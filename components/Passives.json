@@ -1,0 +1,20 @@
+{
+    "library_name": "Passives",
+    "components": [
+        {
+            "name": "0402WGF5101TCE",
+            "base_component": "base_resistor",
+            "properties": [
+                {"key": "Value",                        "value": "5K1"},
+                {"key": "Tolerance",                    "value": "10%"},
+                {"key": "Footprint",                    "value": "easyeda2kicad:R0402"},
+                {"key": "Manufacturer 1",               "value": "Uni-Royal"},
+                {"key": "Manufacturer Part Number 1",   "value": "0402WGF5101TCE"},
+                {"key": "Supplier 1",                   "value": "LCSC"},
+                {"key": "Supplier Part Number 1",       "value": "C25905"},
+                {"key": "Datasheet",                    "value": "https://lcsc.com/product-detail/Chip-Resistor-Surface-Mount-UniOhm_5-1KR-5101-1_C25905.html"}
+            ],
+            "remove_properties": []
+        }
+    ]
+}
