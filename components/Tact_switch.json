@@ -1,0 +1,22 @@
+{
+  "library_name": "Tact Switch",
+  "components": [
+    {
+      "name": "GT-TC025D-H0065-L1",
+      "base_component": "base_resistor",
+      "properties": [
+        { "key": "Footprint", "value": "easyeda2kicad:SW-SMD_4P-L3.0-W2.6-P1.80-LS3.4-TL" },
+        { "key": "Manufacturer 1", "value": "G-Switch" },
+        { "key": "Manufacturer Part Number 1", "value": "GT-TC025D-H0065-L1" },
+        { "key": "Supplier 1", "value": "LCSC" },
+        { "key": "Supplier Part Number 1", "value": "C778132" },
+        { "key": "LCSC Part", "value": "C778132" },
+        {
+          "key": "Datasheet",
+          "value": "https://lcsc.com/product-detail/Tactile-Switches_G-Switch-GT-TC025D-H0065-L1_C778132.html"
+        }
+      ],
+      "remove_properties": []
+    }
+  ]
+}
