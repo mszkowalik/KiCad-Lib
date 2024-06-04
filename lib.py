@@ -22,7 +22,7 @@ def update_component(base_component, properties, remove_properties):
         value = prop.get('value', '')
         if '{' in value and '}' in value:
             value = evaluate_property_expression(value, base_component)
-        
+
         found = False
         for p in base_component.properties:
             if p.key == key:
