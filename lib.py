@@ -16,7 +16,9 @@ def evaluate_property_expression(expression, component):
     local_vars = {prop.key: prop.value for prop in component.properties}
     return eval(f"f'{expression}'", {}, local_vars)
 
-def update_component(base_component, properties, remove_properties):
+def update_component(base_component, components_data):
+    properties = components_data["properties"]
+    remove_properties = components_data.get("remove_properties", [])
     for prop in properties:
         key = prop.get('key')
         value = prop.get('value', '')
@@ -95,7 +97,7 @@ def create_or_update_library(yaml_data, directory):
             new_component = copy.deepcopy(base_component)
             new_component.entryName = component_data["name"]
             rename_symbol_units(new_component)
-            new_component = update_component(new_component, component_data["properties"], component_data["remove_properties"])
+            new_component = update_component(new_component, component_data)
 
             new_lib.symbols.append(new_component)
 
