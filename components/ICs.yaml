@@ -1,0 +1,62 @@
+library_name: ICs
+components:
+  - name: BQ24092DGQT
+    base_component: BQ2409x
+    properties:
+      - key: Footprint
+        value: HVSSOP-10-1EP_3x3mm_P0.5mm_EP1.57x1.88mm_ThermalVias
+      - key: ki_description
+        value: BQ2409x 1-A, Single-Input, Single-Cell Li-Ion and Li-Pol Battery Chargers
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: BQ24092DGQT
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2864890
+      - key: LCSC Part
+        value: C2864890
+      - key: Datasheet
+        value: https://www.ti.com/lit/ds/symlink/bq24092.pdf
+    remove_properties: []
+  - name: W25Q16JVUXIQ
+    base_component: W25Q16JV
+    properties:
+      - key: Footprint
+        value: 7Sigma:USON-8_L3.0-W2.0-P0.50-BL-EP
+      - key: ki_description
+        value: 16M-bit Serial Flash Memory with uniform 4KB sectors and Dual/Quad SPI
+      - key: Manufacturer 1
+        value: Winbond Elec
+      - key: Manufacturer Part Number 1
+        value: W25Q16JVUXIQ
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2843335
+      - key: LCSC Part
+        value: C2843335
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2205122030_Winbond-Elec-W25Q16JVUXIQ_C2843335.pdf
+    remove_properties: []
+  - name: WS2812E-1313
+    base_component: WS2812
+    properties:
+      - key: Footprint
+        value: 7Sigma:LED-SMD_4P-L1.3-W1.3-P0.80_WS2812E-1313
+      - key: ki_description
+        value: Serial RGB LED
+      - key: Manufacturer 1
+        value: Worldsemi
+      - key: Manufacturer Part Number 1
+        value: WS2812E-1313
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5446700
+      - key: LCSC Part
+        value: C5446700
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2402291527_Worldsemi-WS2812E-1313_C5446700.pdf
+    remove_properties: []

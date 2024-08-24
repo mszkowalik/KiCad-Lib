@@ -1,0 +1,22 @@
+library_name: Connectors
+components:
+  - name: BQ24092DGQT
+    base_component: BQ2409x
+    properties:
+      - key: Footprint
+        value: HVSSOP-10-1EP_3x3mm_P0.5mm_EP1.57x1.88mm_ThermalVias
+      - key: ki_description
+        value: BQ2409x 1-A, Single-Input, Single-Cell Li-Ion and Li-Pol Battery Chargers
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: BQ24092DGQT
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2864890
+      - key: LCSC Part
+        value: C2864890
+      - key: Datasheet
+        value: https://www.ti.com/lit/ds/symlink/bq24092.pdf
+    remove_properties: []
