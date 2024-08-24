@@ -1,0 +1,310 @@
+library_name: Resistor
+components:
+  - name: 0402WGF5101TCE
+    base_component: base_resistor
+    properties:
+      - key: Value
+        value: 5K1
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R0402
+      - key: Footprint_Name
+        value: 0402
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF5101TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C25905
+      - key: LCSC Part
+        value: C25905
+      - key: Datasheet
+        value: "https://lcsc.com/product-detail/Chip-Resistor-Surface-Mount-UniOhm_5-1KR-5101-1_C25905.html"
+    remove_properties: []
+  - name: 0402WGF220JTCE
+    base_component: base_resistor
+    properties:
+      - key: Value
+        value: 22R
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R0402
+      - key: Footprint_Name
+        value: 0402
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF220JTCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C25092
+      - key: LCSC Part
+        value: C25092
+      - key: Datasheet
+        value: "https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf"
+    remove_properties: []
+  - name: 0402WGF100JTCE
+    base_component: base_resistor
+    properties:
+      - key: Value
+        value: 10R
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R0402
+      - key: Footprint_Name
+        value: 0402
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF100JTCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C25077
+      - key: LCSC Part
+        value: C25077
+      - key: Datasheet
+        value: "https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf"
+    remove_properties: []
+  - name: 0402WGF1001TCE
+    base_component: base_resistor
+    properties:
+      - key: Value
+        value: 1K
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R0402
+      - key: Footprint_Name
+        value: 0402
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF1001TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C11702
+      - key: LCSC Part
+        value: C11702
+      - key: Datasheet
+        value: "https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf"
+    remove_properties: []
+  - name: 0402WGF1002TCE
+    base_component: base_resistor
+    properties:
+      - key: Value
+        value: 10K
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R0402
+      - key: Footprint_Name
+        value: 0402
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF1002TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C25744
+      - key: LCSC Part
+        value: C25744
+      - key: Datasheet
+        value: "https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf"
+    remove_properties: []
+  - name: 0402WGF1003TCE
+    base_component: base_resistor
+    properties:
+      - key: Value
+        value: 100K
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R0402
+      - key: Footprint_Name
+        value: 0402
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF1003TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C25741
+      - key: LCSC Part
+        value: C25741
+      - key: Datasheet
+        value: "https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf"
+    remove_properties: []
+  - name: 0402WGF1200TCE
+    base_component: base_resistor
+    properties:
+      - key: Value
+        value: 120R
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R0402
+      - key: Footprint_Name
+        value: 0402
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF1200TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C25079
+      - key: LCSC Part
+        value: C25079
+      - key: Datasheet
+        value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
+    remove_properties: []
+  - name: 0402WGF2001TCE
+    base_component: base_resistor
+    properties:
+      - key: Value
+        value: 2K
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R0402
+      - key: Footprint_Name
+        value: 0402
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF2001TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C4109
+      - key: LCSC Part
+        value: C4109
+      - key: Datasheet
+        value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
+    remove_properties: []
+  - name: 0402WGF5100TCE
+    base_component: base_resistor
+    properties:
+      - key: Value
+        value: 510R
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R0402
+      - key: Footprint_Name
+        value: 0402
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF5100TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C25123
+      - key: LCSC Part
+        value: C25123
+      - key: Datasheet
+        value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
+    remove_properties: []
+  - name: 0402WGF5101TCE
+    base_component: base_resistor
+    properties:
+      - key: Value
+        value: 5K1
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R0402
+      - key: Footprint_Name
+        value: 0402
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF5101TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C25905
+      - key: LCSC Part
+        value: C25905
+      - key: Datasheet
+        value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
+    remove_properties: []
+  - name: 1206W4F100LT5E
+    base_component: base_resistor
+    properties:
+      - key: Value
+        value: 1K
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: easyeda2kicad:R1206
+      - key: Footprint_Name
+        value: 0402
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 1206W4F100LT5E
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C25334
+      - key: LCSC Part
+        value: C25334
+      - key: Datasheet
+        value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
+    remove_properties: []

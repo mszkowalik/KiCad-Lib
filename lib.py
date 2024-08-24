@@ -1,15 +1,15 @@
 import os
-import json
+import yaml
 import copy
 from kiutils.symbol import SymbolLib, Symbol
 from kiutils.items.common import Property, Position, Effects, Font
 
-def load_json_files(directory):
-    json_files = [f for f in os.listdir(directory) if f.endswith('.json')]
+def load_yaml_files(directory):
+    yaml_files = [f for f in os.listdir(directory) if f.endswith('.yaml') or f.endswith('.yml')]
     data = []
-    for json_file in json_files:
-        with open(os.path.join(directory, json_file), 'r') as f:
-            data.append(json.load(f))
+    for yaml_file in yaml_files:
+        with open(os.path.join(directory, yaml_file), 'r') as f:
+            data.append(yaml.safe_load(f))
     return data
 
 def evaluate_property_expression(expression, component):
@@ -20,7 +20,9 @@ def update_component(base_component, properties, remove_properties):
     for prop in properties:
         key = prop.get('key')
         value = prop.get('value', '')
-        if '{' in value and '}' in value:
+
+        # Check if value is a string before evaluating the expression
+        if isinstance(value, str) and '{' in value and '}' in value:
             value = evaluate_property_expression(value, base_component)
 
         found = False
@@ -61,13 +63,12 @@ def update_component(base_component, properties, remove_properties):
     base_component.properties = [p for p in base_component.properties if p.key not in remove_properties]
 
     return base_component
-
 def rename_symbol_units(symbol):
     for unit in symbol.units:
         unit.entryName = f"{symbol.entryName}"
 
-def create_or_update_library(json_data, directory):
-    for lib_data in json_data:
+def create_or_update_library(yaml_data, directory):
+    for lib_data in yaml_data:
         base_lib_path = os.path.join(directory, 'base_library.kicad_sym')
         output_lib_path = os.path.join(directory, f"{lib_data['library_name']}.kicad_sym")
 
@@ -98,8 +99,8 @@ def create_or_update_library(json_data, directory):
 
 def main():
     directory = './components'
-    json_data = load_json_files(directory)
-    create_or_update_library(json_data, directory)
+    yaml_data = load_yaml_files(directory)
+    create_or_update_library(yaml_data, directory)
 
 if __name__ == "__main__":
     main()

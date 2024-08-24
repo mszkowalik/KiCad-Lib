@@ -1,0 +1,58 @@
+library_name: Transistors
+components:
+  - name: AO3400A
+    base_component: Q_NMOS_GSD
+    properties:
+      - key: Footprint
+        value: "Package_TO_SOT_SMD:SOT-23-3"
+      - key: ki_description
+        value: N-Channel MOSFETs
+      - key: Power
+        value: 1.4W
+      - key: Drain Source On Resistance
+        value: 26.5mΩ@10V
+      - key: Continuous Drain Current
+        value: 5.7A
+      - key: Drain Source Voltage
+        value: 30V
+      - key: Manufacturer 1
+        value: "Alpha & Omega Semicon"
+      - key: Manufacturer Part Number 1
+        value: AO3400A
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C20917
+      - key: LCSC Part
+        value: C20917
+      - key: Datasheet
+        value: https://lcsc.com/product-detail/MOSFET_AOS_AO3400A_AO3400A_C20917.html
+    remove_properties: []
+  - name: AO3401A
+    base_component: Q_PMOS_GSD
+    properties:
+      - key: Footprint
+        value: "Package_TO_SOT_SMD:SOT-23"
+      - key: ki_description
+        value: P-Channel MOSFETs
+      - key: Power
+        value: 1.4W
+      - key: Drain Source On Resistance
+        value: 44mΩ@10V
+      - key: Continuous Drain Current
+        value: 4A
+      - key: Drain Source Voltage
+        value: 30V
+      - key: Manufacturer 1
+        value: "Alpha & Omega Semicon"
+      - key: Manufacturer Part Number 1
+        value: AO3401A
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C15127
+      - key: LCSC Part
+        value: C15127
+      - key: Datasheet
+        value: https://lcsc.com/product-detail/MOSFET_AOS_AO3401A_AO3401A_C15127.html
+    remove_properties: []

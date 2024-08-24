@@ -1,0 +1,61 @@
+library_name: Capacitor
+components:
+  - name: GRM155R61H105KE05D
+    base_component: base_capacitor
+    properties:
+      - key: Value
+        value: 1uF
+      - key: Tolerance
+        value: 1%
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: X5R
+      - key: Footprint
+        value: easyeda2kicad:C0402
+      - key: Footprint_Name
+        value: 0402
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Murata Electronics
+      - key: Manufacturer Part Number 1
+        value: GRM155R61H105KE05D
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C1518208
+      - key: LCSC Part
+        value: C1518208
+      - key: Datasheet
+        value: "https://datasheet.lcsc.com/lcsc/2201180430_Murata-Electronics-GRM155R61H105KE05D_C1518208.pdf?_gl=1*1ue1ana*_ga*MjA3NTA3NDE1NC4xNzE1NDMyNTIw*_ga_98M84MKSZH*MTcxNzQwNTAzMi45LjEuMTcxNzQwNTIwOS41OS4wLjA."
+    remove_properties: []
+
+  - name: T491D107K016AT
+    base_component: base_capacitor_tantalum
+    properties:
+      - key: Value
+        value: 100uF
+      - key: Tolerance
+        value: 10%
+      - key: Voltage
+        value: 16V
+      - key: Footprint
+        value: easyeda2kicad:CAP-SMD_L7.3-W4.3-R-RD
+      - key: Footprint_Name
+        value: CASE-D-7343
+      - key: ki_description
+        value: "{Value} {Voltage} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Kemet
+      - key: Manufacturer Part Number 1
+        value: T491D107K016AT
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C110548
+      - key: LCSC Part
+        value: C110548
+      - key: Datasheet
+        value: "https://lcsc.com/product-detail/Tantalum-Capacitors_KEMET_T491D107K016AT_100uF-107-10-16V_C110548.html"
+    remove_properties: []
