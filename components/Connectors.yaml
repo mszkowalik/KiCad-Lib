@@ -1,22 +1,40 @@
 library_name: Connectors
 components:
-  - name: BQ24092DGQT
-    base_component: BQ2409x
+  - name: GT-USB-7010ASV
+    base_component: USB_C_Receptacle_USB2.0_16P
     properties:
       - key: Footprint
-        value: HVSSOP-10-1EP_3x3mm_P0.5mm_EP1.57x1.88mm_ThermalVias
+        value: Connector_USB:USB_C_Receptacle_G-Switch_GT-USB-7010ASV
       - key: ki_description
-        value: BQ2409x 1-A, Single-Input, Single-Cell Li-Ion and Li-Pol Battery Chargers
+        value: USB 2.0 Type-C Receptacle 16P
       - key: Manufacturer 1
-        value: Texas Instruments
+        value: G-Switch
       - key: Manufacturer Part Number 1
-        value: BQ24092DGQT
+        value: GT-USB-7010ASV
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
-        value: C2864890
+        value: C2988369
       - key: LCSC Part
-        value: C2864890
+        value: C2988369
       - key: Datasheet
-        value: https://www.ti.com/lit/ds/symlink/bq24092.pdf
-    remove_properties: []
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2303271630_G-Switch-GT-USB-7010ASV_C2988369.pdf
+  - name: SMTSO2010CTJ
+    base_component: SMD_Round_Nut
+    properties:
+      - key: Footprint
+        value: 7Sigma:SMD_BD5.6-L5.6-W5.6-D3.6
+      - key: ki_description
+        value: SMD Round Nut
+      - key: Manufacturer 1
+        value: Sinhoo
+      - key: Manufacturer Part Number 1
+        value: SMTSO2010CTJ
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2916319
+      - key: LCSC Part
+        value: C2916319
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2112061830_Sinhoo-SMTSO2010CTJ_C2916319.pdf

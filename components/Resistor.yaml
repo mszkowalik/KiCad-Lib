@@ -10,7 +10,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: 7Sigma:R0402
+        value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
         value: 0402
       - key: ki_description
@@ -38,7 +38,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: 7Sigma:R0402
+        value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
         value: 0402
       - key: ki_description
@@ -66,7 +66,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: 7Sigma:R0402
+        value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
         value: 0402
       - key: ki_description
@@ -94,7 +94,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: 7Sigma:R0402
+        value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
         value: 0402
       - key: ki_description
@@ -122,7 +122,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: 7Sigma:R0402
+        value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
         value: 0402
       - key: ki_description
@@ -150,7 +150,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: 7Sigma:R0402
+        value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
         value: 0402
       - key: ki_description
@@ -178,7 +178,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: 7Sigma:R0402
+        value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
         value: 0402
       - key: ki_description
@@ -206,7 +206,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: 7Sigma:R0402
+        value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
         value: 0402
       - key: ki_description
@@ -234,7 +234,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: 7Sigma:R0402
+        value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
         value: 0402
       - key: ki_description
@@ -262,7 +262,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: 7Sigma:R0402
+        value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
         value: 0402
       - key: ki_description
@@ -307,4 +307,34 @@ components:
         value: C25334
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
+    remove_properties: []
+  - name: NCP15XH103F03RC
+    base_component: Thermistor_NTC
+    properties:
+      - key: Value
+        value: 10K NTC
+      - key: Power
+        value: 100mW
+      - key: Tolerance
+        value: 1%
+      - key: B Value
+        value: 3435K
+      - key: Type
+        value: NTC
+      - key: Footprint
+        value: Resistor_SMD:R_0402_1005Metric
+      - key: ki_description
+        value: 10K NTC Thermistor
+      - key: Manufacturer 1
+        value: Murata Electronics
+      - key: Manufacturer Part Number 1
+        value: NCP15XH103F03RC
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C77131
+      - key: LCSC Part
+        value: C77131
+      - key: Datasheet
+        value: https://lcsc.com/product-detail/NTC-Thermistors_muRata_NCP15XH103F03RC_NTCThermistor-10kR-1_C77131.html
     remove_properties: []

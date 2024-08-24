@@ -60,3 +60,127 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2402291527_Worldsemi-WS2812E-1313_C5446700.pdf
     remove_properties: []
+  - name: XC6206P332MR-G
+    base_component: XC6206PxxxMR
+    properties:
+      - key: Footprint
+        value: Package_TO_SOT_SMD:SOT-23-3
+      - key: ki_description
+        value: 3.3V 200mA LDO Voltage Regulator
+      - key: Output Current
+        value: 200 mA
+      - key: Output Voltage Accuracy
+        value: 2%
+      - key: Dropout Voltage
+        value: 680mV@(100mA)
+      - key: Output Voltage
+        value: 3.3V
+      - key: Maximum Input Voltage
+        value: 6V
+      - key: Manufacturer 1
+        value: Torex Semicon
+      - key: Manufacturer Part Number 1
+        value: XC6206P332MR-G
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5446
+      - key: LCSC Part
+        value: C5446
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Torex-Semicon-XC6206P332MR-G_C5446.pdf
+  - name: LSM6DS3TR-C
+    base_component: LSM6DS3
+    properties:
+      - key: Footprint
+        value: Package_LGA:LGA-14_3x2.5mm_P0.5mm_LayoutBorder3x4y
+      - key: ki_description
+        value: "I2C/SPI, iNEMO inertial module: always-on 3D accelerometer and 3D gyroscope"
+      - key: Manufacturer 1
+        value: STMicroelectronics
+      - key: Manufacturer Part Number 1
+        value: LSM6DS3TR-C
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C967633
+      - key: LCSC Part
+        value: C967633
+      - key: Datasheet
+        value: https://www.mouser.pl/datasheet/2/389/lsm6ds3tr_c-1761429.pdf
+  - name: ESP32-WROOM-32UE-N4
+    base_component: ESP32-WROOM-32U
+    properties:
+      - key: Footprint
+        value: RF_Module:ESP32-WROOM-32U
+      - key: ki_description
+        value: RF Module, ESP32-D0WD SoC, Wi-Fi 802.11b/g/n, Bluetooth, BLE, 32-bit, 2.7-3.6V, external antenna, SMD, U.FL connector
+      - key: Manufacturer 1
+        value: Espressif Systems
+      - key: Manufacturer Part Number 1
+        value: ESP32-WROOM-32UE-N4
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C701344
+      - key: LCSC Part
+        value: C701344
+      - key: Datasheet
+        value: https://www.espressif.com/sites/default/files/documentation/esp32-wroom-32d_esp32-wroom-32u_datasheet_en.pdf
+  - name: RP2040
+    base_component: RP2040
+    properties:
+      - key: Footprint
+        value: Package_DFN_QFN:QFN-56-1EP_7x7mm_P0.4mm_EP3.2x3.2mm
+      - key: ki_description
+        value: RP2040 ARM Cortex-M0+ USB
+      - key: Manufacturer 1
+        value: Raspberry Pi
+      - key: Manufacturer Part Number 1
+        value: RP2040
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2040
+      - key: LCSC Part
+        value: C2040
+      - key: Datasheet
+        value: https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf
+  - name: CH340B
+    base_component: CH340B
+    properties:
+      - key: Footprint
+        value: Package_SO:SOIC-16_3.9x9.9mm_P1.27mm
+      - key: ki_description
+        value: USB to Serial
+      - key: Manufacturer 1
+        value: WCH(Jiangsu Qin Heng)
+      - key: Manufacturer Part Number 1
+        value: CH340B
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C81010
+      - key: LCSC Part
+        value: C81010
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2403131142_WCH-Jiangsu-Qin-Heng-CH340B_C81010.pdf
+  - name: M3535N1UVS8U12-365NM
+    base_component: M3535N1
+    properties:
+      - key: Footprint
+        value: 7Sigma:LED-SMD_3P-L3.5-W3.5-R-RD-C
+      - key: ki_description
+        value: 500mW 700mA 4V 360nm~370nm SMD3535 Ultraviolet LEDs (UVLED) ROHS
+      - key: Manufacturer 1
+        value: Silverlight
+      - key: Manufacturer Part Number 1
+        value: M3535N1UVS8U12-365NM
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2833504
+      - key: LCSC Part
+        value: C2833504
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2105281611_Silverlight-M3535N1UVS8U12-365nm_C2833504.pdf

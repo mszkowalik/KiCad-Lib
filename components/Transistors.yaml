@@ -4,7 +4,7 @@ components:
     base_component: Q_NMOS_GSD
     properties:
       - key: Footprint
-        value: "Package_TO_SOT_SMD:SOT-23-3"
+        value: Package_TO_SOT_SMD:SOT-23-3
       - key: ki_description
         value: N-Channel MOSFETs
       - key: Power
