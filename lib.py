@@ -48,6 +48,9 @@ def update_component(base_component, properties, remove_properties):
 
         if not found:
             effects_dict = prop.get('effects', {})
+            default_effects = Effects(
+                hide = True if not key in ["Value", "Reference"] else False
+            )
             new_property = Property(
                 key=key,
                 value=value,
@@ -55,7 +58,7 @@ def update_component(base_component, properties, remove_properties):
                 effects=Effects(
                     font=Font(**effects_dict.get('font', {})),
                     hide=effects_dict.get('hide', True)
-                ) if effects_dict else Effects(),
+                ) if effects_dict else default_effects,
                 showName=prop.get('showName', False)
             )
             base_component.properties.append(new_property)
@@ -63,6 +66,7 @@ def update_component(base_component, properties, remove_properties):
     base_component.properties = [p for p in base_component.properties if p.key not in remove_properties]
 
     return base_component
+
 def rename_symbol_units(symbol):
     for unit in symbol.units:
         unit.entryName = f"{symbol.entryName}"
