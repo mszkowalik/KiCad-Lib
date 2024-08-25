@@ -1,0 +1,29 @@
+library_name: Timing_Components
+components:
+  - name: TAXM12M4RKDCDT2T
+    base_component: Crystal_GND24_Small
+    properties:
+      - key: Value
+        value: 12MHz
+      - key: Tolerance
+        value: 20ppm
+      - key: Load Capacitance
+        value: 18pF
+      - key: Equivalent Series Resistance
+        value: 80R
+      - key: Footprint
+        value: Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm
+      - key: ki_description
+        value: "12MHz ±20ppm 18pF Crystal"
+      - key: Manufacturer 1
+        value: TAE
+      - key: Manufacturer Part Number 1
+        value: TAXM12M4RKDCDT2T
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C403945
+      - key: LCSC Part
+        value: C403945
+      - key: Datasheet
+        value: https://atta.szlcsc.com/upload/public/pdf/source/20190712/C403945_BA479055B724E986F735DE30F05BF37D.pdf

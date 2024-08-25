@@ -986,7 +986,7 @@
       )
     )
   )
-  (symbol "M3535N1UVS8U12-365NM" (in_bom yes) (on_board yes)
+  (symbol "M3535N1UVS8U12-365NM" (pin_names hide) (in_bom yes) (on_board yes)
     (property "Reference" "U" (at 0 3.81 0)
       (effects (font (size 1.27 1.27)))
     )

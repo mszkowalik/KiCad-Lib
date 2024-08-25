@@ -1,7 +1,7 @@
 library_name: Resistor
 components:
   - name: 0402WGF5101TCE
-    base_component: base_resistor
+    base_component: R
     properties:
       - key: Value
         value: 5K1
@@ -12,7 +12,7 @@ components:
       - key: Footprint
         value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
-        value: 0402
+        value: "0402"
       - key: ki_description
         value: "{Value} {Power} {Tolerance} {Footprint_Name}"
       - key: Manufacturer 1
@@ -27,9 +27,8 @@ components:
         value: C25905
       - key: Datasheet
         value: "https://lcsc.com/product-detail/Chip-Resistor-Surface-Mount-UniOhm_5-1KR-5101-1_C25905.html"
-    remove_properties: []
   - name: 0402WGF220JTCE
-    base_component: base_resistor
+    base_component: R
     properties:
       - key: Value
         value: 22R
@@ -57,7 +56,7 @@ components:
         value: "https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf"
     remove_properties: []
   - name: 0402WGF100JTCE
-    base_component: base_resistor
+    base_component: R
     properties:
       - key: Value
         value: 10R
@@ -68,7 +67,7 @@ components:
       - key: Footprint
         value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
-        value: 0402
+        value: "0402"
       - key: ki_description
         value: "{Value} {Power} {Tolerance} {Footprint_Name}"
       - key: Manufacturer 1
@@ -83,9 +82,8 @@ components:
         value: C25077
       - key: Datasheet
         value: "https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf"
-    remove_properties: []
   - name: 0402WGF1001TCE
-    base_component: base_resistor
+    base_component: R
     properties:
       - key: Value
         value: 1K
@@ -96,7 +94,7 @@ components:
       - key: Footprint
         value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
-        value: 0402
+        value: "0402"
       - key: ki_description
         value: "{Value} {Power} {Tolerance} {Footprint_Name}"
       - key: Manufacturer 1
@@ -111,9 +109,8 @@ components:
         value: C11702
       - key: Datasheet
         value: "https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf"
-    remove_properties: []
   - name: 0402WGF1002TCE
-    base_component: base_resistor
+    base_component: R
     properties:
       - key: Value
         value: 10K
@@ -124,7 +121,7 @@ components:
       - key: Footprint
         value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
-        value: 0402
+        value: "0402"
       - key: ki_description
         value: "{Value} {Power} {Tolerance} {Footprint_Name}"
       - key: Manufacturer 1
@@ -139,9 +136,8 @@ components:
         value: C25744
       - key: Datasheet
         value: "https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf"
-    remove_properties: []
   - name: 0402WGF1003TCE
-    base_component: base_resistor
+    base_component: R
     properties:
       - key: Value
         value: 100K
@@ -152,7 +148,7 @@ components:
       - key: Footprint
         value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
-        value: 0402
+        value: "0402"
       - key: ki_description
         value: "{Value} {Power} {Tolerance} {Footprint_Name}"
       - key: Manufacturer 1
@@ -167,9 +163,8 @@ components:
         value: C25741
       - key: Datasheet
         value: "https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf"
-    remove_properties: []
   - name: 0402WGF1200TCE
-    base_component: base_resistor
+    base_component: R
     properties:
       - key: Value
         value: 120R
@@ -180,7 +175,7 @@ components:
       - key: Footprint
         value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
-        value: 0402
+        value: "0402"
       - key: ki_description
         value: "{Value} {Power} {Tolerance} {Footprint_Name}"
       - key: Manufacturer 1
@@ -195,9 +190,8 @@ components:
         value: C25079
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
-    remove_properties: []
   - name: 0402WGF2001TCE
-    base_component: base_resistor
+    base_component: R
     properties:
       - key: Value
         value: 2K
@@ -208,7 +202,7 @@ components:
       - key: Footprint
         value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
-        value: 0402
+        value: "0402"
       - key: ki_description
         value: "{Value} {Power} {Tolerance} {Footprint_Name}"
       - key: Manufacturer 1
@@ -223,9 +217,8 @@ components:
         value: C4109
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
-    remove_properties: []
   - name: 0402WGF5100TCE
-    base_component: base_resistor
+    base_component: R
     properties:
       - key: Value
         value: 510R
@@ -236,7 +229,7 @@ components:
       - key: Footprint
         value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
-        value: 0402
+        value: "0402"
       - key: ki_description
         value: "{Value} {Power} {Tolerance} {Footprint_Name}"
       - key: Manufacturer 1
@@ -251,9 +244,8 @@ components:
         value: C25123
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
-    remove_properties: []
   - name: 0402WGF5101TCE
-    base_component: base_resistor
+    base_component: R
     properties:
       - key: Value
         value: 5K1
@@ -264,7 +256,7 @@ components:
       - key: Footprint
         value: Resistor_SMD:R_0402_1005Metric
       - key: Footprint_Name
-        value: 0402
+        value: "0402"
       - key: ki_description
         value: "{Value} {Power} {Tolerance} {Footprint_Name}"
       - key: Manufacturer 1
@@ -279,20 +271,19 @@ components:
         value: C25905
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
-    remove_properties: []
   - name: 1206W4F100LT5E
-    base_component: base_resistor
+    base_component: R
     properties:
       - key: Value
-        value: 1K
+        value: 100m
       - key: Power
         value: 63mW
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: easyeda2kicad:R1206
+        value: Resistor_SMD:R_1206_3216Metric
       - key: Footprint_Name
-        value: 0402
+        value: "1206"
       - key: ki_description
         value: "{Value} {Power} {Tolerance} {Footprint_Name}"
       - key: Manufacturer 1
@@ -307,7 +298,6 @@ components:
         value: C25334
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
-    remove_properties: []
   - name: NCP15XH103F03RC
     base_component: Thermistor_NTC
     properties:

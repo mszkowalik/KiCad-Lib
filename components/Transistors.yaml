@@ -5,6 +5,8 @@ components:
     properties:
       - key: Footprint
         value: Package_TO_SOT_SMD:SOT-23-3
+      - key: Value
+        value: AO3400A
       - key: ki_description
         value: N-Channel MOSFETs
       - key: Power
@@ -27,7 +29,6 @@ components:
         value: C20917
       - key: Datasheet
         value: https://lcsc.com/product-detail/MOSFET_AOS_AO3400A_AO3400A_C20917.html
-    remove_properties: []
   - name: AO3401A
     base_component: Q_PMOS_GSD
     properties:
@@ -35,6 +36,8 @@ components:
         value: "Package_TO_SOT_SMD:SOT-23"
       - key: ki_description
         value: P-Channel MOSFETs
+      - key: Value
+        value: AO3401A
       - key: Power
         value: 1.4W
       - key: Drain Source On Resistance
@@ -55,4 +58,3 @@ components:
         value: C15127
       - key: Datasheet
         value: https://lcsc.com/product-detail/MOSFET_AOS_AO3401A_AO3401A_C15127.html
-    remove_properties: []
