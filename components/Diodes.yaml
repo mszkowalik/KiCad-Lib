@@ -1,0 +1,29 @@
+library_name: Diodes
+components:
+  - name: SM4007PL
+    base_component: D
+    properties:
+      - key: Footprint
+        value: Diode_SMD:D_SOD-123F
+      - key: Value
+        value: SM4007PL
+      - key: ki_description
+        value: General Purpose Diode 1kV 1A
+      - key: Maximum Reverse Voltage
+        value: 1KV
+      - key: Continuous Current
+        value: 1A
+      - key: Manufacturer 1
+        value: MDD
+      - key: Manufacturer Part Number 1
+        value: SM4007PL
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C64898
+      - key: LCSC Part
+        value: C64898
+      - key: Datasheet
+        value: https://atta.szlcsc.com/upload/public/pdf/source/20230823/16A8FDE162764C9B685A3717F2DA3690.pdf
+      - key: JLCPCB Part Class
+        value: Basic Part

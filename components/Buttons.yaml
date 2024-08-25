@@ -1,0 +1,21 @@
+library_name: Buttons
+components:
+  - name: TS24CA
+    base_component: SW_Push
+    properties:
+      - key: Value
+        value: TS24CA
+      - key: Footprint
+        value: 7Sigma:SW-SMD_TS24CA
+      - key: Manufacturer 1
+        value: SHOU HAN
+      - key: Manufacturer Part Number 1
+        value: TS24CA
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C393942
+      - key: LCSC Part
+        value: C393942
+      - key: Datasheet
+        value: https://wmsc.lcsc.com/wmsc/upload/file/pdf/v2/lcsc/2404241539_SHOU-HAN-TS24CA_C393942.pdf
