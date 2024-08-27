@@ -4,7 +4,7 @@ components:
     base_component: USB_C_Receptacle_USB2.0_16P
     properties:
       - key: Footprint
-        value: Connector_USB:USB_C_Receptacle_G-Switch_GT-USB-7010ASV
+        value: 7Sigma:USB_C_Receptacle_G-Switch_GT-USB-7010ASV
       - key: ki_description
         value: USB 2.0 Type-C Receptacle 16P
       - key: Manufacturer 1

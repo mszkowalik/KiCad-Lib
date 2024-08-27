@@ -1,7 +1,7 @@
 (footprint "LED-SMD_3P-L3.5-W3.5-R-RD-C" (version 20221018) (generator pcbnew)
   (layer "F.Cu")
   (attr smd)
-  (fp_text reference "REF**" (at 0 -4) (layer "F.SilkS")
+  (fp_text reference "REF**" (at 0 -2.8) (layer "F.SilkS")
       (effects (font (size 1 1) (thickness 0.15)))
     (tstamp e4fae290-8969-4f56-9672-0cf3b8720800)
   )

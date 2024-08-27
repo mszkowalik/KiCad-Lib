@@ -19,3 +19,24 @@ components:
         value: C393942
       - key: Datasheet
         value: https://wmsc.lcsc.com/wmsc/upload/file/pdf/v2/lcsc/2404241539_SHOU-HAN-TS24CA_C393942.pdf
+  - name: GT-TC025D-H0065-L1
+    base_component: SW_Push
+    properties:
+      - key: Value
+        value: GT-TC025D-H0065-L1
+      - key: Footprint
+        value: 7Sigma:SW-SMD_4P-L3.0-W2.6-P1.80-LS3.4-TL
+      - key: Manufacturer 1
+        value: G-Switch
+      - key: Manufacturer Part Number 1
+        value: GT-TC025D-H0065-L1
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C778132
+      - key: LCSC Part
+        value: C778132
+      - key: Datasheet
+        value: https://atta.szlcsc.com/upload/public/pdf/source/20200903/C778132_B660520F71507DBEE642245864F56D3E.pdf
+      - key: LCSC Part Class
+        value: Extended Part

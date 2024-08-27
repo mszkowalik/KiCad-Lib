@@ -184,3 +184,22 @@ components:
         value: C2833504
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2105281611_Silverlight-M3535N1UVS8U12-365nm_C2833504.pdf
+  - name: MP34DT05TR-A
+    base_component: MP34DT05
+    properties:
+      - key: Footprint
+        value: 7Sigma:MIC-SMD_5P-L3.0-W4.0-P0.85-BL
+      - key: ki_description
+        value: MEMS audio sensor omnidirectional digital microphone
+      - key: Manufacturer 1
+        value: STMicroelectronics
+      - key: Manufacturer Part Number 1
+        value: MP34DT05TR-A
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2688664
+      - key: LCSC Part
+        value: C2688664
+      - key: Datasheet
+        value: https://www.mouser.pl/datasheet/2/389/mp34dt05_a-1850143.pdf

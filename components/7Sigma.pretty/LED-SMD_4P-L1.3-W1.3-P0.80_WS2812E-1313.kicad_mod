@@ -1,7 +1,7 @@
 (footprint "LED-SMD_4P-L1.3-W1.3-P0.80_WS2812E-1313" (version 20221018) (generator pcbnew)
   (layer "F.Cu")
   (attr smd)
-  (fp_text reference "REF**" (at 0 -4.4) (layer "F.SilkS")
+  (fp_text reference "REF**" (at 0 -1.8) (layer "F.SilkS")
       (effects (font (size 1 1) (thickness 0.15)))
     (tstamp 1a1589b9-01b8-4174-b7c6-7e178c3fd18a)
   )
