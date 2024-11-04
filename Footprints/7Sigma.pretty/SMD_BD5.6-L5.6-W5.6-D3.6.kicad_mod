@@ -1,11 +1,11 @@
 (footprint "SMD_BD5.6-L5.6-W5.6-D3.6" (version 20221018) (generator pcbnew)
   (layer "F.Cu")
   (attr through_hole)
-  (fp_text reference "REF**" (at 0 -5.84) (layer "F.SilkS")
+  (fp_text reference "REF**" (at 0 -5.84) (layer "F.SilkS") hide
       (effects (font (size 1 1) (thickness 0.15)))
     (tstamp c9469403-8ec3-4cc2-872f-eb8283e94946)
   )
-  (fp_text value "SMD_BD5.6-L5.6-W5.6-D3.6" (at 0 5.84) (layer "F.Fab")
+  (fp_text value "SMD_BD5.6-L5.6-W5.6-D3.6" (at 0 5.84) (layer "F.Fab") hide
       (effects (font (size 1 1) (thickness 0.15)))
     (tstamp 064faa9a-4b84-42cc-b269-2051af274c9f)
   )
@@ -17,6 +17,8 @@
     (stroke (width 0.15) (type solid)) (fill none) (layer "F.SilkS") (tstamp ba3381d4-ffc9-41a5-a04f-f26aa29301a1))
   (fp_circle (center 0 0) (end 0.9 0)
     (stroke (width 1.8) (type solid)) (fill none) (layer "Cmts.User") (tstamp 26cc81ab-6f97-4361-89d2-8906635e08c6))
+  (fp_circle (center 0 0) (end 3.5 0)
+    (stroke (width 0.05) (type default)) (fill none) (layer "F.CrtYd") (tstamp 53fc054d-00e7-4f11-85b1-dc672a7416fd))
   (fp_circle (center 3.1 -3.1) (end 3.13 -3.1)
     (stroke (width 0.06) (type solid)) (fill none) (layer "F.Fab") (tstamp 2cce15d4-440a-4c63-89ba-866930ba4016))
   (pad "" thru_hole circle (at 0 0) (size 3.8 3.8) (drill 3.8) (layers "*.Cu" "*.Mask") (tstamp 801050a9-9427-4d88-8c11-6685c7abf784))
@@ -476,7 +478,7 @@
         )
         (width 0.1) (fill yes))
     ) (tstamp e9ddf361-8a2f-484d-b810-a3fdd43bf316))
-  (model "${EASYEDA2KICAD}/easyeda2kicad.3dshapes/SMD_BD5.6-L5.6-W5.6-D3.6.wrl"
+  (model "${SEVENSIGMA_DIR}/3DModels/SMD_BD5.6-L5.6-W5.6-D3.6.wrl"
     (offset (xyz 0 -0 0))
     (scale (xyz 1 1 1))
     (rotate (xyz 0 0 0))

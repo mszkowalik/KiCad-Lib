@@ -104,7 +104,7 @@ def create_or_update_library(yaml_data, directory):
         new_lib.to_file(output_lib_path)
 
 def main():
-    directory = './components'
+    directory = './Symbols'
     yaml_data = load_yaml_files(directory)
     create_or_update_library(yaml_data, directory)
 

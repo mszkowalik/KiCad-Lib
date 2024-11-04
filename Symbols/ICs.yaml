@@ -203,3 +203,22 @@ components:
         value: C2688664
       - key: Datasheet
         value: https://www.mouser.pl/datasheet/2/389/mp34dt05_a-1850143.pdf
+  - name: SP3485EN-L/TR
+    base_component: SP3485
+    properties:
+      - key: Footprint
+        value: Package_SO:SOIC-8_3.9x4.9mm_P1.27mm
+      - key: ki_description
+        value: Industrial 3.3V Low Power Half-Duplex RS-485 Transceiver 10Mbps, SOIC-8
+      - key: Manufacturer 1
+        value: MaxLinear
+      - key: Manufacturer Part Number 1
+        value: SP3485EN-L/TR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C8963
+      - key: LCSC Part
+        value: C8963
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_MaxLinear-SP3485EN-L-TR_C8963.pdf
