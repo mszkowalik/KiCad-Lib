@@ -38,3 +38,117 @@ components:
         value: C2916319
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2112061830_Sinhoo-SMTSO2010CTJ_C2916319.pdf
+  - name: 15EDGVM-3.5-02P
+    base_component: Conn_01x02
+    properties:
+      - key: Footprint
+        value: Connector_PhoenixContact_MC:PhoenixContact_MCV_1,5_2-GF-3.5_1x02_P3.50mm_Vertical_ThreadedFlange
+      - key: ki_description
+        value: Pluggable terminal block; 3.5mm
+      - key: Manufacturer 1
+        value: DEGSON
+      - key: Manufacturer Part Number 1
+        value: 15EDGVM-3.5-02P
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2761149
+      - key: LCSC Part
+        value: C2761149
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_DEGSON-15EDGVM-3-5-02P-14-00A-H_C2761149.pdf
+  - name: 15EDGVM-3.5-04P
+    base_component: Conn_01x04
+    properties:
+      - key: Footprint
+        value: Connector_PhoenixContact_MC:PhoenixContact_MCV_1,5_4-GF-3.5_1x04_P3.50mm_Vertical_ThreadedFlange
+      - key: ki_description
+        value: Pluggable terminal block; 3.5mm
+      - key: Manufacturer 1
+        value: DEGSON
+      - key: Manufacturer Part Number 1
+        value: 15EDGVM-3.5-04P
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2761151
+      - key: LCSC Part
+        value: C2761151
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_DEGSON-15EDGVM-3-5-04P-14-00A-H_C2761151.pdf
+  - name: 15EDGVM-3.5-05P
+    base_component: Conn_01x05
+    properties:
+      - key: Footprint
+        value: Connector_PhoenixContact_MC:PhoenixContact_MCV_1,5_5-GF-3.5_1x05_P3.50mm_Vertical_ThreadedFlange
+      - key: ki_description
+        value: Pluggable terminal block; 3.5mm
+      - key: Manufacturer 1
+        value: DEGSON
+      - key: Manufacturer Part Number 1
+        value: 15EDGVM-3.5-05P
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2761152
+      - key: LCSC Part
+        value: C2761152
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411220118_DEGSON-15EDGVM-3-5-05P-14-00A-H_C2761152.pdf
+  - name: 15EDGVM-3.5-08P
+    base_component: Conn_01x08
+    properties:
+      - key: Footprint
+        value: Connector_PhoenixContact_MC:PhoenixContact_MCV_1,5_8-GF-3.5_1x08_P3.50mm_Vertical_ThreadedFlange
+      - key: ki_description
+        value: Pluggable terminal block; 3.5mm
+      - key: Manufacturer 1
+        value: DEGSON
+      - key: Manufacturer Part Number 1
+        value: 15EDGVM-3.5-08P
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2761155
+      - key: LCSC Part
+        value: C2761155
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_DEGSON-15EDGVM-3-5-08P-14-00A-H_C2761155.pdf
+  - name: 15EDGVM-3.5-10P
+    base_component: Conn_01x10
+    properties:
+      - key: Footprint
+        value: Connector_PhoenixContact_MC:PhoenixContact_MCV_1,5_10-GF-3.5_1x10_P3.50mm_Vertical_ThreadedFlange
+      - key: ki_description
+        value: Pluggable terminal block; 3.5mm
+      - key: Manufacturer 1
+        value: DEGSON
+      - key: Manufacturer Part Number 1
+        value: 15EDGVM-3.5-10P
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: 
+      - key: LCSC Part
+        value: 
+      - key: Datasheet
+        value: 
+  - name: 15EDGVM-3.5-12P
+    base_component: Conn_01x12
+    properties:
+      - key: Footprint
+        value: Connector_PhoenixContact_MC:PhoenixContact_MCV_1,5_12-GF-3.81_1x12_P3.81mm_Vertical_ThreadedFlange
+      - key: ki_description
+        value: Pluggable terminal block; 3.5mm
+      - key: Manufacturer 1
+        value: DEGSON
+      - key: Manufacturer Part Number 1
+        value: 15EDGVM-3.5-12P
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: 
+      - key: LCSC Part
+        value: 
+      - key: Datasheet
+        value: 

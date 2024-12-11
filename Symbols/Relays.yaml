@@ -1,0 +1,23 @@
+library_name: Relays
+components:
+  - name: G2RL-1-DC24
+    base_component: G2RL-1
+    properties:
+      - key: Value
+        value: G2RL-1-DC24
+      - key: Footprint
+        value: Relay_THT:Relay_SPDT_Omron_G2RL-1
+      - key: ki_description
+        value: '24V 12A 1C SPDT-Conversion Plugin,12.5x28.8mm Power Relay'
+      - key: Manufacturer 1
+        value: Omron Electronics
+      - key: Manufacturer Part Number 1
+        value: G2RL-1-DC24
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C469139
+      - key: LCSC Part
+        value: C469139
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2211282230_Omron-Electronics-G2RL-1-DC24_C469139.pdf

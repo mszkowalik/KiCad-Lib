@@ -285,3 +285,24 @@ components:
         value: C3232306
       - key: Datasheet
         value: https://www.infineon.com/dgdl/Infineon-BTT6050-1ERA-DS-v01_00-EN.pdf?fileId=5546d46269e1c019016a21fa5b7a0d8a
+  - name: SN74LVC1G17DCKR
+    base_component: 74LVC1G17
+    properties:
+      - key: Footprint
+        value: Package_TO_SOT_SMD:SOT-353_SC-70-5
+      - key: ki_description
+        value: Schmitt Trigger 1 32mA 1.65V~5.5V 32mA 1 SC-70-5
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: SN74LVC1G17DCKR
+      - key: Value
+        value: SN74LVC1G17DCKR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C10425
+      - key: LCSC Part
+        value: C10425
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_1809192011_Texas-Instruments-SN74LVC1G17DCKR_C10425.pdf

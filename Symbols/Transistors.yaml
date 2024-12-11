@@ -85,3 +85,32 @@ components:
         value: C426835
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2410010131_Nexperia-MMBT3904-215_C426835.pdf
+  - name: DMN6075S-7
+    base_component: DMN6075S
+    properties:
+      - key: Footprint
+        value: "Package_TO_SOT_SMD:SOT-23"
+      - key: ki_description
+        value: N-Channel MOSFETs
+      - key: Value
+        value: DMN6075S-7
+      - key: Power
+        value: 1.15W
+      - key: Drain Source On Resistance
+        value: 85mΩ@10V
+      - key: Continuous Drain Current
+        value: 2.5A
+      - key: Drain Source Voltage
+        value: 60V
+      - key: Manufacturer 1
+        value: Diodes Incorporated
+      - key: Manufacturer Part Number 1
+        value: DMN6075S-7
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C155242
+      - key: LCSC Part
+        value: C155242
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_1809081631_Diodes-Incorporated-DMN6075S-7_C155242.pdf

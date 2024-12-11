@@ -167,7 +167,7 @@ components:
       - key: Manufacturer 1
         value: Samwha Capacitor
       - key: Manufacturer Part Number 1
-        value: Samwha Capacitor
+        value: CS3225X7R476K160NRL
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
@@ -176,3 +176,32 @@ components:
         value: C5440143
       - key: Datasheet
         value: ""
+  - name: GRM21BR71H104KA01L
+    base_component: C
+    properties:
+      - key: Value
+        value: 100nF
+      - key: Tolerance
+        value: 10%
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: X7R
+      - key: Footprint
+        value: Capacitor_SMD:C_0805_2012Metric
+      - key: Footprint_Name
+        value: "0805"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: muRata
+      - key: Manufacturer Part Number 1
+        value: GRM21BR71H104KA01L
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C77082
+      - key: LCSC Part
+        value: C77082
+      - key: Datasheet
+        value: https://atta.szlcsc.com/upload/public/pdf/source/20200305/C490387_23319AE8C154DEB24C505E6C82A8106A.pdf
