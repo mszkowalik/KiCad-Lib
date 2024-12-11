@@ -1,0 +1,29 @@
+library_name: Inductors
+components:
+  - name: DFE201612E-R47M=P2
+    base_component: base_inductor
+    properties:
+      - key: Value
+        value: 470nH
+      - key: Tolerance
+        value: 20%
+      - key: Footprint
+        value: Inductor_SMD:L_Murata_DFE201610P
+      - key: Rated_Current
+        value: 4.5A
+      - key: Footprint_Name
+        value: "0806"
+      - key: ki_description
+        value: "{Value} {Rated_Current} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Murata Electronics
+      - key: Manufacturer Part Number 1
+        value: DFE201612E-R47M=P2
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C668312
+      - key: LCSC Part
+        value: C668312
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2409272202_Murata-Electronics-DFE201612E-R47M-P2_C668312.pdf

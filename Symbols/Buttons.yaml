@@ -40,3 +40,22 @@ components:
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200903/C778132_B660520F71507DBEE642245864F56D3E.pdf
       - key: LCSC Part Class
         value: Extended Part
+  - name: KH-6X6X9H-TJ
+    base_component: SW_Push
+    properties:
+      - key: Value
+        value: KH-6X6X9H-TJ
+      - key: Footprint
+        value: Button_Switch_THT:SW_PUSH_6mm
+      - key: Manufacturer 1
+        value: Shenzhen Kinghelm Elec
+      - key: Manufacturer Part Number 1
+        value: KH-6X6X9H-TJ
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2837519
+      - key: LCSC Part
+        value: C2837519
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2106081503_Shenzhen-Kinghelm-Elec-KH-6X6X9H-TJ_C2837519.pdf

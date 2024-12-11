@@ -222,3 +222,66 @@ components:
         value: C8963
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_MaxLinear-SP3485EN-L-TR_C8963.pdf
+  - name: TPS61023DRLR
+    base_component: TPS61023
+    properties:
+      - key: Footprint
+        value: Package_TO_SOT_SMD:SOT-563
+      - key: ki_description
+        value: 3.7-A Boost Converter with 0.5-V Ultra-low Input Voltage
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: TPS61023DRLR
+      - key: Value
+        value: TPS61023DRLR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C919459
+      - key: LCSC Part
+        value: C919459
+      - key: Datasheet
+        value: https://www.ti.com/lit/ds/symlink/tps61023.pdf
+  - name: 74LVC1G175GW,125
+    base_component: 74LVC1G175GW,125
+    properties:
+      - key: Footprint
+        value: Package_TO_SOT_SMD:SOT-363_SC-70-6
+      - key: ki_description
+        value: Single D Flip-Flop w/ Asnynchronus Clear, Low-Voltage CMOS
+      - key: Manufacturer 1
+        value: Nexperia
+      - key: Manufacturer Part Number 1
+        value: 74LVC1G175GW,125
+      - key: Value
+        value: 74LVC1G175GW,125
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C282350
+      - key: LCSC Part
+        value: C282350
+      - key: Datasheet
+        value: https://assets.nexperia.com/documents/data-sheet/74LVC1G175.pdf
+  - name: BTT60501ERAXUMA1
+    base_component: BTT6050-1ERA
+    properties:
+      - key: Footprint
+        value: 7Sigma:SOIC-14_3.9x8.7mm_P1.27mm_EP6.4x2.65
+      - key: ki_description
+        value: Single channel Smart High-Side Power Switch
+      - key: Manufacturer 1
+        value: Infineon
+      - key: Manufacturer Part Number 1
+        value: BTT60501ERAXUMA1
+      - key: Value
+        value: BTT60501ERAXUMA1
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C3232306
+      - key: LCSC Part
+        value: C3232306
+      - key: Datasheet
+        value: https://www.infineon.com/dgdl/Infineon-BTT6050-1ERA-DS-v01_00-EN.pdf?fileId=5546d46269e1c019016a21fa5b7a0d8a

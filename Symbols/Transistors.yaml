@@ -58,3 +58,30 @@ components:
         value: C15127
       - key: Datasheet
         value: https://lcsc.com/product-detail/MOSFET_AOS_AO3401A_AO3401A_C15127.html
+  - name: MMBT3904,215
+    base_component: MMBT3904
+    properties:
+      - key: Footprint
+        value: "Package_TO_SOT_SMD:SOT-23"
+      - key: ki_description
+        value: NPN BJT
+      - key: Value
+        value: MMBT3904,215
+      - key: Power
+        value: 250mW
+      - key: Continuous Drain Current
+        value: 200mA
+      - key: Collector-Emitter Voltage
+        value: 40V
+      - key: Manufacturer 1
+        value: Nexperia
+      - key: Manufacturer Part Number 1
+        value: MMBT3904,215
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C426835
+      - key: LCSC Part
+        value: C426835
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2410010131_Nexperia-MMBT3904-215_C426835.pdf

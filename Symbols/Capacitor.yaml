@@ -14,7 +14,7 @@ components:
       - key: Footprint
         value: Capacitor_SMD:C_0402_1005Metric
       - key: Footprint_Name
-        value: 0402
+        value: "0402"
       - key: ki_description
         value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
       - key: Manufacturer 1
@@ -147,3 +147,32 @@ components:
         value: https://atta.szlcsc.com/upload/public/pdf/source/20181008/C309499_21CC21451B82C39E3D92150FD6B30293.pdf
       - key: JLCPCB Part Class
         value: Extended Part
+  - name: CS3225X7R476K160NRL
+    base_component: C
+    properties:
+      - key: Value
+        value: 47uF
+      - key: Tolerance
+        value: 10%
+      - key: Voltage
+        value: 16V
+      - key: Dielectric
+        value: X7R
+      - key: Footprint
+        value: Capacitor_SMD:C_1210_3225Metric
+      - key: Footprint_Name
+        value: "1210"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Samwha Capacitor
+      - key: Manufacturer Part Number 1
+        value: Samwha Capacitor
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5440143
+      - key: LCSC Part
+        value: C5440143
+      - key: Datasheet
+        value: ""
