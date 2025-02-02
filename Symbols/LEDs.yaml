@@ -1,0 +1,64 @@
+library_name: LEDs
+components:
+  - name: APT2012CGCK
+    base_component: LED
+    properties:
+      - key: Footprint
+        value: LED_SMD:LED_0805_2012Metric
+      - key: Value
+        value: APT2012CGCK
+      - key: ki_description
+        value: Single Color Green LED 570nm Water Clear 40mcd
+      - key: Forward Current
+        value: 20mA
+      - key: Forward Voltage
+        value: 2.1V
+      - key: Wavelength
+        value: 570nm
+      - key: Color
+        value: Green
+      - key: Lens
+        value: Clear
+      - key: Manufacturer 1
+        value: Kingbright
+      - key: Manufacturer Part Number 1
+        value: APT2012CGCK
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5875740
+      - key: LCSC Part
+        value: C5875740
+      - key: Datasheet
+        value: https://www.mouser.pl/datasheet/2/216/APT2012CGCK-24136.pdf
+  - name: APT2012SURCK
+    base_component: LED
+    properties:
+      - key: Footprint
+        value: LED_SMD:LED_0805_2012Metric
+      - key: Value
+        value: APT2012SURCK
+      - key: ki_description
+        value: Single Color Red LED 570nm Water Clear 40mcd
+      - key: Forward Current
+        value: 20mA
+      - key: Forward Voltage
+        value: 1.95V
+      - key: Wavelength
+        value: 645nm
+      - key: Color
+        value: Red
+      - key: Lens
+        value: Clear
+      - key: Manufacturer 1
+        value: Kingbright
+      - key: Manufacturer Part Number 1
+        value: APT2012SURCK
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5875730
+      - key: LCSC Part
+        value: C5875730
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2305191756_Kingbright-APT2012SURCK_C5875730.pdf

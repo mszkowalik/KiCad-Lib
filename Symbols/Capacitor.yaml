@@ -205,3 +205,61 @@ components:
         value: C77082
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200305/C490387_23319AE8C154DEB24C505E6C82A8106A.pdf
+  - name: CC0402JRNPO9BN180
+    base_component: C
+    properties:
+      - key: Value
+        value: 18pF
+      - key: Tolerance
+        value: 5%
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: NP0
+      - key: Footprint
+        value: Capacitor_SMD:C_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: YAGEO
+      - key: Manufacturer Part Number 1
+        value: CC0402JRNPO9BN180
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C106202
+      - key: LCSC Part
+        value: C106202
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0402JRNPO9BN180_C106202.pdf
+  - name: CC0805JRNPO9BN180
+    base_component: C
+    properties:
+      - key: Value
+        value: 18pF
+      - key: Tolerance
+        value: 5%
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: NP0
+      - key: Footprint
+        value: Capacitor_SMD:C_0805_2012Metric
+      - key: Footprint_Name
+        value: "0805"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: YAGEO
+      - key: Manufacturer Part Number 1
+        value: CC0805JRNPO9BN180
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C113825
+      - key: LCSC Part
+        value: C113825
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0805JRNPO9BN180_C113825.pdf

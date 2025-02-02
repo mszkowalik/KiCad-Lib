@@ -409,6 +409,33 @@ components:
         value: C17513
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
+  - name: 0805W8F3300T5E
+    base_component: R
+    properties:
+      - key: Value
+        value: 330R
+      - key: Power
+        value: 125mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: Resistor_SMD:R_0805_2012Metric
+      - key: Footprint_Name
+        value: "0805"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0805W8F3300T5E
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C17630
+      - key: LCSC Part
+        value: C17630
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_UNI-ROYAL-Uniroyal-Elec-0805W8F3300T5E_C17630.pdf
   - name: 0805W8F4701T5E
     base_component: R
     properties:
@@ -436,6 +463,33 @@ components:
         value: C17673
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_UNI-ROYAL-Uniroyal-Elec-0805W8F4701T5E_C17673.pdf
+  - name: 0805W8F5101T5E
+    base_component: R
+    properties:
+      - key: Value
+        value: 5K1
+      - key: Power
+        value: 125mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: Resistor_SMD:R_0805_2012Metric
+      - key: Footprint_Name
+        value: "0805"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0805W8F5101T5E
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C27834
+      - key: LCSC Part
+        value: C27834
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221127_UNI-ROYAL-Uniroyal-Elec-0805W8F5101T5E_C27834.pdf
   - name: 0805W8F1002T5E
     base_component: R
     properties:

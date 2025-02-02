@@ -306,3 +306,68 @@ components:
         value: C10425
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_1809192011_Texas-Instruments-SN74LVC1G17DCKR_C10425.pdf
+  - name: SN74LVC1G14DCKR
+    base_component: 74LVC1G14
+    properties:
+      - key: Footprint
+        value: Package_TO_SOT_SMD:SOT-353_SC-70-5
+      - key: ki_description
+        value: Schmitt Trigger Inverter 32mA 1.65V~5.5V 32mA 1 SC-70-5
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: SN74LVC1G14DCKR
+      - key: Value
+        value: SN74LVC1G14DCKR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C35740
+      - key: LCSC Part
+        value: C35740
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_1811032110_Texas-Instruments-SN74LVC1G14DCKR_C35740.pdf
+  - name: SN74HC21DR
+    base_component: SN74HC21
+    properties:
+      - key: Footprint
+        value: Package_SO:SOIC-14_3.9x8.7mm_P1.27mm
+      - key: ki_description
+        value: AND gate 2-ch, 4-input, 2-V to 6-V 5.2 mA
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: SN74HC21DR
+      - key: Value
+        value: SN74HC21DR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C75398
+      - key: LCSC Part
+        value: C75398
+      - key: Datasheet
+        value: https://www.ti.com/lit/ds/symlink/sn74hc21.pdf
+  - name: UCC27538DBVR
+    base_component: UCC27538
+    properties:
+      - key: Footprint
+        value: Package_SO:Package_TO_SOT_SMD:SOT-23-6
+      - key: ki_description
+        value: 2.5-A/5-A single-channel gate driver with 8-V UVLO, 35-V VDD
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: UCC27538DBVR
+      - key: Value
+        value: UCC27538DBVR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2677323
+      - key: LCSC Part
+        value: C2677323
+      - key: Datasheet
+        value: https://www.ti.com/lit/ds/symlink/ucc27538.pdf
+
+
