@@ -114,3 +114,32 @@ components:
         value: C155242
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_1809081631_Diodes-Incorporated-DMN6075S-7_C155242.pdf
+  - name: AON7264E
+    base_component: AON7264E
+    properties:
+      - key: Footprint
+        value: "DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm"
+      - key: ki_description
+        value: N-Channel 60V 28A 13.3mΩ@4.5V,15A 1.4V DFN-8(3x3) MOSFETs ROHS
+      - key: Value
+        value: AON7264E
+      - key: Power
+        value: 27W
+      - key: Drain Source On Resistance
+        value: 13.3mΩ@4.5V
+      - key: Continuous Drain Current
+        value: 28A
+      - key: Drain Source Voltage
+        value: 60V
+      - key: Manufacturer 1
+        value: Alpha & Omega Semicon
+      - key: Manufacturer Part Number 1
+        value: AON7264E
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C431191
+      - key: LCSC Part
+        value: C431191
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2410121847_Alpha---Omega-Semicon-AON7264E_C431191.pdf

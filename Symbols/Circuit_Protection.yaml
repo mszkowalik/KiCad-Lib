@@ -1,0 +1,64 @@
+library_name: Circuit_Protection
+components:
+  - name: BSMD2920-500-30V
+    base_component: Polyfuse
+    properties:
+      - key: Value
+        value: 5A
+      - key: Hold Current
+        value: 5A
+      - key: Trip Current
+        value: 10A
+      - key: Power
+        value: 2.5W
+      - key: Voltage_Max
+        value: 30V
+      - key: Footprint
+        value: Fuse:Fuse_2920_7451Metric
+      - key: Footprint_Name
+        value: "2920"
+      - key: ki_description
+        value: Resettable Fuse {Value} {Voltage_Max} {Footprint_Name}
+      - key: Manufacturer 1
+        value: BHFUSE
+      - key: Manufacturer Part Number 1
+        value: BSMD2920-500-30V
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C20539728
+      - key: LCSC Part
+        value: C20539728
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2410010300_BHFUSE-BSMD2920-500-30V_C20539728.pdf
+  - name: BSMD0805-005-33V
+    base_component: Polyfuse
+    properties:
+      - key: Value
+        value: 50mA
+      - key: Hold Current
+        value: 50mA
+      - key: Trip Current
+        value: 150mA
+      - key: Power
+        value: 500mW
+      - key: Voltage_Max
+        value: 33V
+      - key: Footprint
+        value: Fuse:Fuse_0805_2012Metric
+      - key: Footprint_Name
+        value: "0805"
+      - key: ki_description
+        value: Resettable Fuse {Value} {Voltage_Max} {Footprint_Name}
+      - key: Manufacturer 1
+        value: BHFUSE
+      - key: Manufacturer Part Number 1
+        value: BSMD0805-005-33V
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C883098
+      - key: LCSC Part
+        value: C883098
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411041821_BHFUSE-BSMD0805-005-33V_C883098.pdf

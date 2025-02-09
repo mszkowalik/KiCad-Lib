@@ -382,6 +382,60 @@ components:
         value: C27009
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2206010030_UNI-ROYAL-Uniroyal-Elec-0402WGF4533TCE_C27009.pdf
+  - name: 0805W8F100JT5E
+    base_component: R
+    properties:
+      - key: Value
+        value: 10R
+      - key: Power
+        value: 125mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: Resistor_SMD:R_0805_2012Metric
+      - key: Footprint_Name
+        value: "0805"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0805W8F100JT5E
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C17415
+      - key: LCSC Part
+        value: C17415
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_UNI-ROYAL-Uniroyal-Elec-0805W8F100JT5E_C17415.pdf
+  - name: 0805W8F1200T5E
+    base_component: R
+    properties:
+      - key: Value
+        value: 120R
+      - key: Power
+        value: 125mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: Resistor_SMD:R_0805_2012Metric
+      - key: Footprint_Name
+        value: "0805"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0805W8F1200T5E
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C17437
+      - key: LCSC Part
+        value: C17437
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_UNI-ROYAL-Uniroyal-Elec-0805W8F1200T5E_C17437.pdf
   - name: 0805W8F1001T5E
     base_component: R
     properties:
