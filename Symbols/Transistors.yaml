@@ -143,3 +143,32 @@ components:
         value: C431191
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2410121847_Alpha---Omega-Semicon-AON7264E_C431191.pdf
+  - name: HSBB6115
+    base_component: HSBB6115
+    properties:
+      - key: Footprint
+        value: "DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm"
+      - key: ki_description
+        value: P-Channel 60V 26A 25mΩ@4.5V DFN-8(3x3) MOSFETs ROHS
+      - key: Value
+        value: HSBB6115
+      - key: Power
+        value: 5.2W
+      - key: Drain Source On Resistance
+        value: 25mΩ@4.5V
+      - key: Continuous Drain Current
+        value: 26A
+      - key: Drain Source Voltage
+        value: 60V
+      - key: Manufacturer 1
+        value: HUASHUO
+      - key: Manufacturer Part Number 1
+        value: HSBB6115
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C845604
+      - key: LCSC Part
+        value: C845604
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2410121456_HUASHUO-HSBB6115_C845604.pdf

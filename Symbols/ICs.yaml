@@ -369,5 +369,24 @@ components:
         value: C2677323
       - key: Datasheet
         value: https://www.ti.com/lit/ds/symlink/ucc27538.pdf
-
-
+  - name: LMR33630ADDAR
+    base_component: LMR33630
+    properties:
+      - key: Footprint
+        value: Package_SO:SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm_ThermalVias
+      - key: ki_description
+        value: Synchronous Step-down 3.8V to 36V, 3A Voltage Converter
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: LMR33630ADDAR
+      - key: Value
+        value: LMR33630ADDAR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C841384
+      - key: LCSC Part
+        value: C841384
+      - key: Datasheet
+        value: https://www.ti.com/lit/ds/symlink/lmr33630.pdf?ts=1739431504302

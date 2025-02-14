@@ -27,3 +27,30 @@ components:
         value: C668312
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2409272202_Murata-Electronics-DFE201612E-R47M-P2_C668312.pdf
+  - name: FXL1350-100-M
+    base_component: base_inductor
+    properties:
+      - key: Value
+        value: 10uH
+      - key: Tolerance
+        value: 20%
+      - key: Footprint
+        value: Inductor_SMD:L_Wuerth_HCM-1350
+      - key: Rated_Current
+        value: 9A
+      - key: Footprint_Name
+        value: SMD,12.6x13.5mm
+      - key: ki_description
+        value: "{Value} {Rated_Current} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: cjiang
+      - key: Manufacturer Part Number 1
+        value: FXL1350-100-M
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C526017
+      - key: LCSC Part
+        value: C526017
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2404260921_cjiang--Changjiang-Microelectronics-Tech-FXL1350-100-M_C526017.pdf

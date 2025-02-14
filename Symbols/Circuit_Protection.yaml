@@ -62,3 +62,34 @@ components:
         value: C883098
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411041821_BHFUSE-BSMD0805-005-33V_C883098.pdf
+  - name: BSMD1206-050-33V
+    base_component: Polyfuse
+    properties:
+      - key: Value
+        value: 500mA
+      - key: Hold Current
+        value: 500mA
+      - key: Trip Current
+        value: 1A
+      - key: Power
+        value: 800mW
+      - key: Voltage_Max
+        value: 33V
+      - key: Footprint
+        value: Fuse:Fuse_1206_3216Metric
+      - key: Footprint_Name
+        value: "1206"
+      - key: ki_description
+        value: Resettable Fuse {Value} {Voltage_Max} {Footprint_Name}
+      - key: Manufacturer 1
+        value: BHFUSE
+      - key: Manufacturer Part Number 1
+        value: BSMD1206-050-33V
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C7202014
+      - key: LCSC Part
+        value: C7202014
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2311161433_BHFUSE-BSMD1206-050-33V_C7202014.pdf

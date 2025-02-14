@@ -263,3 +263,61 @@ components:
         value: C113825
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0805JRNPO9BN180_C113825.pdf
+  - name: CC0805KRX7R9BB103
+    base_component: C
+    properties:
+      - key: Value
+        value: 10nF
+      - key: Tolerance
+        value: 10%
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: X7R
+      - key: Footprint
+        value: Capacitor_SMD:C_0805_2012Metric
+      - key: Footprint_Name
+        value: "0805"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: YAGEO
+      - key: Manufacturer Part Number 1
+        value: CC0805KRX7R9BB103
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C83170
+      - key: LCSC Part
+        value: C83170
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0805KRX7R9BB103_C83170.pdf
+  - name: CL21B105KBFNNNE
+    base_component: C
+    properties:
+      - key: Value
+        value: 1uF
+      - key: Tolerance
+        value: 10%
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: X7R
+      - key: Footprint
+        value: Capacitor_SMD:C_0805_2012Metric
+      - key: Footprint_Name
+        value: "0805"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Samsung Electro-Mechanics
+      - key: Manufacturer Part Number 1
+        value: CL21B105KBFNNNE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C28323
+      - key: LCSC Part
+        value: C28323
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Samsung-Electro-Mechanics-CL21B105KBFNNNE_C28323.pdf

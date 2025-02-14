@@ -27,3 +27,32 @@ components:
         value: https://atta.szlcsc.com/upload/public/pdf/source/20230823/16A8FDE162764C9B685A3717F2DA3690.pdf
       - key: JLCPCB Part Class
         value: Basic Part
+  - name: BZT52C5V6
+    base_component: BZT52C5V6
+    properties:
+      - key: Footprint
+        value: Diode_SMD:D_SOD-123
+      - key: Value
+        value: 5V6
+      - key: ki_description
+        value: Zenner Diode 5.6V 90mA
+      - key: Zenner Voltage
+        value: 5.6V
+      - key: Tolerance
+        value: 5%
+      - key: Max Continuous Current
+        value: 90mA
+      - key: Power
+        value: 500mW
+      - key: Manufacturer 1
+        value: MDD
+      - key: Manufacturer Part Number 1
+        value: BZT52C5V6
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C173406
+      - key: LCSC Part
+        value: C173406
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411211941_MDD-Microdiode-Semiconductor-BZT52C5V6_C173406.pdf
