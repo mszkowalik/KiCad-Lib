@@ -321,3 +321,36 @@ components:
         value: C28323
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Samsung-Electro-Mechanics-CL21B105KBFNNNE_C28323.pdf
+  - name: GJM1555C1H1R2WB01D
+    base_component: C
+    properties:
+      - key: Value
+        value: 1.2pF
+      - key: Tolerance
+        value: 0.5pF
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: C0G
+      - key: Footprint
+        value: Capacitor_SMD:C_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Murata Electronics
+      - key: Manufacturer Part Number 1
+        value: GJM1555C1H1R2WB01D
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C76899
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value: 81-GJM1555C1H1R2WB1D
+      - key: LCSC Part
+        value: C76899
+      - key: Datasheet
+        value: https://lcsc.com/datasheet/lcsc_datasheet_2410121611_muRata-GJM1555C1H1R2WB01D_C76899.pdf

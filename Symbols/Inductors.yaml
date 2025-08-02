@@ -54,3 +54,34 @@ components:
         value: C526017
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2404260921_cjiang--Changjiang-Microelectronics-Tech-FXL1350-100-M_C526017.pdf
+  - name: MLG1005S2N0BT000
+    base_component: base_inductor
+    properties:
+      - key: Value
+        value: 2nH
+      - key: Tolerance
+        value: 0.1nH
+      - key: Footprint
+        value: Inductor_SMD:L_0402_1005Metric
+      - key: Rated_Current
+        value: 900mA
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Rated_Current} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: TDK
+      - key: Manufacturer Part Number 1
+        value: MLG1005S2N0BT000
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C76769
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value: 810-MLG1005S2N0BT000
+      - key: LCSC Part
+        value: C76769
+      - key: Datasheet
+        value: https://lcsc.com/datasheet/lcsc_datasheet_2412231058_TDK-MLG1005S2N0BT000_C76769.pdf

@@ -59,3 +59,22 @@ components:
         value: C2837519
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2106081503_Shenzhen-Kinghelm-Elec-KH-6X6X9H-TJ_C2837519.pdf
+  - name: KH-6X6X4.3H-STM
+    base_component: SW_Push
+    properties:
+      - key: Value
+        value: KH-6X6X4.3H-STM
+      - key: Footprint
+        value: 7Sigma:SW_SPST_6.0mm_6.0mm
+      - key: Manufacturer 1
+        value: Shenzhen Kinghelm Elec
+      - key: Manufacturer Part Number 1
+        value: KH-6X6X4.3H-STM
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2837530
+      - key: LCSC Part
+        value: C2837530
+      - key: Datasheet
+        value: https://wmsc.lcsc.com/wmsc/upload/file/pdf/v2/lcsc/2212051012_Shenzhen-Kinghelm-Elec-KH-6X6X4-3H-STM_C2837530.pdf

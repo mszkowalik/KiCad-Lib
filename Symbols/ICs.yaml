@@ -390,3 +390,24 @@ components:
         value: C841384
       - key: Datasheet
         value: https://www.ti.com/lit/ds/symlink/lmr33630.pdf?ts=1739431504302
+  - name: ESP32-S3FN8
+    base_component: ESP32-S3
+    properties:
+      - key: Footprint
+        value: Package_DFN_QFN:QFN-56-1EP_7x7mm_P0.4mm_EP4x4mm
+      - key: ki_description
+        value: Microcontroller Wi-Fi BT ESP ESP32 Espressif
+      - key: Manufacturer 1
+        value: Espresiff
+      - key: Manufacturer Part Number 1
+        value: ESP32-S3FN8
+      - key: Value
+        value: ESP32-S3FN8
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2913196
+      - key: LCSC Part
+        value: C2913196
+      - key: Datasheet
+        value: https://www.espressif.com/sites/default/files/documentation/esp32-s3_datasheet_en.pdf
