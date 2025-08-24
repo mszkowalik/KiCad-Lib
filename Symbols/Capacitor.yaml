@@ -443,3 +443,32 @@ components:
         value: C76946
       - key: Datasheet
         value: https://lcsc.com/datasheet/lcsc_datasheet_2410121857_muRata-GRM1555C1H100JA01D_C76946.pdf
+  - name: CL05A106MP5NUNC
+    base_component: C
+    properties:
+      - key: Value
+        value: 10uF
+      - key: Tolerance
+        value: 10%
+      - key: Voltage
+        value: 10V
+      - key: Dielectric
+        value: X5R
+      - key: Footprint
+        value: Capacitor_SMD:C_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Murata Electronics
+      - key: Manufacturer Part Number 1
+        value: CL05A106MP5NUNC
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C315248
+      - key: LCSC Part
+        value: C315248
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C315248.pdf

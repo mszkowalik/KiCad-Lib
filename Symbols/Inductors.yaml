@@ -85,3 +85,30 @@ components:
         value: C76769
       - key: Datasheet
         value: https://lcsc.com/datasheet/lcsc_datasheet_2412231058_TDK-MLG1005S2N0BT000_C76769.pdf
+  - name: DFE201610E-1R0M=P2
+    base_component: base_inductor
+    properties:
+      - key: Value
+        value: 1uH
+      - key: Tolerance
+        value: 20%
+      - key: Footprint
+        value: Inductor_SMD:L_Murata_DFE201610P
+      - key: Rated_Current
+        value: 2.7A
+      - key: Footprint_Name
+        value: "0806"
+      - key: ki_description
+        value: "{Value} {Rated_Current} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Murata Electronics
+      - key: Manufacturer Part Number 1
+        value: DFE201610E-1R0M=P2
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C161082
+      - key: LCSC Part
+        value: C161082
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C161082.pdf

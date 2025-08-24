@@ -523,7 +523,7 @@ components:
       - key: LCSC Part
         value: C19725033
       - key: Datasheet
-        value: https://www.ti.com/lit/gpn/bq25155
+        value: https://www.ti.com/lit/ds/symlink/bq25185.pdf
   - name: LC76GPAMD
     base_component: LC76G
     properties:

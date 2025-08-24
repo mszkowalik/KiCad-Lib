@@ -323,3 +323,26 @@ components:
         value:
       - key: Datasheet
         value:
+  - name: 22-28-9023
+    base_component: Conn_01x02
+    properties:
+      - key: Footprint
+        value: Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Horizontal
+      - key: ki_description
+        value: Right Angle Pin Header 2.54mm 2 Position
+      - key: Manufacturer 1
+        value: Molex
+      - key: Manufacturer Part Number 1
+        value: 22-28-9023
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C492410
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value: 538-22-28-9023
+      - key: LCSC Part
+        value: C492410
+      - key: Datasheet
+        value: https://www.molex.com/en-us/products/part-detail-pdf/22289023?display=pdf
