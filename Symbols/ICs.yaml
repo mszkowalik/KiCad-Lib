@@ -524,3 +524,28 @@ components:
         value: C19725033
       - key: Datasheet
         value: https://www.ti.com/lit/gpn/bq25155
+  - name: LC76GPAMD
+    base_component: LC76G
+    properties:
+      - key: Footprint
+        value: 7Sigma:XCVR_LC76G
+      - key: ki_description
+        value: GPS/GLONASS/BDS/Galileo/QZSS Module
+      - key: Manufacturer 1
+        value: Quectel
+      - key: Manufacturer Part Number 1
+        value: LC76GPAMD
+      - key: Value
+        value: LC76GPAMD
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value:
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value: 277-LC76GPAMD
+      - key: LCSC Part
+        value:
+      - key: Datasheet
+        value:

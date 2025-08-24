@@ -1,272 +1,747 @@
-(kicad_symbol_lib (version 20211014) (generator None)
-  (symbol "BSMD2920-500-30V" (pin_names (offset 0)) (in_bom yes) (on_board yes)
-    (property "Reference" "F" (at -2.54 0 90)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "Value" "5A" (at 2.54 0 90)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "Footprint" "Fuse:Fuse_2920_7451Metric" (at 1.27 -5.08 0)
-      (effects (font (size 1.27 1.27)) (justify left) hide)
-    )
-    (property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2410010300_BHFUSE-BSMD2920-500-30V_C20539728.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Resettable fuse, polymeric positive temperature coefficient" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_keywords" "resettable fuse PTC PPTC polyfuse polyswitch" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "*polyfuse* *PTC*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Hold Current" "5A" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Trip Current" "10A" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Power" "2.5W" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Voltage_Max" "30V" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "2920" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "Resettable Fuse 5A 30V 2920" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "BHFUSE" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "BSMD2920-500-30V" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C20539728" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C20539728" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "BSMD2920-500-30V_0_1"
-      (polyline
-        (pts
-          (xy -1.524 2.54)
-          (xy -1.524 1.524)
-          (xy 1.524 -1.524)
-          (xy 1.524 -2.54)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (rectangle (start -0.762 2.54) (end 0.762 -2.54)
-        (stroke (width 0.254) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy 0 2.54)
-          (xy 0 -2.54)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "BSMD2920-500-30V_1_1"
-      (pin passive line (at 0 3.81 270) (length 1.27)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 0 -3.81 90) (length 1.27)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "BSMD0805-005-33V" (pin_names (offset 0)) (in_bom yes) (on_board yes)
-    (property "Reference" "F" (at -2.54 0 90)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "Value" "50mA" (at 2.54 0 90)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "Footprint" "Fuse:Fuse_0805_2012Metric" (at 1.27 -5.08 0)
-      (effects (font (size 1.27 1.27)) (justify left) hide)
-    )
-    (property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2411041821_BHFUSE-BSMD0805-005-33V_C883098.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Resettable fuse, polymeric positive temperature coefficient" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_keywords" "resettable fuse PTC PPTC polyfuse polyswitch" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "*polyfuse* *PTC*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Hold Current" "50mA" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Trip Current" "150mA" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Power" "500mW" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Voltage_Max" "33V" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "0805" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "Resettable Fuse 50mA 33V 0805" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "BHFUSE" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "BSMD0805-005-33V" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C883098" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C883098" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "BSMD0805-005-33V_0_1"
-      (polyline
-        (pts
-          (xy -1.524 2.54)
-          (xy -1.524 1.524)
-          (xy 1.524 -1.524)
-          (xy 1.524 -2.54)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (rectangle (start -0.762 2.54) (end 0.762 -2.54)
-        (stroke (width 0.254) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy 0 2.54)
-          (xy 0 -2.54)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "BSMD0805-005-33V_1_1"
-      (pin passive line (at 0 3.81 270) (length 1.27)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 0 -3.81 90) (length 1.27)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "BSMD1206-050-33V" (pin_names (offset 0)) (in_bom yes) (on_board yes)
-    (property "Reference" "F" (at -2.54 0 90)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "Value" "500mA" (at 2.54 0 90)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "Footprint" "Fuse:Fuse_1206_3216Metric" (at 1.27 -5.08 0)
-      (effects (font (size 1.27 1.27)) (justify left) hide)
-    )
-    (property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2311161433_BHFUSE-BSMD1206-050-33V_C7202014.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Resettable fuse, polymeric positive temperature coefficient" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_keywords" "resettable fuse PTC PPTC polyfuse polyswitch" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "*polyfuse* *PTC*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Hold Current" "500mA" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Trip Current" "1A" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Power" "800mW" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Voltage_Max" "33V" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "1206" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "Resettable Fuse 500mA 33V 1206" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "BHFUSE" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "BSMD1206-050-33V" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C7202014" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C7202014" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "BSMD1206-050-33V_0_1"
-      (polyline
-        (pts
-          (xy -1.524 2.54)
-          (xy -1.524 1.524)
-          (xy 1.524 -1.524)
-          (xy 1.524 -2.54)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (rectangle (start -0.762 2.54) (end 0.762 -2.54)
-        (stroke (width 0.254) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy 0 2.54)
-          (xy 0 -2.54)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "BSMD1206-050-33V_1_1"
-      (pin passive line (at 0 3.81 270) (length 1.27)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 0 -3.81 90) (length 1.27)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
+(kicad_symbol_lib
+	(version 20211014)
+	(symbol "BSMD2920-500-30V"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "F"
+			(at -2.54 0 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "5A"
+			(at 2.54 0 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Fuse:Fuse_2920_7451Metric"
+			(at 1.27 -5.08 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2410010300_BHFUSE-BSMD2920-500-30V_C20539728.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resettable fuse, polymeric positive temperature coefficient"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_keywords" "resettable fuse PTC PPTC polyfuse polyswitch"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "*polyfuse* *PTC*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Hold Current" "5A"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Trip Current" "10A"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Power" "2.5W"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Voltage_Max" "30V"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "2920"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "Resettable Fuse 5A 30V 2920"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "BHFUSE"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "BSMD2920-500-30V"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C20539728"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C20539728"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "BSMD2920-500-30V_0_1"
+			(polyline
+				(pts
+					(xy -1.524 2.54) (xy -1.524 1.524) (xy 1.524 -1.524) (xy 1.524 -2.54)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(rectangle
+				(start -0.762 2.54)
+				(end 0.762 -2.54)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 0 2.54) (xy 0 -2.54)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "BSMD2920-500-30V_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 1.27)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 1.27)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "BSMD0805-005-33V"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "F"
+			(at -2.54 0 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "50mA"
+			(at 2.54 0 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Fuse:Fuse_0805_2012Metric"
+			(at 1.27 -5.08 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2411041821_BHFUSE-BSMD0805-005-33V_C883098.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resettable fuse, polymeric positive temperature coefficient"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_keywords" "resettable fuse PTC PPTC polyfuse polyswitch"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "*polyfuse* *PTC*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Hold Current" "50mA"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Trip Current" "150mA"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Power" "500mW"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Voltage_Max" "33V"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "0805"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "Resettable Fuse 50mA 33V 0805"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "BHFUSE"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "BSMD0805-005-33V"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C883098"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C883098"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "BSMD0805-005-33V_0_1"
+			(polyline
+				(pts
+					(xy -1.524 2.54) (xy -1.524 1.524) (xy 1.524 -1.524) (xy 1.524 -2.54)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(rectangle
+				(start -0.762 2.54)
+				(end 0.762 -2.54)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 0 2.54) (xy 0 -2.54)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "BSMD0805-005-33V_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 1.27)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 1.27)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "BSMD1206-050-33V"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "F"
+			(at -2.54 0 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "500mA"
+			(at 2.54 0 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Fuse:Fuse_1206_3216Metric"
+			(at 1.27 -5.08 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2311161433_BHFUSE-BSMD1206-050-33V_C7202014.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resettable fuse, polymeric positive temperature coefficient"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_keywords" "resettable fuse PTC PPTC polyfuse polyswitch"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "*polyfuse* *PTC*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Hold Current" "500mA"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Trip Current" "1A"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Power" "800mW"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Voltage_Max" "33V"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "1206"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "Resettable Fuse 500mA 33V 1206"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "BHFUSE"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "BSMD1206-050-33V"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C7202014"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C7202014"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "BSMD1206-050-33V_0_1"
+			(polyline
+				(pts
+					(xy -1.524 2.54) (xy -1.524 1.524) (xy 1.524 -1.524) (xy 1.524 -2.54)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(rectangle
+				(start -0.762 2.54)
+				(end 0.762 -2.54)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 0 2.54) (xy 0 -2.54)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "BSMD1206-050-33V_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 1.27)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 1.27)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
 )

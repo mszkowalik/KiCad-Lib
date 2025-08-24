@@ -1,1172 +1,3536 @@
-(kicad_symbol_lib (version 20211014) (generator None)
-  (symbol "GRM155R61H105KE05D" (pin_names (offset 0)) (in_bom yes) (on_board yes)
-    (property "Reference" "C" (at 0.254 2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Value" "1uF" (at 0.254 -2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Footprint" "Capacitor_SMD:C_0402_1005Metric" (at 0.9652 -3.81 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://datasheet.lcsc.com/lcsc/2201180430_Murata-Electronics-GRM155R61H105KE05D_C1518208.pdf?_gl=1*1ue1ana*_ga*MjA3NTA3NDE1NC4xNzE1NDMyNTIw*_ga_98M84MKSZH*MTcxNzQwNTAzMi45LjEuMTcxNzQwNTIwOS41OS4wLjA." (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Unpolarized capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Dielectric" "X5R" (at -1.27 -1.524 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "Voltage" "50V" (at -1.27 -2.54 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "ki_keywords" "cap capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "C_*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "1%" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "0402" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "1uF 50V X5R 1% 0402" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "Murata Electronics" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "GRM155R61H105KE05D" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C1518208" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C1518208" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "GRM155R61H105KE05D_0_1"
-      (polyline
-        (pts
-          (xy -2.032 0.762)
-          (xy 2.032 0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -2.032 -0.762)
-          (xy 2.032 -0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "GRM155R61H105KE05D_1_1"
-      (pin passive line (at 0 3.81 270) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 0 -3.81 90) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "T491D107K016AT" (in_bom yes) (on_board yes)
-    (property "Reference" "C" (at 0 5.08 0)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "Value" "100uF" (at 0 -5.08 0)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "Footprint" "easyeda2kicad:CAP-SMD_L7.3-W4.3-R-RD" (at 0 -7.62 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://lcsc.com/product-detail/Tantalum-Capacitors_KEMET_T491D107K016AT_100uF-107-10-16V_C110548.html" (at 0 -10.16 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "base_capacitor_tantalum" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "LCSC Part" "C110548" (at 0 -12.7 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "10%" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Voltage" "16V" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "CASE-D-7343" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "100uF 16V 10% CASE-D-7343" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "Kemet" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "T491D107K016AT" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C110548" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "T491D107K016AT_0_1"
-      (polyline
-        (pts
-          (xy -0.51 0)
-          (xy -1.27 0)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -0.51 -2.03)
-          (xy -0.51 2.03)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy 0.51 -2.03)
-          (xy 0.51 2.03)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy 1.27 0)
-          (xy 0.51 0)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy 2.03 -1.52)
-          (xy 2.03 -0.51)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy 2.54 -1.02)
-          (xy 1.52 -1.02)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (pin input line (at -3.81 0 0) (length 2.54)
-        (name "2" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-      (pin input line (at 3.81 0 180) (length 2.54)
-        (name "1" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "CL21A226MAQNNNE" (pin_names (offset 0)) (in_bom yes) (on_board yes)
-    (property "Reference" "C" (at 0.254 2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Value" "22uF" (at 0.254 -2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Footprint" "Capacitor_SMD:C_0805_2012Metric" (at 0.9652 -3.81 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Samsung-Electro-Mechanics-CL21A226MAQNNNE_C45783.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Unpolarized capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Dielectric" "X7R" (at -1.27 -1.524 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "Voltage" "25V" (at -1.27 -2.54 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "ki_keywords" "cap capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "C_*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "20%" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "0805" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "22uF 25V 20% 0805" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "Samsung" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "CL21A226MAQNNNE" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C45783" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C45783" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "JLCPCB Part Class" "Basic Part" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "CL21A226MAQNNNE_0_1"
-      (polyline
-        (pts
-          (xy -2.032 0.762)
-          (xy 2.032 0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -2.032 -0.762)
-          (xy 2.032 -0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "CL21A226MAQNNNE_1_1"
-      (pin passive line (at 0 3.81 270) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 0 -3.81 90) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "CL05B104KO5NNNC" (pin_names (offset 0)) (in_bom yes) (on_board yes)
-    (property "Reference" "C" (at 0.254 2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Value" "100nF" (at 0.254 -2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Footprint" "Capacitor_SMD:C_0402_1005Metric" (at 0.9652 -3.81 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://wmsc.lcsc.com/wmsc/upload/file/pdf/v2/lcsc/2304140030_Samsung-Electro-Mechanics-CL05B104KO5NNNC_C1525.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Unpolarized capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Dielectric" "X7R" (at -1.27 -1.524 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "Voltage" "16V" (at -1.27 -2.54 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "ki_keywords" "cap capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "C_*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "10%" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "0402" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "100nF 16V 10% 0402" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "Samsung Electro-Mechanics" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "CL05B104KO5NNNC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C1525" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C1525" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "JLCPCB Part Class" "Basic Part" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "CL05B104KO5NNNC_0_1"
-      (polyline
-        (pts
-          (xy -2.032 0.762)
-          (xy 2.032 0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -2.032 -0.762)
-          (xy 2.032 -0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "CL05B104KO5NNNC_1_1"
-      (pin passive line (at 0 3.81 270) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 0 -3.81 90) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "CC0402FRNPO9BN270" (pin_names (offset 0)) (in_bom yes) (on_board yes)
-    (property "Reference" "C" (at 0.254 2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Value" "27pF" (at 0.254 -2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Footprint" "Capacitor_SMD:C_0402_1005Metric" (at 0.9652 -3.81 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://atta.szlcsc.com/upload/public/pdf/source/20181008/C309499_21CC21451B82C39E3D92150FD6B30293.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Unpolarized capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Dielectric" "NP0" (at -1.27 -1.524 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "Voltage" "50V" (at -1.27 -2.54 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "ki_keywords" "cap capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "C_*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "1%" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "0402" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "27pF 50V 1% 0402" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "Yageo" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "CC0402FRNPO9BN270" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C277506" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C277506" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "JLCPCB Part Class" "Extended Part" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "CC0402FRNPO9BN270_0_1"
-      (polyline
-        (pts
-          (xy -2.032 0.762)
-          (xy 2.032 0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -2.032 -0.762)
-          (xy 2.032 -0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "CC0402FRNPO9BN270_1_1"
-      (pin passive line (at 0 3.81 270) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 0 -3.81 90) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "CS3225X7R476K160NRL" (pin_names (offset 0)) (in_bom yes) (on_board yes)
-    (property "Reference" "C" (at 0.254 2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Value" "47uF" (at 0.254 -2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Footprint" "Capacitor_SMD:C_1210_3225Metric" (at 0.9652 -3.81 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Unpolarized capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Dielectric" "X7R" (at -1.27 -1.524 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "Voltage" "16V" (at -1.27 -2.54 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "ki_keywords" "cap capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "C_*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "10%" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "1210" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "47uF 16V X7R 10% 1210" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "Samwha Capacitor" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "CS3225X7R476K160NRL" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C5440143" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C5440143" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "CS3225X7R476K160NRL_0_1"
-      (polyline
-        (pts
-          (xy -2.032 0.762)
-          (xy 2.032 0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -2.032 -0.762)
-          (xy 2.032 -0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "CS3225X7R476K160NRL_1_1"
-      (pin passive line (at 0 3.81 270) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 0 -3.81 90) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "GRM21BR71H104KA01L" (pin_names (offset 0)) (in_bom yes) (on_board yes)
-    (property "Reference" "C" (at 0.254 2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Value" "100nF" (at 0.254 -2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Footprint" "Capacitor_SMD:C_0805_2012Metric" (at 0.9652 -3.81 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://atta.szlcsc.com/upload/public/pdf/source/20200305/C490387_23319AE8C154DEB24C505E6C82A8106A.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Unpolarized capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Dielectric" "X7R" (at -1.27 -1.524 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "Voltage" "50V" (at -1.27 -2.54 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "ki_keywords" "cap capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "C_*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "10%" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "0805" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "100nF 50V X7R 10% 0805" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "muRata" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "GRM21BR71H104KA01L" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C77082" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C77082" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "GRM21BR71H104KA01L_0_1"
-      (polyline
-        (pts
-          (xy -2.032 0.762)
-          (xy 2.032 0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -2.032 -0.762)
-          (xy 2.032 -0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "GRM21BR71H104KA01L_1_1"
-      (pin passive line (at 0 3.81 270) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 0 -3.81 90) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "CC0402JRNPO9BN180" (pin_names (offset 0)) (in_bom yes) (on_board yes)
-    (property "Reference" "C" (at 0.254 2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Value" "18pF" (at 0.254 -2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Footprint" "Capacitor_SMD:C_0402_1005Metric" (at 0.9652 -3.81 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0402JRNPO9BN180_C106202.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Unpolarized capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Dielectric" "NP0" (at -1.27 -1.524 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "Voltage" "50V" (at -1.27 -2.54 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "ki_keywords" "cap capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "C_*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "5%" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "0402" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "18pF 50V NP0 5% 0402" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "YAGEO" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "CC0402JRNPO9BN180" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C106202" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C106202" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "CC0402JRNPO9BN180_0_1"
-      (polyline
-        (pts
-          (xy -2.032 0.762)
-          (xy 2.032 0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -2.032 -0.762)
-          (xy 2.032 -0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "CC0402JRNPO9BN180_1_1"
-      (pin passive line (at 0 3.81 270) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 0 -3.81 90) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "CC0805JRNPO9BN180" (pin_names (offset 0)) (in_bom yes) (on_board yes)
-    (property "Reference" "C" (at 0.254 2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Value" "18pF" (at 0.254 -2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Footprint" "Capacitor_SMD:C_0805_2012Metric" (at 0.9652 -3.81 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0805JRNPO9BN180_C113825.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Unpolarized capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Dielectric" "NP0" (at -1.27 -1.524 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "Voltage" "50V" (at -1.27 -2.54 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "ki_keywords" "cap capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "C_*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "5%" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "0805" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "18pF 50V NP0 5% 0805" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "YAGEO" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "CC0805JRNPO9BN180" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C113825" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C113825" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "CC0805JRNPO9BN180_0_1"
-      (polyline
-        (pts
-          (xy -2.032 0.762)
-          (xy 2.032 0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -2.032 -0.762)
-          (xy 2.032 -0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "CC0805JRNPO9BN180_1_1"
-      (pin passive line (at 0 3.81 270) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 0 -3.81 90) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "CC0805KRX7R9BB103" (pin_names (offset 0)) (in_bom yes) (on_board yes)
-    (property "Reference" "C" (at 0.254 2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Value" "10nF" (at 0.254 -2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Footprint" "Capacitor_SMD:C_0805_2012Metric" (at 0.9652 -3.81 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0805KRX7R9BB103_C83170.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Unpolarized capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Dielectric" "X7R" (at -1.27 -1.524 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "Voltage" "50V" (at -1.27 -2.54 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "ki_keywords" "cap capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "C_*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "10%" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "0805" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "10nF 50V X7R 10% 0805" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "YAGEO" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "CC0805KRX7R9BB103" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C83170" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C83170" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "CC0805KRX7R9BB103_0_1"
-      (polyline
-        (pts
-          (xy -2.032 0.762)
-          (xy 2.032 0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -2.032 -0.762)
-          (xy 2.032 -0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "CC0805KRX7R9BB103_1_1"
-      (pin passive line (at 0 3.81 270) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 0 -3.81 90) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "CL21B105KBFNNNE" (pin_names (offset 0)) (in_bom yes) (on_board yes)
-    (property "Reference" "C" (at 0.254 2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Value" "1uF" (at 0.254 -2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Footprint" "Capacitor_SMD:C_0805_2012Metric" (at 0.9652 -3.81 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Samsung-Electro-Mechanics-CL21B105KBFNNNE_C28323.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Unpolarized capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Dielectric" "X7R" (at -1.27 -1.524 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "Voltage" "50V" (at -1.27 -2.54 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "ki_keywords" "cap capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "C_*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "10%" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "0805" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "1uF 50V X7R 10% 0805" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "Samsung Electro-Mechanics" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "CL21B105KBFNNNE" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C28323" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C28323" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "CL21B105KBFNNNE_0_1"
-      (polyline
-        (pts
-          (xy -2.032 0.762)
-          (xy 2.032 0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -2.032 -0.762)
-          (xy 2.032 -0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "CL21B105KBFNNNE_1_1"
-      (pin passive line (at 0 3.81 270) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 0 -3.81 90) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "GJM1555C1H1R2WB01D" (pin_names (offset 0)) (in_bom yes) (on_board yes)
-    (property "Reference" "C" (at 0.254 2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Value" "1.2pF" (at 0.254 -2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Footprint" "Capacitor_SMD:C_0402_1005Metric" (at 0.9652 -3.81 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://lcsc.com/datasheet/lcsc_datasheet_2410121611_muRata-GJM1555C1H1R2WB01D_C76899.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Unpolarized capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Dielectric" "C0G" (at -1.27 -1.524 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "Voltage" "50V" (at -1.27 -2.54 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "ki_keywords" "cap capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "C_*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "0.5pF" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "0402" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "1.2pF 50V C0G 0.5pF 0402" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "Murata Electronics" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "GJM1555C1H1R2WB01D" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C76899" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 2" "Mouser" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 2" "81-GJM1555C1H1R2WB1D" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C76899" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "GJM1555C1H1R2WB01D_0_1"
-      (polyline
-        (pts
-          (xy -2.032 0.762)
-          (xy 2.032 0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -2.032 -0.762)
-          (xy 2.032 -0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "GJM1555C1H1R2WB01D_1_1"
-      (pin passive line (at 0 3.81 270) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 0 -3.81 90) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "CL05B103KB5NNNC" (pin_names (offset 0)) (in_bom yes) (on_board yes)
-    (property "Reference" "C" (at 0.254 2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Value" "10nF" (at 0.254 -2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Footprint" "Capacitor_SMD:C_0402_1005Metric" (at 0.9652 -3.81 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://atta.szlcsc.com/upload/public/pdf/source/20160218/1457707763339.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Unpolarized capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Dielectric" "X7R" (at -1.27 -1.524 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "Voltage" "50V" (at -1.27 -2.54 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "ki_keywords" "cap capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "C_*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "10%" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "0402" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "10nF 50V X7R 10% 0402" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "Samsung Electro-Mechanics" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "CL05B103KB5NNNC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C15195" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C15195" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "CL05B103KB5NNNC_0_1"
-      (polyline
-        (pts
-          (xy -2.032 0.762)
-          (xy 2.032 0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -2.032 -0.762)
-          (xy 2.032 -0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "CL05B103KB5NNNC_1_1"
-      (pin passive line (at 0 3.81 270) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 0 -3.81 90) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "GRM1555C1H100JA01D" (pin_names (offset 0)) (in_bom yes) (on_board yes)
-    (property "Reference" "C" (at 0.254 2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Value" "10pF" (at 0.254 -2.032 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Footprint" "Capacitor_SMD:C_0402_1005Metric" (at 0.9652 -3.81 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://lcsc.com/datasheet/lcsc_datasheet_2410121857_muRata-GRM1555C1H100JA01D_C76946.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Unpolarized capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Dielectric" "C0G" (at -1.27 -1.524 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "Voltage" "50V" (at -1.27 -2.54 0)
-      (effects (font (size 0.635 0.635)))
-    )
-    (property "ki_keywords" "cap capacitor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "C_*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "5%" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "0402" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "10pF 50V C0G 5% 0402" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "Murata Electronics" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "GRM1555C1H100JA01D" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C76946" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C76946" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "GRM1555C1H100JA01D_0_1"
-      (polyline
-        (pts
-          (xy -2.032 0.762)
-          (xy 2.032 0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -2.032 -0.762)
-          (xy 2.032 -0.762)
-        )
-        (stroke (width 0.508) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "GRM1555C1H100JA01D_1_1"
-      (pin passive line (at 0 3.81 270) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 0 -3.81 90) (length 2.794)
-        (name "~" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
+(kicad_symbol_lib
+	(version 20211014)
+	(symbol "GRM155R61H105KE05D"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0.254 2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "1uF"
+			(at 0.254 -2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
+			(at 0.9652 -3.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://datasheet.lcsc.com/lcsc/2201180430_Murata-Electronics-GRM155R61H105KE05D_C1518208.pdf?_gl=1*1ue1ana*_ga*MjA3NTA3NDE1NC4xNzE1NDMyNTIw*_ga_98M84MKSZH*MTcxNzQwNTAzMi45LjEuMTcxNzQwNTIwOS41OS4wLjA."
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Unpolarized capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Dielectric" "X5R"
+			(at -1.27 -1.524 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at -1.27 -2.54 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "ki_keywords" "cap capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "C_*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "1%"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "0402"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "1uF 50V X5R 1% 0402"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "Murata Electronics"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "GRM155R61H105KE05D"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C1518208"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C1518208"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "GRM155R61H105KE05D_0_1"
+			(polyline
+				(pts
+					(xy -2.032 0.762) (xy 2.032 0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -2.032 -0.762) (xy 2.032 -0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "GRM155R61H105KE05D_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "CL21A106KAYNNNE"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0.254 2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "10uF"
+			(at 0.254 -2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
+			(at 0.9652 -3.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://jlcpcb.com/api/file/downloadByFileSystemAccessId/8579706853615591424"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Unpolarized capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Dielectric" "X5R"
+			(at -1.27 -1.524 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "Voltage" "25V"
+			(at -1.27 -2.54 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "ki_keywords" "cap capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "C_*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "10%"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "0805"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "10uF 25V X5R 10% 0805"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "Samsung Electro-Mechanics"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "CL21A106KAYNNNE"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C15850"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C15850"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "CL21A106KAYNNNE_0_1"
+			(polyline
+				(pts
+					(xy -2.032 0.762) (xy 2.032 0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -2.032 -0.762) (xy 2.032 -0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "CL21A106KAYNNNE_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "T491D107K016AT"
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0 5.08 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "100uF"
+			(at 0 -5.08 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "easyeda2kicad:CAP-SMD_L7.3-W4.3-R-RD"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://lcsc.com/product-detail/Tantalum-Capacitors_KEMET_T491D107K016AT_100uF-107-10-16V_C110548.html"
+			(at 0 -10.16 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "base_capacitor_tantalum"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C110548"
+			(at 0 -12.7 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "10%"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Voltage" "16V"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "CASE-D-7343"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "100uF 16V 10% CASE-D-7343"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "Kemet"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "T491D107K016AT"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C110548"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "T491D107K016AT_0_1"
+			(polyline
+				(pts
+					(xy -0.51 0) (xy -1.27 0)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -0.51 -2.03) (xy -0.51 2.03)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 0.51 -2.03) (xy 0.51 2.03)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 1.27 0) (xy 0.51 0)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 2.03 -1.52) (xy 2.03 -0.51)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 2.54 -1.02) (xy 1.52 -1.02)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(pin input line
+				(at -3.81 0 0)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin input line
+				(at 3.81 0 180)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "CL21A226MAQNNNE"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0.254 2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "22uF"
+			(at 0.254 -2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
+			(at 0.9652 -3.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Samsung-Electro-Mechanics-CL21A226MAQNNNE_C45783.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Unpolarized capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Dielectric" "X5R"
+			(at -1.27 -1.524 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "Voltage" "25V"
+			(at -1.27 -2.54 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "ki_keywords" "cap capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "C_*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "20%"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "0805"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "22uF 25V X5R 20% 0805"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "Samsung"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "CL21A226MAQNNNE"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C45783"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C45783"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLCPCB Part Class" "Basic Part"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "CL21A226MAQNNNE_0_1"
+			(polyline
+				(pts
+					(xy -2.032 0.762) (xy 2.032 0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -2.032 -0.762) (xy 2.032 -0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "CL21A226MAQNNNE_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "CL05B104KO5NNNC"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0.254 2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "100nF"
+			(at 0.254 -2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
+			(at 0.9652 -3.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://wmsc.lcsc.com/wmsc/upload/file/pdf/v2/lcsc/2304140030_Samsung-Electro-Mechanics-CL05B104KO5NNNC_C1525.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Unpolarized capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Dielectric" "X7R"
+			(at -1.27 -1.524 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "Voltage" "16V"
+			(at -1.27 -2.54 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "ki_keywords" "cap capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "C_*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "10%"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "0402"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "100nF 16V 10% 0402"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "Samsung Electro-Mechanics"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "CL05B104KO5NNNC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C1525"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C1525"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLCPCB Part Class" "Basic Part"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "CL05B104KO5NNNC_0_1"
+			(polyline
+				(pts
+					(xy -2.032 0.762) (xy 2.032 0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -2.032 -0.762) (xy 2.032 -0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "CL05B104KO5NNNC_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "CC0402FRNPO9BN270"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0.254 2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "27pF"
+			(at 0.254 -2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
+			(at 0.9652 -3.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://atta.szlcsc.com/upload/public/pdf/source/20181008/C309499_21CC21451B82C39E3D92150FD6B30293.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Unpolarized capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Dielectric" "NP0"
+			(at -1.27 -1.524 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at -1.27 -2.54 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "ki_keywords" "cap capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "C_*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "1%"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "0402"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "27pF 50V 1% 0402"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "Yageo"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "CC0402FRNPO9BN270"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C277506"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C277506"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "JLCPCB Part Class" "Extended Part"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "CC0402FRNPO9BN270_0_1"
+			(polyline
+				(pts
+					(xy -2.032 0.762) (xy 2.032 0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -2.032 -0.762) (xy 2.032 -0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "CC0402FRNPO9BN270_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "CS3225X7R476K160NRL"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0.254 2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "47uF"
+			(at 0.254 -2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_1210_3225Metric"
+			(at 0.9652 -3.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Unpolarized capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Dielectric" "X7R"
+			(at -1.27 -1.524 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "Voltage" "16V"
+			(at -1.27 -2.54 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "ki_keywords" "cap capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "C_*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "10%"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "1210"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "47uF 16V X7R 10% 1210"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "Samwha Capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "CS3225X7R476K160NRL"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C5440143"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C5440143"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "CS3225X7R476K160NRL_0_1"
+			(polyline
+				(pts
+					(xy -2.032 0.762) (xy 2.032 0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -2.032 -0.762) (xy 2.032 -0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "CS3225X7R476K160NRL_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "GRM21BR71H104KA01L"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0.254 2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "100nF"
+			(at 0.254 -2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
+			(at 0.9652 -3.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://atta.szlcsc.com/upload/public/pdf/source/20200305/C490387_23319AE8C154DEB24C505E6C82A8106A.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Unpolarized capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Dielectric" "X7R"
+			(at -1.27 -1.524 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at -1.27 -2.54 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "ki_keywords" "cap capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "C_*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "10%"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "0805"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "100nF 50V X7R 10% 0805"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "muRata"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "GRM21BR71H104KA01L"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C77082"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C77082"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "GRM21BR71H104KA01L_0_1"
+			(polyline
+				(pts
+					(xy -2.032 0.762) (xy 2.032 0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -2.032 -0.762) (xy 2.032 -0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "GRM21BR71H104KA01L_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "CC0402JRNPO9BN180"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0.254 2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "18pF"
+			(at 0.254 -2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
+			(at 0.9652 -3.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0402JRNPO9BN180_C106202.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Unpolarized capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Dielectric" "NP0"
+			(at -1.27 -1.524 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at -1.27 -2.54 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "ki_keywords" "cap capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "C_*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "5%"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "0402"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "18pF 50V NP0 5% 0402"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "YAGEO"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "CC0402JRNPO9BN180"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C106202"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C106202"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "CC0402JRNPO9BN180_0_1"
+			(polyline
+				(pts
+					(xy -2.032 0.762) (xy 2.032 0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -2.032 -0.762) (xy 2.032 -0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "CC0402JRNPO9BN180_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "CC0805JRNPO9BN180"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0.254 2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "18pF"
+			(at 0.254 -2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
+			(at 0.9652 -3.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0805JRNPO9BN180_C113825.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Unpolarized capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Dielectric" "NP0"
+			(at -1.27 -1.524 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at -1.27 -2.54 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "ki_keywords" "cap capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "C_*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "5%"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "0805"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "18pF 50V NP0 5% 0805"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "YAGEO"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "CC0805JRNPO9BN180"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C113825"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C113825"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "CC0805JRNPO9BN180_0_1"
+			(polyline
+				(pts
+					(xy -2.032 0.762) (xy 2.032 0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -2.032 -0.762) (xy 2.032 -0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "CC0805JRNPO9BN180_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "CC0805KRX7R9BB103"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0.254 2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "10nF"
+			(at 0.254 -2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
+			(at 0.9652 -3.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0805KRX7R9BB103_C83170.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Unpolarized capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Dielectric" "X7R"
+			(at -1.27 -1.524 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at -1.27 -2.54 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "ki_keywords" "cap capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "C_*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "10%"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "0805"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "10nF 50V X7R 10% 0805"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "YAGEO"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "CC0805KRX7R9BB103"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C83170"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C83170"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "CC0805KRX7R9BB103_0_1"
+			(polyline
+				(pts
+					(xy -2.032 0.762) (xy 2.032 0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -2.032 -0.762) (xy 2.032 -0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "CC0805KRX7R9BB103_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "CL21B105KBFNNNE"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0.254 2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "1uF"
+			(at 0.254 -2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
+			(at 0.9652 -3.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Samsung-Electro-Mechanics-CL21B105KBFNNNE_C28323.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Unpolarized capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Dielectric" "X7R"
+			(at -1.27 -1.524 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at -1.27 -2.54 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "ki_keywords" "cap capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "C_*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "10%"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "0805"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "1uF 50V X7R 10% 0805"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "Samsung Electro-Mechanics"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "CL21B105KBFNNNE"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C28323"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C28323"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "CL21B105KBFNNNE_0_1"
+			(polyline
+				(pts
+					(xy -2.032 0.762) (xy 2.032 0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -2.032 -0.762) (xy 2.032 -0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "CL21B105KBFNNNE_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "GJM1555C1H1R2WB01D"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0.254 2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "1.2pF"
+			(at 0.254 -2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
+			(at 0.9652 -3.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://lcsc.com/datasheet/lcsc_datasheet_2410121611_muRata-GJM1555C1H1R2WB01D_C76899.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Unpolarized capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Dielectric" "C0G"
+			(at -1.27 -1.524 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at -1.27 -2.54 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "ki_keywords" "cap capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "C_*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "0.5pF"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "0402"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "1.2pF 50V C0G 0.5pF 0402"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "Murata Electronics"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "GJM1555C1H1R2WB01D"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C76899"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 2" "Mouser"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 2" "81-GJM1555C1H1R2WB1D"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C76899"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "GJM1555C1H1R2WB01D_0_1"
+			(polyline
+				(pts
+					(xy -2.032 0.762) (xy 2.032 0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -2.032 -0.762) (xy 2.032 -0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "GJM1555C1H1R2WB01D_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "CL05B103KB5NNNC"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0.254 2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "10nF"
+			(at 0.254 -2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
+			(at 0.9652 -3.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://atta.szlcsc.com/upload/public/pdf/source/20160218/1457707763339.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Unpolarized capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Dielectric" "X7R"
+			(at -1.27 -1.524 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at -1.27 -2.54 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "ki_keywords" "cap capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "C_*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "10%"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "0402"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "10nF 50V X7R 10% 0402"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "Samsung Electro-Mechanics"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "CL05B103KB5NNNC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C15195"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C15195"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "CL05B103KB5NNNC_0_1"
+			(polyline
+				(pts
+					(xy -2.032 0.762) (xy 2.032 0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -2.032 -0.762) (xy 2.032 -0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "CL05B103KB5NNNC_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "GRM1555C1H100JA01D"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0.254 2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "10pF"
+			(at 0.254 -2.032 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
+			(at 0.9652 -3.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://lcsc.com/datasheet/lcsc_datasheet_2410121857_muRata-GRM1555C1H100JA01D_C76946.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Unpolarized capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Dielectric" "C0G"
+			(at -1.27 -1.524 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at -1.27 -2.54 0)
+			(do_not_autoplace)
+			(effects
+				(font
+					(size 0.635 0.635)
+				)
+			)
+		)
+		(property "ki_keywords" "cap capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "C_*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "5%"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "0402"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "10pF 50V C0G 5% 0402"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "Murata Electronics"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "GRM1555C1H100JA01D"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C76946"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C76946"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "GRM1555C1H100JA01D_0_1"
+			(polyline
+				(pts
+					(xy -2.032 0.762) (xy 2.032 0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -2.032 -0.762) (xy 2.032 -0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "GRM1555C1H100JA01D_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
 )

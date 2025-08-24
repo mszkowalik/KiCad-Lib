@@ -29,6 +29,35 @@ components:
         value: C1518208
       - key: Datasheet
         value: "https://datasheet.lcsc.com/lcsc/2201180430_Murata-Electronics-GRM155R61H105KE05D_C1518208.pdf?_gl=1*1ue1ana*_ga*MjA3NTA3NDE1NC4xNzE1NDMyNTIw*_ga_98M84MKSZH*MTcxNzQwNTAzMi45LjEuMTcxNzQwNTIwOS41OS4wLjA."
+  - name: CL21A106KAYNNNE
+    base_component: C
+    properties:
+      - key: Value
+        value: 10uF
+      - key: Tolerance
+        value: 10%
+      - key: Voltage
+        value: 25V
+      - key: Dielectric
+        value: X5R
+      - key: Footprint
+        value: Capacitor_SMD:C_0805_2012Metric
+      - key: Footprint_Name
+        value: "0805"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Samsung Electro-Mechanics
+      - key: Manufacturer Part Number 1
+        value: CL21A106KAYNNNE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C15850
+      - key: LCSC Part
+        value: C15850
+      - key: Datasheet
+        value: https://jlcpcb.com/api/file/downloadByFileSystemAccessId/8579706853615591424
   - name: T491D107K016AT
     base_component: base_capacitor_tantalum
     properties:
@@ -65,12 +94,14 @@ components:
         value: 20%
       - key: Voltage
         value: 25V
+      - key: Dielectric
+        value: X5R
       - key: Footprint
         value: Capacitor_SMD:C_0805_2012Metric
       - key: Footprint_Name
         value: 0805
       - key: ki_description
-        value: "{Value} {Voltage} {Tolerance} {Footprint_Name}"
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
       - key: Manufacturer 1
         value: Samsung
       - key: Manufacturer Part Number 1

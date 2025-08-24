@@ -1,224 +1,693 @@
-(kicad_symbol_lib (version 20211014) (generator None)
-  (symbol "DFE201612E-R47M=P2" (pin_names) (in_bom yes) (on_board yes)
-    (property "Reference" "L" (at 0 2.54 0)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "Value" "470nH" (at 0 -1.27 0)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "Footprint" "Inductor_SMD:L_Murata_DFE201610P" (at 0 -7.62 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2409272202_Murata-Electronics-DFE201612E-R47M-P2_C668312.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "base_inductor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "20%" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Rated_Current" "4.5A" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "0806" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "470nH 4.5A 20% 0806" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "Murata Electronics" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "DFE201612E-R47M=P2" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C668312" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C668312" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "DFE201612E-R47M=P2_0_1"
-      (arc (start -4.06 -0.01) (mid -3.055 1.013) (end -2.03 0.01)
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (arc (start -2.03 -0.01) (mid -1.025 1.013) (end 0 0.01)
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (arc (start 0 -0.01) (mid 1.005 1.013) (end 2.03 0.01)
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (arc (start 2.03 -0.01) (mid 3.035 1.013) (end 4.06 0.01)
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "DFE201612E-R47M=P2_1_1"
-      (pin passive line (at -5.08 0 0) (length 1.016)
-        (name "1" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 5.08 0 180) (length 1.016)
-        (name "2" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "FXL1350-100-M" (pin_names) (in_bom yes) (on_board yes)
-    (property "Reference" "L" (at 0 2.54 0)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "Value" "10uH" (at 0 -1.27 0)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "Footprint" "Inductor_SMD:L_Wuerth_HCM-1350" (at 0 -7.62 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2404260921_cjiang--Changjiang-Microelectronics-Tech-FXL1350-100-M_C526017.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "base_inductor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "20%" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Rated_Current" "9A" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "SMD,12.6x13.5mm" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "10uH 9A 20% SMD,12.6x13.5mm" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "cjiang" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "FXL1350-100-M" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C526017" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C526017" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "FXL1350-100-M_0_1"
-      (arc (start -4.06 -0.01) (mid -3.055 1.013) (end -2.03 0.01)
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (arc (start -2.03 -0.01) (mid -1.025 1.013) (end 0 0.01)
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (arc (start 0 -0.01) (mid 1.005 1.013) (end 2.03 0.01)
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (arc (start 2.03 -0.01) (mid 3.035 1.013) (end 4.06 0.01)
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "FXL1350-100-M_1_1"
-      (pin passive line (at -5.08 0 0) (length 1.016)
-        (name "1" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 5.08 0 180) (length 1.016)
-        (name "2" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "MLG1005S2N0BT000" (pin_names) (in_bom yes) (on_board yes)
-    (property "Reference" "L" (at 0 2.54 0)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "Value" "2nH" (at 0 -1.27 0)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "Footprint" "Inductor_SMD:L_0402_1005Metric" (at 0 -7.62 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://lcsc.com/datasheet/lcsc_datasheet_2412231058_TDK-MLG1005S2N0BT000_C76769.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "base_inductor" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "0.1nH" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Rated_Current" "900mA" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Footprint_Name" "0402" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "2nH 900mA 0.1nH 0402" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "TDK" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "MLG1005S2N0BT000" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C76769" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 2" "Mouser" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 2" "810-MLG1005S2N0BT000" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C76769" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "MLG1005S2N0BT000_0_1"
-      (arc (start -4.06 -0.01) (mid -3.055 1.013) (end -2.03 0.01)
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (arc (start -2.03 -0.01) (mid -1.025 1.013) (end 0 0.01)
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (arc (start 0 -0.01) (mid 1.005 1.013) (end 2.03 0.01)
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (arc (start 2.03 -0.01) (mid 3.035 1.013) (end 4.06 0.01)
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "MLG1005S2N0BT000_1_1"
-      (pin passive line (at -5.08 0 0) (length 1.016)
-        (name "1" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 5.08 0 180) (length 1.016)
-        (name "2" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
+(kicad_symbol_lib
+	(version 20211014)
+	(symbol "DFE201612E-R47M=P2"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "L"
+			(at 0 2.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "470nH"
+			(at 0 -1.27 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Inductor_SMD:L_Murata_DFE201610P"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2409272202_Murata-Electronics-DFE201612E-R47M-P2_C668312.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "base_inductor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "20%"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Rated_Current" "4.5A"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "0806"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "470nH 4.5A 20% 0806"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "Murata Electronics"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "DFE201612E-R47M=P2"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C668312"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C668312"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "DFE201612E-R47M=P2_0_1"
+			(arc
+				(start -4.06 -0.01)
+				(mid -3.055 1.013)
+				(end -2.03 0.01)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(arc
+				(start -2.03 -0.01)
+				(mid -1.025 1.013)
+				(end 0 0.01)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(arc
+				(start 0 -0.01)
+				(mid 1.005 1.013)
+				(end 2.03 0.01)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(arc
+				(start 2.03 -0.01)
+				(mid 3.035 1.013)
+				(end 4.06 0.01)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "DFE201612E-R47M=P2_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 1.016)
+				(name "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 5.08 0 180)
+				(length 1.016)
+				(name "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "FXL1350-100-M"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "L"
+			(at 0 2.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "10uH"
+			(at 0 -1.27 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Inductor_SMD:L_Wuerth_HCM-1350"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2404260921_cjiang--Changjiang-Microelectronics-Tech-FXL1350-100-M_C526017.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "base_inductor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "20%"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Rated_Current" "9A"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "SMD,12.6x13.5mm"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "10uH 9A 20% SMD,12.6x13.5mm"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "cjiang"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "FXL1350-100-M"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C526017"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C526017"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "FXL1350-100-M_0_1"
+			(arc
+				(start -4.06 -0.01)
+				(mid -3.055 1.013)
+				(end -2.03 0.01)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(arc
+				(start -2.03 -0.01)
+				(mid -1.025 1.013)
+				(end 0 0.01)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(arc
+				(start 0 -0.01)
+				(mid 1.005 1.013)
+				(end 2.03 0.01)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(arc
+				(start 2.03 -0.01)
+				(mid 3.035 1.013)
+				(end 4.06 0.01)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "FXL1350-100-M_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 1.016)
+				(name "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 5.08 0 180)
+				(length 1.016)
+				(name "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "MLG1005S2N0BT000"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "L"
+			(at 0 2.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "2nH"
+			(at 0 -1.27 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Inductor_SMD:L_0402_1005Metric"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://lcsc.com/datasheet/lcsc_datasheet_2412231058_TDK-MLG1005S2N0BT000_C76769.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "base_inductor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "0.1nH"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Rated_Current" "900mA"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint_Name" "0402"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "2nH 900mA 0.1nH 0402"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "TDK"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "MLG1005S2N0BT000"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C76769"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 2" "Mouser"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 2" "810-MLG1005S2N0BT000"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C76769"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "MLG1005S2N0BT000_0_1"
+			(arc
+				(start -4.06 -0.01)
+				(mid -3.055 1.013)
+				(end -2.03 0.01)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(arc
+				(start -2.03 -0.01)
+				(mid -1.025 1.013)
+				(end 0 0.01)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(arc
+				(start 0 -0.01)
+				(mid 1.005 1.013)
+				(end 2.03 0.01)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(arc
+				(start 2.03 -0.01)
+				(mid 3.035 1.013)
+				(end 4.06 0.01)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "MLG1005S2N0BT000_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 1.016)
+				(name "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 5.08 0 180)
+				(length 1.016)
+				(name "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
 )

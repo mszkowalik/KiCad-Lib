@@ -1,234 +1,549 @@
-(kicad_symbol_lib (version 20211014) (generator None)
-  (symbol "APT2012CGCK" (pin_names (offset 1.016)) (in_bom yes) (on_board yes)
-    (property "Reference" "D" (at 0 2.54 0)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "Value" "APT2012CGCK" (at 0 -2.54 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Footprint" "LED_SMD:LED_0805_2012Metric" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://www.mouser.pl/datasheet/2/216/APT2012CGCK-24136.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Light emitting diode" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Color" "Green" (at 0 -2.54 0)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "ki_keywords" "LED diode" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "LED* LED_SMD:* LED_THT:*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_description" "Single Color Green LED 570nm Water Clear 40mcd" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Forward Current" "20mA" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Forward Voltage" "2.1V" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Wavelength" "570nm" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Lens" "Clear" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "Kingbright" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "APT2012CGCK" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C5875740" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C5875740" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "APT2012CGCK_0_1"
-      (polyline
-        (pts
-          (xy -3.048 -0.762)
-          (xy -4.572 -2.286)
-          (xy -3.81 -2.286)
-          (xy -4.572 -2.286)
-          (xy -4.572 -1.524)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -1.778 -0.762)
-          (xy -3.302 -2.286)
-          (xy -2.54 -2.286)
-          (xy -3.302 -2.286)
-          (xy -3.302 -1.524)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -1.27 0)
-          (xy 1.27 0)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -1.27 -1.27)
-          (xy -1.27 1.27)
-        )
-        (stroke (width 0.254) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy 1.27 -1.27)
-          (xy 1.27 1.27)
-          (xy -1.27 0)
-          (xy 1.27 -1.27)
-        )
-        (stroke (width 0.254) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "APT2012CGCK_1_1"
-      (pin passive line (at -3.81 0 0) (length 2.54)
-        (name "K" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 3.81 0 180) (length 2.54)
-        (name "A" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
-  (symbol "APT2012SURCK" (pin_names (offset 1.016)) (in_bom yes) (on_board yes)
-    (property "Reference" "D" (at 0 2.54 0)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "Value" "APT2012SURCK" (at 0 -2.54 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Footprint" "LED_SMD:LED_0805_2012Metric" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2305191756_Kingbright-APT2012SURCK_C5875730.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Light emitting diode" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Color" "Red" (at 0 -2.54 0)
-      (effects (font (size 1.27 1.27)))
-    )
-    (property "ki_keywords" "LED diode" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "LED* LED_SMD:* LED_THT:*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_description" "Single Color Red LED 570nm Water Clear 40mcd" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Forward Current" "20mA" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Forward Voltage" "1.95V" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Wavelength" "645nm" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Lens" "Clear" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "Kingbright" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "APT2012SURCK" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C5875730" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C5875730" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "APT2012SURCK_0_1"
-      (polyline
-        (pts
-          (xy -3.048 -0.762)
-          (xy -4.572 -2.286)
-          (xy -3.81 -2.286)
-          (xy -4.572 -2.286)
-          (xy -4.572 -1.524)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -1.778 -0.762)
-          (xy -3.302 -2.286)
-          (xy -2.54 -2.286)
-          (xy -3.302 -2.286)
-          (xy -3.302 -1.524)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -1.27 0)
-          (xy 1.27 0)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -1.27 -1.27)
-          (xy -1.27 1.27)
-        )
-        (stroke (width 0.254) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy 1.27 -1.27)
-          (xy 1.27 1.27)
-          (xy -1.27 0)
-          (xy 1.27 -1.27)
-        )
-        (stroke (width 0.254) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "APT2012SURCK_1_1"
-      (pin passive line (at -3.81 0 0) (length 2.54)
-        (name "K" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 1.27 1.27))))
-      )
-      (pin passive line (at 3.81 0 180) (length 2.54)
-        (name "A" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 1.27 1.27))))
-      )
-    )
-  )
+(kicad_symbol_lib
+	(version 20211014)
+	(symbol "APT2012CGCK"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 1.016)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "D"
+			(at 0 2.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "APT2012CGCK"
+			(at 0 -2.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint" "LED_SMD:LED_0805_2012Metric"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.mouser.pl/datasheet/2/216/APT2012CGCK-24136.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Light emitting diode"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Color" "Green"
+			(at 0 -2.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "LED diode"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "LED* LED_SMD:* LED_THT:*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "Single Color Green LED 570nm Water Clear 40mcd"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Forward Current" "20mA"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Forward Voltage" "2.1V"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Wavelength" "570nm"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Lens" "Clear"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "Kingbright"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "APT2012CGCK"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C5875740"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C5875740"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "APT2012CGCK_0_1"
+			(polyline
+				(pts
+					(xy -3.048 -0.762) (xy -4.572 -2.286) (xy -3.81 -2.286) (xy -4.572 -2.286) (xy -4.572 -1.524)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.778 -0.762) (xy -3.302 -2.286) (xy -2.54 -2.286) (xy -3.302 -2.286) (xy -3.302 -1.524)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 0) (xy 1.27 0)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 -1.27) (xy -1.27 1.27)
+				)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 1.27 -1.27) (xy 1.27 1.27) (xy -1.27 0) (xy 1.27 -1.27)
+				)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "APT2012CGCK_1_1"
+			(pin passive line
+				(at -3.81 0 0)
+				(length 2.54)
+				(name "K"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 3.81 0 180)
+				(length 2.54)
+				(name "A"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "APT2012SURCK"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 1.016)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "D"
+			(at 0 2.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "APT2012SURCK"
+			(at 0 -2.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Footprint" "LED_SMD:LED_0805_2012Metric"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2305191756_Kingbright-APT2012SURCK_C5875730.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Light emitting diode"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Color" "Red"
+			(at 0 -2.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "LED diode"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "LED* LED_SMD:* LED_THT:*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "Single Color Red LED 570nm Water Clear 40mcd"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Forward Current" "20mA"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Forward Voltage" "1.95V"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Wavelength" "645nm"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Lens" "Clear"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "Kingbright"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "APT2012SURCK"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C5875730"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C5875730"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "APT2012SURCK_0_1"
+			(polyline
+				(pts
+					(xy -3.048 -0.762) (xy -4.572 -2.286) (xy -3.81 -2.286) (xy -4.572 -2.286) (xy -4.572 -1.524)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.778 -0.762) (xy -3.302 -2.286) (xy -2.54 -2.286) (xy -3.302 -2.286) (xy -3.302 -1.524)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 0) (xy 1.27 0)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 -1.27) (xy -1.27 1.27)
+				)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 1.27 -1.27) (xy 1.27 1.27) (xy -1.27 0) (xy 1.27 -1.27)
+				)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "APT2012SURCK_1_1"
+			(pin passive line
+				(at -3.81 0 0)
+				(length 2.54)
+				(name "K"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 3.81 0 180)
+				(length 2.54)
+				(name "A"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
 )

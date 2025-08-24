@@ -1,332 +1,870 @@
-(kicad_symbol_lib (version 20211014) (generator None)
-  (symbol "TAXM12M4RKDCDT2T" (pin_names (offset 1.016)) (in_bom yes) (on_board yes)
-    (property "Reference" "Y" (at 1.27 4.445 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Value" "12MHz" (at 1.27 2.54 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Footprint" "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://atta.szlcsc.com/upload/public/pdf/source/20190712/C403945_BA479055B724E986F735DE30F05BF37D.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Four pin crystal, GND on pins 2 and 4, small symbol" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_keywords" "quartz ceramic resonator oscillator" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "Crystal*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "20ppm" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Load Capacitance" "18pF" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Equivalent Series Resistance" "80R" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "12MHz ±20ppm 18pF Crystal" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "TAE" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "TAXM12M4RKDCDT2T" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C403945" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C403945" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "TAXM12M4RKDCDT2T_0_1"
-      (polyline
-        (pts
-          (xy -1.27 1.27)
-          (xy -1.27 1.905)
-          (xy 1.27 1.905)
-          (xy 1.27 1.27)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -1.27 -0.762)
-          (xy -1.27 0.762)
-        )
-        (stroke (width 0.381) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -1.27 -1.27)
-          (xy -1.27 -1.905)
-          (xy 1.27 -1.905)
-          (xy 1.27 -1.27)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (rectangle (start -0.762 -1.524) (end 0.762 1.524)
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy 1.27 -0.762)
-          (xy 1.27 0.762)
-        )
-        (stroke (width 0.381) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "TAXM12M4RKDCDT2T_1_1"
-      (pin passive line (at -2.54 0 0) (length 1.27)
-        (name "1" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 0.762 0.762))))
-      )
-      (pin passive line (at 0 2.54 270) (length 0.635)
-        (name "4" (effects (font (size 1.27 1.27))))
-        (number "4" (effects (font (size 0.762 0.762))))
-      )
-      (pin passive line (at 0 -2.54 90) (length 0.635)
-        (name "2" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 0.762 0.762))))
-      )
-      (pin passive line (at 2.54 0 180) (length 1.27)
-        (name "3" (effects (font (size 1.27 1.27))))
-        (number "3" (effects (font (size 0.762 0.762))))
-      )
-    )
-  )
-  (symbol "X322525MMB4SI" (pin_names (offset 1.016)) (in_bom yes) (on_board yes)
-    (property "Reference" "Y" (at 1.27 4.445 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Value" "25MHz" (at 1.27 2.54 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Footprint" "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2411121006_YXC-Crystal-Oscillators-X322525MMB4SI_C70582.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Four pin crystal, GND on pins 2 and 4, small symbol" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_keywords" "quartz ceramic resonator oscillator" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "Crystal*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "20ppm" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Load Capacitance" "10pF" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Equivalent Series Resistance" "50R" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "25MHz ±20ppm 10pF Crystal" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "YXC Crystal Oscillators" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "X322525MMB4SI" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C70582" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C70582" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "X322525MMB4SI_0_1"
-      (polyline
-        (pts
-          (xy -1.27 1.27)
-          (xy -1.27 1.905)
-          (xy 1.27 1.905)
-          (xy 1.27 1.27)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -1.27 -0.762)
-          (xy -1.27 0.762)
-        )
-        (stroke (width 0.381) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -1.27 -1.27)
-          (xy -1.27 -1.905)
-          (xy 1.27 -1.905)
-          (xy 1.27 -1.27)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (rectangle (start -0.762 -1.524) (end 0.762 1.524)
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy 1.27 -0.762)
-          (xy 1.27 0.762)
-        )
-        (stroke (width 0.381) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "X322525MMB4SI_1_1"
-      (pin passive line (at -2.54 0 0) (length 1.27)
-        (name "1" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 0.762 0.762))))
-      )
-      (pin passive line (at 0 2.54 270) (length 0.635)
-        (name "4" (effects (font (size 1.27 1.27))))
-        (number "4" (effects (font (size 0.762 0.762))))
-      )
-      (pin passive line (at 0 -2.54 90) (length 0.635)
-        (name "2" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 0.762 0.762))))
-      )
-      (pin passive line (at 2.54 0 180) (length 1.27)
-        (name "3" (effects (font (size 1.27 1.27))))
-        (number "3" (effects (font (size 0.762 0.762))))
-      )
-    )
-  )
-  (symbol "ECS-400-15-33B-CTN-TR" (pin_names (offset 1.016)) (in_bom yes) (on_board yes)
-    (property "Reference" "Y" (at 1.27 4.445 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Value" "40MHz" (at 1.27 2.54 0)
-      (effects (font (size 1.27 1.27)) (justify left))
-    )
-    (property "Footprint" "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Datasheet" "https://www.mouser.pl/datasheet/2/122/ECS_33B-1222132.pdf" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Description" "Four pin crystal, GND on pins 2 and 4, small symbol" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_keywords" "quartz ceramic resonator oscillator" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "ki_fp_filters" "Crystal*" (at 0 0 0)
-      (effects (font (size 1.27 1.27)) hide)
-    )
-    (property "Tolerance" "10ppm" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Load Capacitance" "15pF" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Equivalent Series Resistance" "40R" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "ki_description" "40MHz ±10ppm 15pF Crystal" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer 1" "ECS" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Manufacturer Part Number 1" "ECS-400-15-33B-CTN-TR" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier 1" "LCSC" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "Supplier Part Number 1" "C2450675" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (property "LCSC Part" "C2450675" (at 0.0 0.0 0.0)
-      (effects (font (size 1.0 1.0)) hide)
-    )
-    (symbol "ECS-400-15-33B-CTN-TR_0_1"
-      (polyline
-        (pts
-          (xy -1.27 1.27)
-          (xy -1.27 1.905)
-          (xy 1.27 1.905)
-          (xy 1.27 1.27)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -1.27 -0.762)
-          (xy -1.27 0.762)
-        )
-        (stroke (width 0.381) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy -1.27 -1.27)
-          (xy -1.27 -1.905)
-          (xy 1.27 -1.905)
-          (xy 1.27 -1.27)
-        )
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (rectangle (start -0.762 -1.524) (end 0.762 1.524)
-        (stroke (width 0) (type default))
-        (fill (type none))
-      )
-      (polyline
-        (pts
-          (xy 1.27 -0.762)
-          (xy 1.27 0.762)
-        )
-        (stroke (width 0.381) (type default))
-        (fill (type none))
-      )
-    )
-    (symbol "ECS-400-15-33B-CTN-TR_1_1"
-      (pin passive line (at -2.54 0 0) (length 1.27)
-        (name "1" (effects (font (size 1.27 1.27))))
-        (number "1" (effects (font (size 0.762 0.762))))
-      )
-      (pin passive line (at 0 2.54 270) (length 0.635)
-        (name "4" (effects (font (size 1.27 1.27))))
-        (number "4" (effects (font (size 0.762 0.762))))
-      )
-      (pin passive line (at 0 -2.54 90) (length 0.635)
-        (name "2" (effects (font (size 1.27 1.27))))
-        (number "2" (effects (font (size 0.762 0.762))))
-      )
-      (pin passive line (at 2.54 0 180) (length 1.27)
-        (name "3" (effects (font (size 1.27 1.27))))
-        (number "3" (effects (font (size 0.762 0.762))))
-      )
-    )
-  )
+(kicad_symbol_lib
+	(version 20211014)
+	(symbol "TAXM12M4RKDCDT2T"
+		(pin_names
+			(offset 1.016)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "Y"
+			(at 1.27 4.445 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "12MHz"
+			(at 1.27 2.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://atta.szlcsc.com/upload/public/pdf/source/20190712/C403945_BA479055B724E986F735DE30F05BF37D.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Four pin crystal, GND on pins 2 and 4, small symbol"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_keywords" "quartz ceramic resonator oscillator"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "Crystal*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "20ppm"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Load Capacitance" "18pF"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Equivalent Series Resistance" "80R"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "12MHz ±20ppm 18pF Crystal"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "TAE"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "TAXM12M4RKDCDT2T"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C403945"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C403945"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "TAXM12M4RKDCDT2T_0_1"
+			(polyline
+				(pts
+					(xy -1.27 1.27) (xy -1.27 1.905) (xy 1.27 1.905) (xy 1.27 1.27)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 -0.762) (xy -1.27 0.762)
+				)
+				(stroke
+					(width 0.381)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 -1.27) (xy -1.27 -1.905) (xy 1.27 -1.905) (xy 1.27 -1.27)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(rectangle
+				(start -0.762 -1.524)
+				(end 0.762 1.524)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 1.27 -0.762) (xy 1.27 0.762)
+				)
+				(stroke
+					(width 0.381)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "TAXM12M4RKDCDT2T_1_1"
+			(pin passive line
+				(at -2.54 0 0)
+				(length 1.27)
+				(name "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 0.762 0.762)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 2.54 270)
+				(length 0.635)
+				(name "4"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "4"
+					(effects
+						(font
+							(size 0.762 0.762)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -2.54 90)
+				(length 0.635)
+				(name "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 0.762 0.762)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 2.54 0 180)
+				(length 1.27)
+				(name "3"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "3"
+					(effects
+						(font
+							(size 0.762 0.762)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "X322525MMB4SI"
+		(pin_names
+			(offset 1.016)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "Y"
+			(at 1.27 4.445 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "25MHz"
+			(at 1.27 2.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2411121006_YXC-Crystal-Oscillators-X322525MMB4SI_C70582.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Four pin crystal, GND on pins 2 and 4, small symbol"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_keywords" "quartz ceramic resonator oscillator"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "Crystal*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "20ppm"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Load Capacitance" "10pF"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Equivalent Series Resistance" "50R"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "25MHz ±20ppm 10pF Crystal"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "YXC Crystal Oscillators"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "X322525MMB4SI"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C70582"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C70582"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "X322525MMB4SI_0_1"
+			(polyline
+				(pts
+					(xy -1.27 1.27) (xy -1.27 1.905) (xy 1.27 1.905) (xy 1.27 1.27)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 -0.762) (xy -1.27 0.762)
+				)
+				(stroke
+					(width 0.381)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 -1.27) (xy -1.27 -1.905) (xy 1.27 -1.905) (xy 1.27 -1.27)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(rectangle
+				(start -0.762 -1.524)
+				(end 0.762 1.524)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 1.27 -0.762) (xy 1.27 0.762)
+				)
+				(stroke
+					(width 0.381)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "X322525MMB4SI_1_1"
+			(pin passive line
+				(at -2.54 0 0)
+				(length 1.27)
+				(name "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 0.762 0.762)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 2.54 270)
+				(length 0.635)
+				(name "4"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "4"
+					(effects
+						(font
+							(size 0.762 0.762)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -2.54 90)
+				(length 0.635)
+				(name "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 0.762 0.762)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 2.54 0 180)
+				(length 1.27)
+				(name "3"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "3"
+					(effects
+						(font
+							(size 0.762 0.762)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "ECS-400-15-33B-CTN-TR"
+		(pin_names
+			(offset 1.016)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "Y"
+			(at 1.27 4.445 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "40MHz"
+			(at 1.27 2.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.mouser.pl/datasheet/2/122/ECS_33B-1222132.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Four pin crystal, GND on pins 2 and 4, small symbol"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_keywords" "quartz ceramic resonator oscillator"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "Crystal*"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Tolerance" "10ppm"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Load Capacitance" "15pF"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Equivalent Series Resistance" "40R"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "40MHz ±10ppm 15pF Crystal"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "ECS"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "ECS-400-15-33B-CTN-TR"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C2450675"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C2450675"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "ECS-400-15-33B-CTN-TR_0_1"
+			(polyline
+				(pts
+					(xy -1.27 1.27) (xy -1.27 1.905) (xy 1.27 1.905) (xy 1.27 1.27)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 -0.762) (xy -1.27 0.762)
+				)
+				(stroke
+					(width 0.381)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 -1.27) (xy -1.27 -1.905) (xy 1.27 -1.905) (xy 1.27 -1.27)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(rectangle
+				(start -0.762 -1.524)
+				(end 0.762 1.524)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 1.27 -0.762) (xy 1.27 0.762)
+				)
+				(stroke
+					(width 0.381)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "ECS-400-15-33B-CTN-TR_1_1"
+			(pin passive line
+				(at -2.54 0 0)
+				(length 1.27)
+				(name "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 0.762 0.762)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 2.54 270)
+				(length 0.635)
+				(name "4"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "4"
+					(effects
+						(font
+							(size 0.762 0.762)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -2.54 90)
+				(length 0.635)
+				(name "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 0.762 0.762)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 2.54 0 180)
+				(length 1.27)
+				(name "3"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "3"
+					(effects
+						(font
+							(size 0.762 0.762)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
 )
