@@ -411,3 +411,116 @@ components:
         value: C2913196
       - key: Datasheet
         value: https://www.espressif.com/sites/default/files/documentation/esp32-s3_datasheet_en.pdf
+  - name: LBUA5QJ2AB-828
+    base_component: LBUA5QJ2AB-828
+    properties:
+      - key: Footprint
+        value: 7Sigma:LGA-97_L10.5-W8.3-P0.60-TL
+      - key: ki_description
+        value: UWB+BLE Combo Module
+      - key: Manufacturer 1
+        value: Murata Electronics
+      - key: Manufacturer Part Number 1
+        value: C5368701
+      - key: Value
+        value: LBUA5QJ2AB-82
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5368701
+      - key: LCSC Part
+        value: C5368701
+      - key: Datasheet
+        value: https://www.mouser.pl/datasheet/2/281/1/Murata_UWB_module_2AB_828_Product_Brief_Rev_D-3049200.pdf
+  - name: TPS63020DSJR
+    base_component: TPS6302X
+    properties:
+      - key: Footprint
+        value: 7Sigma:VSON-14_L4.0-W3.0-P0.50-BL-EP_TI_DSJ
+      - key: ki_description
+        value: High Efficiency Single Inductor Buck-boost Converter with 4-A Switches
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: TPS63020DSJR
+      - key: Value
+        value: TPS63020DSJR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C15483
+      - key: LCSC Part
+        value: C15483
+      - key: Datasheet
+        value: https://www.ti.com/lit/ds/symlink/tps63020.pdf
+  - name: LIS2MDLTR
+    base_component: LIS2MDL
+    properties:
+      - key: Footprint
+        value: 7Sigma:LGA-12_L2.0-W2.0-P0.50-BL
+      - key: ki_description
+        value: Digital output magnetic sensor; ultralow-power, high-performance 3-axis magnetometer
+      - key: Manufacturer 1
+        value: STMicroelectronics
+      - key: Manufacturer Part Number 1
+        value: LIS2MDLTR
+      - key: Value
+        value: LIS2MDLTR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C919695
+      - key: LCSC Part
+        value: C919695
+      - key: Datasheet
+        value: https://www.st.com/resource/en/datasheet/lis3mdl.pdf
+  - name: BQ27441DRZR-G1A
+    base_component: BQ27441
+    properties:
+      - key: Footprint
+        value: 7Sigma:SON-12_L4.0-W2.5-P0.40-BL-EP
+      - key: ki_description
+        value: System-Side Impedance Track™ Fuel Gauge, 4.2 V maximum charge
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: BQ27441DRZR-G1A
+      - key: Value
+        value: BQ27441DRZR-G1A
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C473397
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value: 595-BQ27441DRZR-G1A
+      - key: LCSC Part
+        value: C473397
+      - key: Datasheet
+        value: https://www.ti.com/lit/gpn/bq27441-g1
+  - name: BQ25185DLHR
+    base_component: BQ25185
+    properties:
+      - key: Footprint
+        value: 7Sigma:WSON-10_L2.2-W2.0-P0.40-BL-EP_TI_DLH0010A
+      - key: ki_description
+        value: System-Side Impedance Track™ Fuel Gauge, 4.2 V maximum charge
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: BQ25185DLHR
+      - key: Value
+        value: BQ25185DLHR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C19725033
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value: 595-BQ25185DLHR
+      - key: LCSC Part
+        value: C19725033
+      - key: Datasheet
+        value: https://www.ti.com/lit/gpn/bq25155

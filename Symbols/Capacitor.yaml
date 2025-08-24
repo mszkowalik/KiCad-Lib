@@ -354,3 +354,61 @@ components:
         value: C76899
       - key: Datasheet
         value: https://lcsc.com/datasheet/lcsc_datasheet_2410121611_muRata-GJM1555C1H1R2WB01D_C76899.pdf
+  - name: CL05B103KB5NNNC
+    base_component: C
+    properties:
+      - key: Value
+        value: 10nF
+      - key: Tolerance
+        value: 10%
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: X7R
+      - key: Footprint
+        value: Capacitor_SMD:C_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Samsung Electro-Mechanics
+      - key: Manufacturer Part Number 1
+        value: CL05B103KB5NNNC
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C15195
+      - key: LCSC Part
+        value: C15195
+      - key: Datasheet
+        value: https://atta.szlcsc.com/upload/public/pdf/source/20160218/1457707763339.pdf
+  - name: GRM1555C1H100JA01D
+    base_component: C
+    properties:
+      - key: Value
+        value: 10pF
+      - key: Tolerance
+        value: 5%
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: C0G
+      - key: Footprint
+        value: Capacitor_SMD:C_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Murata Electronics
+      - key: Manufacturer Part Number 1
+        value: GRM1555C1H100JA01D
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C76946
+      - key: LCSC Part
+        value: C76946
+      - key: Datasheet
+        value: https://lcsc.com/datasheet/lcsc_datasheet_2410121857_muRata-GRM1555C1H100JA01D_C76946.pdf

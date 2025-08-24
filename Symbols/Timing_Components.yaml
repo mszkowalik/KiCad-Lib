@@ -54,3 +54,30 @@ components:
         value: C70582
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411121006_YXC-Crystal-Oscillators-X322525MMB4SI_C70582.pdf
+  - name: ECS-400-15-33B-CTN-TR
+    base_component: Crystal_GND24_Small
+    properties:
+      - key: Value
+        value: 40MHz
+      - key: Tolerance
+        value: 10ppm
+      - key: Load Capacitance
+        value: 15pF
+      - key: Equivalent Series Resistance
+        value: 40R
+      - key: Footprint
+        value: Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm
+      - key: ki_description
+        value: "40MHz ±10ppm 15pF Crystal"
+      - key: Manufacturer 1
+        value: ECS
+      - key: Manufacturer Part Number 1
+        value: ECS-400-15-33B-CTN-TR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2450675
+      - key: LCSC Part
+        value: C2450675
+      - key: Datasheet
+        value: https://www.mouser.pl/datasheet/2/122/ECS_33B-1222132.pdf

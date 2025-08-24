@@ -1,0 +1,71 @@
+library_name: RF
+components:
+  - name: MIFA_Antenna_2.4GHz
+    base_component: Antenna
+    properties:
+      - key: Value
+        value: 2.4GHz
+      - key: Footprint
+        value: RF_Antenna:Texas_SWRA117D_2.4GHz_Left
+      - key: Footprint_Name
+        value: "0806"
+      - key: ki_description
+        value: MIFA Antenna 2.4GHz
+  - name: KH5220-A36
+    base_component: Antenna
+    properties:
+      - key: Value
+        value: 2.4GHz
+      - key: Footprint
+        value: 7Sigma:Kinghelm_KH5220-A36
+      - key: Peak Gain
+        value: 4.97 dBi
+      - key: Working Central Frequency
+        value: 2450 MHz
+      - key: V.S.W.R
+        value: ≤2.0
+      - key: ki_description
+        value: Ceramic Chip Antenna 2.4GHz
+      - key: Manufacturer 1
+        value: Shenzhen Kinghelm Elec
+      - key: Manufacturer Part Number 1
+        value: KH5220-A36
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C484543
+      - key: LCSC Part
+        value: C484543
+      - key: Datasheet
+        value: https://lcsc.com/datasheet/lcsc_datasheet_2410121246_Shenzhen-Kinghelm-Elec-KH5220-A36_C484543.pdf
+  - name: ACS0301U
+    base_component: Antenna
+    properties:
+      - key: Value
+        value: 6GHz ~ 8.2GHz
+      - key: Footprint
+        value: ANT_1206_3216Metric
+      - key: Peak Gain
+        value: 4.5 dBi
+      - key: Working Central Frequency
+        value: 7.37 GHz
+      - key: V.S.W.R
+        value: ≤2.0
+      - key: ki_description
+        value: Ceramic Chip Antenna 6.24 GHz ~ 8.5 GHz
+      - key: Manufacturer 1
+        value: Abracon LLC.
+      - key: Manufacturer Part Number 1
+        value: ACS0301U
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C3284774
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value: 535-ACS0301UCT-ND
+      - key: LCSC Part
+        value: C3284774
+      - key: Datasheet
+        value: https://abracon.com/datasheets/ACS0301U.pdf
