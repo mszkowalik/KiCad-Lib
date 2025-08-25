@@ -69,3 +69,30 @@ components:
         value: C3284774
       - key: Datasheet
         value: https://abracon.com/datasheets/ACS0301U.pdf
+  - name: BWGNSCNX9-9W2
+    base_component: Antenna
+    properties:
+      - key: Value
+        value: 1.57542GHz
+      - key: Footprint
+        value: 7Sigma:ANT-TH_L9.0-W9.0_BWGNSCNX9-9W2
+      - key: Peak Gain
+        value: 5 dBi
+      - key: Working Central Frequency
+        value: 1.57542GHz
+      - key: V.S.W.R
+        value: "1.8"
+      - key: ki_description
+        value: GNSS Ceramic Chip Antenna 1.5GHz
+      - key: Manufacturer 1
+        value: BAT WIRELESS
+      - key: Manufacturer Part Number 1
+        value: BWGNSCNX9-9W2
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2826452
+      - key: LCSC Part
+        value: C2826452
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C2826452.pdf

@@ -62,3 +62,34 @@ components:
         value: C5875730
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2305191756_Kingbright-APT2012SURCK_C5875730.pdf
+  - name: LTST-C281KRKT
+    base_component: LED
+    properties:
+      - key: Footprint
+        value: LED_SMD:LED_0402_1005Metric
+      - key: Value
+        value: LTST-C281KRKT
+      - key: ki_description
+        value: Single Color Red LED 639nm Water Clear
+      - key: Forward Current
+        value: 20mA
+      - key: Forward Voltage
+        value: 2V
+      - key: Wavelength
+        value: 639nm
+      - key: Color
+        value: Red
+      - key: Lens
+        value: Clear
+      - key: Manufacturer 1
+        value: LITEON
+      - key: Manufacturer Part Number 1
+        value: LTST-C281KRKT
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C364556
+      - key: LCSC Part
+        value: C364556
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C364556.pdf

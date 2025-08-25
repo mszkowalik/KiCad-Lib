@@ -706,3 +706,57 @@ components:
         value: C270927
       - key: Datasheet
         value: ""
+  - name: 0402WGF1373TCE
+    base_component: R
+    properties:
+      - key: Value
+        value: 137K
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: Resistor_SMD:R_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF1373TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C32298
+      - key: LCSC Part
+        value: C32298
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C32298.pdf
+  - name: 0402WGF7683TCE
+    base_component: R
+    properties:
+      - key: Value
+        value: 768K
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: Resistor_SMD:R_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF7683TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C27017
+      - key: LCSC Part
+        value: C27017
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C27017.pdf

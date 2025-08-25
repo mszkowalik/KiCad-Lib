@@ -473,7 +473,7 @@ components:
       - key: LCSC Part
         value: C919695
       - key: Datasheet
-        value: https://www.st.com/resource/en/datasheet/lis3mdl.pdf
+        value: https://www.st.com/resource/en/datasheet/lis2mdl.pdf
   - name: BQ27441DRZR-G1A
     base_component: BQ27441
     properties:
@@ -549,3 +549,70 @@ components:
         value:
       - key: Datasheet
         value:
+  - name: BQ25186DLHR
+    base_component: BQ25186
+    properties:
+      - key: Footprint
+        value: 7Sigma:WSON-10_L2.2-W2.0-P0.40-BL-EP_TI_DLH0010A
+      - key: ki_description
+        value: System-Side Impedance Track™ Fuel Gauge, 4.2 V maximum charge
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: BQ25186DLHR
+      - key: Value
+        value: BQ25186DLHR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C44639442
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value: 595-BQ25186DLHR
+      - key: LCSC Part
+        value: C44639442
+      - key: Datasheet
+        value: https://www.ti.com.cn/cn/lit/ds/symlink/bq25186.pdf
+  - name: LIS3MDLTR
+    base_component: LIS3MDL
+    properties:
+      - key: Footprint
+        value: 7Sigma:LGA-12_L2.0-W2.0-P0.50-BL
+      - key: ki_description
+        value: Digital output magnetic sensor; ultralow-power, high-performance 3-axis magnetometer
+      - key: Manufacturer 1
+        value: STMicroelectronics
+      - key: Manufacturer Part Number 1
+        value: LIS3MDLTR
+      - key: Value
+        value: LIS3MDLTR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C478483
+      - key: LCSC Part
+        value: C478483
+      - key: Datasheet
+        value: https://www.st.com/resource/en/datasheet/lis3mdl.pdf
+  - name: AT2659
+    base_component: AT2659
+    properties:
+      - key: Footprint
+        value: 7Sigma:DFN-6_1.6x1mm-P0.55mm
+      - key: ki_description
+        value:
+      - key: Manufacturer 1
+        value: AT2659
+      - key: Manufacturer Part Number 1
+        value: AT2659
+      - key: Value
+        value: AT2659
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C92450
+      - key: LCSC Part
+        value: C92450
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C92450.pdf

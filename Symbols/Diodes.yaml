@@ -56,3 +56,28 @@ components:
         value: C173406
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411211941_MDD-Microdiode-Semiconductor-BZT52C5V6_C173406.pdf
+  - name: 1N5819WS
+    base_component: D
+    properties:
+      - key: Footprint
+        value: Diode_SMD:D_SOD-323_HandSoldering
+      - key: Value
+        value: 1N5819WS
+      - key: ki_description
+        value: Schottky Diode 40V 600mV@1A 1A SOD-323
+      - key: Maximum Reverse Voltage
+        value: 40V
+      - key: Continuous Current
+        value: 1A
+      - key: Manufacturer 1
+        value: Guangdong Hottech
+      - key: Manufacturer Part Number 1
+        value: 1N5819WS
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C191023
+      - key: LCSC Part
+        value: C191023
+      - key: Datasheet
+        value: https://lcsc.com/product-detail/Others_B5819WS_C191023.html
