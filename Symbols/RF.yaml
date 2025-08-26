@@ -96,3 +96,30 @@ components:
         value: C2826452
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C2826452.pdf
+  - name: GPS1003
+    base_component: Antenna
+    properties:
+      - key: Value
+        value: 1575 MHz
+      - key: Footprint
+        value: 7Sigma:ANT-SMD_L10.0-W3.0
+      - key: Peak Gain
+        value: 4.3 dBi
+      - key: Working Central Frequency
+        value: 1575 MHz
+      - key: V.S.W.R
+        value: "1.5"
+      - key: ki_description
+        value: GNSS Ceramic Chip Antenna 1.5GHz
+      - key: Manufacturer 1
+        value: Rainsun
+      - key: Manufacturer Part Number 1
+        value: GPS1003
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C239243
+      - key: LCSC Part
+        value: C239243
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C239243.pdf

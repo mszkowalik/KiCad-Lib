@@ -28,7 +28,7 @@ components:
       - key: JLCPCB Part Class
         value: Basic Part
   - name: BZT52C5V6
-    base_component: BZT52C5V6
+    base_component: BZT52Cxx
     properties:
       - key: Footprint
         value: Diode_SMD:D_SOD-123
@@ -56,6 +56,31 @@ components:
         value: C173406
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411211941_MDD-Microdiode-Semiconductor-BZT52C5V6_C173406.pdf
+  - name: BZX84C8V2LT1G
+    base_component: BZX84Cxx
+    properties:
+      - key: Footprint
+        value: Package_TO_SOT_SMD:SOT-23-3
+      - key: Value
+        value: 8.2V
+      - key: ki_description
+        value: Zenner Diode 8.2V 250mW
+      - key: Zenner Voltage
+        value: 8.2V
+      - key: Power
+        value: 250mW
+      - key: Manufacturer 1
+        value: onsemi
+      - key: Manufacturer Part Number 1
+        value: BZX84C8V2LT1G
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C82469
+      - key: LCSC Part
+        value: C82469
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C82469.pdf
   - name: 1N5819WS
     base_component: D
     properties:
@@ -81,3 +106,57 @@ components:
         value: C191023
       - key: Datasheet
         value: https://lcsc.com/product-detail/Others_B5819WS_C191023.html
+  - name: SMAJ28CA
+    base_component: SMAJxxCA
+    properties:
+      - key: Footprint
+        value: Diode_SMD:D_SMA
+      - key: Value
+        value: SMAJ28CA
+      - key: ki_description
+        value: TVS DIODE 28VWM 45.4VC DO-214AC(SMA)
+      - key: Voltage - Breakdown
+        value: 34.4V
+      - key: Reverse Leakage Current (Ir)
+        value: 1uA
+      - key: Reverse Stand-Off Voltage
+        value: 28V
+      - key: Manufacturer 1
+        value: Littelfuse
+      - key: Manufacturer Part Number 1
+        value: SMAJ28CA
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C148228
+      - key: LCSC Part
+        value: C148228
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C148228.pdf
+  - name: SMAJ12A
+    base_component: SMAJxxA
+    properties:
+      - key: Footprint
+        value: Diode_SMD:D_SMA
+      - key: Value
+        value: SMAJ12A
+      - key: ki_description
+        value: TVS DIODE 12VWM 20.4VC DO-214AC(SMA)
+      - key: Voltage - Breakdown
+        value: 14.4V
+      - key: Reverse Leakage Current (Ir)
+        value: 1uA
+      - key: Reverse Stand-Off Voltage
+        value: 12V
+      - key: Manufacturer 1
+        value: Littelfuse
+      - key: Manufacturer Part Number 1
+        value: SMAJ12A
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C148213
+      - key: LCSC Part
+        value: C148213
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C148213.pdf

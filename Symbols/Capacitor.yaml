@@ -472,3 +472,32 @@ components:
         value: C315248
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C315248.pdf
+  - name: 35TZV100M6.3X8
+    base_component: CE
+    properties:
+      - key: Value
+        value: 100uF
+      - key: Tolerance
+        value: 20%
+      - key: Voltage
+        value: 35V
+      - key: Dielectric
+        value: Aluminum Electrolytic
+      - key: Footprint
+        value: Capacitor_SMD:CP_Elec_6.3x7.7
+      - key: Footprint_Name
+        value: D6
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Rubycon
+      - key: Manufacturer Part Number 1
+        value: 35TZV100M6.3X8
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C88744
+      - key: LCSC Part
+        value: C88744
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C88744.pdf

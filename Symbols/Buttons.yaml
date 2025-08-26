@@ -78,3 +78,22 @@ components:
         value: C2837530
       - key: Datasheet
         value: https://wmsc.lcsc.com/wmsc/upload/file/pdf/v2/lcsc/2212051012_Shenzhen-Kinghelm-Elec-KH-6X6X4-3H-STM_C2837530.pdf
+  - name: GT-TC048D-H025-L1
+    base_component: SW_Push_4pin
+    properties:
+      - key: Value
+        value: GT-TC048D-H025-L1
+      - key: Footprint
+        value: 7Sigma:SW-SMD_4P-L4.2-W3.2-P2.15-LS4.5
+      - key: Manufacturer 1
+        value: G-Switch
+      - key: Manufacturer Part Number 1
+        value: GT-TC048D-H025-L1
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C843674
+      - key: LCSC Part
+        value: C843674
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C843674.pdf

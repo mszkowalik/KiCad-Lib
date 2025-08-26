@@ -1,0 +1,143 @@
+(footprint "ANT-SMD_L10.0-W3.0"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(property "Reference" "REF**"
+		(at 0.2 -2.5 0)
+		(layer "F.SilkS")
+		(uuid "ebe64457-1179-4e44-866b-f5b1e48d9755")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "ANT-SMD_L10.0-W3.0"
+		(at 0 4 0)
+		(layer "F.Fab")
+		(uuid "71b7b5ca-e33f-41b3-95fe-08a3d3b0c456")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "85cbfd18-ff33-43a7-b36b-2cab065a5111")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "9ccc5bb1-c3eb-4bc7-bf91-1112e10405a1")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr smd)
+	(fp_line
+		(start -4.02 -1.52)
+		(end 4.02 -1.52)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "4e1842bb-1db3-44e4-8ce7-1101ed14966a")
+	)
+	(fp_line
+		(start -4.02 1.53)
+		(end 4.02 1.53)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "60e70c4b-d8e9-4aa3-875e-3c37d1cd0c91")
+	)
+	(fp_circle
+		(center -3.81 -1.02)
+		(end -3.66 -1.02)
+		(stroke
+			(width 0.3)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.SilkS")
+		(uuid "ff12d0b3-e709-4f89-8fa4-607b9eeb1dc6")
+	)
+	(fp_circle
+		(center -3.81 -1.02)
+		(end -3.66 -1.02)
+		(stroke
+			(width 0.3)
+			(type solid)
+		)
+		(fill no)
+		(layer "Cmts.User")
+		(uuid "cb61cce9-aab3-4aff-b4d0-098e7f3ff0f4")
+	)
+	(fp_circle
+		(center -5 1.5)
+		(end -4.97 1.5)
+		(stroke
+			(width 0.06)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "fcdc6d5b-a1ad-4b3c-afc9-bcbf91355c09")
+	)
+	(fp_text user "${REFERENCE}"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(uuid "f1d333a9-06db-4262-beb1-7238d930ed73")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(pad "1" smd roundrect
+		(at -5 0)
+		(size 1.5 3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.1666666667)
+		(uuid "2d924188-53df-4715-a905-a2bd7249c8ad")
+	)
+	(pad "2" smd roundrect
+		(at 5 0)
+		(size 1.5 3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.1666666667)
+		(uuid "7c6ce15c-6c1c-48dd-b74b-ff6891eb7c7b")
+	)
+	(embedded_fonts no)
+	(model "${EASYEDA2KICAD}/easyeda2kicad.3dshapes/ANT-SMD_L10.3-W3.0-H1.6.wrl"
+		(offset
+			(xyz 0 -0 -0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 0 0 0)
+		)
+	)
+)

@@ -616,3 +616,53 @@ components:
         value: C92450
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C92450.pdf
+  - name: NID65-12
+    base_component: NID65
+    properties:
+      - key: Footprint
+        value: 7Sigma:NID65_MWU
+      - key: ki_description
+        value: DC-DC Converter Module Non-Isolated 12V 4.9A 20V - 53V Input
+      - key: Manufacturer 1
+        value: Mean Well
+      - key: Manufacturer Part Number 1
+        value: NID65-12
+      - key: Value
+        value: NID65-12
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C22416625
+      - key: Supplier 2
+        value: TME
+      - key: Supplier Part Number 2
+        value: NID65-12
+      - key: LCSC Part
+        value: C22416625
+      - key: Datasheet
+        value: https://www.meanwellusa.com/upload/pdf/NID65/NID65-spec.pdf
+  - name: L78L05CD13TR
+    base_component: LM78L05_SO8
+    properties:
+      - key: Footprint
+        value: Package_SO:SOIC-8_3.9x4.9mm_P1.27mm
+      - key: ki_description
+        value: LDO 5V 100mA
+      - key: Manufacturer 1
+        value: STMicroelectronics
+      - key: Manufacturer Part Number 1
+        value: L78L05CD13TR
+      - key: Value
+        value: L78L05CD13TR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C81363
+      - key: Supplier 2
+        value: TME
+      - key: Supplier Part Number 2
+        value: L78L05CD13TR
+      - key: LCSC Part
+        value: C81363
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C81363.pdf

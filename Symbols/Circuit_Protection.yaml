@@ -93,3 +93,26 @@ components:
         value: C7202014
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2311161433_BHFUSE-BSMD1206-050-33V_C7202014.pdf
+  - name: PTF-77
+    base_component: Fuse
+    properties:
+      - key: Value
+        value: Fuse Holder
+      - key: Voltage_Max
+        value: 250V
+      - key: Footprint
+        value: 7Sigma:FUSE-TH_L24.4-W9.4-P22.60
+      - key: ki_description
+        value: Fuseholder 20x5mm
+      - key: Manufacturer 1
+        value: XFCN
+      - key: Manufacturer Part Number 1
+        value: PTF-77
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C717030
+      - key: LCSC Part
+        value: C717030
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C717030.pdf

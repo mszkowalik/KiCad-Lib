@@ -346,3 +346,154 @@ components:
         value: C492410
       - key: Datasheet
         value: https://www.molex.com/en-us/products/part-detail-pdf/22289023?display=pdf
+  - name: DB2ERM-3.81-2P-GN
+    base_component: Conn_01x02
+    properties:
+      - key: Footprint
+        value: Connector_Phoenix_MC:PhoenixContact_MC_1,5_2-GF-3.81_1x02_P3.81mm_Horizontal_ThreadedFlange
+      - key: ki_description
+        value: Pluggable terminal block; 3.81mm
+      - key: Value
+        value: DB2ERM-3.81-2P-GN
+      - key: Manufacturer 1
+        value: DORABO
+      - key: Manufacturer Part Number 1
+        value: DB2ERM-3.81-2P-GN
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C430325
+      - key: LCSC Part
+        value: C430325
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C430325.pdf
+  - name: DB2ERM-3.81-4P-GN
+    base_component: Conn_01x04
+    properties:
+      - key: Footprint
+        value: Connector_Phoenix_MC:PhoenixContact_MC_1,5_4-GF-3.81_1x04_P3.81mm_Horizontal_ThreadedFlange
+      - key: ki_description
+        value: Pluggable terminal block; 3.81mm
+      - key: Value
+        value: DB2ERM-3.81-4P-GN
+      - key: Manufacturer 1
+        value: DORABO
+      - key: Manufacturer Part Number 1
+        value: DB2ERM-3.81-4P-GN
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C395696
+      - key: LCSC Part
+        value: C395696
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C395696.pdf
+  - name: DB2ERM-3.81-8P-GN
+    base_component: Conn_01x08
+    properties:
+      - key: Footprint
+        value: Connector_Phoenix_MC:PhoenixContact_MC_1,5_8-GF-3.81_1x08_P3.81mm_Horizontal_ThreadedFlange
+      - key: ki_description
+        value: Pluggable terminal block; 3.81mm
+      - key: Value
+        value: DB2ERM-3.81-8P-GN
+      - key: Manufacturer 1
+        value: DORABO
+      - key: Manufacturer Part Number 1
+        value: DB2ERM-3.81-8P-GN
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C395712
+      - key: LCSC Part
+        value: C395712
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C395712.pdf
+  - name: DB2EKDM-3.81-8P-GN
+    base_component: TERMINAL_BLOCK_PLUG
+    properties:
+      - key: Footprint
+        value: ""
+      - key: ki_description
+        value: Pluggable terminal block; 3.81mm
+      - key: Value
+        value: DB2EKDM-3.81-8P-GN
+      - key: Pin Number
+        value: 8
+      - key: Manufacturer 1
+        value: DORABO
+      - key: Manufacturer Part Number 1
+        value: DDB2EKDM-3.81-8P-GN
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5353821
+      - key: LCSC Part
+        value: C5353821
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C5353821.pdf
+  - name: DB2EKDM-3.81-4P-GN
+    base_component: TERMINAL_BLOCK_PLUG
+    properties:
+      - key: Footprint
+        value: ""
+      - key: ki_description
+        value: Pluggable terminal block; 3.81mm
+      - key: Value
+        value: DB2EKDM-3.81-4P-GN
+      - key: Pin Number
+        value: 4
+      - key: Manufacturer 1
+        value: DORABO
+      - key: Manufacturer Part Number 1
+        value: DDB2EKDM-3.81-4P-GN
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5353817
+      - key: LCSC Part
+        value: C5353817
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C5353817.pdf
+  - name: DB2EKDM-3.81-2P-GN
+    base_component: TERMINAL_BLOCK_PLUG
+    properties:
+      - key: Footprint
+        value: ""
+      - key: ki_description
+        value: Pluggable terminal block; 3.81mm
+      - key: Value
+        value: DB2EKDM-3.81-2P-GN
+      - key: Pin Number
+        value: 2
+      - key: Manufacturer 1
+        value: DORABO
+      - key: Manufacturer Part Number 1
+        value: DDB2EKDM-3.81-2P-GN
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5353816
+      - key: LCSC Part
+        value: C5353816
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C5353816.pdf
+  - name: R-RJ45R08P-A004
+    base_component: 8P8C
+    properties:
+      - key: Footprint
+        value: 7Sigma:RJ45-TH_R-RJ45R08P-A004
+      - key: ki_description
+        value: RJ45 8P8C unshielded without LEDS
+      - key: Manufacturer 1
+        value: Ckmtw
+      - key: Manufacturer Part Number 1
+        value: R-RJ45R08P-A004
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C385834
+      - key: LCSC Part
+        value: C385834
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C385834.pdf

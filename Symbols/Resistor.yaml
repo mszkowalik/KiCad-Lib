@@ -760,3 +760,30 @@ components:
         value: C27017
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C27017.pdf
+  - name: 0805W8F0000T5E
+    base_component: R
+    properties:
+      - key: Value
+        value: 0R
+      - key: Power
+        value: 125mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: Resistor_SMD:R_0805_2012Metric
+      - key: Footprint_Name
+        value: "0805"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0805W8F0000T5E
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C17477
+      - key: LCSC Part
+        value: C17477
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C17477.pdf

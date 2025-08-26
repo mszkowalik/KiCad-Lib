@@ -172,3 +172,32 @@ components:
         value: C845604
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2410121456_HUASHUO-HSBB6115_C845604.pdf
+  - name: BSC0702LS
+    base_component: BSC0702LS
+    properties:
+      - key: Footprint
+        value: Package_SON:Infineon_PG-TDSON-8_6.15x5.15mm
+      - key: Value
+        value: BSC0702LS
+      - key: ki_description
+        value: MOSFET N-CH 60V 84A TDSON-8(5x6)
+      - key: Power
+        value: 83W
+      - key: Drain Source On Resistance
+        value: 2.7mΩ@10V
+      - key: Continuous Drain Current
+        value: 84A
+      - key: Drain Source Voltage
+        value: 60V
+      - key: Manufacturer 1
+        value: Infineon
+      - key: Manufacturer Part Number 1
+        value: BSC0702LS
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C501503
+      - key: LCSC Part
+        value: C501503
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C501503.pdf
