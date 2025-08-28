@@ -26,7 +26,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm"
+		(property "Footprint" "7Sigma:Crystal_SMD_3225-4Pin_3.2x2.5mm"
 			(at 0 0 0)
 			(effects
 				(font
@@ -315,7 +315,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm"
+		(property "Footprint" "7Sigma:Crystal_SMD_3225-4Pin_3.2x2.5mm"
 			(at 0 0 0)
 			(effects
 				(font
@@ -604,7 +604,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm"
+		(property "Footprint" "7Sigma:Crystal_SMD_3225-4Pin_3.2x2.5mm"
 			(at 0 0 0)
 			(effects
 				(font

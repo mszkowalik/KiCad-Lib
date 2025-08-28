@@ -20,7 +20,7 @@
 				)
 			)
 		)
-		(property "Footprint" "HVSSOP-10-1EP_3x3mm_P0.5mm_EP1.57x1.88mm_ThermalVias"
+		(property "Footprint" "7Sigma:HVSSOP-10-1EP_3x3mm_P0.5mm_EP1.57x1.88mm_ThermalVias"
 			(at 0 -13.97 0)
 			(do_not_autoplace)
 			(effects
@@ -1069,7 +1069,7 @@
 				(justify left bottom)
 			)
 		)
-		(property "Footprint" "Package_LGA:LGA-14_3x2.5mm_P0.5mm_LayoutBorder3x4y"
+		(property "Footprint" "7Sigma:LGA-14_3x2.5mm_P0.5mm_LayoutBorder3x4y"
 			(at -10.16 -17.78 0)
 			(effects
 				(font
@@ -1463,7 +1463,7 @@
 				(justify right)
 			)
 		)
-		(property "Footprint" "RF_Module:ESP32-WROOM-32U"
+		(property "Footprint" "7Sigma:ESP32-WROOM-32U"
 			(at 0 -38.1 0)
 			(effects
 				(font
@@ -2302,7 +2302,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Package_DFN_QFN:QFN-56-1EP_7x7mm_P0.4mm_EP3.2x3.2mm"
+		(property "Footprint" "7Sigma:QFN-56-1EP_7x7mm_P0.4mm_EP3.2x3.2mm_ThermalVias"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3470,7 +3470,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Package_SO:SOIC-16_3.9x9.9mm_P1.27mm"
+		(property "Footprint" "7Sigma:SOIC-16_3.9x9.9mm_P1.27mm"
 			(at 0 -16.51 0)
 			(effects
 				(font
@@ -4346,7 +4346,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
+		(property "Footprint" "7Sigma:SOIC-8_3.9x4.9mm_P1.27mm"
 			(at 26.67 -8.89 0)
 			(effects
 				(font
@@ -4627,7 +4627,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Package_TO_SOT_SMD:SOT-563"
+		(property "Footprint" "7Sigma:SOT-563"
 			(at 31.75 6.35 0)
 			(effects
 				(font
@@ -4856,7 +4856,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Package_TO_SOT_SMD:SOT-363_SC-70-6"
+		(property "Footprint" "7Sigma:SOT-363_SC-70-6"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5499,7 +5499,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Package_TO_SOT_SMD:SOT-353_SC-70-5"
+		(property "Footprint" "7Sigma:SOT-353_SC-70-5"
 			(at -2.54 0 0)
 			(effects
 				(font
@@ -5750,7 +5750,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Package_TO_SOT_SMD:SOT-353_SC-70-5"
+		(property "Footprint" "7Sigma:SOT-353_SC-70-5"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5983,7 +5983,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm"
+		(property "Footprint" "7Sigma:SOIC-14_3.9x8.7mm_P1.27mm"
 			(at 2.54 0 0)
 			(effects
 				(font
@@ -6342,7 +6342,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Package_SO:7Sigma:SOT-23-6"
+		(property "Footprint" "7Sigma:SOT-23-6"
 			(at 0 -12.065 0)
 			(effects
 				(font
@@ -6586,7 +6586,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Package_SO:SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm_ThermalVias"
+		(property "Footprint" "7Sigma:SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm_ThermalVias"
 			(at 31.75 6.35 0)
 			(effects
 				(font
@@ -6866,7 +6866,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Package_DFN_QFN:QFN-56-1EP_7x7mm_P0.4mm_EP4x4mm"
+		(property "Footprint" "7Sigma:QFN-56-1EP_7x7mm_P0.4mm_EP4x4mm_ThermalVias"
 			(at 0 -48.26 0)
 			(effects
 				(font
@@ -11013,7 +11013,7 @@
 				)
 			)
 		)
-		(property "Footprint" "7Sigma:WSON-10_L2.2-W2.0-P0.40-BL-EP_TI_DLH0010A"
+		(property "Footprint" "7Sigma:WSON-10-1EP_2.2x2.0mm_P0.40-EP0.9x1.5mm"
 			(at 0 -17.78 0)
 			(effects
 				(font
@@ -12051,7 +12051,7 @@
 				(justify right)
 			)
 		)
-		(property "Footprint" "7Sigma:WSON-10_L2.2-W2.0-P0.40-BL-EP_TI_DLH0010A"
+		(property "Footprint" "7Sigma:WSON-10-1EP_2.2x2.0mm_P0.40-EP0.9x1.5mm"
 			(at -0.508 -11.176 0)
 			(effects
 				(font
@@ -13349,7 +13349,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
+		(property "Footprint" "7Sigma:SOIC-8_3.9x4.9mm_P1.27mm"
 			(at 2.54 5.08 0)
 			(effects
 				(font
@@ -14110,7 +14110,7 @@
 				(justify right)
 			)
 		)
-		(property "Footprint" "Package_SO:TSSOP-20_4.4x6.5mm_P0.65mm"
+		(property "Footprint" "7Sigma:TSSOP-20_4.4x6.5mm_P0.65mm"
 			(at 0 -19.05 0)
 			(effects
 				(font

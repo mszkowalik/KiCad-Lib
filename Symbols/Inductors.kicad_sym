@@ -26,7 +26,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Inductor_SMD:L_Murata_DFE201610P"
+		(property "Footprint" "7Sigma:L_Murata_DFE201610P"
 			(at 0 -7.62 0)
 			(effects
 				(font
@@ -250,7 +250,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Inductor_SMD:L_Wuerth_HCM-1350"
+		(property "Footprint" "7Sigma:L_Wuerth_HCM-1350"
 			(at 0 -7.62 0)
 			(effects
 				(font
@@ -474,7 +474,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Inductor_SMD:L_0402_1005Metric"
+		(property "Footprint" "7Sigma:L_0402_1005Metric"
 			(at 0 -7.62 0)
 			(effects
 				(font

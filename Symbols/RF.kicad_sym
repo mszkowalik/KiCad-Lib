@@ -354,7 +354,7 @@
 				(justify right)
 			)
 		)
-		(property "Footprint" "ANT_1206_3216Metric"
+		(property "Footprint" "7Sigma:ANT_1206_3216Metric"
 			(at 0 0 0)
 			(effects
 				(font
@@ -954,7 +954,7 @@
 				(justify right)
 			)
 		)
-		(property "Footprint" "ANT_3PIN_1206_3216Metric"
+		(property "Footprint" "7Sigma:ANT_3PIN_1206_3216Metric"
 			(at 0 2.54 0)
 			(effects
 				(font

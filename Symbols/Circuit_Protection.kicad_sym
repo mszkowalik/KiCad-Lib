@@ -26,7 +26,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Fuse:Fuse_2920_7451Metric"
+		(property "Footprint" "7Sigma:Fuse_2920_7451Metric"
 			(at 1.27 -5.08 0)
 			(effects
 				(font
@@ -274,7 +274,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Fuse:Fuse_0805_2012Metric"
+		(property "Footprint" "7Sigma:Fuse_0805_2012Metric"
 			(at 1.27 -5.08 0)
 			(effects
 				(font
@@ -522,7 +522,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Fuse:Fuse_1206_3216Metric"
+		(property "Footprint" "7Sigma:Fuse_1206_3216Metric"
 			(at 1.27 -5.08 0)
 			(effects
 				(font

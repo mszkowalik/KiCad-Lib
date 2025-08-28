@@ -430,7 +430,7 @@
 				(hide yes)
 			)
 		)
-		(property "Footprint" "Button_Switch_THT:SW_PUSH_6mm"
+		(property "Footprint" "7Sigma:SW_PUSH_6mm"
 			(at 0 5.08 0)
 			(effects
 				(font

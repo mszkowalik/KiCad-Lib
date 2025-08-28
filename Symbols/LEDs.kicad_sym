@@ -28,7 +28,7 @@
 				(hide yes)
 			)
 		)
-		(property "Footprint" "LED_SMD:LED_0805_2012Metric"
+		(property "Footprint" "7Sigma:LED_0805_2012Metric"
 			(at 0 0 0)
 			(effects
 				(font
@@ -301,7 +301,7 @@
 				(hide yes)
 			)
 		)
-		(property "Footprint" "LED_SMD:LED_0805_2012Metric"
+		(property "Footprint" "7Sigma:LED_0805_2012Metric"
 			(at 0 0 0)
 			(effects
 				(font

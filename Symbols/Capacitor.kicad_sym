@@ -263,7 +263,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
+		(property "Footprint" "7Sigma:C_0805_2012Metric"
 			(at 0.9652 -3.81 0)
 			(effects
 				(font
@@ -735,7 +735,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
+		(property "Footprint" "7Sigma:C_0805_2012Metric"
 			(at 0.9652 -3.81 0)
 			(effects
 				(font
@@ -1458,7 +1458,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_1210_3225Metric"
+		(property "Footprint" "7Sigma:C_1210_3225Metric"
 			(at 0.9652 -3.81 0)
 			(effects
 				(font
@@ -1690,7 +1690,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
+		(property "Footprint" "7Sigma:C_0805_2012Metric"
 			(at 0.9652 -3.81 0)
 			(effects
 				(font
@@ -2154,7 +2154,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
+		(property "Footprint" "7Sigma:C_0805_2012Metric"
 			(at 0.9652 -3.81 0)
 			(effects
 				(font
@@ -2386,7 +2386,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
+		(property "Footprint" "7Sigma:C_0805_2012Metric"
 			(at 0.9652 -3.81 0)
 			(effects
 				(font
@@ -2618,7 +2618,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
+		(property "Footprint" "7Sigma:C_0805_2012Metric"
 			(at 0.9652 -3.81 0)
 			(effects
 				(font
@@ -3796,7 +3796,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:CP_Elec_6.3x7.7"
+		(property "Footprint" "7Sigma:CP_Elec_6.3x7.7"
 			(at 0.9652 -3.81 0)
 			(effects
 				(font
@@ -4029,7 +4029,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:CP_Elec_10x10"
+		(property "Footprint" "7Sigma:CP_Elec_10x10"
 			(at 0.9652 -3.81 0)
 			(effects
 				(font
@@ -4262,7 +4262,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
+		(property "Footprint" "7Sigma:C_0805_2012Metric"
 			(at 0.9652 -3.81 0)
 			(effects
 				(font

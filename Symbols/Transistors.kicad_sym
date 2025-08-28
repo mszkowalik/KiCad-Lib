@@ -1442,7 +1442,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm"
+		(property "Footprint" "7Sigma:DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm"
 			(at 5.08 2.54 0)
 			(effects
 				(font
@@ -1939,7 +1939,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm"
+		(property "Footprint" "7Sigma:DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm"
 			(at 5.08 2.54 0)
 			(effects
 				(font
@@ -2442,7 +2442,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Package_SON:Infineon_PG-TDSON-8_6.15x5.15mm"
+		(property "Footprint" "7Sigma:Infineon_PG-TDSON-8_6.15x5.15mm"
 			(at 0 -10.16 0)
 			(effects
 				(font
