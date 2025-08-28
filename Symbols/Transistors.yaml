@@ -33,7 +33,7 @@ components:
     base_component: Q_PMOS_GSD
     properties:
       - key: Footprint
-        value: "7Sigma:SOT-23"
+        value: 7Sigma:SOT-23
       - key: ki_description
         value: P-MOS 30V 4A 1.4W SOT-23
       - key: Value
@@ -62,7 +62,7 @@ components:
     base_component: MMBT3904
     properties:
       - key: Footprint
-        value: "7Sigma:SOT-23"
+        value: 7Sigma:SOT-23
       - key: ki_description
         value: NPN 40V 200mA 250mW SOT-23
       - key: Value
@@ -89,7 +89,7 @@ components:
     base_component: DMN6075S
     properties:
       - key: Footprint
-        value: "7Sigma:SOT-23"
+        value: 7Sigma:SOT-23
       - key: ki_description
         value: N-MOS 60V 2.5A 1.15W SOT-23
       - key: Value
@@ -118,7 +118,7 @@ components:
     base_component: AON7264E
     properties:
       - key: Footprint
-        value: "DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm"
+        value: 7Sigma:DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm
       - key: ki_description
         value: N-MOS 60V 28A 27W DFN-8
       - key: Value
@@ -147,7 +147,7 @@ components:
     base_component: HSBB6115
     properties:
       - key: Footprint
-        value: "DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm"
+        value: 7Sigma:DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm
       - key: ki_description
         value: P-MOS 60V 26A 5.2W DFN-8
       - key: Value
@@ -176,7 +176,7 @@ components:
     base_component: BSC0702LS
     properties:
       - key: Footprint
-        value: Package_SON:Infineon_PG-TDSON-8_6.15x5.15mm
+        value: 7Sigma:Infineon_PG-TDSON-8_6.15x5.15mm
       - key: Value
         value: BSC0702LS
       - key: ki_description
@@ -234,7 +234,7 @@ components:
     base_component: Q_PMOS_GSD
     properties:
       - key: Footprint
-        value: "7Sigma:SOT-523"
+        value: 7Sigma:SOT-523
       - key: ki_description
         value: P-MOS 20V 2.3A 700mW SOT-523
       - key: Value

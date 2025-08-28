@@ -46,7 +46,7 @@ components:
       - key: Value
         value: KH-6X6X9H-TJ
       - key: Footprint
-        value: Button_Switch_THT:SW_PUSH_6mm
+        value: 7Sigma:SW_PUSH_6mm
       - key: Manufacturer 1
         value: Shenzhen Kinghelm Elec
       - key: Manufacturer Part Number 1

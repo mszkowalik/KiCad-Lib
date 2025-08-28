@@ -82,6 +82,17 @@
 		(layer "Cmts.User")
 		(uuid "72ce372f-e276-4844-b57b-95880832676d")
 	)
+	(fp_rect
+		(start -5.5 -4.4)
+		(end 5.6 4.5)
+		(stroke
+			(width 0.05)
+			(type default)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "0661e1aa-7441-460f-9b7d-8dc417712009")
+	)
 	(fp_line
 		(start -5.25 -4.15)
 		(end 5.25 -4.15)

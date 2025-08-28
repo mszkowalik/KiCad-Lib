@@ -14,7 +14,7 @@ components:
       - key: Voltage_Max
         value: 30V
       - key: Footprint
-        value: Fuse:Fuse_2920_7451Metric
+        value: 7Sigma:Fuse_2920_7451Metric
       - key: Footprint_Name
         value: "2920"
       - key: ki_description
@@ -45,7 +45,7 @@ components:
       - key: Voltage_Max
         value: 33V
       - key: Footprint
-        value: Fuse:Fuse_0805_2012Metric
+        value: 7Sigma:Fuse_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -76,7 +76,7 @@ components:
       - key: Voltage_Max
         value: 33V
       - key: Footprint
-        value: Fuse:Fuse_1206_3216Metric
+        value: 7Sigma:Fuse_1206_3216Metric
       - key: Footprint_Name
         value: "1206"
       - key: ki_description

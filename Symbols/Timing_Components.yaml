@@ -12,7 +12,7 @@ components:
       - key: Equivalent Series Resistance
         value: 80R
       - key: Footprint
-        value: Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm
+        value: 7Sigma:Crystal_SMD_3225-4Pin_3.2x2.5mm
       - key: ki_description
         value: "12MHz ±20ppm 18pF Crystal"
       - key: Manufacturer 1
@@ -39,7 +39,7 @@ components:
       - key: Equivalent Series Resistance
         value: 50R
       - key: Footprint
-        value: Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm
+        value: 7Sigma:Crystal_SMD_3225-4Pin_3.2x2.5mm
       - key: ki_description
         value: "25MHz ±20ppm 10pF Crystal"
       - key: Manufacturer 1
@@ -66,7 +66,7 @@ components:
       - key: Equivalent Series Resistance
         value: 40R
       - key: Footprint
-        value: Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm
+        value: 7Sigma:Crystal_SMD_3225-4Pin_3.2x2.5mm
       - key: ki_description
         value: "40MHz ±10ppm 15pF Crystal"
       - key: Manufacturer 1

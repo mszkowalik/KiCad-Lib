@@ -4,7 +4,7 @@ components:
     base_component: LED
     properties:
       - key: Footprint
-        value: LED_SMD:LED_0805_2012Metric
+        value: 7Sigma:LED_0805_2012Metric
       - key: Value
         value: APT2012CGCK
       - key: ki_description
@@ -35,7 +35,7 @@ components:
     base_component: LED
     properties:
       - key: Footprint
-        value: LED_SMD:LED_0805_2012Metric
+        value: 7Sigma:LED_0805_2012Metric
       - key: Value
         value: APT2012SURCK
       - key: ki_description

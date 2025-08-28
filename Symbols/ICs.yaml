@@ -4,7 +4,7 @@ components:
     base_component: BQ2409x
     properties:
       - key: Footprint
-        value: HVSSOP-10-1EP_3x3mm_P0.5mm_EP1.57x1.88mm_ThermalVias
+        value: 7Sigma:HVSSOP-10-1EP_3x3mm_P0.5mm_EP1.57x1.88mm_ThermalVias
       - key: ki_description
         value: BQ2409x 1-A, Single-Input, Single-Cell Li-Ion and Li-Pol Battery Chargers
       - key: Manufacturer 1
@@ -93,7 +93,7 @@ components:
     base_component: LSM6DS3
     properties:
       - key: Footprint
-        value: Package_LGA:LGA-14_3x2.5mm_P0.5mm_LayoutBorder3x4y
+        value: 7Sigma:LGA-14_3x2.5mm_P0.5mm_LayoutBorder3x4y
       - key: ki_description
         value: "I2C/SPI, iNEMO inertial module: always-on 3D accelerometer and 3D gyroscope"
       - key: Manufacturer 1
@@ -112,7 +112,7 @@ components:
     base_component: ESP32-WROOM-32U
     properties:
       - key: Footprint
-        value: RF_Module:ESP32-WROOM-32U
+        value: 7Sigma:ESP32-WROOM-32U
       - key: ki_description
         value: RF Module, ESP32-D0WD SoC, Wi-Fi 802.11b/g/n, Bluetooth, BLE, 32-bit, 2.7-3.6V, external antenna, SMD, U.FL connector
       - key: Manufacturer 1
@@ -131,7 +131,7 @@ components:
     base_component: RP2040
     properties:
       - key: Footprint
-        value: Package_DFN_QFN:QFN-56-1EP_7x7mm_P0.4mm_EP3.2x3.2mm
+        value: 7Sigma:QFN-56-1EP_7x7mm_P0.4mm_EP3.2x3.2mm_ThermalVias
       - key: ki_description
         value: RP2040 ARM Cortex-M0+ USB
       - key: Manufacturer 1
@@ -150,7 +150,7 @@ components:
     base_component: CH340B
     properties:
       - key: Footprint
-        value: Package_SO:SOIC-16_3.9x9.9mm_P1.27mm
+        value: 7Sigma:SOIC-16_3.9x9.9mm_P1.27mm
       - key: ki_description
         value: USB to Serial
       - key: Manufacturer 1
@@ -207,7 +207,7 @@ components:
     base_component: SP3485
     properties:
       - key: Footprint
-        value: Package_SO:SOIC-8_3.9x4.9mm_P1.27mm
+        value: 7Sigma:SOIC-8_3.9x4.9mm_P1.27mm
       - key: ki_description
         value: Industrial 3.3V Low Power Half-Duplex RS-485 Transceiver 10Mbps, SOIC-8
       - key: Manufacturer 1
@@ -226,7 +226,7 @@ components:
     base_component: TPS61023
     properties:
       - key: Footprint
-        value: Package_TO_SOT_SMD:SOT-563
+        value: 7Sigma:SOT-563
       - key: ki_description
         value: 3.7-A Boost Converter with 0.5-V Ultra-low Input Voltage
       - key: Manufacturer 1
@@ -247,7 +247,7 @@ components:
     base_component: 74LVC1G175GW,125
     properties:
       - key: Footprint
-        value: Package_TO_SOT_SMD:SOT-363_SC-70-6
+        value: 7Sigma:SOT-363_SC-70-6
       - key: ki_description
         value: Single D Flip-Flop w/ Asnynchronus Clear, Low-Voltage CMOS
       - key: Manufacturer 1
@@ -289,7 +289,7 @@ components:
     base_component: 74LVC1G17
     properties:
       - key: Footprint
-        value: Package_TO_SOT_SMD:SOT-353_SC-70-5
+        value: 7Sigma:SOT-353_SC-70-5
       - key: ki_description
         value: Schmitt Trigger 1 32mA 1.65V~5.5V 32mA 1 SC-70-5
       - key: Manufacturer 1
@@ -310,7 +310,7 @@ components:
     base_component: 74LVC1G14
     properties:
       - key: Footprint
-        value: Package_TO_SOT_SMD:SOT-353_SC-70-5
+        value: 7Sigma:SOT-353_SC-70-5
       - key: ki_description
         value: Schmitt Trigger Inverter 32mA 1.65V~5.5V 32mA 1 SC-70-5
       - key: Manufacturer 1
@@ -331,7 +331,7 @@ components:
     base_component: SN74HC21
     properties:
       - key: Footprint
-        value: Package_SO:SOIC-14_3.9x8.7mm_P1.27mm
+        value: 7Sigma:SOIC-14_3.9x8.7mm_P1.27mm
       - key: ki_description
         value: AND gate 2-ch, 4-input, 2-V to 6-V 5.2 mA
       - key: Manufacturer 1
@@ -352,7 +352,7 @@ components:
     base_component: UCC27538
     properties:
       - key: Footprint
-        value: Package_SO:7Sigma:SOT-23-6
+        value: 7Sigma:SOT-23-6
       - key: ki_description
         value: 2.5-A/5-A single-channel gate driver with 8-V UVLO, 35-V VDD
       - key: Manufacturer 1
@@ -373,7 +373,7 @@ components:
     base_component: LMR33630
     properties:
       - key: Footprint
-        value: Package_SO:SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm_ThermalVias
+        value: 7Sigma:SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm_ThermalVias
       - key: ki_description
         value: Synchronous Step-down 3.8V to 36V, 3A Voltage Converter
       - key: Manufacturer 1
@@ -394,7 +394,7 @@ components:
     base_component: ESP32-S3
     properties:
       - key: Footprint
-        value: Package_DFN_QFN:QFN-56-1EP_7x7mm_P0.4mm_EP4x4mm
+        value: 7Sigma:QFN-56-1EP_7x7mm_P0.4mm_EP4x4mm_ThermalVias
       - key: ki_description
         value: Microcontroller Wi-Fi BT ESP ESP32 Espressif
       - key: Manufacturer 1
@@ -503,7 +503,7 @@ components:
     base_component: BQ25185
     properties:
       - key: Footprint
-        value: 7Sigma:WSON-10_L2.2-W2.0-P0.40-BL-EP_TI_DLH0010A
+        value: 7Sigma:WSON-10-1EP_2.2x2.0mm_P0.40-EP0.9x1.5mm
       - key: ki_description
         value: System-Side Impedance Track™ Fuel Gauge, 4.2 V maximum charge
       - key: Manufacturer 1
@@ -553,7 +553,7 @@ components:
     base_component: BQ25186
     properties:
       - key: Footprint
-        value: 7Sigma:WSON-10_L2.2-W2.0-P0.40-BL-EP_TI_DLH0010A
+        value: 7Sigma:WSON-10-1EP_2.2x2.0mm_P0.40-EP0.9x1.5mm
       - key: ki_description
         value: System-Side Impedance Track™ Fuel Gauge, 4.2 V maximum charge
       - key: Manufacturer 1
@@ -645,7 +645,7 @@ components:
     base_component: LM78L05_SO8
     properties:
       - key: Footprint
-        value: Package_SO:SOIC-8_3.9x4.9mm_P1.27mm
+        value: 7Sigma:SOIC-8_3.9x4.9mm_P1.27mm
       - key: ki_description
         value: LDO 5V 100mA
       - key: Manufacturer 1
@@ -712,7 +712,7 @@ components:
     base_component: MAX3222E
     properties:
       - key: Footprint
-        value: Package_SO:TSSOP-20_4.4x6.5mm_P0.65mm
+        value: 7Sigma:TSSOP-20_4.4x6.5mm_P0.65mm
       - key: ki_description
         value: RS232 Transceiver, 500Kbps 3V to 5.5V
       - key: Manufacturer 1

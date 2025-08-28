@@ -6,9 +6,9 @@ components:
       - key: Value
         value: G2RL-1-DC24
       - key: Footprint
-        value: Relay_THT:Relay_SPDT_Omron_G2RL-1
+        value: 7Sigma:Relay_SPDT_Omron_G2RL-1
       - key: ki_description
-        value: '24V 12A 1C SPDT-Conversion Plugin,12.5x28.8mm Power Relay'
+        value: "24V 12A 1C SPDT-Conversion Plugin,12.5x28.8mm Power Relay"
       - key: Manufacturer 1
         value: Omron Electronics
       - key: Manufacturer Part Number 1

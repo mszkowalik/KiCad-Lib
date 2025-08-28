@@ -41,7 +41,7 @@ components:
       - key: Dielectric
         value: X5R
       - key: Footprint
-        value: Capacitor_SMD:C_0805_2012Metric
+        value7Sigma:C_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -97,7 +97,7 @@ components:
       - key: Dielectric
         value: X5R
       - key: Footprint
-        value: Capacitor_SMD:C_0805_2012Metric
+        value7Sigma:C_0805_2012Metric
       - key: Footprint_Name
         value: 0805
       - key: ki_description
@@ -190,7 +190,7 @@ components:
       - key: Dielectric
         value: X7R
       - key: Footprint
-        value: Capacitor_SMD:C_1210_3225Metric
+        value7Sigma:C_1210_3225Metric
       - key: Footprint_Name
         value: "1210"
       - key: ki_description
@@ -219,7 +219,7 @@ components:
       - key: Dielectric
         value: X7R
       - key: Footprint
-        value: Capacitor_SMD:C_0805_2012Metric
+        value7Sigma:C_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -277,7 +277,7 @@ components:
       - key: Dielectric
         value: NP0
       - key: Footprint
-        value: Capacitor_SMD:C_0805_2012Metric
+        value7Sigma:C_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -306,7 +306,7 @@ components:
       - key: Dielectric
         value: X7R
       - key: Footprint
-        value: Capacitor_SMD:C_0805_2012Metric
+        value7Sigma:C_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -335,7 +335,7 @@ components:
       - key: Dielectric
         value: X7R
       - key: Footprint
-        value: Capacitor_SMD:C_0805_2012Metric
+        value7Sigma:C_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -484,7 +484,7 @@ components:
       - key: Dielectric
         value: Aluminum Electrolytic
       - key: Footprint
-        value: Capacitor_SMD:CP_Elec_6.3x7.7
+        value7Sigma:CP_Elec_6.3x7.7
       - key: Footprint_Name
         value: D6
       - key: ki_description
@@ -513,7 +513,7 @@ components:
       - key: Dielectric
         value: Aluminum Electrolytic
       - key: Footprint
-        value: Capacitor_SMD:CP_Elec_10x10
+        value7Sigma:CP_Elec_10x10
       - key: Footprint_Name
         value: D10
       - key: ki_description
@@ -542,7 +542,7 @@ components:
       - key: Dielectric
         value: X5R
       - key: Footprint
-        value: Capacitor_SMD:C_0805_2012Metric
+        value7Sigma:C_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description

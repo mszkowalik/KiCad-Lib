@@ -8,7 +8,7 @@ components:
       - key: Tolerance
         value: 20%
       - key: Footprint
-        value: Inductor_SMD:L_Murata_DFE201610P
+        value: 7Sigma:L_Murata_DFE201610P
       - key: Rated_Current
         value: 4.5A
       - key: Footprint_Name
@@ -35,7 +35,7 @@ components:
       - key: Tolerance
         value: 20%
       - key: Footprint
-        value: Inductor_SMD:L_Wuerth_HCM-1350
+        value: 7Sigma:L_Wuerth_HCM-1350
       - key: Rated_Current
         value: 9A
       - key: Footprint_Name
@@ -62,7 +62,7 @@ components:
       - key: Tolerance
         value: 0.1nH
       - key: Footprint
-        value: Inductor_SMD:L_0402_1005Metric
+        value: 7Sigma:L_0402_1005Metric
       - key: Rated_Current
         value: 900mA
       - key: Footprint_Name

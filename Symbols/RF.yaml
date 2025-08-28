@@ -44,7 +44,7 @@ components:
       - key: Value
         value: 6GHz ~ 8.2GHz
       - key: Footprint
-        value: ANT_1206_3216Metric
+        value: 7Sigma:ANT_1206_3216Metric
       - key: Peak Gain
         value: 4.5 dBi
       - key: Working Central Frequency
@@ -129,7 +129,7 @@ components:
       - key: Value
         value: 1575 MHz
       - key: Footprint
-        value: ANT_3PIN_1206_3216Metric
+        value: 7Sigma:ANT_3PIN_1206_3216Metric
       - key: Working Central Frequency
         value: 1575 MHz
       - key: ki_description

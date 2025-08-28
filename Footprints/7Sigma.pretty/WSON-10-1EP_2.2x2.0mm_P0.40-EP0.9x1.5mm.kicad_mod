@@ -1,4 +1,4 @@
-(footprint "WSON-10_L2.2-W2.0-P0.40-BL-EP_TI_DLH0010A"
+(footprint "WSON-10-1EP_2.2x2.0mm_P0.40-EP0.9x1.5mm"
 	(version 20241229)
 	(generator "pcbnew")
 	(generator_version "9.0")
@@ -14,7 +14,7 @@
 			)
 		)
 	)
-	(property "Value" "WSON-10_L2.2-W2.0-P0.40-BL-EP_TI_DLH0010A"
+	(property "Value" "WSON-10-1EP_2.2x2.0mm_P0.40-EP0.9x1.5mm"
 		(at 0 5.05 0)
 		(layer "F.Fab")
 		(hide yes)
