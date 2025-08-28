@@ -60,7 +60,7 @@ components:
     base_component: BZX84Cxx
     properties:
       - key: Footprint
-        value: Package_TO_SOT_SMD:SOT-23-3
+        value: 7Sigma:SOT-23-3
       - key: Value
         value: 8.2V
       - key: ki_description
@@ -82,7 +82,7 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C82469.pdf
   - name: 1N5819WS
-    base_component: D
+    base_component: D_Schottky
     properties:
       - key: Footprint
         value: Diode_SMD:D_SOD-323_HandSoldering
@@ -107,7 +107,7 @@ components:
       - key: Datasheet
         value: https://lcsc.com/product-detail/Others_B5819WS_C191023.html
   - name: SMAJ28CA
-    base_component: SMAJxxCA
+    base_component: D_TVS_Bi
     properties:
       - key: Footprint
         value: Diode_SMD:D_SMA
@@ -160,3 +160,134 @@ components:
         value: C148213
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C148213.pdf
+  - name: PMEG6010CEJ,115
+    base_component: D_Schottky
+    properties:
+      - key: Footprint
+        value: Diode_SMD:D_SOD-323_HandSoldering
+      - key: Value
+        value: PMEG6010CEJ,115
+      - key: ki_description
+        value: Schottky Diode 60V 600mV@1A 1A SOD-323
+      - key: Maximum Reverse Voltage
+        value: 60V
+      - key: Continuous Current
+        value: 1A
+      - key: Manufacturer 1
+        value: Nexperia
+      - key: Manufacturer Part Number 1
+        value: PMEG6010CEJ,115
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C406049
+      - key: LCSC Part
+        value: C406049
+      - key: Datasheet
+        value: https://lcsc.com/datasheet/C406049.pdf
+  - name: PESD12VL1BA,115
+    base_component: D_TVS_Bi
+    properties:
+      - key: Footprint
+        value: Diode_SMD:D_SOD-323_HandSoldering
+      - key: Value
+        value: 12V
+      - key: ki_description
+        value: TVS DIODE 12V SOD-323
+      - key: Voltage - Breakdown
+        value: 14.2V
+      - key: Reverse Leakage Current (Ir)
+        value: 50nA
+      - key: Reverse Stand-Off Voltage
+        value: 12V
+      - key: Manufacturer 1
+        value: Nexperia
+      - key: Manufacturer Part Number 1
+        value: PESD12VL1BA,115
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C38558
+      - key: LCSC Part
+        value: C38558
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C38558.pdf
+  - name: PESD5V0S1BA
+    base_component: D_TVS_Bi
+    properties:
+      - key: Footprint
+        value: Diode_SMD:D_SOD-323_HandSoldering
+      - key: Value
+        value: 5V
+      - key: ki_description
+        value: TVS DIODE 5V SOD-323
+      - key: Voltage - Breakdown
+        value: 7V
+      - key: Reverse Leakage Current (Ir)
+        value: 50nA
+      - key: Reverse Stand-Off Voltage
+        value: 5V
+      - key: Manufacturer 1
+        value: TECH PUBLIC
+      - key: Manufacturer Part Number 1
+        value: PESD5V0S1BA
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2827694
+      - key: LCSC Part
+        value: C2827694
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C2827694.pdf
+  - name: RCLAMP0521PATCT
+    base_component: D_TVS_Bi
+    properties:
+      - key: Footprint
+        value: 7Sigma:D_0402_1005Metric
+      - key: Value
+        value: 5V
+      - key: ki_description
+        value: TVS DIODE 5V 0402
+      - key: Voltage - Breakdown
+        value: 7V
+      - key: Reverse Leakage Current (Ir)
+        value: 50nA
+      - key: Reverse Stand-Off Voltage
+        value: 5V
+      - key: Manufacturer 1
+        value: SEMTECH
+      - key: Manufacturer Part Number 1
+        value: RCLAMP0521PATCT
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C117554
+      - key: LCSC Part
+        value: C117554
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C117554.pdf
+  - name: 1N5819WT
+    base_component: D_Schottky
+    properties:
+      - key: Footprint
+        value: Diode_SMD:D_SOD-523
+      - key: Value
+        value: 1N5819WT
+      - key: ki_description
+        value: Schottky Diode 40V 600mV@200mA 350mA SOD-523
+      - key: Maximum Reverse Voltage
+        value: 40V
+      - key: Continuous Current
+        value: 350mA
+      - key: Manufacturer 1
+        value: Slkor
+      - key: Manufacturer Part Number 1
+        value: 1N5819WT
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5185918
+      - key: LCSC Part
+        value: C5185918
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C5185918.pdf

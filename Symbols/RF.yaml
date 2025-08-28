@@ -123,3 +123,30 @@ components:
         value: C239243
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C239243.pdf
+  - name: W3011
+    base_component: Antenna_Shield
+    properties:
+      - key: Value
+        value: 1575 MHz
+      - key: Footprint
+        value: ANT_3PIN_1206_3216Metric
+      - key: Working Central Frequency
+        value: 1575 MHz
+      - key: ki_description
+        value: GNSS Ceramic Chip Antenna 1.5GHz
+      - key: Manufacturer 1
+        value: Pulse Electronics
+      - key: Manufacturer Part Number 1
+        value: W3011
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C6604735
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value: 673-W3011
+      - key: LCSC Part
+        value: C6604735
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C6604735.pdf

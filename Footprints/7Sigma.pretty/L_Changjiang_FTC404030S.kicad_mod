@@ -1,0 +1,134 @@
+(footprint "L_Changjiang_FTC404030S"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(descr "Inductor, Changjiang, FTC404030S, 4.1x4.1x3.0mm, (http://www.cjiang.com.cn/Pr_download_id_1117.html), generated with kicad-footprint-generator gen_inductor.py")
+	(tags "cjiang ftc molded power shielded")
+	(property "Reference" "REF**"
+		(at 0 -3 0)
+		(layer "F.SilkS")
+		(uuid "1aa7d58d-31f3-4283-b4c5-decf285882b2")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "L_Changjiang_FTC404030S"
+		(at 0 3 0)
+		(layer "F.Fab")
+		(uuid "c425995c-a356-4e31-94fc-5a91137a99a7")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "38f7726c-dcd6-4969-aab0-80076cd59c48")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "b4da5ebb-f264-4704-a5b4-4d373ac87bae")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr smd)
+	(fp_line
+		(start -2.16 -2.31)
+		(end 2.16 -2.31)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "5b0a0046-5107-4d03-b2b6-2c5ce0c68461")
+	)
+	(fp_line
+		(start 2.16 2.31)
+		(end -2.16 2.31)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "f61701d4-ca91-4107-81ce-0cd075614c2d")
+	)
+	(fp_rect
+		(start -2.3 -2.3)
+		(end 2.3 2.3)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "41dd507d-42c3-4bc1-8df2-14dc2a2bed31")
+	)
+	(fp_rect
+		(start -2.05 -2.05)
+		(end 2.05 2.05)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "c4d25f83-7564-4923-81b2-2b056fa8e74a")
+	)
+	(fp_text user "${REFERENCE}"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(uuid "be04c653-1ca5-4da1-9516-20b7eacfa5b0")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(pad "1" smd roundrect
+		(at -1.35 0)
+		(size 1.4 4.1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.178571)
+		(uuid "953d938e-5691-4242-95f7-07e4bc520bc7")
+	)
+	(pad "2" smd roundrect
+		(at 1.35 0)
+		(size 1.4 4.1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.178571)
+		(uuid "d05e3733-ed15-403e-9e00-e37019bff78c")
+	)
+	(embedded_fonts no)
+	(model "${KICAD9_3DMODEL_DIR}/Inductor_SMD.3dshapes/L_Changjiang_FNR4030S.step"
+		(offset
+			(xyz 0 0 0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 0 0 0)
+		)
+	)
+)

@@ -64,7 +64,7 @@ components:
     base_component: XC6206PxxxMR
     properties:
       - key: Footprint
-        value: Package_TO_SOT_SMD:SOT-23-3
+        value: 7Sigma:SOT-23-3
       - key: ki_description
         value: 3.3V 200mA LDO Voltage Regulator
       - key: Output Current
@@ -352,7 +352,7 @@ components:
     base_component: UCC27538
     properties:
       - key: Footprint
-        value: Package_SO:Package_TO_SOT_SMD:SOT-23-6
+        value: Package_SO:7Sigma:SOT-23-6
       - key: ki_description
         value: 2.5-A/5-A single-channel gate driver with 8-V UVLO, 35-V VDD
       - key: Manufacturer 1
@@ -666,3 +666,108 @@ components:
         value: C81363
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C81363.pdf
+  - name: 74LVC2G34GV,125
+    base_component: 74LVC2G34
+    properties:
+      - key: Footprint
+        value: 7Sigma:TSOP-6_1.65x3.05mm_P0.95mm
+      - key: ki_description
+        value:
+      - key: Manufacturer 1
+        value: Nexperia
+      - key: Manufacturer Part Number 1
+        value: 74LVC2G34GV,125
+      - key: Value
+        value: 74LVC2G34GV,125
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C548649
+      - key: LCSC Part
+        value: C548649
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C548649.pdf
+  - name: NCP115ASN330T2G
+    base_component: NCP115ASN
+    properties:
+      - key: Footprint
+        value: 7Sigma:SOT-23-5
+      - key: ki_description
+        value: LDO 3.3V 300mA
+      - key: Manufacturer 1
+        value: onsemi
+      - key: Manufacturer Part Number 1
+        value: NCP115ASN330T2G
+      - key: Value
+        value: NCP115ASN330T2G
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C603505
+      - key: LCSC Part
+        value: C603505
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C603505.pdf
+  - name: MAX3222EIPWR
+    base_component: MAX3222E
+    properties:
+      - key: Footprint
+        value: Package_SO:TSSOP-20_4.4x6.5mm_P0.65mm
+      - key: ki_description
+        value: RS232 Transceiver, 500Kbps 3V to 5.5V
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: MAX3222EIPWR
+      - key: Value
+        value: MAX3222EIPWR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C527703
+      - key: LCSC Part
+        value: C527703
+      - key: Datasheet
+        value: https://www.ti.com/cn/lit/gpn/max3222e
+  - name: AP63357QZV-7
+    base_component: AP6335XQ
+    properties:
+      - key: Footprint
+        value: 7Sigma:V-DFN3020-13-A_L3.0-W2.0-P0.45-BL-EP_AP6335X
+      - key: ki_description
+        value: 32V 3.5A Low Quiescent Current Synchronous Buck Converter
+      - key: Manufacturer 1
+        value: Diodes Inc
+      - key: Manufacturer Part Number 1
+        value: AP63357QZV-7
+      - key: Value
+        value: AP63357QZV-7
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C3194572
+      - key: LCSC Part
+        value: C3194572
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C3194572.pdf
+  - name: ZED-F9P-04B
+    base_component: ZED-F9P
+    properties:
+      - key: Footprint
+        value: 7Sigma:ublox_ZED
+      - key: ki_description
+        value: GNSS Receiver Module, Multi-Band RTK
+      - key: Manufacturer 1
+        value: ublox
+      - key: Manufacturer Part Number 1
+        value: ZED-F9P-04B
+      - key: Value
+        value: ZED-F9P-04B
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5120257
+      - key: LCSC Part
+        value: C5120257
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C5120257.pdf

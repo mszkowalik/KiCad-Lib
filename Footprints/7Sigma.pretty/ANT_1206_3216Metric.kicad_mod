@@ -6,7 +6,7 @@
 	(descr "Resistor SMD 1206 (3216 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf), generated with kicad-footprint-generator")
 	(tags "resistor")
 	(property "Reference" "REF**"
-		(at 0 -1.83 0)
+		(at 0 -2 0)
 		(layer "F.SilkS")
 		(uuid "3519dc58-052a-4c70-8465-c325839952ac")
 		(effects
@@ -103,18 +103,8 @@
 		(uuid "de9b2b92-da88-4dc2-b90a-b045f3e5d4a6")
 	)
 	(fp_line
-		(start -2.28 -1.13)
-		(end 2.28 -1.13)
-		(stroke
-			(width 0.05)
-			(type solid)
-		)
-		(layer "F.CrtYd")
-		(uuid "b919cf7c-4c50-4992-a2bd-4c871b24d5ef")
-	)
-	(fp_line
-		(start -2.28 1.13)
-		(end -2.28 -1.13)
+		(start -2.3 1.1)
+		(end -2.3 -1.1)
 		(stroke
 			(width 0.05)
 			(type solid)
@@ -123,8 +113,18 @@
 		(uuid "aebe11b5-c397-4b3d-a199-f3a4544b83fc")
 	)
 	(fp_line
-		(start 2.28 -1.13)
-		(end 2.28 1.13)
+		(start -2.26 -1.1)
+		(end 2.3 -1.1)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "b919cf7c-4c50-4992-a2bd-4c871b24d5ef")
+	)
+	(fp_line
+		(start 2.3 -1.1)
+		(end 2.3 1.1)
 		(stroke
 			(width 0.05)
 			(type solid)
@@ -133,8 +133,8 @@
 		(uuid "95b57eda-857d-40f4-a77e-9d27157edfeb")
 	)
 	(fp_line
-		(start 2.28 1.13)
-		(end -2.28 1.13)
+		(start 2.3 1.1)
+		(end -2.3 1.1)
 		(stroke
 			(width 0.05)
 			(type solid)
@@ -194,14 +194,14 @@
 		)
 	)
 	(pad "1" smd roundrect
-		(at -1.4625 0)
+		(at -1.5 0)
 		(size 1.125 1.75)
 		(layers "F.Cu" "F.Mask" "F.Paste")
 		(roundrect_rratio 0.222222)
 		(uuid "6a4f0ec0-399d-4285-b66d-159b99788283")
 	)
 	(pad "2" smd roundrect
-		(at 1.4625 0)
+		(at 1.5 0)
 		(size 1.125 1.75)
 		(layers "F.Cu" "F.Mask" "F.Paste")
 		(roundrect_rratio 0.222222)

@@ -93,7 +93,7 @@ components:
       - key: Tolerance
         value: 20%
       - key: Footprint
-        value: Inductor_SMD:L_Murata_DFE201610P
+        value: 7Sigma:L_Murata_DFE201610P
       - key: Rated_Current
         value: 2.7A
       - key: Footprint_Name
@@ -112,3 +112,57 @@ components:
         value: C161082
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C161082.pdf
+  - name: FTC404030S4R7MGCA
+    base_component: base_inductor
+    properties:
+      - key: Value
+        value: 4.7uH
+      - key: Tolerance
+        value: 20%
+      - key: Footprint
+        value: 7Sigma:L_Changjiang_FTC404030S
+      - key: Rated_Current
+        value: 6A
+      - key: Footprint_Name
+        value: "4040"
+      - key: ki_description
+        value: "{Value} {Rated_Current} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: cjiang
+      - key: Manufacturer Part Number 1
+        value: FTC404030S4R7MGCA
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C39676083
+      - key: LCSC Part
+        value: C39676083
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C39676083.pdf
+  - name: LQW15AN47NJ00D
+    base_component: base_inductor
+    properties:
+      - key: Value
+        value: 47nH
+      - key: Tolerance
+        value: 5%
+      - key: Footprint
+        value: 7Sigma:L_0402_1005Metric
+      - key: Rated_Current
+        value: 210mA
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Rated_Current} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: muRata
+      - key: Manufacturer Part Number 1
+        value: LQW15AN47NJ00D
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C192855
+      - key: LCSC Part
+        value: C192855
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C192855.pdf

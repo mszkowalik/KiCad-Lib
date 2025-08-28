@@ -4,7 +4,7 @@ components:
     base_component: Q_NMOS_GSD
     properties:
       - key: Footprint
-        value: Package_TO_SOT_SMD:SOT-23-3
+        value: 7Sigma:SOT-23-3
       - key: Value
         value: AO3400A
       - key: ki_description
@@ -33,7 +33,7 @@ components:
     base_component: Q_PMOS_GSD
     properties:
       - key: Footprint
-        value: "Package_TO_SOT_SMD:SOT-23"
+        value: "7Sigma:SOT-23"
       - key: ki_description
         value: P-Channel MOSFETs
       - key: Value
@@ -62,7 +62,7 @@ components:
     base_component: MMBT3904
     properties:
       - key: Footprint
-        value: "Package_TO_SOT_SMD:SOT-23"
+        value: "7Sigma:SOT-23"
       - key: ki_description
         value: NPN BJT
       - key: Value
@@ -89,7 +89,7 @@ components:
     base_component: DMN6075S
     properties:
       - key: Footprint
-        value: "Package_TO_SOT_SMD:SOT-23"
+        value: "7Sigma:SOT-23"
       - key: ki_description
         value: N-Channel MOSFETs
       - key: Value

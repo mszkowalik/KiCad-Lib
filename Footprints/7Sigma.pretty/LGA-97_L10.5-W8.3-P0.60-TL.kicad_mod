@@ -1979,4 +1979,15 @@
 		(uuid "7379e88a-db5a-4fb7-a2d9-db29b3e38339")
 	)
 	(embedded_fonts no)
+	(model "${SEVENSIGMA_DIR}/3DModels/LBUA5QJ2AB-828.stp"
+		(offset
+			(xyz 0 0 0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 0 0 0)
+		)
+	)
 )

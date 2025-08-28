@@ -10,7 +10,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0402_1005Metric
+        value: 7Sigma:R_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -37,7 +37,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0402_1005Metric
+        value: 7Sigma:R_0402_1005Metric
       - key: Footprint_Name
         value: 0402
       - key: ki_description
@@ -65,7 +65,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0402_1005Metric
+        value: 7Sigma:R_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -92,7 +92,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0402_1005Metric
+        value: 7Sigma:R_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -119,7 +119,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0402_1005Metric
+        value: 7Sigma:R_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -146,7 +146,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0402_1005Metric
+        value: 7Sigma:R_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -173,7 +173,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0402_1005Metric
+        value: 7Sigma:R_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -200,7 +200,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0402_1005Metric
+        value: 7Sigma:R_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -227,7 +227,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0402_1005Metric
+        value: 7Sigma:R_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -254,7 +254,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0402_1005Metric
+        value: 7Sigma:R_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -312,7 +312,7 @@ components:
       - key: Type
         value: NTC
       - key: Footprint
-        value: Resistor_SMD:R_0402_1005Metric
+        value: 7Sigma:R_0402_1005Metric
       - key: ki_description
         value: 10K NTC Thermistor
       - key: Manufacturer 1
@@ -338,7 +338,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0402_1005Metric
+        value: 7Sigma:R_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -365,7 +365,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0402_1005Metric
+        value: 7Sigma:R_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -392,7 +392,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0805_2012Metric
+        value: 7Sigma:R_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -419,7 +419,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0805_2012Metric
+        value: 7Sigma:R_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -446,7 +446,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0805_2012Metric
+        value: 7Sigma:R_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -473,7 +473,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0805_2012Metric
+        value: 7Sigma:R_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -500,7 +500,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0805_2012Metric
+        value: 7Sigma:R_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -527,7 +527,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0805_2012Metric
+        value: 7Sigma:R_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -554,7 +554,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0805_2012Metric
+        value: 7Sigma:R_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -581,7 +581,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0805_2012Metric
+        value: 7Sigma:R_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -608,7 +608,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0805_2012Metric
+        value: 7Sigma:R_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -635,7 +635,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0805_2012Metric
+        value: 7Sigma:R_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -662,7 +662,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0805_2012Metric
+        value: 7Sigma:R_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -689,7 +689,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0805_2012Metric
+        value: 7Sigma:R_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -716,7 +716,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0402_1005Metric
+        value: 7Sigma:R_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -743,7 +743,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0402_1005Metric
+        value: 7Sigma:R_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -770,7 +770,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_0805_2012Metric
+        value: 7Sigma:R_0805_2012Metric
       - key: Footprint_Name
         value: "0805"
       - key: ki_description
@@ -787,3 +787,57 @@ components:
         value: C17477
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C17477.pdf
+  - name: 0402WGF1583TCE
+    base_component: R
+    properties:
+      - key: Value
+        value: 158K
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF1583TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C99856
+      - key: LCSC Part
+        value: C99856
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C99856.pdf
+  - name: 0402WGF3002TCE
+    base_component: R
+    properties:
+      - key: Value
+        value: 30K
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF3002TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C25776
+      - key: LCSC Part
+        value: C25776
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C25776.pdf

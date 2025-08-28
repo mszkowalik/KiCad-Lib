@@ -19,6 +19,25 @@ components:
         value: C2988369
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2303271630_G-Switch-GT-USB-7010ASV_C2988369.pdf
+  - name: USB-B01
+    base_component: USB-B01
+    properties:
+      - key: Footprint
+        value: 7Sigma:USB-B-TH_USB-B01
+      - key: ki_description
+        value: USB 2.0 Type-B Receptacle 4P
+      - key: Manufacturer 1
+        value: SOFNG
+      - key: Manufacturer Part Number 1
+        value: USB-B01
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C498173
+      - key: LCSC Part
+        value: C498173
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C498173.pdf
   - name: SMTSO2010CTJ
     base_component: SMD_Round_Nut
     properties:
@@ -497,3 +516,79 @@ components:
         value: C385834
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C385834.pdf
+  - name: HU2032-LF
+    base_component: HU2032-LF
+    properties:
+      - key: Footprint
+        value: 7Sigma:BAT-TH_HU2032-LF
+      - key: ki_description
+        value: CR2032 Battery Holder
+      - key: Manufacturer 1
+        value: RENATA
+      - key: Manufacturer Part Number 1
+        value: HU2032-LF
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C6878541
+      - key: LCSC Part
+        value: C6878541
+      - key: Datasheet
+        value: ""
+  - name: BWSMA-KE-Z001
+    base_component: Conn_Coaxial
+    properties:
+      - key: Footprint
+        value: 7Sigma:SMA-TH_BWSMA-KE-Z001
+      - key: ki_description
+        value: USB 2.0 Type-B Receptacle 4P
+      - key: Manufacturer 1
+        value: BAT WIRELESS
+      - key: Manufacturer Part Number 1
+        value: BWSMA-KE-Z001
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C496549
+      - key: LCSC Part
+        value: C496549
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C496549.pdf
+  - name: HC-PZ254-11.5L-2x7PZ
+    base_component: Conn_02x07_Odd_Even
+    properties:
+      - key: Footprint
+        value: Connector_PinHeader_2.54mm:PinHeader_2x07_P2.54mm_Vertical
+      - key: ki_description
+        value: Cortex Debug Connector, standard ARM Cortex-M SWD and JTAG interface
+      - key: Manufacturer 1
+        value: Hong Cheng
+      - key: Manufacturer Part Number 1
+        value: HC-PZ254-11.5L-2x7PZ
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C41375948
+      - key: LCSC Part
+        value: C41375948
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C41375948.pdf
+  - name: KH-IPEX-K501-29
+    base_component: Conn_IPEX
+    properties:
+      - key: Footprint
+        value: 7Sigma:ANT-SMD_KH-IPEX-K501-29
+      - key: ki_description
+        value: IPEX Connector 6GHz
+      - key: Manufacturer 1
+        value: kinghelm
+      - key: Manufacturer Part Number 1
+        value: KH-IPEX-K501-29
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C411563
+      - key: LCSC Part
+        value: C411563
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C411563.pdf

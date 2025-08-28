@@ -501,3 +501,119 @@ components:
         value: C88744
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C88744.pdf
+  - name: EEEFK1H221GP
+    base_component: CE
+    properties:
+      - key: Value
+        value: 220uF
+      - key: Tolerance
+        value: 20%
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: Aluminum Electrolytic
+      - key: Footprint
+        value: Capacitor_SMD:CP_Elec_10x10
+      - key: Footprint_Name
+        value: D10
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: PANASONIC
+      - key: Manufacturer Part Number 1
+        value: EEEFK1H221GP
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C343913
+      - key: LCSC Part
+        value: C343913
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C343913.pdf
+  - name: CL21A475KBQNNNE
+    base_component: C
+    properties:
+      - key: Value
+        value: 4.7uF
+      - key: Tolerance
+        value: 10%
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: X5R
+      - key: Footprint
+        value: Capacitor_SMD:C_0805_2012Metric
+      - key: Footprint_Name
+        value: "0805"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Samsung Electro-Mechanics
+      - key: Manufacturer Part Number 1
+        value: CL21A475KBQNNNE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C98192
+      - key: LCSC Part
+        value: C98192
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C98192.pdf
+  - name: CC0402KRX7R8BB473
+    base_component: C
+    properties:
+      - key: Value
+        value: 47nF
+      - key: Tolerance
+        value: 10%
+      - key: Voltage
+        value: 25V
+      - key: Dielectric
+        value: X7R
+      - key: Footprint
+        value: Capacitor_SMD:C_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: YAGEO
+      - key: Manufacturer Part Number 1
+        value: CC0402KRX7R8BB473
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C107020
+      - key: LCSC Part
+        value: C107020
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C107020.pdf
+  - name: CC0402JRNPO9BN101
+    base_component: C
+    properties:
+      - key: Value
+        value: 100pF
+      - key: Tolerance
+        value: 5%
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: NP0
+      - key: Footprint
+        value: Capacitor_SMD:C_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: YAGEO
+      - key: Manufacturer Part Number 1
+        value: CC0402JRNPO9BN101
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C106200
+      - key: LCSC Part
+        value: C106200
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C106200.pdf
