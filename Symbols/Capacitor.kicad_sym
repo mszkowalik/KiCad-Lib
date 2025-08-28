@@ -465,27 +465,35 @@
 		(embedded_fonts no)
 	)
 	(symbol "T491D107K016AT"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0.254)
+		)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(property "Reference" "C"
-			(at 0 5.08 0)
+			(at 0.635 2.54 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Value" "100uF"
-			(at 0 -5.08 0)
+			(at 0.635 -2.54 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Footprint" "easyeda2kicad:CAP-SMD_L7.3-W4.3-R-RD"
-			(at 0 -7.62 0)
+			(at 0.9652 -3.81 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -494,15 +502,6 @@
 			)
 		)
 		(property "Datasheet" "https://lcsc.com/product-detail/Tantalum-Capacitors_KEMET_T491D107K016AT_100uF-107-10-16V_C110548.html"
-			(at 0 -10.16 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "base_capacitor_tantalum"
 			(at 0 0 0)
 			(effects
 				(font
@@ -511,8 +510,26 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC Part" "C110548"
-			(at 0 -12.7 0)
+		(property "Description" "Polarized capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_keywords" "cap capacitor"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_fp_filters" "CP_*"
+			(at 0 0 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -592,10 +609,30 @@
 				(hide yes)
 			)
 		)
+		(property "LCSC Part" "C110548"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.0 1.0)
+				)
+				(hide yes)
+			)
+		)
 		(symbol "T491D107K016AT_0_1"
+			(rectangle
+				(start -2.286 0.508)
+				(end 2.286 1.016)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
 			(polyline
 				(pts
-					(xy -0.51 0) (xy -1.27 0)
+					(xy -1.778 2.286) (xy -0.762 2.286)
 				)
 				(stroke
 					(width 0)
@@ -607,7 +644,7 @@
 			)
 			(polyline
 				(pts
-					(xy -0.51 -2.03) (xy -0.51 2.03)
+					(xy -1.27 2.794) (xy -1.27 1.778)
 				)
 				(stroke
 					(width 0)
@@ -617,76 +654,23 @@
 					(type none)
 				)
 			)
-			(polyline
-				(pts
-					(xy 0.51 -2.03) (xy 0.51 2.03)
-				)
+			(rectangle
+				(start 2.286 -0.508)
+				(end -2.286 -1.016)
 				(stroke
 					(width 0)
 					(type default)
 				)
 				(fill
-					(type none)
+					(type outline)
 				)
 			)
-			(polyline
-				(pts
-					(xy 1.27 0) (xy 0.51 0)
-				)
-				(stroke
-					(width 0)
-					(type default)
-				)
-				(fill
-					(type none)
-				)
-			)
-			(polyline
-				(pts
-					(xy 2.03 -1.52) (xy 2.03 -0.51)
-				)
-				(stroke
-					(width 0)
-					(type default)
-				)
-				(fill
-					(type none)
-				)
-			)
-			(polyline
-				(pts
-					(xy 2.54 -1.02) (xy 1.52 -1.02)
-				)
-				(stroke
-					(width 0)
-					(type default)
-				)
-				(fill
-					(type none)
-				)
-			)
-			(pin input line
-				(at -3.81 0 0)
-				(length 2.54)
-				(name "2"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(number "2"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-			)
-			(pin input line
-				(at 3.81 0 180)
-				(length 2.54)
-				(name "1"
+		)
+		(symbol "T491D107K016AT_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 2.794)
+				(name "~"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -694,6 +678,24 @@
 					)
 				)
 				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 2.794)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
 					(effects
 						(font
 							(size 1.27 1.27)

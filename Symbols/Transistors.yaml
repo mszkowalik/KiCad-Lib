@@ -176,7 +176,7 @@ components:
     base_component: BSC0702LS
     properties:
       - key: Footprint
-        value: 7Sigma:Infineon_PG-TDSON-8_6.15x5.15mm
+        value: 7Sigma:TDSON-8_6.15x5.15mm
       - key: Value
         value: BSC0702LS
       - key: ki_description

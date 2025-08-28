@@ -59,7 +59,7 @@ components:
       - key: Datasheet
         value: https://jlcpcb.com/api/file/downloadByFileSystemAccessId/8579706853615591424
   - name: T491D107K016AT
-    base_component: base_capacitor_tantalum
+    base_component: C_Polarized
     properties:
       - key: Value
         value: 100uF

@@ -2442,7 +2442,7 @@
 				)
 			)
 		)
-		(property "Footprint" "7Sigma:Infineon_PG-TDSON-8_6.15x5.15mm"
+		(property "Footprint" "7Sigma:TDSON-8_6.15x5.15mm"
 			(at 0 -10.16 0)
 			(effects
 				(font

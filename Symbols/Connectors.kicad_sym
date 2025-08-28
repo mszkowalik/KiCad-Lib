@@ -7510,7 +7510,7 @@
 		)
 		(exclude_from_sim no)
 		(in_bom yes)
-		(on_board yes)
+		(on_board no)
 		(property "Reference" "J"
 			(at -6.35 3.81 0)
 			(effects
@@ -7653,7 +7653,7 @@
 		)
 		(exclude_from_sim no)
 		(in_bom yes)
-		(on_board yes)
+		(on_board no)
 		(property "Reference" "J"
 			(at -6.35 3.81 0)
 			(effects
@@ -7796,7 +7796,7 @@
 		)
 		(exclude_from_sim no)
 		(in_bom yes)
-		(on_board yes)
+		(on_board no)
 		(property "Reference" "J"
 			(at -6.35 3.81 0)
 			(effects

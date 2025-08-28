@@ -1,7 +1,7 @@
 library_name: Inductors
 components:
   - name: DFE201612E-R47M=P2
-    base_component: base_inductor
+    base_component: L
     properties:
       - key: Value
         value: 470nH
@@ -28,7 +28,7 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2409272202_Murata-Electronics-DFE201612E-R47M-P2_C668312.pdf
   - name: FXL1350-100-M
-    base_component: base_inductor
+    base_component: L
     properties:
       - key: Value
         value: 10uH
@@ -55,7 +55,7 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2404260921_cjiang--Changjiang-Microelectronics-Tech-FXL1350-100-M_C526017.pdf
   - name: MLG1005S2N0BT000
-    base_component: base_inductor
+    base_component: L
     properties:
       - key: Value
         value: 2nH
@@ -86,7 +86,7 @@ components:
       - key: Datasheet
         value: https://lcsc.com/datasheet/lcsc_datasheet_2412231058_TDK-MLG1005S2N0BT000_C76769.pdf
   - name: DFE201610E-1R0M=P2
-    base_component: base_inductor
+    base_component: L
     properties:
       - key: Value
         value: 1uH
@@ -113,7 +113,7 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C161082.pdf
   - name: FTC404030S4R7MGCA
-    base_component: base_inductor
+    base_component: L
     properties:
       - key: Value
         value: 4.7uH
@@ -140,7 +140,7 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C39676083.pdf
   - name: LQW15AN47NJ00D
-    base_component: base_inductor
+    base_component: L
     properties:
       - key: Value
         value: 47nH

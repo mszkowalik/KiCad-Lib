@@ -325,7 +325,7 @@
 		(uuid "9384f131-71cb-498f-9829-60301a016f43")
 	)
 	(embedded_fonts no)
-	(model "/Users/mateuszkowalik/Projects/KiCad Lib/components/3dmodels/USB-3.1-SMD_16P-L8.9-W7.3-H3.3-P0.5.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/USB-3.1-SMD_16P-L8.9-W7.3-H3.3-P0.5.step"
 		(offset
 			(xyz 0 -1 0)
 		)
