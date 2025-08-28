@@ -12,7 +12,7 @@ components:
       - key: Dielectric
         value: X5R
       - key: Footprint
-        value: Capacitor_SMD:C_0402_1005Metric
+        value: 7Sigma:C_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -128,7 +128,7 @@ components:
       - key: Dielectric
         value: X7R
       - key: Footprint
-        value: Capacitor_SMD:C_0402_1005Metric
+        value: 7Sigma:C_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -159,7 +159,7 @@ components:
       - key: Dielectric
         value: NP0
       - key: Footprint
-        value: Capacitor_SMD:C_0402_1005Metric
+        value: 7Sigma:C_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -248,7 +248,7 @@ components:
       - key: Dielectric
         value: NP0
       - key: Footprint
-        value: Capacitor_SMD:C_0402_1005Metric
+        value: 7Sigma:C_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -364,7 +364,7 @@ components:
       - key: Dielectric
         value: C0G
       - key: Footprint
-        value: Capacitor_SMD:C_0402_1005Metric
+        value: 7Sigma:C_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -397,7 +397,7 @@ components:
       - key: Dielectric
         value: X7R
       - key: Footprint
-        value: Capacitor_SMD:C_0402_1005Metric
+        value: 7Sigma:C_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -426,7 +426,7 @@ components:
       - key: Dielectric
         value: C0G
       - key: Footprint
-        value: Capacitor_SMD:C_0402_1005Metric
+        value: 7Sigma:C_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -455,7 +455,7 @@ components:
       - key: Dielectric
         value: X5R
       - key: Footprint
-        value: Capacitor_SMD:C_0402_1005Metric
+        value: 7Sigma:C_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -571,7 +571,7 @@ components:
       - key: Dielectric
         value: X7R
       - key: Footprint
-        value: Capacitor_SMD:C_0402_1005Metric
+        value: 7Sigma:C_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description
@@ -600,7 +600,7 @@ components:
       - key: Dielectric
         value: NP0
       - key: Footprint
-        value: Capacitor_SMD:C_0402_1005Metric
+        value: 7Sigma:C_0402_1005Metric
       - key: Footprint_Name
         value: "0402"
       - key: ki_description

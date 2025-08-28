@@ -72,9 +72,20 @@
 		(layer "F.SilkS")
 		(uuid "31a8d784-abaa-4f9d-a84c-b843623ee34f")
 	)
+	(fp_circle
+		(center -0.5 0)
+		(end -0.4 0)
+		(stroke
+			(width 0.5)
+			(type solid)
+		)
+		(fill no)
+		(layer "Cmts.User")
+		(uuid "7f20e27f-b235-4dc4-bfb3-5426244bb757")
+	)
 	(fp_line
-		(start -0.9 -0.45)
-		(end 0.9 -0.45)
+		(start -0.9 -0.5)
+		(end 0.9 -0.5)
 		(stroke
 			(width 0.05)
 			(type solid)
@@ -83,8 +94,8 @@
 		(uuid "9fc3ef9f-002f-46f6-8998-197ddbf643a0")
 	)
 	(fp_line
-		(start -0.9 0.45)
-		(end -0.9 -0.45)
+		(start -0.9 0.5)
+		(end -0.9 -0.5)
 		(stroke
 			(width 0.05)
 			(type solid)
@@ -93,8 +104,8 @@
 		(uuid "aa5b6166-27f0-4ea0-bd92-ee3386ba6c0d")
 	)
 	(fp_line
-		(start 0.9 -0.45)
-		(end 0.9 0.45)
+		(start 0.9 -0.5)
+		(end 0.9 0.5)
 		(stroke
 			(width 0.05)
 			(type solid)
@@ -103,8 +114,8 @@
 		(uuid "ca92e157-0c05-4800-82d3-9d536902cc04")
 	)
 	(fp_line
-		(start 0.9 0.45)
-		(end -0.9 0.45)
+		(start 0.9 0.5)
+		(end -0.9 0.5)
 		(stroke
 			(width 0.05)
 			(type solid)
@@ -178,7 +189,7 @@
 		(uuid "80b24fda-bb8b-4239-a15a-f96c7cd37d62")
 	)
 	(embedded_fonts no)
-	(model "${KICAD9_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0402_1005Metric.step"
+	(model "${SEVENSIGMA_DIR}/3DModels/Capacitor_SMD.3dshapes/C_0402_1005Metric.step"
 		(offset
 			(xyz 0 0 0)
 		)

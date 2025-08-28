@@ -84,6 +84,17 @@
 		(layer "F.SilkS")
 		(uuid "ab981d7f-b23a-4803-83a4-39f964618c29")
 	)
+	(fp_circle
+		(center -2.8 0)
+		(end -2.55 0)
+		(stroke
+			(width 0.5)
+			(type solid)
+		)
+		(fill no)
+		(layer "Cmts.User")
+		(uuid "2a2c23fc-2b68-48bb-b064-12ff6674fd91")
+	)
 	(fp_line
 		(start -3.7 -1.35)
 		(end 3.7 -1.35)
@@ -200,7 +211,7 @@
 		(uuid "7ffbd15e-d0c6-4477-9734-bd964d567903")
 	)
 	(embedded_fonts no)
-	(model "${KICAD9_3DMODEL_DIR}/RF_Antenna.3dshapes/Johanson_2450AT43F0100.step"
+	(model "${SEVENSIGMA_DIR}/3DModels/RF_Antenna.3dshapes/Johanson_2450AT43F0100.step"
 		(offset
 			(xyz 0 0 0)
 		)

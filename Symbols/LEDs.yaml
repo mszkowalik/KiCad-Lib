@@ -66,7 +66,7 @@ components:
     base_component: LED
     properties:
       - key: Footprint
-        value: LED_SMD:LED_0402_1005Metric
+        value: 7Sigma:LED_0402_1005Metric
       - key: Value
         value: LTST-C281KRKT
       - key: ki_description

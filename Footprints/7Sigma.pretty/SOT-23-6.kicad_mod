@@ -104,6 +104,17 @@
 		(layer "F.SilkS")
 		(uuid "9b633bde-b884-4e1e-a605-f040cbfa9866")
 	)
+	(fp_circle
+		(center -1.8 -1.6)
+		(end -1.65 -1.6)
+		(stroke
+			(width 0.3)
+			(type solid)
+		)
+		(fill no)
+		(layer "Cmts.User")
+		(uuid "409dc32a-f01b-489e-867c-e87a01c29ee8")
+	)
 	(fp_rect
 		(start -2 -1.7)
 		(end 2 1.7)
@@ -181,7 +192,7 @@
 		(uuid "8a9dad50-0a2d-4785-929a-939d4544e1bf")
 	)
 	(embedded_fonts no)
-	(model "${KICAD9_3DMODEL_DIR}/Package_TO_SOT_SMD.3dshapes/SOT-23-6.step"
+	(model "${SEVENSIGMA_DIR}/3DModels/Package_TO_SOT_SMD.3dshapes/SOT-23-6.step"
 		(offset
 			(xyz 0 0 0)
 		)

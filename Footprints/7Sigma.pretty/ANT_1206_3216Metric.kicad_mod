@@ -102,6 +102,17 @@
 		(layer "F.SilkS")
 		(uuid "de9b2b92-da88-4dc2-b90a-b045f3e5d4a6")
 	)
+	(fp_circle
+		(center -1.5 0)
+		(end -1.25 0)
+		(stroke
+			(width 0.5)
+			(type solid)
+		)
+		(fill no)
+		(layer "Cmts.User")
+		(uuid "96cc335f-ce98-45ef-9278-5e4e03bb04d9")
+	)
 	(fp_line
 		(start -2.3 1.1)
 		(end -2.3 -1.1)
@@ -208,7 +219,7 @@
 		(uuid "a5d3ca7c-2d56-48e8-9f88-fd5762457e03")
 	)
 	(embedded_fonts no)
-	(model "${KICAD9_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_1206_3216Metric.step"
+	(model "${SEVENSIGMA_DIR}/3DModels/Resistor_SMD.3dshapes/R_1206_3216Metric.step"
 		(offset
 			(xyz 0 0 0)
 		)

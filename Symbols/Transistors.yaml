@@ -8,7 +8,7 @@ components:
       - key: Value
         value: AO3400A
       - key: ki_description
-        value: N-Channel MOSFETs
+        value: N-MOS 30V 5.7A 1.4W SOT-23-3
       - key: Power
         value: 1.4W
       - key: Drain Source On Resistance
@@ -35,7 +35,7 @@ components:
       - key: Footprint
         value: "7Sigma:SOT-23"
       - key: ki_description
-        value: P-Channel MOSFETs
+        value: P-MOS 30V 4A 1.4W SOT-23
       - key: Value
         value: AO3401A
       - key: Power
@@ -64,7 +64,7 @@ components:
       - key: Footprint
         value: "7Sigma:SOT-23"
       - key: ki_description
-        value: NPN BJT
+        value: NPN 40V 200mA 250mW SOT-23
       - key: Value
         value: MMBT3904,215
       - key: Power
@@ -91,7 +91,7 @@ components:
       - key: Footprint
         value: "7Sigma:SOT-23"
       - key: ki_description
-        value: N-Channel MOSFETs
+        value: N-MOS 60V 2.5A 1.15W SOT-23
       - key: Value
         value: DMN6075S-7
       - key: Power
@@ -120,7 +120,7 @@ components:
       - key: Footprint
         value: "DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm"
       - key: ki_description
-        value: N-Channel 60V 28A 13.3mΩ@4.5V,15A 1.4V DFN-8(3x3) MOSFETs ROHS
+        value: N-MOS 60V 28A 27W DFN-8
       - key: Value
         value: AON7264E
       - key: Power
@@ -149,7 +149,7 @@ components:
       - key: Footprint
         value: "DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm"
       - key: ki_description
-        value: P-Channel 60V 26A 25mΩ@4.5V DFN-8(3x3) MOSFETs ROHS
+        value: P-MOS 60V 26A 5.2W DFN-8
       - key: Value
         value: HSBB6115
       - key: Power
@@ -180,7 +180,7 @@ components:
       - key: Value
         value: BSC0702LS
       - key: ki_description
-        value: MOSFET N-CH 60V 84A TDSON-8(5x6)
+        value: N-MOS 60V 84A 83W TDSON-8
       - key: Power
         value: 83W
       - key: Drain Source On Resistance
@@ -201,3 +201,61 @@ components:
         value: C501503
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C501503.pdf
+  - name: DMN2310UT-13
+    base_component: Q_NMOS_GSD
+    properties:
+      - key: Footprint
+        value: 7Sigma:SOT-523
+      - key: Value
+        value: DMN2310UT-13
+      - key: ki_description
+        value: N-MOS 20V 1.2A 290mW SOT-523
+      - key: Power
+        value: 290mW
+      - key: Drain Source On Resistance
+        value: 240mΩ@4.5V
+      - key: Continuous Drain Current
+        value: 1.2A
+      - key: Drain Source Voltage
+        value: 20V
+      - key: Manufacturer 1
+        value: DIODES
+      - key: Manufacturer Part Number 1
+        value: DMN2310UT-13
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5711683
+      - key: LCSC Part
+        value: C5711683
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C5711683.pdf
+  - name: SK2301AAT
+    base_component: Q_PMOS_GSD
+    properties:
+      - key: Footprint
+        value: "7Sigma:SOT-523"
+      - key: ki_description
+        value: P-MOS 20V 2.3A 700mW SOT-523
+      - key: Value
+        value: SK2301AAT
+      - key: Power
+        value: 700mW
+      - key: Drain Source On Resistance
+        value: 130mΩ@4.5V
+      - key: Continuous Drain Current
+        value: 2.3A
+      - key: Drain Source Voltage
+        value: 20V
+      - key: Manufacturer 1
+        value: Shikues
+      - key: Manufacturer Part Number 1
+        value: SK2301AAT
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5334586
+      - key: LCSC Part
+        value: C5334586
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C5334586.pdf
