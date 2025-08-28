@@ -574,7 +574,7 @@
 				(hide yes)
 			)
 		)
-		(property "Footprint" "LED_SMD:LED_0402_1005Metric"
+		(property "Footprint" "7Sigma:LED_0402_1005Metric"
 			(at 0 0 0)
 			(effects
 				(font
