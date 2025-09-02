@@ -133,7 +133,7 @@
 		(uuid "a49cbcca-0447-4184-bd34-3c254e0b0dc9")
 	)
 	(fp_rect
-		(start -1.4 -1.5)
+		(start -1.3 -1.5)
 		(end 1.45 1.5)
 		(stroke
 			(width 0.05)
@@ -235,11 +235,27 @@
 		(roundrect_rratio 0.25)
 		(uuid "dc4bcded-06d5-4240-8d21-0f46335b9201")
 	)
+	(pad "11" thru_hole circle
+		(at -0.4 0)
+		(size 0.45 0.45)
+		(drill 0.3)
+		(layers "*.Cu" "F.Mask" "F.Paste")
+		(remove_unused_layers no)
+		(uuid "74067eaa-3d6a-4a1a-ad81-fbfb5f00e3a8")
+	)
 	(pad "11" smd rect
 		(at 0 0 90)
 		(size 0.9 1.5)
 		(layers "F.Cu" "F.Mask" "F.Paste")
 		(uuid "32978101-1006-49f9-8790-a3381dac4c1c")
+	)
+	(pad "11" thru_hole circle
+		(at 0.4 0)
+		(size 0.45 0.45)
+		(drill 0.3)
+		(layers "*.Cu" "F.Mask" "F.Paste")
+		(remove_unused_layers no)
+		(uuid "658922f0-723c-489d-a042-d0ea0732a7ec")
 	)
 	(embedded_fonts no)
 	(model "${EASYEDA2KICAD}/easyeda2kicad.3dshapes/WSON-10_L2.2-W2.0-P0.40-BL-EP_TI_DLH0010A.wrl"

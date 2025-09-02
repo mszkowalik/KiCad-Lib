@@ -52,7 +52,7 @@
 	(attr smd)
 	(fp_line
 		(start -1.65 -2.28)
-		(end -1.65 -1.4)
+		(end -1.65 -1.5)
 		(stroke
 			(width 0.15)
 			(type solid)
@@ -71,7 +71,7 @@
 		(uuid "9207a022-884d-49e9-af39-2d93f6b41946")
 	)
 	(fp_line
-		(start -1.65 1.41)
+		(start -1.65 1.5)
 		(end -1.65 1.78)
 		(stroke
 			(width 0.15)
@@ -161,7 +161,7 @@
 		(uuid "f67c950f-dd31-4c72-813a-e85cd9cd97b9")
 	)
 	(fp_line
-		(start 1.65 -1.4)
+		(start 1.65 -1.5)
 		(end 1.65 -2.28)
 		(stroke
 			(width 0.15)
@@ -182,7 +182,7 @@
 	)
 	(fp_line
 		(start 1.65 2.29)
-		(end 1.65 1.41)
+		(end 1.65 1.5)
 		(stroke
 			(width 0.15)
 			(type solid)
@@ -329,6 +329,30 @@
 		(roundrect_rratio 0.25)
 		(uuid "f7c5d6d3-5160-447d-83a7-8aa1900054c5")
 	)
+	(pad "13" thru_hole circle
+		(at -0.6 -0.9)
+		(size 0.45 0.45)
+		(drill 0.3)
+		(layers "*.Cu" "F.Mask" "F.Paste")
+		(remove_unused_layers no)
+		(uuid "f1bd3d00-5bbb-480f-bce9-55244dd923d8")
+	)
+	(pad "13" thru_hole circle
+		(at -0.6 0.9)
+		(size 0.45 0.45)
+		(drill 0.3)
+		(layers "*.Cu" "F.Mask" "F.Paste")
+		(remove_unused_layers no)
+		(uuid "6d7621f8-e073-4fe4-b520-5841d5205f9f")
+	)
+	(pad "13" thru_hole circle
+		(at 0 0)
+		(size 0.45 0.45)
+		(drill 0.3)
+		(layers "*.Cu" "F.Mask" "F.Paste")
+		(remove_unused_layers no)
+		(uuid "a3fed5e3-a706-460d-9a97-0b7740b518dc")
+	)
 	(pad "13" smd custom
 		(at 0 0)
 		(size 1 1)
@@ -349,6 +373,22 @@
 			)
 		)
 		(uuid "f7e9e360-18c6-4cd4-818a-907da8246ecf")
+	)
+	(pad "13" thru_hole circle
+		(at 0.6 -0.9)
+		(size 0.45 0.45)
+		(drill 0.3)
+		(layers "*.Cu" "F.Mask" "F.Paste")
+		(remove_unused_layers no)
+		(uuid "374afe9b-c8bf-42cc-b760-2257d87951b5")
+	)
+	(pad "13" thru_hole circle
+		(at 0.6 0.9)
+		(size 0.45 0.45)
+		(drill 0.3)
+		(layers "*.Cu" "F.Mask" "F.Paste")
+		(remove_unused_layers no)
+		(uuid "4a93dbf4-959a-4e29-a6c5-bba84fc78edd")
 	)
 	(embedded_fonts no)
 	(model "${EASYEDA2KICAD}/easyeda2kicad.3dshapes/SON-12_L4.0-W2.5-H1-P0.40-BL-EP.wrl"

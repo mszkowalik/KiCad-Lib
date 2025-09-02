@@ -592,3 +592,49 @@ components:
         value: C411563
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C411563.pdf
+  - name: HX JN1.27-2x5 TP H4.9
+    base_component: Conn_02x05_Odd_Even
+    properties:
+      - key: Footprint
+        value: 7Sigma:IDC-SMD_10P-P1.27-3220-10-0300-00
+      - key: ki_description
+        value: Pin Header 1.27mm 2x5 Vertical SMD
+      - key: Manufacturer 1
+        value: hanxia
+      - key: Manufacturer Part Number 1
+        value: HX JN1.27-2x5 TP H4.9
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C42372555
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value:
+      - key: LCSC Part
+        value: C42372555
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C42372555.pdf
+  - name: Pin_0.7mm_Soldering_Pin
+    base_component: Conn_01x01_Socket
+    properties:
+      - key: Footprint
+        value: 7Sigma:Pin_D0.7mm_W1mm_Soldering
+      - key: ki_description
+        value: 0.7mm Soldering Pin
+      - key: Manufacturer 1
+        value: ""
+      - key: Manufacturer Part Number 1
+        value: ""
+      - key: Supplier 1
+        value:
+      - key: Supplier Part Number 1
+        value:
+      - key: Supplier 2
+        value:
+      - key: Supplier Part Number 2
+        value:
+      - key: LCSC Part
+        value:
+      - key: Datasheet
+        value:
