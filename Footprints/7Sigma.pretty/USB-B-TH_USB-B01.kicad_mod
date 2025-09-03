@@ -278,7 +278,7 @@
 		(uuid "251adb25-4c12-4fcd-9b64-53f5b3ff166b")
 	)
 	(embedded_fonts no)
-	(model "${EASYEDA2KICAD}/easyeda2kicad.3dshapes/USB-B-TH_USB-B01.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/USB-B-TH_USB-B01.wrl"
 		(offset
 			(xyz 0 5 11)
 		)
@@ -286,7 +286,7 @@
 			(xyz 1 1 1)
 		)
 		(rotate
-			(xyz -0 -0 180)
+			(xyz 0 0 180)
 		)
 	)
 )

@@ -371,7 +371,7 @@
 		(uuid "9dcabd4a-93d2-412f-8b52-a1a649727743")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/LC76G.step"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/LC76G.step"
 		(offset
 			(xyz 0 0 0)
 		)

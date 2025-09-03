@@ -219,7 +219,7 @@
 		(uuid "b119f0c8-2364-4020-aabd-f01b47d0c559")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/SOT-523-3P_L1.6-W0.8-H0.9-LS1.6-P0.50.step"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/SOT-523-3P_L1.6-W0.8-H0.9-LS1.6-P0.50.step"
 		(offset
 			(xyz 0 0 0)
 		)

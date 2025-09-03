@@ -323,7 +323,7 @@
 		(uuid "3f8a9789-078e-4a8f-9ec0-abf81f6a69fe")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/IDC-SMD_10P-P1.27-3220-10-0300-00.step"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/IDC-SMD_10P-P1.27-3220-10-0300-00.step"
 		(offset
 			(xyz -6.35 -2.6 0.3)
 		)

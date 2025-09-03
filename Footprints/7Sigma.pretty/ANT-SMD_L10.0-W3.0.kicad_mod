@@ -140,9 +140,9 @@
 		(uuid "7c6ce15c-6c1c-48dd-b74b-ff6891eb7c7b")
 	)
 	(embedded_fonts no)
-	(model "${EASYEDA2KICAD}/easyeda2kicad.3dshapes/ANT-SMD_L10.3-W3.0-H1.6.wrl"
+	(model "$${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/ANT-SMD_L10.3-W3.0-H1.6.wrl"
 		(offset
-			(xyz 0 -0 -0)
+			(xyz 0 0 0)
 		)
 		(scale
 			(xyz 1 1 1)

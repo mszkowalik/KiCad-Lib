@@ -220,7 +220,7 @@
 		(uuid "86933ccb-7aa7-41da-809d-55958589ca2f")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/SW-SMD_TS24CA.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/SW-SMD_TS24CA.wrl"
 		(offset
 			(xyz 0 1.13 0.4)
 		)

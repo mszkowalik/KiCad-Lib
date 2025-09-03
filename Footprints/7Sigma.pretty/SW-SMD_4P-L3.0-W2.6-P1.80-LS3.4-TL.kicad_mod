@@ -258,7 +258,7 @@
 		(uuid "4d2f9ca3-7f2f-4284-907a-6a45f4e09502")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/SW-SMD_4P-L3.0-W2.6-P1.80-LS3.5.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/SW-SMD_4P-L3.0-W2.6-P1.80-LS3.5.wrl"
 		(offset
 			(xyz 0 -0 -0)
 		)

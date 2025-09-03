@@ -334,7 +334,7 @@
 		(uuid "b60737c7-5b93-4977-bfa9-5e7e2a6044ab")
 	)
 	(embedded_fonts no)
-	(model "${EASYEDA2KICAD}/easyeda2kicad.3dshapes/RJ45-TH_L15.9-W15.1-H12.6.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/RJ45-TH_L15.9-W15.1-H12.6.wrl"
 		(offset
 			(xyz 0 -1.07 0)
 		)

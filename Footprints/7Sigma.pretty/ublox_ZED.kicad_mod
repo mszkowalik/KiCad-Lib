@@ -943,7 +943,7 @@
 		(uuid "71bc3a21-0b30-4f09-a3b4-b493fa0a66fd")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/LCC-LGA-102_L22.0-W17.0_FM660.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/LCC-LGA-102_L22.0-W17.0_FM660.wrl"
 		(offset
 			(xyz 0 0 0)
 		)

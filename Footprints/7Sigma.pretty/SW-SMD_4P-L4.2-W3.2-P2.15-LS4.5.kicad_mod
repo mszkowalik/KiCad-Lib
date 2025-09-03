@@ -265,9 +265,9 @@
 		(uuid "c9633748-cf4e-41ed-bddd-36e1d3f40f20")
 	)
 	(embedded_fonts no)
-	(model "${EASYEDA2KICAD}/easyeda2kicad.3dshapes/SW-SMD_4P-L4.2-W3.2-P2.15-LS4.5.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/SW-SMD_4P-L4.2-W3.2-P2.15-LS4.5.wrl"
 		(offset
-			(xyz 0 0 -0)
+			(xyz 0 0 0)
 		)
 		(scale
 			(xyz 1 1 1)

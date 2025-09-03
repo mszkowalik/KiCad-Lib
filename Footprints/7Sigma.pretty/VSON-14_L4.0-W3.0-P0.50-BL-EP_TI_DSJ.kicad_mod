@@ -311,7 +311,6 @@
 		(at 0 0)
 		(size 1 1)
 		(layers "F.Cu" "F.Mask" "F.Paste")
-		(thermal_bridge_angle 90)
 		(options
 			(clearance outline)
 			(anchor circle)
@@ -348,9 +347,9 @@
 		(uuid "273ff2f8-637a-4def-ad4a-a178e36895ad")
 	)
 	(embedded_fonts no)
-	(model "${EASYEDA2KICAD}/easyeda2kicad.3dshapes/VSON-14_L4.0-W3.0-H1.0-P0.50.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/VSON-14_L4.0-W3.0-H1.0-P0.50.wrl"
 		(offset
-			(xyz 0 -0 -0)
+			(xyz 0 0 0)
 		)
 		(scale
 			(xyz 1 1 1)

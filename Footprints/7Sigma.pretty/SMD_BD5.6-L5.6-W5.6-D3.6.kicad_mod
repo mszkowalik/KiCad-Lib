@@ -478,7 +478,7 @@
         )
         (width 0.1) (fill yes))
     ) (tstamp e9ddf361-8a2f-484d-b810-a3fdd43bf316))
-  (model "${SEVENSIGMA_DIR}/3DModels/SMD_BD5.6-L5.6-W5.6-D3.6.wrl"
+  (model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/SMD_BD5.6-L5.6-W5.6-D3.6.wrl"
     (offset (xyz 0 -0 0))
     (scale (xyz 1 1 1))
     (rotate (xyz 0 0 0))

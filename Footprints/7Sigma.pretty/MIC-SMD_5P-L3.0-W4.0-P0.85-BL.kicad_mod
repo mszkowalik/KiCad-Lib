@@ -253,7 +253,7 @@
 		(uuid "a485395c-376f-411f-a0d3-e72814d5da49")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/MIC-SMD_5P-L3.0-W4.0-P0.85-BL.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/MIC-SMD_5P-L3.0-W4.0-P0.85-BL.wrl"
 		(offset
 			(xyz 0 0.01 -0)
 		)

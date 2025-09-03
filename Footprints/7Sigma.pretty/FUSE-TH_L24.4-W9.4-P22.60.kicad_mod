@@ -160,7 +160,7 @@
 		(uuid "f11216d8-a658-4e50-b34a-2504fce0e661")
 	)
 	(embedded_fonts no)
-	(model "${EASYEDA2KICAD}/easyeda2kicad.3dshapes/FUSE-TH_L24.4-W9.4-H11.5-P22.60.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/FUSE-TH_L24.4-W9.4-H11.5-P22.60.wrl"
 		(offset
 			(xyz -1 3 -21.5)
 		)
@@ -168,7 +168,7 @@
 			(xyz 1 1 1)
 		)
 		(rotate
-			(xyz -0 -0 -0)
+			(xyz 0 0 0)
 		)
 	)
 )

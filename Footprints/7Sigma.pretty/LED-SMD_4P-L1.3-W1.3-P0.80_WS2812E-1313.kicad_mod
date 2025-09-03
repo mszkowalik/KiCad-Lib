@@ -165,7 +165,7 @@
 		(uuid "d02354ba-cdb9-4f7d-96f1-613b3476efcf")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/LED-SMD_4P-L1.3-W1.3-P0.80_WS2812E-1313.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/LED-SMD_4P-L1.3-W1.3-P0.80_WS2812E-1313.wrl"
 		(offset
 			(xyz -0 0 -0)
 		)

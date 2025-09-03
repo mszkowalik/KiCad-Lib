@@ -131,7 +131,7 @@
 		(uuid "826e6913-cfae-4926-9b8f-7d0389218347")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/DFE201610P-R33M=P2.STEP"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/DFE201610P-R33M=P2.STEP"
 		(offset
 			(xyz 0 0 0)
 		)

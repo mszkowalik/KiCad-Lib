@@ -250,7 +250,7 @@
 		(uuid "215819fb-a6bd-473a-b789-c09cffa642f7")
 	)
 	(embedded_fonts no)
-	(model "${EASYEDA2KICAD}/easyeda2kicad.3dshapes/BAT-TH_HU2032-LF.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/BAT-TH_HU2032-LF.wrl"
 		(offset
 			(xyz 0 2 2)
 		)
@@ -258,7 +258,7 @@
 			(xyz 1 1 1)
 		)
 		(rotate
-			(xyz -0 -0 180)
+			(xyz 0 0 180)
 		)
 	)
 )

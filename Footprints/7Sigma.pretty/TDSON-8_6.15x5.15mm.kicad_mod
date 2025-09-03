@@ -293,7 +293,7 @@
 		(uuid "7cbb4118-6c30-41d2-b83b-313fa52d80cc")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/PG-TDSON-8_L5.0-W6.0-H0.9-P1.27-BL-EP.step"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/PG-TDSON-8_L5.0-W6.0-H0.9-P1.27-BL-EP.step"
 		(offset
 			(xyz 0 0 0)
 		)

@@ -203,7 +203,7 @@
 		(uuid "204e2cb0-cbc2-4349-8fbd-8d438834f406")
 	)
 	(embedded_fonts no)
-	(model "${EASYEDA2KICAD}/easyeda2kicad.3dshapes/ANT-TH_L9.0-W9.0_BWGNSCNX9-9W2.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/ANT-TH_L9.0-W9.0_BWGNSCNX9-9W2.wrl"
 		(offset
 			(xyz 0.89 -0.03 0)
 		)

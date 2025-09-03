@@ -168,9 +168,9 @@
 		(uuid "a609edcf-ac2f-4214-b76a-f843d70d22a9")
 	)
 	(embedded_fonts no)
-	(model "${EASYEDA2KICAD}/easyeda2kicad.3dshapes/DFN-6_L1.5-W1.0-H0.7-P0.50.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/DFN-6_L1.5-W1.0-H0.7-P0.50.wrl"
 		(offset
-			(xyz 0 0 -0)
+			(xyz 0 0 0)
 		)
 		(scale
 			(xyz 1 1 1)

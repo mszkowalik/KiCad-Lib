@@ -219,9 +219,9 @@
 		(uuid "0396d6d3-6bd5-4ed4-a727-357989c37ac1")
 	)
 	(embedded_fonts no)
-	(model "${EASYEDA2KICAD}/easyeda2kicad.3dshapes/V-DFN3020-13-A_L3.0-W2.0-P0.45-BL-EP_AP6335X.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/V-DFN3020-13-A_L3.0-W2.0-P0.45-BL-EP_AP6335X.wrl"
 		(offset
-			(xyz -0.24 -0 -0)
+			(xyz -0.24 0 0)
 		)
 		(scale
 			(xyz 1 1 1)
