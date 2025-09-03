@@ -73,10 +73,10 @@ def rename_symbol_units(symbol):
         unit.entryName = f"{symbol.entryName}"
 
 
-def create_or_update_library(yaml_data, directory):
+def create_or_update_library(yaml_data, symbols_dir):
     for lib_data in yaml_data:
-        base_lib_path = os.path.join(directory, "base_library.kicad_sym")
-        output_lib_path = os.path.join(directory, f"{lib_data['library_name']}.kicad_sym")
+        base_lib_path = os.path.join(symbols_dir, "base_library.kicad_sym")
+        output_lib_path = os.path.join(symbols_dir, f"{lib_data['library_name']}.kicad_sym")
 
         # Load the base symbol library
         base_lib = SymbolLib.from_file(base_lib_path)
@@ -105,9 +105,13 @@ def create_or_update_library(yaml_data, directory):
 
 
 def main():
-    directory = "./Symbols"
-    yaml_data = load_yaml_files(directory)
-    create_or_update_library(yaml_data, directory)
+    sources_dir = "./Sources"
+    symbols_dir = "./Symbols"
+    # Ensure sources directory exists (safe no-op if it already exists)
+    os.makedirs(sources_dir, exist_ok=True)
+
+    yaml_data = load_yaml_files(sources_dir)
+    create_or_update_library(yaml_data, symbols_dir)
 
 
 if __name__ == "__main__":
