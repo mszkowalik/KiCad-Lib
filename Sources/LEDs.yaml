@@ -93,3 +93,34 @@ components:
         value: C364556
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C364556.pdf
+  - name: XL-1005SURC
+    base_component: LED
+    properties:
+      - key: Footprint
+        value: 7Sigma:LED_0402_1005Metric
+      - key: Value
+        value: XL-1005SURC
+      - key: ki_description
+        value: Single Color Red LED 639nm Water Clear
+      - key: Forward Current
+        value: 25mA
+      - key: Forward Voltage
+        value: 2V
+      - key: Wavelength
+        value: 639nm
+      - key: Color
+        value: Red
+      - key: Lens
+        value: Clear
+      - key: Manufacturer 1
+        value: XINGLIGHT
+      - key: Manufacturer Part Number 1
+        value: XL-1005SURC
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C965790
+      - key: LCSC Part
+        value: C965790
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C965790.pdf

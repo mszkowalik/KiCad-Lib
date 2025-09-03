@@ -638,3 +638,41 @@ components:
         value:
       - key: Datasheet
         value:
+  - name: U262-161N-4BVC11
+    base_component: USB_C_Receptacle_USB2.0_16P
+    properties:
+      - key: Footprint
+        value: 7Sigma:USB-3.1-SMD_U262-161N-4BVC11
+      - key: ki_description
+        value: USB 2.0 Type-C Receptacle 16P
+      - key: Manufacturer 1
+        value: XKB Connection
+      - key: Manufacturer Part Number 1
+        value: U262-161N-4BVC11
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C319148
+      - key: LCSC Part
+        value: C319148
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C319148.pdf
+  - name: WJ500V-5.08-2P
+    base_component: Conn_01x02
+    properties:
+      - key: Footprint
+        value: 7Sigma:TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal
+      - key: ki_description
+        value: Screw Terminal Block; 5.08mm
+      - key: Manufacturer 1
+        value: KANGNEX
+      - key: Manufacturer Part Number 1
+        value: WJ500V-5.08-2P
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C8465
+      - key: LCSC Part
+        value: C8465
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C8465.pdf

@@ -68,7 +68,7 @@ components:
       - key: Voltage
         value: 16V
       - key: Footprint
-        value: easyeda2kicad:CAP-SMD_L7.3-W4.3-R-RD
+        value: 7Sigma:CP_EIA-7343-31_Kemet-D
       - key: Footprint_Name
         value: CASE-D-7343
       - key: ki_description
@@ -617,3 +617,30 @@ components:
         value: C106200
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C106200.pdf
+  - name: FZ100UF35V90RV0145
+    base_component: C_Polarized
+    properties:
+      - key: Value
+        value: 100uF
+      - key: Tolerance
+        value: 20%
+      - key: Voltage
+        value: 35V
+      - key: Footprint
+        value: 7Sigma:CP_Elec_6.3x7.7
+      - key: Footprint_Name
+        value: CASE-D-6377
+      - key: ki_description
+        value: "{Value} {Voltage} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: KNSCHA
+      - key: Manufacturer Part Number 1
+        value: FZ100UF35V90RV0145
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5155339
+      - key: LCSC Part
+        value: C5155339
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C5155339.pdf

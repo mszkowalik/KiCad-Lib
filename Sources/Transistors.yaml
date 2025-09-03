@@ -59,7 +59,7 @@ components:
       - key: Datasheet
         value: https://lcsc.com/product-detail/MOSFET_AOS_AO3401A_AO3401A_C15127.html
   - name: MMBT3904,215
-    base_component: MMBT3904
+    base_component: Q_NPN_BEC
     properties:
       - key: Footprint
         value: 7Sigma:SOT-23
@@ -103,7 +103,7 @@ components:
       - key: Drain Source Voltage
         value: 60V
       - key: Manufacturer 1
-        value: Diodes Incorporated
+        value: DIODES
       - key: Manufacturer Part Number 1
         value: DMN6075S-7
       - key: Supplier 1
@@ -259,3 +259,30 @@ components:
         value: C5334586
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5334586.pdf
+  - name: BC817-40-7-F
+    base_component: Q_NPN_BEC
+    properties:
+      - key: Footprint
+        value: 7Sigma:SOT-23
+      - key: ki_description
+        value: NPN 45V 500mA 350mW SOT-23
+      - key: Value
+        value: BC817-40-7-F
+      - key: Power
+        value: 350mW
+      - key: Continuous Drain Current
+        value: 500mA
+      - key: Collector-Emitter Voltage
+        value: 45V
+      - key: Manufacturer 1
+        value: DIODES
+      - key: Manufacturer Part Number 1
+        value: BC817-40-7-F
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C435867
+      - key: LCSC Part
+        value: C435867
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C435867.pdf

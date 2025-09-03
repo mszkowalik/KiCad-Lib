@@ -771,3 +771,45 @@ components:
         value: C5120257
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5120257.pdf
+  - name: LM2594M-5.0
+    base_component: LM2594M-XX
+    properties:
+      - key: Footprint
+        value: 7Sigma:SOIC-8_3.9x4.9mm_P1.27mm
+      - key: ki_description
+        value: Buck Fixed 5V 4.5V~40V 1.5A SOP-8 DC-DC Converters
+      - key: Manufacturer 1
+        value: UMW
+      - key: Manufacturer Part Number 1
+        value: LM2594M-5.0
+      - key: Value
+        value: LM2594M-5.0
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2904795
+      - key: LCSC Part
+        value: C2904795
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C2904795.pdf
+  - name: LD1117S33CTR
+    base_component: LD1117S
+    properties:
+      - key: Footprint
+        value: 7Sigma:SOT-223
+      - key: ki_description
+        value: LDO 3.3V 1.3A
+      - key: Manufacturer 1
+        value: STMicroelectronics
+      - key: Manufacturer Part Number 1
+        value: LD1117S33CTR
+      - key: Value
+        value: LD1117S33CTR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C35879
+      - key: LCSC Part
+        value: C35879
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C35879.pdf

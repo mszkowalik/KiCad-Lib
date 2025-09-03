@@ -166,3 +166,30 @@ components:
         value: C192855
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C192855.pdf
+  - name: CY54-68UH
+    base_component: L
+    properties:
+      - key: Value
+        value: 68uH
+      - key: Tolerance
+        value: 10%
+      - key: Footprint
+        value: 7Sigma:L_SMD_L5.8-W5.2
+      - key: Rated_Current
+        value: 600mA
+      - key: Footprint_Name
+        value: 5.8x5.2mm
+      - key: ki_description
+        value: "{Value} {Rated_Current} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: SHOU HAN
+      - key: Manufacturer Part Number 1
+        value: CY54-68UH
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2929435
+      - key: LCSC Part
+        value: C2929435
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C2929435.pdf

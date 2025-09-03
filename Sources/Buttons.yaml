@@ -97,3 +97,22 @@ components:
         value: C843674
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C843674.pdf
+  - name: TS3625A
+    base_component: SW_Push
+    properties:
+      - key: Value
+        value: TS3625A
+      - key: Footprint
+        value: 7Sigma:SW-SMD_L6.0-W3.5-LS8.4
+      - key: Manufacturer 1
+        value: SHOU HAN
+      - key: Manufacturer Part Number 1
+        value: TS3625A
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C398053
+      - key: LCSC Part
+        value: C398053
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C398053.pdf

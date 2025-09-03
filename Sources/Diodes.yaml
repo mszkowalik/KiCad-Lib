@@ -291,3 +291,49 @@ components:
         value: C5185918
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5185918.pdf
+  - name: SS34
+    base_component: D_Schottky
+    properties:
+      - key: Footprint
+        value: 7Sigma:D_SMA
+      - key: Value
+        value: SS34
+      - key: ki_description
+        value: Schottky Diode 40V 550mV@3A 3A SOD-323
+      - key: Maximum Reverse Voltage
+        value: 40V
+      - key: Continuous Current
+        value: 3A
+      - key: Manufacturer 1
+        value: TWGMC
+      - key: Manufacturer Part Number 1
+        value: SS34
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C727060
+      - key: LCSC Part
+        value: C727060
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C727060.pdf
+  - name: SM712
+    base_component: D_TVS_Dual_AAC
+    properties:
+      - key: Footprint
+        value: 7Sigma:D_SOT-23
+      - key: Value
+        value: 12V / -7V
+      - key: ki_description
+        value: Asymmetrical TVS Diode for RS-485
+      - key: Manufacturer 1
+        value: MDD
+      - key: Manufacturer Part Number 1
+        value: SM712
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C502564
+      - key: LCSC Part
+        value: C502564
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C502564.pdf

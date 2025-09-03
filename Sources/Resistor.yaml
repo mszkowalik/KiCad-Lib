@@ -841,3 +841,84 @@ components:
         value: C25776
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C25776.pdf
+  - name: 0805W8F100KT5E
+    base_component: R
+    properties:
+      - key: Value
+        value: 1R
+      - key: Power
+        value: 125mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R_0805_2012Metric
+      - key: Footprint_Name
+        value: "0805"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0805W8F100KT5E
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C25271
+      - key: LCSC Part
+        value: C25271
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C25271.pdf
+  - name: 0805W8J0100T5E
+    base_component: R
+    properties:
+      - key: Value
+        value: 10R
+      - key: Power
+        value: 125mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R_0805_2012Metric
+      - key: Footprint_Name
+        value: "0805"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0805W8J0100T5E
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C25278
+      - key: LCSC Part
+        value: C25278
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C25278.pdf
+  - name: 0805W8F6800T5E
+    base_component: R
+    properties:
+      - key: Value
+        value: 680R
+      - key: Power
+        value: 125mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R_0805_2012Metric
+      - key: Footprint_Name
+        value: "0805"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0805W8F6800T5E
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C17798
+      - key: LCSC Part
+        value: C17798
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C17798.pdf
