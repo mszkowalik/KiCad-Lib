@@ -813,3 +813,87 @@ components:
         value: C35879
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C35879.pdf
+  - name: LTC6268HS8-10#PBF
+    base_component: LTC6268xS8-10
+    properties:
+      - key: Footprint
+        value: 7Sigma:SOIC-8_3.9x4.9mm_P1.27mm
+      - key: ki_description
+        value: Op Amps 4GHz Ultra-L Bias C FET In Op Amp
+      - key: Manufacturer 1
+        value: Analog Devices
+      - key: Manufacturer Part Number 1
+        value: LTC6268HS8-10#PBF
+      - key: Value
+        value: LTC6268HS8-10#PBF
+      - key: Supplier 1
+        value: Mouser
+      - key: Supplier Part Number 1
+        value: 584-LTC6268HS8-10PBF
+      - key: LCSC Part
+        value:
+      - key: Datasheet
+        value: https://www.analog.com/media/en/technical-documentation/data-sheets/626810f.pdf
+  - name: VBPW34FAS
+    base_component: BPW34
+    properties:
+      - key: Footprint
+        value: 7Sigma:Osram_BPW34S-SMD
+      - key: ki_description
+        value: Photodiode PIN, 950nm SMD
+      - key: Manufacturer 1
+        value: Vishay Semiconductors
+      - key: Manufacturer Part Number 1
+        value: VBPW34FAS
+      - key: Value
+        value: VBPW34FAS
+      - key: Supplier 1
+        value: Mouser
+      - key: Supplier Part Number 1
+        value: 782-VBPW34FAS
+      - key: LCSC Part
+        value:
+      - key: Datasheet
+        value: https://www.vishay.com/docs/81127/vbpw34fa.pdf
+  - name: TPS7A2050PDBVR
+    base_component: TPS7A20xxxDBV
+    properties:
+      - key: Footprint
+        value: 7Sigma:SOT-23-5
+      - key: ki_description
+        value: LDO 300mA, Ultra-Low-Noise, Low-IQ, High PSRR
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: TPS7A2050PDBVR
+      - key: Value
+        value: TPS7A2050PDBVR
+      - key: Supplier 1
+        value: Mouser
+      - key: Supplier Part Number 1
+        value: 595-TPS7A2050PDBVR
+      - key: LCSC Part
+        value: C2864504
+      - key: Datasheet
+        value: https://www.ti.com/lit/ds/symlink/tps7a20.pdf
+  - name: ADA4945-1ACPZ-R7
+    base_component: ADA4945-1
+    properties:
+      - key: Footprint
+        value: 7Sigma:LFCSP-16-1EP_3x3mm_P0.5mm_EP1.6x1.6mm_ThermalVias
+      - key: ki_description
+        value: ADC Driver, High Speed, ±0.1 µV/˚C Offset Drift, Fully Differential
+      - key: Manufacturer 1
+        value: Analog Devices
+      - key: Manufacturer Part Number 1
+        value: ADA4945-1ACPZ-R7
+      - key: Value
+        value: ADA4945-1ACPZ-R7
+      - key: Supplier 1
+        value: Mouser
+      - key: Supplier Part Number 1
+        value: 584-ADA4945-1ACPZ-R7
+      - key: LCSC Part
+        value: C560261
+      - key: Datasheet
+        value: https://www.analog.com/media/en/technical-documentation/data-sheets/ada4945-1.pdf
