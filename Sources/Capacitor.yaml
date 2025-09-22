@@ -644,3 +644,90 @@ components:
         value: C5155339
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5155339.pdf
+  - name: GRM1555C1H3R3CA01D
+    base_component: C
+    properties:
+      - key: Value
+        value: 3.3pF
+      - key: Tolerance
+        value: 0.25 pF
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: C0G
+      - key: Footprint
+        value: 7Sigma:C_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: muRata
+      - key: Manufacturer Part Number 1
+        value: GRM1555C1H3R3CA01D
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C76968
+      - key: LCSC Part
+        value: C76968
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C76968.pdf
+  - name: CC0402JRNPO9BN301
+    base_component: C
+    properties:
+      - key: Value
+        value: 300pF
+      - key: Tolerance
+        value: 5%
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: NP0
+      - key: Footprint
+        value: 7Sigma:C_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: YAGEO
+      - key: Manufacturer Part Number 1
+        value: CC0402JRNPO9BN301
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5182429
+      - key: LCSC Part
+        value: C5182429
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C5182429.pdf
+  - name: CC0402JRNPO9BN390
+    base_component: C
+    properties:
+      - key: Value
+        value: 39pF
+      - key: Tolerance
+        value: 5%
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: NP0
+      - key: Footprint
+        value: 7Sigma:C_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: YAGEO
+      - key: Manufacturer Part Number 1
+        value: CC0402JRNPO9BN390
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C106223
+      - key: LCSC Part
+        value: C106223
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C106223.pdf
