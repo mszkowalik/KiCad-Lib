@@ -876,6 +876,27 @@ components:
         value: C2864504
       - key: Datasheet
         value: https://www.ti.com/lit/ds/symlink/tps7a20.pdf
+  - name: TPS7A2033PDBVR
+    base_component: TPS7A20xxxDBV
+    properties:
+      - key: Footprint
+        value: 7Sigma:SOT-23-5
+      - key: ki_description
+        value: LDO 3.3V 300mA, Ultra-Low-Noise, Low-IQ, High PSRR
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: TPS7A2033PDBVR
+      - key: Value
+        value: TPS7A2033PDBVR
+      - key: Supplier 1
+        value: Mouser
+      - key: Supplier Part Number 1
+        value: 595-TPS7A2033PDBVR
+      - key: LCSC Part
+        value: C2862740
+      - key: Datasheet
+        value: https://www.ti.com/lit/ds/symlink/tps7a20.pdf
   - name: ADA4945-1ACPZ-R7
     base_component: ADA4945-1
     properties:
@@ -897,3 +918,78 @@ components:
         value: C560261
       - key: Datasheet
         value: https://www.analog.com/media/en/technical-documentation/data-sheets/ada4945-1.pdf
+  - name: TPS65135RTER
+    base_component: TPS65135
+    properties:
+      - key: Footprint
+        value: 7Sigma:WQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm_ThermalVias
+      - key: ki_description
+        value: Single-Inductor, Multiple-Output Regulator
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: TPS65135RTER
+      - key: Value
+        value: TPS65135RTER
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C57950
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value: 595-TPS65135RTER
+      - key: LCSC Part
+        value: C57950
+      - key: Datasheet
+        value: https://www.ti.com/lit/ds/symlink/tps65135.pdf
+  - name: TPS7A3901DSCR
+    base_component: TPS7A39
+    properties:
+      - key: Footprint
+        value: 7Sigma:WQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm_ThermalVias
+      - key: ki_description
+        value: Dual LDO, 150mA, Wide VIN Positive and Negative LDO Voltage Regulator
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: TPS7A3901DSCR
+      - key: Value
+        value: TPS7A3901DSCR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2685819
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value:
+      - key: LCSC Part
+        value: C2685819
+      - key: Datasheet
+        value: https://www.ti.com/lit/ds/symlink/tps7a39.pdf
+  - name: STM32H725RGV3
+    base_component: STM32H725RGVx
+    properties:
+      - key: Footprint
+        value: 7Sigma:QFN-68-1EP_8x8mm_P0.4mm_EP6.4x6.4mm_ThermalVias
+      - key: ki_description
+        value: STMicroelectronics Arm Cortex-M7 MCU, 1024KB flash, 564KB RAM, 550 MHz, 1.71-3.6V, 46 GPIO, VFQFPN68
+      - key: Manufacturer 1
+        value: STMicroelectronics
+      - key: Manufacturer Part Number 1
+        value: STM32H725RGV3
+      - key: Value
+        value: STM32H725RGV3
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5271074
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value: 511-STM32H725RGV3
+      - key: LCSC Part
+        value: C5271074
+      - key: Datasheet
+        value: https://www.st.com/resource/en/datasheet/stm32h725ag.pdf

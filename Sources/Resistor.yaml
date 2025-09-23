@@ -1142,7 +1142,7 @@ components:
     base_component: R
     properties:
       - key: Value
-        value: 1R
+        value: 150K
       - key: Power
         value: 125mW
       - key: Tolerance
@@ -1165,3 +1165,138 @@ components:
         value: C17470
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C17470.pdf
+  - name: 0402WGF1203TCE
+    base_component: R
+    properties:
+      - key: Value
+        value: 120K
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF1203TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C25750
+      - key: LCSC Part
+        value: C25750
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C25750.pdf
+  - name: 0402WGF4123TCE
+    base_component: R
+    properties:
+      - key: Value
+        value: 412K
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF4123TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C27008
+      - key: LCSC Part
+        value: C27008
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C27008.pdf
+  - name: 0402WGF5103TCE
+    base_component: R
+    properties:
+      - key: Value
+        value: 510K
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF5103TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C11616
+      - key: LCSC Part
+        value: C11616
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C11616.pdf
+  - name: 0402WGF4302TCE
+    base_component: R
+    properties:
+      - key: Value
+        value: 43K
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF4302TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C8329
+      - key: LCSC Part
+        value: C8329
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C8329.pdf
+  - name: 0402WGF3242TCE
+    base_component: R
+    properties:
+      - key: Value
+        value: 32K4
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF3242TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C26974
+      - key: LCSC Part
+        value: C26974
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C26974.pdf

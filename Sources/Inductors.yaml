@@ -193,3 +193,30 @@ components:
         value: C2929435
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C2929435.pdf
+  - name: XRIM201608S2R2MBCA
+    base_component: L
+    properties:
+      - key: Value
+        value: 2.2uH
+      - key: Tolerance
+        value: 20%
+      - key: Footprint
+        value: 7Sigma:L_Murata_DFE201610P
+      - key: Rated_Current
+        value: 2.5A
+      - key: Footprint_Name
+        value: "2016"
+      - key: ki_description
+        value: "{Value} {Rated_Current} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: XR
+      - key: Manufacturer Part Number 1
+        value: XRIM201608S2R2MBCA
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C22471088
+      - key: LCSC Part
+        value: C22471088
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C22471088.pdf
