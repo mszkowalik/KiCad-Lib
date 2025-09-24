@@ -124,3 +124,38 @@ components:
         value: C965790
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C965790.pdf
+  - name: SFH4725AS-DBEB-1113REEL
+    base_component: LED_CAA
+    properties:
+      - key: Footprint
+        value: 7Sigma:LED-SMD_3P-L3.8-W3.8
+      - key: Value
+        value: SFH4725AS-DBEB-1113REEL
+      - key: ki_description
+        value: LED IR 1A 950nm
+      - key: Forward Current
+        value: 1A
+      - key: Forward Voltage
+        value: 3.2V
+      - key: Wavelength
+        value: 950nm
+      - key: Color
+        value: IR
+      - key: Lens
+        value: Clear
+      - key: Manufacturer 1
+        value: OSRAM
+      - key: Manufacturer Part Number 1
+        value: SFH4725AS-DBEB-1113REEL
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value:
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value: 720-SFH4725ASDBEB113
+      - key: LCSC Part
+        value:
+      - key: Datasheet
+        value: https://www.mouser.pl/datasheet/3/5912/1/SFH_4725AS_EN.pdf

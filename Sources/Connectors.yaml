@@ -676,3 +676,22 @@ components:
         value: C8465
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C8465.pdf
+  - name: RH-5015
+    base_component: TestPoint
+    properties:
+      - key: Footprint
+        value: 7Sigma:SMD_RH-5015
+      - key: ki_description
+        value: TestPoint Loop
+      - key: Manufacturer 1
+        value: ronghe
+      - key: Manufacturer Part Number 1
+        value: RH-5015
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5199798
+      - key: LCSC Part
+        value: C5199798
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C5199798.pdf

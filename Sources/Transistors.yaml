@@ -286,3 +286,32 @@ components:
         value: C435867
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C435867.pdf
+  - name: CSD17577Q3A
+    base_component: CSD17577Q3A
+    properties:
+      - key: Footprint
+        value: 7Sigma:VSON-8_3.3x3.3mm_P0.65mm_NexFET
+      - key: Value
+        value: CSD17577Q3A
+      - key: ki_description
+        value: N-MOS 30V 83A 53W TDSON-8
+      - key: Power
+        value: 53W
+      - key: Drain Source On Resistance
+        value: 5.3mΩ@4.5V
+      - key: Continuous Drain Current
+        value: 83A
+      - key: Drain Source Voltage
+        value: 30V
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: CSD17577Q3A
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C201632
+      - key: LCSC Part
+        value: C201632
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C201632.pdf

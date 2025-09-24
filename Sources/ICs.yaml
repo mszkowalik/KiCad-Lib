@@ -993,3 +993,28 @@ components:
         value: C5271074
       - key: Datasheet
         value: https://www.st.com/resource/en/datasheet/stm32h725ag.pdf
+  - name: OPA354AIDBVR
+    base_component: OPA354AXDBV
+    properties:
+      - key: Footprint
+        value: 7Sigma:SOT-23-6
+      - key: ki_description
+        value: Rail-to-Rail Input and Output, Low Noise, Low Power Operational Amplifier
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: OPA354AIDBVR
+      - key: Value
+        value: OPA354AIDBVR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C36384
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value: 595-OPA354AIDBVR
+      - key: LCSC Part
+        value: C36384
+      - key: Datasheet
+        value: https://www.ti.com/lit/ds/symlink/opa354a-q1.pdf

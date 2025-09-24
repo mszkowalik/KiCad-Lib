@@ -731,3 +731,32 @@ components:
         value: C106223
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C106223.pdf
+  - name: CC0402JRNPO9BN102
+    base_component: C
+    properties:
+      - key: Value
+        value: 1nF
+      - key: Tolerance
+        value: 5%
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: NP0
+      - key: Footprint
+        value: 7Sigma:C_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: YAGEO
+      - key: Manufacturer Part Number 1
+        value: CC0402JRNPO9BN102
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C113780
+      - key: LCSC Part
+        value: C113780
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C113780.pdf

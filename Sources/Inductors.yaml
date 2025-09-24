@@ -220,3 +220,30 @@ components:
         value: C22471088
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C22471088.pdf
+  - name: LQW15CA1R0K00D
+    base_component: L
+    properties:
+      - key: Value
+        value: 1uH
+      - key: Tolerance
+        value: 10%
+      - key: Footprint
+        value: 7Sigma:L_0402_1005Metric
+      - key: Rated_Current
+        value: 180mA
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Rated_Current} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: muRata
+      - key: Manufacturer Part Number 1
+        value: LQW15CA1R0K00D
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C703738
+      - key: LCSC Part
+        value: C703738
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C703738.pdf
