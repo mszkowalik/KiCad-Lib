@@ -1,0 +1,134 @@
+(footprint "SMD_RH-5015"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(property "Reference" "REF**"
+		(at 0 -4 0)
+		(layer "F.SilkS")
+		(uuid "518be8c4-b74e-4dc6-b9e6-a2b0beba4926")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "SMD_RH-5015"
+		(at 0 4 0)
+		(layer "F.Fab")
+		(uuid "8f29cb36-d199-4a55-85f0-97afb4028fbc")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "9cca350a-f2d8-4613-b102-2d57ec892264")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "3079b032-556b-4a8a-9902-6e477a9c2786")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr smd)
+	(fp_line
+		(start -1.65 -1.02)
+		(end 1.65 -1.02)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "cb60b054-2d61-4410-bad5-7a9187a8f26f")
+	)
+	(fp_line
+		(start -1.65 1.02)
+		(end -1.65 -1.02)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "992b5c1d-f0da-4e6e-9971-1cba7526b6e5")
+	)
+	(fp_line
+		(start 1.65 -1.02)
+		(end 1.65 1.02)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "d567a2f3-ff75-46ee-ad47-41647ecb20df")
+	)
+	(fp_line
+		(start 1.65 1.02)
+		(end -1.65 1.02)
+		(stroke
+			(width 0.25)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "3cda801b-b5a0-481d-b53d-4f7deb43aa75")
+	)
+	(fp_circle
+		(center 1.25 -0.6)
+		(end 1.28 -0.6)
+		(stroke
+			(width 0.06)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "70de22e0-9b0b-4d35-8868-1775cb2a655a")
+	)
+	(fp_text user "${REFERENCE}"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(uuid "d7fcbfbc-f8f2-4836-b15e-cff71430c23e")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(pad "1" smd roundrect
+		(at 0 0)
+		(size 2.8 1.5)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.1666666667)
+		(uuid "def083d8-b67a-4bb6-8eeb-710dd8a2dbee")
+	)
+	(embedded_fonts no)
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/SMD_RH-5015.wrl"
+		(offset
+			(xyz 0 0 0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 0 0 0)
+		)
+	)
+)
