@@ -760,3 +760,32 @@ components:
         value: C113780
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C113780.pdf
+  - name: CL05A225KO5NQNC
+    base_component: C
+    properties:
+      - key: Value
+        value: 2.2uF
+      - key: Tolerance
+        value: 10%
+      - key: Voltage
+        value: 16V
+      - key: Dielectric
+        value: X5R
+      - key: Footprint
+        value: 7Sigma:C_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Samsung Electro-Mechanics
+      - key: Manufacturer Part Number 1
+        value: CL05A225KO5NQNC
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C170151
+      - key: LCSC Part
+        value: C170151
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C170151.pdf

@@ -1197,7 +1197,7 @@
 		(uuid "23d252bc-2d1e-444b-8aae-346e65adfd29")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/Package_DFN_QFN.3dshapes/QFN-68-1EP_8x8mm_P0.4mm_EP6.4x6.4mm.step"
+	(model "${SEVENSIGMA_DIR}/3DModels/Package_DFN_QFN.3dshapes/QFN-68-1EP_8x8mm_P0.4mm_EP5.2x5.2mm.step"
 		(offset
 			(xyz 0 0 0)
 		)

@@ -1,0 +1,35 @@
+library_name: TestPoints
+components:
+  - name: RH-5015
+    base_component: TestPoint
+    properties:
+      - key: Footprint
+        value: 7Sigma:SMD_RH-5015
+      - key: ki_description
+        value: TestPoint Loop
+      - key: Manufacturer 1
+        value: ronghe
+      - key: Manufacturer Part Number 1
+        value: RH-5015
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5199798
+      - key: LCSC Part
+        value: C5199798
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C5199798.pdf
+  - name: TestPoint_Pad_1.5x1.5mm
+    base_component: TestPoint
+    properties:
+      - key: Footprint
+        value: 7Sigma:TestPoint_Pad_1.5x1.5mm
+      - key: ki_description
+        value: SMD rectangular pad as test Point, square 1.5mm side length
+  - name: TestPoint_Pad_D1.5mm
+    base_component: TestPoint
+    properties:
+      - key: Footprint
+        value: 7Sigma:TestPoint_Pad_D1.5mm
+      - key: ki_description
+        value: SMD pad as test Point, diameter 1.5mm

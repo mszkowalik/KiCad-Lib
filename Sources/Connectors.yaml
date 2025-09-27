@@ -676,22 +676,22 @@ components:
         value: C8465
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C8465.pdf
-  - name: RH-5015
-    base_component: TestPoint
+  - name: PM254-2-15-W-8.5
+    base_component: Conn_02x15_Odd_Even
     properties:
       - key: Footprint
-        value: 7Sigma:SMD_RH-5015
+        value: 7Sigma:PinSocket_2x15_P2.54mm_Horizontal
       - key: ki_description
-        value: TestPoint Loop
+        value: Conector 2x15 Pin 2.54mm Pitch Right Angle
       - key: Manufacturer 1
-        value: ronghe
+        value: HCTL
       - key: Manufacturer Part Number 1
-        value: RH-5015
+        value: PM254-2-15-W-8.5
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
-        value: C5199798
+        value: C2897435
       - key: LCSC Part
-        value: C5199798
+        value: C2897435
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/C5199798.pdf
+        value: https://www.lcsc.com/datasheet/C2897435.pdf
