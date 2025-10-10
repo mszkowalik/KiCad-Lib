@@ -159,3 +159,30 @@ components:
         value:
       - key: Datasheet
         value: https://www.mouser.pl/datasheet/3/5912/1/SFH_4725AS_EN.pdf
+  - name: XL-1615RGBC-RF
+    base_component: LED_RABG
+    properties:
+      - key: Footprint
+        value: 7Sigma:LED-SMD_4P-L1.6-W1.5-BR
+      - key: Value
+        value: XL-3227SURUGC
+      - key: ki_description
+        value: LED RGB 20mA Common Anode
+      - key: Forward Current
+        value: 20mA
+      - key: Color
+        value: RGB
+      - key: Lens
+        value: Clear
+      - key: Manufacturer 1
+        value: XINGLIGHT
+      - key: Manufacturer Part Number 1
+        value: XL-1615RGBC-RF
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C965840
+      - key: LCSC Part
+        value: C965840
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C965840.pdf

@@ -695,3 +695,22 @@ components:
         value: C2897435
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C2897435.pdf
+  - name: BWSMA-KWE-Z001
+    base_component: Conn_Coaxial
+    properties:
+      - key: Footprint
+        value: 7Sigma:SMA_BAT_Wireless_BWSMA-KWE-Z001
+      - key: ki_description
+        value: RP-SMA Right Angle
+      - key: Manufacturer 1
+        value: BAT WIRELESS
+      - key: Manufacturer Part Number 1
+        value: BWSMA-KWE-Z001
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C496551
+      - key: LCSC Part
+        value: C496551
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C496551.pdf

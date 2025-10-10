@@ -247,3 +247,30 @@ components:
         value: C703738
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C703738.pdf
+  - name: LQW15AN2N2C10D
+    base_component: L
+    properties:
+      - key: Value
+        value: 2.2nH
+      - key: Tolerance
+        value: 10%
+      - key: Footprint
+        value: 7Sigma:L_0402_1005Metric
+      - key: Rated_Current
+        value: 1A
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Rated_Current} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: muRata
+      - key: Manufacturer Part Number 1
+        value: LQW15AN2N2C10D
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C91240
+      - key: LCSC Part
+        value: C91240
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C91240.pdf

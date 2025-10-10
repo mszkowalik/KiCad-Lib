@@ -1018,3 +1018,66 @@ components:
         value: C36384
       - key: Datasheet
         value: https://www.ti.com/lit/ds/symlink/opa354a-q1.pdf
+  - name: TPS54302DDCR
+    base_component: TPS54302
+    properties:
+      - key: Footprint
+        value: 7Sigma:SOT-23-6
+      - key: ki_description
+        value: 4.5-V to 28-V Input, 3-A Output, EMI-Friendly Synchronous Step-Down Converter
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: TPS54302DDCR
+      - key: Value
+        value: TPS54302DDCR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C311983
+      - key: LCSC Part
+        value: C311983
+      - key: Datasheet
+        value: https://www.ti.com/lit/ds/symlink/tps54302.pdf
+  - name: ESP32-C6
+    base_component: ESP32-C6
+    properties:
+      - key: Footprint
+        value: 7Sigma:VQFN-40-1EP_5x5mm_P0.4mm_EP3.3x3.3mm_ThermalVias
+      - key: ki_description
+        value: Ultra-low-power SoC with RISC-V single-core microprocessor 2.4 GHz Wi-Fi 6 (802.11ax), Bluetooth® 5 (LE), Zigbee and Thread (802.15.4)
+      - key: Manufacturer 1
+        value: Espressif
+      - key: Manufacturer Part Number 1
+        value: ESP32-C6
+      - key: Value
+        value: ESP32-C6
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5364646
+      - key: LCSC Part
+        value: C5364646
+      - key: Datasheet
+        value: https://www.espressif.com/sites/default/files/documentation/esp32-c6_datasheet_en.pdf
+  - name: W25Q64JWUUIQ
+    base_component: W25Q64JW
+    properties:
+      - key: Footprint
+        value: 7Sigma:Winbond_USON-8-2EP_3x4mm_P0.8mm_EP0.2x0.8mm
+      - key: ki_description
+        value: 64Mbit 1.7V~1.95V 133MHz SPI USON-8(3x4) Memory
+      - key: Manufacturer 1
+        value: Winbond
+      - key: Manufacturer Part Number 1
+        value: W25Q64JWUUIQ
+      - key: Value
+        value: W25Q64JWUUIQ
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C6604692
+      - key: LCSC Part
+        value: C6604692
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C6604692.pdf
