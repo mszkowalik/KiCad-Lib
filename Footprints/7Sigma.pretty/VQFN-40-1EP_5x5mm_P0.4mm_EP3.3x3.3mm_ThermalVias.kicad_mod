@@ -749,14 +749,6 @@
 	)
 	(pad "41" smd rect
 		(at 0 0)
-		(size 3.2 3.2)
-		(property pad_prop_heatsink)
-		(layers "B.Cu")
-		(zone_connect 2)
-		(uuid "3a2934e5-7bec-443a-b44c-827b33a853d0")
-	)
-	(pad "41" smd rect
-		(at 0 0)
 		(size 3.3 3.3)
 		(property pad_prop_heatsink)
 		(layers "F.Cu" "F.Mask")
@@ -836,7 +828,7 @@
 		(uuid "5275a9b8-3af2-4553-a1ff-bc81986fb345")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/Package_DFN_QFN.3dshapes/VQFN-40-1EP_5x5mm_P0.4mm_EP3.3x3.3mm.step"
+	(model "${SEVENSIGMA_DIR}/3DModels/Package_DFN_QFN.3dshapes/QFN-40-1EP_5x5mm_P0.4mm_EP3.6x3.6mm.step"
 		(offset
 			(xyz 0 0 0)
 		)

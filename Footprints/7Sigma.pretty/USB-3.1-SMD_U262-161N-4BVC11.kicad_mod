@@ -436,13 +436,13 @@
 	(embedded_fonts no)
 	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/USB-3.1-SMD_16P-L8.9-W7.3-H3.3-P0.5.wrl"
 		(offset
-			(xyz 0 -1.13 0.9)
+			(xyz 0 -2.63 0)
 		)
 		(scale
 			(xyz 1 1 1)
 		)
 		(rotate
-			(xyz 0 0 180)
+			(xyz -0 -0 180)
 		)
 	)
 )

@@ -315,7 +315,7 @@
 		(uuid "5fbddc79-89f4-4da2-b086-94f26b96e588")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/Connector_Coaxial.3dshapes/SMA_BAT_Wireless_BWSMA-KWE-Z001.step"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/SMA-TH_5P-L14.5-W6.0-H9.6_BWSMA-KWE-Z001.wrl"
 		(offset
 			(xyz 0 0 0)
 		)
@@ -323,7 +323,7 @@
 			(xyz 1 1 1)
 		)
 		(rotate
-			(xyz 0 0 0)
+			(xyz -0 -0 -90)
 		)
 	)
 )

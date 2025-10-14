@@ -238,4 +238,15 @@
 			(xyz 0 0 0)
 		)
 	)
+	(model "${SEVENSIGMA_DIR}/3DModels/Button_Switch_SMD.3dshapes/SW_SPST_Omron_B3FS-100xP.step"
+		(offset
+			(xyz 0 0 0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 0 0 0)
+		)
+	)
 )

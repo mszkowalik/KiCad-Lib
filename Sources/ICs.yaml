@@ -922,7 +922,7 @@ components:
     base_component: TPS65135
     properties:
       - key: Footprint
-        value: 7Sigma:WQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm_ThermalVias
+        value: 7Sigma:QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm_ThermalVias
       - key: ki_description
         value: Single-Inductor, Multiple-Output Regulator
       - key: Manufacturer 1
@@ -1081,3 +1081,66 @@ components:
         value: C6604692
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C6604692.pdf
+  - name: PCF8574RGTR
+    base_component: PCF8574RGTR
+    properties:
+      - key: Footprint
+        value: 7Sigma:QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm_ThermalVias
+      - key: ki_description
+        value: I2C I/O Port Expander
+      - key: Manufacturer 1
+        value: UMW
+      - key: Manufacturer Part Number 1
+        value: PCF8574RGTR(UMW)
+      - key: Value
+        value: PCF8574RGTR(UMW)
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C22396384
+      - key: LCSC Part
+        value: C22396384
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C22396384.pdf
+  - name: TMUX1208QRSVRQ1
+    base_component: TMUX1208QRSVRQ1
+    properties:
+      - key: Footprint
+        value: 7Sigma:UQFN-16_1.8x2.6mm_P0.4mm
+      - key: ki_description
+        value: I2C I/O Port Expander
+      - key: Manufacturer 1
+        value: UMW
+      - key: Manufacturer Part Number 1
+        value: TMUX1208QRSVRQ1
+      - key: Value
+        value: TMUX1208QRSVRQ1
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2876797
+      - key: LCSC Part
+        value: C2876797
+      - key: Datasheet
+        value: https://www.ti.com/lit/ds/symlink/tmux1208-q1.pdf
+  - name: TPS70950DBVR
+    base_component: TPS709xxDBV
+    properties:
+      - key: Footprint
+        value: 7Sigma:SOT-23-5
+      - key: ki_description
+        value: LDO 5V 500mA
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: TPS70950DBVR
+      - key: Value
+        value: TPS70950DBVR
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C96028
+      - key: LCSC Part
+        value: C96028
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C96028.pdf

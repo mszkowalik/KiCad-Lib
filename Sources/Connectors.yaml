@@ -714,3 +714,41 @@ components:
         value: C496551
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C496551.pdf
+  - name: RC01812
+    base_component: 8P8C_LED_Shielded
+    properties:
+      - key: Footprint
+        value: 7Sigma:RJ45-TH_RC01812
+      - key: ki_description
+        value: RJ45 Jack 1 Shielded Recessed Mount With LED
+      - key: Manufacturer 1
+        value: RCH
+      - key: Manufacturer Part Number 1
+        value: RC01812
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C708645
+      - key: LCSC Part
+        value: C708645
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C708645.pdf
+  - name: BWSMA-KE-P001
+    base_component: Conn_Coaxial
+    properties:
+      - key: Footprint
+        value: 7Sigma:SMA-SMD_BWSMA-KE-P001
+      - key: ki_description
+        value: RP-SMA Board Mount
+      - key: Manufacturer 1
+        value: BAT WIRELESS
+      - key: Manufacturer Part Number 1
+        value: BWSMA-KE-P001
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C496550
+      - key: LCSC Part
+        value: C496550
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C496550.pdf
