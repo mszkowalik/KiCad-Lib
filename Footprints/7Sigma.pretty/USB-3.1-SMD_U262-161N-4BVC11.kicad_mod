@@ -401,7 +401,7 @@
 		(roundrect_rratio 0.25)
 		(uuid "aae9c138-8acf-447c-8f05-1650de7cb055")
 	)
-	(pad "SHELL" thru_hole oval
+	(pad "SH" thru_hole oval
 		(at -4.32 -1.72)
 		(size 1.2 2.2)
 		(drill oval 0.700024 1.799996)
@@ -409,7 +409,7 @@
 		(remove_unused_layers no)
 		(uuid "e11da726-e8ef-4d51-9803-422cf2679e77")
 	)
-	(pad "SHELL" thru_hole oval
+	(pad "SH" thru_hole oval
 		(at -4.32 2.46)
 		(size 1.2 1.8)
 		(drill oval 0.700024 1.299997)
@@ -417,7 +417,7 @@
 		(remove_unused_layers no)
 		(uuid "924d38ab-f416-4e45-a0e0-8d2c6d1734ba")
 	)
-	(pad "SHELL" thru_hole oval
+	(pad "SH" thru_hole oval
 		(at 4.32 -1.72)
 		(size 1.2 2.2)
 		(drill oval 0.700024 1.799996)
@@ -425,7 +425,7 @@
 		(remove_unused_layers no)
 		(uuid "03c59f1e-8452-426d-97c7-cd328b8be76c")
 	)
-	(pad "SHELL" thru_hole oval
+	(pad "SH" thru_hole oval
 		(at 4.32 2.46)
 		(size 1.2 1.8)
 		(drill oval 0.700024 1.299997)

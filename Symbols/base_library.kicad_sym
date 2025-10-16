@@ -24729,7 +24729,7 @@
 						)
 					)
 				)
-				(number "14"
+				(number "15"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -24747,7 +24747,7 @@
 						)
 					)
 				)
-				(number "15"
+				(number "16"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -24765,7 +24765,7 @@
 						)
 					)
 				)
-				(number "13"
+				(number "14"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -24838,6 +24838,24 @@
 					)
 				)
 				(number "9"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin power_in line
+				(at -10.16 -12.7 0)
+				(length 3.81)
+				(name "GND"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "17"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -30582,7 +30600,7 @@
 				)
 			)
 			(pin unspecified line
-				(at -10.16 -10.16 0)
+				(at -10.16 -12.7 0)
 				(length 2.54)
 				(name "GND"
 					(effects
@@ -30754,26 +30772,6 @@
 					)
 				)
 				(number "1"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-			)
-		)
-		(symbol "TMUX1208QRSVRQ1_1_1"
-			(pin unspecified line
-				(at -10.16 -12.7 0)
-				(length 2.54)
-				(name "EP"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(number "17"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -33617,7 +33615,7 @@
 						)
 					)
 				)
-				(number "S1"
+				(number "SH"
 					(effects
 						(font
 							(size 1.27 1.27)

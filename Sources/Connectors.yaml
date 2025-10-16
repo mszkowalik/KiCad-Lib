@@ -752,3 +752,22 @@ components:
         value: C496550
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C496550.pdf
+  - name: WJ15EDGRC-3.81-2P
+    base_component: Conn_01x02
+    properties:
+      - key: Footprint
+        value: 7Sigma:PhoenixContact_MC_1,5_2-G-3.81_1x02_P3.81mm_Horizontal
+      - key: ki_description
+        value: Pluggable terminal block; 3.81mm
+      - key: Manufacturer 1
+        value: KANGNEX
+      - key: Manufacturer Part Number 1
+        value: WJ15EDGRC-3.81-2P
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C8387
+      - key: LCSC Part
+        value: C8387
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C8387.pdf
