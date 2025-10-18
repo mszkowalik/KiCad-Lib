@@ -4,12 +4,26 @@ from kiutils.items.common import Property, Position, Effects, Font
 
 
 def load_yaml_files(directory):
-    """Load all YAML files from the specified directory."""
+    """Load all YAML files from the specified directory with library name validation."""
     yaml_files = [f for f in os.listdir(directory) if f.endswith(".yaml") or f.endswith(".yml")]
     data = []
+
     for yaml_file in yaml_files:
         with open(os.path.join(directory, yaml_file), "r") as f:
-            data.append(yaml.safe_load(f))
+            yaml_data = yaml.safe_load(f)
+
+            # Extract filename without extension for validation
+            filename_without_ext = os.path.splitext(yaml_file)[0]
+
+            # Validate that library_name matches filename
+            if "library_name" not in yaml_data:
+                raise ValueError(f"Missing 'library_name' field in file: {yaml_file}")
+
+            if yaml_data["library_name"] != filename_without_ext:
+                raise ValueError(f"Library name mismatch in file '{yaml_file}': " f"library_name is '{yaml_data['library_name']}' but should be '{filename_without_ext}'")
+
+            data.append(yaml_data)
+
     return data
 
 
