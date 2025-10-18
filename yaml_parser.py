@@ -1,11 +1,10 @@
 import os
 import yaml
-import copy
-from kiutils.symbol import SymbolLib, Symbol
 from kiutils.items.common import Property, Position, Effects, Font
 
 
 def load_yaml_files(directory):
+    """Load all YAML files from the specified directory."""
     yaml_files = [f for f in os.listdir(directory) if f.endswith(".yaml") or f.endswith(".yml")]
     data = []
     for yaml_file in yaml_files:
@@ -15,13 +14,16 @@ def load_yaml_files(directory):
 
 
 def evaluate_property_expression(expression, component):
+    """Evaluate property templating expressions like {Value} {Power} etc."""
     local_vars = {prop.key: prop.value for prop in component.properties}
     return eval(f"f'{expression}'", {}, local_vars)
 
 
-def update_component(base_component, components_data):
+def update_component_properties(base_component, components_data):
+    """Update component properties based on YAML component data."""
     properties = components_data["properties"]
     remove_properties = components_data.get("remove_properties", [])
+
     for prop in properties:
         key = prop.get("key")
         value = prop.get("value", "")
@@ -66,53 +68,3 @@ def update_component(base_component, components_data):
     base_component.properties = [p for p in base_component.properties if p.key not in remove_properties]
 
     return base_component
-
-
-def rename_symbol_units(symbol):
-    for unit in symbol.units:
-        unit.entryName = f"{symbol.entryName}"
-
-
-def create_or_update_library(yaml_data, symbols_dir):
-    for lib_data in yaml_data:
-        base_lib_path = os.path.join(symbols_dir, "base_library.kicad_sym")
-        output_lib_path = os.path.join(symbols_dir, f"{lib_data['library_name']}.kicad_sym")
-
-        # Load the base symbol library
-        base_lib = SymbolLib.from_file(base_lib_path)
-        new_lib = SymbolLib()
-
-        for component_data in lib_data["components"]:
-            # Find the base component
-            base_component = None
-            for symbol in base_lib.symbols:
-                if symbol.entryName == component_data["base_component"]:
-                    base_component = symbol
-                    break
-
-            if base_component is None:
-                raise ValueError(f"Base component {component_data['base_component']} not found in library")
-
-            # Create a new symbol instance by deep copying the base component
-            new_component = copy.deepcopy(base_component)
-            new_component.entryName = component_data["name"]
-            rename_symbol_units(new_component)
-            new_component = update_component(new_component, component_data)
-
-            new_lib.symbols.append(new_component)
-
-        new_lib.to_file(output_lib_path)
-
-
-def main():
-    sources_dir = "./Sources"
-    symbols_dir = "./Symbols"
-    # Ensure sources directory exists (safe no-op if it already exists)
-    os.makedirs(sources_dir, exist_ok=True)
-
-    yaml_data = load_yaml_files(sources_dir)
-    create_or_update_library(yaml_data, symbols_dir)
-
-
-if __name__ == "__main__":
-    main()

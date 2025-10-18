@@ -467,9 +467,9 @@
 		(uuid "9a5d66cd-38bb-4634-8a27-7e11343505d4")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/pxc_1874221_02_00_DMCV-1-5-12-G1F-3-5-LR-P26THR_3D.stp"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/pxc_1874221_02_00_DMCV-1-5-12-G1F-3-5-LR-P26THR_3D.stp"
 		(offset
-			(xyz -5.3 -8 0)
+			(xyz -5.2 -8.1 0)
 		)
 		(scale
 			(xyz 1 1 1)

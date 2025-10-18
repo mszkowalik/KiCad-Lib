@@ -197,7 +197,7 @@
 		(uuid "e1a50496-f1fa-44a8-ab4c-1d5f6b702289")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/NID65-20241008.stp"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/NID65-20241008.stp"
 		(offset
 			(xyz -1.3 -1.5 4.5)
 		)

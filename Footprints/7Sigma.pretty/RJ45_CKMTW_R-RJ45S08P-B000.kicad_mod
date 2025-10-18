@@ -1,12 +1,12 @@
 (footprint "RJ45_CKMTW_R-RJ45S08P-B000"
-	(version 20221018)
+	(version 20241229)
 	(generator "pcbnew")
+	(generator_version "9.0")
 	(layer "F.Cu")
 	(descr "1 port ethernet throughhole connector")
 	(tags "RJ45 ethernet 8p8c")
-	(attr through_hole)
-	(fp_text reference "REF**"
-		(at 4.445 -5.34)
+	(property "Reference" "REF**"
+		(at 4.445 -5.34 0)
 		(layer "F.SilkS")
 		(uuid "c27e09dc-a13e-4cd6-a87d-efb7cb6f21dd")
 		(effects
@@ -16,8 +16,8 @@
 			)
 		)
 	)
-	(fp_text value "RJ45_CKMTW_R-RJ45S08P-B000"
-		(at 4.455 13.26)
+	(property "Value" "RJ45_CKMTW_R-RJ45S08P-B000"
+		(at 4.455 13.26 0)
 		(layer "F.Fab")
 		(uuid "3c65663d-68bf-4041-8d98-97a22db86ef2")
 		(effects
@@ -27,17 +27,31 @@
 			)
 		)
 	)
-	(fp_text user "${REFERENCE}"
-		(at 4.445 6.36)
+	(property "Datasheet" ""
+		(at 0 0 0)
 		(layer "F.Fab")
-		(uuid "67af0cfe-87ca-4309-99ea-a91097403405")
+		(hide yes)
+		(uuid "736f69fa-a010-47a8-8828-9b0576265777")
 		(effects
 			(font
-				(size 1 1)
+				(size 1.27 1.27)
 				(thickness 0.15)
 			)
 		)
 	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "d42accd8-afb0-4598-b6b1-2d67a622e31f")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr through_hole)
 	(fp_line
 		(start -4.441 -0.508)
 		(end -4.441 0.508)
@@ -218,6 +232,17 @@
 		(layer "F.Fab")
 		(uuid "bc7a2e11-1a80-4967-b6d5-76c8479f6e1e")
 	)
+	(fp_text user "${REFERENCE}"
+		(at 4.445 6.36 0)
+		(layer "F.Fab")
+		(uuid "67af0cfe-87ca-4309-99ea-a91097403405")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
 	(pad "" np_thru_hole circle
 		(at -1.27 6.35)
 		(size 3.25 3.25)
@@ -237,6 +262,7 @@
 		(size 1.5 1.5)
 		(drill 0.9)
 		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
 		(uuid "17f5671d-2e97-4b9f-987a-ad66a053982b")
 	)
 	(pad "2" thru_hole circle
@@ -244,6 +270,7 @@
 		(size 1.5 1.5)
 		(drill 0.9)
 		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
 		(uuid "b353ffd6-edaa-49d9-8b95-e8b557870593")
 	)
 	(pad "3" thru_hole circle
@@ -251,6 +278,7 @@
 		(size 1.5 1.5)
 		(drill 0.9)
 		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
 		(uuid "3ac81920-d481-4ae5-ba08-b05e86fb7b9d")
 	)
 	(pad "4" thru_hole circle
@@ -258,6 +286,7 @@
 		(size 1.5 1.5)
 		(drill 0.9)
 		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
 		(uuid "3efa3cb8-2aa7-47ba-92c3-7782604d0329")
 	)
 	(pad "5" thru_hole circle
@@ -265,6 +294,7 @@
 		(size 1.5 1.5)
 		(drill 0.9)
 		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
 		(uuid "48fd3f51-e102-4376-b0aa-2d5258e35f68")
 	)
 	(pad "6" thru_hole circle
@@ -272,6 +302,7 @@
 		(size 1.5 1.5)
 		(drill 0.9)
 		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
 		(uuid "619c6959-c0bb-4c68-82e2-6ca4012096fc")
 	)
 	(pad "7" thru_hole circle
@@ -279,6 +310,7 @@
 		(size 1.5 1.5)
 		(drill 0.9)
 		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
 		(uuid "246b3ed7-ec17-4959-afd8-ab64e9597bb6")
 	)
 	(pad "8" thru_hole circle
@@ -286,6 +318,7 @@
 		(size 1.5 1.5)
 		(drill 0.9)
 		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
 		(uuid "f49d35a4-3e93-40b9-8fb5-a96ce26f3cc3")
 	)
 	(pad "SH" thru_hole circle
@@ -293,6 +326,7 @@
 		(size 3 3)
 		(drill 1.6)
 		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
 		(uuid "9eb6770e-b684-4286-a819-a1b3b4982479")
 	)
 	(pad "SH" thru_hole circle
@@ -300,11 +334,13 @@
 		(size 3 3)
 		(drill 1.6)
 		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
 		(uuid "6c563a81-13cb-4281-9bdd-a48057e6115f")
 	)
-	(model "${SEVENSIGMA_DIR}/3DModels/Connector_RJ.3dshapes/RJ45_Ninigi_GE.wrl"
+	(embedded_fonts no)
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/RJ45-TH_L16.0-W16.7-H16.5.wrl"
 		(offset
-			(xyz 0 0 0)
+			(xyz 4.5 -4.5 0)
 		)
 		(scale
 			(xyz 1 1 1)

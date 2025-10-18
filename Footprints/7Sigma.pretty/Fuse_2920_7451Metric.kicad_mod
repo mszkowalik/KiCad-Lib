@@ -149,7 +149,7 @@
 		(uuid "06e03ac6-b92d-4fb9-80a0-b3c02789530c")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/Fuse.3dshapes/Fuse_2920_7451Metric.step"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/F2920-1.wrl"
 		(offset
 			(xyz 0 0 0)
 		)

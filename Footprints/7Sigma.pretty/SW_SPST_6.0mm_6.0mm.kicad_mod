@@ -227,17 +227,6 @@
 		(uuid "2b2c973d-da98-4fce-99e8-9c8ae9a51382")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/Button_Switch_SMD.3dshapes/SW_SPST_Omron_B3FS-100xP.wrl"
-		(offset
-			(xyz 0 0 0)
-		)
-		(scale
-			(xyz 1 1 1)
-		)
-		(rotate
-			(xyz 0 0 0)
-		)
-	)
 	(model "${SEVENSIGMA_DIR}/3DModels/Button_Switch_SMD.3dshapes/SW_SPST_Omron_B3FS-100xP.step"
 		(offset
 			(xyz 0 0 0)

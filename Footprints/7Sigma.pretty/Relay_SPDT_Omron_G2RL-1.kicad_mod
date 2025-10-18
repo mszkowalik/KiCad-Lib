@@ -287,7 +287,7 @@
 		(uuid "e5fffc09-c261-46f2-8a5f-edcd87ba8c53")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/Relay_THT.3dshapes/Relay_SPDT_Omron_G2RL-1.step"
+	(model "${SEVENSIGMA_DIR}/3DModels/G2RL_1.step"
 		(offset
 			(xyz 0 0 0)
 		)
@@ -295,7 +295,7 @@
 			(xyz 1 1 1)
 		)
 		(rotate
-			(xyz 0 0 0)
+			(xyz -90 -0 90)
 		)
 	)
 )

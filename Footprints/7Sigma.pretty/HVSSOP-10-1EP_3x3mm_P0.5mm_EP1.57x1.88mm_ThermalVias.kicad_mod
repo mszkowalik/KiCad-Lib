@@ -289,7 +289,7 @@
 		(uuid "75825767-9a22-4f18-98e4-8c859b764db8")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/Package_SO.3dshapes/HVSSOP-10-1EP_3x3mm_P0.5mm_EP1.57x1.88mm.step"
+	(model "${SEVENSIGMA_DIR}/3DModels/Package_SO.3dshapes/VSSOP-10_3x3mm_P0.5mm.step"
 		(offset
 			(xyz 0 0 0)
 		)

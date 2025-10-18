@@ -34,7 +34,7 @@ def _extract_rel_3d_subpath(model_path: str) -> str:
     s = _normalize_model_path(model_path)
     for prefix in SOURCE_BASE_MAP.keys():
         if s.startswith(prefix):
-            return s[len(prefix):]
+            return s[len(prefix) :]
     # Fallback: keep from '<Name>.3dshapes/...'
     marker = ".3dshapes/"
     idx = s.find(marker)
@@ -96,10 +96,15 @@ def process_footprint(filepath: str):
         fp.to_file(filepath)
 
 
-def main():
+def update_footprints_models():
+    """Update 3D models for all footprints in the 7Sigma.pretty directory."""
     for fname in os.listdir(FOOTPRINTS_DIR):
         if fname.endswith(".kicad_mod"):
             process_footprint(os.path.join(FOOTPRINTS_DIR, fname))
+
+
+def main():
+    update_footprints_models()
 
 
 if __name__ == "__main__":

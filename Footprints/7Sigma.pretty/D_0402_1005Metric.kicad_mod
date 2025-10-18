@@ -239,7 +239,7 @@
 		(uuid "6705d933-5bc3-499e-b38a-b707d81c0580")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/Diode_SMD.3dshapes/D_0402_1005Metric.step"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/D0402_L1.0-W0.5-H0.5.wrl"
 		(offset
 			(xyz 0 0 0)
 		)
