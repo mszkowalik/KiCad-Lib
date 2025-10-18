@@ -221,7 +221,7 @@
 		(exclude_from_sim yes)
 		(in_bom yes)
 		(on_board yes)
-		(property "Reference" "G"
+		(property "Reference" "ENC"
 			(at 0 5.08 0)
 			(effects
 				(font
@@ -237,7 +237,7 @@
 				)
 			)
 		)
-		(property "Footprint" "7Sigma:1551RFLGY"
+		(property "Footprint" "7Sigma:HAMMOND_1551RFLGY"
 			(at 0 0 0)
 			(effects
 				(font

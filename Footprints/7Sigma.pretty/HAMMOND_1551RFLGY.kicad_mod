@@ -1,4 +1,4 @@
-(footprint "1551RFLGY"
+(footprint "HAMMOND_1551RFLGY"
 	(version 20241229)
 	(generator "pcbnew")
 	(generator_version "9.0")
@@ -16,7 +16,7 @@
 			)
 		)
 	)
-	(property "Value" "1551RFLGY"
+	(property "Value" "HAMMOND_1551RFLGY"
 		(at 0.8 1.05 0)
 		(unlocked yes)
 		(layer "F.Fab")

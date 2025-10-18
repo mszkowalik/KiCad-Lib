@@ -31,11 +31,11 @@ components:
     base_component: Enclosure
     properties:
       - key: Reference
-        value: "G"
+        value: "ENC"
       - key: Value
-        value: "Hammond_1551RFLGY"
+        value: Hammond_1551RFLGY
       - key: Footprint
-        value: "7Sigma:1551RFLGY"
+        value: 7Sigma:HAMMOND_1551RFLGY
       - key: ki_keywords
         value: "hammond enclosure case housing mechanical"
       - key: ki_description
