@@ -39,7 +39,7 @@ components:
       - key: Footprint
         value: 7Sigma:R_0402_1005Metric
       - key: Footprint_Name
-        value: 0402
+        value: "0402"
       - key: ki_description
         value: "{Value} {Power} {Tolerance} {Footprint_Name}"
       - key: Manufacturer 1
@@ -281,7 +281,7 @@ components:
       - key: Tolerance
         value: 1%
       - key: Footprint
-        value: Resistor_SMD:R_1206_3216Metric
+        value: 7Sigma:R_1206_3216Metric
       - key: Footprint_Name
         value: "1206"
       - key: ki_description

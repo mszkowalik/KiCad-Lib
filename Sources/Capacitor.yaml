@@ -99,7 +99,7 @@ components:
       - key: Footprint
         value: 7Sigma:C_0805_2012Metric
       - key: Footprint_Name
-        value: 0805
+        value: "0805"
       - key: ki_description
         value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
       - key: Manufacturer 1
