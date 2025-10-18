@@ -95,25 +95,6 @@ components:
         value: C2761151
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_DEGSON-15EDGVM-3-5-04P-14-00A-H_C2761151.pdf
-  - name: 15EDGVM-3.5-05P
-    base_component: Conn_01x05
-    properties:
-      - key: Footprint
-        value: 7Sigma:PhoenixContact_MCV_1,5_5-GF-3.5_1x05_P3.50mm_Vertical_ThreadedFlange
-      - key: ki_description
-        value: Pluggable terminal block; 3.5mm
-      - key: Manufacturer 1
-        value: DEGSON
-      - key: Manufacturer Part Number 1
-        value: 15EDGVM-3.5-05P
-      - key: Supplier 1
-        value: LCSC
-      - key: Supplier Part Number 1
-        value: C2761152
-      - key: LCSC Part
-        value: C2761152
-      - key: Datasheet
-        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411220118_DEGSON-15EDGVM-3-5-05P-14-00A-H_C2761152.pdf
   - name: 15EDGVM-3.5-08P
     base_component: Conn_01x08
     properties:
@@ -133,25 +114,6 @@ components:
         value: C2761155
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_DEGSON-15EDGVM-3-5-08P-14-00A-H_C2761155.pdf
-  - name: 15EDGVM-3.5-10P
-    base_component: Conn_01x10
-    properties:
-      - key: Footprint
-        value: 7Sigma:PhoenixContact_MCV_1,5_10-GF-3.5_1x10_P3.50mm_Vertical_ThreadedFlange
-      - key: ki_description
-        value: Pluggable terminal block; 3.5mm
-      - key: Manufacturer 1
-        value: DEGSON
-      - key: Manufacturer Part Number 1
-        value: 15EDGVM-3.5-10P
-      - key: Supplier 1
-        value: LCSC
-      - key: Supplier Part Number 1
-        value:
-      - key: LCSC Part
-        value:
-      - key: Datasheet
-        value:
   - name: 15EDGVM-3.5-12P
     base_component: Conn_01x12
     properties:
@@ -432,9 +394,9 @@ components:
     base_component: TERMINAL_BLOCK_PLUG
     properties:
       - key: Footprint
-        value: ""
+        value: 7Sigma:TerminalBlock_Plug_Invisible
       - key: ki_description
-        value: Pluggable terminal block; 3.81mm
+        value: Pluggable terminal block plug; 3.81mm
       - key: Value
         value: DB2EKDM-3.81-8P-GN
       - key: Pin Number
@@ -455,9 +417,9 @@ components:
     base_component: TERMINAL_BLOCK_PLUG
     properties:
       - key: Footprint
-        value: ""
+        value: 7Sigma:TerminalBlock_Plug_Invisible
       - key: ki_description
-        value: Pluggable terminal block; 3.81mm
+        value: Pluggable terminal block plug; 3.81mm
       - key: Value
         value: DB2EKDM-3.81-4P-GN
       - key: Pin Number
@@ -478,9 +440,9 @@ components:
     base_component: TERMINAL_BLOCK_PLUG
     properties:
       - key: Footprint
-        value: ""
+        value: 7Sigma:TerminalBlock_Plug_Invisible
       - key: ki_description
-        value: Pluggable terminal block; 3.81mm
+        value: Pluggable terminal block plug; 3.81mm
       - key: Value
         value: DB2EKDM-3.81-2P-GN
       - key: Pin Number
@@ -771,3 +733,258 @@ components:
         value: C8387
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C8387.pdf
+  - name: WJ15EDGK-3.81-2P
+    base_component: TERMINAL_BLOCK_PLUG
+    properties:
+      - key: Footprint
+        value: 7Sigma:TerminalBlock_Plug_Invisible
+      - key: ki_description
+        value: Pluggable terminal block plug; 3.81mm
+      - key: on_board
+        value: true
+      - key: Value
+        value: WJ15EDGK-3.81-2P
+      - key: Pin Number
+        value: 2
+      - key: Manufacturer 1
+        value: KANGNEX
+      - key: Manufacturer Part Number 1
+        value: WJ15EDGK-3.81-2P
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C8466
+      - key: LCSC Part
+        value: C8466
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C8466.pdf
+  - name: 15EDGKNM-3.5-02P-14-00A(H)
+    base_component: TERMINAL_BLOCK_PLUG
+    properties:
+      - key: Footprint
+        value: 7Sigma:TerminalBlock_Plug_Invisible
+      - key: ki_description
+        value: Pluggable terminal block plug; 3.5mm
+      - key: Value
+        value: 15EDGKNM-3.5-02P
+      - key: Pin Number
+        value: 2
+      - key: Manufacturer 1
+        value: DEGSON
+      - key: Manufacturer Part Number 1
+        value: 15EDGKNM-3.5-02P-14-00A(H)
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2761156
+      - key: LCSC Part
+        value: C2761156
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C2761156.pdf
+  - name: 15EDGKNM-3.5-04P-14-00A(H)
+    base_component: TERMINAL_BLOCK_PLUG
+    properties:
+      - key: Footprint
+        value: 7Sigma:TerminalBlock_Plug_Invisible
+      - key: ki_description
+        value: Pluggable terminal block plug; 3.5mm
+      - key: Value
+        value: 15EDGKNM-3.5-04P
+      - key: Pin Number
+        value: 4
+      - key: Manufacturer 1
+        value: DEGSON
+      - key: Manufacturer Part Number 1
+        value: 15EDGKNM-3.5-04P-14-00A(H)
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2761158
+      - key: LCSC Part
+        value: C2761158
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C2761158.pdf
+  - name: 15EDGKNM-3.5-05P-14-00A(H)
+    base_component: TERMINAL_BLOCK_PLUG
+    properties:
+      - key: Footprint
+        value: 7Sigma:TerminalBlock_Plug_Invisible
+      - key: ki_description
+        value: Pluggable terminal block plug; 3.5mm
+      - key: Value
+        value: 15EDGKNM-3.5-05P
+      - key: Pin Number
+        value: 5
+      - key: Manufacturer 1
+        value: DEGSON
+      - key: Manufacturer Part Number 1
+        value: 15EDGKNM-3.5-05P-14-00A(H)
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2761159
+      - key: LCSC Part
+        value: C2761159
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C2761159.pdf
+  - name: 15EDGKNM-3.5-08P-14-00A(H)
+    base_component: TERMINAL_BLOCK_PLUG
+    properties:
+      - key: Footprint
+        value: 7Sigma:TerminalBlock_Plug_Invisible
+      - key: ki_description
+        value: Pluggable terminal block plug; 3.5mm
+      - key: Value
+        value: 15EDGKNM-3.5-08P
+      - key: Pin Number
+        value: 8
+      - key: Manufacturer 1
+        value: DEGSON
+      - key: Manufacturer Part Number 1
+        value: 15EDGKNM-3.5-08P-14-00A(H)
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2761162
+      - key: LCSC Part
+        value: C2761162
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C2761162.pdf
+  - name: MCV_1,5/_2-G-3,5-LR_PLUG
+    base_component: TERMINAL_BLOCK_PLUG
+    properties:
+      - key: Footprint
+        value: 7Sigma:TerminalBlock_Plug_Invisible
+      - key: ki_description
+        value: Pluggable terminal block plug; 3.5mm
+      - key: Value
+        value: MCV 1,5/ 2-G-3,5-LR
+      - key: Pin Number
+        value: 2
+      - key: Manufacturer 1
+        value: Phoenix Contact
+      - key: Manufacturer Part Number 1
+        value: MCV 1,5/ 2-G-3,5-LR
+      - key: Supplier 1
+        value: Phoenix Contact
+      - key: Supplier Part Number 1
+        value: ""
+      - key: LCSC Part
+        value: ""
+      - key: Datasheet
+        value: ""
+  - name: MCV_1,5/_4-G-3,5-LR_PLUG
+    base_component: TERMINAL_BLOCK_PLUG
+    properties:
+      - key: Footprint
+        value: 7Sigma:TerminalBlock_Plug_Invisible
+      - key: ki_description
+        value: Pluggable terminal block plug; 3.5mm
+      - key: Value
+        value: MCV 1,5/ 4-G-3,5-LR
+      - key: Pin Number
+        value: 4
+      - key: Manufacturer 1
+        value: Phoenix Contact
+      - key: Manufacturer Part Number 1
+        value: MCV 1,5/ 4-G-3,5-LR
+      - key: Supplier 1
+        value: Phoenix Contact
+      - key: Supplier Part Number 1
+        value: ""
+      - key: LCSC Part
+        value: ""
+      - key: Datasheet
+        value: ""
+  - name: MCV_1,5/_8-G-3,5-LR_PLUG
+    base_component: TERMINAL_BLOCK_PLUG
+    properties:
+      - key: Footprint
+        value: 7Sigma:TerminalBlock_Plug_Invisible
+      - key: ki_description
+        value: Pluggable terminal block plug; 3.5mm
+      - key: Value
+        value: MCV 1,5/ 8-G-3,5-LR
+      - key: Pin Number
+        value: 8
+      - key: Manufacturer 1
+        value: Phoenix Contact
+      - key: Manufacturer Part Number 1
+        value: MCV 1,5/ 8-G-3,5-LR
+      - key: Supplier 1
+        value: Phoenix Contact
+      - key: Supplier Part Number 1
+        value: ""
+      - key: LCSC Part
+        value: ""
+      - key: Datasheet
+        value: ""
+  - name: MCV_1,5/12-G-3,5-LR_PLUG
+    base_component: TERMINAL_BLOCK_PLUG
+    properties:
+      - key: Footprint
+        value: 7Sigma:TerminalBlock_Plug_Invisible
+      - key: ki_description
+        value: Pluggable terminal block plug; 3.5mm
+      - key: Value
+        value: MCV 1,5/12-G-3,5-LR
+      - key: Pin Number
+        value: 12
+      - key: Manufacturer 1
+        value: Phoenix Contact
+      - key: Manufacturer Part Number 1
+        value: MCV 1,5/12-G-3,5-LR
+      - key: Supplier 1
+        value: Phoenix Contact
+      - key: Supplier Part Number 1
+        value: ""
+      - key: LCSC Part
+        value: ""
+      - key: Datasheet
+        value: ""
+  - name: MSTBVA_2,5/_2-G-5,08-LR_PLUG
+    base_component: TERMINAL_BLOCK_PLUG
+    properties:
+      - key: Footprint
+        value: 7Sigma:TerminalBlock_Plug_Invisible
+      - key: ki_description
+        value: Pluggable terminal block plug; 5.08mm
+      - key: Value
+        value: MSTBVA 2,5/ 2-G-5,08-LR
+      - key: Pin Number
+        value: 2
+      - key: Manufacturer 1
+        value: Phoenix Contact
+      - key: Manufacturer Part Number 1
+        value: MSTBVA 2,5/ 2-G-5,08-LR
+      - key: Supplier 1
+        value: Phoenix Contact
+      - key: Supplier Part Number 1
+        value: ""
+      - key: LCSC Part
+        value: ""
+      - key: Datasheet
+        value: ""
+  - name: MSTBVA_2,5/_4-G-5,08-LR_PLUG
+    base_component: TERMINAL_BLOCK_PLUG
+    properties:
+      - key: Footprint
+        value: 7Sigma:TerminalBlock_Plug_Invisible
+      - key: ki_description
+        value: Pluggable terminal block plug; 5.08mm
+      - key: Value
+        value: MSTBVA 2,5/ 4-G-5,08-LR
+      - key: Pin Number
+        value: 4
+      - key: Manufacturer 1
+        value: Phoenix Contact
+      - key: Manufacturer Part Number 1
+        value: MSTBVA 2,5/ 4-G-5,08-LR
+      - key: Supplier 1
+        value: Phoenix Contact
+      - key: Supplier Part Number 1
+        value: ""
+      - key: LCSC Part
+        value: ""
+      - key: Datasheet
+        value: ""

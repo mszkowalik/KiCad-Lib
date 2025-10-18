@@ -296,7 +296,7 @@
 				(hide yes)
 			)
 		)
-		(property "Footprint_Name" "258"
+		(property "Footprint_Name" "0402"
 			(at 0 0 0)
 			(effects
 				(font
@@ -305,7 +305,7 @@
 				(hide yes)
 			)
 		)
-		(property "ki_description" "22R 63mW 1% 258"
+		(property "ki_description" "22R 63mW 1% 0402"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2087,7 +2087,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_1206_3216Metric"
+		(property "Footprint" "7Sigma:R_1206_3216Metric"
 			(at -1.778 0 90)
 			(effects
 				(font

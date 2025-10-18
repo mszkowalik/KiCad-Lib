@@ -292,4 +292,15 @@
 			(xyz 0 0 0)
 		)
 	)
+	(model "${SEVENSIGMA_DIR}/3DModels/Connector_PLUGGABLE_TERMINAL_BLOCK/15EDGKN-3.5-02P-1Y-1000A&Z(H).stp"
+		(offset
+			(xyz 10.5 -1.5 7.5)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 180 -180 -0)
+		)
+	)
 )
