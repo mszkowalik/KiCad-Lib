@@ -25,7 +25,7 @@ components:
       - key: Value
         value: GT-TC025D-H0065-L1
       - key: Footprint
-        value: 7Sigma:SW-SMD_4P-L3.0-W2.6-P1.80-LS3.4-TL
+        value: 7Sigma:SW-SMD_4P-L3.0-W2.6-P1.80-LS3.4-H0.65
       - key: Manufacturer 1
         value: G-Switch
       - key: Manufacturer Part Number 1
@@ -41,12 +41,12 @@ components:
       - key: LCSC Part Class
         value: Extended Part
   - name: KH-6X6X9H-TJ
-    base_component: SW_Push
+    base_component: SW_Push_4pin
     properties:
       - key: Value
         value: KH-6X6X9H-TJ
       - key: Footprint
-        value: 7Sigma:SW_PUSH_6mm
+        value: 7Sigma:SW-TH_4P-L6.0-W6.0-P4.50-LS6.5-H9.0
       - key: Manufacturer 1
         value: Shenzhen Kinghelm Elec
       - key: Manufacturer Part Number 1
@@ -60,12 +60,12 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2106081503_Shenzhen-Kinghelm-Elec-KH-6X6X9H-TJ_C2837519.pdf
   - name: KH-6X6X4.3H-STM
-    base_component: SW_Push
+    base_component: SW_Push_4pin
     properties:
       - key: Value
         value: KH-6X6X4.3H-STM
       - key: Footprint
-        value: 7Sigma:SW_SPST_6.0mm_6.0mm
+        value: 7Sigma:SW-SMD_4P-L6.0-W6.0-P4.50-LS9.0-H4.3
       - key: Manufacturer 1
         value: Shenzhen Kinghelm Elec
       - key: Manufacturer Part Number 1
@@ -84,7 +84,7 @@ components:
       - key: Value
         value: GT-TC048D-H025-L1
       - key: Footprint
-        value: 7Sigma:SW-SMD_4P-L4.2-W3.2-P2.15-LS4.5
+        value: 7Sigma:SW-SMD_4P-L4.2-W3.2-P2.15-LS4.5-H2.5
       - key: Manufacturer 1
         value: G-Switch
       - key: Manufacturer Part Number 1
@@ -103,7 +103,7 @@ components:
       - key: Value
         value: TS3625A
       - key: Footprint
-        value: 7Sigma:SW-SMD_L6.0-W3.5-LS8.4
+        value: 7Sigma:SW-SMD_L6.0-W3.5-LS8.4-H2.5
       - key: Manufacturer 1
         value: SHOU HAN
       - key: Manufacturer Part Number 1

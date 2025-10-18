@@ -12,6 +12,9 @@ def rename_symbol_units(symbol):
 
 def create_or_update_library(yaml_data, symbols_dir):
     """Create or update KiCad symbol libraries based on YAML data."""
+    total_components = 0
+    library_count = 0
+    
     for lib_data in yaml_data:
         base_lib_path = os.path.join(symbols_dir, "base_library.kicad_sym")
         output_lib_path = os.path.join(symbols_dir, f"{lib_data['library_name']}.kicad_sym")
@@ -38,8 +41,12 @@ def create_or_update_library(yaml_data, symbols_dir):
             new_component = update_component_properties(new_component, component_data)
 
             new_lib.symbols.append(new_component)
+            total_components += 1
 
         new_lib.to_file(output_lib_path)
+        library_count += 1
+
+    return total_components, library_count
 
 
 def generate_symbol_libraries(sources_dir="./Sources", symbols_dir="./Symbols"):
@@ -50,4 +57,6 @@ def generate_symbol_libraries(sources_dir="./Sources", symbols_dir="./Symbols"):
     os.makedirs(sources_dir, exist_ok=True)
 
     yaml_data = load_yaml_files(sources_dir)
-    create_or_update_library(yaml_data, symbols_dir)
+    total_components, library_count = create_or_update_library(yaml_data, symbols_dir)
+    
+    return total_components, library_count

@@ -1,4 +1,4 @@
-(footprint "SW-SMD_L6.0-W3.5-LS8.4"
+(footprint "SW-SMD_L6.0-W3.5-LS8.4-H2.5"
 	(version 20241229)
 	(generator "pcbnew")
 	(generator_version "9.0")
@@ -14,7 +14,7 @@
 			)
 		)
 	)
-	(property "Value" "SW-SMD_L6.0-W3.5-LS8.4"
+	(property "Value" "SW-SMD_L6.0-W3.5-LS8.4-H2.5"
 		(at 0 4 0)
 		(layer "F.Fab")
 		(uuid "e46efa66-a01c-4018-9309-f4f26ac338d6")
