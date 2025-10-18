@@ -274,13 +274,13 @@
 	(model "${SEVENSIGMA_DIR}/3DModels/1551RFL.stp"
 		(opacity 0.3800)
 		(offset
-			(xyz 10 -10 -11)
+			(xyz 10.5 -10 -11)
 		)
 		(scale
 			(xyz 1 1 1)
 		)
 		(rotate
-			(xyz 0 -180 -180)
+			(xyz -0 -180 -180)
 		)
 	)
 )

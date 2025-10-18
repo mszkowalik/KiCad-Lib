@@ -310,13 +310,13 @@
 	(embedded_fonts no)
 	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/SMA-TH_5P-L6.5-W6.5-H9.5_BWSMA-KE-P001.wrl"
 		(offset
-			(xyz 2.9 0 0.45)
+			(xyz 2.7 0 0.45)
 		)
 		(scale
 			(xyz 1 1 1)
 		)
 		(rotate
-			(xyz 0 90 -180)
+			(xyz -0 90 -180)
 		)
 	)
 )

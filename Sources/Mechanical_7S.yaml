@@ -1,0 +1,42 @@
+library_name: Mechanical_7S
+components:
+  - name: 7Sigma_Logo
+    base_component: 7Sigma_Logo_Base
+    properties:
+      - key: Reference
+        value: "G"
+      - key: Value
+        value: "7Sigma Logo"
+      - key: Footprint
+        value: "7Sigma:7Sigma_Logo"
+      - key: ki_keywords
+        value: "logo graphic symbol"
+      - key: ki_description
+        value: "7Sigma company logo graphic symbol"
+  - name: MH_2.5mm_4mm_OD
+    base_component: MountingHole_Pad
+    properties:
+      - key: Reference
+        value: "H"
+      - key: Value
+        value: "MH_2.5mm_4mm_OD"
+      - key: Footprint
+        value: "7Sigma:MountingHole_2.5mm_Pad_4mm"
+      - key: ki_keywords
+        value: "mounting hole pad"
+      - key: ki_description
+        value: "Mounting hole with pad, 2.5mm drill, 4mm outer diameter"
+
+  - name: Hammond_1551RFLGY
+    base_component: Enclosure
+    properties:
+      - key: Reference
+        value: "G"
+      - key: Value
+        value: "Hammond_1551RFLGY"
+      - key: Footprint
+        value: "7Sigma:1551RFLGY"
+      - key: ki_keywords
+        value: "hammond enclosure case housing mechanical"
+      - key: ki_description
+        value: "Hammond 1551RFLGY translucent grey flame retardant polycarbonate enclosure"
