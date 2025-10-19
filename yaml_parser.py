@@ -42,6 +42,10 @@ def update_component_properties(base_component, components_data):
         key = prop.get("key")
         value = prop.get("value", "")
 
+        # Convert None to empty string for kiutils compatibility
+        if value is None:
+            value = ""
+
         # Check if value is a string before evaluating the expression
         if isinstance(value, str) and "{" in value and "}" in value:
             value = evaluate_property_expression(value, base_component)
