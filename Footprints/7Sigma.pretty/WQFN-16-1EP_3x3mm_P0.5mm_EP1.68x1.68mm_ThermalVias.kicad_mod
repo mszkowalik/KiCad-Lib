@@ -560,7 +560,7 @@
 		(uuid "ee1b20d0-8d65-405c-b7bc-5dc0fc8295ae")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/Package_DFN_QFN.3dshapes/WQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm.step"
+	(model "${SEVENSIGMA_DIR}/3DModels/Package_DFN_QFN.3dshapes/WQFN-16-1EP_3x3mm_P0.5mm_EP1.6x1.6mm.wrl"
 		(offset
 			(xyz 0 0 0)
 		)

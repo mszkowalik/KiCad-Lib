@@ -1,5 +1,5 @@
 (kicad_symbol_lib
-	(version 20250526)
+	(version 20211014)
 	(symbol "7Sigma_Logo"
 		(pin_numbers
 			(hide yes)
@@ -333,5 +333,6 @@
 				)
 			)
 		)
+		(embedded_fonts no)
 	)
 )

@@ -1,5 +1,5 @@
 (kicad_symbol_lib
-	(version 20250526)
+	(version 20211014)
 	(symbol "G2RL-1-DC24"
 		(exclude_from_sim no)
 		(in_bom yes)
