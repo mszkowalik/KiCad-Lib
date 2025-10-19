@@ -1,4 +1,22 @@
 library_name: LEDs
+
+# Validation rules specific to LED components
+validation_rules:
+  required_properties:
+    - "Color"
+    - "Forward Current"
+    - "Forward Voltage"
+    - "Footprint"
+  non_empty_properties:
+    - "Color"
+    - "Forward Current"
+    - "Forward Voltage"
+  property_patterns:
+    "Color": "^(Red|Green|Blue|Yellow|Orange|White|RGB|RGBW|Infrared|IR|UV)$"
+    "Forward Current": "^[0-9]+(\\.[0-9]+)?[mµnp]?A$" # Current values like 20mA, 0.5A
+    "Forward Voltage": "^([0-9]+(\\.[0-9]+)?V|[0-9]+(\\.[0-9]+)?-[0-9]+(\\.[0-9]+)?V|([0-9]+(\\.[0-9]+)?-[0-9]+(\\.[0-9]+)?V,\\s*)+[0-9]+(\\.[0-9]+)?-[0-9]+(\\.[0-9]+)?V|)$" # Single voltage, range, multiple ranges (RGB), or empty
+    "Wavelength": "^[0-9]+nm$" # Wavelength like 570nm (optional)
+
 components:
   - name: APT2012CGCK
     base_component: LED
@@ -170,6 +188,8 @@ components:
         value: LED RGB 20mA Common Anode
       - key: Forward Current
         value: 20mA
+      - key: Forward Voltage
+        value: null
       - key: Color
         value: RGB
       - key: Lens

@@ -1,4 +1,13 @@
 library_name: TestPoints
+
+# Validation rules specific to test point components
+validation_rules:
+  # Test points can optionally have footprints (some are virtual)
+  footprint_required: false
+  # Test points typically don't have manufacturer information
+  manufacturer_properties: []  # Disable manufacturer validation for test points
+  required_properties: []  # Only global requirements apply
+
 components:
   - name: RH-5015
     base_component: TestPoint

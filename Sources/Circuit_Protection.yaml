@@ -1,4 +1,26 @@
 library_name: Circuit_Protection
+
+# Validation rules specific to circuit protection components
+validation_rules:
+  required_properties:
+    - "Value"
+    - "Hold Current"
+    - "Trip Current"
+    - "Power"
+    - "Voltage_Max"
+    - "Footprint"
+  non_empty_properties:
+    - "Value"
+    - "Hold Current"
+    - "Trip Current"
+    - "Power"
+    - "Voltage_Max"
+  property_patterns:
+    "Hold Current": "^[0-9]+(\\.[0-9]+)?[mµnpkMG]?A$" # Current like 5A, 500mA
+    "Trip Current": "^[0-9]+(\\.[0-9]+)?[mµnpkMG]?A$" # Current like 10A
+    "Power": "^[0-9]+(\\.[0-9]+)?[mµnpkMGT]?W$" # Power like 2.5W
+    "Voltage_Max": "^[0-9]+(\\.[0-9]+)?V$" # Voltage like 30V
+
 components:
   - name: BSMD2920-500-30V
     base_component: Polyfuse
@@ -104,6 +126,12 @@ components:
         value: 7Sigma:FUSE-TH_L24.4-W9.4-P22.60
       - key: ki_description
         value: Fuseholder 20x5mm
+      - key: Power
+        value: null
+      - key: Trip Current
+        value: null
+      - key: Hold Current
+        value: null
       - key: Manufacturer 1
         value: XFCN
       - key: Manufacturer Part Number 1

@@ -1,4 +1,21 @@
 library_name: Inductors
+
+# Validation rules specific to inductor components
+validation_rules:
+  required_properties:
+    - "Value"
+    - "Tolerance"
+    - "Rated_Current"
+    - "Footprint"
+  non_empty_properties:
+    - "Value"
+    - "Tolerance"
+    - "Rated_Current"
+  property_patterns:
+    "Value": "^[0-9]+(\\.[0-9]+)?[mµunpkMGT]?H$" # Inductance like 470nH, 10µH
+    "Tolerance": "^±?([0-9]+(\\.[0-9]+)?%|[0-9]+(\\.[0-9]+)?[mµunpkMGT]?H)$" # Tolerance like 20%, ±5% or 0.1nH, ±0.1µH
+    "Rated_Current": "^[0-9]+(\\.[0-9]+)?[mµnpkMG]?A$" # Current like 4.5A, 500mA
+
 components:
   - name: DFE201612E-R47M=P2
     base_component: L

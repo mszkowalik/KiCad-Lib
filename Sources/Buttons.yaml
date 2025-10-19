@@ -1,10 +1,23 @@
 library_name: Buttons
+
+# Validation rules specific to button/switch components
+validation_rules:
+  required_properties:
+    - "Value"
+    - "ki_description"
+    - "Footprint"
+  non_empty_properties:
+    - "Value"
+    - "ki_description"
+
 components:
   - name: TS24CA
     base_component: SW_Push
     properties:
       - key: Value
         value: TS24CA
+      - key: ki_description
+        value: SMD Tactile Switch 2.5x2.5mm Top Actuation Height 0.55mm
       - key: Footprint
         value: 7Sigma:SW-SMD_TS24CA
       - key: Manufacturer 1
@@ -24,6 +37,8 @@ components:
     properties:
       - key: Value
         value: GT-TC025D-H0065-L1
+      - key: ki_description
+        value: SMD Tactile Switch 3.0x2.6mm Top Actuation Height 0.65mm
       - key: Footprint
         value: 7Sigma:SW-SMD_4P-L3.0-W2.6-P1.80-LS3.4-H0.65
       - key: Manufacturer 1
@@ -45,6 +60,8 @@ components:
     properties:
       - key: Value
         value: KH-6X6X9H-TJ
+      - key: ki_description
+        value: SMD Tactile Switch 6.0x6.0mm Top Actuation Height 9.0mm
       - key: Footprint
         value: 7Sigma:SW-TH_4P-L6.0-W6.0-P4.50-LS6.5-H9.0
       - key: Manufacturer 1
@@ -64,6 +81,8 @@ components:
     properties:
       - key: Value
         value: KH-6X6X4.3H-STM
+      - key: ki_description
+        value: SMD Tactile Switch 6.0x6.0mm Top Actuation Height 4.3mm
       - key: Footprint
         value: 7Sigma:SW-SMD_4P-L6.0-W6.0-P4.50-LS9.0-H4.3
       - key: Manufacturer 1
@@ -83,6 +102,8 @@ components:
     properties:
       - key: Value
         value: GT-TC048D-H025-L1
+      - key: ki_description
+        value: SMD Tactile Switch 4.2x3.2mm Top Actuation Height 2.5mm
       - key: Footprint
         value: 7Sigma:SW-SMD_4P-L4.2-W3.2-P2.15-LS4.5-H2.5
       - key: Manufacturer 1
@@ -102,6 +123,8 @@ components:
     properties:
       - key: Value
         value: TS3625A
+      - key: ki_description
+        value: SMD Tactile Switch 6.0x3.5mm Top Actuation Height 2.5mm
       - key: Footprint
         value: 7Sigma:SW-SMD_L6.0-W3.5-LS8.4-H2.5
       - key: Manufacturer 1

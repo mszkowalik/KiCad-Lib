@@ -1,4 +1,21 @@
 library_name: Resistor
+
+# Validation rules specific to resistor components
+validation_rules:
+  required_properties:
+    - "Value"
+    - "Power"
+    - "Tolerance"
+    - "Footprint"
+  non_empty_properties:
+    - "Value"
+    - "Power"
+    - "Tolerance"
+  property_patterns:
+    "Value": "^[0-9]+(\\.[0-9]+)?[RKMkm][0-9]*$" # Resistance values like 22R, 5K1, 1M (suffix required)
+    "Power": "^[0-9]+(\\.[0-9]+)?[mµnpkMGT]?W?$" # Power values like 63mW, 0.1W
+    "Tolerance": "^[0-9]+(\\.[0-9]+)?%$" # Tolerance values like 1%, 5%
+
 components:
   - name: 0402WGF5101TCE
     base_component: R
@@ -244,33 +261,6 @@ components:
         value: C25123
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
-  - name: 0402WGF5101TCE
-    base_component: R
-    properties:
-      - key: Value
-        value: 5K1
-      - key: Power
-        value: 63mW
-      - key: Tolerance
-        value: 1%
-      - key: Footprint
-        value: 7Sigma:R_0402_1005Metric
-      - key: Footprint_Name
-        value: "0402"
-      - key: ki_description
-        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
-      - key: Manufacturer 1
-        value: Uni-Royal
-      - key: Manufacturer Part Number 1
-        value: 0402WGF5101TCE
-      - key: Supplier 1
-        value: LCSC
-      - key: Supplier Part Number 1
-        value: C25905
-      - key: LCSC Part
-        value: C25905
-      - key: Datasheet
-        value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
   - name: 1206W4F100LT5E
     base_component: R
     properties:
@@ -302,7 +292,7 @@ components:
     base_component: Thermistor_NTC
     properties:
       - key: Value
-        value: 10K NTC
+        value: 10K
       - key: Power
         value: 100mW
       - key: Tolerance
@@ -328,33 +318,6 @@ components:
       - key: Datasheet
         value: https://lcsc.com/product-detail/NTC-Thermistors_muRata_NCP15XH103F03RC_NTCThermistor-10kR-1_C77131.html
     remove_properties: []
-  - name: 0402WGF5101TCE
-    base_component: R
-    properties:
-      - key: Value
-        value: 5K1
-      - key: Power
-        value: 63mW
-      - key: Tolerance
-        value: 1%
-      - key: Footprint
-        value: 7Sigma:R_0402_1005Metric
-      - key: Footprint_Name
-        value: "0402"
-      - key: ki_description
-        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
-      - key: Manufacturer 1
-        value: Uni-Royal
-      - key: Manufacturer Part Number 1
-        value: 0402WGF5101TCE
-      - key: Supplier 1
-        value: LCSC
-      - key: Supplier Part Number 1
-        value: C25905
-      - key: LCSC Part
-        value: C25905
-      - key: Datasheet
-        value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
   - name: 0402WGF4533TCE
     base_component: R
     properties:

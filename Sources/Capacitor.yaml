@@ -1,4 +1,20 @@
 library_name: Capacitor
+
+# Validation rules specific to capacitor components
+validation_rules:
+  required_properties:
+    - "Value"
+    - "Voltage"
+    - "Footprint"
+  non_empty_properties:
+    - "Value"
+    - "Voltage"
+  property_patterns:
+    "Value": "^[0-9]+(\\.[0-9]+)?[npumkKMG]?[Ff]?$" # Capacitance values like 1uF, 100nF, 22pF
+    "Voltage": "^[0-9]+(\\.[0-9]+)?V$" # Voltage ratings like 50V, 3.3V
+    "Tolerance": "^([0-9]+(\\.[0-9]+)?(%|\\s?(pF|F)))$" # Tolerance like 10%, 5%, 0.25 pF
+    "Dielectric": "^(C0G|NP0|X7R|X5R|Y5V|Z5U|Al\\s?Elec|Al-Elec|Aluminum|Tantalum|Film|Ceramic)$" # All capacitor dielectric types
+
 components:
   - name: GRM155R61H105KE05D
     base_component: C
@@ -352,39 +368,6 @@ components:
         value: C28323
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Samsung-Electro-Mechanics-CL21B105KBFNNNE_C28323.pdf
-  - name: GJM1555C1H1R2WB01D
-    base_component: C
-    properties:
-      - key: Value
-        value: 1.2pF
-      - key: Tolerance
-        value: 0.5pF
-      - key: Voltage
-        value: 50V
-      - key: Dielectric
-        value: C0G
-      - key: Footprint
-        value: 7Sigma:C_0402_1005Metric
-      - key: Footprint_Name
-        value: "0402"
-      - key: ki_description
-        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
-      - key: Manufacturer 1
-        value: Murata Electronics
-      - key: Manufacturer Part Number 1
-        value: GJM1555C1H1R2WB01D
-      - key: Supplier 1
-        value: LCSC
-      - key: Supplier Part Number 1
-        value: C76899
-      - key: Supplier 2
-        value: Mouser
-      - key: Supplier Part Number 2
-        value: 81-GJM1555C1H1R2WB1D
-      - key: LCSC Part
-        value: C76899
-      - key: Datasheet
-        value: https://lcsc.com/datasheet/lcsc_datasheet_2410121611_muRata-GJM1555C1H1R2WB01D_C76899.pdf
   - name: CL05B103KB5NNNC
     base_component: C
     properties:
@@ -482,7 +465,7 @@ components:
       - key: Voltage
         value: 35V
       - key: Dielectric
-        value: Aluminum Electrolytic
+        value: Al Elec
       - key: Footprint
         value: 7Sigma:CP_Elec_6.3x7.7
       - key: Footprint_Name
@@ -511,7 +494,7 @@ components:
       - key: Voltage
         value: 50V
       - key: Dielectric
-        value: Aluminum Electrolytic
+        value: Al Elec
       - key: Footprint
         value: 7Sigma:CP_Elec_10x10
       - key: Footprint_Name
@@ -843,6 +826,10 @@ components:
         value: LCSC
       - key: Supplier Part Number 1
         value: C76899
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value: 81-GJM1555C1H1R2WB1D
       - key: LCSC Part
         value: C76899
       - key: Datasheet

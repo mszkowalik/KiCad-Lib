@@ -1,5 +1,5 @@
 (kicad_symbol_lib
-	(version 20211014)
+	(version 20250526)
 	(symbol "G2RL-1-DC24"
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -72,7 +72,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -81,7 +81,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -90,7 +90,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -99,7 +99,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -108,7 +108,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -117,7 +117,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)

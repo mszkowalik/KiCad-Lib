@@ -1,5 +1,5 @@
 (kicad_symbol_lib
-	(version 20211014)
+	(version 20250526)
 	(symbol "GRM155R61H105KE05D"
 		(pin_numbers
 			(hide yes)
@@ -98,7 +98,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -107,7 +107,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -116,7 +116,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -125,7 +125,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -134,7 +134,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -143,7 +143,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -152,7 +152,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -161,7 +161,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -330,7 +330,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -339,7 +339,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -348,7 +348,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -357,7 +357,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -366,7 +366,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -375,7 +375,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -384,7 +384,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -393,7 +393,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -541,7 +541,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -550,7 +550,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -559,7 +559,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -568,7 +568,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -577,7 +577,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -586,7 +586,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -595,7 +595,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -604,7 +604,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -613,7 +613,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -804,7 +804,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -813,7 +813,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -822,7 +822,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -831,7 +831,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -840,7 +840,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -849,7 +849,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -858,7 +858,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -867,7 +867,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -876,7 +876,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1045,7 +1045,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1054,7 +1054,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1063,7 +1063,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1072,7 +1072,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1081,7 +1081,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1090,7 +1090,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1099,7 +1099,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1108,7 +1108,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1117,7 +1117,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1286,7 +1286,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1295,7 +1295,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1304,7 +1304,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1313,7 +1313,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1322,7 +1322,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1331,7 +1331,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1340,7 +1340,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1349,7 +1349,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1358,7 +1358,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1527,7 +1527,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1536,7 +1536,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1545,7 +1545,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1554,7 +1554,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1563,7 +1563,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1572,7 +1572,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1581,7 +1581,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1590,7 +1590,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1759,7 +1759,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1768,7 +1768,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1777,7 +1777,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1786,7 +1786,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1795,7 +1795,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1804,7 +1804,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1813,7 +1813,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1822,7 +1822,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1991,7 +1991,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2000,7 +2000,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2009,7 +2009,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2018,7 +2018,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2027,7 +2027,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2036,7 +2036,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2045,7 +2045,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2054,7 +2054,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2223,7 +2223,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2232,7 +2232,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2241,7 +2241,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2250,7 +2250,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2259,7 +2259,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2268,7 +2268,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2277,7 +2277,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2286,7 +2286,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2455,7 +2455,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2464,7 +2464,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2473,7 +2473,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2482,7 +2482,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2491,7 +2491,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2500,7 +2500,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2509,7 +2509,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2518,7 +2518,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2687,7 +2687,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2696,7 +2696,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2705,7 +2705,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2714,7 +2714,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2723,7 +2723,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2732,7 +2732,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2741,7 +2741,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2750,7 +2750,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -2782,256 +2782,6 @@
 			)
 		)
 		(symbol "CL21B105KBFNNNE_1_1"
-			(pin passive line
-				(at 0 3.81 270)
-				(length 2.794)
-				(name "~"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(number "1"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-			)
-			(pin passive line
-				(at 0 -3.81 90)
-				(length 2.794)
-				(name "~"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(number "2"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-			)
-		)
-		(embedded_fonts no)
-	)
-	(symbol "GJM1555C1H1R2WB01D"
-		(pin_numbers
-			(hide yes)
-		)
-		(pin_names
-			(offset 0)
-			(hide yes)
-		)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(property "Reference" "C"
-			(at 0.254 2.032 0)
-			(do_not_autoplace)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "1.2pF"
-			(at 0.254 -2.032 0)
-			(do_not_autoplace)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "7Sigma:C_0402_1005Metric"
-			(at 0.9652 -3.81 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "https://lcsc.com/datasheet/lcsc_datasheet_2410121611_muRata-GJM1555C1H1R2WB01D_C76899.pdf"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Unpolarized capacitor"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Dielectric" "C0G"
-			(at -1.27 -1.524 0)
-			(do_not_autoplace)
-			(effects
-				(font
-					(size 0.635 0.635)
-				)
-			)
-		)
-		(property "Voltage" "50V"
-			(at -1.27 -2.54 0)
-			(do_not_autoplace)
-			(effects
-				(font
-					(size 0.635 0.635)
-				)
-			)
-		)
-		(property "ki_keywords" "cap capacitor"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "ki_fp_filters" "C_*"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Tolerance" "0.5pF"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.0 1.0)
-				)
-				(hide yes)
-			)
-		)
-		(property "Footprint_Name" "0402"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.0 1.0)
-				)
-				(hide yes)
-			)
-		)
-		(property "ki_description" "1.2pF 50V C0G 0.5pF 0402"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.0 1.0)
-				)
-				(hide yes)
-			)
-		)
-		(property "Manufacturer 1" "Murata Electronics"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.0 1.0)
-				)
-				(hide yes)
-			)
-		)
-		(property "Manufacturer Part Number 1" "GJM1555C1H1R2WB01D"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.0 1.0)
-				)
-				(hide yes)
-			)
-		)
-		(property "Supplier 1" "LCSC"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.0 1.0)
-				)
-				(hide yes)
-			)
-		)
-		(property "Supplier Part Number 1" "C76899"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.0 1.0)
-				)
-				(hide yes)
-			)
-		)
-		(property "Supplier 2" "Mouser"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.0 1.0)
-				)
-				(hide yes)
-			)
-		)
-		(property "Supplier Part Number 2" "81-GJM1555C1H1R2WB1D"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.0 1.0)
-				)
-				(hide yes)
-			)
-		)
-		(property "LCSC Part" "C76899"
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.0 1.0)
-				)
-				(hide yes)
-			)
-		)
-		(symbol "GJM1555C1H1R2WB01D_0_1"
-			(polyline
-				(pts
-					(xy -2.032 0.762) (xy 2.032 0.762)
-				)
-				(stroke
-					(width 0.508)
-					(type default)
-				)
-				(fill
-					(type none)
-				)
-			)
-			(polyline
-				(pts
-					(xy -2.032 -0.762) (xy 2.032 -0.762)
-				)
-				(stroke
-					(width 0.508)
-					(type default)
-				)
-				(fill
-					(type none)
-				)
-			)
-		)
-		(symbol "GJM1555C1H1R2WB01D_1_1"
 			(pin passive line
 				(at 0 3.81 270)
 				(length 2.794)
@@ -3169,7 +2919,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3178,7 +2928,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3187,7 +2937,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3196,7 +2946,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3205,7 +2955,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3214,7 +2964,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3223,7 +2973,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3232,7 +2982,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3401,7 +3151,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3410,7 +3160,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3419,7 +3169,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3428,7 +3178,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3437,7 +3187,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3446,7 +3196,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3455,7 +3205,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3464,7 +3214,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3633,7 +3383,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3642,7 +3392,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3651,7 +3401,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3660,7 +3410,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3669,7 +3419,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3678,7 +3428,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3687,7 +3437,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3696,7 +3446,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3825,7 +3575,7 @@
 				(hide yes)
 			)
 		)
-		(property "Dielectric" "Aluminum Electrolytic"
+		(property "Dielectric" "Al Elec"
 			(at -1.27 -1.524 0)
 			(do_not_autoplace)
 			(effects
@@ -3866,7 +3616,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3875,16 +3625,16 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
 		)
-		(property "ki_description" "100uF 35V Aluminum Electrolytic 20% D6"
+		(property "ki_description" "100uF 35V Al Elec 20% D6"
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3893,7 +3643,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3902,7 +3652,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3911,7 +3661,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3920,7 +3670,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -3929,7 +3679,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4058,7 +3808,7 @@
 				(hide yes)
 			)
 		)
-		(property "Dielectric" "Aluminum Electrolytic"
+		(property "Dielectric" "Al Elec"
 			(at -1.27 -1.524 0)
 			(do_not_autoplace)
 			(effects
@@ -4099,7 +3849,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4108,16 +3858,16 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
 		)
-		(property "ki_description" "220uF 50V Aluminum Electrolytic 20% D10"
+		(property "ki_description" "220uF 50V Al Elec 20% D10"
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4126,7 +3876,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4135,7 +3885,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4144,7 +3894,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4153,7 +3903,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4162,7 +3912,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4331,7 +4081,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4340,7 +4090,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4349,7 +4099,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4358,7 +4108,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4367,7 +4117,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4376,7 +4126,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4385,7 +4135,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4394,7 +4144,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4563,7 +4313,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4572,7 +4322,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4581,7 +4331,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4590,7 +4340,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4599,7 +4349,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4608,7 +4358,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4617,7 +4367,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4626,7 +4376,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4795,7 +4545,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4804,7 +4554,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4813,7 +4563,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4822,7 +4572,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4831,7 +4581,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4840,7 +4590,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4849,7 +4599,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -4858,7 +4608,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5006,7 +4756,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5015,7 +4765,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5024,7 +4774,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5033,7 +4783,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5042,7 +4792,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5051,7 +4801,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5060,7 +4810,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5069,7 +4819,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5078,7 +4828,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5269,7 +5019,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5278,7 +5028,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5287,7 +5037,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5296,7 +5046,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5305,7 +5055,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5314,7 +5064,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5323,7 +5073,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5332,7 +5082,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5501,7 +5251,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5510,7 +5260,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5519,7 +5269,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5528,7 +5278,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5537,7 +5287,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5546,7 +5296,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5555,7 +5305,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5564,7 +5314,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5733,7 +5483,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5742,7 +5492,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5751,7 +5501,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5760,7 +5510,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5769,7 +5519,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5778,7 +5528,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5787,7 +5537,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5796,7 +5546,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5965,7 +5715,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5974,7 +5724,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5983,7 +5733,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -5992,7 +5742,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6001,7 +5751,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6010,7 +5760,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6019,7 +5769,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6028,7 +5778,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6197,7 +5947,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6206,7 +5956,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6215,7 +5965,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6224,7 +5974,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6233,7 +5983,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6242,7 +5992,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6251,7 +6001,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6260,7 +6010,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6429,7 +6179,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6438,7 +6188,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6447,7 +6197,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6456,7 +6206,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6465,7 +6215,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6474,7 +6224,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6483,7 +6233,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6492,7 +6242,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6661,7 +6411,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6670,7 +6420,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6679,7 +6429,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6688,7 +6438,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6697,7 +6447,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6706,7 +6456,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6715,7 +6465,25 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 2" "Mouser"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 2" "81-GJM1555C1H1R2WB1D"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6724,7 +6492,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6893,7 +6661,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6902,7 +6670,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6911,7 +6679,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6920,7 +6688,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6929,7 +6697,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6938,7 +6706,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6947,7 +6715,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -6956,7 +6724,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)

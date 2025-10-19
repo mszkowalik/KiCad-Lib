@@ -1,5 +1,5 @@
 (kicad_symbol_lib
-	(version 20211014)
+	(version 20250526)
 	(symbol "TAXM12M4RKDCDT2T"
 		(pin_names
 			(offset 1.016)
@@ -75,7 +75,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -84,7 +84,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -93,7 +93,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -102,7 +102,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -111,7 +111,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -120,7 +120,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -129,7 +129,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -138,7 +138,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -147,7 +147,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -364,7 +364,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -373,7 +373,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -382,7 +382,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -391,7 +391,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -400,7 +400,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -409,7 +409,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -418,7 +418,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -427,7 +427,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -436,7 +436,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -653,7 +653,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -662,7 +662,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -671,7 +671,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -680,7 +680,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -689,7 +689,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -698,7 +698,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -707,7 +707,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -716,7 +716,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -725,7 +725,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -942,7 +942,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -951,7 +951,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -960,7 +960,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -969,7 +969,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -978,7 +978,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -987,7 +987,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -996,7 +996,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1005,7 +1005,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)
@@ -1014,7 +1014,7 @@
 			(at 0 0 0)
 			(effects
 				(font
-					(size 1.0 1.0)
+					(size 1 1)
 				)
 				(hide yes)
 			)

@@ -1,4 +1,20 @@
 library_name: Timing_Components
+
+# Validation rules specific to timing components (crystals, oscillators)
+validation_rules:
+  required_properties:
+    - "Value"
+    - "Tolerance"
+    - "Footprint"
+  non_empty_properties:
+    - "Value"
+    - "Tolerance"
+  property_patterns:
+    "Value": "^[0-9]+(\\.[0-9]+)?[mµnpkMGT]?Hz$" # Frequency like 12MHz, 32.768kHz
+    "Tolerance": "^±?[0-9]+(\\.[0-9]+)?ppm$" # Tolerance like 20ppm, ±10ppm
+    "Load Capacitance": "^[0-9]+(\\.[0-9]+)?[mµnpkMG]?F$" # Capacitance like 18pF, 12.5pF
+    "Equivalent Series Resistance": "^[0-9]+(\\.[0-9]+)?[mµnpkMGT]?[RΩ]$" # Resistance like 80R, 75Ω
+
 components:
   - name: TAXM12M4RKDCDT2T
     base_component: Crystal_GND24_Small

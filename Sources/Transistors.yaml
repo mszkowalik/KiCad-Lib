@@ -1,8 +1,36 @@
 library_name: Transistors
+
+# Validation rules specific to transistor components
+validation_rules:
+  required_properties:
+    - "Power"
+    - "Footprint"
+  non_empty_properties:
+    - "Power"
+  property_patterns:
+    "Power": "^[0-9]+(\\.[0-9]+)?[mµnpkMGT]?W$" # Power like 1.4W, 500mW
+    "Drain Source Voltage": "^[0-9]+(\\.[0-9]+)?V$" # Voltage like 30V
+    "Collector-Emitter Voltage": "^[0-9]+(\\.[0-9]+)?V$" # Voltage for BJTs like 40V
+    "Continuous Drain Current": "^[0-9]+(\\.[0-9]+)?[mµnpkMG]?A$" # Current like 5.7A
+    "Drain Source On Resistance": "^[0-9]+(\\.[0-9]+)?[mµnpkMG]?Ω(@[0-9]+(\\.[0-9]+)?V)?$" # Resistance like 26.5mΩ@10V
+  # Conditional requirements based on transistor type
+  conditional_required_properties:
+    - properties:
+        comp_type: "^(N|P)MOS$" # Both NMOS and PMOS MOSFETs
+      requirements: ["Drain Source Voltage", "Continuous Drain Current"]
+    - properties:
+        comp_type: "^NPN$" # NPN BJTs need collector-emitter voltage and current
+      requirements: ["Collector-Emitter Voltage", "Continuous Drain Current"]
+    - properties:
+        comp_type: "^PNP$" # PNP BJTs need collector-emitter voltage and current
+      requirements: ["Collector-Emitter Voltage", "Continuous Drain Current"]
+
 components:
   - name: AO3400A
     base_component: Q_NMOS_GSD
     properties:
+      - key: comp_type
+        value: NMOS
       - key: Footprint
         value: 7Sigma:SOT-23-3
       - key: Value
@@ -32,6 +60,8 @@ components:
   - name: AO3401A
     base_component: Q_PMOS_GSD
     properties:
+      - key: comp_type
+        value: PMOS
       - key: Footprint
         value: 7Sigma:SOT-23
       - key: ki_description
@@ -61,6 +91,8 @@ components:
   - name: MMBT3904,215
     base_component: Q_NPN_BEC
     properties:
+      - key: comp_type
+        value: NPN
       - key: Footprint
         value: 7Sigma:SOT-23
       - key: ki_description
@@ -88,6 +120,8 @@ components:
   - name: DMN6075S-7
     base_component: DMN6075S
     properties:
+      - key: comp_type
+        value: NMOS
       - key: Footprint
         value: 7Sigma:SOT-23
       - key: ki_description
@@ -117,6 +151,8 @@ components:
   - name: AON7264E
     base_component: AON7264E
     properties:
+      - key: comp_type
+        value: NMOS
       - key: Footprint
         value: 7Sigma:DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm
       - key: ki_description
@@ -146,6 +182,8 @@ components:
   - name: HSBB6115
     base_component: HSBB6115
     properties:
+      - key: comp_type
+        value: PMOS
       - key: Footprint
         value: 7Sigma:DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm
       - key: ki_description
@@ -175,6 +213,8 @@ components:
   - name: BSC0702LS
     base_component: BSC0702LS
     properties:
+      - key: comp_type
+        value: NMOS
       - key: Footprint
         value: 7Sigma:TDSON-8_6.15x5.15mm
       - key: Value
@@ -204,6 +244,8 @@ components:
   - name: DMN2310UT-13
     base_component: Q_NMOS_GSD
     properties:
+      - key: comp_type
+        value: NMOS
       - key: Footprint
         value: 7Sigma:SOT-523
       - key: Value
@@ -233,6 +275,8 @@ components:
   - name: SK2301AAT
     base_component: Q_PMOS_GSD
     properties:
+      - key: comp_type
+        value: PMOS
       - key: Footprint
         value: 7Sigma:SOT-523
       - key: ki_description
@@ -262,6 +306,8 @@ components:
   - name: BC817-40-7-F
     base_component: Q_NPN_BEC
     properties:
+      - key: comp_type
+        value: NPN
       - key: Footprint
         value: 7Sigma:SOT-23
       - key: ki_description
@@ -289,6 +335,8 @@ components:
   - name: CSD17577Q3A
     base_component: CSD17577Q3A
     properties:
+      - key: comp_type
+        value: NMOS
       - key: Footprint
         value: 7Sigma:VSON-8_3.3x3.3mm_P0.65mm_NexFET
       - key: Value

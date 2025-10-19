@@ -1,4 +1,16 @@
 library_name: Mechanical_7S
+
+# Validation rules specific to mechanical components
+validation_rules:
+  required_properties:
+    - "Value"
+    - "ki_description"
+    - "Footprint"
+  non_empty_properties:
+    - "Value"
+    - "ki_description"
+  manufacturer_properties: [] # Disable manufacturer validation for mechanical components
+
 components:
   - name: 7Sigma_Logo
     base_component: 7Sigma_Logo_Base
@@ -13,6 +25,10 @@ components:
         value: "logo graphic symbol"
       - key: ki_description
         value: "7Sigma company logo graphic symbol"
+      - key: Manufacturer
+        value: null
+      - key: Manufacturer Part Number
+        value: null
   - name: MH_2.5mm_4mm_OD
     base_component: MountingHole_Pad
     properties:

@@ -1,4 +1,15 @@
 library_name: Relays
+
+# Validation rules specific to relay components
+validation_rules:
+  required_properties:
+    - "Value"
+    - "ki_description"
+    - "Footprint"
+  non_empty_properties:
+    - "Value"
+    - "ki_description"
+
 components:
   - name: G2RL-1-DC24
     base_component: G2RL-1

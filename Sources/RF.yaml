@@ -1,4 +1,18 @@
 library_name: RF
+
+# Validation rules specific to RF components
+validation_rules:
+  required_properties:
+    - "Value"
+    - "ki_description"
+    - "Footprint"
+  non_empty_properties:
+    - "Value"
+    - "ki_description"
+  property_patterns:
+    "Peak Gain": "^[+-]?[0-9]+(\\.[0-9]+)? dBi$" # Gain like 4.97 dBi, -2.1 dBi
+    "Working Central Frequency": "^[0-9]+(\\.[0-9]+)? ?[MG]Hz$" # Frequency like 2450 MHz, 1.57542GHz
+
 components:
   - name: MIFA_Antenna_2.4GHz
     base_component: Antenna
@@ -11,6 +25,10 @@ components:
         value: "0806"
       - key: ki_description
         value: MIFA Antenna 2.4GHz
+      - key: Manufacturer 1
+        value: null
+      - key: Manufacturer Part Number 1
+        value: null
   - name: KH5220-A36
     base_component: Antenna
     properties:

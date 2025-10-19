@@ -1,4 +1,13 @@
 library_name: Connectors
+
+# Validation rules specific to connector components
+validation_rules:
+  required_properties:
+    - "ki_description"
+    - "Footprint"
+  non_empty_properties:
+    - "ki_description"
+
 components:
   - name: GT-USB-7010ASV
     base_component: USB_C_Receptacle_USB2.0_16P
@@ -520,7 +529,7 @@ components:
     base_component: Conn_02x07_Odd_Even
     properties:
       - key: Footprint
-        value: Connector_PinHeader_2.54mm:PinHeader_2x07_P2.54mm_Vertical
+        value: 7Sigma:PinHeader_2x07_P2.54mm_Vertical
       - key: ki_description
         value: Cortex Debug Connector, standard ARM Cortex-M SWD and JTAG interface
       - key: Manufacturer 1
@@ -599,7 +608,11 @@ components:
       - key: LCSC Part
         value:
       - key: Datasheet
-        value:
+        value: null
+      - key: Manufacturer 1
+        value: null
+      - key: Manufacturer Part Number 1
+        value: null
   - name: U262-161N-4BVC11
     base_component: USB_C_Receptacle_USB2.0_16P
     properties:

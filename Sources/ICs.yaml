@@ -1,4 +1,17 @@
 library_name: ICs
+
+# Validation rules specific to IC components
+validation_rules:
+  required_properties:
+    - "Manufacturer 1"
+    - "Manufacturer Part Number 1"
+    - "Footprint"
+  non_empty_properties:
+    - "Manufacturer 1"
+    - "Manufacturer Part Number 1"
+  # ICs should have descriptive ki_description
+  property_patterns: {} # Use global patterns
+
 components:
   - name: BQ24092DGQT
     base_component: BQ2409x
@@ -601,7 +614,7 @@ components:
       - key: Footprint
         value: 7Sigma:DFN-6_1.6x1mm-P0.55mm
       - key: ki_description
-        value:
+        value: GNSS Amplifier
       - key: Manufacturer 1
         value: AT2659
       - key: Manufacturer Part Number 1
@@ -672,7 +685,7 @@ components:
       - key: Footprint
         value: 7Sigma:TSOP-6_1.65x3.05mm_P0.95mm
       - key: ki_description
-        value:
+        value: Dual buffer/driver
       - key: Manufacturer 1
         value: Nexperia
       - key: Manufacturer Part Number 1

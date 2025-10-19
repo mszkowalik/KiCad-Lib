@@ -1,4 +1,37 @@
 library_name: Diodes
+
+# Validation rules specific to diode components
+validation_rules:
+  required_properties:
+    - "comp_type"
+    - "Footprint"
+  non_empty_properties:
+    - "Maximum Reverse Voltage"
+    - "Continuous Current"
+  property_patterns:
+    "Maximum Reverse Voltage": "^[0-9]+(\\.[0-9]+)?[mkKMG]?V$" # Voltage like 1kV, 50V
+    "Continuous Current": "^[0-9]+(\\.[0-9]+)?[mµnpkMG]?A$" # Current like 1A, 200mA
+    "Forward Voltage": "^[0-9]+(\\.[0-9]+)?V$" # Forward voltage like 0.7V
+  conditional_required_properties:
+    - properties:
+        comp_type: "^DIODE$" # Both NMOS and PMOS MOSFETs
+      requirements:
+        - "Maximum Reverse Voltage"
+        - "Continuous Current"
+    - properties:
+        comp_type: "^TVS$" # TVS diodes need specific voltage and current ratings
+      requirements:
+        - "Voltage - Breakdown"
+        - "Reverse Leakage Current"
+        - "Reverse Stand-Off Voltage"
+    - properties:
+        comp_type: "^ZENNER$" # TVS diodes need specific voltage and current ratings
+      requirements:
+        - "Zenner Voltage"
+        - "Tolerance"
+        - "Max Continuous Current"
+        - "Power"
+
 components:
   - name: SM4007PL
     base_component: D
@@ -7,6 +40,8 @@ components:
         value: 7Sigma:D_SOD-123F
       - key: Value
         value: SM4007PL
+      - key: comp_type
+        value: DIODE
       - key: ki_description
         value: General Purpose Diode 1kV 1A
       - key: Maximum Reverse Voltage
@@ -34,6 +69,8 @@ components:
         value: 7Sigma:D_SOD-123
       - key: Value
         value: 5V6
+      - key: comp_type
+        value: ZENNER
       - key: ki_description
         value: Zenner Diode 5.6V 90mA
       - key: Zenner Voltage
@@ -63,10 +100,16 @@ components:
         value: 7Sigma:SOT-23-3
       - key: Value
         value: 8.2V
+      - key: comp_type
+        value: ZENNER
       - key: ki_description
         value: Zenner Diode 8.2V 250mW
       - key: Zenner Voltage
         value: 8.2V
+      - key: Tolerance
+        value: 5%
+      - key: Max Continuous Current
+        value: 20mA
       - key: Power
         value: 250mW
       - key: Manufacturer 1
@@ -88,6 +131,8 @@ components:
         value: 7Sigma:D_SOD-323
       - key: Value
         value: 1N5819WS
+      - key: comp_type
+        value: DIODE
       - key: ki_description
         value: Schottky Diode 40V 600mV@1A 1A SOD-323
       - key: Maximum Reverse Voltage
@@ -113,11 +158,13 @@ components:
         value: 7Sigma:D_SMA
       - key: Value
         value: SMAJ28CA
+      - key: comp_type
+        value: TVS
       - key: ki_description
         value: TVS DIODE 28VWM 45.4VC DO-214AC(SMA)
       - key: Voltage - Breakdown
         value: 34.4V
-      - key: Reverse Leakage Current (Ir)
+      - key: Reverse Leakage Current
         value: 1uA
       - key: Reverse Stand-Off Voltage
         value: 28V
@@ -140,11 +187,13 @@ components:
         value: 7Sigma:D_SMA
       - key: Value
         value: SMAJ12A
+      - key: comp_type
+        value: TVS
       - key: ki_description
         value: TVS DIODE 12VWM 20.4VC DO-214AC(SMA)
       - key: Voltage - Breakdown
         value: 14.4V
-      - key: Reverse Leakage Current (Ir)
+      - key: Reverse Leakage Current
         value: 1uA
       - key: Reverse Stand-Off Voltage
         value: 12V
@@ -167,6 +216,8 @@ components:
         value: 7Sigma:D_SOD-323
       - key: Value
         value: PMEG6010CEJ,115
+      - key: comp_type
+        value: DIODE
       - key: ki_description
         value: Schottky Diode 60V 600mV@1A 1A SOD-323
       - key: Maximum Reverse Voltage
@@ -192,11 +243,13 @@ components:
         value: 7Sigma:D_SOD-323
       - key: Value
         value: 12V
+      - key: comp_type
+        value: TVS
       - key: ki_description
         value: TVS DIODE 12V SOD-323
       - key: Voltage - Breakdown
         value: 14.2V
-      - key: Reverse Leakage Current (Ir)
+      - key: Reverse Leakage Current
         value: 50nA
       - key: Reverse Stand-Off Voltage
         value: 12V
@@ -219,11 +272,13 @@ components:
         value: 7Sigma:D_SOD-323
       - key: Value
         value: 5V
+      - key: comp_type
+        value: TVS
       - key: ki_description
         value: TVS DIODE 5V SOD-323
       - key: Voltage - Breakdown
         value: 7V
-      - key: Reverse Leakage Current (Ir)
+      - key: Reverse Leakage Current
         value: 50nA
       - key: Reverse Stand-Off Voltage
         value: 5V
@@ -246,11 +301,13 @@ components:
         value: 7Sigma:D_0402_1005Metric
       - key: Value
         value: 5V
+      - key: comp_type
+        value: TVS
       - key: ki_description
         value: TVS DIODE 5V 0402
       - key: Voltage - Breakdown
         value: 7V
-      - key: Reverse Leakage Current (Ir)
+      - key: Reverse Leakage Current
         value: 50nA
       - key: Reverse Stand-Off Voltage
         value: 5V
@@ -273,6 +330,8 @@ components:
         value: 7Sigma:D_SOD-523
       - key: Value
         value: 1N5819WT
+      - key: comp_type
+        value: DIODE
       - key: ki_description
         value: Schottky Diode 40V 600mV@200mA 350mA SOD-523
       - key: Maximum Reverse Voltage
@@ -298,6 +357,8 @@ components:
         value: 7Sigma:D_SMA
       - key: Value
         value: SS34
+      - key: comp_type
+        value: DIODE
       - key: ki_description
         value: Schottky Diode 40V 550mV@3A 3A SOD-323
       - key: Maximum Reverse Voltage
@@ -320,11 +381,19 @@ components:
     base_component: D_TVS_Dual_AAC
     properties:
       - key: Footprint
-        value: 7Sigma:D_SOT-23
+        value: 7Sigma:SOT-23
       - key: Value
         value: 12V / -7V
+      - key: comp_type
+        value: TVS
       - key: ki_description
         value: Asymmetrical TVS Diode for RS-485
+      - key: Reverse Stand-Off Voltage
+        value: 12V / -7V
+      - key: Reverse Leakage Current
+        value: 1uA / -20uA
+      - key: Voltage - Breakdown
+        value: 13.3V / -7.5V
       - key: Manufacturer 1
         value: MDD
       - key: Manufacturer Part Number 1

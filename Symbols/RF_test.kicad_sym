@@ -83,7 +83,7 @@
 				(hide yes)
 			)
 		)
-		(property "Manufacturer 1" ""
+		(property "Manufacturer 1" "None"
 			(at 0 0 0)
 			(effects
 				(font
@@ -92,7 +92,7 @@
 				(hide yes)
 			)
 		)
-		(property "Manufacturer Part Number 1" ""
+		(property "Manufacturer Part Number 1" "None"
 			(at 0 0 0)
 			(effects
 				(font
