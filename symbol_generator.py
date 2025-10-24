@@ -22,6 +22,12 @@ def create_or_update_library(yaml_data, symbols_dir):
         # Load the base symbol library
         base_lib = SymbolLib.from_file(base_lib_path)
         new_lib = SymbolLib()
+        
+        # Copy version and generator information from base library
+        new_lib.version = base_lib.version
+        new_lib.generator = base_lib.generator
+        new_lib.generator_version = base_lib.generator_version
+        new_lib.embedded_fonts = base_lib.embedded_fonts
 
         for component_data in lib_data["components"]:
             # Find the base component

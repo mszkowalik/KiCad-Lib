@@ -97,6 +97,27 @@ components:
         value: C2837530
       - key: Datasheet
         value: https://wmsc.lcsc.com/wmsc/upload/file/pdf/v2/lcsc/2212051012_Shenzhen-Kinghelm-Elec-KH-6X6X4-3H-STM_C2837530.pdf
+  - name: KH-6X6X7H-STM
+    base_component: SW_Push_4pin
+    properties:
+      - key: Value
+        value: KH-6X6X7H-STM
+      - key: ki_description
+        value: SMD Tactile Switch 6.0x6.0mm Top Actuation Height 7.0mm
+      - key: Footprint
+        value: 7Sigma:SW-SMD_4P-L6.0-W6.0-P4.50-LS9.0-H7.0
+      - key: Manufacturer 1
+        value: Shenzhen Kinghelm Elec
+      - key: Manufacturer Part Number 1
+        value: KH-6X6X7H-STM
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2837533
+      - key: LCSC Part
+        value: C2837533
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C2837533.pdf
   - name: GT-TC048D-H025-L1
     base_component: SW_Push_4pin
     properties:

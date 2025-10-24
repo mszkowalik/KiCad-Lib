@@ -1,7 +1,3 @@
 # kiutils
 pyyaml
 git+https://github.com/Wittmann-MEE/kiutils.git
-
-# Testing dependencies
-pytest
-pytest-html
