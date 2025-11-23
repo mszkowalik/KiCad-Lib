@@ -69,11 +69,74 @@ def _resolve_source_path(model_path: str, rel_subpath: str) -> Optional[str]:
     return None
 
 
+def _find_step_alternative(wrl_path: str, rel_subpath: str) -> Optional[str]:
+    """
+    Try to find a STEP format alternative for a WRL file by checking
+    the same base name with .step or .stp extensions in known sources.
+    """
+    base_path = os.path.splitext(rel_subpath)[0]
+    
+    # Try both .step and .stp extensions
+    for step_ext in ['.step', '.stp']:
+        step_rel_path = base_path + step_ext
+        
+        # Check in EASYEDA2KICAD
+        easyeda_candidate = os.path.join(EASYEDA2KICAD, step_rel_path)
+        if os.path.isfile(easyeda_candidate):
+            return easyeda_candidate
+        
+        # Check in USER_KICAD9_3DMODEL_DIR
+        kicad_candidate = os.path.join(USER_KICAD9_3DMODEL_DIR, step_rel_path)
+        if os.path.isfile(kicad_candidate):
+            return kicad_candidate
+    
+    return None
+
+
 def process_footprint(filepath: str):
     fp = Footprint.from_file(filepath)
     changed = False
-    for model in fp.models:
-        # Compute the relative path preserving the '.3dshapes/...' structure
+    models_to_remove = []
+    
+    for idx, model in enumerate(fp.models):
+        model_ext = os.path.splitext(model.path)[1].lower()
+        
+        # Handle WRL files - try to find STEP alternative
+        if model_ext in ['.wrl', '.vrml']:
+            rel_subpath = _extract_rel_3d_subpath(model.path)
+            step_source = _find_step_alternative(model.path, rel_subpath)
+            
+            if step_source:
+                # Found a STEP alternative
+                step_ext = os.path.splitext(step_source)[1]
+                step_rel_path = os.path.splitext(rel_subpath)[0] + step_ext
+                dst_model_path = os.path.join(TARGET_3DMODELS_ROOT, step_rel_path)
+                ensure_dir(os.path.dirname(dst_model_path))
+                
+                # Copy the STEP file if needed
+                if not os.path.isfile(dst_model_path):
+                    shutil.copy2(step_source, dst_model_path)
+                    print(f"Info: Replaced WRL with STEP alternative: {os.path.basename(step_source)}")
+                
+                # Update model path to STEP format
+                new_model_path = SEVENSIGMA_MODELS_BASE + _normalize_model_path(step_rel_path)
+                model.path = new_model_path
+                changed = True
+            else:
+                # No STEP alternative found, remove WRL
+                print(f"Warning: No STEP alternative found for WRL model in '{filepath}': {model.path}")
+                models_to_remove.append(idx)
+                changed = True
+            continue
+        
+        # Skip other unsupported formats
+        if model_ext not in ['.step', '.stp']:
+            print(f"Warning: Skipping unsupported 3D model format '{model_ext}' in '{filepath}': {model.path}")
+            models_to_remove.append(idx)
+            changed = True
+            continue
+        
+        # Process STEP files normally
         rel_subpath = _extract_rel_3d_subpath(model.path)
         dst_model_path = os.path.join(TARGET_3DMODELS_ROOT, rel_subpath)
         ensure_dir(os.path.dirname(dst_model_path))
@@ -91,6 +154,10 @@ def process_footprint(filepath: str):
         if model.path != new_model_path:
             model.path = new_model_path
             changed = True
+    
+    # Remove unsupported models from the footprint
+    for idx in reversed(models_to_remove):
+        fp.models.pop(idx)
 
     if changed:
         fp.to_file(filepath)

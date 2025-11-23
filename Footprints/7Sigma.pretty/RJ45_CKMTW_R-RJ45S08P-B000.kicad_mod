@@ -338,7 +338,7 @@
 		(uuid "6c563a81-13cb-4281-9bdd-a48057e6115f")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/RJ45-TH_L16.0-W16.7-H16.5.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/RJ45-TH_L16.0-W16.7-H16.5.step"
 		(offset
 			(xyz 4.5 -4.5 0)
 		)

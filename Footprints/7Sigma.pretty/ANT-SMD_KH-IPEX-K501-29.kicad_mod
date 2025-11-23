@@ -305,7 +305,7 @@
 		(uuid "3b8614b6-32f6-4ead-8b33-a6e4a1d37205")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/ANT-SMD_KH-IPEX-K501-29.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/ANT-SMD_KH-IPEX-K501-29.step"
 		(offset
 			(xyz 0 0 0)
 		)
@@ -313,7 +313,7 @@
 			(xyz 1 1 1)
 		)
 		(rotate
-			(xyz -0 -0 -180)
+			(xyz 0 0 -180)
 		)
 	)
 )

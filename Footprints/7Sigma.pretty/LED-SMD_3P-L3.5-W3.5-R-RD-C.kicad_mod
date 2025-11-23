@@ -207,9 +207,9 @@
 		(uuid "52e818df-438d-41e5-ba45-6814372ddd42")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/LED-SMD_3P-L3.5-W3.5-R-RD-C.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/LED-SMD_3P-L3.5-W3.5-R-RD-C.step"
 		(offset
-			(xyz 0 -0 -0)
+			(xyz 0 0 0)
 		)
 		(scale
 			(xyz 1 1 1)

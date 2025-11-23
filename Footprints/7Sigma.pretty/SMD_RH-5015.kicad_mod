@@ -120,7 +120,7 @@
 		(uuid "def083d8-b67a-4bb6-8eeb-710dd8a2dbee")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/SMD_RH-5015.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/SMD_RH-5015.step"
 		(offset
 			(xyz 0 0 0)
 		)

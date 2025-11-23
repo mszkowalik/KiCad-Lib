@@ -138,7 +138,7 @@
 		(uuid "ff8849ff-ccd4-4d3c-8a5c-c3587af00863")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/IND-SMD_L5.8-W5.2-H4.5.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/IND-SMD_L5.8-W5.2-H4.5.step"
 		(offset
 			(xyz 0.03 0 0)
 		)

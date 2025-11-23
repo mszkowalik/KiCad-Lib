@@ -412,7 +412,7 @@
 		(uuid "3102371e-aa75-455e-93fd-d740e59243cc")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/RJ45-TH_RC01812.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/RJ45-TH_RC01812.step"
 		(offset
 			(xyz 0 4.5 -4.1)
 		)

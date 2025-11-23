@@ -370,7 +370,7 @@
 		(uuid "8f8ede8a-c555-4107-9767-653fb85c9750")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/Package_SO.3dshapes/SOIC-14_3.9x8.7mm_P1.27mm.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/Package_SO.3dshapes/SOIC-14_3.9x8.7mm_P1.27mm.step"
 		(offset
 			(xyz 0 0 0)
 		)

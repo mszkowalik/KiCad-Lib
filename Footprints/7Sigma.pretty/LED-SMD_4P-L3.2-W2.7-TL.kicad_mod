@@ -154,7 +154,7 @@
 		(uuid "3aafd81d-d13c-4702-a0b5-eefe314350e0")
 	)
 	(embedded_fonts no)
-	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/LED-ARRAY-SMD_4P-L3.0-W2.5-H1.5-P1.5.wrl"
+	(model "${SEVENSIGMA_DIR}/3DModels/easyeda2kicad.3dshapes/LED-ARRAY-SMD_4P-L3.0-W2.5-H1.5-P1.5.step"
 		(offset
 			(xyz 0 0 0)
 		)
