@@ -118,6 +118,25 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/lcsc_datasheet_2402291527_Worldsemi-WS2812E-1313_C5446700.pdf"
     remove_properties: []
+  - name: "WS2816C-1313"
+    base_component: WS2812
+    properties:
+      - key: LCSC Part
+        value: C42417612
+      - key: ki_description
+        value: SMD-4P,1.3x1.3mm LED Addressable, Specialty RoHS
+      - key: Manufacturer 1
+        value: Worldsemi
+      - key: Manufacturer Part Number 1
+        value: WS2816C-1313/4P
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/lcsc/2412231915_Worldsemi-WS2816C-1313-4P_C42417612.pdf
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C42417612
+      - key: Footprint
+        value: "7Sigma:LED-SMD_4P-L1.3-W1.3-P0.80_WS2812E-1313"
   - name: "XC6206P332MR-G"
     base_component: XC6206PxxxMR
     properties:

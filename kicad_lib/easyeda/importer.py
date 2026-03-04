@@ -138,6 +138,8 @@ def _download_and_import(
         sym_importer = EasyedaSymbolImporter(easyeda_cp_cad_data=cad_data)
         easyeda_symbol = sym_importer.get_symbol()
         symbol_name = easyeda_symbol.info.name
+        # easyeda2kicad sanitizes symbol names: spaces removed, slashes → underscores
+        sanitized_name = symbol_name.replace(" ", "").replace("/", "_")
 
         if not base_component_name:
             base_component_name = symbol_name
@@ -160,10 +162,10 @@ def _download_and_import(
             )
 
             tmp_lib = SymbolLib.from_file(tmp_sym)
-            src_symbol = next((s for s in tmp_lib.symbols if s.entryName == symbol_name), None)
+            src_symbol = next((s for s in tmp_lib.symbols if s.entryName == sanitized_name), None)
 
         if src_symbol is None:
-            log.error(f"Symbol '{symbol_name}' not found after export")
+            log.error(f"Symbol '{symbol_name}' (sanitized: '{sanitized_name}') not found after export")
             return None
 
         base_lib = SymbolLib.from_file(config.BASE_LIB_PATH)
@@ -271,7 +273,7 @@ def auto_import_missing_components(
                 not component.get("base_component") and effective_base
             )
 
-            # 3. Resolve footprint: component → footprint_map[encapStandard] → footprint_map[easyeda_name] → easyeda
+            # 3. Resolve footprint: component → footprint_map[encapStandard] → footprint_map[easyeda_name] → reverse match → easyeda
             existing_footprint = get_property_value(component, "Footprint")
             footprint_from_defaults = None
             if not existing_footprint:
@@ -284,6 +286,16 @@ def auto_import_missing_components(
                     easyeda_fp_name = _get_easyeda_footprint_name(lcsc_id)
                     if easyeda_fp_name:
                         footprint_from_defaults = footprint_map.get(easyeda_fp_name)
+
+                        # Fallback: reverse-lookup — check if the EasyEDA footprint name
+                        # matches any value in the footprint_map (with or without 7Sigma: prefix)
+                        if not footprint_from_defaults:
+                            for _key, mapped_fp in footprint_map.items():
+                                bare_name = mapped_fp.split(":", 1)[-1] if ":" in mapped_fp else mapped_fp
+                                if bare_name == easyeda_fp_name:
+                                    footprint_from_defaults = mapped_fp
+                                    break
+
                         if not footprint_from_defaults:
                             log.info(f"No footprint_map match for encapStandard='{lcsc_package}' "
                                      f"or easyeda_fp='{easyeda_fp_name}'")

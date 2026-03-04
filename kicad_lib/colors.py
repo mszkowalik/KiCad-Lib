@@ -41,12 +41,12 @@ class ColoredFormatter(logging.Formatter):
     """Formatter that adds ANSI colors based on log level."""
 
     COLORS = {
-        logging.DEBUG: "\033[2m",       # dim
-        logging.INFO: "\033[36m",       # cyan
-        SUCCESS: "\033[32m",            # green
-        logging.WARNING: "\033[33m",    # yellow
-        logging.ERROR: "\033[31m",      # red
-        logging.CRITICAL: "\033[1;31m", # bold red
+        logging.DEBUG: "\033[2m",  # dim
+        logging.INFO: "\033[36m",  # cyan
+        SUCCESS: "\033[32m",  # green
+        logging.WARNING: "\033[33m",  # yellow
+        logging.ERROR: "\033[31m",  # red
+        logging.CRITICAL: "\033[1;31m",  # bold red
     }
     RESET = "\033[0m"
 
@@ -66,3 +66,7 @@ def setup_logging(level: int = logging.DEBUG) -> None:
     root.setLevel(level)
     # Avoid duplicate handlers on repeated calls
     root.handlers = [handler]
+
+    # Silence noisy third-party loggers
+    for name in ("urllib3", "requests", "urllib3.connectionpool"):
+        logging.getLogger(name).setLevel(logging.WARNING)

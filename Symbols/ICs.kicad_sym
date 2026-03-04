@@ -832,6 +832,243 @@
 		)
 		(embedded_fonts no)
 	)
+	(symbol "WS2816C-1313"
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "WS2812"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "7Sigma:LED-SMD_4P-L1.3-W1.3-P0.80_WS2812E-1313"
+			(at 0 -8.89 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://datasheet.lcsc.com/lcsc/2412231915_Worldsemi-WS2816C-1313-4P_C42417612.pdf"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "LCSC Part" "C42417612"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "SMD-4P,1.3x1.3mm LED Addressable, Specialty RoHS"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "Worldsemi"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "WS2816C-1313/4P"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" "C42417612"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "WS2816C-1313_0_1"
+			(rectangle
+				(start -7.62 3.81)
+				(end 7.62 -3.81)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type background)
+				)
+			)
+			(circle
+				(center -6.35 2.54)
+				(radius 0.38)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(pin unspecified line
+				(at -10.16 1.27 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at -10.16 -1.27 0)
+				(length 2.54)
+				(name "DIN"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "4"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 10.16 1.27 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "3"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 10.16 -1.27 180)
+				(length 2.54)
+				(name "DOUT"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(symbol "WS2816C-1313_1_1"
+			(circle
+				(center 0 2.159)
+				(radius 0.381)
+				(stroke
+					(width 1)
+					(type default)
+					(color 255 0 0 1)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(circle
+				(center 0 0)
+				(radius 0.381)
+				(stroke
+					(width 1)
+					(type default)
+					(color 0 255 0 1)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(circle
+				(center 0 -2.159)
+				(radius 0.381)
+				(stroke
+					(width 1)
+					(type default)
+					(color 0 0 255 1)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
 	(symbol "XC6206P332MR-G"
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -4614,7 +4851,7 @@
 		(in_bom yes)
 		(on_board yes)
 		(property "Reference" "U"
-			(at -2.54 6.35 0)
+			(at -3.81 5.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4622,7 +4859,7 @@
 			)
 		)
 		(property "Value" "TPS61023DRLR"
-			(at -1.27 -7.62 0)
+			(at -2.54 -8.89 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4630,7 +4867,7 @@
 			)
 		)
 		(property "Footprint" "7Sigma:SOT-563"
-			(at 31.75 6.35 0)
+			(at 30.48 5.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4639,7 +4876,7 @@
 			)
 		)
 		(property "Datasheet" "https://www.ti.com/lit/ds/symlink/tps61023.pdf"
-			(at 31.75 6.35 0)
+			(at 30.48 5.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4648,7 +4885,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 0 0 0)
+			(at -1.27 -1.27 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4712,8 +4949,8 @@
 		)
 		(symbol "TPS61023DRLR_0_1"
 			(rectangle
-				(start -6.35 5.08)
-				(end 7.62 -6.35)
+				(start -7.62 3.81)
+				(end 6.35 -7.62)
 				(stroke
 					(width 0)
 					(type default)
@@ -4725,7 +4962,7 @@
 		)
 		(symbol "TPS61023DRLR_1_1"
 			(pin power_in line
-				(at -8.89 3.81 0)
+				(at -10.16 2.54 0)
 				(length 2.54)
 				(name "VIN"
 					(effects
@@ -4743,7 +4980,7 @@
 				)
 			)
 			(pin input line
-				(at -8.89 0 0)
+				(at -10.16 0 0)
 				(length 2.54)
 				(name "EN"
 					(effects
@@ -4761,7 +4998,7 @@
 				)
 			)
 			(pin power_in line
-				(at -8.89 -3.81 0)
+				(at -10.16 -5.08 0)
 				(length 2.54)
 				(name "GND"
 					(effects
@@ -4779,7 +5016,7 @@
 				)
 			)
 			(pin passive line
-				(at 10.16 3.81 180)
+				(at 8.89 2.54 180)
 				(length 2.54)
 				(name "SW"
 					(effects
@@ -4797,7 +5034,7 @@
 				)
 			)
 			(pin power_out line
-				(at 10.16 1.27 180)
+				(at 8.89 0 180)
 				(length 2.54)
 				(name "VOUT"
 					(effects
@@ -4815,7 +5052,7 @@
 				)
 			)
 			(pin passive line
-				(at 10.16 -3.81 180)
+				(at 8.89 -5.08 180)
 				(length 2.54)
 				(name "FB"
 					(effects
@@ -23715,11 +23952,11 @@
 		(embedded_fonts no)
 	)
 	(symbol "STM32G031G8U6"
+		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(property "Reference" "U"
 			(at 0 21.59 0)
-			(id 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -23728,7 +23965,6 @@
 		)
 		(property "Value" "STM32G031G8U6"
 			(at 0 -21.59 0)
-			(id 1)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -23737,7 +23973,6 @@
 		)
 		(property "Footprint" "7Sigma:QFN-28_4x4mm_P0.5mm"
 			(at 0 -24.13 0)
-			(id 2)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -23747,7 +23982,15 @@
 		)
 		(property "Datasheet" "https://datasheet.lcsc.com/lcsc/1912111437_ST-STM32G031G8U6_C432211.pdf"
 			(at 0 -26.67 0)
-			(id 3)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 0 0 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -23757,7 +24000,6 @@
 		)
 		(property "LCSC Part" "C432211"
 			(at 0 -29.21 0)
-			(id 5)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -23817,7 +24059,6 @@
 				(stroke
 					(width 0)
 					(type default)
-					(color 0 0 0 0)
 				)
 				(fill
 					(type background)
@@ -23829,7 +24070,6 @@
 				(stroke
 					(width 0)
 					(type default)
-					(color 0 0 0 0)
 				)
 				(fill
 					(type none)
@@ -24088,214 +24328,16 @@
 				)
 			)
 			(pin unspecified line
-				(at 24.13 -16.51 180)
+				(at 24.13 16.51 180)
 				(length 2.54)
-				(name "PB1"
+				(name "PB8"
 					(effects
 						(font
 							(size 1.27 1.27)
 						)
 					)
 				)
-				(number "15"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-			)
-			(pin unspecified line
-				(at 24.13 -13.97 180)
-				(length 2.54)
-				(name "PA8"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(number "16"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-			)
-			(pin unspecified line
-				(at 24.13 -11.43 180)
-				(length 2.54)
-				(name "PC6"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(number "17"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-			)
-			(pin unspecified line
-				(at 24.13 -8.89 180)
-				(length 2.54)
-				(name "PA11[PA9]"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(number "18"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-			)
-			(pin unspecified line
-				(at 24.13 -6.35 180)
-				(length 2.54)
-				(name "PA12[PA10]"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(number "19"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-			)
-			(pin unspecified line
-				(at 24.13 -3.81 180)
-				(length 2.54)
-				(name "PA13"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(number "20"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-			)
-			(pin unspecified line
-				(at 24.13 -1.27 180)
-				(length 2.54)
-				(name "PA14-BOOT0"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(number "21"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-			)
-			(pin unspecified line
-				(at 24.13 1.27 180)
-				(length 2.54)
-				(name "PA15"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(number "22"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-			)
-			(pin unspecified line
-				(at 24.13 3.81 180)
-				(length 2.54)
-				(name "PB3"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(number "23"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-			)
-			(pin unspecified line
-				(at 24.13 6.35 180)
-				(length 2.54)
-				(name "PB4"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(number "24"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-			)
-			(pin unspecified line
-				(at 24.13 8.89 180)
-				(length 2.54)
-				(name "PB5"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(number "25"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-			)
-			(pin unspecified line
-				(at 24.13 11.43 180)
-				(length 2.54)
-				(name "PB6"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(number "26"
+				(number "28"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -24322,16 +24364,214 @@
 				)
 			)
 			(pin unspecified line
-				(at 24.13 16.51 180)
+				(at 24.13 11.43 180)
 				(length 2.54)
-				(name "PB8"
+				(name "PB6"
 					(effects
 						(font
 							(size 1.27 1.27)
 						)
 					)
 				)
-				(number "28"
+				(number "26"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 24.13 8.89 180)
+				(length 2.54)
+				(name "PB5"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "25"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 24.13 6.35 180)
+				(length 2.54)
+				(name "PB4"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "24"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 24.13 3.81 180)
+				(length 2.54)
+				(name "PB3"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "23"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 24.13 1.27 180)
+				(length 2.54)
+				(name "PA15"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "22"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 24.13 -1.27 180)
+				(length 2.54)
+				(name "PA14-BOOT0"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "21"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 24.13 -3.81 180)
+				(length 2.54)
+				(name "PA13"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "20"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 24.13 -6.35 180)
+				(length 2.54)
+				(name "PA12[PA10]"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "19"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 24.13 -8.89 180)
+				(length 2.54)
+				(name "PA11[PA9]"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "18"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 24.13 -11.43 180)
+				(length 2.54)
+				(name "PC6"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "17"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 24.13 -13.97 180)
+				(length 2.54)
+				(name "PA8"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "16"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin unspecified line
+				(at 24.13 -16.51 180)
+				(length 2.54)
+				(name "PB1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "15"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -24340,5 +24580,6 @@
 				)
 			)
 		)
+		(embedded_fonts no)
 	)
 )

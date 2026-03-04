@@ -375,3 +375,32 @@ components:
         value: C201632
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C201632.pdf
+  - name: BC847CLT1G
+    base_component: Q_NPN_BEC
+    properties:
+      - key: comp_type
+        value: NPN
+      - key: Footprint
+        value: 7Sigma:SOT-23-3
+      - key: ki_description
+        value: NPN 45V 100mA 300mW SOT-23-3
+      - key: Value
+        value: BC847CLT1G
+      - key: Power
+        value: 300mW
+      - key: Continuous Drain Current
+        value: 100mA
+      - key: Collector-Emitter Voltage
+        value: 45V
+      - key: Manufacturer 1
+        value: onsemi
+      - key: Manufacturer Part Number 1
+        value: BC847CLT1G
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C150094
+      - key: LCSC Part
+        value: C150094
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/lcsc/2410121940_onsemi-BC847CLT1G_C150094.pdf
