@@ -4,6 +4,9 @@ import shutil
 from kiutils.footprint import Footprint
 
 import config
+from colors import get_logger
+
+log = get_logger(__name__)
 
 
 def ensure_dir(path: str):
@@ -106,7 +109,7 @@ def process_footprint(filepath: str):
                 # Copy the STEP file if needed
                 if not os.path.isfile(dst_model_path):
                     shutil.copy2(step_source, dst_model_path)
-                    print(f"Info: Replaced WRL with STEP alternative: {os.path.basename(step_source)}")
+                    log.info(f"Replaced WRL with STEP alternative: {os.path.basename(step_source)}")
 
                 # Update model path to STEP format
                 new_model_path = config.SEVENSIGMA_MODELS_BASE + _normalize_model_path(step_rel_path)
@@ -114,14 +117,14 @@ def process_footprint(filepath: str):
                 changed = True
             else:
                 # No STEP alternative found, remove WRL
-                print(f"Warning: No STEP alternative found for WRL model in '{filepath}': {model.path}")
+                log.warning(f"No STEP alternative found for WRL model in '{filepath}': {model.path}")
                 models_to_remove.append(idx)
                 changed = True
             continue
 
         # Skip other unsupported formats
         if model_ext not in [".step", ".stp"]:
-            print(f"Warning: Skipping unsupported 3D model format '{model_ext}' in '{filepath}': {model.path}")
+            log.warning(f"Skipping unsupported 3D model format '{model_ext}' in '{filepath}': {model.path}")
             models_to_remove.append(idx)
             changed = True
             continue
@@ -137,7 +140,7 @@ def process_footprint(filepath: str):
             if not os.path.isfile(dst_model_path):
                 shutil.copy2(src_model_path, dst_model_path)
         else:
-            print(f"Warning: Could not resolve source for model '{model.path}' in '{filepath}'")
+            log.warning(f"Could not resolve source for model '{model.path}' in '{filepath}'")
 
         # Always rewrite to local ${SEVENSIGMA_DIR} base while preserving structure
         new_model_path = config.SEVENSIGMA_MODELS_BASE + _normalize_model_path(rel_subpath)

@@ -40,9 +40,14 @@ from easyeda2kicad.kicad.export_kicad_symbol import ExporterSymbolKicad
 from easyeda2kicad.kicad.parameters_kicad_symbol import KicadVersion
 from kiutils.symbol import SymbolLib
 from ruamel.yaml import YAML as RuamelYAML
+from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.scalarstring import DoubleQuotedScalarString as DQ
 
 import config
+from colors import get_logger
 from update_footprints_models import process_footprint
+
+log = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -66,13 +71,22 @@ def _get_prop(component: dict, key: str) -> str | None:
     return None
 
 
-def _needs_import(component: dict, existing_bases: set[str]) -> bool:
-    """Check whether a component still needs to be imported."""
+def _needs_import(component: dict, existing_bases: set[str], defaults: dict | None = None) -> bool:
+    """Check whether a component still needs to be imported.
+
+    A component needs import when it has an LCSC Part number AND its base
+    component is unresolved (missing, empty, or not present in base_library).
+    The optional *defaults* dict (from the YAML ``defaults:`` section) is
+    consulted as a fallback for base_component.
+    """
     lcsc = _get_prop(component, "LCSC Part")
     if not lcsc:
         return False
 
     base = component.get("base_component")
+    if not base and defaults:
+        base = defaults.get("base_component")
+
     # Needs import when base_component is missing/empty OR the referenced base
     # doesn't exist in base_library.
     return bool(not base or base not in existing_bases)
@@ -82,9 +96,14 @@ def _needs_import(component: dict, existing_bases: set[str]) -> bool:
 # LCSC metadata
 # ---------------------------------------------------------------------------
 
+_lcsc_metadata_cache: dict[str, dict[str, str] | None] = {}
+
 
 def _fetch_lcsc_metadata(lcsc_id: str) -> dict[str, str] | None:
-    """Fetch component metadata from the LCSC API."""
+    """Fetch component metadata from the LCSC API (with per-run cache)."""
+    if lcsc_id in _lcsc_metadata_cache:
+        return _lcsc_metadata_cache[lcsc_id]
+
     url = config.LCSC_API_URL.format(lcsc_id)
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     try:
@@ -92,8 +111,9 @@ def _fetch_lcsc_metadata(lcsc_id: str) -> dict[str, str] | None:
         data = json.loads(resp.read())
         result = data.get("result")
         if not result or not isinstance(result, dict):
+            _lcsc_metadata_cache[lcsc_id] = None
             return None
-        return {
+        meta = {
             "manufacturer": result.get("brandNameEn", ""),
             "mpn": result.get("productModel", ""),
             "description": result.get("productIntroEn") or result.get("productNameEn") or "",
@@ -101,8 +121,11 @@ def _fetch_lcsc_metadata(lcsc_id: str) -> dict[str, str] | None:
             "category": result.get("catalogName", ""),
             "package": result.get("encapStandard", ""),
         }
+        _lcsc_metadata_cache[lcsc_id] = meta
+        return meta
     except Exception as e:
-        print(f"  Warning: Could not fetch LCSC metadata for {lcsc_id}: {e}")
+        log.warning(f"Could not fetch LCSC metadata for {lcsc_id}: {e}")
+        _lcsc_metadata_cache[lcsc_id] = None
         return None
 
 
@@ -111,6 +134,18 @@ def _fetch_lcsc_metadata(lcsc_id: str) -> dict[str, str] | None:
 # ---------------------------------------------------------------------------
 
 _easyeda_api = EasyedaApi()
+
+
+def _get_easyeda_footprint_name(lcsc_id: str) -> str | None:
+    """Fetch just the EasyEDA footprint name for a component (no file export)."""
+    try:
+        cad_data = _easyeda_api.get_cad_data_of_component(lcsc_id=lcsc_id)
+        if not cad_data:
+            return None
+        fp_importer = EasyedaFootprintImporter(easyeda_cp_cad_data=cad_data)
+        return fp_importer.get_footprint().info.name
+    except Exception:
+        return None
 
 
 def _download_and_import(
@@ -129,7 +164,7 @@ def _download_and_import(
     """
     cad_data = _easyeda_api.get_cad_data_of_component(lcsc_id=lcsc_id)
     if not cad_data:
-        print(f"  ERROR: Failed to fetch CAD data from EasyEDA API for {lcsc_id}")
+        log.error(f"Failed to fetch CAD data from EasyEDA API for {lcsc_id}")
         return None
 
     kicad_version = KicadVersion.v6
@@ -166,7 +201,7 @@ def _download_and_import(
             src_symbol = next((s for s in tmp_lib.symbols if s.entryName == symbol_name), None)
 
         if src_symbol is None:
-            print(f"  ERROR: Symbol '{symbol_name}' not found after export")
+            log.error(f"Symbol '{symbol_name}' not found after export")
             return None
 
         base_lib = SymbolLib.from_file(config.BASE_LIB_PATH)
@@ -182,7 +217,7 @@ def _download_and_import(
             base_lib.symbols.append(new_symbol)
             base_lib.to_file(config.BASE_LIB_PATH)
     except Exception as e:
-        print(f"  ERROR: Symbol import failed for {lcsc_id}: {e}")
+        log.error(f"Symbol import failed for {lcsc_id}: {e}")
         return None
 
     # ---- 3D Model → ./3DModels/easyeda2kicad.3dshapes/ (must run before footprint) ----
@@ -195,7 +230,7 @@ def _download_and_import(
             with open(step_path, "wb") as f:
                 f.write(model_importer.output.step)
     except Exception as e:
-        print(f"  WARNING: 3D model export failed for {lcsc_id}: {e}")
+        log.warning(f"3D model export failed for {lcsc_id}: {e}")
 
     # ---- Footprint → 7Sigma.pretty/ (with ${SEVENSIGMA_DIR} model path) ----
     try:
@@ -212,7 +247,7 @@ def _download_and_import(
             # Normalise model references (WRL→STEP, verify paths)
             process_footprint(dst)
     except Exception as e:
-        print(f"  WARNING: Footprint import failed for {lcsc_id}: {e}")
+        log.warning(f"Footprint import failed for {lcsc_id}: {e}")
 
     if not symbol_name:
         return None
@@ -341,9 +376,10 @@ def auto_import_missing_components(
     component in base_library and have an LCSC Part number).
 
     For each such component:
-      1. Fetch metadata from LCSC API
-      2. Download symbol / footprint / 3D model via easyeda2kicad
-      3. Import base symbol and footprint into the library
+      1. Resolve base_component and footprint from YAML ``defaults:`` section
+         (base_component fallback, footprint_map keyed by LCSC package size)
+      2. Fetch metadata from LCSC API
+      3. Only download from EasyEDA when the defaults cannot satisfy the need
       4. Update the YAML file with all resolved fields
 
     Returns the number of components successfully imported.
@@ -359,43 +395,86 @@ def auto_import_missing_components(
         if not yaml_data or "components" not in yaml_data:
             continue
 
+        defaults = yaml_data.get("defaults") or {}
+
         for component in yaml_data["components"]:
             comp_name = component.get("name", "?")
 
-            if not _needs_import(component, existing_bases):
+            if not _needs_import(component, existing_bases, defaults):
                 continue
 
             lcsc_id = _get_prop(component, "LCSC Part")
-            print(f"\n  Auto-importing '{comp_name}' (LCSC: {lcsc_id}) ...")
+            log.info(f"Auto-importing '{comp_name}' (LCSC: {lcsc_id})...")
 
             # 1. Fetch LCSC metadata
             meta = _fetch_lcsc_metadata(lcsc_id) or {}
 
-            # 2. Check if user already specified a footprint
+            # 2. Resolve base_component: component → defaults → easyeda
+            effective_base = component.get("base_component") or defaults.get("base_component")
+            base_resolved_from_defaults = bool(
+                not component.get("base_component") and effective_base
+            )
+
+            # 3. Resolve footprint: component → footprint_map[encapStandard] → footprint_map[easyeda_name] → easyeda
             existing_footprint = _get_prop(component, "Footprint")
+            footprint_from_defaults = None
+            if not existing_footprint:
+                footprint_map = defaults.get("footprint_map") or {}
+                lcsc_package = meta.get("package", "")
+                footprint_from_defaults = footprint_map.get(lcsc_package)
 
-            # 3. Download and import directly into the project
-            dl = _download_and_import(lcsc_id, component.get("base_component") or None)
-            if dl is None:
-                print(f"  ERROR: Download failed - skipping '{comp_name}'")
-                continue
+                # Fallback: try EasyEDA footprint name as a key in the map
+                if not footprint_from_defaults and footprint_map:
+                    easyeda_fp_name = _get_easyeda_footprint_name(lcsc_id)
+                    if easyeda_fp_name:
+                        footprint_from_defaults = footprint_map.get(easyeda_fp_name)
+                        if not footprint_from_defaults:
+                            log.info(f"No footprint_map match for encapStandard='{lcsc_package}' "
+                                     f"or easyeda_fp='{easyeda_fp_name}'")
 
-            base_component_name = dl["base_component_name"]
-            fp_name = dl.get("footprint_name")
+            effective_footprint = existing_footprint or footprint_from_defaults
 
-            print(f"  OK: Base symbol '{base_component_name}' added")
-            existing_bases.add(base_component_name)
+            # 4. Decide whether EasyEDA download is needed
+            need_easyeda_symbol = not effective_base or effective_base not in existing_bases
+            need_easyeda_footprint = not effective_footprint
 
-            # Only import easyeda footprint if user didn't specify one
-            if not existing_footprint and fp_name:
-                print(f"  OK: Footprint '{fp_name}' imported to 7Sigma.pretty")
-            elif existing_footprint:
-                print(f"  OK: Using user-specified footprint '{existing_footprint}'")
+            if need_easyeda_symbol or need_easyeda_footprint:
+                # Download and import from EasyEDA
+                dl = _download_and_import(
+                    lcsc_id,
+                    component.get("base_component") or None,
+                )
+                if dl is None:
+                    log.error(f"Download failed - skipping '{comp_name}'")
+                    continue
 
-            # 4. Build property updates
+                base_component_name = dl["base_component_name"]
+                fp_name = dl.get("footprint_name")
+
+                if need_easyeda_symbol:
+                    log.success(f"  Base symbol '{base_component_name}' added from EasyEDA")
+                    existing_bases.add(base_component_name)
+                else:
+                    base_component_name = effective_base
+
+                if need_easyeda_footprint and fp_name:
+                    log.success(f"  Footprint '{fp_name}' imported from EasyEDA")
+                    effective_footprint = f"7Sigma:{fp_name}"
+            else:
+                # Everything resolved from defaults — no EasyEDA download needed
+                base_component_name = effective_base
+                if base_resolved_from_defaults:
+                    log.success(f"  Using default base symbol '{base_component_name}'")
+                if footprint_from_defaults:
+                    log.success(f"  Using default footprint '{footprint_from_defaults}' (package: {meta.get('package', '?')})")
+
+            if existing_footprint:
+                log.success(f"  Using user-specified footprint '{existing_footprint}'")
+
+            # 5. Build property updates
             props = _build_property_updates(meta, lcsc_id)
-            if not existing_footprint and fp_name:
-                props["Footprint"] = f"7Sigma:{fp_name}"
+            if effective_footprint and not existing_footprint:
+                props["Footprint"] = effective_footprint
 
             # 6. Rewrite YAML
             updates = {
@@ -403,10 +482,10 @@ def auto_import_missing_components(
                 "properties": props,
             }
             _rewrite_yaml_component(str(yaml_path), comp_name, updates)
-            print("  OK: YAML updated with metadata")
+            log.debug("  YAML updated with metadata")
 
             imported_count += 1
-            print(f"  OK: Successfully imported '{comp_name}'")
+            log.success(f"  Successfully imported '{comp_name}'")
 
     return imported_count
 
@@ -466,21 +545,163 @@ def fill_missing_properties(
 
             _rewrite_yaml_component(str(yaml_path), comp_name, {"properties": props_to_fill})
             filled = ", ".join(props_to_fill.keys())
-            print(f"  Filled '{comp_name}': {filled}")
+            log.success(f"  Filled '{comp_name}': {filled}")
             updated_count += 1
 
     return updated_count
 
 
+# ---------------------------------------------------------------------------
+# Auto-learn default footprint mappings
+# ---------------------------------------------------------------------------
+
+
+def update_default_mappings(
+    sources_dir: str = config.SOURCES_DIR,
+) -> int:
+    """
+    Auto-expand ``defaults.footprint_map`` in each YAML file by learning
+    encapStandard → Footprint associations from existing fully-specified
+    components.
+
+    For each YAML file:
+      1. Collect components that have both an LCSC Part and a Footprint set.
+      2. Fetch ``encapStandard`` from the LCSC API (cache avoids duplicate calls).
+      3. If all components sharing the same ``encapStandard`` agree on one
+         footprint, add the mapping automatically.
+      4. If they disagree (conflict), add the package to ``ignore_packages``
+         so the warning does not recur.
+
+    If a YAML file has no ``defaults:`` section yet, one is created
+    automatically when learnable mappings are found.
+
+    Packages already in ``footprint_map`` or ``ignore_packages`` are skipped.
+
+    Returns the number of new mappings added.
+    """
+    ryaml = RuamelYAML()
+    ryaml.preserve_quotes = True
+    ryaml.indent(mapping=2, sequence=4, offset=2)
+    ryaml.width = 4096
+
+    yaml_files = sorted(Path(sources_dir).glob("*.yaml"))
+    total_added = 0
+
+    for yaml_path in yaml_files:
+        with open(yaml_path) as f:
+            data = ryaml.load(f)
+
+        if not data or "components" not in data:
+            continue
+
+        defaults = data.get("defaults")
+        if defaults is None:
+            defaults = CommentedMap()
+            # Will only be inserted into data if we find learnable mappings
+            created_defaults = True
+        else:
+            created_defaults = False
+
+        footprint_map = defaults.get("footprint_map")
+        if footprint_map is None:
+            footprint_map = {}
+            defaults["footprint_map"] = footprint_map
+
+        ignore_packages = defaults.get("ignore_packages") or []
+        ignore_set = set(ignore_packages)
+
+        # Collect components with both LCSC Part and Footprint
+        candidates: list[tuple[str, str]] = []
+        for comp in data["components"]:
+            lcsc_id = _get_prop(comp, "LCSC Part")
+            footprint = _get_prop(comp, "Footprint")
+            if lcsc_id and footprint:
+                candidates.append((lcsc_id, footprint))
+
+        if not candidates:
+            continue
+
+        # Smart filtering: only query LCSC for components whose footprint
+        # isn't already reachable as a value in the existing map.
+        mapped_footprints = set(footprint_map.values())
+        to_query = [(lid, fp) for lid, fp in candidates if fp not in mapped_footprints]
+
+        if not to_query:
+            continue
+
+        # Fetch encapStandard and group by package
+        package_to_footprints: dict[str, set[str]] = {}
+        for lcsc_id, footprint in to_query:
+            meta = _fetch_lcsc_metadata(lcsc_id)
+            if not meta:
+                continue
+            package = meta.get("package", "").strip()
+            if not package or package in footprint_map or package in ignore_set:
+                continue
+            package_to_footprints.setdefault(package, set()).add(footprint)
+
+        # Add consistent mappings; flag conflicts
+        added = 0
+        new_ignores: list[str] = []
+        for package, footprints in sorted(package_to_footprints.items()):
+            if len(footprints) == 1:
+                fp = next(iter(footprints))
+                footprint_map[DQ(package)] = DQ(fp)
+                added += 1
+                log.success(f"  Learned: '{package}' \u2192 '{fp}' ({yaml_path.name})")
+            else:
+                log.warning(
+                    f"Conflict: '{package}' maps to {sorted(footprints)} "
+                    f"in {yaml_path.name} — added to ignore_packages"
+                )
+                new_ignores.append(package)
+
+        # Persist ignore_packages for conflicts
+        if new_ignores:
+            for pkg in new_ignores:
+                if pkg not in ignore_set:
+                    ignore_packages.append(pkg)
+                    ignore_set.add(pkg)
+            defaults["ignore_packages"] = ignore_packages
+
+        if added or new_ignores:
+            # Rebuild footprint_map as a fresh CommentedMap with all entries
+            # quoted.  This avoids ruamel.yaml attaching stale trailing
+            # comments from the original last-key to the mapping, which
+            # causes new entries to appear after unrelated comment lines.
+            fresh_map = CommentedMap()
+            for k, v in footprint_map.items():
+                fresh_map[DQ(str(k))] = DQ(str(v))
+            defaults["footprint_map"] = fresh_map
+
+            # Insert defaults into data if it was newly created
+            if created_defaults:
+                # Place defaults before validation_rules or components
+                insert_pos = 1  # after library_name
+                for i, key in enumerate(data.keys()):
+                    if key in ("validation_rules", "components"):
+                        insert_pos = i
+                        break
+                data.insert(insert_pos, "defaults", defaults)
+
+            with open(yaml_path, "w") as f:
+                ryaml.dump(data, f)
+            total_added += added
+
+    return total_added
+
+
 def main():
     """Standalone entry point."""
-    print("EasyEDA Auto-Importer")
-    print("=" * 50)
+    from colors import setup_logging
+    setup_logging()
+    log.info("EasyEDA Auto-Importer")
+    log.debug("=" * 50)
     count = auto_import_missing_components()
     if count > 0:
-        print(f"\nImported {count} component(s) from EasyEDA.")
+        log.success(f"Imported {count} component(s) from EasyEDA.")
     else:
-        print("\nNo missing components to import.")
+        log.info("No missing components to import.")
 
 
 if __name__ == "__main__":

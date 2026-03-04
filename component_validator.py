@@ -14,6 +14,9 @@ from pathlib import Path
 import yaml
 
 import config
+from colors import get_logger
+
+log = get_logger(__name__)
 
 
 @dataclass
@@ -93,7 +96,7 @@ class ComponentValidator:
                 default_config.update(loaded_config)
                 return default_config
         except Exception as e:
-            print(f"Warning: Could not load config file {config_file}: {e}")
+            log.warning(f"Could not load config file {config_file}: {e}")
             return default_config
 
     def _load_all_yaml_files(self) -> list[dict]:
@@ -756,8 +759,8 @@ class ComponentValidator:
 
     def run_all_validations(self) -> bool:
         """Run all validation checks and return success status."""
-        print("Running KiCad Library Component Validation...")
-        print("=" * 60)
+        log.info("Running KiCad Library Component Validation...")
+        log.debug("=" * 60)
 
         # Run validations
         self.validate_yaml_structure()
@@ -778,43 +781,51 @@ class ComponentValidator:
     def print_results(self):
         """Print validation results."""
         # Print statistics
-        print("\\nLibrary Statistics:")
-        print(f"  Libraries: {self.stats['total_libraries']}")
-        print(f"  Components: {self.stats['total_components']}")
-        print(f"  Base Symbols: {self.stats['total_base_symbols']}")
-        print(f"  Footprints: {self.stats['total_footprints']}")
+        log.info("Library Statistics:")
+        log.info(f"  Libraries: {self.stats['total_libraries']}")
+        log.info(f"  Components: {self.stats['total_components']}")
+        log.info(f"  Base Symbols: {self.stats['total_base_symbols']}")
+        log.info(f"  Footprints: {self.stats['total_footprints']}")
 
         # Print validation summary
-        print("\\nValidation Results:")
-        print(f"  ✓ Validations passed: {len(self.errors) == 0}")
-        print(f"  ✗ Errors: {len(self.errors)}")
-        print(f"  ⚠ Warnings: {len(self.warnings)}")
+        log.info("Validation Results:")
+        if len(self.errors) == 0:
+            log.success("  ✓ Validations passed")
+        else:
+            log.error("  ✗ Validations failed")
+        if len(self.errors) > 0:
+            log.error(f"  ✗ Errors: {len(self.errors)}")
+        else:
+            log.info(f"  Errors: {len(self.errors)}")
+        if len(self.warnings) > 0:
+            log.warning(f"  ⚠ Warnings: {len(self.warnings)}")
+        else:
+            log.info(f"  Warnings: {len(self.warnings)}")
 
         # Print errors
         if self.errors:
-            print(f"\\n{'=' * 60}")
-            print("ERRORS:")
-            print("=" * 60)
-            for error in self.errors:
+            log.debug("=" * 60)
+            log.error("ERRORS:")
+            log.debug("=" * 60)
+            for err in self.errors:
                 location = []
-                if error.component_name:
-                    location.append(f"Component: {error.component_name}")
-                if error.library_name:
-                    location.append(f"Library: {error.library_name}")
-                if error.source_file:
-                    location.append(f"File: {error.source_file}")
+                if err.component_name:
+                    location.append(f"Component: {err.component_name}")
+                if err.library_name:
+                    location.append(f"Library: {err.library_name}")
+                if err.source_file:
+                    location.append(f"File: {err.source_file}")
 
                 location_str = " | ".join(location)
-                print(f"✗ {error.message}")
+                log.error(f"✗ {err.message}")
                 if location_str:
-                    print(f"  └─ {location_str}")
-                print()
+                    log.debug(f"  └─ {location_str}")
 
         # Print warnings
         if self.warnings:
-            print(f"\\n{'=' * 60}")
-            print("WARNINGS:")
-            print("=" * 60)
+            log.debug("=" * 60)
+            log.warning("WARNINGS:")
+            log.debug("=" * 60)
             for warning in self.warnings:
                 location = []
                 if warning.component_name:
@@ -825,23 +836,26 @@ class ComponentValidator:
                     location.append(f"File: {warning.source_file}")
 
                 location_str = " | ".join(location)
-                print(f"⚠ {warning.message}")
+                log.warning(f"⚠ {warning.message}")
                 if location_str:
-                    print(f"  └─ {location_str}")
-                print()
+                    log.debug(f"  └─ {location_str}")
 
         # Print component distribution
         if self.stats["components_by_library"]:
-            print("\\nComponents per Library:")
+            log.info("Components per Library:")
             for lib_name, count in sorted(self.stats["components_by_library"].items()):
-                print(f"  {lib_name}: {count}")
+                log.info(f"  {lib_name}: {count}")
 
-        print("\\n" + "=" * 60)
+        log.debug("=" * 60)
 
 
 def main():
     """Main entry point for standalone validation."""
     import argparse
+
+    from colors import setup_logging
+
+    setup_logging()
 
     parser = argparse.ArgumentParser(description="Validate KiCad Library Components")
     parser.add_argument("--sources", default="./Sources", help="Sources directory")
