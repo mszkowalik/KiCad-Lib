@@ -4,7 +4,7 @@ library_name: Relays
 defaults:
   footprint_map: {}
   ignore_packages:
-    - "hrough Hole,28.8x12.5mm"
+    - "Through Hole,28.8x12.5mm"
 validation_rules:
   required_properties:
     - "Value"
