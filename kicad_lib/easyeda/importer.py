@@ -21,13 +21,11 @@ The importer will automatically:
 """
 
 import copy
-import json
 import os
 import tempfile
-import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-import yaml
 from easyeda2kicad.easyeda.easyeda_api import EasyedaApi
 from easyeda2kicad.easyeda.easyeda_importer import (
     Easyeda3dModelImporter,
@@ -39,36 +37,37 @@ from easyeda2kicad.kicad.export_kicad_footprint import ExporterFootprintKicad
 from easyeda2kicad.kicad.export_kicad_symbol import ExporterSymbolKicad
 from easyeda2kicad.kicad.parameters_kicad_symbol import KicadVersion
 from kiutils.symbol import SymbolLib
-from ruamel.yaml import YAML as RuamelYAML
 from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString as DQ
 
-import config
-from colors import get_logger
-from update_footprints_models import process_footprint
+from kicad_lib import config
+from kicad_lib.colors import get_logger
+from kicad_lib.easyeda import api as lcsc_api
+from kicad_lib.kicad.footprints import process_footprint
+from kicad_lib.yaml import rewriter as yaml_rewriter
+from kicad_lib.yaml.helpers import get_property_value, load_base_symbol_names, load_yaml_sources
 
 log = get_logger(__name__)
+
+# Maximum parallel LCSC API requests
+_MAX_WORKERS = 8
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _get_base_component_names() -> set[str]:
-    """Get the set of all base component entry names."""
-    base_lib = SymbolLib.from_file(config.BASE_LIB_PATH)
-    return {s.entryName for s in base_lib.symbols}
+def _prefetch_metadata(lcsc_ids: set[str]) -> None:
+    """Fetch LCSC metadata for multiple IDs in parallel (warms the cache)."""
+    # Only fetch IDs not already cached
+    to_fetch = [lid for lid in lcsc_ids if lid not in lcsc_api._cache]
+    if not to_fetch:
+        return
 
-
-def _get_prop(component: dict, key: str) -> str | None:
-    """Get a property value from a YAML component dict. Returns None if missing or empty."""
-    for prop in component.get("properties", []):
-        if prop.get("key") == key:
-            val = prop.get("value")
-            if val is None or (isinstance(val, str) and not val.strip()):
-                return None
-            return str(val)
-    return None
+    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
+        futures = {pool.submit(lcsc_api.fetch_metadata, lid): lid for lid in to_fetch}
+        for future in as_completed(futures):
+            future.result()  # exceptions are already handled inside fetch_metadata
 
 
 def _needs_import(component: dict, existing_bases: set[str], defaults: dict | None = None) -> bool:
@@ -79,7 +78,7 @@ def _needs_import(component: dict, existing_bases: set[str], defaults: dict | No
     The optional *defaults* dict (from the YAML ``defaults:`` section) is
     consulted as a fallback for base_component.
     """
-    lcsc = _get_prop(component, "LCSC Part")
+    lcsc = get_property_value(component, "LCSC Part")
     if not lcsc:
         return False
 
@@ -90,43 +89,6 @@ def _needs_import(component: dict, existing_bases: set[str], defaults: dict | No
     # Needs import when base_component is missing/empty OR the referenced base
     # doesn't exist in base_library.
     return bool(not base or base not in existing_bases)
-
-
-# ---------------------------------------------------------------------------
-# LCSC metadata
-# ---------------------------------------------------------------------------
-
-_lcsc_metadata_cache: dict[str, dict[str, str] | None] = {}
-
-
-def _fetch_lcsc_metadata(lcsc_id: str) -> dict[str, str] | None:
-    """Fetch component metadata from the LCSC API (with per-run cache)."""
-    if lcsc_id in _lcsc_metadata_cache:
-        return _lcsc_metadata_cache[lcsc_id]
-
-    url = config.LCSC_API_URL.format(lcsc_id)
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    try:
-        resp = urllib.request.urlopen(req, timeout=15)
-        data = json.loads(resp.read())
-        result = data.get("result")
-        if not result or not isinstance(result, dict):
-            _lcsc_metadata_cache[lcsc_id] = None
-            return None
-        meta = {
-            "manufacturer": result.get("brandNameEn", ""),
-            "mpn": result.get("productModel", ""),
-            "description": result.get("productIntroEn") or result.get("productNameEn") or "",
-            "datasheet": result.get("pdfUrl", ""),
-            "category": result.get("catalogName", ""),
-            "package": result.get("encapStandard", ""),
-        }
-        _lcsc_metadata_cache[lcsc_id] = meta
-        return meta
-    except Exception as e:
-        log.warning(f"Could not fetch LCSC metadata for {lcsc_id}: {e}")
-        _lcsc_metadata_cache[lcsc_id] = None
-        return None
 
 
 # ---------------------------------------------------------------------------
@@ -260,110 +222,6 @@ def _download_and_import(
 
 
 # ---------------------------------------------------------------------------
-# YAML rewriting
-# ---------------------------------------------------------------------------
-
-
-def _rewrite_yaml_component(filepath: str, component_name: str, updates: dict):
-    """
-    Rewrite a component block in a YAML file with updated/new properties.
-    Uses ruamel.yaml for round-trip editing that preserves comments,
-    indentation, and quoting style.
-
-    `updates` is a dict like:
-        {
-            "base_component": "STM32G031G8U6",
-            "properties": {
-                "Footprint": "7Sigma:UFQFPN-28_L4.0-W4.0-P0.50-BL",
-                "ki_description": "ARM Cortex-M0+ ...",
-                ...
-            }
-        }
-    """
-    ryaml = RuamelYAML()
-    ryaml.preserve_quotes = True
-    ryaml.indent(mapping=2, sequence=4, offset=2)
-    ryaml.width = 4096  # prevent line wrapping of long strings
-
-    with open(filepath) as f:
-        data = ryaml.load(f)
-
-    modified = False
-    for comp in data.get("components", []):
-        if comp.get("name") != component_name:
-            continue
-
-        # Update base_component if provided
-        if "base_component" in updates and (not comp.get("base_component")):
-            comp["base_component"] = updates["base_component"]
-            modified = True
-
-        # Update / add properties
-        existing_keys = {p["key"] for p in comp.get("properties", [])}
-        for key, value in updates.get("properties", {}).items():
-            if key in existing_keys:
-                # Only overwrite if currently empty
-                for p in comp["properties"]:
-                    if p["key"] == key:
-                        if p.get("value") is None or (isinstance(p.get("value"), str) and not p["value"].strip()):
-                            p["value"] = value
-                            modified = True
-                        break
-            else:
-                comp.setdefault("properties", []).append({"key": key, "value": value})
-                modified = True
-
-        # Enforce canonical key order: name → base_component → properties → rest
-        canonical_order = ["name", "base_component", "properties"]
-        ordered = {}
-        for k in canonical_order:
-            if k in comp:
-                ordered[k] = comp[k]
-        for k, v in comp.items():
-            if k not in ordered:
-                ordered[k] = v
-        comp.clear()
-        comp.update(ordered)
-
-        break
-
-    if modified:
-        with open(filepath, "w") as f:
-            ryaml.dump(data, f)
-
-
-# ---------------------------------------------------------------------------
-# LCSC metadata → YAML property mapping
-# ---------------------------------------------------------------------------
-
-# Maps LCSC API metadata keys → YAML property keys
-_LCSC_PROPERTY_MAP = {
-    "description": "ki_description",
-    "manufacturer": "Manufacturer 1",
-    "mpn": "Manufacturer Part Number 1",
-    "datasheet": "Datasheet",
-}
-
-# Properties that are always set for LCSC-sourced components
-_LCSC_STATIC_PROPS = {
-    "Supplier 1": "LCSC",
-}
-
-
-def _build_property_updates(meta: dict[str, str], lcsc_id: str) -> dict[str, str]:
-    """Build a YAML property dict from LCSC metadata."""
-    props: dict[str, str] = {}
-    for meta_key, yaml_key in _LCSC_PROPERTY_MAP.items():
-        val = meta.get(meta_key, "")
-        if val:
-            props[yaml_key] = val
-
-    props.update(_LCSC_STATIC_PROPS)
-    props["Supplier Part Number 1"] = lcsc_id
-    return props
-
-
-# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -384,30 +242,28 @@ def auto_import_missing_components(
 
     Returns the number of components successfully imported.
     """
-    existing_bases = _get_base_component_names()
-    yaml_files = sorted(Path(sources_dir).glob("*.yaml"))
+    existing_bases = load_base_symbol_names()
+    yaml_data_list = load_yaml_sources(sources_dir)
     imported_count = 0
 
-    for yaml_path in yaml_files:
-        with open(yaml_path) as f:
-            yaml_data = yaml.safe_load(f)
-
-        if not yaml_data or "components" not in yaml_data:
+    for lib_data in yaml_data_list:
+        if "components" not in lib_data:
             continue
 
-        defaults = yaml_data.get("defaults") or {}
+        yaml_path = Path(sources_dir) / lib_data["_source_file"]
+        defaults = lib_data.get("defaults") or {}
 
-        for component in yaml_data["components"]:
+        for component in lib_data["components"]:
             comp_name = component.get("name", "?")
 
             if not _needs_import(component, existing_bases, defaults):
                 continue
 
-            lcsc_id = _get_prop(component, "LCSC Part")
+            lcsc_id = get_property_value(component, "LCSC Part")
             log.info(f"Auto-importing '{comp_name}' (LCSC: {lcsc_id})...")
 
             # 1. Fetch LCSC metadata
-            meta = _fetch_lcsc_metadata(lcsc_id) or {}
+            meta = lcsc_api.fetch_metadata(lcsc_id) or {}
 
             # 2. Resolve base_component: component → defaults → easyeda
             effective_base = component.get("base_component") or defaults.get("base_component")
@@ -416,7 +272,7 @@ def auto_import_missing_components(
             )
 
             # 3. Resolve footprint: component → footprint_map[encapStandard] → footprint_map[easyeda_name] → easyeda
-            existing_footprint = _get_prop(component, "Footprint")
+            existing_footprint = get_property_value(component, "Footprint")
             footprint_from_defaults = None
             if not existing_footprint:
                 footprint_map = defaults.get("footprint_map") or {}
@@ -472,7 +328,7 @@ def auto_import_missing_components(
                 log.success(f"  Using user-specified footprint '{existing_footprint}'")
 
             # 5. Build property updates
-            props = _build_property_updates(meta, lcsc_id)
+            props = lcsc_api.build_property_updates(meta, lcsc_id)
             if effective_footprint and not existing_footprint:
                 props["Footprint"] = effective_footprint
 
@@ -481,7 +337,7 @@ def auto_import_missing_components(
                 "base_component": base_component_name,
                 "properties": props,
             }
-            _rewrite_yaml_component(str(yaml_path), comp_name, updates)
+            yaml_rewriter.rewrite_component(str(yaml_path), comp_name, updates)
             log.debug("  YAML updated with metadata")
 
             imported_count += 1
@@ -502,48 +358,63 @@ def fill_missing_properties(
 
     Returns the number of components updated.
     """
-    yaml_files = sorted(Path(sources_dir).glob("*.yaml"))
+    yaml_data_list = load_yaml_sources(sources_dir)
     updated_count = 0
 
-    for yaml_path in yaml_files:
-        with open(yaml_path) as f:
-            yaml_data = yaml.safe_load(f)
+    # Collect all LCSC IDs that need metadata, then prefetch in parallel
+    ids_to_fetch: set[str] = set()
+    for lib_data in yaml_data_list:
+        for component in lib_data.get("components", []):
+            lcsc_id = get_property_value(component, "LCSC Part")
+            if lcsc_id:
+                fillable_keys = (
+                    set(lcsc_api.LCSC_PROPERTY_MAP.values())
+                    | set(lcsc_api.LCSC_STATIC_PROPS.keys())
+                    | {"Supplier Part Number 1"}
+                )
+                if any(get_property_value(component, k) is None for k in fillable_keys):
+                    ids_to_fetch.add(lcsc_id)
+    _prefetch_metadata(ids_to_fetch)
 
-        if not yaml_data or "components" not in yaml_data:
+    for lib_data in yaml_data_list:
+        if "components" not in lib_data:
             continue
 
-        for component in yaml_data["components"]:
+        yaml_path = Path(sources_dir) / lib_data["_source_file"]
+
+        for component in lib_data.get("components", []):
             comp_name = component.get("name", "?")
-            lcsc_id = _get_prop(component, "LCSC Part")
+            lcsc_id = get_property_value(component, "LCSC Part")
             if not lcsc_id:
                 continue
 
             # Check if any fillable property is missing
             fillable_keys = (
-                set(_LCSC_PROPERTY_MAP.values()) | set(_LCSC_STATIC_PROPS.keys()) | {"Supplier Part Number 1"}
+                set(lcsc_api.LCSC_PROPERTY_MAP.values())
+                | set(lcsc_api.LCSC_STATIC_PROPS.keys())
+                | {"Supplier Part Number 1"}
             )
-            has_gap = any(_get_prop(component, k) is None for k in fillable_keys)
+            has_gap = any(get_property_value(component, k) is None for k in fillable_keys)
             if not has_gap:
                 continue
 
-            meta = _fetch_lcsc_metadata(lcsc_id)
+            meta = lcsc_api.fetch_metadata(lcsc_id)
             if not meta:
                 continue
 
-            props = _build_property_updates(meta, lcsc_id)
+            props = lcsc_api.build_property_updates(meta, lcsc_id)
 
             # Only include properties that are actually missing
-            existing_props = {p["key"] for p in component.get("properties", [])}
             props_to_fill = {}
             for key, value in props.items():
-                current = _get_prop(component, key)
+                current = get_property_value(component, key)
                 if current is None and value:
                     props_to_fill[key] = value
 
             if not props_to_fill:
                 continue
 
-            _rewrite_yaml_component(str(yaml_path), comp_name, {"properties": props_to_fill})
+            yaml_rewriter.rewrite_component(str(yaml_path), comp_name, {"properties": props_to_fill})
             filled = ", ".join(props_to_fill.keys())
             log.success(f"  Filled '{comp_name}': {filled}")
             updated_count += 1
@@ -579,17 +450,11 @@ def update_default_mappings(
 
     Returns the number of new mappings added.
     """
-    ryaml = RuamelYAML()
-    ryaml.preserve_quotes = True
-    ryaml.indent(mapping=2, sequence=4, offset=2)
-    ryaml.width = 4096
-
     yaml_files = sorted(Path(sources_dir).glob("*.yaml"))
     total_added = 0
 
     for yaml_path in yaml_files:
-        with open(yaml_path) as f:
-            data = ryaml.load(f)
+        ryaml, data = yaml_rewriter.load_roundtrip(yaml_path)
 
         if not data or "components" not in data:
             continue
@@ -613,8 +478,8 @@ def update_default_mappings(
         # Collect components with both LCSC Part and Footprint
         candidates: list[tuple[str, str]] = []
         for comp in data["components"]:
-            lcsc_id = _get_prop(comp, "LCSC Part")
-            footprint = _get_prop(comp, "Footprint")
+            lcsc_id = get_property_value(comp, "LCSC Part")
+            footprint = get_property_value(comp, "Footprint")
             if lcsc_id and footprint:
                 candidates.append((lcsc_id, footprint))
 
@@ -629,10 +494,13 @@ def update_default_mappings(
         if not to_query:
             continue
 
-        # Fetch encapStandard and group by package
+        # Fetch encapStandard and group by package (parallel for speed)
+        unique_lcsc_ids = {lid for lid, _ in to_query}
+        _prefetch_metadata(unique_lcsc_ids)
+
         package_to_footprints: dict[str, set[str]] = {}
         for lcsc_id, footprint in to_query:
-            meta = _fetch_lcsc_metadata(lcsc_id)
+            meta = lcsc_api.fetch_metadata(lcsc_id)
             if not meta:
                 continue
             package = meta.get("package", "").strip()
@@ -684,8 +552,7 @@ def update_default_mappings(
                         break
                 data.insert(insert_pos, "defaults", defaults)
 
-            with open(yaml_path, "w") as f:
-                ryaml.dump(data, f)
+            yaml_rewriter.save_roundtrip(ryaml, data, yaml_path)
             total_added += added
 
     return total_added
@@ -693,7 +560,7 @@ def update_default_mappings(
 
 def main():
     """Standalone entry point."""
-    from colors import setup_logging
+    from kicad_lib.colors import setup_logging
     setup_logging()
     log.info("EasyEDA Auto-Importer")
     log.debug("=" * 50)

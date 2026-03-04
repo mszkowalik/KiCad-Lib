@@ -3,15 +3,10 @@ import shutil
 
 from kiutils.footprint import Footprint
 
-import config
-from colors import get_logger
+from kicad_lib import config
+from kicad_lib.colors import get_logger
 
 log = get_logger(__name__)
-
-
-def ensure_dir(path: str):
-    if not os.path.exists(path):
-        os.makedirs(path)
 
 
 def _normalize_model_path(p: str) -> str:
@@ -104,7 +99,7 @@ def process_footprint(filepath: str):
                 step_ext = os.path.splitext(step_source)[1]
                 step_rel_path = os.path.splitext(rel_subpath)[0] + step_ext
                 dst_model_path = os.path.join(config.TARGET_3DMODELS_ROOT, step_rel_path)
-                ensure_dir(os.path.dirname(dst_model_path))
+                os.makedirs(os.path.dirname(dst_model_path), exist_ok=True)
 
                 # Copy the STEP file if needed
                 if not os.path.isfile(dst_model_path):
@@ -132,7 +127,7 @@ def process_footprint(filepath: str):
         # Process STEP files normally
         rel_subpath = _extract_rel_3d_subpath(model.path)
         dst_model_path = os.path.join(config.TARGET_3DMODELS_ROOT, rel_subpath)
-        ensure_dir(os.path.dirname(dst_model_path))
+        os.makedirs(os.path.dirname(dst_model_path), exist_ok=True)
 
         # Resolve the source file and copy if needed
         src_model_path = _resolve_source_path(model.path, rel_subpath)

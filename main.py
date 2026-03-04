@@ -9,12 +9,12 @@ automated 3D model management.
 
 import os
 
-import config
-from colors import get_logger, setup_logging
-from component_validator import ComponentValidator
-from easyeda_importer import auto_import_missing_components, fill_missing_properties, update_default_mappings
-from symbol_generator import generate_symbol_libraries
-from update_footprints_models import update_footprints_models
+from kicad_lib import config
+from kicad_lib.colors import get_logger, setup_logging
+from kicad_lib.easyeda.importer import auto_import_missing_components, fill_missing_properties, update_default_mappings
+from kicad_lib.kicad.footprints import update_footprints_models
+from kicad_lib.kicad.symbols import generate_symbol_libraries
+from kicad_lib.kicad.validator import ComponentValidator
 
 log = get_logger(__name__)
 

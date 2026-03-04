@@ -3,8 +3,9 @@ import os
 
 from kiutils.symbol import SymbolLib
 
-import config
-from yaml_parser import update_component_properties
+from kicad_lib import config
+from kicad_lib.yaml.helpers import load_yaml_sources, validate_library_names
+from kicad_lib.yaml.parser import update_component_properties
 
 
 def rename_symbol_units(symbol):
@@ -60,12 +61,14 @@ def create_or_update_library(yaml_data, symbols_dir):
 
 def generate_symbol_libraries(sources_dir=config.SOURCES_DIR, symbols_dir=config.SYMBOLS_DIR):
     """Generate all symbol libraries from YAML definitions."""
-    from yaml_parser import load_yaml_files
-
     # Ensure sources directory exists (safe no-op if it already exists)
     os.makedirs(sources_dir, exist_ok=True)
 
-    yaml_data = load_yaml_files(sources_dir)
+    yaml_data = load_yaml_sources(sources_dir)
+    errors = validate_library_names(yaml_data)
+    if errors:
+        raise ValueError(errors[0])
+
     total_components, library_count = create_or_update_library(yaml_data, symbols_dir)
 
     return total_components, library_count

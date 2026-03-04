@@ -13,8 +13,15 @@ from pathlib import Path
 
 import yaml
 
-import config
-from colors import get_logger
+from kicad_lib import config
+from kicad_lib.colors import get_logger
+from kicad_lib.yaml.helpers import (
+    get_property,
+    has_property,
+    iter_all_components,
+    load_base_symbol_names,
+    load_yaml_sources,
+)
 
 log = get_logger(__name__)
 
@@ -54,9 +61,10 @@ class ComponentValidator:
         self.stats = {}
 
         # Load data
-        self.yaml_data = self._load_all_yaml_files()
-        self.base_symbols = self._load_base_symbols()
+        self.yaml_data = load_yaml_sources(self.sources_dir)
+        self.base_symbols = load_base_symbol_names(self.base_library_path)
         self.available_footprints = self._load_available_footprints()
+        self._libraries_map: dict[str, dict] | None = None
 
     def _load_config(self, config_file: str = None) -> dict:
         """Load global validation configuration from YAML file."""
@@ -99,55 +107,18 @@ class ComponentValidator:
             log.warning(f"Could not load config file {config_file}: {e}")
             return default_config
 
-    def _load_all_yaml_files(self) -> list[dict]:
-        """Load all YAML component files."""
-        yaml_files = []
-        for yaml_file in self.sources_dir.glob("*.yaml"):
-            try:
-                with open(yaml_file) as f:
-                    data = yaml.safe_load(f)
-                    data["_source_file"] = yaml_file.name
-                    yaml_files.append(data)
-            except yaml.YAMLError as e:
-                self.errors.append(
-                    ValidationResult(passed=False, message=f"Invalid YAML syntax: {e}", source_file=yaml_file.name)
-                )
-        return yaml_files
+    def _get_libraries_map(self) -> dict[str, dict]:
+        """Build (and cache) a map of library_name → lib_data for rule lookup."""
+        if self._libraries_map is None:
+            self._libraries_map = {
+                lib_data.get("library_name", "unknown"): lib_data for lib_data in self.yaml_data
+            }
+        return self._libraries_map
 
-    def _load_base_symbols(self) -> set[str]:
-        """Load available base component names from base library."""
-        if not self.base_library_path.exists():
-            self.errors.append(
-                ValidationResult(passed=False, message=f"Base library not found at {self.base_library_path}")
-            )
-            return set()
-
-        try:
-            # Try to import kiutils, fall back to text parsing if not available
-            try:
-                from kiutils.symbol import SymbolLib
-
-                base_lib = SymbolLib.from_file(str(self.base_library_path))
-                return {symbol.entryName for symbol in base_lib.symbols}
-            except ImportError:
-                # Fall back to text parsing
-                return self._parse_base_symbols_from_text()
-        except Exception as e:
-            self.errors.append(ValidationResult(passed=False, message=f"Failed to load base library: {e}"))
-            return set()
-
-    def _parse_base_symbols_from_text(self) -> set[str]:
-        """Parse base symbols from text file when kiutils is not available."""
-        symbols = set()
-        try:
-            with open(self.base_library_path) as f:
-                content = f.read()
-                # Look for symbol definitions: (symbol "SymbolName"
-                matches = re.findall(r'\\(symbol\\s+"([^"]+)"', content)
-                symbols.update(matches)
-        except Exception as e:
-            self.errors.append(ValidationResult(passed=False, message=f"Failed to parse base library: {e}"))
-        return symbols
+    def _get_rules_for_component(self, lib_name: str) -> dict:
+        """Get merged validation rules for a component's library."""
+        lib_data = self._get_libraries_map().get(lib_name, {})
+        return self.get_merged_rules_for_library(lib_data)
 
     def _load_available_footprints(self) -> set[str]:
         """Load available footprint names."""
@@ -162,27 +133,9 @@ class ComponentValidator:
             footprints.add(footprint_file.stem)
         return footprints
 
-    def get_component_property(self, component: dict, property_key: str) -> str | None:
-        """Get property value from component definition."""
-        properties = component.get("properties", [])
-        for prop in properties:
-            if prop.get("key") == property_key:
-                return prop.get("value")
-        return None
-
-    def has_component_property(self, component: dict, property_key: str) -> bool:
-        """Check if component has a property defined (regardless of value)."""
-        properties = component.get("properties", [])
-        return any(prop.get("key") == property_key for prop in properties)
-
     def get_all_components(self) -> list[tuple[str, dict, str]]:
         """Get all components with their library context."""
-        components = []
-        for lib_data in self.yaml_data:
-            lib_name = lib_data.get("library_name", "unknown")
-            for component in lib_data.get("components", []):
-                components.append((lib_name, component, lib_data["_source_file"]))
-        return components
+        return list(iter_all_components(self.yaml_data))
 
     def get_library_validation_rules(self, lib_data: dict) -> dict:
         """Extract validation rules from a library YAML file."""
@@ -228,6 +181,20 @@ class ComponentValidator:
 
     def validate_yaml_structure(self):
         """Validate YAML file structure."""
+        # Detect files that failed to parse (skipped by load_yaml_sources)
+        expected_files = {p.name for p in self.sources_dir.glob("*.yaml")}
+        loaded_files = {d["_source_file"] for d in self.yaml_data}
+        for missing in expected_files - loaded_files:
+            self.errors.append(
+                ValidationResult(passed=False, message="Failed to load (invalid YAML syntax?)", source_file=missing)
+            )
+
+        # Check base library exists
+        if not self.base_library_path.exists():
+            self.errors.append(
+                ValidationResult(passed=False, message=f"Base library not found at {self.base_library_path}")
+            )
+
         for lib_data in self.yaml_data:
             source_file = lib_data["_source_file"]
 
@@ -307,22 +274,13 @@ class ComponentValidator:
 
     def validate_component_properties(self):
         """Validate component properties using library-specific rules."""
-        # Group components by library for rule application
-        libraries = {}
-        for lib_data in self.yaml_data:
-            lib_name = lib_data.get("library_name", "unknown")
-            libraries[lib_name] = lib_data
-
         for lib_name, component, source_file in self.get_all_components():
             comp_name = component.get("name", "unnamed")
-
-            # Get library-specific validation rules
-            lib_data = libraries.get(lib_name, {})
-            rules = self.get_merged_rules_for_library(lib_data)
+            rules = self._get_rules_for_component(lib_name)
 
             # Check required properties (must be defined, but can be null)
             for required_prop in rules["required_properties"]:
-                if not self.has_component_property(component, required_prop):
+                if not has_property(component, required_prop):
                     self.errors.append(
                         ValidationResult(
                             passed=False,
@@ -365,7 +323,7 @@ class ComponentValidator:
                 # Check properties conditions (new format)
                 if "properties" in rule and rule_matches:
                     for prop_name, pattern in rule["properties"].items():
-                        actual_value = self.get_component_property(component, prop_name)
+                        actual_value = get_property(component, prop_name)
                         if actual_value is None:
                             rule_matches = False
                             break
@@ -378,7 +336,7 @@ class ComponentValidator:
                 if rule_matches:
                     required_props = rule.get("requirements", [])
                     for required_prop in required_props:
-                        if not self.has_component_property(component, required_prop):
+                        if not has_property(component, required_prop):
                             self.errors.append(
                                 ValidationResult(
                                     passed=False,
@@ -391,7 +349,7 @@ class ComponentValidator:
 
             # Check non-empty properties (null values are ignored, empty strings are errors)
             for prop_key in rules["non_empty_properties"]:
-                prop_value = self.get_component_property(component, prop_key)
+                prop_value = get_property(component, prop_key)
 
                 # Skip validation if property is null (explicitly set to null means "not applicable")
                 if prop_value is None:
@@ -411,7 +369,7 @@ class ComponentValidator:
 
             # Check property patterns (skip null values)
             for prop_key, pattern in rules["property_patterns"].items():
-                prop_value = self.get_component_property(component, prop_key)
+                prop_value = get_property(component, prop_key)
 
                 # Skip validation if property is null or empty
                 if prop_value is None or not prop_value:
@@ -451,8 +409,8 @@ class ComponentValidator:
                 # Check if ANY manufacturer property has a non-null value
                 has_manufacturer_info = False
                 for prop in mfr_props:
-                    if self.has_component_property(component, prop):
-                        prop_value = self.get_component_property(component, prop)
+                    if has_property(component, prop):
+                        prop_value = get_property(component, prop)
                         # Consider it valid if property is defined and not None/empty
                         if prop_value is not None and str(prop_value).strip():
                             has_manufacturer_info = True
@@ -461,7 +419,7 @@ class ComponentValidator:
                 # Only warn if no manufacturer properties are defined OR all are empty (not null)
                 if not has_manufacturer_info:
                     # Check if at least one manufacturer property is explicitly defined (even if null)
-                    any_defined = any(self.has_component_property(component, prop) for prop in mfr_props)
+                    any_defined = any(has_property(component, prop) for prop in mfr_props)
                     if not any_defined:
                         # No manufacturer properties defined at all
                         self.warnings.append(
@@ -476,24 +434,15 @@ class ComponentValidator:
 
     def validate_footprints(self):
         """Validate footprint references using library-specific rules."""
-        # Group components by library for rule application
-        libraries = {}
-        for lib_data in self.yaml_data:
-            lib_name = lib_data.get("library_name", "unknown")
-            libraries[lib_name] = lib_data
-
         for lib_name, component, source_file in self.get_all_components():
             comp_name = component.get("name", "unnamed")
-
-            # Get library-specific validation rules
-            lib_data = libraries.get(lib_name, {})
-            rules = self.get_merged_rules_for_library(lib_data)
+            rules = self._get_rules_for_component(lib_name)
 
             # Skip if footprint not required for this library
             if not rules["footprint_required"]:
                 continue
 
-            footprint_value = self.get_component_property(component, "Footprint")
+            footprint_value = get_property(component, "Footprint")
             if not footprint_value:
                 continue
 
@@ -521,24 +470,15 @@ class ComponentValidator:
         MIN_PAD_SIZE = dim_config.get("min_pad_size", 0.6)
         THERMAL_VIA_WARNING_ONLY = dim_config.get("thermal_via_warning_only", True)
 
-        # Group components by library for rule application
-        libraries = {}
-        for lib_data in self.yaml_data:
-            lib_name = lib_data.get("library_name", "unknown")
-            libraries[lib_name] = lib_data
-
         for lib_name, component, source_file in self.get_all_components():
             comp_name = component.get("name", "unnamed")
-
-            # Get library-specific validation rules
-            lib_data = libraries.get(lib_name, {})
-            rules = self.get_merged_rules_for_library(lib_data)
+            rules = self._get_rules_for_component(lib_name)
 
             # Skip if footprint not required for this library
             if not rules["footprint_required"]:
                 continue
 
-            footprint_value = self.get_component_property(component, "Footprint")
+            footprint_value = get_property(component, "Footprint")
             if not footprint_value or not footprint_value.startswith("7Sigma:"):
                 continue
 
@@ -551,8 +491,6 @@ class ComponentValidator:
             try:
                 with open(footprint_path) as f:
                     content = f.read()
-
-                import re
 
                 # Track issues per footprint to aggregate them
                 footprint_issues = {
@@ -853,7 +791,7 @@ def main():
     """Main entry point for standalone validation."""
     import argparse
 
-    from colors import setup_logging
+    from kicad_lib.colors import setup_logging
 
     setup_logging()
 
