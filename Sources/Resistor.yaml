@@ -1,5 +1,15 @@
 library_name: Resistor
 
+# Default base component and standard package-to-footprint mapping.
+# When importing a new component via LCSC, the importer uses these defaults
+# so you only need to specify name + LCSC Part in the component entry.
+defaults:
+  base_component: R
+  footprint_map:
+    "0402": "7Sigma:R_0402_1005Metric"
+    "0805": "7Sigma:R_0805_2012Metric"
+    "1206": "7Sigma:R_1206_3216Metric"
+
 # Validation rules specific to resistor components
 validation_rules:
   required_properties:

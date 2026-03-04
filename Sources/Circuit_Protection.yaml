@@ -1,5 +1,14 @@
 library_name: Circuit_Protection
 
+# Standard package-to-footprint mapping for fuses.
+# No default base_component since it varies (Polyfuse, Fuse, etc.).
+defaults:
+  footprint_map:
+    "0805": "7Sigma:Fuse_0805_2012Metric"
+    "1206": "7Sigma:Fuse_1206_3216Metric"
+    "2920": "7Sigma:Fuse_2920_7451Metric"
+    "Through Hole,P=22.5mm": "7Sigma:FUSE-TH_L24.4-W9.4-P22.60"
+
 # Validation rules specific to circuit protection components
 validation_rules:
   required_properties:

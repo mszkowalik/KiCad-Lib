@@ -1,4 +1,53 @@
 library_name: ICs
+
+# Package-to-footprint mapping for common IC packages.
+# Keys are LCSC encapStandard values; EasyEDA footprint names also accepted.
+defaults:
+  footprint_map:
+    "SOT-23-5": "7Sigma:SOT-23-5"
+    "SOT-23-6": "7Sigma:SOT-23-6"
+    "TSOT-23-6": "7Sigma:SOT-23-6"
+    "SC-70-5": "7Sigma:SOT-353_SC-70-5"
+    "SOT-23-3L": "7Sigma:SOT-23-3"
+    "SOIC-8": "7Sigma:SOIC-8_3.9x4.9mm_P1.27mm"
+    "SOP-8": "7Sigma:SOIC-8_3.9x4.9mm_P1.27mm"
+    "SOIC-14": "7Sigma:SOIC-14_3.9x8.7mm_P1.27mm"
+    "SOP-16": "7Sigma:SOIC-16_3.9x9.9mm_P1.27mm"
+    "TSSOP-20": "7Sigma:TSSOP-20_4.4x6.5mm_P0.65mm"
+    "SOT-223-4": "7Sigma:SOT-223"
+    "SOT-563": "7Sigma:SOT-563"
+    "TSSOP-6": "7Sigma:SOT-363_SC-70-6"
+    "TSOP-5": "7Sigma:SOT-23-5"
+    "DFN-6(1x1.6)": "7Sigma:DFN-6_1.6x1mm-P0.55mm"
+    "ESOP-8": "7Sigma:SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm_ThermalVias"
+    "HVSSOP-10-EP-0.5mm": "7Sigma:HVSSOP-10-1EP_3x3mm_P0.5mm_EP1.57x1.88mm_ThermalVias"
+    "LFCSP-16(3x3)": "7Sigma:LFCSP-16-1EP_3x3mm_P0.5mm_EP1.6x1.6mm_ThermalVias"
+    "LGA-12(2x2)": "7Sigma:LGA-12_L2.0-W2.0-P0.50-BL"
+    "LGA-14(2.5x3)": "7Sigma:LGA-14_3x2.5mm_P0.5mm_LayoutBorder3x4y"
+    "LQFN-56(7x7)": "7Sigma:QFN-56-1EP_7x7mm_P0.4mm_EP3.2x3.2mm_ThermalVias"
+    "QFN-40-EP(5x5)": "7Sigma:VQFN-40-1EP_5x5mm_P0.4mm_EP3.3x3.3mm_ThermalVias"
+    "QFN-56-EP(7x7)": "7Sigma:QFN-56-1EP_7x7mm_P0.4mm_EP4x4mm_ThermalVias"
+    "SC-74": "7Sigma:TSOP-6_1.65x3.05mm_P0.95mm"
+    "SIP-11": "7Sigma:NID65_MWU"
+    "SMD,19.2x18mm": "7Sigma:ESP32-WROOM-32U"
+    "SMD,22x17mm": "7Sigma:ublox_ZED"
+    "SMD1313": "7Sigma:LED-SMD_4P-L1.3-W1.3-P0.80_WS2812E-1313"
+    "SMD3535-3P": "7Sigma:LED-SMD_3P-L3.5-W3.5-R-RD-C"
+    "SOIC-14-EP": "7Sigma:SOIC-14_3.9x8.7mm_P1.27mm_EP6.4x2.65"
+    "SON-12-EP(2.5x4)": "7Sigma:SON-12_L4.0-W2.5-P0.40-BL-EP"
+    "UFQFPN-28(4x4)": "7Sigma:QFN-28_4x4mm_P0.5mm"
+    "UQFN-16(1.8x2.6)": "7Sigma:UQFN-16_1.8x2.6mm_P0.4mm"
+    "USON-8(3x4)": "7Sigma:Winbond_USON-8-2EP_3x4mm_P0.8mm_EP0.2x0.8mm"
+    "USON-8-EP(2x3)": "7Sigma:USON-8_L3.0-W2.0-P0.50-BL-EP"
+    "VDFN-13(2x3)": "7Sigma:V-DFN3020-13-A_L3.0-W2.0-P0.45-BL-EP_AP6335X"
+    "VFQFPN-68(8x8)": "7Sigma:QFN-68-1EP_8x8mm_P0.4mm_EP6.4x6.4mm_ThermalVias"
+    "VSON-14-EP(3x4)": "7Sigma:VSON-14_L4.0-W3.0-P0.50-BL-EP_TI_DSJ"
+    "WQFN-16-EP(3x3)": "7Sigma:QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm_ThermalVias"
+    "WSON-10": "7Sigma:WSON-10-1EP_2.2x2.0mm_P0.40-EP0.9x1.5mm"
+    "WSON-10-EP(2.2x2)": "7Sigma:WSON-10-1EP_2.2x2.0mm_P0.40-EP0.9x1.5mm"
+    "WSON-10-EP(3x3)": "7Sigma:WQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm_ThermalVias"
+  ignore_packages:
+    - "-"
 validation_rules:
   required_properties:
     - Manufacturer 1

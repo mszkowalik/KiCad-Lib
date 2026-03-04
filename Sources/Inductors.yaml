@@ -1,5 +1,16 @@
 library_name: Inductors
 
+# Default base component and standard package-to-footprint mapping.
+defaults:
+  base_component: L
+  footprint_map:
+    "0402": "7Sigma:L_0402_1005Metric"
+    "0806": "7Sigma:L_Murata_DFE201610P"
+    "SMD,13.5x12.6mm": "7Sigma:L_Wuerth_HCM-1350"
+    "SMD,2x1.6mm": "7Sigma:L_Murata_DFE201610P"
+    "SMD,4.1x4.1mm": "7Sigma:L_Changjiang_FTC404030S"
+    "SMD,5.8x5.2mm": "7Sigma:L_SMD_L5.8-W5.2"
+
 # Validation rules specific to inductor components
 validation_rules:
   required_properties:

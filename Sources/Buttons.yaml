@@ -1,6 +1,15 @@
 library_name: Buttons
 
 # Validation rules specific to button/switch components
+defaults:
+  footprint_map:
+    "SMD,4.6x1.8mm": "7Sigma:SW-SMD_TS24CA"
+    "SMD,6.1x3.7mm": "7Sigma:SW-SMD_L6.0-W3.5-LS8.4-H2.5"
+    "SMD-4P,3x2.6mm": "7Sigma:SW-SMD_4P-L3.0-W2.6-P1.80-LS3.4-H0.65"
+    "SMD-4P,4.2x3.2mm": "7Sigma:SW-SMD_4P-L4.2-W3.2-P2.15-LS4.5-H2.5"
+    "Through Hole-4P,6x6mm": "7Sigma:SW-TH_4P-L6.0-W6.0-P4.50-LS6.5-H9.0"
+  ignore_packages:
+    - SMD-4P,6x6mm
 validation_rules:
   required_properties:
     - "Value"

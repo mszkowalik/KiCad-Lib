@@ -1,5 +1,17 @@
 library_name: Transistors
 
+# Standard package-to-footprint mapping for transistors.
+# No default base_component since it varies (Q_NMOS_GSD, Q_PMOS_GSD, etc.).
+defaults:
+  footprint_map:
+    "SOT-23": "7Sigma:SOT-23-3"
+    "SOT-23-3L": "7Sigma:SOT-23-3"
+    "SOT-523": "7Sigma:SOT-523"
+    "DFN-8(3x3)": "7Sigma:DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm"
+    "PRPAK3x3-8L": "7Sigma:DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm"
+    "TDSON-8(5x6)": "7Sigma:TDSON-8_6.15x5.15mm"
+    "VSONP-8(3.3x3.3)": "7Sigma:VSON-8_3.3x3.3mm_P0.65mm_NexFET"
+
 # Validation rules specific to transistor components
 validation_rules:
   required_properties:
@@ -63,9 +75,9 @@ components:
       - key: comp_type
         value: PMOS
       - key: Footprint
-        value: 7Sigma:SOT-23
+        value: 7Sigma:SOT-23-3
       - key: ki_description
-        value: P-MOS 30V 4A 1.4W SOT-23
+        value: P-MOS 30V 4A 1.4W SOT-23-3
       - key: Value
         value: AO3401A
       - key: Power
@@ -94,9 +106,9 @@ components:
       - key: comp_type
         value: NPN
       - key: Footprint
-        value: 7Sigma:SOT-23
+        value: 7Sigma:SOT-23-3
       - key: ki_description
-        value: NPN 40V 200mA 250mW SOT-23
+        value: NPN 40V 200mA 250mW SOT-23-3
       - key: Value
         value: MMBT3904,215
       - key: Power
@@ -123,9 +135,9 @@ components:
       - key: comp_type
         value: NMOS
       - key: Footprint
-        value: 7Sigma:SOT-23
+        value: 7Sigma:SOT-23-3
       - key: ki_description
-        value: N-MOS 60V 2.5A 1.15W SOT-23
+        value: N-MOS 60V 2.5A 1.15W SOT-23-3
       - key: Value
         value: DMN6075S-7
       - key: Power
@@ -309,9 +321,9 @@ components:
       - key: comp_type
         value: NPN
       - key: Footprint
-        value: 7Sigma:SOT-23
+        value: 7Sigma:SOT-23-3
       - key: ki_description
-        value: NPN 45V 500mA 350mW SOT-23
+        value: NPN 45V 500mA 350mW SOT-23-3
       - key: Value
         value: BC817-40-7-F
       - key: Power

@@ -1,5 +1,10 @@
 library_name: Timing_Components
 
+# Standard package-to-footprint mapping for crystals/oscillators.
+defaults:
+  footprint_map:
+    "SMD3225-4P": "7Sigma:Crystal_SMD_3225-4Pin_3.2x2.5mm"
+
 # Validation rules specific to timing components (crystals, oscillators)
 validation_rules:
   required_properties:

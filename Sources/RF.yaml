@@ -1,6 +1,12 @@
 library_name: RF
 
 # Validation rules specific to RF components
+defaults:
+  footprint_map: {}
+  ignore_packages:
+    - "1206"
+    - SMD
+    - Through Hole,9x9mm
 validation_rules:
   required_properties:
     - "Value"

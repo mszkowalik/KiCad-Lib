@@ -1,6 +1,10 @@
 library_name: Relays
 
 # Validation rules specific to relay components
+defaults:
+  footprint_map: {}
+  ignore_packages:
+    - "hrough Hole,28.8x12.5mm"
 validation_rules:
   required_properties:
     - "Value"

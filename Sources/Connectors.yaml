@@ -1,6 +1,21 @@
 library_name: Connectors
 
 # Validation rules specific to connector components
+defaults:
+  footprint_map:
+    "P=3.5mm": "7Sigma:TerminalBlock_Plug_Invisible"
+    "P=3.81mm": "7Sigma:TerminalBlock_Plug_Invisible"
+  ignore_packages:
+    - "-"
+    - SMD
+    - Through Hole
+    - SMD,P=1.27mm
+    - Through Hole,P=2.54mm
+    - Through Hole,P=3.5mm
+    - Through Hole,P=5.08mm
+    - Through Hole,Right Angle
+    - Through Hole,Right Angle,P=2.54mm
+    - Through Hole,Right Angle,P=3.81mm
 validation_rules:
   required_properties:
     - "ki_description"

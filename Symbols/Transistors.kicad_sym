@@ -414,7 +414,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "7Sigma:SOT-23"
+		(property "Footprint" "7Sigma:SOT-23-3"
 			(at 5.08 2.54 0)
 			(effects
 				(font
@@ -540,7 +540,7 @@
 				(hide yes)
 			)
 		)
-		(property "ki_description" "P-MOS 30V 4A 1.4W SOT-23"
+		(property "ki_description" "P-MOS 30V 4A 1.4W SOT-23-3"
 			(at 0 0 0)
 			(effects
 				(font
@@ -800,7 +800,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "7Sigma:SOT-23"
+		(property "Footprint" "7Sigma:SOT-23-3"
 			(at 5.08 2.54 0)
 			(effects
 				(font
@@ -845,7 +845,7 @@
 				(hide yes)
 			)
 		)
-		(property "ki_description" "NPN 40V 200mA 250mW SOT-23"
+		(property "ki_description" "NPN 40V 200mA 250mW SOT-23-3"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1082,7 +1082,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "7Sigma:SOT-23"
+		(property "Footprint" "7Sigma:SOT-23-3"
 			(at 5.08 -1.905 0)
 			(effects
 				(font
@@ -1139,7 +1139,7 @@
 				(hide yes)
 			)
 		)
-		(property "ki_description" "N-MOS 60V 2.5A 1.15W SOT-23"
+		(property "ki_description" "N-MOS 60V 2.5A 1.15W SOT-23-3"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3742,7 +3742,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "7Sigma:SOT-23"
+		(property "Footprint" "7Sigma:SOT-23-3"
 			(at 5.08 2.54 0)
 			(effects
 				(font
@@ -3787,7 +3787,7 @@
 				(hide yes)
 			)
 		)
-		(property "ki_description" "NPN 45V 500mA 350mW SOT-23"
+		(property "ki_description" "NPN 45V 500mA 350mW SOT-23-3"
 			(at 0 0 0)
 			(effects
 				(font

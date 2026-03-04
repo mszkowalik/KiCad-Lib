@@ -1,5 +1,17 @@
 library_name: Capacitor
 
+# Default base component and standard package-to-footprint mapping.
+defaults:
+  base_component: C
+  footprint_map:
+    "0402": "7Sigma:C_0402_1005Metric"
+    "0805": "7Sigma:C_0805_2012Metric"
+    "1210": "7Sigma:C_1210_3225Metric"
+    "CASE-D-7343-31(mm)": "7Sigma:CP_EIA-7343-31_Kemet-D"
+    "SMD,D10xL10.2mm": "7Sigma:CP_Elec_10x10"
+    "SMD,D6.3xL7.7mm": "7Sigma:CP_Elec_6.3x7.7"
+    "SMD,D6.3xL8mm": "7Sigma:CP_Elec_6.3x7.7"
+
 # Validation rules specific to capacitor components
 validation_rules:
   required_properties:

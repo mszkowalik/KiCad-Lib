@@ -1,5 +1,20 @@
 library_name: Diodes
 
+# Standard package-to-footprint mapping for diodes.
+# No default base_component since it varies (D, D_Schottky, D_Zener, etc.).
+# Keys are LCSC encapStandard values; EasyEDA footprint names also accepted.
+defaults:
+  footprint_map:
+    "0402": "7Sigma:D_0402_1005Metric"
+    "SOD-123": "7Sigma:D_SOD-123"
+    "SOD-123FL": "7Sigma:D_SOD-123F"
+    "SOD-323": "7Sigma:D_SOD-323"
+    "SOD-323F": "7Sigma:D_SOD-323"
+    "SOD-523": "7Sigma:D_SOD-523"
+    "DO-214AC(SMA)": "7Sigma:D_SMA"
+    "SMA(DO-214AC)": "7Sigma:D_SMA"
+    "SOT-23": "7Sigma:SOT-23-3"
+
 # Validation rules specific to diode components
 validation_rules:
   required_properties:
@@ -381,7 +396,7 @@ components:
     base_component: D_TVS_Dual_AAC
     properties:
       - key: Footprint
-        value: 7Sigma:SOT-23
+        value: 7Sigma:SOT-23-3
       - key: Value
         value: 12V / -7V
       - key: comp_type

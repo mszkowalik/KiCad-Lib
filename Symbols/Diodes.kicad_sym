@@ -2924,7 +2924,7 @@
 				)
 			)
 		)
-		(property "Footprint" "7Sigma:SOT-23"
+		(property "Footprint" "7Sigma:SOT-23-3"
 			(at -3.81 0 0)
 			(effects
 				(font

@@ -1,5 +1,13 @@
 library_name: LEDs
 
+# Default base component and standard package-to-footprint mapping.
+defaults:
+  base_component: LED
+  footprint_map:
+    "0402": "7Sigma:LED_0402_1005Metric"
+    "0805": "7Sigma:LED_0805_2012Metric"
+    "SMD-4P,1.6x1.5mm": "7Sigma:LED-SMD_4P-L1.6-W1.5-BR"
+
 # Validation rules specific to LED components
 validation_rules:
   required_properties:
