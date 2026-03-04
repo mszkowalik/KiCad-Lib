@@ -127,11 +127,11 @@ components:
       - key: ki_description
         value: Fuseholder 20x5mm
       - key: Power
-        value: null
+        value:
       - key: Trip Current
-        value: null
+        value:
       - key: Hold Current
-        value: null
+        value:
       - key: Manufacturer 1
         value: XFCN
       - key: Manufacturer Part Number 1

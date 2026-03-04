@@ -26,9 +26,9 @@ components:
       - key: ki_description
         value: "7Sigma company logo graphic symbol"
       - key: Manufacturer
-        value: null
+        value:
       - key: Manufacturer Part Number
-        value: null
+        value:
   - name: MH_2.5mm_4mm_OD
     base_component: MountingHole_Pad
     properties:

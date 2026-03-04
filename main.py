@@ -11,7 +11,7 @@ import os
 
 import config
 from component_validator import ComponentValidator
-from easyeda_importer import auto_import_missing_components
+from easyeda_importer import auto_import_missing_components, fill_missing_properties
 from symbol_generator import generate_symbol_libraries
 from update_footprints_models import update_footprints_models
 
@@ -45,6 +45,18 @@ def main():
             print("✓ No missing components to import.")
     except Exception as e:
         print(f"✗ Error during auto-import: {e}")
+        print("  Continuing with library generation...")
+
+    # Fill missing metadata from LCSC API for existing components
+    print("\nFilling missing properties from LCSC API...")
+    try:
+        filled = fill_missing_properties()
+        if filled > 0:
+            print(f"✓ Filled properties for {filled} component(s).")
+        else:
+            print("✓ All LCSC-sourced components have complete metadata.")
+    except Exception as e:
+        print(f"✗ Error filling properties: {e}")
         print("  Continuing with library generation...")
 
     # Run component validation

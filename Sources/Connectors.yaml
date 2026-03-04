@@ -608,11 +608,11 @@ components:
       - key: LCSC Part
         value:
       - key: Datasheet
-        value: null
+        value:
       - key: Manufacturer 1
-        value: null
+        value:
       - key: Manufacturer Part Number 1
-        value: null
+        value:
   - name: U262-161N-4BVC11
     base_component: USB_C_Receptacle_USB2.0_16P
     properties:

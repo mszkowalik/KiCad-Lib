@@ -26,9 +26,9 @@ components:
       - key: ki_description
         value: MIFA Antenna 2.4GHz
       - key: Manufacturer 1
-        value: null
+        value:
       - key: Manufacturer Part Number 1
-        value: null
+        value:
   - name: KH5220-A36
     base_component: Antenna
     properties:

@@ -298,6 +298,37 @@ def _rewrite_yaml_component(filepath: str, component_name: str, updates: dict):
 
 
 # ---------------------------------------------------------------------------
+# LCSC metadata → YAML property mapping
+# ---------------------------------------------------------------------------
+
+# Maps LCSC API metadata keys → YAML property keys
+_LCSC_PROPERTY_MAP = {
+    "description": "ki_description",
+    "manufacturer": "Manufacturer 1",
+    "mpn": "Manufacturer Part Number 1",
+    "datasheet": "Datasheet",
+}
+
+# Properties that are always set for LCSC-sourced components
+_LCSC_STATIC_PROPS = {
+    "Supplier 1": "LCSC",
+}
+
+
+def _build_property_updates(meta: dict[str, str], lcsc_id: str) -> dict[str, str]:
+    """Build a YAML property dict from LCSC metadata."""
+    props: dict[str, str] = {}
+    for meta_key, yaml_key in _LCSC_PROPERTY_MAP.items():
+        val = meta.get(meta_key, "")
+        if val:
+            props[yaml_key] = val
+
+    props.update(_LCSC_STATIC_PROPS)
+    props["Supplier Part Number 1"] = lcsc_id
+    return props
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -340,7 +371,10 @@ def auto_import_missing_components(
             # 1. Fetch LCSC metadata
             meta = _fetch_lcsc_metadata(lcsc_id) or {}
 
-            # 2. Download and import directly into the project
+            # 2. Check if user already specified a footprint
+            existing_footprint = _get_prop(component, "Footprint")
+
+            # 3. Download and import directly into the project
             dl = _download_and_import(lcsc_id, component.get("base_component") or None)
             if dl is None:
                 print(f"  ERROR: Download failed - skipping '{comp_name}'")
@@ -351,34 +385,17 @@ def auto_import_missing_components(
 
             print(f"  OK: Base symbol '{base_component_name}' added")
             existing_bases.add(base_component_name)
-            if fp_name:
+
+            # Only import easyeda footprint if user didn't specify one
+            if not existing_footprint and fp_name:
                 print(f"  OK: Footprint '{fp_name}' imported to 7Sigma.pretty")
+            elif existing_footprint:
+                print(f"  OK: Using user-specified footprint '{existing_footprint}'")
 
-            # 5. Build property updates
-            props: dict[str, str] = {}
-
-            if fp_name:
+            # 4. Build property updates
+            props = _build_property_updates(meta, lcsc_id)
+            if not existing_footprint and fp_name:
                 props["Footprint"] = f"7Sigma:{fp_name}"
-
-            desc = meta.get("description", "")
-            if desc:
-                props["ki_description"] = desc
-
-            manufacturer = meta.get("manufacturer", "")
-            if manufacturer:
-                props["Manufacturer 1"] = manufacturer
-
-            mpn = meta.get("mpn", "")
-            if mpn:
-                props["Manufacturer Part Number 1"] = mpn
-                props["Value"] = mpn
-
-            props["Supplier 1"] = "LCSC"
-            props["Supplier Part Number 1"] = lcsc_id
-
-            datasheet = meta.get("datasheet", "")
-            if datasheet:
-                props["Datasheet"] = datasheet
 
             # 6. Rewrite YAML
             updates = {
@@ -392,6 +409,67 @@ def auto_import_missing_components(
             print(f"  OK: Successfully imported '{comp_name}'")
 
     return imported_count
+
+
+def fill_missing_properties(
+    sources_dir: str = config.SOURCES_DIR,
+) -> int:
+    """
+    Scan all YAML components that have an LCSC Part number and fill in any
+    missing metadata properties (Datasheet, Manufacturer, MPN, etc.) from
+    the LCSC API.
+
+    Only empty/missing properties are overwritten — existing values are kept.
+
+    Returns the number of components updated.
+    """
+    yaml_files = sorted(Path(sources_dir).glob("*.yaml"))
+    updated_count = 0
+
+    for yaml_path in yaml_files:
+        with open(yaml_path) as f:
+            yaml_data = yaml.safe_load(f)
+
+        if not yaml_data or "components" not in yaml_data:
+            continue
+
+        for component in yaml_data["components"]:
+            comp_name = component.get("name", "?")
+            lcsc_id = _get_prop(component, "LCSC Part")
+            if not lcsc_id:
+                continue
+
+            # Check if any fillable property is missing
+            fillable_keys = (
+                set(_LCSC_PROPERTY_MAP.values()) | set(_LCSC_STATIC_PROPS.keys()) | {"Supplier Part Number 1"}
+            )
+            has_gap = any(_get_prop(component, k) is None for k in fillable_keys)
+            if not has_gap:
+                continue
+
+            meta = _fetch_lcsc_metadata(lcsc_id)
+            if not meta:
+                continue
+
+            props = _build_property_updates(meta, lcsc_id)
+
+            # Only include properties that are actually missing
+            existing_props = {p["key"] for p in component.get("properties", [])}
+            props_to_fill = {}
+            for key, value in props.items():
+                current = _get_prop(component, key)
+                if current is None and value:
+                    props_to_fill[key] = value
+
+            if not props_to_fill:
+                continue
+
+            _rewrite_yaml_component(str(yaml_path), comp_name, {"properties": props_to_fill})
+            filled = ", ".join(props_to_fill.keys())
+            print(f"  Filled '{comp_name}': {filled}")
+            updated_count += 1
+
+    return updated_count
 
 
 def main():

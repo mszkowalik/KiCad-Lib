@@ -189,7 +189,7 @@ components:
       - key: Forward Current
         value: 20mA
       - key: Forward Voltage
-        value: null
+        value:
       - key: Color
         value: RGB
       - key: Lens

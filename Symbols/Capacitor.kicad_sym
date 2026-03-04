@@ -1471,7 +1471,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://datasheet.lcsc.com/lcsc/2411201415_SAMWHA-CS3225X7R476K160NRL_C5440143.pdf"
 			(at 0 0 0)
 			(effects
 				(font

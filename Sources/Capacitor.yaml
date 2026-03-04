@@ -222,7 +222,7 @@ components:
       - key: LCSC Part
         value: C5440143
       - key: Datasheet
-        value: ""
+        value: "https://datasheet.lcsc.com/lcsc/2411201415_SAMWHA-CS3225X7R476K160NRL_C5440143.pdf"
   - name: GRM21BR71H104KA01L
     base_component: C
     properties:
