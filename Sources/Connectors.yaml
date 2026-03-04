@@ -1016,3 +1016,24 @@ components:
         value: ""
       - key: Datasheet
         value: ""
+  - name: KEYS2466
+    base_component: Battery_Holder
+    properties:
+      - key: LCSC Part
+        value: ""
+      - key: Value
+        value: KEYS2466
+      - key: ki_description
+        value: AAA Battery Holder, Single Cell, PCB Mount
+      - key: Manufacturer 1
+        value: Keystone
+      - key: Manufacturer Part Number 1
+        value: 2466
+      - key: Datasheet
+        value: https://www.keyelco.com/userAssets/file/M65p26.pdf
+      - key: Supplier 1
+        value: TME
+      - key: Supplier Part Number 1
+        value: KEYS2466
+      - key: Footprint
+        value: 7Sigma:BAT-TH_KEYS2466

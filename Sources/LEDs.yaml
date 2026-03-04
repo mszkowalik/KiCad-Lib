@@ -5,6 +5,7 @@ defaults:
   base_component: LED
   footprint_map:
     "0402": "7Sigma:LED_0402_1005Metric"
+    "0603": "7Sigma:LED_0603_1608Metric"
     "0805": "7Sigma:LED_0805_2012Metric"
     "SMD-4P,1.6x1.5mm": "7Sigma:LED-SMD_4P-L1.6-W1.5-BR"
 
@@ -214,3 +215,34 @@ components:
         value: C965840
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C965840.pdf
+  - name: OSV50603C1E
+    base_component: LED
+    properties:
+      - key: Footprint
+        value: 7Sigma:LED_0603_1608Metric
+      - key: Value
+        value: OSV50603C1E
+      - key: ki_description
+        value: UV LED 405-415nm 5mA 2.9-3.4V SMD 0603
+      - key: Forward Current
+        value: 5mA
+      - key: Forward Voltage
+        value: 2.9-3.4V
+      - key: Wavelength
+        value: 410nm
+      - key: Color
+        value: UV
+      - key: Lens
+        value: Clear
+      - key: Manufacturer 1
+        value: OPTOSUPPLY
+      - key: Manufacturer Part Number 1
+        value: OSV50603C1E
+      - key: Supplier 1
+        value: TME
+      - key: Supplier Part Number 1
+        value: OSV50603C1E
+      - key: LCSC Part
+        value:
+      - key: Datasheet
+        value: https://www.optosupply.com/uppic/2025710973519.pdf
