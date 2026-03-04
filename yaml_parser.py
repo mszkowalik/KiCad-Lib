@@ -1,6 +1,7 @@
 import os
+
 import yaml
-from kiutils.items.common import Property, Position, Effects, Font
+from kiutils.items.common import Effects, Font, Position, Property
 
 
 def load_yaml_files(directory):
@@ -9,7 +10,7 @@ def load_yaml_files(directory):
     data = []
 
     for yaml_file in yaml_files:
-        with open(os.path.join(directory, yaml_file), "r") as f:
+        with open(os.path.join(directory, yaml_file)) as f:
             yaml_data = yaml.safe_load(f)
 
             # Extract filename without extension for validation
@@ -20,7 +21,10 @@ def load_yaml_files(directory):
                 raise ValueError(f"Missing 'library_name' field in file: {yaml_file}")
 
             if yaml_data["library_name"] != filename_without_ext:
-                raise ValueError(f"Library name mismatch in file '{yaml_file}': " f"library_name is '{yaml_data['library_name']}' but should be '{filename_without_ext}'")
+                raise ValueError(
+                    f"Library name mismatch in file '{yaml_file}': "
+                    f"library_name is '{yaml_data['library_name']}' but should be '{filename_without_ext}'"
+                )
 
             data.append(yaml_data)
 
@@ -78,7 +82,9 @@ def update_component_properties(base_component, components_data):
                 key=key,
                 value=value,
                 position=Position(**prop.get("position", {"X": 0.0, "Y": 0.0, "angle": 0.0})),
-                effects=Effects(font=Font(**effects_dict.get("font", {})), hide=effects_dict.get("hide", True)),  # Default to hidden unless explicitly set
+                effects=Effects(
+                    font=Font(**effects_dict.get("font", {})), hide=effects_dict.get("hide", True)
+                ),  # Default to hidden unless explicitly set
                 showName=prop.get("showName", False),
             )
             base_component.properties.append(new_property)

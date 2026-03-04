@@ -8,13 +8,15 @@ automated 3D model management.
 """
 
 import os
-import sys
+
+import config
+from component_validator import ComponentValidator
+from easyeda_importer import auto_import_missing_components
 from symbol_generator import generate_symbol_libraries
 from update_footprints_models import update_footprints_models
-from component_validator import ComponentValidator
 
 
-def count_footprints(footprints_dir="./Footprints/7Sigma.pretty"):
+def count_footprints(footprints_dir=config.FOOTPRINTS_DIR):
     """Count the number of footprint files in the library."""
     if not os.path.exists(footprints_dir):
         return 0
@@ -33,8 +35,20 @@ def main():
     library_count = 0
     footprint_count = 0
 
-    # Run component validation first
-    print("Validating component definitions...")
+    # Auto-import missing components from EasyEDA/LCSC
+    print("Checking for missing base components to auto-import...")
+    try:
+        imported = auto_import_missing_components()
+        if imported > 0:
+            print(f"✓ Auto-imported {imported} component(s) from EasyEDA.")
+        else:
+            print("✓ No missing components to import.")
+    except Exception as e:
+        print(f"✗ Error during auto-import: {e}")
+        print("  Continuing with library generation...")
+
+    # Run component validation
+    print("\nValidating component definitions...")
     try:
         validator = ComponentValidator()
         validation_passed = validator.run_all_validations()

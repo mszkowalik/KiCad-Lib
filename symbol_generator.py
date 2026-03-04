@@ -1,6 +1,9 @@
-import os
 import copy
-from kiutils.symbol import SymbolLib, Symbol
+import os
+
+from kiutils.symbol import SymbolLib
+
+import config
 from yaml_parser import update_component_properties
 
 
@@ -14,7 +17,7 @@ def create_or_update_library(yaml_data, symbols_dir):
     """Create or update KiCad symbol libraries based on YAML data."""
     total_components = 0
     library_count = 0
-    
+
     for lib_data in yaml_data:
         base_lib_path = os.path.join(symbols_dir, "base_library.kicad_sym")
         output_lib_path = os.path.join(symbols_dir, f"{lib_data['library_name']}.kicad_sym")
@@ -22,7 +25,7 @@ def create_or_update_library(yaml_data, symbols_dir):
         # Load the base symbol library
         base_lib = SymbolLib.from_file(base_lib_path)
         new_lib = SymbolLib()
-        
+
         # Copy version and generator information from base library
         new_lib.version = base_lib.version
         new_lib.generator = base_lib.generator
@@ -55,7 +58,7 @@ def create_or_update_library(yaml_data, symbols_dir):
     return total_components, library_count
 
 
-def generate_symbol_libraries(sources_dir="./Sources", symbols_dir="./Symbols"):
+def generate_symbol_libraries(sources_dir=config.SOURCES_DIR, symbols_dir=config.SYMBOLS_DIR):
     """Generate all symbol libraries from YAML definitions."""
     from yaml_parser import load_yaml_files
 
@@ -64,5 +67,5 @@ def generate_symbol_libraries(sources_dir="./Sources", symbols_dir="./Symbols"):
 
     yaml_data = load_yaml_files(sources_dir)
     total_components, library_count = create_or_update_library(yaml_data, symbols_dir)
-    
+
     return total_components, library_count

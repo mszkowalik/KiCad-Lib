@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kicad-lib"
+version = "1.0.0"
+description = "KiCad component library generator — transforms YAML definitions into KiCad symbol libraries with automated 3D model management"
+requires-python = ">=3.10"
+
+dependencies = [
+    "pyyaml",
+    "ruamel.yaml",
+    "kiutils @ git+https://github.com/Wittmann-MEE/kiutils.git",
+    "easyeda2kicad",
+]
+
+[project.scripts]
+kicad-lib = "main:main"
+
+[tool.setuptools]
+py-modules = [
+    "config",
+    "main",
+    "symbol_generator",
+    "yaml_parser",
+    "update_footprints_models",
+    "component_validator",
+    "easyeda_importer",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+]
+
+[tool.ruff.format]
+quote-style = "double"

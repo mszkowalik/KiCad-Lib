@@ -1,25 +1,21 @@
 library_name: ICs
-
-# Validation rules specific to IC components
 validation_rules:
   required_properties:
-    - "Manufacturer 1"
-    - "Manufacturer Part Number 1"
-    - "Footprint"
+    - Manufacturer 1
+    - Manufacturer Part Number 1
+    - Footprint
   non_empty_properties:
-    - "Manufacturer 1"
-    - "Manufacturer Part Number 1"
-  # ICs should have descriptive ki_description
-  property_patterns: {} # Use global patterns
-
+    - Manufacturer 1
+    - Manufacturer Part Number 1
+  property_patterns: {}
 components:
   - name: BQ24092DGQT
     base_component: BQ2409x
     properties:
       - key: Footprint
-        value: 7Sigma:HVSSOP-10-1EP_3x3mm_P0.5mm_EP1.57x1.88mm_ThermalVias
+        value: "7Sigma:HVSSOP-10-1EP_3x3mm_P0.5mm_EP1.57x1.88mm_ThermalVias"
       - key: ki_description
-        value: BQ2409x 1-A, Single-Input, Single-Cell Li-Ion and Li-Pol Battery Chargers
+        value: "BQ2409x 1-A, Single-Input, Single-Cell Li-Ion and Li-Pol Battery Chargers"
       - key: Manufacturer 1
         value: Texas Instruments
       - key: Manufacturer Part Number 1
@@ -31,15 +27,15 @@ components:
       - key: LCSC Part
         value: C2864890
       - key: Datasheet
-        value: https://www.ti.com/lit/ds/symlink/bq24092.pdf
+        value: "https://www.ti.com/lit/ds/symlink/bq24092.pdf"
     remove_properties: []
   - name: W25Q16JVUXIQ
     base_component: W25Q16JV
     properties:
       - key: Footprint
-        value: 7Sigma:USON-8_L3.0-W2.0-P0.50-BL-EP
+        value: "7Sigma:USON-8_L3.0-W2.0-P0.50-BL-EP"
       - key: ki_description
-        value: 16M-bit Serial Flash Memory with uniform 4KB sectors and Dual/Quad SPI
+        value: "16M-bit Serial Flash Memory with uniform 4KB sectors and Dual/Quad SPI"
       - key: Manufacturer 1
         value: Winbond Elec
       - key: Manufacturer Part Number 1
@@ -51,19 +47,19 @@ components:
       - key: LCSC Part
         value: C2843335
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2205122030_Winbond-Elec-W25Q16JVUXIQ_C2843335.pdf
+        value: "https://www.lcsc.com/datasheet/lcsc_datasheet_2205122030_Winbond-Elec-W25Q16JVUXIQ_C2843335.pdf"
     remove_properties: []
-  - name: WS2812E-1313
+  - name: "WS2812E-1313"
     base_component: WS2812
     properties:
       - key: Footprint
-        value: 7Sigma:LED-SMD_4P-L1.3-W1.3-P0.80_WS2812E-1313
+        value: "7Sigma:LED-SMD_4P-L1.3-W1.3-P0.80_WS2812E-1313"
       - key: ki_description
         value: Serial RGB LED
       - key: Manufacturer 1
         value: Worldsemi
       - key: Manufacturer Part Number 1
-        value: WS2812E-1313
+        value: "WS2812E-1313"
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
@@ -71,21 +67,21 @@ components:
       - key: LCSC Part
         value: C5446700
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2402291527_Worldsemi-WS2812E-1313_C5446700.pdf
+        value: "https://www.lcsc.com/datasheet/lcsc_datasheet_2402291527_Worldsemi-WS2812E-1313_C5446700.pdf"
     remove_properties: []
-  - name: XC6206P332MR-G
+  - name: "XC6206P332MR-G"
     base_component: XC6206PxxxMR
     properties:
       - key: Footprint
-        value: 7Sigma:SOT-23-3
+        value: "7Sigma:SOT-23-3"
       - key: ki_description
         value: 3.3V 200mA LDO Voltage Regulator
       - key: Output Current
         value: 200 mA
       - key: Output Voltage Accuracy
-        value: 2%
+        value: "2%"
       - key: Dropout Voltage
-        value: 680mV@(100mA)
+        value: "680mV@(100mA)"
       - key: Output Voltage
         value: 3.3V
       - key: Maximum Input Voltage
@@ -93,7 +89,7 @@ components:
       - key: Manufacturer 1
         value: Torex Semicon
       - key: Manufacturer Part Number 1
-        value: XC6206P332MR-G
+        value: "XC6206P332MR-G"
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
@@ -101,18 +97,18 @@ components:
       - key: LCSC Part
         value: C5446
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Torex-Semicon-XC6206P332MR-G_C5446.pdf
-  - name: LSM6DS3TR-C
+        value: "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Torex-Semicon-XC6206P332MR-G_C5446.pdf"
+  - name: "LSM6DS3TR-C"
     base_component: LSM6DS3
     properties:
       - key: Footprint
-        value: 7Sigma:LGA-14_3x2.5mm_P0.5mm_LayoutBorder3x4y
+        value: "7Sigma:LGA-14_3x2.5mm_P0.5mm_LayoutBorder3x4y"
       - key: ki_description
         value: "I2C/SPI, iNEMO inertial module: always-on 3D accelerometer and 3D gyroscope"
       - key: Manufacturer 1
         value: STMicroelectronics
       - key: Manufacturer Part Number 1
-        value: LSM6DS3TR-C
+        value: "LSM6DS3TR-C"
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
@@ -120,18 +116,18 @@ components:
       - key: LCSC Part
         value: C967633
       - key: Datasheet
-        value: https://www.mouser.pl/datasheet/2/389/lsm6ds3tr_c-1761429.pdf
-  - name: ESP32-WROOM-32UE-N4
-    base_component: ESP32-WROOM-32U
+        value: "https://www.mouser.pl/datasheet/2/389/lsm6ds3tr_c-1761429.pdf"
+  - name: "ESP32-WROOM-32UE-N4"
+    base_component: "ESP32-WROOM-32U"
     properties:
       - key: Footprint
-        value: 7Sigma:ESP32-WROOM-32U
+        value: "7Sigma:ESP32-WROOM-32U"
       - key: ki_description
-        value: RF Module, ESP32-D0WD SoC, Wi-Fi 802.11b/g/n, Bluetooth, BLE, 32-bit, 2.7-3.6V, external antenna, SMD, U.FL connector
+        value: "RF Module, ESP32-D0WD SoC, Wi-Fi 802.11b/g/n, Bluetooth, BLE, 32-bit, 2.7-3.6V, external antenna, SMD, U.FL connector"
       - key: Manufacturer 1
         value: Espressif Systems
       - key: Manufacturer Part Number 1
-        value: ESP32-WROOM-32UE-N4
+        value: "ESP32-WROOM-32UE-N4"
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
@@ -139,14 +135,14 @@ components:
       - key: LCSC Part
         value: C701344
       - key: Datasheet
-        value: https://www.espressif.com/sites/default/files/documentation/esp32-wroom-32d_esp32-wroom-32u_datasheet_en.pdf
+        value: "https://www.espressif.com/sites/default/files/documentation/esp32-wroom-32d_esp32-wroom-32u_datasheet_en.pdf"
   - name: RP2040
     base_component: RP2040
     properties:
       - key: Footprint
-        value: 7Sigma:QFN-56-1EP_7x7mm_P0.4mm_EP3.2x3.2mm_ThermalVias
+        value: "7Sigma:QFN-56-1EP_7x7mm_P0.4mm_EP3.2x3.2mm_ThermalVias"
       - key: ki_description
-        value: RP2040 ARM Cortex-M0+ USB
+        value: "RP2040 ARM Cortex-M0+ USB"
       - key: Manufacturer 1
         value: Raspberry Pi
       - key: Manufacturer Part Number 1
@@ -158,12 +154,12 @@ components:
       - key: LCSC Part
         value: C2040
       - key: Datasheet
-        value: https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf
+        value: "https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf"
   - name: CH340B
     base_component: CH340B
     properties:
       - key: Footprint
-        value: 7Sigma:SOIC-16_3.9x9.9mm_P1.27mm
+        value: "7Sigma:SOIC-16_3.9x9.9mm_P1.27mm"
       - key: ki_description
         value: USB to Serial
       - key: Manufacturer 1
@@ -177,18 +173,18 @@ components:
       - key: LCSC Part
         value: C81010
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2403131142_WCH-Jiangsu-Qin-Heng-CH340B_C81010.pdf
-  - name: M3535N1UVS8U12-365NM
+        value: "https://www.lcsc.com/datasheet/lcsc_datasheet_2403131142_WCH-Jiangsu-Qin-Heng-CH340B_C81010.pdf"
+  - name: "M3535N1UVS8U12-365NM"
     base_component: M3535N1
     properties:
       - key: Footprint
-        value: 7Sigma:LED-SMD_3P-L3.5-W3.5-R-RD-C
+        value: "7Sigma:LED-SMD_3P-L3.5-W3.5-R-RD-C"
       - key: ki_description
         value: 500mW 700mA 4V 360nm~370nm SMD3535 Ultraviolet LEDs (UVLED) ROHS
       - key: Manufacturer 1
         value: Silverlight
       - key: Manufacturer Part Number 1
-        value: M3535N1UVS8U12-365NM
+        value: "M3535N1UVS8U12-365NM"
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
@@ -196,18 +192,18 @@ components:
       - key: LCSC Part
         value: C2833504
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2105281611_Silverlight-M3535N1UVS8U12-365nm_C2833504.pdf
-  - name: MP34DT05TR-A
+        value: "https://www.lcsc.com/datasheet/lcsc_datasheet_2105281611_Silverlight-M3535N1UVS8U12-365nm_C2833504.pdf"
+  - name: "MP34DT05TR-A"
     base_component: MP34DT05
     properties:
       - key: Footprint
-        value: 7Sigma:MIC-SMD_5P-L3.0-W4.0-P0.85-BL
+        value: "7Sigma:MIC-SMD_5P-L3.0-W4.0-P0.85-BL"
       - key: ki_description
         value: MEMS audio sensor omnidirectional digital microphone
       - key: Manufacturer 1
         value: STMicroelectronics
       - key: Manufacturer Part Number 1
-        value: MP34DT05TR-A
+        value: "MP34DT05TR-A"
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
@@ -215,18 +211,18 @@ components:
       - key: LCSC Part
         value: C2688664
       - key: Datasheet
-        value: https://www.mouser.pl/datasheet/2/389/mp34dt05_a-1850143.pdf
-  - name: SP3485EN-L/TR
+        value: "https://www.mouser.pl/datasheet/2/389/mp34dt05_a-1850143.pdf"
+  - name: "SP3485EN-L/TR"
     base_component: SP3485
     properties:
       - key: Footprint
-        value: 7Sigma:SOIC-8_3.9x4.9mm_P1.27mm
+        value: "7Sigma:SOIC-8_3.9x4.9mm_P1.27mm"
       - key: ki_description
-        value: Industrial 3.3V Low Power Half-Duplex RS-485 Transceiver 10Mbps, SOIC-8
+        value: "Industrial 3.3V Low Power Half-Duplex RS-485 Transceiver 10Mbps, SOIC-8"
       - key: Manufacturer 1
         value: MaxLinear
       - key: Manufacturer Part Number 1
-        value: SP3485EN-L/TR
+        value: "SP3485EN-L/TR"
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
@@ -234,14 +230,14 @@ components:
       - key: LCSC Part
         value: C8963
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_MaxLinear-SP3485EN-L-TR_C8963.pdf
+        value: "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_MaxLinear-SP3485EN-L-TR_C8963.pdf"
   - name: TPS61023DRLR
     base_component: TPS61023
     properties:
       - key: Footprint
-        value: 7Sigma:SOT-563
+        value: "7Sigma:SOT-563"
       - key: ki_description
-        value: 3.7-A Boost Converter with 0.5-V Ultra-low Input Voltage
+        value: "3.7-A Boost Converter with 0.5-V Ultra-low Input Voltage"
       - key: Manufacturer 1
         value: Texas Instruments
       - key: Manufacturer Part Number 1
@@ -255,14 +251,14 @@ components:
       - key: LCSC Part
         value: C919459
       - key: Datasheet
-        value: https://www.ti.com/lit/ds/symlink/tps61023.pdf
+        value: "https://www.ti.com/lit/ds/symlink/tps61023.pdf"
   - name: 74LVC1G175GW,125
     base_component: 74LVC1G175GW,125
     properties:
       - key: Footprint
-        value: 7Sigma:SOT-363_SC-70-6
+        value: "7Sigma:SOT-363_SC-70-6"
       - key: ki_description
-        value: Single D Flip-Flop w/ Asnynchronus Clear, Low-Voltage CMOS
+        value: "Single D Flip-Flop w/ Asnynchronus Clear, Low-Voltage CMOS"
       - key: Manufacturer 1
         value: Nexperia
       - key: Manufacturer Part Number 1
@@ -276,14 +272,14 @@ components:
       - key: LCSC Part
         value: C282350
       - key: Datasheet
-        value: https://assets.nexperia.com/documents/data-sheet/74LVC1G175.pdf
+        value: "https://assets.nexperia.com/documents/data-sheet/74LVC1G175.pdf"
   - name: BTT60501ERAXUMA1
-    base_component: BTT6050-1ERA
+    base_component: "BTT6050-1ERA"
     properties:
       - key: Footprint
-        value: 7Sigma:SOIC-14_3.9x8.7mm_P1.27mm_EP6.4x2.65
+        value: "7Sigma:SOIC-14_3.9x8.7mm_P1.27mm_EP6.4x2.65"
       - key: ki_description
-        value: Single channel Smart High-Side Power Switch
+        value: "Single channel Smart High-Side Power Switch"
       - key: Manufacturer 1
         value: Infineon
       - key: Manufacturer Part Number 1
@@ -297,14 +293,14 @@ components:
       - key: LCSC Part
         value: C3232306
       - key: Datasheet
-        value: https://www.infineon.com/dgdl/Infineon-BTT6050-1ERA-DS-v01_00-EN.pdf?fileId=5546d46269e1c019016a21fa5b7a0d8a
+        value: "https://www.infineon.com/dgdl/Infineon-BTT6050-1ERA-DS-v01_00-EN.pdf?fileId=5546d46269e1c019016a21fa5b7a0d8a"
   - name: SN74LVC1G17DCKR
     base_component: 74LVC1G17
     properties:
       - key: Footprint
-        value: 7Sigma:SOT-353_SC-70-5
+        value: "7Sigma:SOT-353_SC-70-5"
       - key: ki_description
-        value: Schmitt Trigger 1 32mA 1.65V~5.5V 32mA 1 SC-70-5
+        value: "Schmitt Trigger 1 32mA 1.65V~5.5V 32mA 1 SC-70-5"
       - key: Manufacturer 1
         value: Texas Instruments
       - key: Manufacturer Part Number 1
@@ -318,14 +314,14 @@ components:
       - key: LCSC Part
         value: C10425
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/lcsc_datasheet_1809192011_Texas-Instruments-SN74LVC1G17DCKR_C10425.pdf
+        value: "https://www.lcsc.com/datasheet/lcsc_datasheet_1809192011_Texas-Instruments-SN74LVC1G17DCKR_C10425.pdf"
   - name: SN74LVC1G14DCKR
     base_component: 74LVC1G14
     properties:
       - key: Footprint
-        value: 7Sigma:SOT-353_SC-70-5
+        value: "7Sigma:SOT-353_SC-70-5"
       - key: ki_description
-        value: Schmitt Trigger Inverter 32mA 1.65V~5.5V 32mA 1 SC-70-5
+        value: "Schmitt Trigger Inverter 32mA 1.65V~5.5V 32mA 1 SC-70-5"
       - key: Manufacturer 1
         value: Texas Instruments
       - key: Manufacturer Part Number 1
@@ -339,14 +335,14 @@ components:
       - key: LCSC Part
         value: C35740
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/lcsc_datasheet_1811032110_Texas-Instruments-SN74LVC1G14DCKR_C35740.pdf
+        value: "https://www.lcsc.com/datasheet/lcsc_datasheet_1811032110_Texas-Instruments-SN74LVC1G14DCKR_C35740.pdf"
   - name: SN74HC21DR
     base_component: SN74HC21
     properties:
       - key: Footprint
-        value: 7Sigma:SOIC-14_3.9x8.7mm_P1.27mm
+        value: "7Sigma:SOIC-14_3.9x8.7mm_P1.27mm"
       - key: ki_description
-        value: AND gate 2-ch, 4-input, 2-V to 6-V 5.2 mA
+        value: "AND gate 2-ch, 4-input, 2-V to 6-V 5.2 mA"
       - key: Manufacturer 1
         value: Texas Instruments
       - key: Manufacturer Part Number 1
@@ -360,14 +356,14 @@ components:
       - key: LCSC Part
         value: C75398
       - key: Datasheet
-        value: https://www.ti.com/lit/ds/symlink/sn74hc21.pdf
+        value: "https://www.ti.com/lit/ds/symlink/sn74hc21.pdf"
   - name: UCC27538DBVR
     base_component: UCC27538
     properties:
       - key: Footprint
-        value: 7Sigma:SOT-23-6
+        value: "7Sigma:SOT-23-6"
       - key: ki_description
-        value: 2.5-A/5-A single-channel gate driver with 8-V UVLO, 35-V VDD
+        value: "2.5-A/5-A single-channel gate driver with 8-V UVLO, 35-V VDD"
       - key: Manufacturer 1
         value: Texas Instruments
       - key: Manufacturer Part Number 1
@@ -381,14 +377,14 @@ components:
       - key: LCSC Part
         value: C2677323
       - key: Datasheet
-        value: https://www.ti.com/lit/ds/symlink/ucc27538.pdf
+        value: "https://www.ti.com/lit/ds/symlink/ucc27538.pdf"
   - name: LMR33630ADDAR
     base_component: LMR33630
     properties:
       - key: Footprint
-        value: 7Sigma:SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm_ThermalVias
+        value: "7Sigma:SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm_ThermalVias"
       - key: ki_description
-        value: Synchronous Step-down 3.8V to 36V, 3A Voltage Converter
+        value: "Synchronous Step-down 3.8V to 36V, 3A Voltage Converter"
       - key: Manufacturer 1
         value: Texas Instruments
       - key: Manufacturer Part Number 1
@@ -402,20 +398,20 @@ components:
       - key: LCSC Part
         value: C841384
       - key: Datasheet
-        value: https://www.ti.com/lit/ds/symlink/lmr33630.pdf?ts=1739431504302
-  - name: ESP32-S3FN8
-    base_component: ESP32-S3
+        value: "https://www.ti.com/lit/ds/symlink/lmr33630.pdf?ts=1739431504302"
+  - name: "ESP32-S3FN8"
+    base_component: "ESP32-S3"
     properties:
       - key: Footprint
-        value: 7Sigma:QFN-56-1EP_7x7mm_P0.4mm_EP4x4mm_ThermalVias
+        value: "7Sigma:QFN-56-1EP_7x7mm_P0.4mm_EP4x4mm_ThermalVias"
       - key: ki_description
-        value: Microcontroller Wi-Fi BT ESP ESP32 Espressif
+        value: "Microcontroller Wi-Fi BT ESP ESP32 Espressif"
       - key: Manufacturer 1
         value: Espresiff
       - key: Manufacturer Part Number 1
-        value: ESP32-S3FN8
+        value: "ESP32-S3FN8"
       - key: Value
-        value: ESP32-S3FN8
+        value: "ESP32-S3FN8"
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
@@ -423,12 +419,12 @@ components:
       - key: LCSC Part
         value: C2913196
       - key: Datasheet
-        value: https://www.espressif.com/sites/default/files/documentation/esp32-s3_datasheet_en.pdf
-  - name: LBUA5QJ2AB-828
-    base_component: LBUA5QJ2AB-828
+        value: "https://www.espressif.com/sites/default/files/documentation/esp32-s3_datasheet_en.pdf"
+  - name: "LBUA5QJ2AB-828"
+    base_component: "LBUA5QJ2AB-828"
     properties:
       - key: Footprint
-        value: 7Sigma:LGA-97_L10.5-W8.3-P0.60-TL
+        value: "7Sigma:LGA-97_L10.5-W8.3-P0.60-TL"
       - key: ki_description
         value: UWB+BLE Combo Module
       - key: Manufacturer 1
@@ -436,7 +432,7 @@ components:
       - key: Manufacturer Part Number 1
         value: C5368701
       - key: Value
-        value: LBUA5QJ2AB-82
+        value: "LBUA5QJ2AB-82"
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
@@ -444,14 +440,14 @@ components:
       - key: LCSC Part
         value: C5368701
       - key: Datasheet
-        value: https://www.mouser.pl/datasheet/2/281/1/Murata_UWB_module_2AB_828_Product_Brief_Rev_D-3049200.pdf
+        value: "https://www.mouser.pl/datasheet/2/281/1/Murata_UWB_module_2AB_828_Product_Brief_Rev_D-3049200.pdf"
   - name: TPS63020DSJR
     base_component: TPS6302X
     properties:
       - key: Footprint
-        value: 7Sigma:VSON-14_L4.0-W3.0-P0.50-BL-EP_TI_DSJ
+        value: "7Sigma:VSON-14_L4.0-W3.0-P0.50-BL-EP_TI_DSJ"
       - key: ki_description
-        value: High Efficiency Single Inductor Buck-boost Converter with 4-A Switches
+        value: "High Efficiency Single Inductor Buck-boost Converter with 4-A Switches"
       - key: Manufacturer 1
         value: Texas Instruments
       - key: Manufacturer Part Number 1
@@ -465,14 +461,14 @@ components:
       - key: LCSC Part
         value: C15483
       - key: Datasheet
-        value: https://www.ti.com/lit/ds/symlink/tps63020.pdf
+        value: "https://www.ti.com/lit/ds/symlink/tps63020.pdf"
   - name: LIS2MDLTR
     base_component: LIS2MDL
     properties:
       - key: Footprint
-        value: 7Sigma:LGA-12_L2.0-W2.0-P0.50-BL
+        value: "7Sigma:LGA-12_L2.0-W2.0-P0.50-BL"
       - key: ki_description
-        value: Digital output magnetic sensor; ultralow-power, high-performance 3-axis magnetometer
+        value: "Digital output magnetic sensor; ultralow-power, high-performance 3-axis magnetometer"
       - key: Manufacturer 1
         value: STMicroelectronics
       - key: Manufacturer Part Number 1
@@ -486,20 +482,20 @@ components:
       - key: LCSC Part
         value: C919695
       - key: Datasheet
-        value: https://www.st.com/resource/en/datasheet/lis2mdl.pdf
-  - name: BQ27441DRZR-G1A
+        value: "https://www.st.com/resource/en/datasheet/lis2mdl.pdf"
+  - name: "BQ27441DRZR-G1A"
     base_component: BQ27441
     properties:
       - key: Footprint
-        value: 7Sigma:SON-12_L4.0-W2.5-P0.40-BL-EP
+        value: "7Sigma:SON-12_L4.0-W2.5-P0.40-BL-EP"
       - key: ki_description
-        value: System-Side Impedance Track™ Fuel Gauge, 4.2 V maximum charge
+        value: "System-Side Impedance Track™ Fuel Gauge, 4.2 V maximum charge"
       - key: Manufacturer 1
         value: Texas Instruments
       - key: Manufacturer Part Number 1
-        value: BQ27441DRZR-G1A
+        value: "BQ27441DRZR-G1A"
       - key: Value
-        value: BQ27441DRZR-G1A
+        value: "BQ27441DRZR-G1A"
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
@@ -507,18 +503,18 @@ components:
       - key: Supplier 2
         value: Mouser
       - key: Supplier Part Number 2
-        value: 595-BQ27441DRZR-G1A
+        value: "595-BQ27441DRZR-G1A"
       - key: LCSC Part
         value: C473397
       - key: Datasheet
-        value: https://www.ti.com/lit/gpn/bq27441-g1
+        value: "https://www.ti.com/lit/gpn/bq27441-g1"
   - name: BQ25185DLHR
     base_component: BQ25185
     properties:
       - key: Footprint
-        value: 7Sigma:WSON-10-1EP_2.2x2.0mm_P0.40-EP0.9x1.5mm
+        value: "7Sigma:WSON-10-1EP_2.2x2.0mm_P0.40-EP0.9x1.5mm"
       - key: ki_description
-        value: System-Side Impedance Track™ Fuel Gauge, 4.2 V maximum charge
+        value: "System-Side Impedance Track™ Fuel Gauge, 4.2 V maximum charge"
       - key: Manufacturer 1
         value: Texas Instruments
       - key: Manufacturer Part Number 1
@@ -532,16 +528,16 @@ components:
       - key: Supplier 2
         value: Mouser
       - key: Supplier Part Number 2
-        value: 595-BQ25185DLHR
+        value: "595-BQ25185DLHR"
       - key: LCSC Part
         value: C19725033
       - key: Datasheet
-        value: https://www.ti.com/lit/ds/symlink/bq25185.pdf
+        value: "https://www.ti.com/lit/ds/symlink/bq25185.pdf"
   - name: LC76GPAMD
     base_component: LC76G
     properties:
       - key: Footprint
-        value: 7Sigma:XCVR_LC76G
+        value: "7Sigma:XCVR_LC76G"
       - key: ki_description
         value: GPS/GLONASS/BDS/Galileo/QZSS Module
       - key: Manufacturer 1
@@ -557,7 +553,7 @@ components:
       - key: Supplier 2
         value: Mouser
       - key: Supplier Part Number 2
-        value: 277-LC76GPAMD
+        value: "277-LC76GPAMD"
       - key: LCSC Part
         value:
       - key: Datasheet
@@ -566,9 +562,9 @@ components:
     base_component: BQ25186
     properties:
       - key: Footprint
-        value: 7Sigma:WSON-10-1EP_2.2x2.0mm_P0.40-EP0.9x1.5mm
+        value: "7Sigma:WSON-10-1EP_2.2x2.0mm_P0.40-EP0.9x1.5mm"
       - key: ki_description
-        value: System-Side Impedance Track™ Fuel Gauge, 4.2 V maximum charge
+        value: "System-Side Impedance Track™ Fuel Gauge, 4.2 V maximum charge"
       - key: Manufacturer 1
         value: Texas Instruments
       - key: Manufacturer Part Number 1
@@ -582,18 +578,18 @@ components:
       - key: Supplier 2
         value: Mouser
       - key: Supplier Part Number 2
-        value: 595-BQ25186DLHR
+        value: "595-BQ25186DLHR"
       - key: LCSC Part
         value: C44639442
       - key: Datasheet
-        value: https://www.ti.com.cn/cn/lit/ds/symlink/bq25186.pdf
+        value: "https://www.ti.com.cn/cn/lit/ds/symlink/bq25186.pdf"
   - name: LIS3MDLTR
     base_component: LIS3MDL
     properties:
       - key: Footprint
-        value: 7Sigma:LGA-12_L2.0-W2.0-P0.50-BL
+        value: "7Sigma:LGA-12_L2.0-W2.0-P0.50-BL"
       - key: ki_description
-        value: Digital output magnetic sensor; ultralow-power, high-performance 3-axis magnetometer
+        value: "Digital output magnetic sensor; ultralow-power, high-performance 3-axis magnetometer"
       - key: Manufacturer 1
         value: STMicroelectronics
       - key: Manufacturer Part Number 1
@@ -607,12 +603,12 @@ components:
       - key: LCSC Part
         value: C478483
       - key: Datasheet
-        value: https://www.st.com/resource/en/datasheet/lis3mdl.pdf
+        value: "https://www.st.com/resource/en/datasheet/lis3mdl.pdf"
   - name: AT2659
     base_component: AT2659
     properties:
       - key: Footprint
-        value: 7Sigma:DFN-6_1.6x1mm-P0.55mm
+        value: "7Sigma:DFN-6_1.6x1mm-P0.55mm"
       - key: ki_description
         value: GNSS Amplifier
       - key: Manufacturer 1
@@ -628,20 +624,20 @@ components:
       - key: LCSC Part
         value: C92450
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/C92450.pdf
-  - name: NID65-12
+        value: "https://www.lcsc.com/datasheet/C92450.pdf"
+  - name: "NID65-12"
     base_component: NID65
     properties:
       - key: Footprint
-        value: 7Sigma:NID65_MWU
+        value: "7Sigma:NID65_MWU"
       - key: ki_description
-        value: DC-DC Converter Module Non-Isolated 12V 4.9A 20V - 53V Input
+        value: "DC-DC Converter Module Non-Isolated 12V 4.9A 20V - 53V Input"
       - key: Manufacturer 1
         value: Mean Well
       - key: Manufacturer Part Number 1
-        value: NID65-12
+        value: "NID65-12"
       - key: Value
-        value: NID65-12
+        value: "NID65-12"
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
@@ -649,16 +645,16 @@ components:
       - key: Supplier 2
         value: TME
       - key: Supplier Part Number 2
-        value: NID65-12
+        value: "NID65-12"
       - key: LCSC Part
         value: C22416625
       - key: Datasheet
-        value: https://www.meanwellusa.com/upload/pdf/NID65/NID65-spec.pdf
+        value: "https://www.meanwellusa.com/upload/pdf/NID65/NID65-spec.pdf"
   - name: L78L05CD13TR
     base_component: LM78L05_SO8
     properties:
       - key: Footprint
-        value: 7Sigma:SOIC-8_3.9x4.9mm_P1.27mm
+        value: "7Sigma:SOIC-8_3.9x4.9mm_P1.27mm"
       - key: ki_description
         value: LDO 5V 100mA
       - key: Manufacturer 1
@@ -678,12 +674,12 @@ components:
       - key: LCSC Part
         value: C81363
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/C81363.pdf
+        value: "https://www.lcsc.com/datasheet/C81363.pdf"
   - name: 74LVC2G34GV,125
     base_component: 74LVC2G34
     properties:
       - key: Footprint
-        value: 7Sigma:TSOP-6_1.65x3.05mm_P0.95mm
+        value: "7Sigma:TSOP-6_1.65x3.05mm_P0.95mm"
       - key: ki_description
         value: Dual buffer/driver
       - key: Manufacturer 1
@@ -699,12 +695,12 @@ components:
       - key: LCSC Part
         value: C548649
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/C548649.pdf
+        value: "https://www.lcsc.com/datasheet/C548649.pdf"
   - name: NCP115ASN330T2G
     base_component: NCP115ASN
     properties:
       - key: Footprint
-        value: 7Sigma:SOT-23-5
+        value: "7Sigma:SOT-23-5"
       - key: ki_description
         value: LDO 3.3V 300mA
       - key: Manufacturer 1
@@ -720,12 +716,12 @@ components:
       - key: LCSC Part
         value: C603505
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/C603505.pdf
+        value: "https://www.lcsc.com/datasheet/C603505.pdf"
   - name: MAX3222EIPWR
     base_component: MAX3222E
     properties:
       - key: Footprint
-        value: 7Sigma:TSSOP-20_4.4x6.5mm_P0.65mm
+        value: "7Sigma:TSSOP-20_4.4x6.5mm_P0.65mm"
       - key: ki_description
         value: RS232 Transceiver, 500Kbps 3V to 5.5V
       - key: Manufacturer 1
@@ -741,20 +737,20 @@ components:
       - key: LCSC Part
         value: C527703
       - key: Datasheet
-        value: https://www.ti.com/cn/lit/gpn/max3222e
-  - name: AP63357QZV-7
+        value: "https://www.ti.com/cn/lit/gpn/max3222e"
+  - name: "AP63357QZV-7"
     base_component: AP6335XQ
     properties:
       - key: Footprint
-        value: 7Sigma:V-DFN3020-13-A_L3.0-W2.0-P0.45-BL-EP_AP6335X
+        value: "7Sigma:V-DFN3020-13-A_L3.0-W2.0-P0.45-BL-EP_AP6335X"
       - key: ki_description
         value: 32V 3.5A Low Quiescent Current Synchronous Buck Converter
       - key: Manufacturer 1
         value: Diodes Inc
       - key: Manufacturer Part Number 1
-        value: AP63357QZV-7
+        value: "AP63357QZV-7"
       - key: Value
-        value: AP63357QZV-7
+        value: "AP63357QZV-7"
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
@@ -762,20 +758,20 @@ components:
       - key: LCSC Part
         value: C3194572
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/C3194572.pdf
-  - name: ZED-F9P-04B
-    base_component: ZED-F9P
+        value: "https://www.lcsc.com/datasheet/C3194572.pdf"
+  - name: "ZED-F9P-04B"
+    base_component: "ZED-F9P"
     properties:
       - key: Footprint
-        value: 7Sigma:ublox_ZED
+        value: "7Sigma:ublox_ZED"
       - key: ki_description
-        value: GNSS Receiver Module, Multi-Band RTK
+        value: "GNSS Receiver Module, Multi-Band RTK"
       - key: Manufacturer 1
         value: ublox
       - key: Manufacturer Part Number 1
-        value: ZED-F9P-04B
+        value: "ZED-F9P-04B"
       - key: Value
-        value: ZED-F9P-04B
+        value: "ZED-F9P-04B"
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
@@ -783,20 +779,20 @@ components:
       - key: LCSC Part
         value: C5120257
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/C5120257.pdf
-  - name: LM2594M-5.0
-    base_component: LM2594M-XX
+        value: "https://www.lcsc.com/datasheet/C5120257.pdf"
+  - name: "LM2594M-5.0"
+    base_component: "LM2594M-XX"
     properties:
       - key: Footprint
-        value: 7Sigma:SOIC-8_3.9x4.9mm_P1.27mm
+        value: "7Sigma:SOIC-8_3.9x4.9mm_P1.27mm"
       - key: ki_description
-        value: Buck Fixed 5V 4.5V~40V 1.5A SOP-8 DC-DC Converters
+        value: "Buck Fixed 5V 4.5V~40V 1.5A SOP-8 DC-DC Converters"
       - key: Manufacturer 1
         value: UMW
       - key: Manufacturer Part Number 1
-        value: LM2594M-5.0
+        value: "LM2594M-5.0"
       - key: Value
-        value: LM2594M-5.0
+        value: "LM2594M-5.0"
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
@@ -804,12 +800,12 @@ components:
       - key: LCSC Part
         value: C2904795
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/C2904795.pdf
+        value: "https://www.lcsc.com/datasheet/C2904795.pdf"
   - name: LD1117S33CTR
     base_component: LD1117S
     properties:
       - key: Footprint
-        value: 7Sigma:SOT-223
+        value: "7Sigma:SOT-223"
       - key: ki_description
         value: LDO 3.3V 1.3A
       - key: Manufacturer 1
@@ -825,33 +821,33 @@ components:
       - key: LCSC Part
         value: C35879
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/C35879.pdf
-  - name: LTC6268HS8-10#PBF
-    base_component: LTC6268xS8-10
+        value: "https://www.lcsc.com/datasheet/C35879.pdf"
+  - name: "LTC6268HS8-10#PBF"
+    base_component: "LTC6268xS8-10"
     properties:
       - key: Footprint
-        value: 7Sigma:SOIC-8_3.9x4.9mm_P1.27mm
+        value: "7Sigma:SOIC-8_3.9x4.9mm_P1.27mm"
       - key: ki_description
-        value: Op Amps 4GHz Ultra-L Bias C FET In Op Amp
+        value: "Op Amps 4GHz Ultra-L Bias C FET In Op Amp"
       - key: Manufacturer 1
         value: Analog Devices
       - key: Manufacturer Part Number 1
-        value: LTC6268HS8-10#PBF
+        value: "LTC6268HS8-10#PBF"
       - key: Value
-        value: LTC6268HS8-10#PBF
+        value: "LTC6268HS8-10#PBF"
       - key: Supplier 1
         value: Mouser
       - key: Supplier Part Number 1
-        value: 584-LTC6268HS8-10PBF
+        value: "584-LTC6268HS8-10PBF"
       - key: LCSC Part
         value:
       - key: Datasheet
-        value: https://www.analog.com/media/en/technical-documentation/data-sheets/626810f.pdf
+        value: "https://www.analog.com/media/en/technical-documentation/data-sheets/626810f.pdf"
   - name: VBPW34FAS
     base_component: BPW34
     properties:
       - key: Footprint
-        value: 7Sigma:Osram_BPW34S-SMD
+        value: "7Sigma:Osram_BPW34S-SMD"
       - key: ki_description
         value: Photodiode PIN, 950nm SMD
       - key: Manufacturer 1
@@ -863,18 +859,18 @@ components:
       - key: Supplier 1
         value: Mouser
       - key: Supplier Part Number 1
-        value: 782-VBPW34FAS
+        value: "782-VBPW34FAS"
       - key: LCSC Part
         value:
       - key: Datasheet
-        value: https://www.vishay.com/docs/81127/vbpw34fa.pdf
+        value: "https://www.vishay.com/docs/81127/vbpw34fa.pdf"
   - name: TPS7A2050PDBVR
     base_component: TPS7A20xxxDBV
     properties:
       - key: Footprint
-        value: 7Sigma:SOT-23-5
+        value: "7Sigma:SOT-23-5"
       - key: ki_description
-        value: LDO 300mA, Ultra-Low-Noise, Low-IQ, High PSRR
+        value: "LDO 300mA, Ultra-Low-Noise, Low-IQ, High PSRR"
       - key: Manufacturer 1
         value: Texas Instruments
       - key: Manufacturer Part Number 1
@@ -884,18 +880,18 @@ components:
       - key: Supplier 1
         value: Mouser
       - key: Supplier Part Number 1
-        value: 595-TPS7A2050PDBVR
+        value: "595-TPS7A2050PDBVR"
       - key: LCSC Part
         value: C2864504
       - key: Datasheet
-        value: https://www.ti.com/lit/ds/symlink/tps7a20.pdf
+        value: "https://www.ti.com/lit/ds/symlink/tps7a20.pdf"
   - name: TPS7A2033PDBVR
     base_component: TPS7A20xxxDBV
     properties:
       - key: Footprint
-        value: 7Sigma:SOT-23-5
+        value: "7Sigma:SOT-23-5"
       - key: ki_description
-        value: LDO 3.3V 300mA, Ultra-Low-Noise, Low-IQ, High PSRR
+        value: "LDO 3.3V 300mA, Ultra-Low-Noise, Low-IQ, High PSRR"
       - key: Manufacturer 1
         value: Texas Instruments
       - key: Manufacturer Part Number 1
@@ -905,39 +901,39 @@ components:
       - key: Supplier 1
         value: Mouser
       - key: Supplier Part Number 1
-        value: 595-TPS7A2033PDBVR
+        value: "595-TPS7A2033PDBVR"
       - key: LCSC Part
         value: C2862740
       - key: Datasheet
-        value: https://www.ti.com/lit/ds/symlink/tps7a20.pdf
-  - name: ADA4945-1ACPZ-R7
-    base_component: ADA4945-1
+        value: "https://www.ti.com/lit/ds/symlink/tps7a20.pdf"
+  - name: "ADA4945-1ACPZ-R7"
+    base_component: "ADA4945-1"
     properties:
       - key: Footprint
-        value: 7Sigma:LFCSP-16-1EP_3x3mm_P0.5mm_EP1.6x1.6mm_ThermalVias
+        value: "7Sigma:LFCSP-16-1EP_3x3mm_P0.5mm_EP1.6x1.6mm_ThermalVias"
       - key: ki_description
         value: ADC Driver, High Speed, ±0.1 µV/˚C Offset Drift, Fully Differential
       - key: Manufacturer 1
         value: Analog Devices
       - key: Manufacturer Part Number 1
-        value: ADA4945-1ACPZ-R7
+        value: "ADA4945-1ACPZ-R7"
       - key: Value
-        value: ADA4945-1ACPZ-R7
+        value: "ADA4945-1ACPZ-R7"
       - key: Supplier 1
         value: Mouser
       - key: Supplier Part Number 1
-        value: 584-ADA4945-1ACPZ-R7
+        value: "584-ADA4945-1ACPZ-R7"
       - key: LCSC Part
         value: C560261
       - key: Datasheet
-        value: https://www.analog.com/media/en/technical-documentation/data-sheets/ada4945-1.pdf
+        value: "https://www.analog.com/media/en/technical-documentation/data-sheets/ada4945-1.pdf"
   - name: TPS65135RTER
     base_component: TPS65135
     properties:
       - key: Footprint
-        value: 7Sigma:QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm_ThermalVias
+        value: "7Sigma:QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm_ThermalVias"
       - key: ki_description
-        value: Single-Inductor, Multiple-Output Regulator
+        value: "Single-Inductor, Multiple-Output Regulator"
       - key: Manufacturer 1
         value: Texas Instruments
       - key: Manufacturer Part Number 1
@@ -951,16 +947,16 @@ components:
       - key: Supplier 2
         value: Mouser
       - key: Supplier Part Number 2
-        value: 595-TPS65135RTER
+        value: "595-TPS65135RTER"
       - key: LCSC Part
         value: C57950
       - key: Datasheet
-        value: https://www.ti.com/lit/ds/symlink/tps65135.pdf
+        value: "https://www.ti.com/lit/ds/symlink/tps65135.pdf"
   - name: TPS7A3901DSCR
     base_component: TPS7A39
     properties:
       - key: Footprint
-        value: 7Sigma:WQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm_ThermalVias
+        value: "7Sigma:WQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm_ThermalVias"
       - key: ki_description
         value: Dual LDO, 150mA, Wide VIN Positive and Negative LDO Voltage Regulator
       - key: Manufacturer 1
@@ -980,14 +976,14 @@ components:
       - key: LCSC Part
         value: C2685819
       - key: Datasheet
-        value: https://www.ti.com/lit/ds/symlink/tps7a39.pdf
+        value: "https://www.ti.com/lit/ds/symlink/tps7a39.pdf"
   - name: STM32H725RGV3
     base_component: STM32H725RGVx
     properties:
       - key: Footprint
-        value: 7Sigma:QFN-68-1EP_8x8mm_P0.4mm_EP6.4x6.4mm_ThermalVias
+        value: "7Sigma:QFN-68-1EP_8x8mm_P0.4mm_EP6.4x6.4mm_ThermalVias"
       - key: ki_description
-        value: STMicroelectronics Arm Cortex-M7 MCU, 1024KB flash, 564KB RAM, 550 MHz, 1.71-3.6V, 46 GPIO, VFQFPN68
+        value: "STMicroelectronics Arm Cortex-M7 MCU, 1024KB flash, 564KB RAM, 550 MHz, 1.71-3.6V, 46 GPIO, VFQFPN68"
       - key: Manufacturer 1
         value: STMicroelectronics
       - key: Manufacturer Part Number 1
@@ -1001,18 +997,18 @@ components:
       - key: Supplier 2
         value: Mouser
       - key: Supplier Part Number 2
-        value: 511-STM32H725RGV3
+        value: "511-STM32H725RGV3"
       - key: LCSC Part
         value: C5271074
       - key: Datasheet
-        value: https://www.st.com/resource/en/datasheet/stm32h725ag.pdf
+        value: "https://www.st.com/resource/en/datasheet/stm32h725ag.pdf"
   - name: OPA354AIDBVR
     base_component: OPA354AXDBV
     properties:
       - key: Footprint
-        value: 7Sigma:SOT-23-6
+        value: "7Sigma:SOT-23-6"
       - key: ki_description
-        value: Rail-to-Rail Input and Output, Low Noise, Low Power Operational Amplifier
+        value: "Rail-to-Rail Input and Output, Low Noise, Low Power Operational Amplifier"
       - key: Manufacturer 1
         value: Texas Instruments
       - key: Manufacturer Part Number 1
@@ -1026,18 +1022,18 @@ components:
       - key: Supplier 2
         value: Mouser
       - key: Supplier Part Number 2
-        value: 595-OPA354AIDBVR
+        value: "595-OPA354AIDBVR"
       - key: LCSC Part
         value: C36384
       - key: Datasheet
-        value: https://www.ti.com/lit/ds/symlink/opa354a-q1.pdf
+        value: "https://www.ti.com/lit/ds/symlink/opa354a-q1.pdf"
   - name: TPS54302DDCR
     base_component: TPS54302
     properties:
       - key: Footprint
-        value: 7Sigma:SOT-23-6
+        value: "7Sigma:SOT-23-6"
       - key: ki_description
-        value: 4.5-V to 28-V Input, 3-A Output, EMI-Friendly Synchronous Step-Down Converter
+        value: "4.5-V to 28-V Input, 3-A Output, EMI-Friendly Synchronous Step-Down Converter"
       - key: Manufacturer 1
         value: Texas Instruments
       - key: Manufacturer Part Number 1
@@ -1051,20 +1047,20 @@ components:
       - key: LCSC Part
         value: C311983
       - key: Datasheet
-        value: https://www.ti.com/lit/ds/symlink/tps54302.pdf
-  - name: ESP32-C6
-    base_component: ESP32-C6
+        value: "https://www.ti.com/lit/ds/symlink/tps54302.pdf"
+  - name: "ESP32-C6"
+    base_component: "ESP32-C6"
     properties:
       - key: Footprint
-        value: 7Sigma:VQFN-40-1EP_5x5mm_P0.4mm_EP3.3x3.3mm_ThermalVias
+        value: "7Sigma:VQFN-40-1EP_5x5mm_P0.4mm_EP3.3x3.3mm_ThermalVias"
       - key: ki_description
-        value: Ultra-low-power SoC with RISC-V single-core microprocessor 2.4 GHz Wi-Fi 6 (802.11ax), Bluetooth® 5 (LE), Zigbee and Thread (802.15.4)
+        value: "Ultra-low-power SoC with RISC-V single-core microprocessor 2.4 GHz Wi-Fi 6 (802.11ax), Bluetooth® 5 (LE), Zigbee and Thread (802.15.4)"
       - key: Manufacturer 1
         value: Espressif
       - key: Manufacturer Part Number 1
-        value: ESP32-C6
+        value: "ESP32-C6"
       - key: Value
-        value: ESP32-C6
+        value: "ESP32-C6"
       - key: Supplier 1
         value: LCSC
       - key: Supplier Part Number 1
@@ -1072,14 +1068,14 @@ components:
       - key: LCSC Part
         value: C5364646
       - key: Datasheet
-        value: https://www.espressif.com/sites/default/files/documentation/esp32-c6_datasheet_en.pdf
+        value: "https://www.espressif.com/sites/default/files/documentation/esp32-c6_datasheet_en.pdf"
   - name: W25Q64JWUUIQ
     base_component: W25Q64JW
     properties:
       - key: Footprint
-        value: 7Sigma:Winbond_USON-8-2EP_3x4mm_P0.8mm_EP0.2x0.8mm
+        value: "7Sigma:Winbond_USON-8-2EP_3x4mm_P0.8mm_EP0.2x0.8mm"
       - key: ki_description
-        value: 64Mbit 1.7V~1.95V 133MHz SPI USON-8(3x4) Memory
+        value: "64Mbit 1.7V~1.95V 133MHz SPI USON-8(3x4) Memory"
       - key: Manufacturer 1
         value: Winbond
       - key: Manufacturer Part Number 1
@@ -1093,12 +1089,12 @@ components:
       - key: LCSC Part
         value: C6604692
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/C6604692.pdf
+        value: "https://www.lcsc.com/datasheet/C6604692.pdf"
   - name: PCF8574RGTR
     base_component: PCF8574RGTR
     properties:
       - key: Footprint
-        value: 7Sigma:QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm_ThermalVias
+        value: "7Sigma:QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm_ThermalVias"
       - key: ki_description
         value: I2C I/O Port Expander
       - key: Manufacturer 1
@@ -1114,12 +1110,12 @@ components:
       - key: LCSC Part
         value: C22396384
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/C22396384.pdf
+        value: "https://www.lcsc.com/datasheet/C22396384.pdf"
   - name: TMUX1208QRSVRQ1
     base_component: TMUX1208QRSVRQ1
     properties:
       - key: Footprint
-        value: 7Sigma:UQFN-16_1.8x2.6mm_P0.4mm
+        value: "7Sigma:UQFN-16_1.8x2.6mm_P0.4mm"
       - key: ki_description
         value: I2C I/O Port Expander
       - key: Manufacturer 1
@@ -1135,12 +1131,12 @@ components:
       - key: LCSC Part
         value: C2876797
       - key: Datasheet
-        value: https://www.ti.com/lit/ds/symlink/tmux1208-q1.pdf
+        value: "https://www.ti.com/lit/ds/symlink/tmux1208-q1.pdf"
   - name: TPS70950DBVR
     base_component: TPS709xxDBV
     properties:
       - key: Footprint
-        value: 7Sigma:SOT-23-5
+        value: "7Sigma:SOT-23-5"
       - key: ki_description
         value: LDO 5V 500mA
       - key: Manufacturer 1
@@ -1156,4 +1152,25 @@ components:
       - key: LCSC Part
         value: C96028
       - key: Datasheet
-        value: https://www.lcsc.com/datasheet/C96028.pdf
+        value: "https://www.lcsc.com/datasheet/C96028.pdf"
+  - name: STM32G031G8U6
+    base_component: STM32G031G8U6
+    properties:
+      - key: LCSC Part
+        value: C432211
+      - key: Footprint
+        value: 7Sigma:QFN-28_4x4mm_P0.5mm
+      - key: ki_description
+        value: ARM Cortex-M0+ 32 Bit 64MHz 26 UFQFPN-28(4x4) Microcontrollers RoHS
+      - key: Manufacturer 1
+        value: ST
+      - key: Manufacturer Part Number 1
+        value: STM32G031G8U6
+      - key: Value
+        value: STM32G031G8U6
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C432211
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/lcsc/1912111437_ST-STM32G031G8U6_C432211.pdf

@@ -1,3 +1,0 @@
-# kiutils
-pyyaml
-git+https://github.com/Wittmann-MEE/kiutils.git

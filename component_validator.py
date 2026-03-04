@@ -6,13 +6,14 @@ Standalone validator that can be run independently or integrated into the main w
 Provides comprehensive validation of YAML components, base symbols, and footprints.
 """
 
-import os
-import sys
-import yaml
 import re
-from pathlib import Path
-from typing import Dict, List, Set, Optional, Tuple
+import sys
 from dataclasses import dataclass
+from pathlib import Path
+
+import yaml
+
+import config
 
 
 @dataclass
@@ -29,7 +30,13 @@ class ValidationResult:
 class ComponentValidator:
     """Standalone component validator that doesn't require pytest."""
 
-    def __init__(self, sources_dir: str = "./Sources", symbols_dir: str = "./Symbols", footprints_dir: str = "./Footprints/7Sigma.pretty", config_file: str = None):
+    def __init__(
+        self,
+        sources_dir: str = config.SOURCES_DIR,
+        symbols_dir: str = config.SYMBOLS_DIR,
+        footprints_dir: str = config.FOOTPRINTS_DIR,
+        config_file: str = None,
+    ):
         self.sources_dir = Path(sources_dir)
         self.symbols_dir = Path(symbols_dir)
         self.footprints_dir = Path(footprints_dir)
@@ -39,8 +46,8 @@ class ComponentValidator:
         self.config = self._load_config(config_file)
 
         # Results storage
-        self.errors: List[ValidationResult] = []
-        self.warnings: List[ValidationResult] = []
+        self.errors: list[ValidationResult] = []
+        self.warnings: list[ValidationResult] = []
         self.stats = {}
 
         # Load data
@@ -48,7 +55,7 @@ class ComponentValidator:
         self.base_symbols = self._load_base_symbols()
         self.available_footprints = self._load_available_footprints()
 
-    def _load_config(self, config_file: str = None) -> Dict:
+    def _load_config(self, config_file: str = None) -> dict:
         """Load global validation configuration from YAML file."""
         # Default global configuration
         default_config = {
@@ -56,8 +63,19 @@ class ComponentValidator:
             "non_empty_properties": ["Footprint", "ki_description"],
             "property_patterns": {"Footprint": "^7Sigma:", "LCSC Part": "^C\\d+$"},
             "max_property_length": 200,
-            "manufacturer_properties": ["Manufacturer 1", "Manufacturer Part Number 1", "Supplier 1", "Supplier Part Number 1"],
-            "footprint_dimensions": {"min_drill_diameter": 0.3, "min_via_size": 0.3, "min_via_drill": 0.3, "min_pad_size": 0.6, "thermal_via_warning_only": True},
+            "manufacturer_properties": [
+                "Manufacturer 1",
+                "Manufacturer Part Number 1",
+                "Supplier 1",
+                "Supplier Part Number 1",
+            ],
+            "footprint_dimensions": {
+                "min_drill_diameter": 0.3,
+                "min_via_size": 0.3,
+                "min_via_drill": 0.3,
+                "min_pad_size": 0.6,
+                "thermal_via_warning_only": True,
+            },
         }
 
         # If no config file specified, try the default location
@@ -69,7 +87,7 @@ class ComponentValidator:
             return default_config
 
         try:
-            with open(config_path, "r") as f:
+            with open(config_path) as f:
                 loaded_config = yaml.safe_load(f) or {}
                 # Merge with defaults
                 default_config.update(loaded_config)
@@ -78,23 +96,27 @@ class ComponentValidator:
             print(f"Warning: Could not load config file {config_file}: {e}")
             return default_config
 
-    def _load_all_yaml_files(self) -> List[Dict]:
+    def _load_all_yaml_files(self) -> list[dict]:
         """Load all YAML component files."""
         yaml_files = []
         for yaml_file in self.sources_dir.glob("*.yaml"):
             try:
-                with open(yaml_file, "r") as f:
+                with open(yaml_file) as f:
                     data = yaml.safe_load(f)
                     data["_source_file"] = yaml_file.name
                     yaml_files.append(data)
             except yaml.YAMLError as e:
-                self.errors.append(ValidationResult(passed=False, message=f"Invalid YAML syntax: {e}", source_file=yaml_file.name))
+                self.errors.append(
+                    ValidationResult(passed=False, message=f"Invalid YAML syntax: {e}", source_file=yaml_file.name)
+                )
         return yaml_files
 
-    def _load_base_symbols(self) -> Set[str]:
+    def _load_base_symbols(self) -> set[str]:
         """Load available base component names from base library."""
         if not self.base_library_path.exists():
-            self.errors.append(ValidationResult(passed=False, message=f"Base library not found at {self.base_library_path}"))
+            self.errors.append(
+                ValidationResult(passed=False, message=f"Base library not found at {self.base_library_path}")
+            )
             return set()
 
         try:
@@ -111,11 +133,11 @@ class ComponentValidator:
             self.errors.append(ValidationResult(passed=False, message=f"Failed to load base library: {e}"))
             return set()
 
-    def _parse_base_symbols_from_text(self) -> Set[str]:
+    def _parse_base_symbols_from_text(self) -> set[str]:
         """Parse base symbols from text file when kiutils is not available."""
         symbols = set()
         try:
-            with open(self.base_library_path, "r") as f:
+            with open(self.base_library_path) as f:
                 content = f.read()
                 # Look for symbol definitions: (symbol "SymbolName"
                 matches = re.findall(r'\\(symbol\\s+"([^"]+)"', content)
@@ -124,10 +146,12 @@ class ComponentValidator:
             self.errors.append(ValidationResult(passed=False, message=f"Failed to parse base library: {e}"))
         return symbols
 
-    def _load_available_footprints(self) -> Set[str]:
+    def _load_available_footprints(self) -> set[str]:
         """Load available footprint names."""
         if not self.footprints_dir.exists():
-            self.warnings.append(ValidationResult(passed=True, message=f"Footprints directory not found at {self.footprints_dir}"))
+            self.warnings.append(
+                ValidationResult(passed=True, message=f"Footprints directory not found at {self.footprints_dir}")
+            )
             return set()
 
         footprints = set()
@@ -135,7 +159,7 @@ class ComponentValidator:
             footprints.add(footprint_file.stem)
         return footprints
 
-    def get_component_property(self, component: Dict, property_key: str) -> Optional[str]:
+    def get_component_property(self, component: dict, property_key: str) -> str | None:
         """Get property value from component definition."""
         properties = component.get("properties", [])
         for prop in properties:
@@ -143,15 +167,12 @@ class ComponentValidator:
                 return prop.get("value")
         return None
 
-    def has_component_property(self, component: Dict, property_key: str) -> bool:
+    def has_component_property(self, component: dict, property_key: str) -> bool:
         """Check if component has a property defined (regardless of value)."""
         properties = component.get("properties", [])
-        for prop in properties:
-            if prop.get("key") == property_key:
-                return True
-        return False
+        return any(prop.get("key") == property_key for prop in properties)
 
-    def get_all_components(self) -> List[Tuple[str, Dict, str]]:
+    def get_all_components(self) -> list[tuple[str, dict, str]]:
         """Get all components with their library context."""
         components = []
         for lib_data in self.yaml_data:
@@ -160,11 +181,11 @@ class ComponentValidator:
                 components.append((lib_name, component, lib_data["_source_file"]))
         return components
 
-    def get_library_validation_rules(self, lib_data: Dict) -> Dict:
+    def get_library_validation_rules(self, lib_data: dict) -> dict:
         """Extract validation rules from a library YAML file."""
         return lib_data.get("validation_rules", {})
 
-    def get_merged_rules_for_library(self, lib_data: Dict) -> Dict:
+    def get_merged_rules_for_library(self, lib_data: dict) -> dict:
         """Get merged validation rules (global + library-specific)."""
         library_rules = self.get_library_validation_rules(lib_data)
 
@@ -212,13 +233,23 @@ class ComponentValidator:
             actual_name = lib_data.get("library_name")
 
             if actual_name != expected_name:
-                self.errors.append(ValidationResult(passed=False, message=f"Library name '{actual_name}' doesn't match filename '{expected_name}'", source_file=source_file))
+                self.errors.append(
+                    ValidationResult(
+                        passed=False,
+                        message=f"Library name '{actual_name}' doesn't match filename '{expected_name}'",
+                        source_file=source_file,
+                    )
+                )
 
             # Check components key exists
             if "components" not in lib_data:
-                self.errors.append(ValidationResult(passed=False, message="Missing 'components' key", source_file=source_file))
+                self.errors.append(
+                    ValidationResult(passed=False, message="Missing 'components' key", source_file=source_file)
+                )
             elif not isinstance(lib_data["components"], list):
-                self.errors.append(ValidationResult(passed=False, message="'components' should be a list", source_file=source_file))
+                self.errors.append(
+                    ValidationResult(passed=False, message="'components' should be a list", source_file=source_file)
+                )
 
     def validate_base_components(self):
         """Validate base component references."""
@@ -229,12 +260,22 @@ class ComponentValidator:
 
             # Check component name exists and is unique
             if not comp_name:
-                self.errors.append(ValidationResult(passed=False, message="Missing 'name' field", library_name=lib_name, source_file=source_file))
+                self.errors.append(
+                    ValidationResult(
+                        passed=False, message="Missing 'name' field", library_name=lib_name, source_file=source_file
+                    )
+                )
                 continue
 
             if comp_name in component_names:
                 self.errors.append(
-                    ValidationResult(passed=False, message=f"Duplicate component name '{comp_name}'", component_name=comp_name, library_name=lib_name, source_file=source_file)
+                    ValidationResult(
+                        passed=False,
+                        message=f"Duplicate component name '{comp_name}'",
+                        component_name=comp_name,
+                        library_name=lib_name,
+                        source_file=source_file,
+                    )
                 )
             component_names.add(comp_name)
 
@@ -242,7 +283,13 @@ class ComponentValidator:
             base_component = component.get("base_component")
             if not base_component:
                 self.errors.append(
-                    ValidationResult(passed=False, message="Missing 'base_component' field", component_name=comp_name, library_name=lib_name, source_file=source_file)
+                    ValidationResult(
+                        passed=False,
+                        message="Missing 'base_component' field",
+                        component_name=comp_name,
+                        library_name=lib_name,
+                        source_file=source_file,
+                    )
                 )
             elif base_component not in self.base_symbols:
                 self.errors.append(
@@ -296,7 +343,9 @@ class ComponentValidator:
                     elif condition_key == "property_based":
                         for prop_condition, required_props in condition_requirements.items():
                             condition_prop, expected_value = prop_condition.split("=")
-                            converted_rules.append({"properties": {condition_prop: expected_value}, "requirements": required_props})
+                            converted_rules.append(
+                                {"properties": {condition_prop: expected_value}, "requirements": required_props}
+                            )
                 conditional_rules = converted_rules
 
             # Process list-based conditional rules
@@ -413,7 +462,13 @@ class ComponentValidator:
                     if not any_defined:
                         # No manufacturer properties defined at all
                         self.warnings.append(
-                            ValidationResult(passed=True, message="No manufacturer information found", component_name=comp_name, library_name=lib_name, source_file=source_file)
+                            ValidationResult(
+                                passed=True,
+                                message="No manufacturer information found",
+                                component_name=comp_name,
+                                library_name=lib_name,
+                                source_file=source_file,
+                            )
                         )
 
     def validate_footprints(self):
@@ -445,7 +500,11 @@ class ComponentValidator:
                 if footprint_name not in self.available_footprints:
                     self.errors.append(
                         ValidationResult(
-                            passed=False, message=f"Footprint file '{footprint_name}.kicad_mod' not found", component_name=comp_name, library_name=lib_name, source_file=source_file
+                            passed=False,
+                            message=f"Footprint file '{footprint_name}.kicad_mod' not found",
+                            component_name=comp_name,
+                            library_name=lib_name,
+                            source_file=source_file,
                         )
                     )
 
@@ -487,7 +546,7 @@ class ComponentValidator:
             # Check footprint file for pad and via dimensions
             footprint_path = self.footprints_dir / f"{footprint_name}.kicad_mod"
             try:
-                with open(footprint_path, "r") as f:
+                with open(footprint_path) as f:
                     content = f.read()
 
                 import re
@@ -513,7 +572,10 @@ class ComponentValidator:
                         continue
 
                 # Check through-hole pad sizes (only for through-hole pads, not SMD)
-                th_pad_size_matches = re.findall(r'\(pad\s+"[^"]*"\s+thru_hole\s+\w+\s+\([^)]*\)\s+\(size\s+([0-9]*\.?[0-9]+)(?:\s+[0-9]*\.?[0-9]+)?\)', content)
+                th_pad_size_matches = re.findall(
+                    r'\(pad\s+"[^"]*"\s+thru_hole\s+\w+\s+\([^)]*\)\s+\(size\s+([0-9]*\.?[0-9]+)(?:\s+[0-9]*\.?[0-9]+)?\)',
+                    content,
+                )
                 for pad_size_str in th_pad_size_matches:
                     try:
                         pad_size = float(pad_size_str)
@@ -523,7 +585,9 @@ class ComponentValidator:
                         continue
 
                 # Check via definitions
-                via_matches = re.findall(r"\(via\s+\([^)]*\)\s+\(size\s+([0-9]*\.?[0-9]+)\)\s+\(drill\s+([0-9]*\.?[0-9]+)\)", content)
+                via_matches = re.findall(
+                    r"\(via\s+\([^)]*\)\s+\(size\s+([0-9]*\.?[0-9]+)\)\s+\(drill\s+([0-9]*\.?[0-9]+)\)", content
+                )
                 for via_size_str, via_drill_str in via_matches:
                     try:
                         via_size = float(via_size_str)
@@ -672,7 +736,11 @@ class ComponentValidator:
             "total_footprints": len(self.available_footprints),
             "components_by_library": {},
             "base_components_usage": {},
-            "validation_summary": {"errors": len(self.errors), "warnings": len(self.warnings), "passed": len(self.errors) == 0},
+            "validation_summary": {
+                "errors": len(self.errors),
+                "warnings": len(self.warnings),
+                "passed": len(self.errors) == 0,
+            },
         }
 
         # Count components per library
@@ -710,21 +778,21 @@ class ComponentValidator:
     def print_results(self):
         """Print validation results."""
         # Print statistics
-        print(f"\\nLibrary Statistics:")
+        print("\\nLibrary Statistics:")
         print(f"  Libraries: {self.stats['total_libraries']}")
         print(f"  Components: {self.stats['total_components']}")
         print(f"  Base Symbols: {self.stats['total_base_symbols']}")
         print(f"  Footprints: {self.stats['total_footprints']}")
 
         # Print validation summary
-        print(f"\\nValidation Results:")
+        print("\\nValidation Results:")
         print(f"  ✓ Validations passed: {len(self.errors) == 0}")
         print(f"  ✗ Errors: {len(self.errors)}")
         print(f"  ⚠ Warnings: {len(self.warnings)}")
 
         # Print errors
         if self.errors:
-            print(f"\\n{'='*60}")
+            print(f"\\n{'=' * 60}")
             print("ERRORS:")
             print("=" * 60)
             for error in self.errors:
@@ -744,7 +812,7 @@ class ComponentValidator:
 
         # Print warnings
         if self.warnings:
-            print(f"\\n{'='*60}")
+            print(f"\\n{'=' * 60}")
             print("WARNINGS:")
             print("=" * 60)
             for warning in self.warnings:
@@ -764,7 +832,7 @@ class ComponentValidator:
 
         # Print component distribution
         if self.stats["components_by_library"]:
-            print(f"\\nComponents per Library:")
+            print("\\nComponents per Library:")
             for lib_name, count in sorted(self.stats["components_by_library"].items()):
                 print(f"  {lib_name}: {count}")
 
@@ -784,7 +852,9 @@ def main():
 
     args = parser.parse_args()
 
-    validator = ComponentValidator(sources_dir=args.sources, symbols_dir=args.symbols, footprints_dir=args.footprints, config_file=args.config)
+    validator = ComponentValidator(
+        sources_dir=args.sources, symbols_dir=args.symbols, footprints_dir=args.footprints, config_file=args.config
+    )
 
     success = validator.run_all_validations()
 
