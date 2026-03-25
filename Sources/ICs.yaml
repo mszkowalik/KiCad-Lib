@@ -46,6 +46,8 @@ defaults:
     "WSON-10": "7Sigma:WSON-10-1EP_2.2x2.0mm_P0.40-EP0.9x1.5mm"
     "WSON-10-EP(2.2x2)": "7Sigma:WSON-10-1EP_2.2x2.0mm_P0.40-EP0.9x1.5mm"
     "WSON-10-EP(3x3)": "7Sigma:WQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm_ThermalVias"
+    "BGA-484": "7Sigma:Xilinx_FGG484"
+    "WSON-8-EP(5x6)": "7Sigma:WSON-8_L6.0-W5.0-P1.27-BL-EP"
   ignore_packages:
     - "-"
 validation_rules:
@@ -77,6 +79,26 @@ components:
         value: C2864890
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/bq24092.pdf"
+    remove_properties: []
+  - name: "XC7A100T-2FGG484I"
+    base_component: "XC7A100T-FGG484"
+    properties:
+      - key: Footprint
+        value: "7Sigma:Xilinx_FGG484"
+      - key: ki_description
+        value: "Xilinx Artix-7 FPGA, XC7A100T, 484-ball BGA (FGG484)"
+      - key: Manufacturer 1
+        value: Xilinx
+      - key: Manufacturer Part Number 1
+        value: "XC7A100T-2FGG484I"
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C410276
+      - key: LCSC Part
+        value: C410276
+      - key: Datasheet
+        value: "https://www.xilinx.com/support/documentation/data_sheets/ds182_Artix_7.pdf"
     remove_properties: []
   - name: W25Q16JVUXIQ
     base_component: W25Q16JV
@@ -1242,3 +1264,81 @@ components:
         value: C432211
       - key: Datasheet
         value: https://datasheet.lcsc.com/lcsc/1912111437_ST-STM32G031G8U6_C432211.pdf
+  - name: MMICT390200012
+    base_component: MMICT390200012
+    properties:
+      - key: Footprint
+        value: "7Sigma:MIC-SMD_5P-L3.5-W2.7-TL_MMICT390200012"
+      - key: ki_description
+        value: "Omnidirectional -32dB 64dB Microphones RoHS"
+      - key: Manufacturer 1
+        value: "TDK InvenSense"
+      - key: Manufacturer Part Number 1
+        value: MMICT390200012
+      - key: Value
+        value: MMICT390200012
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C3171752
+      - key: LCSC Part
+        value: C3171752
+      - key: Datasheet
+        value: "https://datasheet.lcsc.com/datasheet/pdf/d835e51d402815d71771c5f8c876c44e.pdf?productCode=C3171752"
+  - name: TLV62585DRLR
+    base_component: TLV62585DRLR
+    properties:
+      - key: LCSC Part
+        value: C485117
+      - key: ki_description
+        value: 1.5MHz Buck Adjustable 600mV~5.5V 3A 2.5V~5.5V SOT-563 Voltage Regulators - DC DC Switching Regulators RoHS
+      - key: Manufacturer 1
+        value: TI
+      - key: Manufacturer Part Number 1
+        value: TLV62585DRLR
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/824b18c4c38ba8ab05296ec5dfd1fe6e.pdf?productCode=C485117
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C485117
+      - key: Footprint
+        value: 7Sigma:SOT-563
+  - name: W25Q128JVPIQ
+    base_component: W25Q16JV
+    properties:
+      - key: Footprint
+        value: "7Sigma:WSON-8_L6.0-W5.0-P1.27-BL-EP"
+      - key: LCSC Part
+        value: C190862
+      - key: ki_description
+        value: 2.7V~3.6V 128Mbit 133MHz SPI WSON-8-EP(5x6) Memory (ICs) RoHS
+      - key: Manufacturer 1
+        value: Winbond
+      - key: Manufacturer Part Number 1
+        value: W25Q128JVPIQ
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/29be038ba9c4afd78f5b33186e84a099.pdf?productCode=C190862
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C190862
+  - name: RPi_CM5
+    base_component: RPi_CM5
+    properties:
+      - key: Footprint
+        value: 7Sigma:Raspberry-Pi-5-Compute-Module
+      - key: ki_description
+        value: Raspberry Pi Compute Module 5, 200-pin dual DF40 connectors, mechanical reference (exclude from BOM)
+      - key: Manufacturer 1
+        value: Raspberry Pi
+      - key: Manufacturer Part Number 1
+        value: CM5
+      - key: Datasheet
+        value: https://pip.raspberrypi.com/documents/RP-008180-DS
+      - key: Supplier 1
+        value: ""
+      - key: Supplier Part Number 1
+        value: ""
+      - key: LCSC Part
+        value: ""

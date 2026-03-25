@@ -110,9 +110,7 @@ class ComponentValidator:
     def _get_libraries_map(self) -> dict[str, dict]:
         """Build (and cache) a map of library_name → lib_data for rule lookup."""
         if self._libraries_map is None:
-            self._libraries_map = {
-                lib_data.get("library_name", "unknown"): lib_data for lib_data in self.yaml_data
-            }
+            self._libraries_map = {lib_data.get("library_name", "unknown"): lib_data for lib_data in self.yaml_data}
         return self._libraries_map
 
     def _get_rules_for_component(self, lib_name: str) -> dict:
@@ -492,6 +490,10 @@ class ComponentValidator:
                 with open(footprint_path) as f:
                     content = f.read()
 
+                # Check for validation suppressions in footprint file content
+                # e.g. (fp_text user "validation: ignore_min_pad_size" ...)
+                ignore_min_pad_size = "validation: ignore_min_pad_size" in content.lower()
+
                 # Track issues per footprint to aggregate them
                 footprint_issues = {
                     "drill_too_small": [],
@@ -513,17 +515,18 @@ class ComponentValidator:
                         continue
 
                 # Check through-hole pad sizes (only for through-hole pads, not SMD)
-                th_pad_size_matches = re.findall(
-                    r'\(pad\s+"[^"]*"\s+thru_hole\s+\w+\s+\([^)]*\)\s+\(size\s+([0-9]*\.?[0-9]+)(?:\s+[0-9]*\.?[0-9]+)?\)',
-                    content,
-                )
-                for pad_size_str in th_pad_size_matches:
-                    try:
-                        pad_size = float(pad_size_str)
-                        if pad_size < MIN_PAD_SIZE:
-                            footprint_issues["pad_too_small"].append(pad_size)
-                    except ValueError:
-                        continue
+                if not ignore_min_pad_size:
+                    th_pad_size_matches = re.findall(
+                        r'\(pad\s+"[^"]*"\s+thru_hole\s+\w+\s+\([^)]*\)\s+\(size\s+([0-9]*\.?[0-9]+)(?:\s+[0-9]*\.?[0-9]+)?\)',
+                        content,
+                    )
+                    for pad_size_str in th_pad_size_matches:
+                        try:
+                            pad_size = float(pad_size_str)
+                            if pad_size < MIN_PAD_SIZE:
+                                footprint_issues["pad_too_small"].append(pad_size)
+                        except ValueError:
+                            continue
 
                 # Check via definitions
                 via_matches = re.findall(

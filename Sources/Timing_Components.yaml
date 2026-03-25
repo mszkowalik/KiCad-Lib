@@ -129,3 +129,26 @@ components:
         value: C37635390
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C37635390.pdf
+  - name: SX3M25.000M20F30TNN
+    base_component: Oscillator_4Pin
+    properties:
+      - key: Value
+        value: 25MHz
+      - key: Tolerance
+        value: ±20ppm
+      - key: LCSC Part
+        value: C2901575
+      - key: ki_description
+        value: Oscillator 25MHz ±20ppm CMOS 1.62V~3.63V SMD3225-4P
+      - key: Manufacturer 1
+        value: SCTF
+      - key: Manufacturer Part Number 1
+        value: SX3M25.000M20F30TNN
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/647e27ef195e0290201e020f027d7870.pdf?productCode=C2901575
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2901575
+      - key: Footprint
+        value: 7Sigma:Crystal_SMD_3225-4Pin_3.2x2.5mm

@@ -5,6 +5,8 @@ defaults:
   footprint_map:
     "P=3.5mm": "7Sigma:TerminalBlock_Plug_Invisible"
     "P=3.81mm": "7Sigma:TerminalBlock_Plug_Invisible"
+    "SMD,P=0.4mm": "7Sigma:CONN-SMD_DF40C-100DS-0.4V-51"
+    "SMD,P=0.5mm,Surface Mount,Right Angle": "7Sigma:FPC-SMD_AFC01-S22FCC-00"
   ignore_packages:
     - "-"
     - SMD
@@ -81,6 +83,25 @@ components:
         value: C2916319
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2112061830_Sinhoo-SMTSO2010CTJ_C2916319.pdf
+  - name: SMTSO2515CTJ
+    base_component: SMD_Round_Nut
+    properties:
+      - key: Footprint
+        value: 7Sigma:SMD_BD5.6-D4.1
+      - key: ki_description
+        value: SMD Round Nut M2.5
+      - key: Manufacturer 1
+        value: Sinhoo
+      - key: Manufacturer Part Number 1
+        value: SMTSO2515CTJ
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2915629
+      - key: LCSC Part
+        value: C2915629
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/ece43b9c9581dc6ca2141ce7cea61a1e.pdf?productCode=C2915629
   - name: 15EDGVM-3.5-02P
     base_component: Conn_01x02
     properties:
@@ -1037,3 +1058,41 @@ components:
         value: KEYS2466
       - key: Footprint
         value: 7Sigma:BAT-TH_KEYS2466
+  - name: DF40C-100DS-0.4V(51)
+    base_component: DF40C-100DS
+    properties:
+      - key: Footprint
+        value: 7Sigma:CONN-SMD_DF40C-100DS-0.4V-51
+      - key: ki_description
+        value: Board-to-Board Connector, Receptacle, 100-pin, 0.4mm pitch, SMD
+      - key: Manufacturer 1
+        value: HRS (Hirose)
+      - key: Manufacturer Part Number 1
+        value: DF40C-100DS-0.4V(51)
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C597931
+      - key: LCSC Part
+        value: C597931
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C597931.pdf
+  - name: AFC01-S22FCC-00
+    base_component: Conn_01x22
+    properties:
+      - key: LCSC Part
+        value: "C262275"
+      - key: ki_description
+        value: FFC/FPC Connector 22 Position 0.5mm Pitch Bottom Contact Surface Mount, Right Angle
+      - key: Manufacturer 1
+        value: JUSHUO
+      - key: Manufacturer Part Number 1
+        value: AFC01-S22FCC-00
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/599ced13aa56815b9cdbe2f9bfb59155.pdf?productCode=C262275
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C262275
+      - key: Footprint
+        value: 7Sigma:FPC-SMD_AFC01-S22FCC-00

@@ -1,0 +1,499 @@
+(footprint "Raspberry-Pi-5-Compute-Module"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(descr "Raspberry Pi Compute Module 5 - Mechanical placement footprint with connector guides. Place DF40C-100DS connectors at the marked positions.")
+	(tags "Raspberry Pi CM5 Compute Module mechanical")
+	(property "Reference" "REF**"
+		(at 16.5 -54 0)
+		(layer "F.SilkS")
+		(uuid "a673bf1e-c83a-4442-b076-c5a76794ea62")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "RPi_CM5"
+		(at 16.5 5.5 0)
+		(layer "F.Fab")
+		(uuid "49b1eec6-b628-4dba-a45d-27144a6b94a5")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "832e29f6-b832-4c1f-ac80-ee49c6aa33e1")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" "Raspberry Pi CM5 mechanical footprint - mounting holes, board outline, and connector placement guides"
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "e6e8eb5c-68c1-4d96-88d7-0b3d792a5ef9")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr exclude_from_pos_files)
+	(fp_line
+		(start -3.5 -48)
+		(end -3.5 0)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "2beae874-a516-488f-a0a6-2b403c3b7276")
+	)
+	(fp_line
+		(start 0 3.5)
+		(end 33 3.5)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "d2fbc9ac-79ed-4aae-97fc-c73b80e5a9c0")
+	)
+	(fp_line
+		(start 33 -51.5)
+		(end 0 -51.5)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "fad91ed6-f5c3-4e18-9f64-6b3307a1c6df")
+	)
+	(fp_line
+		(start 36.5 0)
+		(end 36.5 -48)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "93c2e6b5-feef-4a5d-80a7-635a2ab5a596")
+	)
+	(fp_arc
+		(start -3.5 -48)
+		(mid -2.474874 -50.474874)
+		(end 0 -51.5)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "20d23e9e-ae57-4848-8ce5-5113fd59d539")
+	)
+	(fp_arc
+		(start 0 3.5)
+		(mid -2.474874 2.474874)
+		(end -3.5 0)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "8d2aab78-f7e8-4e23-ae46-40a7fbad4e21")
+	)
+	(fp_arc
+		(start 33 -51.5)
+		(mid 35.474874 -50.474874)
+		(end 36.5 -48)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "e1888e76-375f-4dd1-b70d-1f2c6e4a6a76")
+	)
+	(fp_arc
+		(start 36.5 0)
+		(mid 35.474874 2.474874)
+		(end 33 3.5)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "757c1f09-8fb6-4903-8243-6160bdb4c0a7")
+	)
+	(fp_line
+		(start -2.19 -32.8)
+		(end -2.19 -10.2)
+		(stroke
+			(width 0.2)
+			(type dash)
+		)
+		(layer "Dwgs.User")
+		(uuid "32c36069-8213-4814-a667-147d21903553")
+	)
+	(fp_line
+		(start -2.19 -32.8)
+		(end 1.19 -32.8)
+		(stroke
+			(width 0.2)
+			(type dash)
+		)
+		(layer "Dwgs.User")
+		(uuid "2631f0d6-3960-462c-b607-c1d3ae61c5a4")
+	)
+	(fp_line
+		(start -2.19 -10.2)
+		(end 1.19 -10.2)
+		(stroke
+			(width 0.2)
+			(type dash)
+		)
+		(layer "Dwgs.User")
+		(uuid "70c151ef-c772-478a-a310-020823f35931")
+	)
+	(fp_line
+		(start -1.5 -21.5)
+		(end 0.5 -21.5)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(layer "Dwgs.User")
+		(uuid "61590523-18f1-4155-8982-0d837d397e20")
+	)
+	(fp_line
+		(start -1 -33)
+		(end 0 -33)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "Dwgs.User")
+		(uuid "5e2ef4ab-a2cf-4aec-a927-0ad24c512f6f")
+	)
+	(fp_line
+		(start -0.5 -33.5)
+		(end -0.5 -32.8)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "Dwgs.User")
+		(uuid "1c639d8d-af3a-47fd-b69b-90ac1329dcda")
+	)
+	(fp_line
+		(start -0.5 -22.5)
+		(end -0.5 -20.5)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(layer "Dwgs.User")
+		(uuid "bded367b-228e-4ca1-ae73-c78c209b2c32")
+	)
+	(fp_line
+		(start 1.19 -32.8)
+		(end 1.19 -10.2)
+		(stroke
+			(width 0.2)
+			(type dash)
+		)
+		(layer "Dwgs.User")
+		(uuid "f0aa2c23-5b87-49ed-92aa-ab84d19de03c")
+	)
+	(fp_line
+		(start 31.81 -32.8)
+		(end 31.81 -10.2)
+		(stroke
+			(width 0.2)
+			(type dash)
+		)
+		(layer "Dwgs.User")
+		(uuid "a7d15ec5-df12-4f10-907d-f8c71a1481b8")
+	)
+	(fp_line
+		(start 31.81 -32.8)
+		(end 35.19 -32.8)
+		(stroke
+			(width 0.2)
+			(type dash)
+		)
+		(layer "Dwgs.User")
+		(uuid "178617d5-c888-430b-aa6f-7a7005f02ccf")
+	)
+	(fp_line
+		(start 31.81 -10.2)
+		(end 35.19 -10.2)
+		(stroke
+			(width 0.2)
+			(type dash)
+		)
+		(layer "Dwgs.User")
+		(uuid "aa527e6b-822b-4053-9ce7-85d3e12baf2e")
+	)
+	(fp_line
+		(start 32.5 -21.5)
+		(end 34.5 -21.5)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(layer "Dwgs.User")
+		(uuid "7fef8d60-dac2-44a7-9e0b-a15159b32feb")
+	)
+	(fp_line
+		(start 33 -33)
+		(end 34 -33)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "Dwgs.User")
+		(uuid "d5ee5e3b-2cd1-4ea9-a4a6-a113e26704cd")
+	)
+	(fp_line
+		(start 33.5 -33.5)
+		(end 33.5 -32.8)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "Dwgs.User")
+		(uuid "f2fb160f-8e23-4adc-bc91-bff09e06a59e")
+	)
+	(fp_line
+		(start 33.5 -22.5)
+		(end 33.5 -20.5)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(layer "Dwgs.User")
+		(uuid "6c462c28-7152-428e-91cf-a85376d61cc9")
+	)
+	(fp_line
+		(start 35.19 -32.8)
+		(end 35.19 -10.2)
+		(stroke
+			(width 0.2)
+			(type dash)
+		)
+		(layer "Dwgs.User")
+		(uuid "a45e9dbe-c282-4f67-b179-12551d020924")
+	)
+	(fp_line
+		(start -3.5 -48)
+		(end -3.5 0)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "953d2f5f-77ba-46e2-ad5e-1ea2e1de1a7a")
+	)
+	(fp_line
+		(start 0 3.5)
+		(end 33 3.5)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "3eb555bd-7f85-44fe-923b-e6b3b7cba4dc")
+	)
+	(fp_line
+		(start 33 -51.5)
+		(end 0 -51.5)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "dd716e99-ff0c-41d8-bc59-01d6d0c54d6f")
+	)
+	(fp_line
+		(start 36.5 0)
+		(end 36.5 -48)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "db573fad-cae0-49de-9550-352123798831")
+	)
+	(fp_arc
+		(start -3.5 -48)
+		(mid -2.474874 -50.474874)
+		(end 0 -51.5)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "fc24c69a-7146-4188-af3f-eb59b3454bdf")
+	)
+	(fp_arc
+		(start 0 3.5)
+		(mid -2.474874 2.474874)
+		(end -3.5 0)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "a5d3b178-85a0-497c-a352-42ae11e4a89e")
+	)
+	(fp_arc
+		(start 33 -51.5)
+		(mid 35.474874 -50.474874)
+		(end 36.5 -48)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "e80f7dc3-836a-42c5-9a55-e97b942f35ad")
+	)
+	(fp_arc
+		(start 36.5 0)
+		(mid 35.474874 2.474874)
+		(end 33 3.5)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "166e3a52-1f6f-4367-9262-d9c2a42540ff")
+	)
+	(fp_text user "J1 (pins 1-100)"
+		(at -0.5 -21.5 90)
+		(layer "Dwgs.User")
+		(uuid "0bdf7d3b-7d2a-42ce-a6d0-76b730ba46ed")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.1)
+			)
+		)
+	)
+	(fp_text user "Place DF40C-100DS\nconnectors at J1 & J2"
+		(at 16.5 -18 0)
+		(layer "Dwgs.User")
+		(uuid "4fc96981-8b17-4418-9bd1-5a00257fd7bd")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.1)
+			)
+		)
+	)
+	(fp_text user "Pin 1"
+		(at -0.5 -34 0)
+		(layer "Dwgs.User")
+		(uuid "988b0e4d-5c06-4292-82bd-35e86bae40bd")
+		(effects
+			(font
+				(size 0.6 0.6)
+				(thickness 0.08)
+			)
+		)
+	)
+	(fp_text user "Pin 1"
+		(at 33.5 -34 0)
+		(layer "Dwgs.User")
+		(uuid "b35c9adc-46de-4fe9-bcd1-113c23a01539")
+		(effects
+			(font
+				(size 0.6 0.6)
+				(thickness 0.08)
+			)
+		)
+	)
+	(fp_text user "J2 (pins 101-200)"
+		(at 33.5 -21.5 90)
+		(layer "Dwgs.User")
+		(uuid "e5648b60-4b33-40a6-8bfb-29057e4a2094")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.1)
+			)
+		)
+	)
+	(fp_text user "Raspberry Pi CM5"
+		(at 16.5 -24 0)
+		(layer "F.Fab")
+		(uuid "e1cd2b89-1d8d-47f2-9345-038a944da365")
+		(effects
+			(font
+				(size 1.5 1.5)
+				(thickness 0.15)
+			)
+		)
+	)
+	(pad "" np_thru_hole circle
+		(at 0 -48)
+		(size 2.7 2.7)
+		(drill 2.7)
+		(layers "*.Cu" "*.Mask")
+		(solder_mask_margin 1.7)
+		(clearance 1.7)
+		(uuid "a4a0b273-a5d7-4b89-9183-3a5a0d34483f")
+	)
+	(pad "" np_thru_hole circle
+		(at 0 0)
+		(size 2.7 2.7)
+		(drill 2.7)
+		(layers "*.Cu" "*.Mask")
+		(solder_mask_margin 1.7)
+		(clearance 1.7)
+		(uuid "0e9ff0ab-be9a-410e-83d3-560aabe41a96")
+	)
+	(pad "" np_thru_hole circle
+		(at 33 -48)
+		(size 2.7 2.7)
+		(drill 2.7)
+		(layers "*.Cu" "*.Mask")
+		(solder_mask_margin 1.7)
+		(clearance 1.7)
+		(uuid "24644d5b-8a8d-4e6c-81de-1d29e1b2cf87")
+	)
+	(pad "" np_thru_hole circle
+		(at 33 0)
+		(size 2.7 2.7)
+		(drill 2.7)
+		(layers "*.Cu" "*.Mask")
+		(solder_mask_margin 1.7)
+		(clearance 1.7)
+		(uuid "bbef7c9c-3baf-44f1-a3db-387df8539077")
+	)
+	(embedded_fonts no)
+	(model "${SEVENSIGMA_DIR}/3DModels/CM5R5-3dsteps.step"
+		(offset
+			(xyz 36.5 -3.5 1.5)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz -0 -0 -90)
+		)
+	)
+)
