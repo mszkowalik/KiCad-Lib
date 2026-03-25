@@ -43,6 +43,20 @@ components:
       - key: ki_description
         value: "Mounting hole with pad, 2.5mm drill, 4mm outer diameter"
 
+  - name: MH_M3_3.2mm_6mm_OD
+    base_component: MountingHole_Pad
+    properties:
+      - key: Reference
+        value: "H"
+      - key: Value
+        value: "MH_M3_3.2mm_6mm_OD"
+      - key: Footprint
+        value: "7Sigma:MountingHole_3.2mm_M3_Pad_6mm"
+      - key: ki_keywords
+        value: "mounting hole pad M3"
+      - key: ki_description
+        value: "Mounting hole with pad, M3, 3.2mm drill, 6mm outer diameter"
+
   - name: Hammond_1551RFLGY
     base_component: Enclosure
     properties:
