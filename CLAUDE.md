@@ -52,3 +52,21 @@ Managed via `pyproject.toml` — install with `pip install -e .` inside `.venv`:
 - **kiutils** — custom fork: `git+https://github.com/Wittmann-MEE/kiutils.git`
 - **pyyaml** / **ruamel.yaml** — YAML parsing
 - **easyeda2kicad** — LCSC component importing
+
+## Running the Pipeline
+
+```bash
+source .venv/bin/activate
+python main.py
+```
+
+The pipeline runs in order: auto-import → fill metadata → validate → generate symbols → update 3D models.
+
+## Available Commands
+
+- `/add-component` — Add a new component to the library
+- `/import-easyeda` — Import a component from LCSC/EasyEDA by part number
+- `/validate-components` — Validate all YAML component definitions
+- `/generate-libraries` — Run the full generation pipeline
+- `/verify-datasheets` — Verify components against manufacturer datasheets
+- `/project-setup` — Set up or troubleshoot the development environment

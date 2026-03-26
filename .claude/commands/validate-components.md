@@ -1,15 +1,8 @@
----
-name: validate-components
-description: Validate KiCad library component definitions. Use when the user wants to check YAML components for errors, verify footprints exist, check property patterns, or debug validation failures.
----
+Run comprehensive validation on all YAML component definitions, base symbols, footprints, and property patterns.
 
-# Validate Component Definitions
-
-This skill runs comprehensive validation on all YAML component definitions, base symbols, footprints, and property patterns.
+---
 
 ## Prerequisites
-
-Activate the virtual environment before running:
 
 ```bash
 source .venv/bin/activate
@@ -27,7 +20,7 @@ Validation runs automatically as step 3 of `python main.py`. If validation fails
 python component_validator.py
 ```
 
-This gives detailed error and warning output without running the rest of the pipeline.
+Gives detailed error and warning output without running the rest of the pipeline.
 
 ## What Gets Validated
 
@@ -61,26 +54,18 @@ validation_rules:
     "Tolerance": "^[0-9]+(\\.[0-9]+)?%$"
 ```
 
-Global defaults (applied to all libraries) are defined in `component_validator.py`:
-
+Global defaults (applied to all libraries):
 - `Footprint` must match `^7Sigma:`
 - `LCSC Part` must match `^C\d+$`
 - `Footprint` and `ki_description` are always required
 
-## Configuration
-
-The validator loads additional configuration from `tests/test_config.yaml` if it exists. Config keys:
-
-- `required_properties` — properties every component must have
-- `non_empty_properties` — properties that must not be empty
-- `property_patterns` — regex patterns properties must match
-- `max_property_length` — maximum character count for any property value (default: 200)
+Additional config can be loaded from `tests/test_config.yaml`:
+- `required_properties`, `non_empty_properties`, `property_patterns`
+- `max_property_length` — max character count per property value (default: 200)
 - `manufacturer_properties` — expected manufacturer/supplier property keys
 - `footprint_dimensions` — min pad/drill/via size thresholds
 
 ## Reading Output
-
-The validator prints a summary:
 
 ```
 Library Statistics:
