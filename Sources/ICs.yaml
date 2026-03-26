@@ -48,6 +48,7 @@ defaults:
     "WSON-10-EP(3x3)": "7Sigma:WQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm_ThermalVias"
     "BGA-484": "7Sigma:Xilinx_FGG484"
     "WSON-8-EP(5x6)": "7Sigma:WSON-8_L6.0-W5.0-P1.27-BL-EP"
+    "VSON-6(1.5x1.5)": "7Sigma:VSON-6_L1.5-W1.5-P0.50-TL"
   ignore_packages:
     - "-"
 validation_rules:
@@ -1342,3 +1343,22 @@ components:
         value: ""
       - key: LCSC Part
         value: ""
+  - name: TPS62826DMQR
+    base_component: TPS62826DMQR
+    properties:
+      - key: LCSC Part
+        value: C2073319
+      - key: ki_description
+        value: Buck Switching Regulator IC Adjustable 0.6V~4V 1 Output 3A VSON-6(1.5x1.5)
+      - key: Manufacturer 1
+        value: TI
+      - key: Manufacturer Part Number 1
+        value: TPS62826DMQR
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/4dea072ed0ce854e3d68c8cdabb31c9e.pdf?productCode=C2073319
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2073319
+      - key: Footprint
+        value: 7Sigma:VSON-6_L1.5-W1.5-P0.50-TL

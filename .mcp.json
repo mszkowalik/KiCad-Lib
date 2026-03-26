@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "kicad": {
+      "command": "node",
+      "args": ["/Users/mateuszkowalik/.local/share/mcp-servers/kicad/dist/index.js"],
+      "env": {
+        "PYTHONPATH": "/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages",
+        "KICAD_PYTHON": "/Users/mateuszkowalik/.local/share/mcp-servers/kicad/venv/bin/python3",
+        "LOG_LEVEL": "info"
+      }
+    }
+  }
+}

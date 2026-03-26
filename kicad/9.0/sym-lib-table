@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "7Sigma_ICs")(type "KiCad")(uri "/Users/mateuszkowalik/Projects/KiCad Lib/Symbols/ICs.kicad_sym")(options "")(descr ""))
+)
