@@ -49,6 +49,7 @@ defaults:
     "BGA-484": "7Sigma:Xilinx_FGG484"
     "WSON-8-EP(5x6)": "7Sigma:WSON-8_L6.0-W5.0-P1.27-BL-EP"
     "VSON-6(1.5x1.5)": "7Sigma:VSON-6_L1.5-W1.5-P0.50-TL"
+    "FTBGA-256": "7Sigma:Xilinx_FTG256"
   ignore_packages:
     - "-"
 validation_rules:
@@ -80,6 +81,26 @@ components:
         value: C2864890
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/bq24092.pdf"
+    remove_properties: []
+  - name: "XC7A35T-2FTG256I"
+    base_component: "XC7A35T-FTG256"
+    properties:
+      - key: Footprint
+        value: "7Sigma:Xilinx_FTG256"
+      - key: ki_description
+        value: "Xilinx Artix-7 FPGA, XC7A35T, 256-ball BGA (FTG256)"
+      - key: Manufacturer 1
+        value: AMD/Xilinx
+      - key: Manufacturer Part Number 1
+        value: "XC7A35T-2FTG256I"
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C1521744
+      - key: LCSC Part
+        value: C1521744
+      - key: Datasheet
+        value: "https://datasheet.lcsc.com/datasheet/pdf/9a1a25a038fbd05e37c20b75ac1310f8.pdf?productCode=C1521744"
     remove_properties: []
   - name: "XC7A100T-2FGG484I"
     base_component: "XC7A100T-FGG484"

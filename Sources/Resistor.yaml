@@ -328,6 +328,33 @@ components:
       - key: Datasheet
         value: https://lcsc.com/product-detail/NTC-Thermistors_muRata_NCP15XH103F03RC_NTCThermistor-10kR-1_C77131.html
     remove_properties: []
+  - name: 0402WGF4532TCE
+    base_component: R
+    properties:
+      - key: Value
+        value: 45K3
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF4532TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C26980
+      - key: LCSC Part
+        value: C26980
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/lcsc_datasheet_2206010030_UNI-ROYAL-Uniroyal-Elec-0402WGF4532TCE_C26980.pdf
   - name: 0402WGF4533TCE
     base_component: R
     properties:
