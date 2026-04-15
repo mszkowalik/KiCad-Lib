@@ -215,6 +215,37 @@ components:
         value: C965840
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C965840.pdf
+  - name: XL-1608UVC-04
+    base_component: LED
+    properties:
+      - key: Footprint
+        value: 7Sigma:LED_0603_1608Metric
+      - key: Value
+        value: XL-1608UVC-04
+      - key: ki_description
+        value: UV LED 390-405nm 20mA 3.0-3.4V 60mcd SMD 0603
+      - key: Forward Current
+        value: 20mA
+      - key: Forward Voltage
+        value: 3.0-3.4V
+      - key: Wavelength
+        value: 405nm
+      - key: Color
+        value: UV
+      - key: Lens
+        value: Clear
+      - key: Manufacturer 1
+        value: XINGLIGHT
+      - key: Manufacturer Part Number 1
+        value: XL-1608UVC-04
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C7371898
+      - key: LCSC Part
+        value: C7371898
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/195f1090e23e761b8bb4a96109c36c7a.pdf?productCode=C7371898
   - name: OSV50603C1E
     base_component: LED
     properties:

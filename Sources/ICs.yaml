@@ -50,6 +50,7 @@ defaults:
     "WSON-8-EP(5x6)": "7Sigma:WSON-8_L6.0-W5.0-P1.27-BL-EP"
     "VSON-6(1.5x1.5)": "7Sigma:VSON-6_L1.5-W1.5-P0.50-TL"
     "FTBGA-256": "7Sigma:Xilinx_FTG256"
+    "VSON-8-EP(2x3)": "7Sigma:DFN-8-1EP_3x2mm_P0.5mm_EP1.36x1.46mm"
   ignore_packages:
     - "-"
 validation_rules:
@@ -81,6 +82,26 @@ components:
         value: C2864890
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/bq24092.pdf"
+    remove_properties: []
+  - name: STM32C071G8U6
+    base_component: STM32C071G8U6
+    properties:
+      - key: Footprint
+        value: "7Sigma:QFN-28_4x4mm_P0.5mm"
+      - key: ki_description
+        value: "ST Arm Cortex-M0+ 48MHz, 64KB Flash, 12KB RAM, UFQFPN28"
+      - key: Manufacturer 1
+        value: STMicroelectronics
+      - key: Manufacturer Part Number 1
+        value: STM32C071G8U6
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C44521811
+      - key: LCSC Part
+        value: C44521811
+      - key: Datasheet
+        value: "https://datasheet.lcsc.com/datasheet/pdf/b96eda3d04ec68a8f52839538fc3b7d2.pdf?productCode=C44521811"
     remove_properties: []
   - name: "XC7A35T-2FTG256I"
     base_component: "XC7A35T-FTG256"
@@ -141,6 +162,26 @@ components:
         value: C2843335
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/lcsc_datasheet_2205122030_Winbond-Elec-W25Q16JVUXIQ_C2843335.pdf"
+    remove_properties: []
+  - name: WS2811N
+    base_component: WS2811N
+    properties:
+      - key: Footprint
+        value: "7Sigma:DFN-8-1EP_3x2mm_P0.5mm_EP1.36x1.46mm"
+      - key: LCSC Part
+        value: C3034985
+      - key: ki_description
+        value: "Three-channel constant-current LED driver, 256-level PWM, DFN-8"
+      - key: Manufacturer 1
+        value: Worldsemi
+      - key: Manufacturer Part Number 1
+        value: WS2811N
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/cbed6a93a26bce0e9283a99617d985d3.pdf?productCode=C3034985
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C3034985
     remove_properties: []
   - name: "WS2812E-1313"
     base_component: WS2812
