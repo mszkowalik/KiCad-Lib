@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk '/symbol \"IS31FL3741A-QFLS4-TR_0_1\"/{found=1} found{print; if\\(/^\\\\t\\\\t\\\\\\)$/ && found>1\\) exit; if\\(/^\\\\t\\\\t\\\\\\)$/\\) found++}' Symbols/base_library.kicad_sym)"
+    ]
+  }
+}

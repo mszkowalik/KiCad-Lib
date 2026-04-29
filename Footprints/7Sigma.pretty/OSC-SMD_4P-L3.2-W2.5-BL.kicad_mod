@@ -79,22 +79,22 @@
 		(width 0.25)
 		(layer "Cmts.User")
 	)
-	(pad "1.0" smd rect
+	(pad "1" smd rect
 		(at -1.1 0.88 0)
 		(size 1.4 1.2)
 		(layers "F.Cu" "F.Paste" "F.Mask")
 	)
-	(pad "2.0" smd rect
+	(pad "2" smd rect
 		(at 1.1 0.88 0)
 		(size 1.4 1.2)
 		(layers "F.Cu" "F.Paste" "F.Mask")
 	)
-	(pad "3.0" smd rect
+	(pad "3" smd rect
 		(at 1.1 -0.88 0)
 		(size 1.4 1.2)
 		(layers "F.Cu" "F.Paste" "F.Mask")
 	)
-	(pad "4.0" smd rect
+	(pad "4" smd rect
 		(at -1.1 -0.88 0)
 		(size 1.4 1.2)
 		(layers "F.Cu" "F.Paste" "F.Mask")

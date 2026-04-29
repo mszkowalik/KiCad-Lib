@@ -61,47 +61,47 @@
 		(width 0.2)
 		(layer "F.SilkS")
 	)
-	(pad "1.0" smd oval
+	(pad "1" smd oval
 		(at -1.91 3.01 0)
 		(size 0.58 1.28)
 		(layers "F.Cu" "F.Paste" "F.Mask")
 	)
-	(pad "2.0" smd oval
+	(pad "2" smd oval
 		(at -0.63 3.01 0)
 		(size 0.58 1.28)
 		(layers "F.Cu" "F.Paste" "F.Mask")
 	)
-	(pad "3.0" smd oval
+	(pad "3" smd oval
 		(at 0.63 3.01 0)
 		(size 0.58 1.28)
 		(layers "F.Cu" "F.Paste" "F.Mask")
 	)
-	(pad "4.0" smd oval
+	(pad "4" smd oval
 		(at 1.9 3.01 0)
 		(size 0.58 1.28)
 		(layers "F.Cu" "F.Paste" "F.Mask")
 	)
-	(pad "8.0" smd oval
+	(pad "8" smd oval
 		(at -1.91 -3.01 0)
 		(size 0.58 1.28)
 		(layers "F.Cu" "F.Paste" "F.Mask")
 	)
-	(pad "7.0" smd oval
+	(pad "7" smd oval
 		(at -0.63 -3.01 0)
 		(size 0.58 1.28)
 		(layers "F.Cu" "F.Paste" "F.Mask")
 	)
-	(pad "6.0" smd oval
+	(pad "6" smd oval
 		(at 0.63 -3.01 0)
 		(size 0.58 1.28)
 		(layers "F.Cu" "F.Paste" "F.Mask")
 	)
-	(pad "5.0" smd oval
+	(pad "5" smd oval
 		(at 1.9 -3.01 0)
 		(size 0.58 1.28)
 		(layers "F.Cu" "F.Paste" "F.Mask")
 	)
-	(pad "9.0" smd rect
+	(pad "9" smd rect
 		(at 0 0 0)
 		(size 4.3 3.4)
 		(layers "F.Cu" "F.Paste" "F.Mask")

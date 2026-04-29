@@ -1096,3 +1096,22 @@ components:
         value: C262275
       - key: Footprint
         value: 7Sigma:FPC-SMD_AFC01-S22FCC-00
+  - name: FPC-05F-24PH20
+    base_component: FPC-05F-24PH20
+    properties:
+      - key: LCSC Part
+        value: C2856805
+      - key: Footprint
+        value: 7Sigma:FPC-SMD_24P-P0.50_FPC-05F-24PH20
+      - key: ki_description
+        value: FFC/FPC Connector 24 Position 0.5mm Pitch Bottom Contact Surface Mount, Right Angle -25℃~+85℃
+      - key: Manufacturer 1
+        value: XUNPU
+      - key: Manufacturer Part Number 1
+        value: FPC-05F-24PH20
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/0ee18373cdadd5e6c8c1fa51e58ba102.pdf?productCode=C2856805
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2856805

@@ -49,7 +49,7 @@
 		(width 2.05)
 		(layer "Cmts.User")
 	)
-	(pad "2.0" smd custom
+	(pad "2" smd custom
 		(at 1.65 -2.1 0)
 		(size 1 1)
 		(layers "F.Cu" "F.Paste" "F.Mask")
@@ -79,7 +79,7 @@
 			)
 		)
 	)
-	(pad "1.0" smd custom
+	(pad "1" smd custom
 		(at -2.1 -1.65 90)
 		(size 1 1)
 		(layers "F.Cu" "F.Paste" "F.Mask")
@@ -110,7 +110,7 @@
 			)
 		)
 	)
-	(pad "4.0" smd custom
+	(pad "4" smd custom
 		(at -1.65 2.1 180)
 		(size 1 1)
 		(layers "F.Cu" "F.Paste" "F.Mask")
@@ -139,7 +139,7 @@
 			)
 		)
 	)
-	(pad "3.0" smd custom
+	(pad "3" smd custom
 		(at 2.1 1.65 -90)
 		(size 1 1)
 		(layers "F.Cu" "F.Paste" "F.Mask")

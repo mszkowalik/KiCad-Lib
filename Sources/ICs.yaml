@@ -51,6 +51,9 @@ defaults:
     "VSON-6(1.5x1.5)": "7Sigma:VSON-6_L1.5-W1.5-P0.50-TL"
     "FTBGA-256": "7Sigma:Xilinx_FTG256"
     "VSON-8-EP(2x3)": "7Sigma:DFN-8-1EP_3x2mm_P0.5mm_EP1.36x1.46mm"
+    "QFN-60-EP(7x7)": "7Sigma:QFN-60_L7.0-W7.0-P0.40-TL-EP5.3"
+    "LGA-5(3.5x2.7)": "7Sigma:MIC-SMD_5P-L3.5-W2.7-TL_MMICT390200012"
+    "SMD,10.5x8.3mm": "7Sigma:LGA-97_L10.5-W8.3-P0.60-TL"
   ignore_packages:
     - "-"
 validation_rules:
@@ -1405,6 +1408,25 @@ components:
         value: ""
       - key: LCSC Part
         value: ""
+  - name: IS31FL3741A-QFLS4-TR
+    base_component: IS31FL3741A-QFLS4-TR
+    properties:
+      - key: LCSC Part
+        value: C2940604
+      - key: ki_description
+        value: 900Hz~29kHz 9 2.7V~5.5V QFN-60-EP(7x7) LED Drivers ICs RoHS
+      - key: Manufacturer 1
+        value: ISSI
+      - key: Manufacturer Part Number 1
+        value: IS31FL3741A-QFLS4-TR
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/b35ebea605ac9434efd9ca6aa97fa4b8.pdf?productCode=C2940604
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C2940604
+      - key: Footprint
+        value: 7Sigma:QFN-60_L7.0-W7.0-P0.40-TL-EP5.3
   - name: TPS62826DMQR
     base_component: TPS62826DMQR
     properties:

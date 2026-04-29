@@ -61,32 +61,32 @@
 		(width 0.2)
 		(layer "F.SilkS")
 	)
-	(pad "1.0" smd rect
+	(pad "1" smd rect
 		(at -0.5 0.72 0)
 		(size 0.28 0.55)
 		(layers "F.Cu" "F.Paste" "F.Mask")
 	)
-	(pad "2.0" smd rect
+	(pad "2" smd rect
 		(at -0 0.72 0)
 		(size 0.28 0.55)
 		(layers "F.Cu" "F.Paste" "F.Mask")
 	)
-	(pad "3.0" smd rect
+	(pad "3" smd rect
 		(at 0.5 0.72 0)
 		(size 0.28 0.55)
 		(layers "F.Cu" "F.Paste" "F.Mask")
 	)
-	(pad "4.0" smd rect
+	(pad "4" smd rect
 		(at 0.5 -0.72 0)
 		(size 0.28 0.55)
 		(layers "F.Cu" "F.Paste" "F.Mask")
 	)
-	(pad "5.0" smd rect
+	(pad "5" smd rect
 		(at -0 -0.72 0)
 		(size 0.28 0.55)
 		(layers "F.Cu" "F.Paste" "F.Mask")
 	)
-	(pad "6.0" smd rect
+	(pad "6" smd rect
 		(at -0.5 -0.72 0)
 		(size 0.28 0.55)
 		(layers "F.Cu" "F.Paste" "F.Mask")
