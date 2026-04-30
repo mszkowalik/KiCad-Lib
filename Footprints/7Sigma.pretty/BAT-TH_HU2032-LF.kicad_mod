@@ -1,7 +1,7 @@
 (footprint "BAT-TH_HU2032-LF"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(property "Reference" "REF**"
 		(at 0 -5.27 0)
@@ -50,11 +50,12 @@
 		)
 	)
 	(attr through_hole)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_line
 		(start -14.6 -3.81)
 		(end -9.52 -3.81)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -64,7 +65,7 @@
 		(start -14.6 3.81)
 		(end -14.6 -3.81)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -74,7 +75,7 @@
 		(start -9.52 -8.38)
 		(end 9.53 -8.38)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -84,7 +85,7 @@
 		(start -9.52 -3.81)
 		(end -9.52 -8.38)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -94,7 +95,7 @@
 		(start -9.52 3.81)
 		(end -14.6 3.81)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -104,7 +105,7 @@
 		(start -9.52 8.38)
 		(end -9.52 3.81)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -114,7 +115,7 @@
 		(start 9.53 -8.38)
 		(end 9.53 -3.81)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -124,7 +125,7 @@
 		(start 9.53 -3.81)
 		(end 14.61 -3.81)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -134,7 +135,7 @@
 		(start 9.53 3.81)
 		(end 9.53 8.38)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -144,7 +145,7 @@
 		(start 9.53 8.38)
 		(end -9.52 8.38)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -154,7 +155,7 @@
 		(start 14.61 -3.81)
 		(end 14.61 3.81)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -164,7 +165,7 @@
 		(start 14.61 3.81)
 		(end 9.53 3.81)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -174,7 +175,7 @@
 		(center -14.5 8.35)
 		(end -14.47 8.35)
 		(stroke
-			(width 0.06)
+			(width 0.1)
 			(type solid)
 		)
 		(fill no)
@@ -185,7 +186,7 @@
 		(center -13.6 0)
 		(end -13.48 0)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(fill no)
@@ -196,7 +197,7 @@
 		(center 13.6 -1.27)
 		(end 13.72 -1.27)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(fill no)
@@ -207,7 +208,7 @@
 		(center 13.6 1.27)
 		(end 13.72 1.27)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(fill no)
@@ -260,5 +261,15 @@
 		(rotate
 			(xyz 0 0 180)
 		)
+	)
+	(fp_rect
+		(start -14.9 -6.25)
+		(end 14.9 6.25)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.CrtYd")
 	)
 )

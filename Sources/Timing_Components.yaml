@@ -20,6 +20,15 @@ validation_rules:
     "Load Capacitance": "^[0-9]+(\\.[0-9]+)?[mµnpkMG]?F$" # Capacitance like 18pF, 12.5pF
     "Equivalent Series Resistance": "^[0-9]+(\\.[0-9]+)?[mµnpkMGT]?[RΩ]$" # Resistance like 80R, 75Ω
 
+  footprint_style:
+    pad_shape: roundrect         # SMD pads must use roundrect, not rect or oval
+    pad_roundrect_rratio: 0.25  # rounded corner ratio for roundrect pads
+    fab_line_width_mm: 0.1      # F.Fab body outline line width
+    silk_line_width_mm: 0.1      # F.SilkS silkscreen line width
+    crtyd_line_width_mm: 0.05  # F.CrtYd courtyard line width
+    require_fab_outline: true   # must have at least one fp_line on F.Fab
+    require_crtyd: true         # must have a closed F.CrtYd rectangle
+    no_easyeda_prefix: true     # footprint header must not contain "easyeda2kicad:"
 components:
   - name: TAXM12M4RKDCDT2T
     base_component: Crystal_GND24_Small

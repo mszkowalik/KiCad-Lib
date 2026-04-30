@@ -1,7 +1,7 @@
 (footprint "7Sigma_Logo"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(descr "7Sigma Logo")
 	(tags "logo graphic")
@@ -54,6 +54,7 @@
 		)
 	)
 	(attr exclude_from_pos_files exclude_from_bom)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_rect
 		(start -2.8 -2.1)
 		(end 2.8 2)
@@ -89,4 +90,15 @@
 		)
 	)
 	(embedded_fonts no)
+	(fp_rect
+		(start -2.8 -2.1)
+		(end 2.8 2.0)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "5add7803-fd29-4409-8879-1561cc45696f")
+	)
 )

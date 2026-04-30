@@ -1,7 +1,7 @@
 (footprint "SW-SMD_TS24CA"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(property "Reference" "REF**"
 		(at 0 -3.8 0)
@@ -52,11 +52,12 @@
 		)
 	)
 	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_line
 		(start -2.3 -1.67)
 		(end 2.3 -1.67)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -66,7 +67,7 @@
 		(start -2.3 -1.53)
 		(end -2.3 -1.67)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -76,7 +77,7 @@
 		(start -1 -2.87)
 		(end -1 -1.67)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -86,7 +87,7 @@
 		(start -1 -2.87)
 		(end 1 -2.87)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -96,7 +97,7 @@
 		(start -0.89 0.63)
 		(end 0.89 0.63)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -106,7 +107,7 @@
 		(start 1 -2.87)
 		(end 1 -1.67)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -116,7 +117,7 @@
 		(start 2.3 -1.67)
 		(end 2.3 -1.53)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -181,14 +182,14 @@
 		(at -0.85 -0.77)
 		(size 0.7 0.7)
 		(drill 0.7)
-		(layers "F&B.Cu" "*.Mask")
+		(layers "*.Cu" "*.Mask")
 		(uuid "e0da50eb-f301-4b02-b3e0-55de04a54e61")
 	)
 	(pad "" np_thru_hole circle
 		(at 0.85 -0.77)
 		(size 0.7 0.7)
 		(drill 0.7)
-		(layers "F&B.Cu" "*.Mask")
+		(layers "*.Cu" "*.Mask")
 		(uuid "2fce8921-5ace-4623-9131-08c17b77a8bf")
 	)
 	(pad "1" smd roundrect
@@ -230,5 +231,16 @@
 		(rotate
 			(xyz 0 0 0)
 		)
+	)
+	(fp_rect
+		(start -2.4 -2.6)
+		(end 2.4 1.1)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "feea9084-45d6-4099-af43-1fee2791c265")
 	)
 )

@@ -1,7 +1,7 @@
 (footprint "HVSSOP-10-1EP_3x3mm_P0.5mm_EP1.57x1.88mm_ThermalVias"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(descr "HVSSOP, 10 Pin (https://www.ti.com/lit/ds/symlink/bq24090.pdf), generated with kicad-footprint-generator ipc_gullwing_generator.py")
 	(tags "HVSSOP SO")
@@ -52,11 +52,12 @@
 		)
 	)
 	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_line
 		(start 0 -1.61)
 		(end -1.5 -1.61)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -66,7 +67,7 @@
 		(start 0 -1.61)
 		(end 1.5 -1.61)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -76,7 +77,7 @@
 		(start 0 1.61)
 		(end -1.5 1.61)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -86,7 +87,7 @@
 		(start 0 1.61)
 		(end 1.5 1.61)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -97,7 +98,7 @@
 			(xy -2.1875 -1.41) (xy -2.4275 -1.74) (xy -1.9475 -1.74)
 		)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(fill yes)
@@ -254,20 +255,22 @@
 		(remove_unused_layers no)
 		(uuid "5185f8ae-1aca-4055-bd28-f2f7a1f7d9d5")
 	)
-	(pad "11" smd rect
+	(pad "11" smd roundrect
 		(at 0 0)
 		(size 1.57 1.88)
 		(property pad_prop_heatsink)
 		(layers "F.Cu" "F.Mask")
 		(zone_connect 2)
+		(roundrect_rratio 0.25)
 		(uuid "1257f6bc-0f35-4d7f-bbd8-79584d1b0c3f")
 	)
-	(pad "11" smd rect
+	(pad "11" smd roundrect
 		(at 0 0)
 		(size 1.57 1.88)
 		(property pad_prop_heatsink)
 		(layers "B.Cu")
 		(zone_connect 2)
+		(roundrect_rratio 0.25)
 		(uuid "480aa7aa-d812-4530-9c8b-85c4b7bb8885")
 	)
 	(pad "11" thru_hole circle

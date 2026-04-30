@@ -698,6 +698,152 @@ class ComponentValidator:
             base_comp = component.get("base_component", "unknown")
             self.stats["base_components_usage"][base_comp] = self.stats["base_components_usage"].get(base_comp, 0) + 1
 
+    @staticmethod
+    def _parse_fp_graphics(content: str) -> list[dict]:
+        """Extract all fp graphic entries as {type, layer, width} dicts.
+
+        Handles fp_line, fp_rect, fp_poly, fp_arc, fp_circle in both legacy (unquoted)
+        and modern KiCad 9/10 (stroke-nested) s-expression formats.
+        """
+        results = []
+        graphic_types = ("(fp_line", "(fp_rect", "(fp_poly", "(fp_arc", "(fp_circle")
+        i = 0
+        while i < len(content):
+            # Find the nearest graphic opener
+            next_pos = len(content)
+            found_type = None
+            for gtype in graphic_types:
+                pos = content.find(gtype, i)
+                if pos != -1 and pos < next_pos:
+                    next_pos = pos
+                    found_type = gtype
+            if found_type is None:
+                break
+            start = next_pos
+            # Walk forward to find the matching closing paren
+            depth = 0
+            j = start
+            while j < len(content):
+                if content[j] == "(":
+                    depth += 1
+                elif content[j] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            block = content[start : j + 1]
+            layer_m = re.search(r'\(layer\s+"?(F\.[^"\s)]+)"?\)', block)
+            # Width: direct (width x) or nested inside (stroke (width x) ...)
+            width_m = re.search(r'\(width\s+([\d.]+)\)', block)
+            if layer_m:
+                width = float(width_m.group(1)) if width_m else None
+                results.append({
+                    "type": found_type.lstrip("("),
+                    "layer": layer_m.group(1),
+                    "width": width,
+                })
+            i = j + 1
+        return results
+
+    def validate_footprint_style(self):
+        """Warn on footprint style violations: missing layers, wrong pad shapes, wrong widths."""
+        checked: set[str] = set()
+
+        for lib_name, component, source_file in self.get_all_components():
+            footprint_value = get_property(component, "Footprint")
+            if not footprint_value or not footprint_value.startswith("7Sigma:"):
+                continue
+
+            footprint_name = footprint_value[7:]
+            if footprint_name not in self.available_footprints or footprint_name in checked:
+                continue
+            checked.add(footprint_name)
+
+            footprint_path = self.footprints_dir / f"{footprint_name}.kicad_mod"
+            try:
+                content = footprint_path.read_text()
+            except Exception:
+                continue
+
+            comp_name = component.get("name", "unnamed")
+            fp_lines = self._parse_fp_graphics(content)
+
+            # Rule: no easyeda2kicad: prefix in header
+            if "easyeda2kicad:" in content.split("\n")[0]:
+                self.warnings.append(ValidationResult(
+                    passed=True,
+                    message=f"Footprint '{footprint_name}' has 'easyeda2kicad:' prefix in header — remove it",
+                    component_name=comp_name, library_name=lib_name, source_file=source_file,
+                ))
+
+            # Rule: F.CrtYd must be present (handles both quoted and unquoted layer names)
+            has_crtyd = bool(re.search(r'F\.CrtYd', content))
+            if not has_crtyd:
+                self.warnings.append(ValidationResult(
+                    passed=True,
+                    message=f"Footprint '{footprint_name}' is missing F.CrtYd (courtyard) outline",
+                    component_name=comp_name, library_name=lib_name, source_file=source_file,
+                ))
+
+            # Rule: F.Fab graphic must be present (body outline — any fp_line/fp_rect/fp_poly/fp_circle/fp_arc)
+            fab_graphics = [entry for entry in fp_lines if entry["layer"] == "F.Fab"]
+            if not fab_graphics:
+                self.warnings.append(ValidationResult(
+                    passed=True,
+                    message=f"Footprint '{footprint_name}' is missing F.Fab body outline",
+                    component_name=comp_name, library_name=lib_name, source_file=source_file,
+                ))
+
+            # Rule: SMD pads should be roundrect (warn on rect or oval)
+            non_roundrect = re.findall(r'\(pad\s+"[^"]*"\s+smd\s+(rect|oval)\b', content)
+            non_roundrect += re.findall(r'\(pad\s+\S+\s+smd\s+(rect|oval)\b', content)  # legacy unquoted
+            if non_roundrect:
+                shapes = set(non_roundrect)
+                count = len(non_roundrect)
+                self.warnings.append(ValidationResult(
+                    passed=True,
+                    message=(
+                        f"Footprint '{footprint_name}' has {count} SMD pad(s) with shape {shapes}"
+                        " — use roundrect (rratio 0.25)"
+                    ),
+                    component_name=comp_name, library_name=lib_name, source_file=source_file,
+                ))
+
+            # Rule: F.Fab line width should be 0.1 mm
+            for entry in fab_graphics:
+                if abs(entry["width"] - 0.1) > 0.001:
+                    w = entry["width"]
+                    self.warnings.append(ValidationResult(
+                        passed=True,
+                        message=f"Footprint '{footprint_name}' F.Fab line width is {w} mm — should be 0.1 mm",
+                        component_name=comp_name, library_name=lib_name, source_file=source_file,
+                    ))
+                    break
+
+            # Rule: F.CrtYd line width should be 0.05 mm
+            crtyd_fp_lines = [entry for entry in fp_lines if entry["layer"] == "F.CrtYd"]
+            for entry in crtyd_fp_lines:
+                if abs(entry["width"] - 0.05) > 0.001:
+                    w = entry["width"]
+                    self.warnings.append(ValidationResult(
+                        passed=True,
+                        message=f"Footprint '{footprint_name}' F.CrtYd line width is {w} mm — should be 0.05 mm",
+                        component_name=comp_name, library_name=lib_name, source_file=source_file,
+                    ))
+                    break
+
+            # Rule: F.SilkS line width should be 0.1 mm
+            silk_fp_lines = [entry for entry in fp_lines if entry["layer"] == "F.SilkS"]
+            for entry in silk_fp_lines:
+                if abs(entry["width"] - 0.1) > 0.001:
+                    w = entry["width"]
+                    self.warnings.append(ValidationResult(
+                        passed=True,
+                        message=f"Footprint '{footprint_name}' F.SilkS line width is {w} mm — should be 0.1 mm",
+                        component_name=comp_name, library_name=lib_name, source_file=source_file,
+                    ))
+                    break
+
     def run_all_validations(self) -> bool:
         """Run all validation checks and return success status."""
         log.info("Running KiCad Library Component Validation...")
@@ -709,6 +855,7 @@ class ComponentValidator:
         self.validate_component_properties()
         self.validate_footprints()
         self.validate_footprint_dimensions()
+        self.validate_footprint_style()
         self.validate_template_expressions()
 
         # Generate statistics

@@ -1,7 +1,7 @@
 (footprint "Xilinx_FGG484"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(descr "Artix-7 BGA, NSMD pad definition Appendix A, 23x23mm, 484 Ball, 22x22 Layout, 1mm Pitch, generated with kicad-footprint-generator ipc_bga_generator.py, https://www.xilinx.com/support/documentation/user_guides/ug475_7Series_Pkg_Pinout.pdf#page=275")
 	(tags "BGA 484 1 FG484 FGG484")
@@ -53,11 +53,12 @@
 	)
 	(solder_mask_margin 0.05)
 	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_line
 		(start -11.61 11.61)
 		(end -11.61 -10.61)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -67,7 +68,7 @@
 		(start -10.61 -11.61)
 		(end 11.61 -11.61)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -77,7 +78,7 @@
 		(start 11.61 -11.61)
 		(end 11.61 11.61)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -87,7 +88,7 @@
 		(start 11.61 11.61)
 		(end -11.61 11.61)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -98,7 +99,7 @@
 			(xy -11.61 -11.61) (xy -12.11 -11.61) (xy -11.61 -12.11)
 		)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(fill yes)

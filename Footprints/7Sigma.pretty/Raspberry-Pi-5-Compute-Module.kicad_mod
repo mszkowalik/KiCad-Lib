@@ -1,7 +1,7 @@
 (footprint "Raspberry-Pi-5-Compute-Module"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(descr "Raspberry Pi Compute Module 5 - Mechanical placement footprint with connector guides. Place DF40C-100DS connectors at the marked positions.")
 	(tags "Raspberry Pi CM5 Compute Module mechanical")
@@ -54,11 +54,12 @@
 		)
 	)
 	(attr exclude_from_pos_files)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_line
 		(start -3.5 -48)
 		(end -3.5 0)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -68,7 +69,7 @@
 		(start 0 3.5)
 		(end 33 3.5)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -78,7 +79,7 @@
 		(start 33 -51.5)
 		(end 0 -51.5)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -88,7 +89,7 @@
 		(start 36.5 0)
 		(end 36.5 -48)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -99,7 +100,7 @@
 		(mid -2.474874 -50.474874)
 		(end 0 -51.5)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -110,7 +111,7 @@
 		(mid -2.474874 2.474874)
 		(end -3.5 0)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -121,7 +122,7 @@
 		(mid 35.474874 -50.474874)
 		(end 36.5 -48)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -132,7 +133,7 @@
 		(mid 35.474874 2.474874)
 		(end 33 3.5)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -302,7 +303,7 @@
 		(start -3.5 -48)
 		(end -3.5 0)
 		(stroke
-			(width 0.05)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.Fab")
@@ -312,7 +313,7 @@
 		(start 0 3.5)
 		(end 33 3.5)
 		(stroke
-			(width 0.05)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.Fab")
@@ -322,7 +323,7 @@
 		(start 33 -51.5)
 		(end 0 -51.5)
 		(stroke
-			(width 0.05)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.Fab")
@@ -332,7 +333,7 @@
 		(start 36.5 0)
 		(end 36.5 -48)
 		(stroke
-			(width 0.05)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.Fab")
@@ -343,7 +344,7 @@
 		(mid -2.474874 -50.474874)
 		(end 0 -51.5)
 		(stroke
-			(width 0.05)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.Fab")
@@ -354,7 +355,7 @@
 		(mid -2.474874 2.474874)
 		(end -3.5 0)
 		(stroke
-			(width 0.05)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.Fab")
@@ -365,7 +366,7 @@
 		(mid 35.474874 -50.474874)
 		(end 36.5 -48)
 		(stroke
-			(width 0.05)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.Fab")
@@ -376,11 +377,22 @@
 		(mid 35.474874 2.474874)
 		(end 33 3.5)
 		(stroke
-			(width 0.05)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.Fab")
 		(uuid "166e3a52-1f6f-4367-9262-d9c2a42540ff")
+	)
+	(fp_text user "Pin 1"
+		(at -0.5 -34 0)
+		(layer "Dwgs.User")
+		(uuid "988b0e4d-5c06-4292-82bd-35e86bae40bd")
+		(effects
+			(font
+				(size 0.6 0.6)
+				(thickness 0.08)
+			)
+		)
 	)
 	(fp_text user "J1 (pins 1-100)"
 		(at -0.5 -21.5 90)
@@ -401,17 +413,6 @@
 			(font
 				(size 0.8 0.8)
 				(thickness 0.1)
-			)
-		)
-	)
-	(fp_text user "Pin 1"
-		(at -0.5 -34 0)
-		(layer "Dwgs.User")
-		(uuid "988b0e4d-5c06-4292-82bd-35e86bae40bd")
-		(effects
-			(font
-				(size 0.6 0.6)
-				(thickness 0.08)
 			)
 		)
 	)
@@ -495,5 +496,15 @@
 		(rotate
 			(xyz -0 -0 -90)
 		)
+	)
+	(fp_rect
+		(start -1.85 -55.0)
+		(end 34.85 6.5)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.CrtYd")
 	)
 )

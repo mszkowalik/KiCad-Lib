@@ -1,7 +1,7 @@
 (footprint "SOIC-14_3.9x8.7mm_P1.27mm"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(descr "SOIC, 14 Pin (JEDEC MS-012AB, https://www.analog.com/media/en/package-pcb-resources/package/pkg_pdf/soic_narrow-r/r_14.pdf), generated with kicad-footprint-generator ipc_gullwing_generator.py")
 	(tags "SOIC SO")
@@ -52,11 +52,12 @@
 		)
 	)
 	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_line
 		(start -2.06 -4.435)
 		(end 2.06 -4.435)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -66,7 +67,7 @@
 		(start -2.06 -4.37)
 		(end -2.06 -4.435)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -76,7 +77,7 @@
 		(start -2.06 4.435)
 		(end -2.06 4.37)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -86,7 +87,7 @@
 		(start 2.06 -4.435)
 		(end 2.06 -4.37)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -96,7 +97,7 @@
 		(start 2.06 4.37)
 		(end 2.06 4.435)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -106,7 +107,7 @@
 		(start 2.06 4.435)
 		(end -2.06 4.435)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -117,7 +118,7 @@
 			(xy -2.6 -4.37) (xy -2.84 -4.7) (xy -2.36 -4.7)
 		)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(fill yes)

@@ -1,7 +1,7 @@
 (footprint "PhoenixContact_MC_1,5_2-G-3.81_1x02_P3.81mm_Horizontal"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(descr "Generic Phoenix Contact connector footprint for: MC_1,5/2-G-3.81; number of pins: 02; pin pitch: 3.81mm; Angled || order number: 1803277 8A 160V")
 	(tags "phoenix_contact connector MC_01x02_G_3.81mm")
@@ -52,11 +52,12 @@
 		)
 	)
 	(attr through_hole)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_line
 		(start -2.71 -1.31)
 		(end -2.71 8.11)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -66,7 +67,7 @@
 		(start -2.71 -1.31)
 		(end -1.05 -1.31)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -76,7 +77,7 @@
 		(start -2.71 4.8)
 		(end 6.52 4.8)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -86,7 +87,7 @@
 		(start -2.71 8.11)
 		(end 6.52 8.11)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -96,7 +97,7 @@
 		(start -0.3 -2.6)
 		(end 0.3 -2.6)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -106,7 +107,7 @@
 		(start 0 -2)
 		(end -0.3 -2.6)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -116,7 +117,7 @@
 		(start 0.3 -2.6)
 		(end 0 -2)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -126,7 +127,7 @@
 		(start 1.05 -1.31)
 		(end 2.76 -1.31)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -136,7 +137,7 @@
 		(start 6.52 -1.31)
 		(end 4.86 -1.31)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -146,7 +147,7 @@
 		(start 6.52 8.11)
 		(end 6.52 -1.31)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")

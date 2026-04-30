@@ -1,7 +1,7 @@
 (footprint "MIC-SMD_5P-L3.0-W4.0-P0.85-BL"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(property "Reference" "REF**"
 		(at 0 -5.23 0)
@@ -52,11 +52,12 @@
 		)
 	)
 	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_line
 		(start -2 -1.52)
 		(end -2 -0.86)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -66,7 +67,7 @@
 		(start -2 -1.52)
 		(end -1.35 -1.52)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -76,7 +77,7 @@
 		(start -2 0.86)
 		(end -2 1.14)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -86,7 +87,7 @@
 		(start -2 1.14)
 		(end -1.64 1.5)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -96,7 +97,7 @@
 		(start -1.64 1.5)
 		(end -1.36 1.5)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -106,7 +107,7 @@
 		(start 1.35 -1.52)
 		(end 1.98 -1.52)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -116,7 +117,7 @@
 		(start 1.36 1.5)
 		(end 2 1.5)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -126,7 +127,7 @@
 		(start 1.98 -1.52)
 		(end 2 -1.5)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -136,7 +137,7 @@
 		(start 2 -1.5)
 		(end 2 -0.86)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -146,7 +147,7 @@
 		(start 2 0.86)
 		(end 2 1.5)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -178,7 +179,7 @@
 		(center -2 1.5)
 		(end -1.97 1.5)
 		(stroke
-			(width 0.06)
+			(width 0.1)
 			(type solid)
 		)
 		(fill no)

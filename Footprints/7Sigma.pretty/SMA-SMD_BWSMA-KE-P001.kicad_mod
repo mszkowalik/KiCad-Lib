@@ -1,7 +1,7 @@
 (footprint "SMA-SMD_BWSMA-KE-P001"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(property "Reference" "REF**"
 		(at 0 -6.55 0)
@@ -50,11 +50,12 @@
 		)
 	)
 	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_line
 		(start 2.89 -3.25)
 		(end 2.89 3.17)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -64,7 +65,7 @@
 		(start 4.42 -3.25)
 		(end 2.89 -3.25)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -74,7 +75,7 @@
 		(start 4.42 -3.25)
 		(end 4.42 3.25)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -84,7 +85,7 @@
 		(start 4.42 3.25)
 		(end 2.89 3.25)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -94,7 +95,7 @@
 		(start 7.93 -2.69)
 		(end 7.93 2.66)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -104,7 +105,7 @@
 		(start 7.93 2.66)
 		(end 8.86 -2.69)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -114,7 +115,7 @@
 		(start 8.86 -2.69)
 		(end 8.86 2.66)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -124,7 +125,7 @@
 		(start 8.86 2.66)
 		(end 9.78 -2.69)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -134,7 +135,7 @@
 		(start 9.78 -2.69)
 		(end 9.78 2.66)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -144,7 +145,7 @@
 		(start 9.78 2.66)
 		(end 10.67 -2.69)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -154,7 +155,7 @@
 		(start 10.67 -2.69)
 		(end 10.67 2.66)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -164,7 +165,7 @@
 		(start 10.67 2.66)
 		(end 11.54 -2.69)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -174,7 +175,7 @@
 		(start 11.54 -2.69)
 		(end 4.42 -2.67)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -184,7 +185,7 @@
 		(start 11.54 -2.69)
 		(end 11.54 2.66)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -194,7 +195,7 @@
 		(start 11.54 -2.69)
 		(end 12.09 -2.69)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -204,7 +205,7 @@
 		(start 11.54 2.66)
 		(end 4.42 2.66)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -214,7 +215,7 @@
 		(start 11.54 2.66)
 		(end 12.1 2.66)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -224,7 +225,7 @@
 		(start 12.09 -2.69)
 		(end 12.1 -2.7)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -234,7 +235,7 @@
 		(start 12.1 -2.7)
 		(end 12.1 2.68)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -255,7 +256,7 @@
 		(start 2.7 -3.3)
 		(end 2.7 3.3)
 		(stroke
-			(width 0.25)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.Fab")
@@ -265,7 +266,7 @@
 		(center 4.42 3.25)
 		(end 4.45 3.25)
 		(stroke
-			(width 0.06)
+			(width 0.1)
 			(type solid)
 		)
 		(fill no)

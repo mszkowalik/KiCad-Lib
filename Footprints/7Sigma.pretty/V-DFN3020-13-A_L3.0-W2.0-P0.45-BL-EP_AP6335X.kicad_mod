@@ -1,7 +1,7 @@
 (footprint "V-DFN3020-13-A_L3.0-W2.0-P0.45-BL-EP_AP6335X"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(property "Reference" "REF**"
 		(at 0 -4.85 0)
@@ -50,11 +50,12 @@
 		)
 	)
 	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_line
 		(start -1.85 -1.14)
 		(end -1.85 -0.38)
 		(stroke
-			(width 0.15)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -64,7 +65,7 @@
 		(start -1.85 0.38)
 		(end -1.85 1.02)
 		(stroke
-			(width 0.15)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -74,7 +75,7 @@
 		(start -1.85 1.02)
 		(end -1.85 1.02)
 		(stroke
-			(width 0.15)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -84,7 +85,7 @@
 		(start -1.85 1.02)
 		(end -1.85 1.14)
 		(stroke
-			(width 0.15)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -94,7 +95,7 @@
 		(start 1.35 -1.14)
 		(end 1.35 1.14)
 		(stroke
-			(width 0.15)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -104,7 +105,7 @@
 		(center -2.18 1.4)
 		(end -1.97 1.4)
 		(stroke
-			(width 0.15)
+			(width 0.1)
 			(type solid)
 		)
 		(fill no)
@@ -137,7 +138,7 @@
 		(center -1.74 1)
 		(end -1.71 1)
 		(stroke
-			(width 0.06)
+			(width 0.1)
 			(type solid)
 		)
 		(fill no)

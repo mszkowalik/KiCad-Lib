@@ -1,7 +1,7 @@
 (footprint "VQFN-40-1EP_5x5mm_P0.4mm_EP3.3x3.3mm_ThermalVias"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(descr "VQFN, 40 Pin (Based on JEDEC MO-220-K.01, variation VHHE-1, https://tridentiot.com/wp-content/uploads/2024/11/DS-ZW-0001-01-T32CZ20-Datasheet.pdf#page=36), generated with kicad-footprint-generator ipc_noLead_generator.py")
 	(tags "VQFN NoLead")
@@ -52,11 +52,12 @@
 		)
 	)
 	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_line
 		(start -2.61 -2.16)
 		(end -2.61 -2.37)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -66,7 +67,7 @@
 		(start -2.61 2.61)
 		(end -2.61 2.16)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -76,7 +77,7 @@
 		(start -2.16 -2.61)
 		(end -2.31 -2.61)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -86,7 +87,7 @@
 		(start -2.16 2.61)
 		(end -2.61 2.61)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -96,7 +97,7 @@
 		(start 2.16 -2.61)
 		(end 2.61 -2.61)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -106,7 +107,7 @@
 		(start 2.16 2.61)
 		(end 2.61 2.61)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -116,7 +117,7 @@
 		(start 2.61 -2.61)
 		(end 2.61 -2.16)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -126,7 +127,7 @@
 		(start 2.61 2.61)
 		(end 2.61 2.16)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -137,7 +138,7 @@
 			(xy -2.61 -2.61) (xy -2.85 -2.94) (xy -2.37 -2.94)
 		)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(fill yes)
@@ -747,12 +748,13 @@
 		(remove_unused_layers no)
 		(uuid "1b1656a9-9454-4386-8c17-66451cd7c28f")
 	)
-	(pad "41" smd rect
+	(pad "41" smd roundrect
 		(at 0 0)
 		(size 3.3 3.3)
 		(property pad_prop_heatsink)
 		(layers "F.Cu" "F.Mask")
 		(zone_connect 2)
+		(roundrect_rratio 0.25)
 		(uuid "c90be210-8ffc-4f8b-bb7c-ceba2adb3db2")
 	)
 	(pad "41" thru_hole circle

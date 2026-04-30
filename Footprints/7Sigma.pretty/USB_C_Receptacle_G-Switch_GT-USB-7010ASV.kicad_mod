@@ -1,7 +1,7 @@
 (footprint "USB_C_Receptacle_G-Switch_GT-USB-7010ASV"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(descr "USB Type C, right-angle, SMT, https://datasheet.lcsc.com/lcsc/2204071530_G-Switch-GT-USB-7010ASV_C2988369.pdf")
 	(tags "USB C Type-C Receptacle SMD")
@@ -54,11 +54,12 @@
 		)
 	)
 	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_line
 		(start -4.58 -1.85)
 		(end -4.58 0.07)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -68,7 +69,7 @@
 		(start -4.58 3.785)
 		(end -4.58 2.08)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -78,7 +79,7 @@
 		(start 4.58 0.07)
 		(end 4.58 -1.85)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -88,7 +89,7 @@
 		(start 4.58 2.08)
 		(end 4.58 3.785)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -98,7 +99,7 @@
 		(start 4.58 3.785)
 		(end -4.58 3.785)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")

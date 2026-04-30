@@ -1,7 +1,7 @@
 (footprint "SOIC-14_3.9x8.7mm_P1.27mm_EP6.4x2.65"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(descr "SOIC, 14 Pin (JEDEC MS-012AB, https://www.analog.com/media/en/package-pcb-resources/package/pkg_pdf/soic_narrow-r/r_14.pdf), generated with kicad-footprint-generator ipc_gullwing_generator.py")
 	(tags "SOIC SO")
@@ -52,11 +52,12 @@
 		)
 	)
 	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_line
 		(start 0 -4.435)
 		(end -3.45 -4.435)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -66,7 +67,7 @@
 		(start 0 -4.435)
 		(end 1.95 -4.435)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -76,7 +77,7 @@
 		(start 0 4.435)
 		(end -1.95 4.435)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -86,7 +87,7 @@
 		(start 0 4.435)
 		(end 1.95 4.435)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -204,64 +205,74 @@
 			)
 		)
 	)
-	(pad "" smd rect
+	(pad "" smd roundrect
 		(at -0.5 -2.5 90)
 		(size 0.8 0.6)
 		(layers "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "42972457-8038-429d-b4ce-0e17bf762ebb")
 	)
-	(pad "" smd rect
+	(pad "" smd roundrect
 		(at -0.5 -1.25 90)
 		(size 0.8 0.6)
 		(layers "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "9a8e4ef2-bf85-48e9-bf53-4538b31ac0b5")
 	)
-	(pad "" smd rect
+	(pad "" smd roundrect
 		(at -0.5 0 90)
 		(size 0.8 0.6)
 		(layers "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "e50f6d90-8f51-414b-8ef7-a9918ab4ad0e")
 	)
-	(pad "" smd rect
+	(pad "" smd roundrect
 		(at -0.5 1.25 90)
 		(size 0.8 0.6)
 		(layers "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "69a2a0bc-9b2c-46f0-b16d-62c3dea7a7b6")
 	)
-	(pad "" smd rect
+	(pad "" smd roundrect
 		(at -0.5 2.5 90)
 		(size 0.8 0.6)
 		(layers "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "104dd783-13c0-41ed-8ec3-9dd46ebfbdf5")
 	)
-	(pad "" smd rect
+	(pad "" smd roundrect
 		(at 0.5 -2.5 90)
 		(size 0.8 0.6)
 		(layers "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "8943aea1-fd0d-44f4-a8fe-b55bec531135")
 	)
-	(pad "" smd rect
+	(pad "" smd roundrect
 		(at 0.5 -1.25 90)
 		(size 0.8 0.6)
 		(layers "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "0cec5684-07c0-4983-9cfb-bd0b2301b7b6")
 	)
-	(pad "" smd rect
+	(pad "" smd roundrect
 		(at 0.5 0 90)
 		(size 0.8 0.6)
 		(layers "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "893e3088-3010-4ddd-a0c5-108e760aae7a")
 	)
-	(pad "" smd rect
+	(pad "" smd roundrect
 		(at 0.5 1.25 90)
 		(size 0.8 0.6)
 		(layers "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "3ef9cd53-ad4e-40a1-816b-e7e297ef5833")
 	)
-	(pad "" smd rect
+	(pad "" smd roundrect
 		(at 0.5 2.5 90)
 		(size 0.8 0.6)
 		(layers "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "ed487357-9892-4027-bf9b-fd1c35acfde1")
 	)
 	(pad "1" smd roundrect

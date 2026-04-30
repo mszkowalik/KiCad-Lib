@@ -1,7 +1,7 @@
 (footprint "ESP32-WROOM-32U"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(descr "Single 2.4 GHz Wi-Fi and Bluetooth combo chip with U.FL connector, https://www.espressif.com/sites/default/files/documentation/esp32-wroom-32d_esp32-wroom-32u_datasheet_en.pdf")
 	(tags "Single 2.4 GHz Wi-Fi and Bluetooth combo  chip")
@@ -54,11 +54,12 @@
 		)
 	)
 	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_line
 		(start -9.12 -9.72)
 		(end 9.12 -9.72)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -68,7 +69,7 @@
 		(start -9.12 9.1)
 		(end -9.12 9.72)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -78,7 +79,7 @@
 		(start -9.12 9.72)
 		(end -8.12 9.72)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -88,7 +89,7 @@
 		(start 9.12 -9.72)
 		(end 9.12 -9.3)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -98,7 +99,7 @@
 		(start 9.12 9.1)
 		(end 9.12 9.72)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -108,7 +109,7 @@
 		(start 9.12 9.72)
 		(end 8.12 9.72)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -119,7 +120,7 @@
 			(xy -9.125 -8.975) (xy -9.625 -8.975) (xy -9.125 -9.475) (xy -9.125 -8.975)
 		)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(fill yes)
@@ -484,10 +485,11 @@
 		(roundrect_rratio 0.25)
 		(uuid "8ab5ec0a-9f98-4125-b05f-f56e9ccfea6e")
 	)
-	(pad "39" smd rect
+	(pad "39" smd roundrect
 		(at -2.9 -2.09)
 		(size 0.9 0.9)
 		(layers "F.Cu" "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "c0ab9658-1987-4a99-9ea2-6cadae1e5541")
 	)
 	(pad "39" thru_hole circle
@@ -500,10 +502,11 @@
 		(zone_connect 2)
 		(uuid "8c8e8879-2cf2-4d91-8081-c8fa67835447")
 	)
-	(pad "39" smd rect
+	(pad "39" smd roundrect
 		(at -2.9 -0.69)
 		(size 0.9 0.9)
 		(layers "F.Cu" "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "89f589b5-6a91-4f61-89df-a8281b824101")
 	)
 	(pad "39" thru_hole circle
@@ -516,10 +519,11 @@
 		(zone_connect 2)
 		(uuid "7d72b044-4109-4028-b0f6-eb6ff1d7e609")
 	)
-	(pad "39" smd rect
+	(pad "39" smd roundrect
 		(at -2.9 0.71)
 		(size 0.9 0.9)
 		(layers "F.Cu" "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "ac7f812d-905d-47df-a1c7-057e6714bf80")
 	)
 	(pad "39" thru_hole circle
@@ -552,10 +556,11 @@
 		(zone_connect 2)
 		(uuid "f854d792-4708-40c2-960a-4cb86570b7a5")
 	)
-	(pad "39" smd rect
+	(pad "39" smd roundrect
 		(at -1.5 -2.09)
 		(size 0.9 0.9)
 		(layers "F.Cu" "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "4d789efd-711a-4125-a742-daee8f451fb1")
 	)
 	(pad "39" thru_hole circle
@@ -568,18 +573,20 @@
 		(zone_connect 2)
 		(uuid "9b4af961-f295-4518-801e-8fbef3a42258")
 	)
-	(pad "39" smd rect
+	(pad "39" smd roundrect
 		(at -1.5 -0.69)
 		(size 0.9 0.9)
 		(layers "F.Cu" "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "7d5144d0-b091-49c4-90b3-90008088fc81")
 	)
-	(pad "39" smd rect
+	(pad "39" smd roundrect
 		(at -1.5 -0.69)
 		(size 3.8 3.8)
 		(property pad_prop_heatsink)
 		(layers "F.Cu" "F.Mask")
 		(zone_connect 2)
+		(roundrect_rratio 0.25)
 		(uuid "62218883-480f-41ca-abe2-f8bc02192a98")
 	)
 	(pad "39" thru_hole circle
@@ -592,10 +599,11 @@
 		(zone_connect 2)
 		(uuid "d855c8fc-e782-45eb-82d4-3325f7a846ca")
 	)
-	(pad "39" smd rect
+	(pad "39" smd roundrect
 		(at -1.5 0.71)
 		(size 0.9 0.9)
 		(layers "F.Cu" "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "f19d695c-888d-4274-a79a-470af0fc156b")
 	)
 	(pad "39" thru_hole circle
@@ -628,10 +636,11 @@
 		(zone_connect 2)
 		(uuid "ea61430a-e0ce-4b42-9ce7-21294013d2eb")
 	)
-	(pad "39" smd rect
+	(pad "39" smd roundrect
 		(at -0.1 -2.09)
 		(size 0.9 0.9)
 		(layers "F.Cu" "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "c0bee152-fd95-4eed-8b29-d6733a74f2df")
 	)
 	(pad "39" thru_hole circle
@@ -644,10 +653,11 @@
 		(zone_connect 2)
 		(uuid "f82198aa-be67-48ca-9c3f-805808d1e52d")
 	)
-	(pad "39" smd rect
+	(pad "39" smd roundrect
 		(at -0.1 -0.69)
 		(size 0.9 0.9)
 		(layers "F.Cu" "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "7d1e309c-9905-46a4-9c69-61f245016199")
 	)
 	(pad "39" thru_hole circle
@@ -660,10 +670,11 @@
 		(zone_connect 2)
 		(uuid "79a0fca8-74d6-42c5-8b7d-99b2f2755ea9")
 	)
-	(pad "39" smd rect
+	(pad "39" smd roundrect
 		(at -0.1 0.71)
 		(size 0.9 0.9)
 		(layers "F.Cu" "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "743fce41-41f2-4ce9-802d-171213758744")
 	)
 	(embedded_fonts no)

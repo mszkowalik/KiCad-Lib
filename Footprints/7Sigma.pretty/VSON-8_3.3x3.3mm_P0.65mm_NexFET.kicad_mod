@@ -1,7 +1,7 @@
 (footprint "VSON-8_3.3x3.3mm_P0.65mm_NexFET"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(descr "8-Lead Plastic Dual Flat, No Lead Package (MF) - 3.3x3.3x1 mm Body [VSON] http://www.ti.com/lit/ds/symlink/csd87334q3d.pdf")
 	(tags "VSON 0.65")
@@ -54,11 +54,12 @@
 		)
 	)
 	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_line
 		(start -1.75 1.5)
 		(end -1.75 1.76)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -68,7 +69,7 @@
 		(start -1.75 1.76)
 		(end 1.75 1.76)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -78,7 +79,7 @@
 		(start -1.43 -1.74)
 		(end 1.75 -1.74)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -88,7 +89,7 @@
 		(start 1.75 -1.74)
 		(end 1.75 -1.48)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -98,7 +99,7 @@
 		(start 1.75 1.5)
 		(end 1.75 1.76)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -109,7 +110,7 @@
 			(xy -1.75 -1.48) (xy -2.23 -1.48) (xy -1.75 -1.96) (xy -1.75 -1.48)
 		)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(fill yes)
@@ -217,28 +218,32 @@
 			)
 		)
 	)
-	(pad "" smd rect
+	(pad "" smd roundrect
 		(at -0.09 -0.61)
 		(size 0.57 0.738)
 		(layers "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "6eeec194-6697-4301-9f3b-e92cce524f5f")
 	)
-	(pad "" smd rect
+	(pad "" smd roundrect
 		(at -0.09 0.61)
 		(size 0.57 0.738)
 		(layers "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "06565fe3-cccb-4978-8814-254d134ce7fa")
 	)
-	(pad "" smd rect
+	(pad "" smd roundrect
 		(at 0.86 -0.61)
 		(size 0.57 0.738)
 		(layers "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "dac42578-92c0-4b3b-844d-f88564315224")
 	)
-	(pad "" smd rect
+	(pad "" smd roundrect
 		(at 0.86 0.61)
 		(size 0.57 0.738)
 		(layers "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "3f9b4c14-886a-4cb6-82d1-d023e8aca288")
 	)
 	(pad "" smd roundrect
@@ -325,10 +330,11 @@
 		(roundrect_rratio 0.25)
 		(uuid "4bab8a09-0ebc-4cae-840d-c6288e92c545")
 	)
-	(pad "9" smd rect
+	(pad "9" smd roundrect
 		(at 0.385 0 270)
 		(size 2.45 1.9)
 		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.25)
 		(uuid "e08ae23f-c860-48c4-8677-d3fa450ee00b")
 	)
 	(embedded_fonts no)

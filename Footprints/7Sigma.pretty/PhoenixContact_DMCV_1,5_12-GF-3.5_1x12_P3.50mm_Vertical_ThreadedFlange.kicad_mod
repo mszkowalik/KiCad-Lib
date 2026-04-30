@@ -1,7 +1,7 @@
 (footprint "PhoenixContact_DMCV_1,5_12-GF-3.5_1x12_P3.50mm_Vertical_ThreadedFlange"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(descr "Generic Phoenix Contact connector footprint for: MCV_1,5/12-GF-3.5; number of pins: 12; pin pitch: 3.50mm; Vertical; threaded flange || order number: 1843321 8A 160V")
 	(tags "phoenix_contact connector MCV_01x12_GF_3.5mm")
@@ -54,11 +54,12 @@
 		)
 	)
 	(attr through_hole)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_line
 		(start -5.25 -2.55)
 		(end -5.25 8.05)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -68,7 +69,7 @@
 		(start -5.25 -2.55)
 		(end 43.8 -2.55)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -78,7 +79,7 @@
 		(start -5.25 8.05)
 		(end 43.8 8.05)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -88,7 +89,7 @@
 		(start 43.8 -2.55)
 		(end 43.8 8.05)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -98,7 +99,7 @@
 		(center -3 5)
 		(end -2 5)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(fill no)
@@ -109,7 +110,7 @@
 		(center -3 5)
 		(end -1.1 5)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(fill no)
@@ -120,7 +121,7 @@
 		(center 41.4 5)
 		(end 39.5 5)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(fill no)
@@ -131,7 +132,7 @@
 		(center 41.4 5)
 		(end 40.4 5)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(fill no)
@@ -222,7 +223,7 @@
 		(center -3 5)
 		(end -4.9 5)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(fill no)
@@ -233,7 +234,7 @@
 		(center -3 5)
 		(end -4 5)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(fill no)
@@ -244,7 +245,7 @@
 		(center 41.4 5)
 		(end 39.5 5)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(fill no)
@@ -255,7 +256,7 @@
 		(center 41.4 5)
 		(end 40.4 5)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(fill no)

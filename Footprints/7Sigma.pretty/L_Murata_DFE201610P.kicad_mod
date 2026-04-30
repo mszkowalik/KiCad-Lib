@@ -1,7 +1,7 @@
 (footprint "L_Murata_DFE201610P"
-	(version 20241229)
+	(version 20260206)
 	(generator "pcbnew")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(layer "F.Cu")
 	(descr "Inductor, Murata, DFE201610P, 2.0x1.6x1.0mm, (https://www.murata.com/~/media/webrenewal/products/inductor/chip/tokoproducts/wirewoundmetalalloychiptype/m_dfe201610p.ashx), generated with kicad-footprint-generator gen_inductor.py")
 	(tags "power chip flatwire")
@@ -52,11 +52,12 @@
 		)
 	)
 	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
 	(fp_line
 		(start -1.11 -1.06)
 		(end 1.11 -1.06)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")
@@ -66,7 +67,7 @@
 		(start 1.11 1.06)
 		(end -1.11 1.06)
 		(stroke
-			(width 0.12)
+			(width 0.1)
 			(type solid)
 		)
 		(layer "F.SilkS")

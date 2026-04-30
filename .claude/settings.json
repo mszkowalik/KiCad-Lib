@@ -1,7 +1,20 @@
 {
   "permissions": {
     "allow": [
-      "Bash(awk '/symbol \"IS31FL3741A-QFLS4-TR_0_1\"/{found=1} found{print; if\\(/^\\\\t\\\\t\\\\\\)$/ && found>1\\) exit; if\\(/^\\\\t\\\\t\\\\\\)$/\\) found++}' Symbols/base_library.kicad_sym)"
+      "Bash(awk '/symbol \"IS31FL3741A-QFLS4-TR_0_1\"/{found=1} found{print; if\\(/^\\\\t\\\\t\\\\\\)$/ && found>1\\) exit; if\\(/^\\\\t\\\\t\\\\\\)$/\\) found++}' Symbols/base_library.kicad_sym)",
+      "WebFetch(domain:wmsc.lcsc.com)",
+      "WebFetch(domain:www.telit.com)",
+      "WebFetch(domain:www.everythingrf.com)",
+      "WebFetch(domain:dz.telit.com)",
+      "WebFetch(domain:telit-download-zone.s3.eu-west-1.amazonaws.com)",
+      "WebFetch(domain:fcc.report)",
+      "WebFetch(domain:www.snapeda.com)",
+      "WebFetch(domain:atoma.spb.ru)",
+      "Bash(pdftotext \"/Users/mateuszkowalik/.claude/projects/-Users-mateuszkowalik-Projects-KiCad-Lib/2818b376-5b9f-457b-8a04-493d22c7ecb8/tool-results/webfetch-1777464252433-9o1c3y.pdf\" -)",
+      "Read(//Users/mateuszkowalik/Downloads/**)",
+      "Bash(cp /Users/mateuszkowalik/Downloads/ME310G1-W3/XCVR_ME310G1-W3.kicad_mod '/Users/mateuszkowalik/Projects/KiCad Lib/Footprints/7Sigma.pretty/LGA-94_L15.0-W18.0-P0.6_xE310.kicad_mod')",
+      "Bash(cp /Users/mateuszkowalik/Downloads/ME310G1-W3/ME310G1-W3.step '/Users/mateuszkowalik/Projects/KiCad Lib/3DModels/easyeda2kicad.3dshapes/LGA-94_L15.0-W18.0-P0.6_xE310.step')",
+      "Bash(python3 -c ' *)"
     ]
   }
 }
