@@ -14,7 +14,7 @@ SOURCES_DIR = os.path.abspath("./Sources")
 SYMBOLS_DIR = os.path.abspath("./Symbols")
 FOOTPRINTS_DIR = os.path.abspath("./Footprints/7Sigma.pretty")
 TARGET_3DMODELS_ROOT = os.path.abspath("./3DModels")
-BASE_LIB_PATH = os.path.join(SYMBOLS_DIR, "base_library.kicad_sym")
+BASE_LIB_DIR = os.path.join(SYMBOLS_DIR, "base_library.kicad_symdir")
 
 # ---------------------------------------------------------------------------
 # External tool / environment paths

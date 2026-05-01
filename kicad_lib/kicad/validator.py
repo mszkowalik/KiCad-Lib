@@ -50,7 +50,7 @@ class ComponentValidator:
         self.sources_dir = Path(sources_dir)
         self.symbols_dir = Path(symbols_dir)
         self.footprints_dir = Path(footprints_dir)
-        self.base_library_path = self.symbols_dir / "base_library.kicad_sym"
+        self.base_library_dir = self.symbols_dir / "base_library.kicad_symdir"
 
         # Load configuration
         self.config = self._load_config(config_file)
@@ -62,7 +62,7 @@ class ComponentValidator:
 
         # Load data
         self.yaml_data = load_yaml_sources(self.sources_dir)
-        self.base_symbols = load_base_symbol_names(self.base_library_path)
+        self.base_symbols = load_base_symbol_names(self.base_library_dir)
         self.available_footprints = self._load_available_footprints()
         self._libraries_map: dict[str, dict] | None = None
 
@@ -187,10 +187,10 @@ class ComponentValidator:
                 ValidationResult(passed=False, message="Failed to load (invalid YAML syntax?)", source_file=missing)
             )
 
-        # Check base library exists
-        if not self.base_library_path.exists():
+        # Check base library directory exists
+        if not self.base_library_dir.exists():
             self.errors.append(
-                ValidationResult(passed=False, message=f"Base library not found at {self.base_library_path}")
+                ValidationResult(passed=False, message=f"Base library not found at {self.base_library_dir}")
             )
 
         for lib_data in self.yaml_data:

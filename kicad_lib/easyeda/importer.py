@@ -22,6 +22,7 @@ The importer will automatically:
 
 import copy
 import os
+import re
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -168,8 +169,11 @@ def _download_and_import(
             log.error(f"Symbol '{symbol_name}' (sanitized: '{sanitized_name}') not found after export")
             return None
 
-        base_lib = SymbolLib.from_file(config.BASE_LIB_PATH)
-        if not any(s.entryName == base_component_name for s in base_lib.symbols):
+        base_lib_dir = config.BASE_LIB_DIR
+        os.makedirs(base_lib_dir, exist_ok=True)
+        safe_name = re.sub(r'[/\\:*?"<>|,]', '_', base_component_name)
+        dest_path = os.path.join(base_lib_dir, f"{safe_name}.kicad_sym")
+        if not os.path.exists(dest_path):
             new_symbol = copy.deepcopy(src_symbol)
             if new_symbol.entryName != base_component_name:
                 new_symbol.entryName = base_component_name
@@ -178,8 +182,13 @@ def _download_and_import(
             for prop in new_symbol.properties:
                 if prop.key in ("Footprint", "Datasheet"):
                     prop.value = ""
-            base_lib.symbols.append(new_symbol)
-            base_lib.to_file(config.BASE_LIB_PATH)
+            single_lib = SymbolLib()
+            single_lib.version = tmp_lib.version
+            single_lib.generator = tmp_lib.generator
+            single_lib.generator_version = tmp_lib.generator_version
+            single_lib.embedded_fonts = tmp_lib.embedded_fonts
+            single_lib.symbols.append(new_symbol)
+            single_lib.to_file(dest_path)
     except Exception as e:
         log.error(f"Symbol import failed for {lcsc_id}: {e}")
         return None

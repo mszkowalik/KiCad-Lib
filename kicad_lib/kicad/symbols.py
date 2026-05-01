@@ -4,7 +4,7 @@ import os
 from kiutils.symbol import SymbolLib
 
 from kicad_lib import config
-from kicad_lib.yaml.helpers import load_yaml_sources, validate_library_names
+from kicad_lib.yaml.helpers import load_base_symbols, load_yaml_sources, validate_library_names
 from kicad_lib.yaml.parser import update_component_properties
 
 
@@ -19,27 +19,26 @@ def create_or_update_library(yaml_data, symbols_dir):
     total_components = 0
     library_count = 0
 
+    base_lib_dir = os.path.join(symbols_dir, "base_library.kicad_symdir")
+    base_symbols = load_base_symbols(base_lib_dir)
+
+    # Read version/generator metadata from any symbol file in the directory
+    _sample_lib = SymbolLib.from_file(next(iter(
+        f for f in sorted(os.scandir(base_lib_dir), key=lambda e: e.name)
+        if f.name.endswith(".kicad_sym")
+    )).path)
+
     for lib_data in yaml_data:
-        base_lib_path = os.path.join(symbols_dir, "base_library.kicad_sym")
         output_lib_path = os.path.join(symbols_dir, f"{lib_data['library_name']}.kicad_sym")
 
-        # Load the base symbol library
-        base_lib = SymbolLib.from_file(base_lib_path)
         new_lib = SymbolLib()
-
-        # Copy version and generator information from base library
-        new_lib.version = base_lib.version
-        new_lib.generator = base_lib.generator
-        new_lib.generator_version = base_lib.generator_version
-        new_lib.embedded_fonts = base_lib.embedded_fonts
+        new_lib.version = _sample_lib.version
+        new_lib.generator = _sample_lib.generator
+        new_lib.generator_version = _sample_lib.generator_version
+        new_lib.embedded_fonts = _sample_lib.embedded_fonts
 
         for component_data in lib_data["components"]:
-            # Find the base component
-            base_component = None
-            for symbol in base_lib.symbols:
-                if symbol.entryName == component_data["base_component"]:
-                    base_component = symbol
-                    break
+            base_component = base_symbols.get(component_data["base_component"])
 
             if base_component is None:
                 raise ValueError(f"Base component {component_data['base_component']} not found in library")

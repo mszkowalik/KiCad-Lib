@@ -36617,6 +36617,8 @@
 				)
 				(alternate "XTAL_32K_P" passive line)
 				(alternate "ADC1_CH0" input line)
+				(alternate "XTAL_32K_P" passive line)
+				(alternate "ADC1_CH0" input line)
 			)
 			(pin bidirectional line
 				(at -17.78 -2.54 0)
@@ -36635,6 +36637,8 @@
 						)
 					)
 				)
+				(alternate "XTAL_32K_N" passive line)
+				(alternate "ADC1_CH1" input line)
 				(alternate "XTAL_32K_N" passive line)
 				(alternate "ADC1_CH1" input line)
 			)
@@ -36657,6 +36661,8 @@
 				)
 				(alternate "FSPIQ" bidirectional line)
 				(alternate "ADC1_CH2" input line)
+				(alternate "FSPIQ" bidirectional line)
+				(alternate "ADC1_CH2" input line)
 			)
 			(pin bidirectional line
 				(at 20.32 -10.16 180)
@@ -36676,11 +36682,12 @@
 					)
 				)
 				(alternate "ADC1_CH3" input line)
+				(alternate "ADC1_CH3" input line)
 			)
 			(pin bidirectional line
 				(at -17.78 5.08 0)
 				(length 2.54)
-				(name "GPIO4"
+				(name "MTMS"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -36697,11 +36704,14 @@
 				(alternate "MTMS" input line)
 				(alternate "FSPIHD" bidirectional line)
 				(alternate "ADC1_CH4" input line)
+				(alternate "GPIO4" bidirectional line)
+				(alternate "FSPIHD" bidirectional line)
+				(alternate "ADC1_CH4" input line)
 			)
 			(pin bidirectional line
 				(at -17.78 10.16 0)
 				(length 2.54)
-				(name "GPIO5"
+				(name "MTDI"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -36718,11 +36728,14 @@
 				(alternate "MTDI" input line)
 				(alternate "FSPIWP" bidirectional line)
 				(alternate "ADC1_CH5" input line)
+				(alternate "GPIO5" bidirectional line)
+				(alternate "FSPIWP" bidirectional line)
+				(alternate "ADC1_CH5" input line)
 			)
 			(pin bidirectional line
 				(at -17.78 12.7 0)
 				(length 2.54)
-				(name "GPIO6"
+				(name "MTCK"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -36739,11 +36752,14 @@
 				(alternate "MTCK" input line)
 				(alternate "FSPICLK" bidirectional line)
 				(alternate "ADC1_CH6" input line)
+				(alternate "GPIO6" bidirectional line)
+				(alternate "FSPICLK" bidirectional line)
+				(alternate "ADC1_CH6" input line)
 			)
 			(pin bidirectional line
 				(at -17.78 7.62 0)
 				(length 2.54)
-				(name "GPIO7"
+				(name "MTDO"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -36758,6 +36774,8 @@
 					)
 				)
 				(alternate "MTDO" output line)
+				(alternate "FSPID" bidirectional line)
+				(alternate "GPIO7" bidirectional line)
 				(alternate "FSPID" bidirectional line)
 			)
 			(pin bidirectional line
@@ -36850,6 +36868,7 @@
 					)
 				)
 				(alternate "USB_D-" bidirectional line)
+				(alternate "USB_D-" bidirectional line)
 			)
 			(pin bidirectional line
 				(at 20.32 -25.4 180)
@@ -36869,11 +36888,12 @@
 					)
 				)
 				(alternate "USB_D+" bidirectional line)
+				(alternate "USB_D+" bidirectional line)
 			)
 			(pin bidirectional line
 				(at 20.32 10.16 180)
 				(length 2.54)
-				(name "GPIO24"
+				(name "SPICS0"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -36888,11 +36908,12 @@
 					)
 				)
 				(alternate "SPICS0" bidirectional line)
+				(alternate "GPIO24" bidirectional line)
 			)
 			(pin bidirectional line
 				(at 20.32 2.54 180)
 				(length 2.54)
-				(name "GPIO25"
+				(name "SPIQ"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -36907,11 +36928,12 @@
 					)
 				)
 				(alternate "SPIQ" bidirectional line)
+				(alternate "GPIO25" bidirectional line)
 			)
 			(pin bidirectional line
 				(at 20.32 0 180)
 				(length 2.54)
-				(name "GPIO26"
+				(name "SPIWP"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -36926,6 +36948,7 @@
 					)
 				)
 				(alternate "SPIWP" bidirectional line)
+				(alternate "GPIO26" bidirectional line)
 			)
 			(pin power_out line
 				(at 20.32 20.32 180)
@@ -36948,7 +36971,7 @@
 			(pin bidirectional line
 				(at 20.32 5.08 180)
 				(length 2.54)
-				(name "GPIO28"
+				(name "SPIHD"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -36963,11 +36986,12 @@
 					)
 				)
 				(alternate "SPIHD" bidirectional line)
+				(alternate "GPIO28" bidirectional line)
 			)
 			(pin bidirectional line
 				(at 20.32 12.7 180)
 				(length 2.54)
-				(name "GPIO29"
+				(name "SPICLK"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -36982,11 +37006,12 @@
 					)
 				)
 				(alternate "SPICLK" bidirectional line)
+				(alternate "GPIO29" bidirectional line)
 			)
 			(pin bidirectional line
 				(at 20.32 7.62 180)
 				(length 2.54)
-				(name "GPIO30"
+				(name "SPID"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -37001,6 +37026,7 @@
 					)
 				)
 				(alternate "SPID" bidirectional line)
+				(alternate "GPIO30" bidirectional line)
 			)
 			(pin bidirectional line
 				(at 20.32 -27.94 180)
@@ -37038,10 +37064,10 @@
 					)
 				)
 			)
-			(pin bidirectional line
+			(pin output line
 				(at -17.78 30.48 0)
 				(length 2.54)
-				(name "GPIO16"
+				(name "U0TXD"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -37057,11 +37083,13 @@
 				)
 				(alternate "U0TXD" output line)
 				(alternate "FSPICS0" bidirectional line)
+				(alternate "GPIO16" bidirectional line)
+				(alternate "FSPICS0" bidirectional line)
 			)
-			(pin bidirectional line
+			(pin input line
 				(at -17.78 33.02 0)
 				(length 2.54)
-				(name "GPIO17"
+				(name "U0RXD"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -37077,11 +37105,13 @@
 				)
 				(alternate "U0RXD" input line)
 				(alternate "FSPICS1" bidirectional line)
+				(alternate "GPIO17" bidirectional line)
+				(alternate "FSPICS1" bidirectional line)
 			)
 			(pin bidirectional line
 				(at -17.78 -20.32 0)
 				(length 2.54)
-				(name "GPIO18"
+				(name "SDIO_CMD"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -37097,11 +37127,13 @@
 				)
 				(alternate "SDIO_CMD" bidirectional line)
 				(alternate "FSPICS2" bidirectional line)
+				(alternate "GPIO18" bidirectional line)
+				(alternate "FSPICS2" bidirectional line)
 			)
 			(pin bidirectional line
 				(at -17.78 -17.78 0)
 				(length 2.54)
-				(name "GPIO19"
+				(name "SDIO_CLK"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -37117,11 +37149,13 @@
 				)
 				(alternate "SDIO_CLK" bidirectional line)
 				(alternate "FSPICS3" bidirectional line)
+				(alternate "GPIO19" bidirectional line)
+				(alternate "FSPICS3" bidirectional line)
 			)
 			(pin bidirectional line
 				(at -17.78 -22.86 0)
 				(length 2.54)
-				(name "GPIO20"
+				(name "SDIO_DATA0"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -37137,11 +37171,13 @@
 				)
 				(alternate "SDIO_DATA0" bidirectional line)
 				(alternate "FSPICS4" bidirectional line)
+				(alternate "GPIO20" bidirectional line)
+				(alternate "FSPICS4" bidirectional line)
 			)
 			(pin bidirectional line
 				(at -17.78 -25.4 0)
 				(length 2.54)
-				(name "GPIO21"
+				(name "SDIO_DATA1"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -37157,11 +37193,13 @@
 				)
 				(alternate "SDIO_DATA1" bidirectional line)
 				(alternate "FSPICS5" bidirectional line)
+				(alternate "GPIO21" bidirectional line)
+				(alternate "FSPICS5" bidirectional line)
 			)
 			(pin bidirectional line
 				(at -17.78 -27.94 0)
 				(length 2.54)
-				(name "GPIO22"
+				(name "SDIO_DATA2"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -37176,11 +37214,12 @@
 					)
 				)
 				(alternate "SDIO_DATA2" bidirectional line)
+				(alternate "GPIO22" bidirectional line)
 			)
 			(pin bidirectional line
 				(at -17.78 -30.48 0)
 				(length 2.54)
-				(name "GPIO23"
+				(name "SDIO_DATA3"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -37195,6 +37234,7 @@
 					)
 				)
 				(alternate "SDIO_DATA3" bidirectional line)
+				(alternate "GPIO23" bidirectional line)
 			)
 			(pin power_in line
 				(at 20.32 35.56 180)

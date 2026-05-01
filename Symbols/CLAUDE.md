@@ -1,6 +1,6 @@
 # 7Sigma Symbol Design Rules
 
-All base symbols live in `Symbols/base_library.kicad_sym`. Generated libraries under `Symbols/*.kicad_sym` are pipeline output — never edit them directly.
+All base symbols live in `Symbols/base_library.kicad_symdir/` — one `.kicad_sym` file per symbol. Generated libraries under `Symbols/*.kicad_sym` are pipeline output — never edit them directly.
 
 ---
 

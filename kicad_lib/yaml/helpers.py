@@ -130,17 +130,27 @@ def iter_all_components(yaml_data: list[dict]) -> Iterator[tuple[str, dict, str]
 # ---------------------------------------------------------------------------
 
 
-def load_base_symbol_names(base_lib_path: str | Path | None = None) -> set[str]:
-    """Load base component entry names from the base symbol library.
+def load_base_symbols(base_lib_dir: str | Path | None = None) -> dict[str, object]:
+    """Load all base symbols from the unpacked library directory.
 
-    Returns an empty set if the base library file does not exist.
+    Returns a dict mapping entryName -> Symbol. Returns empty dict if directory
+    does not exist.
     """
-    if base_lib_path is None:
-        base_lib_path = config.BASE_LIB_PATH
+    if base_lib_dir is None:
+        base_lib_dir = config.BASE_LIB_DIR
 
-    path = Path(base_lib_path)
-    if not path.exists():
-        return set()
+    dirpath = Path(base_lib_dir)
+    if not dirpath.exists():
+        return {}
 
-    base_lib = SymbolLib.from_file(str(path))
-    return {s.entryName for s in base_lib.symbols}
+    symbols: dict[str, object] = {}
+    for sym_file in sorted(dirpath.glob("*.kicad_sym")):
+        lib = SymbolLib.from_file(str(sym_file))
+        for s in lib.symbols:
+            symbols[s.entryName] = s
+    return symbols
+
+
+def load_base_symbol_names(base_lib_dir: str | Path | None = None) -> set[str]:
+    """Return the set of base symbol entry names."""
+    return set(load_base_symbols(base_lib_dir).keys())

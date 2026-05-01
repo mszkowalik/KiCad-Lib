@@ -8,7 +8,7 @@ Template-based generation model:
 
 | Layer | Path | Role |
 |---|---|---|
-| Base symbols | `Symbols/base_library.kicad_sym` | Graphical templates (resistor, capacitor, IC shapes) |
+| Base symbols | `Symbols/base_library.kicad_symdir/` | Graphical templates — one `.kicad_sym` per symbol |
 | YAML definitions | `Sources/*.yaml` | Component variants with properties and footprints |
 | Generated libraries | `Symbols/<Type>.kicad_sym` | Final KiCad symbol libraries (output) |
 | Footprints | `Footprints/7Sigma.pretty/` | KiCad footprint files |
