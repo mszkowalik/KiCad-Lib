@@ -5,3 +5,6 @@ __pycache__/
 *.pyo
 *.egg-info/
 .venv/
+easyeda_tmp.3dshapes/
+easyeda_tmp.pretty/
+easyeda_tmp.kicad_sym

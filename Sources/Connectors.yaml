@@ -1067,7 +1067,7 @@ components:
         value: KEYS2466
       - key: Footprint
         value: 7Sigma:BAT-TH_KEYS2466
-  - name: DF40C-100DS-0.4V(51)
+  - name: DF40C-100DS-0.4V-51
     base_component: DF40C-100DS
     properties:
       - key: Footprint
@@ -1124,3 +1124,22 @@ components:
         value: LCSC
       - key: Supplier Part Number 1
         value: C2856805
+  - name: NANO SIM TL6P H1.35
+    base_component: SIM_NANO_Socket
+    properties:
+      - key: LCSC Part
+        value: "C7529385"
+      - key: Footprint
+        value: 7Sigma:SIM-SMD_NANO-SIM-TL6P-H1.35
+      - key: ki_description
+        value: Card Connector NANO SIM Push-Pull Surface Mount
+      - key: Manufacturer 1
+        value: SHOU HAN
+      - key: Manufacturer Part Number 1
+        value: NANO SIM TL6P H1.35
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/d1975e8cbf968d4dd21d3386864bb491.pdf?productCode=C7529385
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: "C7529385"

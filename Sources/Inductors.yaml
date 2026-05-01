@@ -11,6 +11,7 @@ defaults:
     "SMD,4.1x4.1mm": "7Sigma:L_Changjiang_FTC404030S"
     "SMD,5.8x5.2mm": "7Sigma:L_SMD_L5.8-W5.2"
     "SMD,4.5x4.1mm": "7Sigma:IND-SMD_L4.5-W4.1_SRP4020TA"
+    "0603": "7Sigma:L_0603_1608Metric"
 validation_rules:
   required_properties:
     - "Value"
@@ -337,3 +338,32 @@ components:
         value: C913245
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C913245.pdf
+  - name: BLM18EG101TN1D
+    base_component: FerriteBead
+    properties:
+      - key: Value
+        value: 68nH
+      - key: Tolerance
+        value: 25%
+      - key: Footprint
+        value: 7Sigma:L_0603_1608Metric
+      - key: Rated_Current
+        value: 2A
+      - key: Footprint_Name
+        value: "0603"
+      - key: Impedance
+        value: 100Ω@100MHz
+      - key: ki_description
+        value: "Ferrite Bead {Impedance} {Rated_Current} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: muRata
+      - key: Manufacturer Part Number 1
+        value: BLM18EG101TN1D
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C76893
+      - key: LCSC Part
+        value: C76893
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/f56d59225adc45bfab675df0e0fbb20e.pdf?productCode=C76893

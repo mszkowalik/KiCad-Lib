@@ -1336,6 +1336,33 @@ components:
         value: C17168
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C17168.pdf
+  - name: 0402WGF1183TCE
+    base_component: R
+    properties:
+      - key: Value
+        value: 118K
+      - key: Power
+        value: 63mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF1183TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C25748
+      - key: LCSC Part
+        value: C25748
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C25748.pdf
   - name: 0402WGF2202TCE
     base_component: R
     properties:

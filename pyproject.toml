@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 dependencies = [
     "pyyaml",
     "ruamel.yaml",
-    "kiutils @ git+https://github.com/Wittmann-MEE/kiutils.git",
+    "kiutils @ git+https://github.com/mszkowalik/kiutils.git@kicad10-compat",
     "easyeda2kicad",
 ]
 

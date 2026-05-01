@@ -302,6 +302,64 @@ components:
         value: C106202
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0402JRNPO9BN180_C106202.pdf
+  - name: CC0402JRNPO9BN221
+    base_component: C
+    properties:
+      - key: Value
+        value: 220pF
+      - key: Tolerance
+        value: 5%
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: NP0
+      - key: Footprint
+        value: 7Sigma:C_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: YAGEO
+      - key: Manufacturer Part Number 1
+        value: CC0402JRNPO9BN221
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C107001
+      - key: LCSC Part
+        value: C107001
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/4eca2bb4b507f1633db47e922d632b95.pdf?productCode=C107001
+  - name: CC0402JRNPO9BN330
+    base_component: C
+    properties:
+      - key: Value
+        value: 33pF
+      - key: Tolerance
+        value: 5%
+      - key: Voltage
+        value: 50V
+      - key: Dielectric
+        value: NP0
+      - key: Footprint
+        value: 7Sigma:C_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: YAGEO
+      - key: Manufacturer Part Number 1
+        value: CC0402JRNPO9BN330
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C107005
+      - key: LCSC Part
+        value: C107005
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/4eca2bb4b507f1633db47e922d632b95.pdf?productCode=C107005
   - name: CC0805JRNPO9BN180
     base_component: C
     properties:
@@ -855,6 +913,35 @@ components:
         value: C76899
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C76899.pdf
+  - name: EEHZK1E471P
+    base_component: CE
+    properties:
+      - key: Value
+        value: 470uF
+      - key: Tolerance
+        value: 20%
+      - key: Voltage
+        value: 25V
+      - key: Dielectric
+        value: Al Elec
+      - key: Footprint
+        value: 7Sigma:CP_Elec_10x10
+      - key: Footprint_Name
+        value: D10
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: PANASONIC
+      - key: Manufacturer Part Number 1
+        value: EEHZK1E471P
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C242138
+      - key: LCSC Part
+        value: C242138
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/242ede0bfb543b5edcc6a9353c456beb.pdf?productCode=C242138
   - name: CC0402JRNPO9BN120
     base_component: C
     properties:

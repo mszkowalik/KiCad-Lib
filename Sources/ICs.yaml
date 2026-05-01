@@ -54,6 +54,8 @@ defaults:
     "QFN-60-EP(7x7)": "7Sigma:QFN-60_L7.0-W7.0-P0.40-TL-EP5.3"
     "LGA-5(3.5x2.7)": "7Sigma:MIC-SMD_5P-L3.5-W2.7-TL_MMICT390200012"
     "SMD,10.5x8.3mm": "7Sigma:LGA-97_L10.5-W8.3-P0.60-TL"
+    "VQFN-14-EP(3.5x3.5)": "7Sigma:VQFN-14_L3.5-W3.5-P0.50-BL-EP"
+    "VQFN-20-EP(3.7x4.7)": "7Sigma:VQFN-20_L4.6-W3.6-P0.50-BL-EP"
   ignore_packages:
     - "-"
 validation_rules:
@@ -1500,3 +1502,45 @@ components:
         value: LCSC
       - key: Supplier Part Number 1
         value: C7471302
+  - name: TXS0104ERGYR
+    base_component: TXS0104ERGYR
+    properties:
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: TXS0104ERGYR
+      - key: ki_description
+        value: "4-bit bidirectional voltage-level translator, 1.2V–5.5V, VQFN-14-EP 3.5x3.5mm"
+      - key: Footprint
+        value: "7Sigma:VQFN-14_L3.5-W3.5-P0.50-BL-EP"
+      - key: Footprint_Name
+        value: "VQFN-14-EP 3.5x3.5mm"
+      - key: LCSC Part
+        value: "C154926"
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C154926
+      - key: Datasheet
+        value: "https://www.ti.com/lit/ds/symlink/txs0104e.pdf"
+  - name: TXS0108ERGYR
+    base_component: TXS0108ERGYR
+    properties:
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: TXS0108ERGYR
+      - key: ki_description
+        value: "8-bit bidirectional voltage-level translator, 1.2V–3.6V/1.65V–5.5V, VQFN-20-EP 3.7x4.7mm"
+      - key: Footprint
+        value: "7Sigma:VQFN-20_L4.6-W3.6-P0.50-BL-EP"
+      - key: Footprint_Name
+        value: "VQFN-20-EP 3.7x4.7mm"
+      - key: LCSC Part
+        value: "C90706"
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C90706
+      - key: Datasheet
+        value: "https://www.ti.com/lit/ds/symlink/txs0108e.pdf"

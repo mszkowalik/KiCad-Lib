@@ -84,6 +84,17 @@ If a needed footprint exists only in KiCad's standard library:
 
 Mixing in KiCad stock footprints creates external dependencies and breaks reproducibility. Localize everything, even if the symbol came from KiCad stock.
 
+### kiutils doesn't support KiCad 10 symbol fields (`in_pos_files`)
+
+KiCad 10 adds `(in_pos_files yes)` to each symbol when a `.kicad_sym` file is saved by the KiCad editor. Neither `mvnmgrx/kiutils` (upstream) nor `Wittmann-MEE/kiutils` (our fork, v1.9.6) handles this field — loading raises `ValueError: Unrecognized property key: in_pos_files`, causing every symbol in the library to silently fail to load. The pipeline then thinks all base symbols are missing and re-imports everything from EasyEDA.
+
+**Fix:** patch `.venv/lib/python3.14/site-packages/kiutils/symbol.py`:
+1. Add `in_pos_files: Optional[bool] = None` and `_unknown_fields: list = field(default_factory=list)` to the `Symbol` dataclass
+2. In `from_sexpr`: add `elif item[0] == "in_pos_files": object.in_pos_files = parse_bool(item, "in_pos_files")` after the `on_board` branch, and change the final `else: raise ValueError(...)` to `else: object._unknown_fields.append(item)`
+3. In `to_sexpr`: after the `on_board` block, emit `in_pos_files` and `_unknown_fields`
+
+This patch is lost on `pip install -e .` reinstalls. Re-apply it after any kiutils reinstall.
+
 ### EasyEDA API blocks the `easyeda2kicad` User-Agent
 
 The `https://easyeda.com/api/products/{lcsc_id}/components` endpoint returns HTTP 403 when the `User-Agent` header contains "easyeda2kicad" or "python-requests". Both the auto-importer and the `easyeda2kicad` CLI then fail with `JSONDecodeError: Expecting value: line 1 column 1 (char 0)` because the 403 HTML is not JSON.
