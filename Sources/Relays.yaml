@@ -2,7 +2,8 @@ library_name: Relays
 
 # Validation rules specific to relay components
 defaults:
-  footprint_map: {}
+  footprint_map:
+    "SMD,10x6.5mm": "7Sigma:RELAY-SMD_G6K-2F-X-XX"
   ignore_packages:
     - "Through Hole,28.8x12.5mm"
 validation_rules:
@@ -45,3 +46,24 @@ components:
         value: C469139
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2211282230_Omron-Electronics-G2RL-1-DC24_C469139.pdf
+  - name: G6K-2F-Y-TR DC5
+    base_component: G6K-2F
+    properties:
+      - key: Value
+        value: G6K-2F-Y-TR DC5
+      - key: LCSC Part
+        value: "C47190"
+      - key: ki_description
+        value: '5V Two groups of conversions: 2C(Double-pole double-throw conversion) 1A SMD,10x6.5mm Signal Relays RoHS'
+      - key: Manufacturer 1
+        value: OMRON
+      - key: Manufacturer Part Number 1
+        value: G6K-2F-Y-TR DC5
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/61fb53c6234ed00aa64248b2c58b602c.pdf?productCode=C47190
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C47190
+      - key: Footprint
+        value: 7Sigma:RELAY-SMD_G6K-2F-X-XX
