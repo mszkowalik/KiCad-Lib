@@ -117,6 +117,68 @@ components:
         value: C173406
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411211941_MDD-Microdiode-Semiconductor-BZT52C5V6_C173406.pdf
+  - name: BZT52C5V1
+    base_component: BZT52Cxx
+    properties:
+      - key: Footprint
+        value: 7Sigma:D_SOD-123
+      - key: Value
+        value: 5V1
+      - key: comp_type
+        value: ZENNER
+      - key: ki_description
+        value: Zenner Diode 5.1V 500mW
+      - key: Zenner Voltage
+        value: 5.1V
+      - key: Tolerance
+        value: 5%
+      - key: Max Continuous Current
+        value: 100mA
+      - key: Power
+        value: 500mW
+      - key: Manufacturer 1
+        value: MDD
+      - key: Manufacturer Part Number 1
+        value: BZT52C5V1
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C173407
+      - key: LCSC Part
+        value: C173407
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C173407.pdf
+  - name: BZT52C3V3
+    base_component: BZT52Cxx
+    properties:
+      - key: Footprint
+        value: 7Sigma:D_SOD-123
+      - key: Value
+        value: 3V3
+      - key: comp_type
+        value: ZENNER
+      - key: ki_description
+        value: Zenner Diode 3.3V 500mW
+      - key: Zenner Voltage
+        value: 3.3V
+      - key: Tolerance
+        value: 5%
+      - key: Max Continuous Current
+        value: 100mA
+      - key: Power
+        value: 500mW
+      - key: Manufacturer 1
+        value: MDD
+      - key: Manufacturer Part Number 1
+        value: BZT52C3V3
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C173413
+      - key: LCSC Part
+        value: C173413
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C173413.pdf
   - name: BZX84C8V2LT1G
     base_component: BZX84Cxx
     properties:

@@ -384,6 +384,37 @@ components:
         value: C201632
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C201632.pdf
+  - name: SI2308A
+    base_component: Q_NMOS_GSD
+    properties:
+      - key: comp_type
+        value: NMOS
+      - key: Footprint
+        value: 7Sigma:SOT-23-3
+      - key: Value
+        value: SI2308A
+      - key: ki_description
+        value: N-MOS 60V 3A 1.25W SOT-23-3
+      - key: Power
+        value: 1.25W
+      - key: Drain Source On Resistance
+        value: 82mΩ@10V
+      - key: Continuous Drain Current
+        value: 3A
+      - key: Drain Source Voltage
+        value: 60V
+      - key: Manufacturer 1
+        value: UMW
+      - key: Manufacturer Part Number 1
+        value: SI2308A
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C347491
+      - key: LCSC Part
+        value: C347491
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C347491.pdf
   - name: BC847CLT1G
     base_component: Q_NPN_BEC
     properties:

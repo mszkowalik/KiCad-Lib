@@ -8,6 +8,7 @@ defaults:
     "SMD-4P,3x2.6mm": "7Sigma:SW-SMD_4P-L3.0-W2.6-P1.80-LS3.4-H0.65"
     "SMD-4P,4.2x3.2mm": "7Sigma:SW-SMD_4P-L4.2-W3.2-P2.15-LS4.5-H2.5"
     "Through Hole-4P,6x6mm": "7Sigma:SW-TH_4P-L6.0-W6.0-P4.50-LS6.5-H9.0"
+    "Through Hole,Right Angle-4P,6x6mm": "7Sigma:SW-TH_4P-RA-L6.0-W6.0-H9.0"
   ignore_packages:
     - SMD-4P,6x6mm
 validation_rules:
@@ -178,3 +179,24 @@ components:
         value: C398053
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C398053.pdf
+  - name: TC-6615-9.0-160G
+    base_component: SW_Push_4pin
+    properties:
+      - key: Value
+        value: TC-6615-9.0-160G
+      - key: ki_description
+        value: TH Tactile Switch 6.0x6.0mm Right-Angle Actuation Lever 9.0mm 160gf
+      - key: Footprint
+        value: 7Sigma:SW-TH_4P-RA-L6.0-W6.0-H9.0
+      - key: Manufacturer 1
+        value: HCTL
+      - key: Manufacturer Part Number 1
+        value: TC-6615-9.0-160G
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C6575016
+      - key: LCSC Part
+        value: C6575016
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/00ba1333f734c320d9923544e703b5e6.pdf?productCode=C6575016

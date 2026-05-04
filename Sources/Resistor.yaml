@@ -1390,3 +1390,111 @@ components:
         value: C25768
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C25768.pdf
+  - name: 0805W8F1602T5E
+    base_component: R
+    properties:
+      - key: Value
+        value: 16K
+      - key: Power
+        value: 125mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R_0805_2012Metric
+      - key: Footprint_Name
+        value: "0805"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0805W8F1602T5E
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C17490
+      - key: LCSC Part
+        value: C17490
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/0a975aaa49b7c97f38a963127be4a823.pdf?productCode=C17490
+  - name: 0402WGF1623TCE
+    base_component: R
+    properties:
+      - key: Value
+        value: 162K
+      - key: Power
+        value: 62.5mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: Uni-Royal
+      - key: Manufacturer Part Number 1
+        value: 0402WGF1623TCE
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C54068
+      - key: LCSC Part
+        value: C54068
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/0a975aaa49b7c97f38a963127be4a823.pdf?productCode=C54068
+  - name: 0402WGF3323TCE
+    base_component: R
+    properties:
+      - key: Value
+        value: 332K
+      - key: Power
+        value: 62.5mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: LCSC Part
+        value: C44358
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: UNI-ROYAL
+      - key: Manufacturer Part Number 1
+        value: 0402WGF3323TCE
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/0a975aaa49b7c97f38a963127be4a823.pdf?productCode=C44358
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C44358
+  - name: 0402WGF3743TCE
+    base_component: R
+    properties:
+      - key: Value
+        value: 374K
+      - key: Power
+        value: 62.5mW
+      - key: Tolerance
+        value: 1%
+      - key: Footprint
+        value: 7Sigma:R_0402_1005Metric
+      - key: Footprint_Name
+        value: "0402"
+      - key: LCSC Part
+        value: C25781
+      - key: ki_description
+        value: "{Value} {Power} {Tolerance} {Footprint_Name}"
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/0a975aaa49b7c97f38a963127be4a823.pdf?productCode=C44358
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C44358
+      - key: Manufacturer 1
+        value: UNI-ROYAL
+      - key: Manufacturer Part Number 1
+        value: 0402WGF3743TCE

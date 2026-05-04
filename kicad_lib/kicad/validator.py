@@ -768,6 +768,11 @@ class ComponentValidator:
             comp_name = component.get("name", "unnamed")
             fp_lines = self._parse_fp_graphics(content)
 
+            lib_data = self._get_libraries_map().get(lib_name, {})
+            footprint_style_rules = lib_data.get("validation_rules", {}).get("footprint_style", {})
+            exempt_bases = set(footprint_style_rules.get("exempt_base_components", []))
+            base_exempt = component.get("base_component") in exempt_bases
+
             # Rule: no easyeda2kicad: prefix in header
             if "easyeda2kicad:" in content.split("\n")[0]:
                 self.warnings.append(ValidationResult(
@@ -778,7 +783,7 @@ class ComponentValidator:
 
             # Rule: F.CrtYd must be present (handles both quoted and unquoted layer names)
             has_crtyd = bool(re.search(r'F\.CrtYd', content))
-            if not has_crtyd:
+            if not has_crtyd and not base_exempt:
                 self.warnings.append(ValidationResult(
                     passed=True,
                     message=f"Footprint '{footprint_name}' is missing F.CrtYd (courtyard) outline",
@@ -787,7 +792,7 @@ class ComponentValidator:
 
             # Rule: F.Fab graphic must be present (body outline — any fp_line/fp_rect/fp_poly/fp_circle/fp_arc)
             fab_graphics = [entry for entry in fp_lines if entry["layer"] == "F.Fab"]
-            if not fab_graphics:
+            if not fab_graphics and not base_exempt:
                 self.warnings.append(ValidationResult(
                     passed=True,
                     message=f"Footprint '{footprint_name}' is missing F.Fab body outline",
@@ -810,6 +815,8 @@ class ComponentValidator:
                 ))
 
             # Rule: F.Fab line width should be 0.1 mm
+            if base_exempt:
+                fab_graphics = []
             for entry in fab_graphics:
                 if abs(entry["width"] - 0.1) > 0.001:
                     w = entry["width"]
@@ -821,7 +828,7 @@ class ComponentValidator:
                     break
 
             # Rule: F.CrtYd line width should be 0.05 mm
-            crtyd_fp_lines = [entry for entry in fp_lines if entry["layer"] == "F.CrtYd"]
+            crtyd_fp_lines = [] if base_exempt else [entry for entry in fp_lines if entry["layer"] == "F.CrtYd"]
             for entry in crtyd_fp_lines:
                 if abs(entry["width"] - 0.05) > 0.001:
                     w = entry["width"]

@@ -125,3 +125,7 @@ The component validator (`kicad_lib/kicad/validator.py`) checks:
 - F.SilkS line width is `0.1 mm`
 
 Rules are also documented in the `validation_rules.footprint_style` section of each `Sources/*.yaml`.
+
+### Per-library exemptions
+
+A library YAML may opt specific base components out of the F.Fab and F.CrtYd presence and width rules via `validation_rules.footprint_style.exempt_base_components`. Used for mechanical placeholders (e.g. enclosures) where a body outline and courtyard are not meaningful. Pad-shape, silkscreen-width, and `easyeda2kicad:` prefix rules still apply.
