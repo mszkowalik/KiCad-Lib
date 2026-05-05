@@ -12,9 +12,12 @@
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
+		(in_pos_files yes)
+		(duplicate_pin_numbers_are_jumpers no)
 		(property "Reference" "FB"
 			(at 0 5.08 0)
 			(show_name no)
+			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -24,6 +27,7 @@
 		(property "Value" "FerriteBead"
 			(at 0 -3.81 0)
 			(show_name no)
+			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -33,6 +37,7 @@
 		(property "Footprint" ""
 			(at 0 0 0)
 			(show_name no)
+			(do_not_autoplace no)
 			(hide yes)
 			(effects
 				(font
@@ -43,6 +48,7 @@
 		(property "Datasheet" ""
 			(at 0 0 0)
 			(show_name no)
+			(do_not_autoplace no)
 			(hide yes)
 			(effects
 				(font
@@ -53,6 +59,7 @@
 		(property "Description" "Ferrite bead"
 			(at 0 0 0)
 			(show_name no)
+			(do_not_autoplace no)
 			(hide yes)
 			(effects
 				(font
@@ -63,7 +70,7 @@
 		(symbol "FerriteBead_0_1"
 			(polyline
 				(pts
-					(xy -0.4064 -2.7686) (xy -2.2606 -1.7018) (xy 0.3048 2.7686) (xy 2.159 1.6764) (xy -0.4064 -2.7686)
+					(xy -4.064 0) (xy -1.2954 0)
 				)
 				(stroke
 					(width 0)
@@ -75,7 +82,7 @@
 			)
 			(polyline
 				(pts
-					(xy -4.064 0) (xy -1.2954 0)
+					(xy -0.4064 -2.7686) (xy -2.2606 -1.7018) (xy 0.3048 2.7686) (xy 2.159 1.6764) (xy -0.4064 -2.7686)
 				)
 				(stroke
 					(width 0)

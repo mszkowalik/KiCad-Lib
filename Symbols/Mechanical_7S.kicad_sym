@@ -457,6 +457,113 @@
 		)
 		(embedded_fonts no)
 	)
+	(symbol "Hammond_1551XFLGY"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(hide yes)
+		)
+		(exclude_from_sim yes)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(property "Reference" "ENC"
+			(at 0 5.08 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Hammond_1551XFLGY"
+			(at 0 -5.08 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "7Sigma:HAMMOND_1551XFLGY"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Enclosure, case, housing"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "hammond enclosure case housing mechanical flanged"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_description" "Hammond 1551XFLGY translucent grey flame retardant polycarbonate flanged enclosure, 80 x 40 x 20 mm"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "Hammond_1551XFLGY_0_1"
+			(rectangle
+				(start -5.08 3.81)
+				(end 5.08 -3.81)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(rectangle
+				(start -4.572 3.302)
+				(end 4.572 -3.302)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(text "ENCLOSURE"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.016 1.016)
+						(bold yes)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
 	(symbol "Hammond_1556CGY"
 		(pin_numbers
 			(hide yes)

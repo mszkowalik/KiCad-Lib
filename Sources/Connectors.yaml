@@ -423,6 +423,27 @@ components:
         value: C395696
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C395696.pdf
+  - name: DB2ERM-3.81-6P-GN
+    base_component: Conn_01x06
+    properties:
+      - key: Footprint
+        value: 7Sigma:PhoenixContact_MC_1,5_6-GF-3.81_1x06_P3.81mm_Horizontal_ThreadedFlange
+      - key: ki_description
+        value: Pluggable terminal block; 3.81mm
+      - key: Value
+        value: DB2ERM-3.81-6P-GN
+      - key: Manufacturer 1
+        value: DORABO
+      - key: Manufacturer Part Number 1
+        value: DB2ERM-3.81-6P-GN
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C430331
+      - key: LCSC Part
+        value: C430331
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C430331.pdf
   - name: DB2ERM-3.81-8P-GN
     base_component: Conn_01x08
     properties:
@@ -444,6 +465,27 @@ components:
         value: C395712
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C395712.pdf
+  - name: DB2ERM-3.81-10P-GN
+    base_component: Conn_01x10
+    properties:
+      - key: Footprint
+        value: 7Sigma:PhoenixContact_MC_1,5_10-GF-3.81_1x10_P3.81mm_Horizontal_ThreadedFlange
+      - key: ki_description
+        value: Pluggable terminal block; 3.81mm
+      - key: Value
+        value: DB2ERM-3.81-10P-GN
+      - key: Manufacturer 1
+        value: DORABO
+      - key: Manufacturer Part Number 1
+        value: DB2ERM-3.81-10P-GN
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C430344
+      - key: LCSC Part
+        value: C430344
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C430344.pdf
   - name: DB2EKDM-3.81-8P-GN
     base_component: TERMINAL_BLOCK_PLUG
     properties:
@@ -513,6 +555,52 @@ components:
         value: C5353816
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5353816.pdf
+  - name: DB2EKDM-3.81-6P-GN
+    base_component: TERMINAL_BLOCK_PLUG
+    properties:
+      - key: Footprint
+        value: 7Sigma:TerminalBlock_Plug_Invisible
+      - key: ki_description
+        value: Pluggable terminal block plug; 3.81mm
+      - key: Value
+        value: DB2EKDM-3.81-6P-GN
+      - key: Pin Number
+        value: 6
+      - key: Manufacturer 1
+        value: DORABO
+      - key: Manufacturer Part Number 1
+        value: DDB2EKDM-3.81-6P-GN
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5353819
+      - key: LCSC Part
+        value: C5353819
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C5353819.pdf
+  - name: DB2EKDM-3.81-10P-GN
+    base_component: TERMINAL_BLOCK_PLUG
+    properties:
+      - key: Footprint
+        value: 7Sigma:TerminalBlock_Plug_Invisible
+      - key: ki_description
+        value: Pluggable terminal block plug; 3.81mm
+      - key: Value
+        value: DB2EKDM-3.81-10P-GN
+      - key: Pin Number
+        value: 10
+      - key: Manufacturer 1
+        value: DORABO
+      - key: Manufacturer Part Number 1
+        value: DDB2EKDM-3.81-10P-GN
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C5353823
+      - key: LCSC Part
+        value: C5353823
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C5353823.pdf
   - name: R-RJ45R08P-A004
     base_component: 8P8C
     properties:

@@ -2505,6 +2505,7 @@
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
+		(in_pos_files yes)
 		(property "Reference" "FB"
 			(at 0 5.08 0)
 			(effects
@@ -2641,7 +2642,7 @@
 		(symbol "BLM18EG101TN1D_0_1"
 			(polyline
 				(pts
-					(xy -0.4064 -2.7686) (xy -2.2606 -1.7018) (xy 0.3048 2.7686) (xy 2.159 1.6764) (xy -0.4064 -2.7686)
+					(xy -4.064 0) (xy -1.2954 0)
 				)
 				(stroke
 					(width 0)
@@ -2653,7 +2654,7 @@
 			)
 			(polyline
 				(pts
-					(xy -4.064 0) (xy -1.2954 0)
+					(xy -0.4064 -2.7686) (xy -2.2606 -1.7018) (xy 0.3048 2.7686) (xy 2.159 1.6764) (xy -0.4064 -2.7686)
 				)
 				(stroke
 					(width 0)

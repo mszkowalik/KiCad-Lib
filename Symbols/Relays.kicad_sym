@@ -393,11 +393,12 @@
 		(pin_names
 			(hide yes)
 		)
+		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
+		(in_pos_files yes)
 		(property "Reference" "K"
 			(at 0 6.35 0)
-			(id 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -406,7 +407,6 @@
 		)
 		(property "Value" "G6K-2F-Y-TR DC5"
 			(at 0 -6.35 0)
-			(id 1)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -415,22 +415,29 @@
 		)
 		(property "Footprint" "7Sigma:RELAY-SMD_G6K-2F-X-XX"
 			(at 0 -10.16 0)
-			(id 2)
+			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(hide yes)
 			)
 		)
 		(property "Datasheet" "https://datasheet.lcsc.com/datasheet/pdf/61fb53c6234ed00aa64248b2c58b602c.pdf?productCode=C47190"
 			(at 0 -12.7 0)
-			(id 3)
+			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
 			)
 		)
 		(property "LCSC Part" "C47190"
@@ -494,7 +501,6 @@
 				(stroke
 					(width 0)
 					(type default)
-					(color 0 0 0 0)
 				)
 				(fill
 					(type background)
@@ -506,7 +512,6 @@
 				(stroke
 					(width 0)
 					(type default)
-					(color 0 0 0 0)
 				)
 				(fill
 					(type background)
@@ -519,7 +524,6 @@
 				(stroke
 					(width 0)
 					(type default)
-					(color 0 0 0 0)
 				)
 				(fill
 					(type none)
@@ -532,7 +536,6 @@
 				(stroke
 					(width 0)
 					(type default)
-					(color 0 0 0 0)
 				)
 				(fill
 					(type none)
@@ -545,7 +548,6 @@
 				(stroke
 					(width 0)
 					(type default)
-					(color 0 0 0 0)
 				)
 				(fill
 					(type none)
@@ -558,7 +560,6 @@
 				(stroke
 					(width 0)
 					(type default)
-					(color 0 0 0 0)
 				)
 				(fill
 					(type none)
@@ -571,46 +572,6 @@
 				(stroke
 					(width 0)
 					(type default)
-					(color 0 0 0 0)
-				)
-				(fill
-					(type none)
-				)
-			)
-			(polyline
-				(pts
-					(xy -5.08 -5.08) (xy -5.08 -1.27) (xy -2.54 -1.27)
-				)
-				(stroke
-					(width 0)
-					(type default)
-					(color 0 0 0 0)
-				)
-				(fill
-					(type none)
-				)
-			)
-			(polyline
-				(pts
-					(xy 2.54 -5.08) (xy 2.54 -3.81) (xy -2.54 -1.27)
-				)
-				(stroke
-					(width 0)
-					(type default)
-					(color 0 0 0 0)
-				)
-				(fill
-					(type none)
-				)
-			)
-			(polyline
-				(pts
-					(xy 10.16 -5.08) (xy 10.16 -1.27) (xy 7.62 -1.27)
-				)
-				(stroke
-					(width 0)
-					(type default)
-					(color 0 0 0 0)
 				)
 				(fill
 					(type none)
@@ -623,7 +584,18 @@
 				(stroke
 					(width 0)
 					(type default)
-					(color 0 0 0 0)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -5.08 -5.08) (xy -5.08 -1.27) (xy -2.54 -1.27)
+				)
+				(stroke
+					(width 0)
+					(type default)
 				)
 				(fill
 					(type none)
@@ -636,7 +608,18 @@
 				(stroke
 					(width 0)
 					(type default)
-					(color 0 0 0 0)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 2.54 -5.08) (xy 2.54 -3.81) (xy -2.54 -1.27)
+				)
+				(stroke
+					(width 0)
+					(type default)
 				)
 				(fill
 					(type none)
@@ -649,7 +632,18 @@
 				(stroke
 					(width 0)
 					(type default)
-					(color 0 0 0 0)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 10.16 -5.08) (xy 10.16 -1.27) (xy 7.62 -1.27)
+				)
+				(stroke
+					(width 0)
+					(type default)
 				)
 				(fill
 					(type none)
@@ -663,7 +657,6 @@
 						(font
 							(size 1.27 1.27)
 						)
-						(hide yes)
 					)
 				)
 				(number "1"
@@ -682,7 +675,6 @@
 						(font
 							(size 1.27 1.27)
 						)
-						(hide yes)
 					)
 				)
 				(number "2"
@@ -701,7 +693,6 @@
 						(font
 							(size 1.27 1.27)
 						)
-						(hide yes)
 					)
 				)
 				(number "3"
@@ -720,7 +711,6 @@
 						(font
 							(size 1.27 1.27)
 						)
-						(hide yes)
 					)
 				)
 				(number "4"
@@ -739,7 +729,6 @@
 						(font
 							(size 1.27 1.27)
 						)
-						(hide yes)
 					)
 				)
 				(number "5"
@@ -758,7 +747,6 @@
 						(font
 							(size 1.27 1.27)
 						)
-						(hide yes)
 					)
 				)
 				(number "6"
@@ -777,7 +765,6 @@
 						(font
 							(size 1.27 1.27)
 						)
-						(hide yes)
 					)
 				)
 				(number "7"
@@ -796,7 +783,6 @@
 						(font
 							(size 1.27 1.27)
 						)
-						(hide yes)
 					)
 				)
 				(number "8"
@@ -808,5 +794,6 @@
 				)
 			)
 		)
+		(embedded_fonts no)
 	)
 )

@@ -1483,6 +1483,19 @@ components:
         value: "7Sigma:LGA-94_L15.0-W18.0-P0.6_xE310"
       - key: Footprint_Name
         value: "LGA-94 15x18mm"
+  - name: LE910R1-EU
+    base_component: LE910R1
+    properties:
+      - key: Manufacturer 1
+        value: Telit Cinterion
+      - key: Manufacturer Part Number 1
+        value: LE910R1-EU
+      - key: ki_description
+        value: "LTE Cat 1 module, EMEA bands, LGA, LE910R1 family"
+      - key: Footprint
+        value: "7Sigma:XCVR_LE910R1-EU"
+      - key: Footprint_Name
+        value: "LGA XCVR_LE910R1-EU"
   - name: EG915UEUAC-N05-SNNSA
     base_component: EG915U
     properties:
