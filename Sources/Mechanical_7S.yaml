@@ -22,6 +22,7 @@ validation_rules:
     no_easyeda_prefix: true     # footprint header must not contain "easyeda2kicad:"
     exempt_base_components:     # skip F.Fab/F.CrtYd presence + width rules for these
       - Enclosure               # Hammond/etc. enclosure footprints are mechanical placeholders
+      - LightPipe               # lightpipes have no copper, courtyard intentionally omitted; clearance noted on Cmts.User/Dwgs.User
 components:
   - name: 7Sigma_Logo
     base_component: 7Sigma_Logo_Base
@@ -109,6 +110,66 @@ components:
         value: "hammond enclosure case housing mechanical flanged"
       - key: ki_description
         value: "Hammond 1551TFLGY translucent grey flame retardant polycarbonate flanged enclosure"
+
+  - name: FIX-LEMB2-4.8V0-F
+    base_component: LightPipe
+    properties:
+      - key: Reference
+        value: "LP"
+      - key: Value
+        value: FIX-LEMB2-4.8V0-F
+      - key: Footprint
+        value: 7Sigma:FIX-LEMB2-4.8V0-F
+      - key: Datasheet
+        value: "https://www.tme.eu/Document/ff2728ec20ffc962365f3d27dbd8df78/FIX-LEMB.pdf"
+      - key: ki_keywords
+        value: "lightpipe light pipe optical lens transparent PC mechanical"
+      - key: ki_description
+        value: "Transparent PC light pipe, L=4.8mm, head Ø2.3, post Ø1.9 in Ø1.98 mounting hole, 60° conical lens (FIX&fasten FIX-LEMB2-4.8V0-F)"
+      - key: Manufacturer
+        value: "FIX&fasten"
+      - key: Manufacturer Part Number
+        value: FIX-LEMB2-4.8V0-F
+
+  - name: FIX-LEMB2-7V0-F
+    base_component: LightPipe
+    properties:
+      - key: Reference
+        value: "LP"
+      - key: Value
+        value: FIX-LEMB2-7V0-F
+      - key: Footprint
+        value: 7Sigma:FIX-LEMB2-7V0-F
+      - key: Datasheet
+        value: "https://www.tme.eu/Document/ff2728ec20ffc962365f3d27dbd8df78/FIX-LEMB.pdf"
+      - key: ki_keywords
+        value: "lightpipe light pipe optical lens transparent PC mechanical"
+      - key: ki_description
+        value: "Transparent PC light pipe, L=7mm, head Ø2.3, post Ø1.9 in Ø1.98 mounting hole, 60° conical lens (FIX&fasten FIX-LEMB2-7V0-F)"
+      - key: Manufacturer
+        value: "FIX&fasten"
+      - key: Manufacturer Part Number
+        value: FIX-LEMB2-7V0-F
+
+  - name: FIX-LEMB3-8V0-F
+    base_component: LightPipe
+    properties:
+      - key: Reference
+        value: "LP"
+      - key: Value
+        value: FIX-LEMB3-8V0-F
+      - key: Footprint
+        value: 7Sigma:FIX-LEMB3-8V0-F
+      - key: Datasheet
+        value: "https://www.tme.eu/Document/ff2728ec20ffc962365f3d27dbd8df78/FIX-LEMB.pdf"
+      - key: ki_keywords
+        value: "lightpipe light pipe optical lens transparent PC mechanical"
+      - key: ki_description
+        value: "Transparent PC light pipe, L=8mm, head Ø3.3, post Ø2.9 in Ø3.07 mounting hole, 60° conical lens (FIX&fasten FIX-LEMB3-8V0-F)"
+      - key: Manufacturer
+        value: "FIX&fasten"
+      - key: Manufacturer Part Number
+        value: FIX-LEMB3-8V0-F
 
   - name: Hammond_1556CGY
     base_component: Enclosure
