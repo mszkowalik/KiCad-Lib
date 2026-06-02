@@ -41,6 +41,10 @@ components:
         value:
       - key: Manufacturer Part Number 1
         value:
+      - key: Supplier 1
+        value: ""
+      - key: Supplier Part Number 1
+        value: ""
   - name: MH_2.5mm_4mm_OD
     base_component: MountingHole_Pad
     properties:
@@ -54,7 +58,10 @@ components:
         value: "mounting hole pad"
       - key: ki_description
         value: "Mounting hole with pad, 2.5mm drill, 4mm outer diameter"
-
+      - key: Supplier 1
+        value: ""
+      - key: Supplier Part Number 1
+        value: ""
   - name: MH_M3_3.2mm_6mm_OD
     base_component: MountingHole_Pad
     properties:
@@ -69,6 +76,10 @@ components:
       - key: ki_description
         value: "Mounting hole with pad, M3, 3.2mm drill, 6mm outer diameter"
 
+      - key: Supplier 1
+        value: ""
+      - key: Supplier Part Number 1
+        value: ""
   - name: Hammond_1551RFLGY
     base_component: Enclosure
     properties:
@@ -83,6 +94,10 @@ components:
       - key: ki_description
         value: "Hammond 1551RFLGY translucent grey flame retardant polycarbonate enclosure"
 
+      - key: Supplier 1
+        value: ""
+      - key: Supplier Part Number 1
+        value: ""
   - name: Hammond_1551XFLGY
     base_component: Enclosure
     properties:
@@ -105,6 +120,10 @@ components:
       - key: Price Source
         value: Manual
 
+      - key: Supplier 1
+        value: ""
+      - key: Supplier Part Number 1
+        value: ""
   - name: Hammond_1551TFLGY
     base_component: Enclosure
     properties:
@@ -119,6 +138,10 @@ components:
       - key: ki_description
         value: "Hammond 1551TFLGY translucent grey flame retardant polycarbonate flanged enclosure"
 
+      - key: Supplier 1
+        value: ""
+      - key: Supplier Part Number 1
+        value: ""
   - name: FIX-LEMB2-4.8V0-F
     base_component: LightPipe
     properties:
@@ -145,6 +168,10 @@ components:
       - key: Price Source
         value: Manual
 
+      - key: Supplier 1
+        value: ""
+      - key: Supplier Part Number 1
+        value: ""
   - name: FIX-LEMB2-7V0-F
     base_component: LightPipe
     properties:
@@ -165,6 +192,10 @@ components:
       - key: Manufacturer Part Number 1
         value: FIX-LEMB2-7V0-F
 
+      - key: Supplier 1
+        value: ""
+      - key: Supplier Part Number 1
+        value: ""
   - name: FIX-LEMB3-8V0-F
     base_component: LightPipe
     properties:
@@ -185,6 +216,10 @@ components:
       - key: Manufacturer Part Number 1
         value: FIX-LEMB3-8V0-F
 
+      - key: Supplier 1
+        value: ""
+      - key: Supplier Part Number 1
+        value: ""
   - name: Hammond_1556CGY
     base_component: Enclosure
     properties:
@@ -198,3 +233,7 @@ components:
         value: "hammond enclosure case housing mechanical"
       - key: ki_description
         value: "Hammond 1556CGY grey ABS general purpose enclosure, 120 x 80 x 45 mm"
+      - key: Supplier 1
+        value: ""
+      - key: Supplier Part Number 1
+        value: ""

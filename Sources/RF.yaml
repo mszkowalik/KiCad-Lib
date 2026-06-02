@@ -44,6 +44,10 @@ components:
         value:
       - key: Manufacturer Part Number 1
         value:
+      - key: Supplier 1
+        value: ''
+      - key: Supplier Part Number 1
+        value: ''
   - name: KH5220-A36
     base_component: Antenna
     properties:

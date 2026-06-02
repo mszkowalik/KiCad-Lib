@@ -22,7 +22,7 @@ from pathlib import Path
 
 from kicad_lib import config
 from kicad_lib.colors import get_logger
-from kicad_lib.yaml.rewriter import load_roundtrip, save_roundtrip
+from kicad_lib.yaml.rewriter import dq, load_roundtrip, save_roundtrip
 
 log = get_logger(__name__)
 
@@ -44,9 +44,9 @@ def _set_prop(comp: dict, key: str, value: str) -> None:
     props = comp.setdefault("properties", [])
     for p in props:
         if p.get("key") == key:
-            p["value"] = value
+            p["value"] = dq(value)
             return
-    props.append({"key": key, "value": value})
+    props.append({"key": key, "value": dq(value)})
 
 
 def _is_stale(updated: str | None, today: _dt.date) -> bool:

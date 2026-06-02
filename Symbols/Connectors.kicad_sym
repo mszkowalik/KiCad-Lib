@@ -21127,7 +21127,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(symbol "NANO SIM TL6P H1.35"
+	(symbol "NANO_SIM_TL6P_H1.35"
 		(pin_names
 			(offset 1.016)
 		)
@@ -21296,7 +21296,7 @@
 				(hide yes)
 			)
 		)
-		(symbol "NANO SIM TL6P H1.35_1_1"
+		(symbol "NANO_SIM_TL6P_H1.35_1_1"
 			(rectangle
 				(start -1.27 10.16)
 				(end 10.16 -12.7)

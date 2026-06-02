@@ -92,6 +92,24 @@
 				(hide yes)
 			)
 		)
+		(property "Supplier 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
 		(symbol "7Sigma_Logo_0_1"
 			(rectangle
 				(start -7.62 7.62)
@@ -190,6 +208,24 @@
 			)
 		)
 		(property "ki_description" "Mounting hole with pad, 2.5mm drill, 4mm outer diameter"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" ""
 			(at 0 0 0)
 			(effects
 				(font
@@ -315,6 +351,24 @@
 				(hide yes)
 			)
 		)
+		(property "Supplier 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
 		(symbol "MH_M3_3.2mm_6mm_OD_0_1"
 			(circle
 				(center 0 1.27)
@@ -414,6 +468,24 @@
 			)
 		)
 		(property "ki_description" "Hammond 1551RFLGY translucent grey flame retardant polycarbonate enclosure"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" ""
 			(at 0 0 0)
 			(effects
 				(font
@@ -565,6 +637,24 @@
 				(hide yes)
 			)
 		)
+		(property "Supplier 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
 		(symbol "Hammond_1551XFLGY_0_1"
 			(rectangle
 				(start -5.08 3.81)
@@ -664,6 +754,24 @@
 			)
 		)
 		(property "ki_description" "Hammond 1551TFLGY translucent grey flame retardant polycarbonate flanged enclosure"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" ""
 			(at 0 0 0)
 			(effects
 				(font
@@ -824,6 +932,24 @@
 				(hide yes)
 			)
 		)
+		(property "Supplier 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
 		(symbol "FIX-LEMB2-4.8V0-F_0_1"
 			(rectangle
 				(start -5.08 3.81)
@@ -952,6 +1078,24 @@
 			)
 		)
 		(property "Manufacturer Part Number 1" "FIX-LEMB2-7V0-F"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" ""
 			(at 0 0 0)
 			(effects
 				(font
@@ -1096,6 +1240,24 @@
 				(hide yes)
 			)
 		)
+		(property "Supplier 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
 		(symbol "FIX-LEMB3-8V0-F_0_1"
 			(rectangle
 				(start -5.08 3.81)
@@ -1206,6 +1368,24 @@
 			)
 		)
 		(property "ki_description" "Hammond 1556CGY grey ABS general purpose enclosure, 120 x 80 x 45 mm"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" ""
 			(at 0 0 0)
 			(effects
 				(font

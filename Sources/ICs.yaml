@@ -1573,9 +1573,13 @@ components:
       - key: Value
         value: TPS7A2050PDBVR
       - key: Supplier 1
-        value: Mouser
+        value: LCSC
       - key: Supplier Part Number 1
-        value: "595-TPS7A2050PDBVR"
+        value: "C2864504"
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value: 595-TPS7A2050PDBVR
       - key: LCSC Part
         value: C2864504
       - key: Datasheet
@@ -1606,9 +1610,13 @@ components:
       - key: Value
         value: TPS7A2033PDBVR
       - key: Supplier 1
-        value: Mouser
+        value: LCSC
       - key: Supplier Part Number 1
-        value: "595-TPS7A2033PDBVR"
+        value: "C2862740"
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value: 595-TPS7A2033PDBVR
       - key: LCSC Part
         value: C2862740
       - key: Datasheet
@@ -1639,9 +1647,13 @@ components:
       - key: Value
         value: "ADA4945-1ACPZ-R7"
       - key: Supplier 1
-        value: Mouser
+        value: LCSC
       - key: Supplier Part Number 1
-        value: "584-ADA4945-1ACPZ-R7"
+        value: "C560261"
+      - key: Supplier 2
+        value: Mouser
+      - key: Supplier Part Number 2
+        value: 584-ADA4945-1ACPZ-R7
       - key: LCSC Part
         value: C560261
       - key: Datasheet
@@ -2259,6 +2271,10 @@ components:
         value: "7Sigma:LGA-94_L15.0-W18.0-P0.6_xE310"
       - key: Footprint_Name
         value: "LGA-94 15x18mm"
+      - key: Supplier 1
+        value: ""
+      - key: Supplier Part Number 1
+        value: ""
   - name: LE310X1-LA
     base_component: LE310X1
     properties:
@@ -2272,6 +2288,10 @@ components:
         value: "7Sigma:LGA-94_L15.0-W18.0-P0.6_xE310"
       - key: Footprint_Name
         value: "LGA-94 15x18mm"
+      - key: Supplier 1
+        value: ""
+      - key: Supplier Part Number 1
+        value: ""
   - name: LE910R1-EU
     base_component: LE910R1
     properties:
@@ -2289,6 +2309,10 @@ components:
         value: "7.0000"
       - key: Price Source
         value: Manual
+      - key: Supplier 1
+        value: ""
+      - key: Supplier Part Number 1
+        value: ""
   - name: EG915UEUAC-N05-SNNSA
     base_component: EG915U
     properties:

@@ -104,6 +104,24 @@
 				(hide yes)
 			)
 		)
+		(property "Supplier 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
 		(symbol "MIFA_Antenna_2.4GHz_0_1"
 			(polyline
 				(pts

@@ -44,6 +44,8 @@ Template-based generation model:
 - **Base components**: Must exist in `base_library.kicad_sym` before YAML can reference them
 - **File naming**: YAML `library_name` field must match the filename (e.g., `Resistor.yaml` → `library_name: Resistor`)
 - **Property templating**: Use `{PropertyKey}` in YAML values — evaluated as f-strings at generation time
+- **YAML quoting**: The user's formatter rewrites single quotes (`''`) to double quotes (`""`). The pipeline matches this — all written YAML values pass through `dq()` in `kicad_lib/yaml/rewriter.py`, which emits double quotes for values that need quoting (prices, dates, quantities) and leaves plain strings (e.g. `LCSC`) unquoted. Route any new value-write site through `dq()` too. Don't flag quote-style diffs the formatter introduces.
+- **No blank lines in YAML**: Don't add empty lines between or within component entries in `Sources/*.yaml`.
 - **Linting**: Ruff with line-length 120, target Python 3.10
 
 ## Environment Variables
@@ -70,6 +72,10 @@ python main.py
 ```
 
 The pipeline runs in order: auto-import → fill metadata → refresh prices → validate → generate symbols → update 3D models.
+
+### Supplier field normalization (`suppliers.py`)
+
+Every component gets `Supplier 1` / `Supplier Part Number 1`. When a component has an `LCSC Part`, `Supplier 1` is made authoritative as `LCSC` (with the `Cxxxx` as the part number). If `Supplier 1` already names a **different** supplier (e.g. `Mouser`), that supplier is **not discarded** — it is relocated to the next free `Supplier N` / `Supplier Part Number N` slot (so Mouser becomes `Supplier 2`, etc.). Components without an `LCSC Part` keep whatever `Supplier 1` they have, and missing keys are added empty. Key presence (not value) decides whether a key is added, so empty values never produce duplicate keys.
 
 ### LCSC price properties
 

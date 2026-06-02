@@ -35331,7 +35331,7 @@
 				(hide yes)
 			)
 		)
-		(property "Supplier 1" "Mouser"
+		(property "Supplier 1" "LCSC"
 			(at 0 0 0)
 			(effects
 				(font
@@ -35340,7 +35340,25 @@
 				(hide yes)
 			)
 		)
-		(property "Supplier Part Number 1" "595-TPS7A2050PDBVR"
+		(property "Supplier Part Number 1" "C2864504"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 2" "Mouser"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 2" "595-TPS7A2050PDBVR"
 			(at 0 0 0)
 			(effects
 				(font
@@ -35612,7 +35630,7 @@
 				(hide yes)
 			)
 		)
-		(property "Supplier 1" "Mouser"
+		(property "Supplier 1" "LCSC"
 			(at 0 0 0)
 			(effects
 				(font
@@ -35621,7 +35639,25 @@
 				(hide yes)
 			)
 		)
-		(property "Supplier Part Number 1" "595-TPS7A2033PDBVR"
+		(property "Supplier Part Number 1" "C2862740"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 2" "Mouser"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 2" "595-TPS7A2033PDBVR"
 			(at 0 0 0)
 			(effects
 				(font
@@ -35906,7 +35942,7 @@
 				(hide yes)
 			)
 		)
-		(property "Supplier 1" "Mouser"
+		(property "Supplier 1" "LCSC"
 			(at 0 0 0)
 			(effects
 				(font
@@ -35915,7 +35951,25 @@
 				(hide yes)
 			)
 		)
-		(property "Supplier Part Number 1" "584-ADA4945-1ACPZ-R7"
+		(property "Supplier Part Number 1" "C560261"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 2" "Mouser"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 2" "584-ADA4945-1ACPZ-R7"
 			(at 0 0 0)
 			(effects
 				(font
@@ -49333,6 +49387,24 @@
 				(hide yes)
 			)
 		)
+		(property "Supplier 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
 		(symbol "LE310X1-EU_0_1"
 			(rectangle
 				(start -15.24 78.74)
@@ -51138,6 +51210,24 @@
 			)
 		)
 		(property "Footprint_Name" "LGA-94 15x18mm"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" ""
 			(at 0 0 0)
 			(effects
 				(font
@@ -52969,6 +53059,24 @@
 			)
 		)
 		(property "Price Source" "Manual"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" ""
 			(at 0 0 0)
 			(effects
 				(font

@@ -5,13 +5,18 @@ Uses ruamel.yaml to modify YAML component files while preserving comments,
 formatting, quoting style, and key ordering.
 """
 
+from io import StringIO
 from pathlib import Path
 
 from ruamel.yaml import YAML as RuamelYAML
+from ruamel.yaml.scalarstring import DoubleQuotedScalarString, ScalarString
 
 from kicad_lib.colors import get_logger
 
 log = get_logger(__name__)
+
+# Probe loader used to decide whether a plain string would need quoting.
+_QUOTE_PROBE = RuamelYAML(typ="safe")
 
 
 def _create_yaml_handler() -> RuamelYAML:
@@ -21,6 +26,25 @@ def _create_yaml_handler() -> RuamelYAML:
     ryaml.indent(mapping=2, sequence=4, offset=2)
     ryaml.width = 4096  # prevent line wrapping of long strings
     return ryaml
+
+
+def dq(value):
+    """Tag a written string so ruamel emits it double-quoted *iff* it needs quoting.
+
+    ruamel.yaml defaults to single quotes (``''``) whenever a scalar must be
+    quoted (numeric-looking prices, dates, quantities, etc.). The user's
+    formatter rewrites ``''`` → ``""``, so we emit double quotes up front to
+    avoid churn. Strings that don't require quoting (e.g. ``LCSC``) are returned
+    unchanged so they stay unquoted, matching the formatter's behaviour.
+    """
+    if not isinstance(value, str) or isinstance(value, ScalarString):
+        return value
+    try:
+        reparsed = _QUOTE_PROBE.load(StringIO(value))
+    except Exception:
+        reparsed = None
+    needs_quote = not isinstance(reparsed, str) or reparsed != value or value.strip() != value
+    return DoubleQuotedScalarString(value) if needs_quote else value
 
 
 def load_roundtrip(filepath: str | Path) -> tuple[RuamelYAML, dict]:
@@ -65,7 +89,7 @@ def rewrite_component(filepath: str | Path, component_name: str, updates: dict) 
 
         # Update base_component if provided and currently empty
         if "base_component" in updates and not comp.get("base_component"):
-            comp["base_component"] = updates["base_component"]
+            comp["base_component"] = dq(updates["base_component"])
             modified = True
 
         # Update / add properties
@@ -76,11 +100,11 @@ def rewrite_component(filepath: str | Path, component_name: str, updates: dict) 
                 for p in comp["properties"]:
                     if p["key"] == key:
                         if p.get("value") is None or (isinstance(p.get("value"), str) and not p["value"].strip()):
-                            p["value"] = value
+                            p["value"] = dq(value)
                             modified = True
                         break
             else:
-                comp.setdefault("properties", []).append({"key": key, "value": value})
+                comp.setdefault("properties", []).append({"key": key, "value": dq(value)})
                 modified = True
 
         # Enforce canonical key order

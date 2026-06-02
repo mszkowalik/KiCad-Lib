@@ -1704,7 +1704,7 @@ components:
         value: LCSC
       - key: Price Updated
         value: '2026-05-14'
-  - name: NANO SIM TL6P H1.35
+  - name: NANO_SIM_TL6P_H1.35
     base_component: SIM_NANO_Socket
     properties:
       - key: LCSC Part

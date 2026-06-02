@@ -60,6 +60,10 @@ components:
         value: 7Sigma:TestPoint_Pad_1.5x1.5mm
       - key: ki_description
         value: SMD rectangular pad as test Point, square 1.5mm side length
+      - key: Supplier 1
+        value: ''
+      - key: Supplier Part Number 1
+        value: ''
   - name: TestPoint_Pad_D1.5mm
     base_component: TestPoint
     properties:
@@ -67,3 +71,7 @@ components:
         value: 7Sigma:TestPoint_Pad_D1.5mm
       - key: ki_description
         value: SMD pad as test Point, diameter 1.5mm
+      - key: Supplier 1
+        value: ''
+      - key: Supplier Part Number 1
+        value: ''

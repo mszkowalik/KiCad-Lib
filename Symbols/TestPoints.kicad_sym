@@ -302,6 +302,24 @@
 				(hide yes)
 			)
 		)
+		(property "Supplier 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
 		(symbol "TestPoint_Pad_1.5x1.5mm_0_1"
 			(circle
 				(center 0 3.302)
@@ -412,6 +430,24 @@
 			)
 		)
 		(property "ki_description" "SMD pad as test Point, diameter 1.5mm"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" ""
 			(at 0 0 0)
 			(effects
 				(font
