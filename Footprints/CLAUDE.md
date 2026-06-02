@@ -106,7 +106,87 @@ When importing from EasyEDA / LCSC (`easyeda2kicad`), verify all of the followin
 
 ---
 
-## 9. Native vs Imported Footprints
+## 9. Footprint Naming
+
+The filename and internal `(footprint "...")` name must match exactly (without `.kicad_mod`). Two conventions live in this library:
+
+- **kicad-footprint-generator style**: `FAMILY-PINS_L<W>-W<W>-P<pitch>-...-EP`
+  (e.g. `VQFN-14_L3.5-W3.5-P0.50-BL-EP`)
+- **easyeda / KiCad-stock style**: `FAMILY-PINS-1EP_<L>x<W>mm_P<pitch>mm_EP<a>x<b>mm`
+  (e.g. `QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm`)
+
+Either is acceptable — match the convention already used for the family. Don't rename existing footprints just to harmonise; only adjust when the filename no longer reflects the geometry (e.g. after adding thermal vias).
+
+### Thermal-via suffix
+
+If the footprint includes thermal stitching vias under the exposed pad, the name **must end with `_ThermalVias`** (or `-ThermalVias` if hyphens are already in use as separators in the rest of the name). Examples:
+
+- `QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm_ThermalVias`
+- `VQFN-40-1EP_5x5mm_P0.4mm_EP3.3x3.3mm_ThermalVias`
+- `VQFN-14_L3.5-W3.5-P0.50-BL-EP-ThermalVias`
+
+This signals to the schematic author that the footprint will solder-mask differently and consume more board real estate.
+
+---
+
+## 10. Thermal Vias Under Exposed Pads
+
+KiCad has no separate "via" primitive inside footprints — thermal vias are modelled as **thru-hole pads sharing the EP's pad number**. Net inheritance is by pad number (enforced by `(duplicate_pad_numbers_are_jumpers no)`), so the via is automatically on the same net as the exposed-pad land.
+
+### Required pattern
+
+For every thermal via:
+
+```
+(pad "<EP_NUMBER>" thru_hole circle
+    (at <x> <y>)
+    (size 0.6 0.6)
+    (drill 0.3)
+    (property pad_prop_heatsink)
+    (layers "*.Cu")
+    (remove_unused_layers no)
+)
+```
+
+| Attribute | Value | Why |
+|---|---|---|
+| Pad number | Same as the EP land pad | Net inheritance |
+| Annular ring | `size 0.6`, `drill 0.3` (0.15 mm annular ring) | Standard thermal-via stitching geometry |
+| `property pad_prop_heatsink` | Required | Flags pad as heat-spreader for DRC and BOM tools |
+| `layers "*.Cu"` | All copper layers | Heat dissipation path top-to-bottom |
+| `remove_unused_layers no` | Required | Forces annular ring on inner/outer layers even if not used as a signal pad |
+
+### Required companion changes when adding thermal vias
+
+1. **Strip `F.Paste` from the EP land pad** — solder paste over an open via barrel wicks down the hole and starves the joint. The EP pad must use `(layers "F.Cu" "F.Mask")` only.
+2. **Add windowed paste apertures** — define unnamed `(pad "" smd roundrect ... (layers "F.Paste"))` blocks that cover ~50–70 % of the EP area, positioned to avoid via barrels. Target 4–9 apertures depending on EP size.
+3. **Add back-side land** — duplicate the EP pad on `B.Cu` with `(layers "B.Cu")` and `(zone_connect 2)`, so the via stitches into a back-side copper pour.
+4. **Set `(zone_connect 2)` on the EP F.Cu pad** — solid connection to surrounding fill (default would be thermal relief, which defeats the point).
+5. **Rename the footprint** with the `_ThermalVias` suffix per §9.
+6. **Update all YAML references** in `Sources/*.yaml`.
+
+### Via grid sizing
+
+Aim for ~1 mm via pitch inside the EP, with at least 0.2 mm clearance from the EP edge to the via copper. A 2 × 2 grid suits EPs up to ~2.5 mm; a 4 × 4 grid suits EPs ~3 mm and larger.
+
+---
+
+## 11. Pad Placement Grid
+
+All pad centers and sizes should be on the **0.1 mm grid**. This makes routing predictable and keeps the BOM/CAM output clean.
+
+Two exceptions:
+
+- **Pitch axis of a fine-pitch package**, where lead positions don't divide evenly by 0.1 mm. Example: a 0.5 mm-pitch package with only 2 leads per side has leads centered at y = ±0.75 mm — snapping to ±0.7 or ±0.8 would misalign the pad with the actual lead. Leave the pitch axis on whatever grid the datasheet dictates.
+- **When snapping would move a pad more than 0.1 mm** from its datasheet-correct position. Never sacrifice land-pattern correctness for grid tidiness.
+
+When pad centers are snapped to grid, also round pad sizes to `0.1 × n`. If the across-edge dimension (perpendicular to the package edge) is shifted, prefer moving the pad **outward** (away from body) so the toe of the lead stays fully covered.
+
+For thermal vias (§10), the 1 mm grid spacing falls naturally on 0.1 mm — no exception needed.
+
+---
+
+## 12. Native vs Imported Footprints
 
 All footprints are stored in `7Sigma.pretty/` regardless of origin. The style rules apply uniformly. After importing from any source, apply all QA fixes above before committing.
 

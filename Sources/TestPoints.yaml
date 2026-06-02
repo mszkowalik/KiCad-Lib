@@ -41,6 +41,18 @@ components:
         value: C5199798
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5199798.pdf
+      - key: Price @1 USD
+        value: '0.0907'
+      - key: Price @100 USD
+        value: '0.0736'
+      - key: Price @Bulk USD
+        value: '0.0583'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: TestPoint_Pad_1.5x1.5mm
     base_component: TestPoint
     properties:

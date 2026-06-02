@@ -74,7 +74,7 @@
 				(hide yes)
 			)
 		)
-		(property "Manufacturer" ""
+		(property "Manufacturer 1" ""
 			(at 0 0 0)
 			(effects
 				(font
@@ -83,7 +83,7 @@
 				(hide yes)
 			)
 		)
-		(property "Manufacturer Part Number" ""
+		(property "Manufacturer Part Number 1" ""
 			(at 0 0 0)
 			(effects
 				(font
@@ -520,7 +520,43 @@
 				)
 			)
 		)
+		(property "Manufacturer 1" "FIX&Hammond Mfg"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "1551XFLGY"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
 		(property "ki_description" "Hammond 1551XFLGY translucent grey flame retardant polycarbonate flanged enclosure, 80 x 40 x 20 mm"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Price @Bulk USD" "2.3700"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Price Source" "Manual"
 			(at 0 0 0)
 			(effects
 				(font
@@ -743,7 +779,7 @@
 				(hide yes)
 			)
 		)
-		(property "Manufacturer" "FIX&fasten"
+		(property "Manufacturer 1" "FIX&fasten"
 			(at 0 0 0)
 			(effects
 				(font
@@ -752,7 +788,34 @@
 				(hide yes)
 			)
 		)
-		(property "Manufacturer Part Number" "FIX-LEMB2-4.8V0-F"
+		(property "Manufacturer Part Number 1" "FIX-LEMB2-4.8V0-F"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Price @Bulk USD" "0.0720"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Price Bulk Qty" "1000"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Price Source" "Manual"
 			(at 0 0 0)
 			(effects
 				(font
@@ -879,7 +942,7 @@
 				(hide yes)
 			)
 		)
-		(property "Manufacturer" "FIX&fasten"
+		(property "Manufacturer 1" "FIX&fasten"
 			(at 0 0 0)
 			(effects
 				(font
@@ -888,7 +951,7 @@
 				(hide yes)
 			)
 		)
-		(property "Manufacturer Part Number" "FIX-LEMB2-7V0-F"
+		(property "Manufacturer Part Number 1" "FIX-LEMB2-7V0-F"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1015,7 +1078,7 @@
 				(hide yes)
 			)
 		)
-		(property "Manufacturer" "FIX&fasten"
+		(property "Manufacturer 1" "FIX&fasten"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1024,7 +1087,7 @@
 				(hide yes)
 			)
 		)
-		(property "Manufacturer Part Number" "FIX-LEMB3-8V0-F"
+		(property "Manufacturer Part Number 1" "FIX-LEMB3-8V0-F"
 			(at 0 0 0)
 			(effects
 				(font

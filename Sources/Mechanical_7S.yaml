@@ -12,17 +12,17 @@ validation_rules:
   manufacturer_properties: [] # Disable manufacturer validation for mechanical components
 
   footprint_style:
-    pad_shape: roundrect         # SMD pads must use roundrect, not rect or oval
-    pad_roundrect_rratio: 0.25  # rounded corner ratio for roundrect pads
-    fab_line_width_mm: 0.1      # F.Fab body outline line width
-    silk_line_width_mm: 0.1      # F.SilkS silkscreen line width
-    crtyd_line_width_mm: 0.05  # F.CrtYd courtyard line width
-    require_fab_outline: true   # must have at least one fp_line on F.Fab
-    require_crtyd: true         # must have a closed F.CrtYd rectangle
-    no_easyeda_prefix: true     # footprint header must not contain "easyeda2kicad:"
-    exempt_base_components:     # skip F.Fab/F.CrtYd presence + width rules for these
-      - Enclosure               # Hammond/etc. enclosure footprints are mechanical placeholders
-      - LightPipe               # lightpipes have no copper, courtyard intentionally omitted; clearance noted on Cmts.User/Dwgs.User
+    pad_shape: roundrect # SMD pads must use roundrect, not rect or oval
+    pad_roundrect_rratio: 0.25 # rounded corner ratio for roundrect pads
+    fab_line_width_mm: 0.1 # F.Fab body outline line width
+    silk_line_width_mm: 0.1 # F.SilkS silkscreen line width
+    crtyd_line_width_mm: 0.05 # F.CrtYd courtyard line width
+    require_fab_outline: true # must have at least one fp_line on F.Fab
+    require_crtyd: true # must have a closed F.CrtYd rectangle
+    no_easyeda_prefix: true # footprint header must not contain "easyeda2kicad:"
+    exempt_base_components: # skip F.Fab/F.CrtYd presence + width rules for these
+      - Enclosure # Hammond/etc. enclosure footprints are mechanical placeholders
+      - LightPipe # lightpipes have no copper, courtyard intentionally omitted; clearance noted on Cmts.User/Dwgs.User
 components:
   - name: 7Sigma_Logo
     base_component: 7Sigma_Logo_Base
@@ -37,9 +37,9 @@ components:
         value: "logo graphic symbol"
       - key: ki_description
         value: "7Sigma company logo graphic symbol"
-      - key: Manufacturer
+      - key: Manufacturer 1
         value:
-      - key: Manufacturer Part Number
+      - key: Manufacturer Part Number 1
         value:
   - name: MH_2.5mm_4mm_OD
     base_component: MountingHole_Pad
@@ -92,10 +92,18 @@ components:
         value: Hammond_1551XFLGY
       - key: Footprint
         value: 7Sigma:HAMMOND_1551XFLGY
+      - key: Manufacturer 1
+        value: "FIX&Hammond Mfg"
+      - key: Manufacturer Part Number 1
+        value: 1551XFLGY
       - key: ki_keywords
         value: "hammond enclosure case housing mechanical flanged"
       - key: ki_description
         value: "Hammond 1551XFLGY translucent grey flame retardant polycarbonate flanged enclosure, 80 x 40 x 20 mm"
+      - key: Price @Bulk USD
+        value: "2.3700"
+      - key: Price Source
+        value: Manual
 
   - name: Hammond_1551TFLGY
     base_component: Enclosure
@@ -126,10 +134,16 @@ components:
         value: "lightpipe light pipe optical lens transparent PC mechanical"
       - key: ki_description
         value: "Transparent PC light pipe, L=4.8mm, head Ø2.3, post Ø1.9 in Ø1.98 mounting hole, 60° conical lens (FIX&fasten FIX-LEMB2-4.8V0-F)"
-      - key: Manufacturer
+      - key: Manufacturer 1
         value: "FIX&fasten"
-      - key: Manufacturer Part Number
+      - key: Manufacturer Part Number 1
         value: FIX-LEMB2-4.8V0-F
+      - key: Price @Bulk USD
+        value: "0.0720"
+      - key: Price Bulk Qty
+        value: "1000"
+      - key: Price Source
+        value: Manual
 
   - name: FIX-LEMB2-7V0-F
     base_component: LightPipe
@@ -146,9 +160,9 @@ components:
         value: "lightpipe light pipe optical lens transparent PC mechanical"
       - key: ki_description
         value: "Transparent PC light pipe, L=7mm, head Ø2.3, post Ø1.9 in Ø1.98 mounting hole, 60° conical lens (FIX&fasten FIX-LEMB2-7V0-F)"
-      - key: Manufacturer
+      - key: Manufacturer 1
         value: "FIX&fasten"
-      - key: Manufacturer Part Number
+      - key: Manufacturer Part Number 1
         value: FIX-LEMB2-7V0-F
 
   - name: FIX-LEMB3-8V0-F
@@ -166,9 +180,9 @@ components:
         value: "lightpipe light pipe optical lens transparent PC mechanical"
       - key: ki_description
         value: "Transparent PC light pipe, L=8mm, head Ø3.3, post Ø2.9 in Ø3.07 mounting hole, 60° conical lens (FIX&fasten FIX-LEMB3-8V0-F)"
-      - key: Manufacturer
+      - key: Manufacturer 1
         value: "FIX&fasten"
-      - key: Manufacturer Part Number
+      - key: Manufacturer Part Number 1
         value: FIX-LEMB3-8V0-F
 
   - name: Hammond_1556CGY

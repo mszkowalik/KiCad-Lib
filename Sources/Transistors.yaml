@@ -78,6 +78,18 @@ components:
         value: C20917
       - key: Datasheet
         value: https://lcsc.com/product-detail/MOSFET_AOS_AO3400A_AO3400A_C20917.html
+      - key: Price @1 USD
+        value: '0.0828'
+      - key: Price @100 USD
+        value: '0.0671'
+      - key: Price @Bulk USD
+        value: '0.0523'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: AO3401A
     base_component: Q_PMOS_GSD
     properties:
@@ -109,6 +121,18 @@ components:
         value: C15127
       - key: Datasheet
         value: https://lcsc.com/product-detail/MOSFET_AOS_AO3401A_AO3401A_C15127.html
+      - key: Price @1 USD
+        value: '0.0589'
+      - key: Price @100 USD
+        value: '0.0474'
+      - key: Price @Bulk USD
+        value: '0.0415'
+      - key: Price Bulk Qty
+        value: '300'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: MMBT3904,215
     base_component: Q_NPN_BEC
     properties:
@@ -138,6 +162,18 @@ components:
         value: C426835
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2410010131_Nexperia-MMBT3904-215_C426835.pdf
+      - key: Price @1 USD
+        value: '0.0389'
+      - key: Price @100 USD
+        value: '0.0389'
+      - key: Price @Bulk USD
+        value: '0.0255'
+      - key: Price Bulk Qty
+        value: '600'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: DMN6075S-7
     base_component: DMN6075S
     properties:
@@ -169,6 +205,18 @@ components:
         value: C155242
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_1809081631_Diodes-Incorporated-DMN6075S-7_C155242.pdf
+      - key: Price @1 USD
+        value: '0.1653'
+      - key: Price @100 USD
+        value: '0.1281'
+      - key: Price @Bulk USD
+        value: '0.0956'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: AON7264E
     base_component: AON7264E
     properties:
@@ -200,6 +248,18 @@ components:
         value: C431191
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2410121847_Alpha---Omega-Semicon-AON7264E_C431191.pdf
+      - key: Price @1 USD
+        value: '0.2828'
+      - key: Price @100 USD
+        value: '0.2271'
+      - key: Price @Bulk USD
+        value: '0.1735'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: HSBB6115
     base_component: HSBB6115
     properties:
@@ -231,6 +291,18 @@ components:
         value: C845604
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2410121456_HUASHUO-HSBB6115_C845604.pdf
+      - key: Price @1 USD
+        value: '0.4226'
+      - key: Price @100 USD
+        value: '0.2452'
+      - key: Price @Bulk USD
+        value: '0.1919'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: BSC0702LS
     base_component: BSC0702LS
     properties:
@@ -262,6 +334,18 @@ components:
         value: C501503
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C501503.pdf
+      - key: Price @1 USD
+        value: '0.6339'
+      - key: Price @100 USD
+        value: '0.3871'
+      - key: Price @Bulk USD
+        value: '0.3710'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: DMN2310UT-13
     base_component: Q_NMOS_GSD
     properties:
@@ -293,6 +377,18 @@ components:
         value: C5711683
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5711683.pdf
+      - key: Price @1 USD
+        value: '0.0789'
+      - key: Price @100 USD
+        value: '0.0699'
+      - key: Price @Bulk USD
+        value: '0.0620'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: SK2301AAT
     base_component: Q_PMOS_GSD
     properties:
@@ -324,6 +420,18 @@ components:
         value: C5334586
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5334586.pdf
+      - key: Price @1 USD
+        value: '0.0400'
+      - key: Price @100 USD
+        value: '0.0400'
+      - key: Price @Bulk USD
+        value: '0.0267'
+      - key: Price Bulk Qty
+        value: '600'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: BC817-40-7-F
     base_component: Q_NPN_BEC
     properties:
@@ -353,6 +461,18 @@ components:
         value: C435867
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C435867.pdf
+      - key: Price @1 USD
+        value: '0.1029'
+      - key: Price @100 USD
+        value: '0.0828'
+      - key: Price @Bulk USD
+        value: '0.0653'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CSD17577Q3A
     base_component: CSD17577Q3A
     properties:
@@ -384,6 +504,18 @@ components:
         value: C201632
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C201632.pdf
+      - key: Price @1 USD
+        value: '0.5400'
+      - key: Price @100 USD
+        value: '0.3146'
+      - key: Price @Bulk USD
+        value: '0.2741'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: SI2308A
     base_component: Q_NMOS_GSD
     properties:
@@ -415,6 +547,18 @@ components:
         value: C347491
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C347491.pdf
+      - key: Price @1 USD
+        value: '0.0364'
+      - key: Price @100 USD
+        value: '0.0284'
+      - key: Price @Bulk USD
+        value: '0.0242'
+      - key: Price Bulk Qty
+        value: '300'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: BC847CLT1G
     base_component: Q_NPN_BEC
     properties:
@@ -444,3 +588,15 @@ components:
         value: C150094
       - key: Datasheet
         value: https://datasheet.lcsc.com/lcsc/2410121940_onsemi-BC847CLT1G_C150094.pdf
+      - key: Price @1 USD
+        value: '0.0416'
+      - key: Price @100 USD
+        value: '0.0416'
+      - key: Price @Bulk USD
+        value: '0.0276'
+      - key: Price Bulk Qty
+        value: '600'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'

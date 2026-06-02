@@ -54,6 +54,18 @@ components:
         value: C2988369
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2303271630_G-Switch-GT-USB-7010ASV_C2988369.pdf
+      - key: Price @1 USD
+        value: '0.0870'
+      - key: Price @100 USD
+        value: '0.0707'
+      - key: Price @Bulk USD
+        value: '0.0508'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: USB-B01
     base_component: USB-B01
     properties:
@@ -73,6 +85,18 @@ components:
         value: C498173
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C498173.pdf
+      - key: Price @1 USD
+        value: '0.2071'
+      - key: Price @100 USD
+        value: '0.1616'
+      - key: Price @Bulk USD
+        value: '0.1195'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: SMTSO2010CTJ
     base_component: SMD_Round_Nut
     properties:
@@ -92,6 +116,18 @@ components:
         value: C2916319
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2112061830_Sinhoo-SMTSO2010CTJ_C2916319.pdf
+      - key: Price @1 USD
+        value: '0.0752'
+      - key: Price @100 USD
+        value: '0.0752'
+      - key: Price @Bulk USD
+        value: '0.0710'
+      - key: Price Bulk Qty
+        value: '150'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: SMTSO2515CTJ
     base_component: SMD_Round_Nut
     properties:
@@ -111,6 +147,18 @@ components:
         value: C2915629
       - key: Datasheet
         value: https://datasheet.lcsc.com/datasheet/pdf/ece43b9c9581dc6ca2141ce7cea61a1e.pdf?productCode=C2915629
+      - key: Price @1 USD
+        value: '0.0693'
+      - key: Price @100 USD
+        value: '0.0693'
+      - key: Price @Bulk USD
+        value: '0.0673'
+      - key: Price Bulk Qty
+        value: '150'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: 15EDGVM-3.5-02P
     base_component: Conn_01x02
     properties:
@@ -130,6 +178,18 @@ components:
         value: C2761149
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_DEGSON-15EDGVM-3-5-02P-14-00A-H_C2761149.pdf
+      - key: Price @1 USD
+        value: '0.2877'
+      - key: Price @100 USD
+        value: '0.2259'
+      - key: Price @Bulk USD
+        value: '0.1664'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: 15EDGVM-3.5-04P
     base_component: Conn_01x04
     properties:
@@ -149,6 +209,18 @@ components:
         value: C2761151
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_DEGSON-15EDGVM-3-5-04P-14-00A-H_C2761151.pdf
+      - key: Price @1 USD
+        value: '0.3484'
+      - key: Price @100 USD
+        value: '0.2733'
+      - key: Price @Bulk USD
+        value: '0.2009'
+      - key: Price Bulk Qty
+        value: '400'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: 15EDGVM-3.5-08P
     base_component: Conn_01x08
     properties:
@@ -168,6 +240,18 @@ components:
         value: C2761155
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_DEGSON-15EDGVM-3-5-08P-14-00A-H_C2761155.pdf
+      - key: Price @1 USD
+        value: '0.6195'
+      - key: Price @100 USD
+        value: '0.3730'
+      - key: Price @Bulk USD
+        value: '0.3357'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: 15EDGVM-3.5-12P
     base_component: Conn_01x12
     properties:
@@ -206,6 +290,18 @@ components:
         value: C386763
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411121108_Ckmtw-Shenzhen-Cankemeng-R-RJ45S08P-B000_C386763.pdf
+      - key: Price @1 USD
+        value: '0.5189'
+      - key: Price @100 USD
+        value: '0.2757'
+      - key: Price @Bulk USD
+        value: '0.2530'
+      - key: Price Bulk Qty
+        value: '960'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: Conn_ARM_JTAG_SWD_10
     base_component: Conn_ARM_JTAG_SWD_10
     properties:
@@ -225,6 +321,18 @@ components:
         value: C7501191
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2410121612_Megastar-ZX-IDC2-54-2-5PZZ_C7501191.pdf
+      - key: Price @1 USD
+        value: '0.1045'
+      - key: Price @100 USD
+        value: '0.0879'
+      - key: Price @Bulk USD
+        value: '0.0722'
+      - key: Price Bulk Qty
+        value: '520'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: MSTBVA_2,5/_4-G-5,08-LR
     base_component: Conn_01x04
     properties:
@@ -381,6 +489,18 @@ components:
         value: C492410
       - key: Datasheet
         value: https://www.molex.com/en-us/products/part-detail-pdf/22289023?display=pdf
+      - key: Price @1 USD
+        value: '0.0154'
+      - key: Price @100 USD
+        value: '0.0154'
+      - key: Price @Bulk USD
+        value: '0.0122'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: DB2ERM-3.81-2P-GN
     base_component: Conn_01x02
     properties:
@@ -402,6 +522,18 @@ components:
         value: C430325
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C430325.pdf
+      - key: Price @1 USD
+        value: '0.1532'
+      - key: Price @100 USD
+        value: '0.1228'
+      - key: Price @Bulk USD
+        value: '0.0884'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: DB2ERM-3.81-4P-GN
     base_component: Conn_01x04
     properties:
@@ -423,6 +555,18 @@ components:
         value: C395696
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C395696.pdf
+      - key: Price @1 USD
+        value: '0.2693'
+      - key: Price @100 USD
+        value: '0.2165'
+      - key: Price @Bulk USD
+        value: '0.1624'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: DB2ERM-3.81-6P-GN
     base_component: Conn_01x06
     properties:
@@ -444,6 +588,18 @@ components:
         value: C430331
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C430331.pdf
+      - key: Price @1 USD
+        value: '0.3773'
+      - key: Price @100 USD
+        value: '0.3045'
+      - key: Price @Bulk USD
+        value: '0.2220'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: DB2ERM-3.81-8P-GN
     base_component: Conn_01x08
     properties:
@@ -465,6 +621,18 @@ components:
         value: C395712
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C395712.pdf
+      - key: Price @1 USD
+        value: '0.5020'
+      - key: Price @100 USD
+        value: '0.3148'
+      - key: Price @Bulk USD
+        value: '0.2502'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: DB2ERM-3.81-10P-GN
     base_component: Conn_01x10
     properties:
@@ -486,6 +654,18 @@ components:
         value: C430344
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C430344.pdf
+      - key: Price @1 USD
+        value: '0.5441'
+      - key: Price @100 USD
+        value: '0.3155'
+      - key: Price @Bulk USD
+        value: '0.2688'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: DB2EKDM-3.81-8P-GN
     base_component: TERMINAL_BLOCK_PLUG
     properties:
@@ -509,6 +689,18 @@ components:
         value: C5353821
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5353821.pdf
+      - key: Price @1 USD
+        value: '0.7990'
+      - key: Price @100 USD
+        value: '0.7554'
+      - key: Price @Bulk USD
+        value: '0.7554'
+      - key: Price Bulk Qty
+        value: '100'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: DB2EKDM-3.81-4P-GN
     base_component: TERMINAL_BLOCK_PLUG
     properties:
@@ -532,6 +724,18 @@ components:
         value: C5353817
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5353817.pdf
+      - key: Price @1 USD
+        value: '0.8500'
+      - key: Price @100 USD
+        value: '0.6025'
+      - key: Price @Bulk USD
+        value: '0.4453'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: DB2EKDM-3.81-2P-GN
     base_component: TERMINAL_BLOCK_PLUG
     properties:
@@ -555,6 +759,18 @@ components:
         value: C5353816
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5353816.pdf
+      - key: Price @1 USD
+        value: '0.5073'
+      - key: Price @100 USD
+        value: '0.3521'
+      - key: Price @Bulk USD
+        value: '0.2529'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: DB2EKDM-3.81-6P-GN
     base_component: TERMINAL_BLOCK_PLUG
     properties:
@@ -578,6 +794,18 @@ components:
         value: C5353819
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5353819.pdf
+      - key: Price @1 USD
+        value: '1.0132'
+      - key: Price @100 USD
+        value: '0.7414'
+      - key: Price @Bulk USD
+        value: '0.5622'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: DB2EKDM-3.81-10P-GN
     base_component: TERMINAL_BLOCK_PLUG
     properties:
@@ -601,6 +829,18 @@ components:
         value: C5353823
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5353823.pdf
+      - key: Price @1 USD
+        value: '1.6311'
+      - key: Price @100 USD
+        value: '1.0183'
+      - key: Price @Bulk USD
+        value: '0.9058'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: R-RJ45R08P-A004
     base_component: 8P8C
     properties:
@@ -620,6 +860,18 @@ components:
         value: C385834
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C385834.pdf
+      - key: Price @1 USD
+        value: '0.2417'
+      - key: Price @100 USD
+        value: '0.1952'
+      - key: Price @Bulk USD
+        value: '0.1307'
+      - key: Price Bulk Qty
+        value: '480'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: HU2032-LF
     base_component: HU2032-LF
     properties:
@@ -639,6 +891,18 @@ components:
         value: C6878541
       - key: Datasheet
         value: ""
+      - key: Price @1 USD
+        value: '0.6385'
+      - key: Price @100 USD
+        value: '0.5953'
+      - key: Price @Bulk USD
+        value: '0.4865'
+      - key: Price Bulk Qty
+        value: '200'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: BWSMA-KE-Z001
     base_component: Conn_Coaxial
     properties:
@@ -658,6 +922,18 @@ components:
         value: C496549
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C496549.pdf
+      - key: Price @1 USD
+        value: '0.4022'
+      - key: Price @100 USD
+        value: '0.2238'
+      - key: Price @Bulk USD
+        value: '0.2060'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: HC-PZ254-11.5L-2x7PZ
     base_component: Conn_02x07_Odd_Even
     properties:
@@ -677,6 +953,18 @@ components:
         value: C41375948
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C41375948.pdf
+      - key: Price @1 USD
+        value: '0.0756'
+      - key: Price @100 USD
+        value: '0.0603'
+      - key: Price @Bulk USD
+        value: '0.0470'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: KH-IPEX-K501-29
     base_component: Conn_IPEX
     properties:
@@ -696,6 +984,18 @@ components:
         value: C411563
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C411563.pdf
+      - key: Price @1 USD
+        value: '0.0731'
+      - key: Price @100 USD
+        value: '0.0596'
+      - key: Price @Bulk USD
+        value: '0.0470'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: HX JN1.27-2x5 TP H4.9
     base_component: Conn_02x05_Odd_Even
     properties:
@@ -719,6 +1019,18 @@ components:
         value: C42372555
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C42372555.pdf
+      - key: Price @1 USD
+        value: '0.1954'
+      - key: Price @100 USD
+        value: '0.1539'
+      - key: Price @Bulk USD
+        value: '0.1122'
+      - key: Price Bulk Qty
+        value: '340'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: Pin_0.7mm_Soldering_Pin
     base_component: Conn_01x01_Socket
     properties:
@@ -765,6 +1077,18 @@ components:
         value: C319148
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C319148.pdf
+      - key: Price @1 USD
+        value: '0.3864'
+      - key: Price @100 USD
+        value: '0.3059'
+      - key: Price @Bulk USD
+        value: '0.2316'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: WJ500V-5.08-2P
     base_component: Conn_01x02
     properties:
@@ -784,6 +1108,18 @@ components:
         value: C8465
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C8465.pdf
+      - key: Price @1 USD
+        value: '0.1335'
+      - key: Price @100 USD
+        value: '0.1076'
+      - key: Price @Bulk USD
+        value: '0.0839'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: PM254-2-15-W-8.5
     base_component: Conn_02x15_Odd_Even
     properties:
@@ -803,6 +1139,18 @@ components:
         value: C2897435
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C2897435.pdf
+      - key: Price @1 USD
+        value: '0.5393'
+      - key: Price @100 USD
+        value: '0.3768'
+      - key: Price @Bulk USD
+        value: '0.2834'
+      - key: Price Bulk Qty
+        value: '504'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: BWSMA-KWE-Z001
     base_component: Conn_Coaxial
     properties:
@@ -822,6 +1170,18 @@ components:
         value: C496551
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C496551.pdf
+      - key: Price @1 USD
+        value: '0.5091'
+      - key: Price @100 USD
+        value: '0.2821'
+      - key: Price @Bulk USD
+        value: '0.2594'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: RC01812
     base_component: 8P8C_LED_Shielded
     properties:
@@ -841,6 +1201,18 @@ components:
         value: C708645
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C708645.pdf
+      - key: Price @1 USD
+        value: '0.5973'
+      - key: Price @100 USD
+        value: '0.3342'
+      - key: Price @Bulk USD
+        value: '0.2890'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: BWSMA-KE-P001
     base_component: Conn_Coaxial
     properties:
@@ -860,6 +1232,18 @@ components:
         value: C496550
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C496550.pdf
+      - key: Price @1 USD
+        value: '0.3843'
+      - key: Price @100 USD
+        value: '0.2076'
+      - key: Price @Bulk USD
+        value: '0.1897'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: WJ15EDGRC-3.81-2P
     base_component: Conn_01x02
     properties:
@@ -879,6 +1263,18 @@ components:
         value: C8387
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C8387.pdf
+      - key: Price @1 USD
+        value: '0.0401'
+      - key: Price @100 USD
+        value: '0.0401'
+      - key: Price @Bulk USD
+        value: '0.0268'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: WJ15EDGK-3.81-2P
     base_component: TERMINAL_BLOCK_PLUG
     properties:
@@ -904,6 +1300,18 @@ components:
         value: C8466
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C8466.pdf
+      - key: Price @1 USD
+        value: '0.1782'
+      - key: Price @100 USD
+        value: '0.1426'
+      - key: Price @Bulk USD
+        value: '0.0977'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: 15EDGKNM-3.5-02P-14-00A(H)
     base_component: TERMINAL_BLOCK_PLUG
     properties:
@@ -927,6 +1335,18 @@ components:
         value: C2761156
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C2761156.pdf
+      - key: Price @1 USD
+        value: '0.9653'
+      - key: Price @100 USD
+        value: '0.6033'
+      - key: Price @Bulk USD
+        value: '0.5368'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: 15EDGKNM-3.5-04P-14-00A(H)
     base_component: TERMINAL_BLOCK_PLUG
     properties:
@@ -950,6 +1370,18 @@ components:
         value: C2761158
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C2761158.pdf
+      - key: Price @1 USD
+        value: '1.5404'
+      - key: Price @100 USD
+        value: '0.9625'
+      - key: Price @Bulk USD
+        value: '0.8547'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: 15EDGKNM-3.5-05P-14-00A(H)
     base_component: TERMINAL_BLOCK_PLUG
     properties:
@@ -973,6 +1405,18 @@ components:
         value: C2761159
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C2761159.pdf
+      - key: Price @1 USD
+        value: '1.5268'
+      - key: Price @100 USD
+        value: '0.9626'
+      - key: Price @Bulk USD
+        value: '0.8902'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: 15EDGKNM-3.5-08P-14-00A(H)
     base_component: TERMINAL_BLOCK_PLUG
     properties:
@@ -996,6 +1440,18 @@ components:
         value: C2761162
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C2761162.pdf
+      - key: Price @1 USD
+        value: '1.7685'
+      - key: Price @100 USD
+        value: '1.4023'
+      - key: Price @Bulk USD
+        value: '1.3350'
+      - key: Price Bulk Qty
+        value: '900'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: MCV_1,5/_2-G-3,5-LR_PLUG
     base_component: TERMINAL_BLOCK_PLUG
     properties:
@@ -1174,6 +1630,18 @@ components:
         value: C597931
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C597931.pdf
+      - key: Price @1 USD
+        value: '0.9852'
+      - key: Price @100 USD
+        value: '0.6482'
+      - key: Price @Bulk USD
+        value: '0.6047'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: AFC01-S22FCC-00
     base_component: Conn_01x22
     properties:
@@ -1193,6 +1661,18 @@ components:
         value: C262275
       - key: Footprint
         value: 7Sigma:FPC-SMD_AFC01-S22FCC-00
+      - key: Price @1 USD
+        value: '0.1101'
+      - key: Price @100 USD
+        value: '0.1101'
+      - key: Price @Bulk USD
+        value: '0.0861'
+      - key: Price Bulk Qty
+        value: '370'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: FPC-05F-24PH20
     base_component: FPC-05F-24PH20
     properties:
@@ -1212,6 +1692,18 @@ components:
         value: LCSC
       - key: Supplier Part Number 1
         value: C2856805
+      - key: Price @1 USD
+        value: '0.1010'
+      - key: Price @100 USD
+        value: '0.0815'
+      - key: Price @Bulk USD
+        value: '0.0632'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: NANO SIM TL6P H1.35
     base_component: SIM_NANO_Socket
     properties:
@@ -1231,3 +1723,15 @@ components:
         value: LCSC
       - key: Supplier Part Number 1
         value: "C7529385"
+      - key: Price @1 USD
+        value: '0.1994'
+      - key: Price @100 USD
+        value: '0.1579'
+      - key: Price @Bulk USD
+        value: '0.1180'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'

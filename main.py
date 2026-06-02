@@ -13,6 +13,8 @@ from kicad_lib import config
 from kicad_lib.colors import get_logger, setup_logging
 from kicad_lib.easyeda.importer import auto_import_missing_components, fill_missing_properties, update_default_mappings
 from kicad_lib.kicad.footprints import update_footprints_models
+from kicad_lib.pricing import refresh_prices
+from kicad_lib.suppliers import ensure_supplier_fields
 from kicad_lib.kicad.symbols import generate_symbol_libraries
 from kicad_lib.kicad.validator import ComponentValidator
 
@@ -62,6 +64,30 @@ def main():
             log.success("✓ All LCSC-sourced components have complete metadata.")
     except Exception as e:
         log.error(f"✗ Error filling properties: {e}")
+        log.debug("  Continuing with library generation...")
+
+    # Ensure every component has Supplier 1 / Supplier Part Number 1 keys
+    log.info("Ensuring Supplier 1 / Supplier Part Number 1 fields...")
+    try:
+        n = ensure_supplier_fields()
+        if n > 0:
+            log.success(f"✓ Synced supplier fields on {n} component(s).")
+        else:
+            log.success("✓ Supplier fields already present on all components.")
+    except Exception as e:
+        log.error(f"✗ Error syncing supplier fields: {e}")
+        log.debug("  Continuing with library generation...")
+
+    # Refresh LCSC prices for components whose data is >30 days old
+    log.info("Refreshing LCSC prices (entries older than 30 days)...")
+    try:
+        n = refresh_prices()
+        if n > 0:
+            log.success(f"✓ Updated prices for {n} component(s).")
+        else:
+            log.success("✓ All prices are fresh (or no LCSC data available).")
+    except Exception as e:
+        log.error(f"✗ Error refreshing prices: {e}")
         log.debug("  Continuing with library generation...")
 
     # Auto-learn default footprint mappings from existing components

@@ -14,6 +14,14 @@ Template-based generation model:
 | Footprints | `Footprints/7Sigma.pretty/` | KiCad footprint files |
 | 3D models | `3DModels/` | STEP/WRL files, auto-resolved from multiple sources |
 
+## Documentation Map
+
+| File | Scope |
+|---|---|
+| `CLAUDE.md` (this file) | Pipeline, environment, dependencies, cross-cutting gotchas |
+| `Footprints/CLAUDE.md` | Footprint styling, naming, pad grid, thermal vias |
+| `Symbols/CLAUDE.md` | Symbol pin types, grouping, geometry |
+
 ## Module Map
 
 | Module | Responsibility |
@@ -25,6 +33,7 @@ Template-based generation model:
 | `update_footprints_models.py` | Normalizes 3D model paths, copies missing models |
 | `component_validator.py` | Validates YAML structure, base refs, footprints, property patterns |
 | `easyeda_importer.py` | Auto-imports components from LCSC/EasyEDA API |
+| `pricing.py` | Refreshes LCSC prices in YAML (skips fresh / manual entries) |
 
 ## Conventions (Always Apply)
 
@@ -60,7 +69,24 @@ source .venv/bin/activate
 python main.py
 ```
 
-The pipeline runs in order: auto-import → fill metadata → validate → generate symbols → update 3D models.
+The pipeline runs in order: auto-import → fill metadata → refresh prices → validate → generate symbols → update 3D models.
+
+### LCSC price properties
+
+Each component with an `LCSC Part` (Cxxxxx) gets six auto-managed properties refreshed by `pricing.py` during `main.py`:
+
+| Key | Value |
+|---|---|
+| `Price @1 USD` | Unit price at qty=1 (USD, 4 decimals) |
+| `Price @100 USD` | Unit price at qty=100 |
+| `Price @Bulk USD` | Unit price at the 1000-qty break, or 5000 if no ladder tier ≤1000 |
+| `Price Bulk Qty` | Which ladder tier `Price @Bulk USD` was sourced from (e.g. `1000`, `5000`, `600`) |
+| `Price Source` | `LCSC` for auto-managed entries. Set to anything else (e.g. `Manual`) to lock the prices — they will never be overwritten |
+| `Price Updated` | ISO date of last refresh. Entries older than 30 days are refetched; fresher ones are skipped |
+
+If LCSC returns no price ladder the price fields are not added (component is silently skipped). Components with no `LCSC Part` are skipped entirely. To manually pin a price, set `Price Source: Manual` (or any non-`LCSC` value) and the refresher will leave that component untouched.
+
+**Always run `main.py` after editing any `Sources/*.yaml` file.** The YAML is the source of truth, but KiCad reads the generated `Symbols/<Type>.kicad_sym` files. If `main.py` is not re-run, the YAML change is invisible in KiCad and the task is effectively undone. This applies to all YAML edits — property changes, footprint renames, new components, anything.
 
 ## Available Commands
 
@@ -109,3 +135,13 @@ EasyEDA-imported `.kicad_mod` files have two recurring defects that must be fixe
 2. **Wrong internal library prefix** — header reads `(footprint "easyeda2kicad:NAME"` but the repo convention is `(footprint "NAME"` with no prefix (the `7Sigma:` prefix comes from the `.pretty` folder name, not the file).
 
 Both issues only appear on the EasyEDA fallback path — i.e. when no match exists in the YAML file's `defaults.footprint_map`. Inspect every new `.kicad_mod` for both before declaring the import complete.
+
+## Maintaining These Rules
+
+When a non-obvious convention or fix emerges in conversation — a new rule, a workaround, a renamed convention — record it in the most-specific CLAUDE.md before closing the task:
+
+- Footprint rules → `Footprints/CLAUDE.md`
+- Symbol rules → `Symbols/CLAUDE.md`
+- Anything cross-cutting or environmental → this file
+
+Don't let the rule live only in chat history or `memory/`. Project rules belong in version control where the next contributor (human or agent) will find them.

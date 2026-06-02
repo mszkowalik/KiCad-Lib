@@ -57,6 +57,18 @@ components:
         value: C403945
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20190712/C403945_BA479055B724E986F735DE30F05BF37D.pdf
+      - key: Price @1 USD
+        value: '0.0674'
+      - key: Price @100 USD
+        value: '0.0535'
+      - key: Price @Bulk USD
+        value: '0.0466'
+      - key: Price Bulk Qty
+        value: '300'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: X322525MMB4SI
     base_component: Crystal_GND24_Small
     properties:
@@ -84,6 +96,18 @@ components:
         value: C70582
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411121006_YXC-Crystal-Oscillators-X322525MMB4SI_C70582.pdf
+      - key: Price @1 USD
+        value: '0.0814'
+      - key: Price @100 USD
+        value: '0.0655'
+      - key: Price @Bulk USD
+        value: '0.0515'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: ECS-400-15-33B-CTN-TR
     base_component: Crystal_GND24_Small
     properties:
@@ -111,6 +135,18 @@ components:
         value: C2450675
       - key: Datasheet
         value: https://www.mouser.pl/datasheet/2/122/ECS_33B-1222132.pdf
+      - key: Price @1 USD
+        value: '0.9987'
+      - key: Price @100 USD
+        value: '0.5923'
+      - key: Price @Bulk USD
+        value: '0.5002'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: XTM32040000FT00351001
     base_component: Crystal_GND24_Small
     properties:
@@ -138,6 +174,18 @@ components:
         value: C37635390
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C37635390.pdf
+      - key: Price @1 USD
+        value: '0.0841'
+      - key: Price @100 USD
+        value: '0.0681'
+      - key: Price @Bulk USD
+        value: '0.0541'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: SX3M25.000M20F30TNN
     base_component: Oscillator_4Pin
     properties:
@@ -161,3 +209,15 @@ components:
         value: C2901575
       - key: Footprint
         value: 7Sigma:Crystal_SMD_3225-4Pin_3.2x2.5mm
+      - key: Price @1 USD
+        value: '0.4297'
+      - key: Price @100 USD
+        value: '0.2463'
+      - key: Price @Bulk USD
+        value: '0.2044'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'

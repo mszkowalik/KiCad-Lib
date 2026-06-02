@@ -66,6 +66,18 @@ components:
         value: C1518208
       - key: Datasheet
         value: "https://datasheet.lcsc.com/lcsc/2201180430_Murata-Electronics-GRM155R61H105KE05D_C1518208.pdf?_gl=1*1ue1ana*_ga*MjA3NTA3NDE1NC4xNzE1NDMyNTIw*_ga_98M84MKSZH*MTcxNzQwNTAzMi45LjEuMTcxNzQwNTIwOS41OS4wLjA."
+      - key: Price @1 USD
+        value: '0.0308'
+      - key: Price @100 USD
+        value: '0.0308'
+      - key: Price @Bulk USD
+        value: '0.0209'
+      - key: Price Bulk Qty
+        value: '600'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CL21A106KAYNNNE
     base_component: C
     properties:
@@ -95,6 +107,18 @@ components:
         value: C15850
       - key: Datasheet
         value: https://jlcpcb.com/api/file/downloadByFileSystemAccessId/8579706853615591424
+      - key: Price @1 USD
+        value: '0.0262'
+      - key: Price @100 USD
+        value: '0.0262'
+      - key: Price @Bulk USD
+        value: '0.0190'
+      - key: Price Bulk Qty
+        value: '600'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: T491D107K016AT
     base_component: C_Polarized
     properties:
@@ -122,6 +146,18 @@ components:
         value: C110548
       - key: Datasheet
         value: "https://lcsc.com/product-detail/Tantalum-Capacitors_KEMET_T491D107K016AT_100uF-107-10-16V_C110548.html"
+      - key: Price @1 USD
+        value: '1.0419'
+      - key: Price @100 USD
+        value: '0.7646'
+      - key: Price @Bulk USD
+        value: '0.4504'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CL21A226MAQNNNE
     base_component: C
     properties:
@@ -153,6 +189,18 @@ components:
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Samsung-Electro-Mechanics-CL21A226MAQNNNE_C45783.pdf
       - key: JLCPCB Part Class
         value: Basic Part
+      - key: Price @1 USD
+        value: '0.0349'
+      - key: Price @100 USD
+        value: '0.0349'
+      - key: Price @Bulk USD
+        value: '0.0262'
+      - key: Price Bulk Qty
+        value: '600'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CL05B104KO5NNNC
     base_component: C
     properties:
@@ -184,6 +232,18 @@ components:
         value: https://wmsc.lcsc.com/wmsc/upload/file/pdf/v2/lcsc/2304140030_Samsung-Electro-Mechanics-CL05B104KO5NNNC_C1525.pdf
       - key: JLCPCB Part Class
         value: Basic Part
+      - key: Price @1 USD
+        value: '0.0015'
+      - key: Price @100 USD
+        value: '0.0015'
+      - key: Price @Bulk USD
+        value: '0.0012'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CC0402FRNPO9BN270
     base_component: C
     properties:
@@ -215,6 +275,18 @@ components:
         value: https://atta.szlcsc.com/upload/public/pdf/source/20181008/C309499_21CC21451B82C39E3D92150FD6B30293.pdf
       - key: JLCPCB Part Class
         value: Extended Part
+      - key: Price @1 USD
+        value: '0.0034'
+      - key: Price @100 USD
+        value: '0.0034'
+      - key: Price @Bulk USD
+        value: '0.0026'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CS3225X7R476K160NRL
     base_component: C
     properties:
@@ -244,6 +316,18 @@ components:
         value: C5440143
       - key: Datasheet
         value: "https://datasheet.lcsc.com/lcsc/2411201415_SAMWHA-CS3225X7R476K160NRL_C5440143.pdf"
+      - key: Price @1 USD
+        value: '0.1071'
+      - key: Price @100 USD
+        value: '0.0850'
+      - key: Price @Bulk USD
+        value: '0.0636'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: GRM21BR71H104KA01L
     base_component: C
     properties:
@@ -273,6 +357,18 @@ components:
         value: C77082
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200305/C490387_23319AE8C154DEB24C505E6C82A8106A.pdf
+      - key: Price @1 USD
+        value: '0.0135'
+      - key: Price @100 USD
+        value: '0.0135'
+      - key: Price @Bulk USD
+        value: '0.0109'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CC0402JRNPO9BN180
     base_component: C
     properties:
@@ -302,6 +398,18 @@ components:
         value: C106202
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0402JRNPO9BN180_C106202.pdf
+      - key: Price @1 USD
+        value: '0.0012'
+      - key: Price @100 USD
+        value: '0.0012'
+      - key: Price @Bulk USD
+        value: '0.0009'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CC0402JRNPO9BN221
     base_component: C
     properties:
@@ -331,6 +439,18 @@ components:
         value: C107001
       - key: Datasheet
         value: https://datasheet.lcsc.com/datasheet/pdf/4eca2bb4b507f1633db47e922d632b95.pdf?productCode=C107001
+      - key: Price @1 USD
+        value: '0.0029'
+      - key: Price @100 USD
+        value: '0.0029'
+      - key: Price @Bulk USD
+        value: '0.0022'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CC0402JRNPO9BN330
     base_component: C
     properties:
@@ -360,6 +480,18 @@ components:
         value: C107005
       - key: Datasheet
         value: https://datasheet.lcsc.com/datasheet/pdf/4eca2bb4b507f1633db47e922d632b95.pdf?productCode=C107005
+      - key: Price @1 USD
+        value: '0.0012'
+      - key: Price @100 USD
+        value: '0.0012'
+      - key: Price @Bulk USD
+        value: '0.0009'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CC0805JRNPO9BN180
     base_component: C
     properties:
@@ -389,6 +521,18 @@ components:
         value: C113825
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0805JRNPO9BN180_C113825.pdf
+      - key: Price @1 USD
+        value: '0.0065'
+      - key: Price @100 USD
+        value: '0.0065'
+      - key: Price @Bulk USD
+        value: '0.0052'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CC0805KRX7R9BB103
     base_component: C
     properties:
@@ -418,6 +562,18 @@ components:
         value: C83170
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0805KRX7R9BB103_C83170.pdf
+      - key: Price @1 USD
+        value: '0.0050'
+      - key: Price @100 USD
+        value: '0.0050'
+      - key: Price @Bulk USD
+        value: '0.0039'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CL21B105KBFNNNE
     base_component: C
     properties:
@@ -447,6 +603,18 @@ components:
         value: C28323
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Samsung-Electro-Mechanics-CL21B105KBFNNNE_C28323.pdf
+      - key: Price @1 USD
+        value: '0.0138'
+      - key: Price @100 USD
+        value: '0.0138'
+      - key: Price @Bulk USD
+        value: '0.0096'
+      - key: Price Bulk Qty
+        value: '600'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CL05B103KB5NNNC
     base_component: C
     properties:
@@ -476,6 +644,18 @@ components:
         value: C15195
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20160218/1457707763339.pdf
+      - key: Price @1 USD
+        value: '0.0016'
+      - key: Price @100 USD
+        value: '0.0016'
+      - key: Price @Bulk USD
+        value: '0.0013'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: GRM1555C1H100JA01D
     base_component: C
     properties:
@@ -505,6 +685,18 @@ components:
         value: C76946
       - key: Datasheet
         value: https://lcsc.com/datasheet/lcsc_datasheet_2410121857_muRata-GRM1555C1H100JA01D_C76946.pdf
+      - key: Price @1 USD
+        value: '0.0031'
+      - key: Price @100 USD
+        value: '0.0031'
+      - key: Price @Bulk USD
+        value: '0.0025'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CL05A106MP5NUNC
     base_component: C
     properties:
@@ -534,6 +726,18 @@ components:
         value: C315248
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C315248.pdf
+      - key: Price @1 USD
+        value: '0.0090'
+      - key: Price @100 USD
+        value: '0.0090'
+      - key: Price @Bulk USD
+        value: '0.0064'
+      - key: Price Bulk Qty
+        value: '600'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: 35TZV100M6.3X8
     base_component: CE
     properties:
@@ -563,6 +767,18 @@ components:
         value: C88744
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C88744.pdf
+      - key: Price @1 USD
+        value: '0.1271'
+      - key: Price @100 USD
+        value: '0.1035'
+      - key: Price @Bulk USD
+        value: '0.0813'
+      - key: Price Bulk Qty
+        value: '900'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: EEEFK1H221GP
     base_component: CE
     properties:
@@ -592,6 +808,18 @@ components:
         value: C343913
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C343913.pdf
+      - key: Price @1 USD
+        value: '0.4161'
+      - key: Price @100 USD
+        value: '0.2339'
+      - key: Price @Bulk USD
+        value: '0.1968'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CL21A475KBQNNNE
     base_component: C
     properties:
@@ -621,6 +849,18 @@ components:
         value: C98192
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C98192.pdf
+      - key: Price @1 USD
+        value: '0.0266'
+      - key: Price @100 USD
+        value: '0.0216'
+      - key: Price @Bulk USD
+        value: '0.0193'
+      - key: Price Bulk Qty
+        value: '300'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CC0402KRX7R8BB473
     base_component: C
     properties:
@@ -650,6 +890,18 @@ components:
         value: C107020
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C107020.pdf
+      - key: Price @1 USD
+        value: '0.0025'
+      - key: Price @100 USD
+        value: '0.0025'
+      - key: Price @Bulk USD
+        value: '0.0019'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CC0402JRNPO9BN101
     base_component: C
     properties:
@@ -679,6 +931,18 @@ components:
         value: C106200
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C106200.pdf
+      - key: Price @1 USD
+        value: '0.0012'
+      - key: Price @100 USD
+        value: '0.0012'
+      - key: Price @Bulk USD
+        value: '0.0010'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: FZ100UF35V90RV0145
     base_component: C_Polarized
     properties:
@@ -706,6 +970,18 @@ components:
         value: C5155339
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5155339.pdf
+      - key: Price @1 USD
+        value: '0.0585'
+      - key: Price @100 USD
+        value: '0.0475'
+      - key: Price @Bulk USD
+        value: '0.0332'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: GRM1555C1H3R3CA01D
     base_component: C
     properties:
@@ -735,6 +1011,18 @@ components:
         value: C76968
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C76968.pdf
+      - key: Price @1 USD
+        value: '0.0036'
+      - key: Price @100 USD
+        value: '0.0036'
+      - key: Price @Bulk USD
+        value: '0.0029'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CC0402JRNPO9BN301
     base_component: C
     properties:
@@ -764,6 +1052,18 @@ components:
         value: C5182429
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5182429.pdf
+      - key: Price @1 USD
+        value: '0.0029'
+      - key: Price @100 USD
+        value: '0.0029'
+      - key: Price @Bulk USD
+        value: '0.0022'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CC0402JRNPO9BN390
     base_component: C
     properties:
@@ -793,6 +1093,18 @@ components:
         value: C106223
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C106223.pdf
+      - key: Price @1 USD
+        value: '0.0012'
+      - key: Price @100 USD
+        value: '0.0012'
+      - key: Price @Bulk USD
+        value: '0.0009'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CC0402JRNPO9BN102
     base_component: C
     properties:
@@ -822,6 +1134,18 @@ components:
         value: C113780
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C113780.pdf
+      - key: Price @1 USD
+        value: '0.0059'
+      - key: Price @100 USD
+        value: '0.0059'
+      - key: Price @Bulk USD
+        value: '0.0048'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CL05A225KO5NQNC
     base_component: C
     properties:
@@ -851,6 +1175,18 @@ components:
         value: C170151
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C170151.pdf
+      - key: Price @1 USD
+        value: '0.0066'
+      - key: Price @100 USD
+        value: '0.0066'
+      - key: Price @Bulk USD
+        value: '0.0052'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: GRM21BR61H106KE43L
     base_component: C
     properties:
@@ -880,6 +1216,18 @@ components:
         value: C440198
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C440198.pdf
+      - key: Price @1 USD
+        value: '0.0690'
+      - key: Price @100 USD
+        value: '0.0561'
+      - key: Price @Bulk USD
+        value: '0.0494'
+      - key: Price Bulk Qty
+        value: '300'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: GJM1555C1H1R2WB01D
     base_component: C
     properties:
@@ -913,6 +1261,18 @@ components:
         value: C76899
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C76899.pdf
+      - key: Price @1 USD
+        value: '0.0238'
+      - key: Price @100 USD
+        value: '0.0238'
+      - key: Price @Bulk USD
+        value: '0.0190'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: EEHZK1E471P
     base_component: CE
     properties:
@@ -942,6 +1302,18 @@ components:
         value: C242138
       - key: Datasheet
         value: https://datasheet.lcsc.com/datasheet/pdf/242ede0bfb543b5edcc6a9353c456beb.pdf?productCode=C242138
+      - key: Price @1 USD
+        value: '0.6789'
+      - key: Price @100 USD
+        value: '0.4372'
+      - key: Price @Bulk USD
+        value: '0.3827'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: CC0402JRNPO9BN120
     base_component: C
     properties:
@@ -971,3 +1343,15 @@ components:
         value: C106201
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C106201.pdf
+      - key: Price @1 USD
+        value: '0.0012'
+      - key: Price @100 USD
+        value: '0.0012'
+      - key: Price @Bulk USD
+        value: '0.0009'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'

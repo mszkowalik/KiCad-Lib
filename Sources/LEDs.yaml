@@ -67,6 +67,18 @@ components:
         value: C5875740
       - key: Datasheet
         value: https://www.mouser.pl/datasheet/2/216/APT2012CGCK-24136.pdf
+      - key: Price @1 USD
+        value: '0.1249'
+      - key: Price @100 USD
+        value: '0.0985'
+      - key: Price @Bulk USD
+        value: '0.0753'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: APT2012SURCK
     base_component: LED
     properties:
@@ -98,6 +110,18 @@ components:
         value: C5875730
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2305191756_Kingbright-APT2012SURCK_C5875730.pdf
+      - key: Price @1 USD
+        value: '0.1229'
+      - key: Price @100 USD
+        value: '0.0969'
+      - key: Price @Bulk USD
+        value: '0.0741'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: LTST-C281KRKT
     base_component: LED
     properties:
@@ -129,6 +153,18 @@ components:
         value: C364556
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C364556.pdf
+      - key: Price @1 USD
+        value: '0.0396'
+      - key: Price @100 USD
+        value: '0.0396'
+      - key: Price @Bulk USD
+        value: '0.0266'
+      - key: Price Bulk Qty
+        value: '600'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: XL-1005SURC
     base_component: LED
     properties:
@@ -160,6 +196,18 @@ components:
         value: C965790
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C965790.pdf
+      - key: Price @1 USD
+        value: '0.0064'
+      - key: Price @100 USD
+        value: '0.0064'
+      - key: Price @Bulk USD
+        value: '0.0048'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: SFH4725AS-DBEB-1113REEL
     base_component: LED_CAA
     properties:
@@ -224,6 +272,18 @@ components:
         value: C965840
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C965840.pdf
+      - key: Price @1 USD
+        value: '0.0194'
+      - key: Price @100 USD
+        value: '0.0194'
+      - key: Price @Bulk USD
+        value: '0.0155'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: XL-1608UVC-04
     base_component: LED
     properties:
@@ -255,6 +315,18 @@ components:
         value: C7371898
       - key: Datasheet
         value: https://datasheet.lcsc.com/datasheet/pdf/195f1090e23e761b8bb4a96109c36c7a.pdf?productCode=C7371898
+      - key: Price @1 USD
+        value: '0.0132'
+      - key: Price @100 USD
+        value: '0.0132'
+      - key: Price @Bulk USD
+        value: '0.0103'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: OSV50603C1E
     base_component: LED
     properties:

@@ -86,6 +86,18 @@ components:
         value: https://atta.szlcsc.com/upload/public/pdf/source/20230823/16A8FDE162764C9B685A3717F2DA3690.pdf
       - key: JLCPCB Part Class
         value: Basic Part
+      - key: Price @1 USD
+        value: '0.0074'
+      - key: Price @100 USD
+        value: '0.0074'
+      - key: Price @Bulk USD
+        value: '0.0059'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: BZT52C5V6
     base_component: BZT52Cxx
     properties:
@@ -117,6 +129,18 @@ components:
         value: C173406
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411211941_MDD-Microdiode-Semiconductor-BZT52C5V6_C173406.pdf
+      - key: Price @1 USD
+        value: '0.0140'
+      - key: Price @100 USD
+        value: '0.0140'
+      - key: Price @Bulk USD
+        value: '0.0111'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: BZT52C5V1
     base_component: BZT52Cxx
     properties:
@@ -148,6 +172,18 @@ components:
         value: C173407
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C173407.pdf
+      - key: Price @1 USD
+        value: '0.0131'
+      - key: Price @100 USD
+        value: '0.0131'
+      - key: Price @Bulk USD
+        value: '0.0121'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: BZT52C3V3
     base_component: BZT52Cxx
     properties:
@@ -179,6 +215,18 @@ components:
         value: C173413
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C173413.pdf
+      - key: Price @1 USD
+        value: '0.0136'
+      - key: Price @100 USD
+        value: '0.0136'
+      - key: Price @Bulk USD
+        value: '0.0108'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: BZX84C8V2LT1G
     base_component: BZX84Cxx
     properties:
@@ -210,6 +258,18 @@ components:
         value: C82469
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C82469.pdf
+      - key: Price @1 USD
+        value: '0.0465'
+      - key: Price @100 USD
+        value: '0.0465'
+      - key: Price @Bulk USD
+        value: '0.0341'
+      - key: Price Bulk Qty
+        value: '600'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: 1N5819WS
     base_component: D_Schottky
     properties:
@@ -237,6 +297,18 @@ components:
         value: C191023
       - key: Datasheet
         value: https://lcsc.com/product-detail/Others_B5819WS_C191023.html
+      - key: Price @1 USD
+        value: '0.0112'
+      - key: Price @100 USD
+        value: '0.0112'
+      - key: Price @Bulk USD
+        value: '0.0093'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: SMAJ28CA
     base_component: D_TVS_Bi
     properties:
@@ -266,6 +338,18 @@ components:
         value: C148228
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C148228.pdf
+      - key: Price @1 USD
+        value: '0.1072'
+      - key: Price @100 USD
+        value: '0.0867'
+      - key: Price @Bulk USD
+        value: '0.0688'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: SMAJ12A
     base_component: SMAJxxA
     properties:
@@ -295,6 +379,18 @@ components:
         value: C148213
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C148213.pdf
+      - key: Price @1 USD
+        value: '0.1025'
+      - key: Price @100 USD
+        value: '0.0804'
+      - key: Price @Bulk USD
+        value: '0.0610'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: PMEG6010CEJ,115
     base_component: D_Schottky
     properties:
@@ -322,6 +418,18 @@ components:
         value: C406049
       - key: Datasheet
         value: https://lcsc.com/datasheet/C406049.pdf
+      - key: Price @1 USD
+        value: '0.5148'
+      - key: Price @100 USD
+        value: '0.3044'
+      - key: Price @Bulk USD
+        value: '0.2833'
+      - key: Price Bulk Qty
+        value: '1000'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: PESD12VL1BA,115
     base_component: D_TVS_Bi
     properties:
@@ -351,6 +459,18 @@ components:
         value: C38558
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C38558.pdf
+      - key: Price @1 USD
+        value: '0.1726'
+      - key: Price @100 USD
+        value: '0.1370'
+      - key: Price @Bulk USD
+        value: '0.1027'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: PESD5V0S1BA
     base_component: D_TVS_Bi
     properties:
@@ -380,6 +500,18 @@ components:
         value: C2827694
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C2827694.pdf
+      - key: Price @1 USD
+        value: '0.0337'
+      - key: Price @100 USD
+        value: '0.0337'
+      - key: Price @Bulk USD
+        value: '0.0210'
+      - key: Price Bulk Qty
+        value: '600'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: RCLAMP0521PATCT
     base_component: D_TVS_Bi
     properties:
@@ -409,6 +541,18 @@ components:
         value: C117554
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C117554.pdf
+      - key: Price @1 USD
+        value: '0.0924'
+      - key: Price @100 USD
+        value: '0.0717'
+      - key: Price @Bulk USD
+        value: '0.0614'
+      - key: Price Bulk Qty
+        value: '300'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: 1N5819WT
     base_component: D_Schottky
     properties:
@@ -436,6 +580,18 @@ components:
         value: C5185918
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5185918.pdf
+      - key: Price @1 USD
+        value: '0.0110'
+      - key: Price @100 USD
+        value: '0.0110'
+      - key: Price @Bulk USD
+        value: '0.0087'
+      - key: Price Bulk Qty
+        value: '500'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: SS34
     base_component: D_Schottky
     properties:
@@ -463,6 +619,18 @@ components:
         value: C727060
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C727060.pdf
+      - key: Price @1 USD
+        value: '0.0278'
+      - key: Price @100 USD
+        value: '0.0278'
+      - key: Price @Bulk USD
+        value: '0.0193'
+      - key: Price Bulk Qty
+        value: '600'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
   - name: SM712
     base_component: D_TVS_Dual_AAC
     properties:
@@ -492,3 +660,15 @@ components:
         value: C502564
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C502564.pdf
+      - key: Price @1 USD
+        value: '0.0701'
+      - key: Price @100 USD
+        value: '0.0701'
+      - key: Price @Bulk USD
+        value: '0.0526'
+      - key: Price Bulk Qty
+        value: '600'
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: '2026-05-14'
