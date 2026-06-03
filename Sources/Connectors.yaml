@@ -1704,6 +1704,37 @@ components:
         value: LCSC
       - key: Price Updated
         value: '2026-05-14'
+  - name: DB301V-3.5-2P-GN-S
+    base_component: Conn_01x02
+    properties:
+      - key: LCSC Part
+        value: C695629
+      - key: ki_description
+        value: 2 Position Wire to Board Terminal Block Through Hole 3.5mm
+      - key: Manufacturer 1
+        value: DORABO
+      - key: Manufacturer Part Number 1
+        value: DB301V-3.5-2P-GN-S
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/1fe3daf7471ba03f243a2206860de637.pdf?productCode=C695629
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C695629
+      - key: Footprint
+        value: 7Sigma:CONN-TH_DB301V-3.5-2P-GN
+      - key: Price @1 USD
+        value: "0.0947"
+      - key: Price @100 USD
+        value: "0.0783"
+      - key: Price @Bulk USD
+        value: "0.0566"
+      - key: Price Bulk Qty
+        value: "1000"
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: "2026-06-02"
   - name: NANO_SIM_TL6P_H1.35
     base_component: SIM_NANO_Socket
     properties:
