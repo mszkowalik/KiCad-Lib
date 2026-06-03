@@ -166,6 +166,12 @@ For every thermal via:
 5. **Rename the footprint** with the `_ThermalVias` suffix per §9.
 6. **Update all YAML references** in `Sources/*.yaml`.
 
+### Exposed-pad land shape: use `rect`, never `roundrect`
+
+The EP copper land (and its `B.Cu` back-side twin) must be a plain `smd rect`, matching KiCad's stock QFN/DFN exposed pads. **Do not** apply the §2 `roundrect_rratio 0.25` convention to an exposed pad: on a large EP the corner radius becomes large (e.g. 0.25 × 3.3 mm = 0.825 mm) and rounds the EP corners back far enough to **clip the corner thermal vias**, leaving them poking outside the EP copper → DRC annular-ring / isolated-copper errors. Thermal vias sit flush (tangent) to the EP edges by design, so any corner rounding eats into them.
+
+The validator exempts pads carrying `(property pad_prop_heatsink)` from the roundrect rule, so a `rect` EP does not raise a warning. The §2 roundrect rule still applies to every normal signal pad.
+
 ### Via grid sizing
 
 Aim for ~1 mm via pitch inside the EP, with at least 0.2 mm clearance from the EP edge to the via copper. A 2 × 2 grid suits EPs up to ~2.5 mm; a 4 × 4 grid suits EPs ~3 mm and larger.
@@ -220,7 +226,7 @@ The component validator (`kicad_lib/kicad/validator.py`) checks:
 - `F.CrtYd` present in each referenced footprint file
 - `F.Fab` fp_line present in each referenced footprint file
 - No `easyeda2kicad:` prefix in the footprint header
-- Pad shape is `roundrect` (warned on `oval` or `rect`)
+- Pad shape is `roundrect` (warned on `oval` or `rect`; exposed-pad/heatsink pads with `pad_prop_heatsink` are exempt and must be `rect` — see §10)
 - F.Fab line width is `0.1 mm`
 - F.CrtYd line width is `0.05 mm`
 - F.SilkS line width is `0.1 mm`

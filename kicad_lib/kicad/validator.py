@@ -745,6 +745,23 @@ class ComponentValidator:
             i = j + 1
         return results
 
+    @staticmethod
+    def _iter_pad_blocks(content: str):
+        """Yield the text of each top-level (pad ...) s-expression block."""
+        for m in re.finditer(r'\(pad\b', content):
+            start = m.start()
+            depth = 0
+            i = start
+            while i < len(content):
+                if content[i] == "(":
+                    depth += 1
+                elif content[i] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                i += 1
+            yield content[start:i + 1]
+
     def validate_footprint_style(self):
         """Warn on footprint style violations: missing layers, wrong pad shapes, wrong widths."""
         checked: set[str] = set()
@@ -799,9 +816,16 @@ class ComponentValidator:
                     component_name=comp_name, library_name=lib_name, source_file=source_file,
                 ))
 
-            # Rule: SMD pads should be roundrect (warn on rect or oval)
-            non_roundrect = re.findall(r'\(pad\s+"[^"]*"\s+smd\s+(rect|oval)\b', content)
-            non_roundrect += re.findall(r'\(pad\s+\S+\s+smd\s+(rect|oval)\b', content)  # legacy unquoted
+            # Rule: SMD pads should be roundrect (warn on rect or oval).
+            # Exempt exposed-pad / heatsink lands (pad_prop_heatsink): KiCad's stock
+            # QFN/DFN exposed pads are plain rect, and a roundrect EP clips corner
+            # thermal vias (see Footprints/CLAUDE.md §10).
+            non_roundrect = []
+            for pad_block in self._iter_pad_blocks(content):
+                m = re.match(r'\(pad\s+(?:"[^"]*"|\S+)\s+smd\s+(rect|oval)\b', pad_block)
+                if not m or "pad_prop_heatsink" in pad_block:
+                    continue
+                non_roundrect.append(m.group(1))
             if non_roundrect:
                 shapes = set(non_roundrect)
                 count = len(non_roundrect)

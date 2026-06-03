@@ -1082,13 +1082,12 @@
 		(remove_unused_layers no)
 		(uuid "b1d3ef90-3bda-4183-be78-55435340d548")
 	)
-	(pad "69" smd roundrect
+	(pad "69" smd rect
 		(at 0 0)
 		(size 6.4 6.4)
 		(property pad_prop_heatsink)
 		(layers "F.Cu" "F.Mask")
 		(zone_connect 2)
-		(roundrect_rratio 0.25)
 		(uuid "d566c849-e1f1-438b-9674-3dd9b6885b51")
 	)
 	(pad "69" thru_hole circle
