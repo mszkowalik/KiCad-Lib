@@ -6,6 +6,7 @@ defaults:
   footprint_map:
     "0402": "7Sigma:C_0402_1005Metric"
     "0805": "7Sigma:C_0805_2012Metric"
+    "1206": "7Sigma:C_1206_3216Metric"
     "1210": "7Sigma:C_1210_3225Metric"
     "CASE-D-7343-31(mm)": "7Sigma:CP_EIA-7343-31_Kemet-D"
     "SMD,D10xL10.2mm": "7Sigma:CP_Elec_10x10"
@@ -1314,6 +1315,47 @@ components:
         value: LCSC
       - key: Price Updated
         value: '2026-05-14'
+  - name: C3216X5R1E476MTJ00E
+    base_component: C
+    properties:
+      - key: Value
+        value: 47uF
+      - key: Tolerance
+        value: 20%
+      - key: Voltage
+        value: 25V
+      - key: Dielectric
+        value: X5R
+      - key: Footprint
+        value: 7Sigma:C_1206_3216Metric
+      - key: Footprint_Name
+        value: "1206"
+      - key: ki_description
+        value: "{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}"
+      - key: Manufacturer 1
+        value: TDK
+      - key: Manufacturer Part Number 1
+        value: C3216X5R1E476MTJ00E
+      - key: LCSC Part
+        value: C76659
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/38af89a3abb50324a7de8b759d1fdf7e.pdf?productCode=C76659
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C76659
+      - key: Price @1 USD
+        value: "0.2943"
+      - key: Price @100 USD
+        value: "0.1815"
+      - key: Price @Bulk USD
+        value: "0.1647"
+      - key: Price Bulk Qty
+        value: "1000"
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: "2026-06-03"
   - name: CC0402JRNPO9BN120
     base_component: C
     properties:
