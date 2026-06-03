@@ -103,6 +103,7 @@ When importing from EasyEDA / LCSC (`easyeda2kicad`), verify all of the followin
 - [ ] `F.Fab` fp_lines present (body outline)
 - [ ] `F.CrtYd` fp_lines present (courtyard rectangle)
 - [ ] 3D model offset/rotation is correct (easyeda offsets are often wrong)
+- [ ] Mechanical holes (unnamed plated pads with `size == drill`, 0 ring) → `np_thru_hole` (see §12)
 
 ---
 
@@ -186,7 +187,27 @@ For thermal vias (§10), the 1 mm grid spacing falls naturally on 0.1 mm — no 
 
 ---
 
-## 12. Native vs Imported Footprints
+## 12. Mechanical Holes Must Be NPTH (no zero-ring plated pads)
+
+Mounting holes, locating-peg holes, and body/clearance holes are **mechanical**, not electrical. They must use `np_thru_hole` (non-plated), never `thru_hole`.
+
+A common defect from EasyEDA/LCSC imports: an unnamed plated pad whose copper size equals its drill, e.g.
+
+```
+(pad "" thru_hole circle (at ...) (size 1 1) (drill 1) (layers "*.Cu" "*.Mask") ...)
+```
+
+This has a **0 mm annular ring** → KiCad DRC raises an "annular ring" / "minimum annular width" violation on every such hole. Plated holes need copper around the barrel; a mechanical hole has none.
+
+**Fix:** change the pad type `thru_hole` → `np_thru_hole`. NPTH pads are exempt from annular-ring DRC (there is no plating to ring). Keep the rest of the pad (size = drill, `(layers "*.Cu" "*.Mask")`) as-is — that matches KiCad's own NPTH mounting-hole footprints. Unnamed pads carry no net, so converting loses nothing electrically.
+
+Rule of thumb: any pad where `(size − drill)/2 ≤ 0` must be `np_thru_hole`. If a hole is genuinely meant to be plated and netted, give it a real annular ring instead (size ≥ drill + 0.3 mm) and a pad number.
+
+Affected footprints fixed under this rule: `SIM-SMD_NANO-SIM-TL6P-H1.35`, `MIC-SMD_5P-L3.5-W2.7-TL_MMICT390200012`, `SMD_BD5.6-D4.1`, `SMD_BD5.6-L5.6-W5.6-D3.6`.
+
+---
+
+## 13. Native vs Imported Footprints
 
 All footprints are stored in `7Sigma.pretty/` regardless of origin. The style rules apply uniformly. After importing from any source, apply all QA fixes above before committing.
 
