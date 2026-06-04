@@ -9,6 +9,7 @@ property keys used in the library definitions.
 import json
 import threading
 import urllib.request
+from pathlib import Path
 
 from kicad_lib import config
 from kicad_lib.colors import get_logger
@@ -31,20 +32,54 @@ LCSC_STATIC_PROPS: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
-# Metadata fetching (with per-run cache)
+# Metadata fetching (with persistent disk cache)
 # ---------------------------------------------------------------------------
 
 _cache: dict[str, dict[str, str] | None] = {}
 _cache_lock = threading.Lock()
+_cache_dirty = False  # true when in-memory cache has unsaved entries
+
+
+def _load_cache() -> None:
+    """Load the on-disk cache into memory (called once at import time)."""
+    global _cache
+    path = Path(config.LCSC_METADATA_CACHE)
+    if not path.exists():
+        return
+    try:
+        with path.open(encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            with _cache_lock:
+                _cache.update(data)
+    except Exception as e:
+        log.warning(f"Could not load LCSC cache from {path}: {e}")
+
+
+def save_cache() -> None:
+    """Flush the in-memory cache to disk. Call after a batch of fetches."""
+    global _cache_dirty
+    with _cache_lock:
+        if not _cache_dirty:
+            return
+        snapshot = dict(_cache)
+        _cache_dirty = False
+    path = Path(config.LCSC_METADATA_CACHE)
+    try:
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(snapshot, f, indent=2)
+    except Exception as e:
+        log.warning(f"Could not save LCSC cache to {path}: {e}")
 
 
 def fetch_metadata(lcsc_id: str) -> dict[str, str] | None:
     """Fetch component metadata from the LCSC API.
 
     Returns a dict with keys: manufacturer, mpn, description, datasheet,
-    category, package.  Returns ``None`` on failure.  Results are cached for
-    the lifetime of the process.  Thread-safe.
+    category, package.  Returns ``None`` on failure.  Results are cached in
+    memory and persisted to disk across runs.  Thread-safe.
     """
+    global _cache_dirty
     with _cache_lock:
         if lcsc_id in _cache:
             return _cache[lcsc_id]
@@ -58,6 +93,7 @@ def fetch_metadata(lcsc_id: str) -> dict[str, str] | None:
         if not result or not isinstance(result, dict):
             with _cache_lock:
                 _cache[lcsc_id] = None
+                _cache_dirty = True
             return None
         meta = {
             "manufacturer": result.get("brandNameEn", ""),
@@ -69,11 +105,13 @@ def fetch_metadata(lcsc_id: str) -> dict[str, str] | None:
         }
         with _cache_lock:
             _cache[lcsc_id] = meta
+            _cache_dirty = True
         return meta
     except Exception as e:
         log.warning(f"Could not fetch LCSC metadata for {lcsc_id}: {e}")
         with _cache_lock:
             _cache[lcsc_id] = None
+            _cache_dirty = True
         return None
 
 
@@ -92,3 +130,7 @@ def build_property_updates(meta: dict[str, str], lcsc_id: str) -> dict[str, str]
     props.update(LCSC_STATIC_PROPS)
     props["Supplier Part Number 1"] = lcsc_id
     return props
+
+
+# Load the disk cache immediately so all callers benefit from the first import.
+_load_cache()

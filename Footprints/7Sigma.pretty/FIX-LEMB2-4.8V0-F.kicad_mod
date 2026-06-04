@@ -8,7 +8,7 @@
 	(property "Reference" "LP**"
 		(at 0 -2.8 0)
 		(layer "F.SilkS")
-		(uuid "a9e816c9-59a0-45e9-bc23-b2587a250470")
+		(uuid "bd5269c4-fa46-480b-92f3-071edd401975")
 		(effects
 			(font
 				(size 1 1)
@@ -19,7 +19,7 @@
 	(property "Value" "FIX-LEMB2-4.8V0-F"
 		(at 0 2.8 0)
 		(layer "F.Fab")
-		(uuid "6561ec52-aeac-4cec-8a01-325725ae37bf")
+		(uuid "7938231d-fd82-41ac-b23f-06b3e39126ea")
 		(effects
 			(font
 				(size 1 1)
@@ -32,7 +32,7 @@
 		(unlocked yes)
 		(layer "F.Fab")
 		(hide yes)
-		(uuid "788090af-494c-437f-8e14-252dd75a6b18")
+		(uuid "ac8dc343-16a9-44f6-88e8-f0f8247005f6")
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -45,7 +45,7 @@
 		(unlocked yes)
 		(layer "F.Fab")
 		(hide yes)
-		(uuid "802e8e80-2d6c-4301-afd1-60c478af560e")
+		(uuid "8544f170-f3c7-428f-baef-3708b06a5796")
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -64,12 +64,23 @@
 		)
 		(fill no)
 		(layer "Dwgs.User")
-		(uuid "00000000-0000-0000-0000-00000000001b")
+		(uuid "c70cd533-d619-4d42-a0a8-2b6a34a84598")
+	)
+	(fp_circle
+		(center 0 0)
+		(end 0 1.15)
+		(stroke
+			(width 0.05)
+			(type default)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "1e9e4f8c-84f8-4ba4-8b99-cb5de420649d")
 	)
 	(fp_text user "Min 1mm clearance below"
 		(at 0 2.35 0)
 		(layer "Cmts.User")
-		(uuid "00000000-0000-0000-0000-00000000001a")
+		(uuid "c4085a71-ccfd-4543-9b0e-495c6faf3481")
 		(effects
 			(font
 				(size 0.6 0.6)
@@ -80,7 +91,7 @@
 	(fp_text user "${REFERENCE}"
 		(at 0 0 0)
 		(layer "F.Fab")
-		(uuid "00000000-0000-0000-0000-000000000017")
+		(uuid "10b6f346-0805-421d-871e-f07dc3ddc552")
 		(effects
 			(font
 				(size 1 1)

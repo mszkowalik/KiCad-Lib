@@ -69,6 +69,7 @@ def _prefetch_metadata(lcsc_ids: set[str]) -> None:
         futures = {pool.submit(lcsc_api.fetch_metadata, lid): lid for lid in to_fetch}
         for future in as_completed(futures):
             future.result()  # exceptions are already handled inside fetch_metadata
+    lcsc_api.save_cache()
 
 
 def _needs_import(component: dict, existing_bases: set[str], defaults: dict | None = None) -> bool:

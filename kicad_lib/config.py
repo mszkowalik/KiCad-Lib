@@ -35,3 +35,8 @@ SOURCE_BASE_MAP = {
 # API URLs
 # ---------------------------------------------------------------------------
 LCSC_API_URL = "https://wmsc.lcsc.com/ftps/wm/product/detail?productCode={}"
+
+# ---------------------------------------------------------------------------
+# Cache files
+# ---------------------------------------------------------------------------
+LCSC_METADATA_CACHE = os.path.abspath("./.lcsc_cache.json")
