@@ -65,17 +65,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2409272202_Murata-Electronics-DFE201612E-R47M-P2_C668312.pdf
       - key: Price @1 USD
-        value: '0.1482'
+        value: "0.1608"
       - key: Price @100 USD
-        value: '0.1268'
+        value: "0.1375"
       - key: Price @Bulk USD
-        value: '0.1080'
+        value: "0.1172"
       - key: Price Bulk Qty
-        value: '500'
+        value: "500"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: FXL1350-100-M
     base_component: L
     properties:
@@ -104,17 +104,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2404260921_cjiang--Changjiang-Microelectronics-Tech-FXL1350-100-M_C526017.pdf
       - key: Price @1 USD
-        value: '0.7818'
+        value: "0.7818"
       - key: Price @100 USD
-        value: '0.4780'
+        value: "0.4780"
       - key: Price @Bulk USD
-        value: '0.4051'
+        value: "0.4051"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: MLG1005S2N0BT000
     base_component: L
     properties:
@@ -147,17 +147,17 @@ components:
       - key: Datasheet
         value: https://lcsc.com/datasheet/lcsc_datasheet_2412231058_TDK-MLG1005S2N0BT000_C76769.pdf
       - key: Price @1 USD
-        value: '0.0087'
+        value: "0.0097"
       - key: Price @100 USD
-        value: '0.0070'
+        value: "0.0080"
       - key: Price @Bulk USD
-        value: '0.0054'
+        value: "0.0065"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: DFE201610E-1R0M=P2
     base_component: L
     properties:
@@ -186,17 +186,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C161082.pdf
       - key: Price @1 USD
-        value: '0.1654'
+        value: "0.2046"
       - key: Price @100 USD
-        value: '0.1395'
+        value: "0.1786"
       - key: Price @Bulk USD
-        value: '0.1168'
+        value: "0.1558"
       - key: Price Bulk Qty
-        value: '500'
+        value: "500"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: FTC404030S4R7MGCA
     base_component: L
     properties:
@@ -225,17 +225,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C39676083.pdf
       - key: Price @1 USD
-        value: '0.2442'
+        value: "0.2560"
       - key: Price @100 USD
-        value: '0.1909'
+        value: "0.2025"
       - key: Price @Bulk USD
-        value: '0.1397'
+        value: "0.1510"
       - key: Price Bulk Qty
-        value: '500'
+        value: "500"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: LQW15AN47NJ00D
     base_component: L
     properties:
@@ -264,17 +264,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C192855.pdf
       - key: Price @1 USD
-        value: '0.0442'
+        value: "0.0716"
       - key: Price @100 USD
-        value: '0.0364'
+        value: "0.0635"
       - key: Price @Bulk USD
-        value: '0.0295'
+        value: "0.0563"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: CY54-68UH
     base_component: L
     properties:
@@ -303,17 +303,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C2929435.pdf
       - key: Price @1 USD
-        value: '0.0553'
+        value: "0.0552"
       - key: Price @100 USD
-        value: '0.0447'
+        value: "0.0446"
       - key: Price @Bulk USD
-        value: '0.0394'
+        value: "0.0393"
       - key: Price Bulk Qty
-        value: '300'
+        value: "300"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: XRIM201608S2R2MBCA
     base_component: L
     properties:
@@ -342,17 +342,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C22471088.pdf
       - key: Price @1 USD
-        value: '0.0405'
+        value: "0.0413"
       - key: Price @100 USD
-        value: '0.0323'
+        value: "0.0329"
       - key: Price @Bulk USD
-        value: '0.0282'
+        value: "0.0287"
       - key: Price Bulk Qty
-        value: '300'
+        value: "300"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: LQW15CA1R0K00D
     base_component: L
     properties:
@@ -381,17 +381,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C703738.pdf
       - key: Price @1 USD
-        value: '0.1518'
+        value: "0.1953"
       - key: Price @100 USD
-        value: '0.1176'
+        value: "0.1599"
       - key: Price @Bulk USD
-        value: '0.0848'
+        value: "0.1258"
       - key: Price Bulk Qty
-        value: '500'
+        value: "500"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: LQW15AN2N2C10D
     base_component: L
     properties:
@@ -420,17 +420,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C91240.pdf
       - key: Price @1 USD
-        value: '0.0490'
+        value: "0.0615"
       - key: Price @100 USD
-        value: '0.0402'
+        value: "0.0508"
       - key: Price @Bulk USD
-        value: '0.0324'
+        value: "0.0414"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: SRP4020TA-1R0M
     base_component: L
     properties:
@@ -459,17 +459,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C913245.pdf
       - key: Price @1 USD
-        value: '0.3918'
+        value: "0.4154"
       - key: Price @100 USD
-        value: '0.2274'
+        value: "0.2402"
       - key: Price @Bulk USD
-        value: '0.1855'
+        value: "0.1964"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: BLM18EG101TN1D
     base_component: FerriteBead
     properties:
@@ -500,14 +500,14 @@ components:
       - key: Datasheet
         value: https://datasheet.lcsc.com/datasheet/pdf/f56d59225adc45bfab675df0e0fbb20e.pdf?productCode=C76893
       - key: Price @1 USD
-        value: '0.0538'
+        value: "0.0519"
       - key: Price @100 USD
-        value: '0.0538'
+        value: "0.0428"
       - key: Price @Bulk USD
-        value: '0.0408'
+        value: "0.0347"
       - key: Price Bulk Qty
-        value: '600'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"

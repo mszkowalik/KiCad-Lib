@@ -964,7 +964,7 @@
 			)
 			(circle
 				(center 0 0)
-				(radius 1.524)
+				(radius 0.508)
 				(stroke
 					(width 0.127)
 					(type default)
@@ -975,7 +975,7 @@
 			)
 			(circle
 				(center 0 0)
-				(radius 0.508)
+				(radius 1.524)
 				(stroke
 					(width 0.127)
 					(type default)
@@ -1118,7 +1118,7 @@
 			)
 			(circle
 				(center 0 0)
-				(radius 1.524)
+				(radius 0.508)
 				(stroke
 					(width 0.127)
 					(type default)
@@ -1129,7 +1129,7 @@
 			)
 			(circle
 				(center 0 0)
-				(radius 0.508)
+				(radius 1.524)
 				(stroke
 					(width 0.127)
 					(type default)
@@ -1272,7 +1272,7 @@
 			)
 			(circle
 				(center 0 0)
-				(radius 1.524)
+				(radius 0.508)
 				(stroke
 					(width 0.127)
 					(type default)
@@ -1283,7 +1283,7 @@
 			)
 			(circle
 				(center 0 0)
-				(radius 0.508)
+				(radius 1.524)
 				(stroke
 					(width 0.127)
 					(type default)
@@ -1395,6 +1395,149 @@
 			)
 		)
 		(symbol "Hammond_1556CGY_0_1"
+			(rectangle
+				(start -5.08 3.81)
+				(end 5.08 -3.81)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(rectangle
+				(start -4.572 3.302)
+				(end 4.572 -3.302)
+				(stroke
+					(width 0.127)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(text "ENCLOSURE"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.016 1.016)
+						(bold yes)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	(symbol "Takachi_SIM6-12-3W"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(hide yes)
+		)
+		(exclude_from_sim yes)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(property "Reference" "ENC"
+			(at 0 5.08 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Takachi_SIM6-12-3W"
+			(at 0 -5.08 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "7Sigma:TAKACHI_SIM6-12-3W"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://www.takachi-enclosure.com/products/SIM"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Enclosure, case, housing"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "takachi enclosure case housing mechanical wall mount IoT"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_description" "Takachi SIM6-12-3W white ASA weather-resistant wall-mount IoT enclosure, 60 x 120 x 27 mm"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer 1" "Takachi"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Manufacturer Part Number 1" "SIM6-12-3W"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Supplier Part Number 1" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "Takachi_SIM6-12-3W_0_1"
 			(rectangle
 				(start -5.08 3.81)
 				(end 5.08 -3.81)

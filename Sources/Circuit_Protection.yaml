@@ -72,17 +72,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2410010300_BHFUSE-BSMD2920-500-30V_C20539728.pdf
       - key: Price @1 USD
-        value: '0.2177'
+        value: "0.2243"
       - key: Price @100 USD
-        value: '0.1689'
+        value: "0.1751"
       - key: Price @Bulk USD
-        value: '0.1479'
+        value: "0.1540"
       - key: Price Bulk Qty
-        value: '150'
+        value: "150"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: BSMD0805-005-33V
     base_component: Polyfuse
     properties:
@@ -115,17 +115,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411041821_BHFUSE-BSMD0805-005-33V_C883098.pdf
       - key: Price @1 USD
-        value: '0.0544'
+        value: "0.0544"
       - key: Price @100 USD
-        value: '0.0421'
+        value: "0.0421"
       - key: Price @Bulk USD
-        value: '0.0313'
+        value: "0.0313"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: BSMD1206-050-33V
     base_component: Polyfuse
     properties:
@@ -158,17 +158,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2311161433_BHFUSE-BSMD1206-050-33V_C7202014.pdf
       - key: Price @1 USD
-        value: '0.0678'
+        value: "0.0692"
       - key: Price @100 USD
-        value: '0.0524'
+        value: "0.0535"
       - key: Price @Bulk USD
-        value: '0.0390'
+        value: "0.0398"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: PTF-77
     base_component: Fuse
     properties:
@@ -199,14 +199,14 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C717030.pdf
       - key: Price @1 USD
-        value: '0.1694'
+        value: "0.1729"
       - key: Price @100 USD
-        value: '0.1340'
+        value: "0.1363"
       - key: Price @Bulk USD
-        value: '0.0986'
+        value: "0.0996"
       - key: Price Bulk Qty
-        value: '500'
+        value: "500"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"

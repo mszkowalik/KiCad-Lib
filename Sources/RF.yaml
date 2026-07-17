@@ -76,17 +76,17 @@ components:
       - key: Datasheet
         value: https://lcsc.com/datasheet/lcsc_datasheet_2410121246_Shenzhen-Kinghelm-Elec-KH5220-A36_C484543.pdf
       - key: Price @1 USD
-        value: '0.2275'
+        value: "0.2301"
       - key: Price @100 USD
-        value: '0.1798'
+        value: "0.1819"
       - key: Price @Bulk USD
-        value: '0.1339'
+        value: "0.1354"
       - key: Price Bulk Qty
-        value: '500'
+        value: "500"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: ACS0301U
     base_component: Antenna
     properties:
@@ -119,17 +119,17 @@ components:
       - key: Datasheet
         value: https://abracon.com/datasheets/ACS0301U.pdf
       - key: Price @1 USD
-        value: '1.0350'
+        value: "0.9917"
       - key: Price @100 USD
-        value: '0.6471'
+        value: "0.6012"
       - key: Price @Bulk USD
-        value: '0.5763'
+        value: "0.5299"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: BWGNSCNX9-9W2
     base_component: Antenna
     properties:
@@ -158,17 +158,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C2826452.pdf
       - key: Price @1 USD
-        value: '0.7694'
+        value: "0.7311"
       - key: Price @100 USD
-        value: '0.4910'
+        value: "0.5199"
       - key: Price @Bulk USD
-        value: '0.4282'
+        value: "0.4095"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "450"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: GPS1003
     base_component: Antenna
     properties:
@@ -197,17 +197,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C239243.pdf
       - key: Price @1 USD
-        value: '1.0350'
+        value: "1.0350"
       - key: Price @100 USD
-        value: '0.6910'
+        value: "0.6910"
       - key: Price @Bulk USD
-        value: '0.5598'
+        value: "0.5598"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: W3011
     base_component: Antenna_Shield
     properties:
@@ -236,14 +236,14 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C6604735.pdf
       - key: Price @1 USD
-        value: '1.0030'
+        value: "1.0155"
       - key: Price @100 USD
-        value: '0.6665'
+        value: "0.6748"
       - key: Price @Bulk USD
-        value: '0.5748'
+        value: "0.5819"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"

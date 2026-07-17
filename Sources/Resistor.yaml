@@ -64,17 +64,17 @@ components:
       - key: Datasheet
         value: "https://lcsc.com/product-detail/Chip-Resistor-Surface-Mount-UniOhm_5-1KR-5101-1_C25905.html"
       - key: Price @1 USD
-        value: '0.0009'
+        value: "0.0014"
       - key: Price @100 USD
-        value: '0.0009'
+        value: "0.0014"
       - key: Price @Bulk USD
-        value: '0.0007'
+        value: "0.0012"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF220JTCE
     base_component: R
     properties:
@@ -103,17 +103,17 @@ components:
       - key: Datasheet
         value: "https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf"
       - key: Price @1 USD
-        value: '0.0007'
+        value: "0.0060"
       - key: Price @100 USD
-        value: '0.0007'
+        value: "0.0060"
       - key: Price @Bulk USD
-        value: '0.0006'
+        value: "0.0053"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
     remove_properties: []
   - name: 0402WGF100JTCE
     base_component: R
@@ -143,17 +143,17 @@ components:
       - key: Datasheet
         value: "https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf"
       - key: Price @1 USD
-        value: '0.0010'
+        value: "0.0014"
       - key: Price @100 USD
-        value: '0.0010'
+        value: "0.0014"
       - key: Price @Bulk USD
-        value: '0.0008'
+        value: "0.0012"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF1001TCE
     base_component: R
     properties:
@@ -182,17 +182,17 @@ components:
       - key: Datasheet
         value: "https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf"
       - key: Price @1 USD
-        value: '0.0011'
+        value: "0.0081"
       - key: Price @100 USD
-        value: '0.0011'
+        value: "0.0081"
       - key: Price @Bulk USD
-        value: '0.0009'
+        value: "0.0072"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF1002TCE
     base_component: R
     properties:
@@ -221,17 +221,17 @@ components:
       - key: Datasheet
         value: "https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf"
       - key: Price @1 USD
-        value: '0.0013'
+        value: "0.0093"
       - key: Price @100 USD
-        value: '0.0013'
+        value: "0.0093"
       - key: Price @Bulk USD
-        value: '0.0011'
+        value: "0.0084"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF1003TCE
     base_component: R
     properties:
@@ -260,17 +260,17 @@ components:
       - key: Datasheet
         value: "https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf"
       - key: Price @1 USD
-        value: '0.0009'
+        value: "0.0066"
       - key: Price @100 USD
-        value: '0.0009'
+        value: "0.0066"
       - key: Price @Bulk USD
-        value: '0.0007'
+        value: "0.0059"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF1200TCE
     base_component: R
     properties:
@@ -299,17 +299,17 @@ components:
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
       - key: Price @1 USD
-        value: '0.0011'
+        value: "0.0083"
       - key: Price @100 USD
-        value: '0.0011'
+        value: "0.0083"
       - key: Price @Bulk USD
-        value: '0.0009'
+        value: "0.0076"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF2001TCE
     base_component: R
     properties:
@@ -338,17 +338,17 @@ components:
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
       - key: Price @1 USD
-        value: '0.0007'
+        value: "0.0057"
       - key: Price @100 USD
-        value: '0.0007'
+        value: "0.0057"
       - key: Price @Bulk USD
-        value: '0.0006'
+        value: "0.0050"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF5100TCE
     base_component: R
     properties:
@@ -377,17 +377,17 @@ components:
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
       - key: Price @1 USD
-        value: '0.0008'
+        value: "0.0024"
       - key: Price @100 USD
-        value: '0.0008'
+        value: "0.0024"
       - key: Price @Bulk USD
-        value: '0.0007'
+        value: "0.0021"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 1206W4F100LT5E
     base_component: R
     properties:
@@ -416,17 +416,17 @@ components:
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
       - key: Price @1 USD
-        value: '0.0072'
+        value: "0.0099"
       - key: Price @100 USD
-        value: '0.0072'
+        value: "0.0099"
       - key: Price @Bulk USD
-        value: '0.0060'
+        value: "0.0089"
       - key: Price Bulk Qty
-        value: '500'
+        value: "500"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: NCP15XH103F03RC
     base_component: Thermistor_NTC
     properties:
@@ -457,17 +457,17 @@ components:
       - key: Datasheet
         value: https://lcsc.com/product-detail/NTC-Thermistors_muRata_NCP15XH103F03RC_NTCThermistor-10kR-1_C77131.html
       - key: Price @1 USD
-        value: '0.0112'
+        value: "0.0201"
       - key: Price @100 USD
-        value: '0.0112'
+        value: "0.0201"
       - key: Price @Bulk USD
-        value: '0.0088'
+        value: "0.0175"
       - key: Price Bulk Qty
-        value: '500'
+        value: "500"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
     remove_properties: []
   - name: 0402WGF4532TCE
     base_component: R
@@ -497,17 +497,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2206010030_UNI-ROYAL-Uniroyal-Elec-0402WGF4532TCE_C26980.pdf
       - key: Price @1 USD
-        value: '0.0009'
+        value: "0.0069"
       - key: Price @100 USD
-        value: '0.0009'
+        value: "0.0069"
       - key: Price @Bulk USD
-        value: '0.0007'
+        value: "0.0061"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF4533TCE
     base_component: R
     properties:
@@ -536,17 +536,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2206010030_UNI-ROYAL-Uniroyal-Elec-0402WGF4533TCE_C27009.pdf
       - key: Price @1 USD
-        value: '0.0009'
+        value: "0.0024"
       - key: Price @100 USD
-        value: '0.0009'
+        value: "0.0024"
       - key: Price @Bulk USD
-        value: '0.0007'
+        value: "0.0021"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W8F100JT5E
     base_component: R
     properties:
@@ -575,17 +575,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_UNI-ROYAL-Uniroyal-Elec-0805W8F100JT5E_C17415.pdf
       - key: Price @1 USD
-        value: '0.0029'
+        value: "0.0122"
       - key: Price @100 USD
-        value: '0.0029'
+        value: "0.0122"
       - key: Price @Bulk USD
-        value: '0.0024'
+        value: "0.0110"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W8F1200T5E
     base_component: R
     properties:
@@ -614,17 +614,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_UNI-ROYAL-Uniroyal-Elec-0805W8F1200T5E_C17437.pdf
       - key: Price @1 USD
-        value: '0.0028'
+        value: "0.0146"
       - key: Price @100 USD
-        value: '0.0028'
+        value: "0.0146"
       - key: Price @Bulk USD
-        value: '0.0022'
+        value: "0.0130"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W8F1001T5E
     base_component: R
     properties:
@@ -653,17 +653,17 @@ components:
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
       - key: Price @1 USD
-        value: '0.0030'
+        value: "0.0131"
       - key: Price @100 USD
-        value: '0.0030'
+        value: "0.0131"
       - key: Price @Bulk USD
-        value: '0.0025'
+        value: "0.0118"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W8F3300T5E
     base_component: R
     properties:
@@ -692,17 +692,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_UNI-ROYAL-Uniroyal-Elec-0805W8F3300T5E_C17630.pdf
       - key: Price @1 USD
-        value: '0.0023'
+        value: "0.0113"
       - key: Price @100 USD
-        value: '0.0023'
+        value: "0.0113"
       - key: Price @Bulk USD
-        value: '0.0018'
+        value: "0.0101"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W8F4701T5E
     base_component: R
     properties:
@@ -731,17 +731,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_UNI-ROYAL-Uniroyal-Elec-0805W8F4701T5E_C17673.pdf
       - key: Price @1 USD
-        value: '0.0023'
+        value: "0.0111"
       - key: Price @100 USD
-        value: '0.0023'
+        value: "0.0111"
       - key: Price @Bulk USD
-        value: '0.0018'
+        value: "0.0098"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W8F5101T5E
     base_component: R
     properties:
@@ -770,17 +770,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221127_UNI-ROYAL-Uniroyal-Elec-0805W8F5101T5E_C27834.pdf
       - key: Price @1 USD
-        value: '0.0027'
+        value: "0.0143"
       - key: Price @100 USD
-        value: '0.0027'
+        value: "0.0143"
       - key: Price @Bulk USD
-        value: '0.0023'
+        value: "0.0129"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W8F1002T5E
     base_component: R
     properties:
@@ -809,17 +809,17 @@ components:
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
       - key: Price @1 USD
-        value: '0.0030'
+        value: "0.0171"
       - key: Price @100 USD
-        value: '0.0030'
+        value: "0.0171"
       - key: Price @Bulk USD
-        value: '0.0025'
+        value: "0.0155"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W8F1003T5E
     base_component: R
     properties:
@@ -848,17 +848,17 @@ components:
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
       - key: Price @1 USD
-        value: '0.0028'
+        value: "0.0160"
       - key: Price @100 USD
-        value: '0.0028'
+        value: "0.0160"
       - key: Price @Bulk USD
-        value: '0.0023'
+        value: "0.0145"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W8F4700T5E
     base_component: R
     properties:
@@ -887,17 +887,17 @@ components:
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
       - key: Price @1 USD
-        value: '0.0026'
+        value: "0.0145"
       - key: Price @100 USD
-        value: '0.0026'
+        value: "0.0145"
       - key: Price @Bulk USD
-        value: '0.0021'
+        value: "0.0129"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W8F1000T5E
     base_component: R
     properties:
@@ -926,17 +926,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_UNI-ROYAL-Uniroyal-Elec-0805W8F1000T5E_C17408.pdf
       - key: Price @1 USD
-        value: '0.0024'
+        value: "0.0116"
       - key: Price @100 USD
-        value: '0.0024'
+        value: "0.0116"
       - key: Price @Bulk USD
-        value: '0.0019'
+        value: "0.0104"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W8F2002T5E
     base_component: R
     properties:
@@ -965,17 +965,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_UNI-ROYAL-Uniroyal-Elec-0805W8F2002T5E_C4328.pdf
       - key: Price @1 USD
-        value: '0.0027'
+        value: "0.0155"
       - key: Price @100 USD
-        value: '0.0027'
+        value: "0.0155"
       - key: Price @Bulk USD
-        value: '0.0022'
+        value: "0.0139"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W4F100MT5E
     base_component: R
     properties:
@@ -1004,17 +1004,17 @@ components:
       - key: Datasheet
         value: ""
       - key: Price @1 USD
-        value: '0.0111'
+        value: "0.0181"
       - key: Price @100 USD
-        value: '0.0111'
+        value: "0.0181"
       - key: Price @Bulk USD
-        value: '0.0088'
+        value: "0.0161"
       - key: Price Bulk Qty
-        value: '500'
+        value: "500"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF1373TCE
     base_component: R
     properties:
@@ -1043,17 +1043,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C32298.pdf
       - key: Price @1 USD
-        value: '0.0008'
+        value: "0.0008"
       - key: Price @100 USD
-        value: '0.0008'
+        value: "0.0008"
       - key: Price @Bulk USD
-        value: '0.0007'
+        value: "0.0007"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF7683TCE
     base_component: R
     properties:
@@ -1082,17 +1082,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C27017.pdf
       - key: Price @1 USD
-        value: '0.0007'
+        value: "0.0007"
       - key: Price @100 USD
-        value: '0.0007'
+        value: "0.0007"
       - key: Price @Bulk USD
-        value: '0.0006'
+        value: "0.0006"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W8F0000T5E
     base_component: R
     properties:
@@ -1121,17 +1121,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C17477.pdf
       - key: Price @1 USD
-        value: '0.0022'
+        value: "0.0152"
       - key: Price @100 USD
-        value: '0.0022'
+        value: "0.0152"
       - key: Price @Bulk USD
-        value: '0.0018'
+        value: "0.0136"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF1583TCE
     base_component: R
     properties:
@@ -1160,17 +1160,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C99856.pdf
       - key: Price @1 USD
-        value: '0.0009'
+        value: "0.0016"
       - key: Price @100 USD
-        value: '0.0009'
+        value: "0.0016"
       - key: Price @Bulk USD
-        value: '0.0008'
+        value: "0.0015"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF3002TCE
     base_component: R
     properties:
@@ -1199,17 +1199,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C25776.pdf
       - key: Price @1 USD
-        value: '0.0008'
+        value: "0.0015"
       - key: Price @100 USD
-        value: '0.0008'
+        value: "0.0015"
       - key: Price @Bulk USD
-        value: '0.0007'
+        value: "0.0013"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W8F100KT5E
     base_component: R
     properties:
@@ -1238,17 +1238,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C25271.pdf
       - key: Price @1 USD
-        value: '0.0044'
+        value: "0.0295"
       - key: Price @100 USD
-        value: '0.0044'
+        value: "0.0295"
       - key: Price @Bulk USD
-        value: '0.0037'
+        value: "0.0268"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "500"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W8J0100T5E
     base_component: R
     properties:
@@ -1277,17 +1277,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C25278.pdf
       - key: Price @1 USD
-        value: '0.0020'
+        value: "0.0153"
       - key: Price @100 USD
-        value: '0.0020'
+        value: "0.0153"
       - key: Price @Bulk USD
-        value: '0.0016'
+        value: "0.0139"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W8F6800T5E
     base_component: R
     properties:
@@ -1316,17 +1316,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C17798.pdf
       - key: Price @1 USD
-        value: '0.0031'
+        value: "0.0144"
       - key: Price @100 USD
-        value: '0.0031'
+        value: "0.0144"
       - key: Price @Bulk USD
-        value: '0.0025'
+        value: "0.0128"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF1301TCE
     base_component: R
     properties:
@@ -1355,17 +1355,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C2586.pdf
       - key: Price @1 USD
-        value: '0.0007'
+        value: "0.0055"
       - key: Price @100 USD
-        value: '0.0007'
+        value: "0.0055"
       - key: Price @Bulk USD
-        value: '0.0006'
+        value: "0.0048"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF6492TCE
     base_component: R
     properties:
@@ -1394,17 +1394,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C26984.pdf
       - key: Price @1 USD
-        value: '0.0007'
+        value: "0.0008"
       - key: Price @100 USD
-        value: '0.0007'
+        value: "0.0008"
       - key: Price @Bulk USD
-        value: '0.0006'
+        value: "0.0007"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF2611TCE
     base_component: R
     properties:
@@ -1433,17 +1433,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C34906.pdf
       - key: Price @1 USD
-        value: '0.0008'
+        value: "0.0008"
       - key: Price @100 USD
-        value: '0.0008'
+        value: "0.0008"
       - key: Price @Bulk USD
-        value: '0.0007'
+        value: "0.0007"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF750JTCE
     base_component: R
     properties:
@@ -1472,17 +1472,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C25133.pdf
       - key: Price @1 USD
-        value: '0.0009'
+        value: "0.0080"
       - key: Price @100 USD
-        value: '0.0009'
+        value: "0.0080"
       - key: Price @Bulk USD
-        value: '0.0007'
+        value: "0.0071"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF4020TCE
     base_component: R
     properties:
@@ -1511,17 +1511,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C41042.pdf
       - key: Price @1 USD
-        value: '0.0009'
+        value: "0.0009"
       - key: Price @100 USD
-        value: '0.0009'
+        value: "0.0009"
       - key: Price @Bulk USD
-        value: '0.0007'
+        value: "0.0007"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF9531TCE
     base_component: R
     properties:
@@ -1550,17 +1550,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C96273.pdf
       - key: Price @1 USD
-        value: '0.0009'
+        value: "0.0032"
       - key: Price @100 USD
-        value: '0.0009'
+        value: "0.0032"
       - key: Price @Bulk USD
-        value: '0.0007'
+        value: "0.0028"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF1000TCE
     base_component: R
     properties:
@@ -1589,17 +1589,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C25076.pdf
       - key: Price @1 USD
-        value: '0.0010'
+        value: "0.0071"
       - key: Price @100 USD
-        value: '0.0010'
+        value: "0.0071"
       - key: Price @Bulk USD
-        value: '0.0008'
+        value: "0.0064"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF249JTCE
     base_component: R
     properties:
@@ -1628,17 +1628,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5099.pdf
       - key: Price @1 USD
-        value: '0.0007'
+        value: "0.0020"
       - key: Price @100 USD
-        value: '0.0007'
+        value: "0.0020"
       - key: Price @Bulk USD
-        value: '0.0006'
+        value: "0.0016"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W8F1503T5E
     base_component: R
     properties:
@@ -1667,17 +1667,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C17470.pdf
       - key: Price @1 USD
-        value: '0.0027'
+        value: "0.0130"
       - key: Price @100 USD
-        value: '0.0027'
+        value: "0.0130"
       - key: Price @Bulk USD
-        value: '0.0022'
+        value: "0.0118"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF1203TCE
     base_component: R
     properties:
@@ -1706,17 +1706,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C25750.pdf
       - key: Price @1 USD
-        value: '0.0007'
+        value: "0.0012"
       - key: Price @100 USD
-        value: '0.0007'
+        value: "0.0012"
       - key: Price @Bulk USD
-        value: '0.0006'
+        value: "0.0011"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF4123TCE
     base_component: R
     properties:
@@ -1745,17 +1745,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C27008.pdf
       - key: Price @1 USD
-        value: '0.0006'
+        value: "0.0006"
       - key: Price @100 USD
-        value: '0.0006'
+        value: "0.0006"
       - key: Price @Bulk USD
-        value: '0.0006'
+        value: "0.0006"
       - key: Price Bulk Qty
-        value: '100'
+        value: "100"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF5103TCE
     base_component: R
     properties:
@@ -1784,17 +1784,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C11616.pdf
       - key: Price @1 USD
-        value: '0.0008'
+        value: "0.0013"
       - key: Price @100 USD
-        value: '0.0008'
+        value: "0.0013"
       - key: Price @Bulk USD
-        value: '0.0006'
+        value: "0.0011"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF4302TCE
     base_component: R
     properties:
@@ -1823,17 +1823,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C8329.pdf
       - key: Price @1 USD
-        value: '0.0008'
+        value: "0.0015"
       - key: Price @100 USD
-        value: '0.0008'
+        value: "0.0015"
       - key: Price @Bulk USD
-        value: '0.0007'
+        value: "0.0014"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF3242TCE
     base_component: R
     properties:
@@ -1862,17 +1862,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C26974.pdf
       - key: Price @1 USD
-        value: '0.0008'
+        value: "0.0012"
       - key: Price @100 USD
-        value: '0.0008'
+        value: "0.0012"
       - key: Price @Bulk USD
-        value: '0.0006'
+        value: "0.0011"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF0000TCE
     base_component: R
     properties:
@@ -1901,17 +1901,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C17168.pdf
       - key: Price @1 USD
-        value: '0.0008'
+        value: "0.0065"
       - key: Price @100 USD
-        value: '0.0008'
+        value: "0.0065"
       - key: Price @Bulk USD
-        value: '0.0006'
+        value: "0.0058"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF1183TCE
     base_component: R
     properties:
@@ -1940,17 +1940,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C25748.pdf
       - key: Price @1 USD
-        value: '0.0004'
+        value: "0.0008"
       - key: Price @100 USD
-        value: '0.0004'
+        value: "0.0008"
       - key: Price @Bulk USD
-        value: '0.0004'
+        value: "0.0007"
       - key: Price Bulk Qty
-        value: '100'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF2202TCE
     base_component: R
     properties:
@@ -1979,17 +1979,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C25768.pdf
       - key: Price @1 USD
-        value: '0.0010'
+        value: "0.0075"
       - key: Price @100 USD
-        value: '0.0010'
+        value: "0.0075"
       - key: Price @Bulk USD
-        value: '0.0008'
+        value: "0.0067"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0805W8F1602T5E
     base_component: R
     properties:
@@ -2018,17 +2018,17 @@ components:
       - key: Datasheet
         value: https://datasheet.lcsc.com/datasheet/pdf/0a975aaa49b7c97f38a963127be4a823.pdf?productCode=C17490
       - key: Price @1 USD
-        value: '0.0023'
+        value: "0.0140"
       - key: Price @100 USD
-        value: '0.0023'
+        value: "0.0140"
       - key: Price @Bulk USD
-        value: '0.0018'
+        value: "0.0124"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF1623TCE
     base_component: R
     properties:
@@ -2057,17 +2057,17 @@ components:
       - key: Datasheet
         value: https://datasheet.lcsc.com/datasheet/pdf/0a975aaa49b7c97f38a963127be4a823.pdf?productCode=C54068
       - key: Price @1 USD
-        value: '0.0007'
+        value: "0.0013"
       - key: Price @100 USD
-        value: '0.0007'
+        value: "0.0013"
       - key: Price @Bulk USD
-        value: '0.0006'
+        value: "0.0012"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF3323TCE
     base_component: R
     properties:
@@ -2096,17 +2096,17 @@ components:
       - key: Supplier Part Number 1
         value: C44358
       - key: Price @1 USD
-        value: '0.0009'
+        value: "0.0014"
       - key: Price @100 USD
-        value: '0.0009'
+        value: "0.0014"
       - key: Price @Bulk USD
-        value: '0.0007'
+        value: "0.0013"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: 0402WGF3743TCE
     base_component: R
     properties:
@@ -2135,14 +2135,14 @@ components:
       - key: Manufacturer Part Number 1
         value: 0402WGF3743TCE
       - key: Price @1 USD
-        value: '0.0004'
+        value: "0.0004"
       - key: Price @100 USD
-        value: '0.0004'
+        value: "0.0004"
       - key: Price @Bulk USD
-        value: '0.0004'
+        value: "0.0004"
       - key: Price Bulk Qty
-        value: '100'
+        value: "100"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"

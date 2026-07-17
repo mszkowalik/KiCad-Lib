@@ -130,7 +130,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0907"
+		(property "Price @1 USD" "0.0913"
 			(at 0 0 0)
 			(effects
 				(font
@@ -139,7 +139,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0736"
+		(property "Price @100 USD" "0.0741"
 			(at 0 0 0)
 			(effects
 				(font
@@ -148,7 +148,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0583"
+		(property "Price @Bulk USD" "0.0587"
 			(at 0 0 0)
 			(effects
 				(font
@@ -175,7 +175,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font

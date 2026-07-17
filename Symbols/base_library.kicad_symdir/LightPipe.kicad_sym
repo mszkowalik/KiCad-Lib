@@ -92,7 +92,7 @@
 			)
 			(circle
 				(center 0 0)
-				(radius 1.524)
+				(radius 0.508)
 				(stroke
 					(width 0.127)
 					(type default)
@@ -103,7 +103,7 @@
 			)
 			(circle
 				(center 0 0)
-				(radius 0.508)
+				(radius 1.524)
 				(stroke
 					(width 0.127)
 					(type default)

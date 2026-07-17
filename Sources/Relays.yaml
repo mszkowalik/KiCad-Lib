@@ -47,17 +47,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2211282230_Omron-Electronics-G2RL-1-DC24_C469139.pdf
       - key: Price @1 USD
-        value: '1.8261'
+        value: "1.7479"
       - key: Price @100 USD
-        value: '1.0490'
+        value: "1.0475"
       - key: Price @Bulk USD
-        value: '0.9260'
+        value: "0.9399"
       - key: Price Bulk Qty
-        value: '1000'
+        value: "1000"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"
   - name: G6K-2F-Y-TR DC5
     base_component: G6K-2F
     properties:
@@ -80,14 +80,14 @@ components:
       - key: Footprint
         value: 7Sigma:RELAY-SMD_G6K-2F-X-XX
       - key: Price @1 USD
-        value: '1.0385'
+        value: "0.9245"
       - key: Price @100 USD
-        value: '0.6783'
+        value: "0.6218"
       - key: Price @Bulk USD
-        value: '0.6315'
+        value: "0.5713"
       - key: Price Bulk Qty
-        value: '900'
+        value: "900"
       - key: Price Source
         value: LCSC
       - key: Price Updated
-        value: '2026-05-14'
+        value: "2026-07-16"

@@ -73,7 +73,7 @@
 					(type background)
 				)
 			)
-			(pin unspecified line
+			(pin no_connect line
 				(at 10.16 -12.7 180)
 				(length 2.54)
 				(name "N.C."
@@ -91,25 +91,7 @@
 					)
 				)
 			)
-			(pin unspecified line
-				(at 10.16 10.16 180)
-				(length 2.54)
-				(name "S1"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(number "2"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-			)
-			(pin unspecified line
+			(pin passive line
 				(at 10.16 7.62 180)
 				(length 2.54)
 				(name "S2"
@@ -127,7 +109,7 @@
 					)
 				)
 			)
-			(pin unspecified line
+			(pin passive line
 				(at 10.16 5.08 180)
 				(length 2.54)
 				(name "S3"
@@ -145,7 +127,7 @@
 					)
 				)
 			)
-			(pin unspecified line
+			(pin passive line
 				(at 10.16 2.54 180)
 				(length 2.54)
 				(name "S4"
@@ -163,7 +145,7 @@
 					)
 				)
 			)
-			(pin unspecified line
+			(pin passive line
 				(at -10.16 7.62 0)
 				(length 2.54)
 				(name "D"
@@ -181,7 +163,7 @@
 					)
 				)
 			)
-			(pin unspecified line
+			(pin passive line
 				(at 10.16 -7.62 180)
 				(length 2.54)
 				(name "S8"
@@ -199,7 +181,7 @@
 					)
 				)
 			)
-			(pin unspecified line
+			(pin passive line
 				(at 10.16 -5.08 180)
 				(length 2.54)
 				(name "S7"
@@ -217,7 +199,7 @@
 					)
 				)
 			)
-			(pin unspecified line
+			(pin passive line
 				(at 10.16 -2.54 180)
 				(length 2.54)
 				(name "S6"
@@ -235,7 +217,7 @@
 					)
 				)
 			)
-			(pin unspecified line
+			(pin passive line
 				(at 10.16 0 180)
 				(length 2.54)
 				(name "S5"
@@ -253,7 +235,7 @@
 					)
 				)
 			)
-			(pin unspecified line
+			(pin power_in line
 				(at -10.16 10.16 0)
 				(length 2.54)
 				(name "VDD"
@@ -271,7 +253,7 @@
 					)
 				)
 			)
-			(pin unspecified line
+			(pin power_in line
 				(at -10.16 -12.7 0)
 				(length 2.54)
 				(name "GND"
@@ -289,7 +271,7 @@
 					)
 				)
 			)
-			(pin unspecified line
+			(pin input line
 				(at -10.16 -2.54 0)
 				(length 2.54)
 				(name "A2"
@@ -307,7 +289,7 @@
 					)
 				)
 			)
-			(pin unspecified line
+			(pin input line
 				(at -10.16 0 0)
 				(length 2.54)
 				(name "A1"
@@ -325,7 +307,7 @@
 					)
 				)
 			)
-			(pin unspecified line
+			(pin input line
 				(at -10.16 2.54 0)
 				(length 2.54)
 				(name "A0"
@@ -343,7 +325,7 @@
 					)
 				)
 			)
-			(pin unspecified line
+			(pin input line
 				(at -10.16 -5.08 0)
 				(length 2.54)
 				(name "EN"
@@ -354,6 +336,26 @@
 					)
 				)
 				(number "16"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(symbol "TMUX1208QRSVRQ1_1_1"
+			(pin passive line
+				(at 10.16 10.16 180)
+				(length 2.54)
+				(name "S1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
 					(effects
 						(font
 							(size 1.27 1.27)

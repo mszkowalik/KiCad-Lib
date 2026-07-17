@@ -237,3 +237,26 @@ components:
         value: ""
       - key: Supplier Part Number 1
         value: ""
+  - name: Takachi_SIM6-12-3W
+    base_component: Enclosure
+    properties:
+      - key: Reference
+        value: "ENC"
+      - key: Value
+        value: Takachi_SIM6-12-3W
+      - key: Footprint
+        value: 7Sigma:TAKACHI_SIM6-12-3W
+      - key: Datasheet
+        value: "https://www.takachi-enclosure.com/products/SIM"
+      - key: ki_keywords
+        value: "takachi enclosure case housing mechanical wall mount IoT"
+      - key: ki_description
+        value: "Takachi SIM6-12-3W white ASA weather-resistant wall-mount IoT enclosure, 60 x 120 x 27 mm"
+      - key: Manufacturer 1
+        value: "Takachi"
+      - key: Manufacturer Part Number 1
+        value: SIM6-12-3W
+      - key: Supplier 1
+        value: ""
+      - key: Supplier Part Number 1
+        value: ""

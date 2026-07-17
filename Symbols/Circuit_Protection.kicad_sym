@@ -174,7 +174,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.2177"
+		(property "Price @1 USD" "0.2243"
 			(at 0 0 0)
 			(effects
 				(font
@@ -183,7 +183,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.1689"
+		(property "Price @100 USD" "0.1751"
 			(at 0 0 0)
 			(effects
 				(font
@@ -192,7 +192,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.1479"
+		(property "Price @Bulk USD" "0.1540"
 			(at 0 0 0)
 			(effects
 				(font
@@ -219,7 +219,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font
@@ -522,7 +522,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font
@@ -780,7 +780,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0678"
+		(property "Price @1 USD" "0.0692"
 			(at 0 0 0)
 			(effects
 				(font
@@ -789,7 +789,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0524"
+		(property "Price @100 USD" "0.0535"
 			(at 0 0 0)
 			(effects
 				(font
@@ -798,7 +798,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0390"
+		(property "Price @Bulk USD" "0.0398"
 			(at 0 0 0)
 			(effects
 				(font
@@ -825,7 +825,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1073,7 +1073,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.1694"
+		(property "Price @1 USD" "0.1729"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1082,7 +1082,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.1340"
+		(property "Price @100 USD" "0.1363"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1091,7 +1091,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0986"
+		(property "Price @Bulk USD" "0.0996"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1118,7 +1118,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font

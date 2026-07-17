@@ -164,7 +164,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0828"
+		(property "Price @1 USD" "0.0846"
 			(at 0 0 0)
 			(effects
 				(font
@@ -173,7 +173,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0671"
+		(property "Price @100 USD" "0.0682"
 			(at 0 0 0)
 			(effects
 				(font
@@ -182,7 +182,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0523"
+		(property "Price @Bulk USD" "0.0528"
 			(at 0 0 0)
 			(effects
 				(font
@@ -209,7 +209,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font
@@ -605,7 +605,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0589"
+		(property "Price @1 USD" "0.0996"
 			(at 0 0 0)
 			(effects
 				(font
@@ -614,7 +614,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0474"
+		(property "Price @100 USD" "0.0837"
 			(at 0 0 0)
 			(effects
 				(font
@@ -623,7 +623,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0415"
+		(property "Price @Bulk USD" "0.0688"
 			(at 0 0 0)
 			(effects
 				(font
@@ -632,7 +632,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Bulk Qty" "300"
+		(property "Price Bulk Qty" "500"
 			(at 0 0 0)
 			(effects
 				(font
@@ -650,7 +650,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font
@@ -884,6 +884,447 @@
 		)
 		(embedded_fonts no)
 	)
+	(symbol "SI2319A"
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(property "Reference" "Q"
+			(at 5.08 1.27 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "SI2319A"
+			(at 5.08 -1.27 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "7Sigma:SOT-23-3"
+			(at 5.08 2.54 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://datasheet.lcsc.com/datasheet/pdf/f0ccd1ecfc97711372e48e951f7a93d2.pdf?productCode=C545576"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "P-MOSFET transistor, gate/source/drain"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Power" "1.25W"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Drain Source On Resistance" "70mΩ@10V"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Continuous Drain Current" "4.4A"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Drain Source Voltage" "40V"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Manufacturer 1" "UMW"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Manufacturer Part Number 1" "SI2319A"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Supplier 1" "LCSC"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Supplier Part Number 1" "C545576"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC Part" "C545576"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "transistor PMOS P-MOS P-MOSFET"
+			(at 0 0 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "comp_type" "PMOS"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_description" "P-MOS 40V 4.4A 1.25W SOT-23-3"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Price @1 USD" "0.0585"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Price @100 USD" "0.0455"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Price @Bulk USD" "0.0390"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Price Bulk Qty" "300"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Price Source" "LCSC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(property "Price Updated" "2026-07-16"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "SI2319A_0_1"
+			(polyline
+				(pts
+					(xy 0.254 1.905) (xy 0.254 -1.905)
+				)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 0.254 0) (xy -2.54 0)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 0.762 2.286) (xy 0.762 1.27)
+				)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 0.762 1.778) (xy 3.302 1.778) (xy 3.302 -1.778) (xy 0.762 -1.778)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 0.762 0.508) (xy 0.762 -0.508)
+				)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 0.762 -1.27) (xy 0.762 -2.286)
+				)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(circle
+				(center 1.651 0)
+				(radius 2.794)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 2.286 0) (xy 1.27 0.381) (xy 1.27 -0.381) (xy 2.286 0)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type outline)
+				)
+			)
+			(polyline
+				(pts
+					(xy 2.54 2.54) (xy 2.54 1.778)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(circle
+				(center 2.54 1.778)
+				(radius 0.254)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type outline)
+				)
+			)
+			(circle
+				(center 2.54 -1.778)
+				(radius 0.254)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type outline)
+				)
+			)
+			(polyline
+				(pts
+					(xy 2.54 -2.54) (xy 2.54 0) (xy 0.762 0)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 2.794 -0.508) (xy 2.921 -0.381) (xy 3.683 -0.381) (xy 3.81 -0.254)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 3.302 -0.381) (xy 2.921 0.254) (xy 3.683 0.254) (xy 3.302 -0.381)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "SI2319A_1_1"
+			(pin input line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "G"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 2.54 -5.08 90)
+				(length 2.54)
+				(name "S"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 2.54 5.08 270)
+				(length 2.54)
+				(name "D"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "3"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
 	(symbol "MMBT3904,215"
 		(pin_names
 			(offset 0)
@@ -1037,7 +1478,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0389"
+		(property "Price @1 USD" "0.0307"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1046,7 +1487,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0389"
+		(property "Price @100 USD" "0.0307"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1055,7 +1496,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0255"
+		(property "Price @Bulk USD" "0.0208"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1082,7 +1523,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1395,7 +1836,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.1653"
+		(property "Price @1 USD" "0.1600"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1404,7 +1845,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.1281"
+		(property "Price @100 USD" "0.1273"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1413,7 +1854,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0956"
+		(property "Price @Bulk USD" "0.0958"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1440,7 +1881,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1836,7 +2277,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.2828"
+		(property "Price @1 USD" "0.2896"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1845,7 +2286,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.2271"
+		(property "Price @100 USD" "0.2362"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1854,7 +2295,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.1735"
+		(property "Price @Bulk USD" "0.1847"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1881,7 +2322,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2397,7 +2838,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.4226"
+		(property "Price @1 USD" "0.4452"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2406,7 +2847,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.2452"
+		(property "Price @100 USD" "0.2714"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2415,7 +2856,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.1919"
+		(property "Price @Bulk USD" "0.2177"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2442,7 +2883,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2955,7 +3396,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.6339"
+		(property "Price @1 USD" "1.2995"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2964,7 +3405,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.3871"
+		(property "Price @100 USD" "0.9958"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2973,7 +3414,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.3710"
+		(property "Price @Bulk USD" "0.9747"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3000,7 +3441,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3491,7 +3932,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0789"
+		(property "Price @1 USD" "0.0812"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3500,7 +3941,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0699"
+		(property "Price @100 USD" "0.0719"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3509,7 +3950,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0620"
+		(property "Price @Bulk USD" "0.0638"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3536,7 +3977,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3932,7 +4373,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0400"
+		(property "Price @1 USD" "0.0428"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3941,7 +4382,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0400"
+		(property "Price @100 USD" "0.0428"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3950,7 +4391,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0267"
+		(property "Price @Bulk USD" "0.0294"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3977,7 +4418,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4364,7 +4805,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.1029"
+		(property "Price @1 USD" "0.2386"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4373,7 +4814,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0828"
+		(property "Price @100 USD" "0.1944"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4382,7 +4823,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0653"
+		(property "Price @Bulk USD" "0.1519"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4409,7 +4850,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4696,7 +5137,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.5400"
+		(property "Price @1 USD" "0.7717"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4705,7 +5146,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.3146"
+		(property "Price @100 USD" "0.5167"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4714,7 +5155,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.2741"
+		(property "Price @Bulk USD" "0.4631"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4741,7 +5182,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5251,7 +5692,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0364"
+		(property "Price @1 USD" "0.0458"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5260,7 +5701,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0284"
+		(property "Price @100 USD" "0.0354"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5269,7 +5710,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0242"
+		(property "Price @Bulk USD" "0.0303"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5296,7 +5737,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5683,7 +6124,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0416"
+		(property "Price @1 USD" "0.0437"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5692,7 +6133,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0416"
+		(property "Price @100 USD" "0.0437"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5701,7 +6142,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0276"
+		(property "Price @Bulk USD" "0.0296"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5728,7 +6169,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-05-14"
+		(property "Price Updated" "2026-07-16"
 			(at 0 0 0)
 			(effects
 				(font
