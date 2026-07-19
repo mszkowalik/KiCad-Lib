@@ -96,3 +96,22 @@ first_pin_y = box_half_height - 1.27
 - **GND is `power_in`** even though it is often thought of as a return path. KiCad treats GND nets as power and expects them to connect to `power_in` pins on ICs and `power_out` on power symbols (PWR_FLAG, VCC symbols).
 - **VDD_IO** (a module-generated IO supply) is `power_out` — it drives other devices' VCC pins.
 - `no_connect` pins must have an X marker placed on them in schematics; ERC will warn otherwise.
+
+---
+
+## 5. Stacked (Shorted) Pins
+
+KiCad shorts pads **inside the symbol** by stacking pins: two or more pins placed at the **identical** `(at x y angle)` with the **same name** form a single electrical node. Make one pin visible and mark every other one `(hide yes)` — the symbol then shows one pin, but the netlist ties all their pad numbers to the same net.
+
+Two uses:
+
+1. **Multiple pads that are the same net internally** — e.g. a MOSFET with several source/drain pads, or an IC with redundant GND/VDD pads. Draw one visible pin per net and stack the duplicates hidden on top. See `CSD17577Q3A` (source pads 1/2/3 and drain pads 5–9), `LM78L05_SO8`, `ESP32-S3`.
+2. **Tying a signal pad to an adjacent datasheet `NC` pad** for a better routing / copper shape. Because an `NC` pad has no internal connection, shorting it to a signal net is electrically safe and lets the layout use the extra pad as copper. This is a **layout-driven decision** — only do it when the board designer asks for that specific short, and confirm the target pad is genuinely `NC` in the datasheet before tying it in.
+
+Rules for a stacked pin:
+- Same `(at …)` coordinates and orientation as the visible pin it stacks onto.
+- Same `name` as the visible pin (mismatched names on coincident pins raise an ERC warning).
+- A pin type compatible with the visible one (usually `passive`); an `NC` pad that gets shorted stops being `no_connect` and becomes whatever the net is (e.g. `passive`).
+- `(hide yes)` on all but the one visible pin.
+
+Example in this library: `TPD4E05U06` — pad 10 (datasheet `NC`) is stacked hidden onto pad 1 (`D1+`) at the board designer's request, so the two pads are shorted for routing and only `D1+` is drawn.

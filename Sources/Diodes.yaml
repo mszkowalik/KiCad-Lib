@@ -14,8 +14,7 @@ defaults:
     "DO-214AC(SMA)": "7Sigma:D_SMA"
     "SMA(DO-214AC)": "7Sigma:D_SMA"
     "SOT-23": "7Sigma:SOT-23-3"
-
-# Validation rules specific to diode components
+    "USON-10(1x2.5)": "7Sigma:USON-10_2.5x1.0mm_P0.5mm"
 validation_rules:
   required_properties:
     - "comp_type"
@@ -227,6 +226,92 @@ components:
         value: LCSC
       - key: Price Updated
         value: "2026-07-16"
+  - name: BZX384-C3V6,115
+    base_component: BZT52Cxx
+    properties:
+      - key: Footprint
+        value: 7Sigma:D_SOD-323
+      - key: Value
+        value: 3V6
+      - key: comp_type
+        value: ZENNER
+      - key: ki_description
+        value: Zenner Diode 3.6V 300mW SOD-323
+      - key: Zenner Voltage
+        value: 3.6V
+      - key: Tolerance
+        value: 5%
+      - key: Max Continuous Current
+        value: 83mA
+      - key: Power
+        value: 300mW
+      - key: Manufacturer 1
+        value: Nexperia
+      - key: Manufacturer Part Number 1
+        value: BZX384-C3V6,115
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C454986
+      - key: LCSC Part
+        value: C454986
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/c773df4d2305e2d654be5bae94e5e78b.pdf?productCode=C454986
+      - key: Price @1 USD
+        value: "0.0291"
+      - key: Price @100 USD
+        value: "0.0291"
+      - key: Price @Bulk USD
+        value: "0.0191"
+      - key: Price Bulk Qty
+        value: "600"
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: "2026-07-17"
+  - name: BZX384-C12,115
+    base_component: BZT52Cxx
+    properties:
+      - key: Footprint
+        value: 7Sigma:D_SOD-323
+      - key: Value
+        value: 12V
+      - key: comp_type
+        value: ZENNER
+      - key: ki_description
+        value: Zenner Diode 12V 300mW SOD-323
+      - key: Zenner Voltage
+        value: 12V
+      - key: Tolerance
+        value: 5%
+      - key: Max Continuous Current
+        value: 25mA
+      - key: Power
+        value: 300mW
+      - key: Manufacturer 1
+        value: Nexperia
+      - key: Manufacturer Part Number 1
+        value: BZX384-C12,115
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C454968
+      - key: LCSC Part
+        value: C454968
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/c773df4d2305e2d654be5bae94e5e78b.pdf?productCode=C454968
+      - key: Price @1 USD
+        value: "0.0296"
+      - key: Price @100 USD
+        value: "0.0296"
+      - key: Price @Bulk USD
+        value: "0.0195"
+      - key: Price Bulk Qty
+        value: "600"
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: "2026-07-17"
   - name: BZX84C8V2LT1G
     base_component: BZX84Cxx
     properties:
@@ -391,6 +476,47 @@ components:
         value: LCSC
       - key: Price Updated
         value: "2026-07-16"
+  - name: SMAJ28A
+    base_component: SMAJxxA
+    properties:
+      - key: Footprint
+        value: 7Sigma:D_SMA
+      - key: Value
+        value: SMAJ28A
+      - key: comp_type
+        value: TVS
+      - key: ki_description
+        value: TVS DIODE 28VWM 45.4VC DO-214AC(SMA)
+      - key: Voltage - Breakdown
+        value: 34.4V
+      - key: Reverse Leakage Current
+        value: 1uA
+      - key: Reverse Stand-Off Voltage
+        value: 28V
+      - key: Manufacturer 1
+        value: Littelfuse
+      - key: Manufacturer Part Number 1
+        value: SMAJ28A
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C148227
+      - key: LCSC Part
+        value: C148227
+      - key: Datasheet
+        value: https://www.lcsc.com/datasheet/C148227.pdf
+      - key: Price @1 USD
+        value: "0.1321"
+      - key: Price @100 USD
+        value: "0.1099"
+      - key: Price @Bulk USD
+        value: "0.0904"
+      - key: Price Bulk Qty
+        value: "500"
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: "2026-07-17"
   - name: PMEG6010CEJ,115
     base_component: D_Schottky
     properties:
@@ -672,3 +798,44 @@ components:
         value: LCSC
       - key: Price Updated
         value: "2026-07-16"
+  - name: TPD4E05U06DQAR
+    base_component: TPD4E05U06
+    properties:
+      - key: Footprint
+        value: 7Sigma:USON-10_2.5x1.0mm_P0.5mm
+      - key: Value
+        value: 5.5V
+      - key: comp_type
+        value: TVS
+      - key: ki_description
+        value: 4-Channel ESD Protection Array 5.5VWM USON-10
+      - key: Voltage - Breakdown
+        value: 6.5V
+      - key: Reverse Leakage Current
+        value: 10nA
+      - key: Reverse Stand-Off Voltage
+        value: 5.5V
+      - key: Manufacturer 1
+        value: Texas Instruments
+      - key: Manufacturer Part Number 1
+        value: TPD4E05U06DQAR
+      - key: LCSC Part
+        value: C138714
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/86fce5e377410b6c2d1b0526f306f55e.pdf?productCode=C138714
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C138714
+      - key: Price @1 USD
+        value: "0.0875"
+      - key: Price @100 USD
+        value: "0.0717"
+      - key: Price @Bulk USD
+        value: "0.0570"
+      - key: Price Bulk Qty
+        value: "500"
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: "2026-07-19"

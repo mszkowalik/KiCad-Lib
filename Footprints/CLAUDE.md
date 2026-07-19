@@ -102,8 +102,19 @@ When importing from EasyEDA / LCSC (`easyeda2kicad`), verify all of the followin
 - [ ] Pad names: no `.0` suffix (`"1.0"` → `"1"`)
 - [ ] `F.Fab` fp_lines present (body outline)
 - [ ] `F.CrtYd` fp_lines present (courtyard rectangle)
-- [ ] 3D model offset/rotation is correct (easyeda offsets are often wrong)
+- [ ] 3D model offset/rotation is correct (easyeda offsets are often wrong — see verification method below)
 - [ ] Mechanical holes (unnamed plated pads with `size == drill`, 0 ring) → `np_thru_hole` (see §12)
+
+### Verifying 3D model alignment without opening KiCad
+
+The WRL mesh from easyeda2kicad can be checked against the footprint computationally.
+Parse the `point [ x y z, ... ]` blocks and multiply coordinates by **2.54** to get mm. Then:
+
+- With zero rotation: `board_x = mesh_x + offset_x`, `board_y = −(mesh_y + offset_y)` (KiCad 3D y is inverted vs board y).
+- A stored z-rotation θ is applied **clockwise** in the viewer frame, i.e. `θ=90` → `board = (mesh_y, mesh_x)`; `θ=270` → `board = (−mesh_y, −mesh_x)`.
+- Anchor features to match against pads: points below z=0 are TH pins; per-`point`-block small clusters at the top surface are the pin-1 index dot; asymmetric lead counts (e.g. SOT-23-5's 3-vs-2 sides) give chirality.
+
+Do **not** blindly keep easyeda2kicad's generated offset: for C784940 it emitted `offset x=0.28` when the mesh pins were already centered on the pads (correct offset x=0). Verify that mesh pin/lead centers land on the pad coordinates.
 
 ---
 

@@ -169,6 +169,49 @@ components:
         value: LCSC
       - key: Price Updated
         value: "2026-07-16"
+  - name: BSMD1206-110-30V
+    base_component: Polyfuse
+    properties:
+      - key: Value
+        value: 1.1A
+      - key: Hold Current
+        value: 1.1A
+      - key: Trip Current
+        value: 2.2A
+      - key: Power
+        value: 1W
+      - key: Voltage_Max
+        value: 30V
+      - key: Footprint
+        value: 7Sigma:Fuse_1206_3216Metric
+      - key: Footprint_Name
+        value: "1206"
+      - key: ki_description
+        value: Resettable Fuse {Value} {Voltage_Max} {Footprint_Name}
+      - key: Manufacturer 1
+        value: BHFUSE
+      - key: Manufacturer Part Number 1
+        value: BSMD1206-110-30V
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C21714343
+      - key: LCSC Part
+        value: C21714343
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/536516336d784fb8e1d4d3f7dabf668c.pdf?productCode=C21714343
+      - key: Price @1 USD
+        value: "0.1468"
+      - key: Price @100 USD
+        value: "0.1135"
+      - key: Price @Bulk USD
+        value: "0.0844"
+      - key: Price Bulk Qty
+        value: "500"
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: "2026-07-17"
   - name: PTF-77
     base_component: Fuse
     properties:

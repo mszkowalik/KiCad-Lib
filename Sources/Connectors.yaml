@@ -1710,7 +1710,7 @@ components:
       - key: LCSC Part
         value: C695629
       - key: ki_description
-        value: 2 Position Wire to Board Terminal Block Through Hole 3.5mm
+        value: 2 Position Wire to Board Terminal Block Through Hole 3.5mm, spring-cage screw clamp (screw presses sprung plate onto wire)
       - key: Manufacturer 1
         value: DORABO
       - key: Manufacturer Part Number 1
@@ -1735,6 +1735,37 @@ components:
         value: LCSC
       - key: Price Updated
         value: "2026-07-16"
+  - name: XY302V-3.5-2P
+    base_component: Conn_01x02
+    properties:
+      - key: LCSC Part
+        value: C784940
+      - key: ki_description
+        value: 2 Position Wire to Board Terminal Block Through Hole 3.5mm, raised-cage screw clamp (screw pulls wire cage up against body)
+      - key: Manufacturer 1
+        value: XINLAIYA
+      - key: Manufacturer Part Number 1
+        value: XY302V-3.5-2P
+      - key: Datasheet
+        value: https://datasheet.lcsc.com/datasheet/pdf/89f72271d31a4bf1c07e31bc815e3a9d.pdf?productCode=C784940
+      - key: Supplier 1
+        value: LCSC
+      - key: Supplier Part Number 1
+        value: C784940
+      - key: Footprint
+        value: 7Sigma:CONN-TH_XY302V-3.5-2P
+      - key: Price @1 USD
+        value: "0.1532"
+      - key: Price @100 USD
+        value: "0.1204"
+      - key: Price @Bulk USD
+        value: "0.1064"
+      - key: Price Bulk Qty
+        value: "150"
+      - key: Price Source
+        value: LCSC
+      - key: Price Updated
+        value: "2026-07-19"
   - name: NANO_SIM_TL6P_H1.35
     base_component: SIM_NANO_Socket
     properties:
