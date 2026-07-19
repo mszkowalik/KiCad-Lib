@@ -1,0 +1,41 @@
+/** Small shared UI atoms: spinner, error banner, status pill. */
+
+export function Spinner({ label }: { label?: string }) {
+  return (
+    <span className="spinner-wrap" role="status" aria-live="polite">
+      <span className="spinner" aria-hidden="true" />
+      {label ? <span className="spinner-label">{label}</span> : null}
+    </span>
+  );
+}
+
+export function ErrorBanner({ message }: { message: string }) {
+  return (
+    <div className="banner-error" role="alert">
+      {message}
+    </div>
+  );
+}
+
+const STATUS_TONES: Record<string, string> = {
+  published: "ok",
+  approved: "ok",
+  active: "ok",
+  current: "ok",
+  ok: "ok",
+  draft: "warn",
+  pending: "warn",
+  proposed: "warn",
+  running: "warn",
+  rejected: "err",
+  failed: "err",
+  error: "err",
+  deprecated: "err",
+  archived: "err",
+};
+
+export function StatusPill({ status }: { status: string | null | undefined }) {
+  if (!status) return <span className="pill neutral">unknown</span>;
+  const tone = STATUS_TONES[status.toLowerCase()] ?? "neutral";
+  return <span className={`pill ${tone}`}>{status}</span>;
+}

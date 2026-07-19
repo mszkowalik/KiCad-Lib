@@ -1,0 +1,41 @@
+[project]
+name = "kicadlib-platform-api"
+version = "0.1.0"
+description = "Project Management Platform backend — Postgres-backed component library with versioning, approval gates, and KiCad HTTP-library endpoints"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "pyyaml>=6.0",
+    "httpx>=0.27",
+    "anthropic>=0.117",
+    "minio>=7.2",
+    "cryptography>=42",
+    "python-multipart>=0.0.9",
+    # kiutils is VENDORED at platform/api/kiutils/ — it is the Wittmann-MEE fork
+    # plus the manual KiCad-10 patch from the root CLAUDE.md (in_pos_files +
+    # _unknown_fields catch-all). The upstream fork cannot parse KiCad-10-saved
+    # symbols at all (raises on `(hide yes)`, `(duplicate_pin_numbers_are_jumpers)`,
+    # `(in_pos_files)`); vendoring means Docker builds and reinstalls can never
+    # lose the patch.
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*", "kiutils*"]
+
+[tool.setuptools.package-data]
+# Jaravis's seed skill documents are read at import time via importlib path
+# (app/seed_skills/*.md) — ship them in the non-editable Docker install too.
+app = ["seed_skills/*.md"]

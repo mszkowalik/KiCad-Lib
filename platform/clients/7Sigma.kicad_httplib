@@ -1,0 +1,13 @@
+{
+    "meta": {
+        "version": 1.0
+    },
+    "name": "7Sigma Library (platform)",
+    "description": "Live part catalog from the KiCad Library Platform. Symbols/footprints must be synced locally from the platform file mirror.",
+    "source": {
+        "type": "REST_API",
+        "api_version": "v1",
+        "root_url": "http://localhost:8020/kicad/",
+        "token": "dev-token"
+    }
+}

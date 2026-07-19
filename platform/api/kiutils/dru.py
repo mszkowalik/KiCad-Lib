@@ -1,0 +1,349 @@
+"""Classes for custom design rules (.kicad_dru) and its contents
+
+Author:
+    (C) Marvin Mager - @mvnmgrx - 2022
+
+License identifier:
+    GPL-3.0
+
+Major changes:
+    26.06.2022 - created
+
+Documentation taken from:
+    ??? Syntax help in Pcbnew
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Optional, List
+from os import path
+
+from kiutils.utils.sexpr import sexp_prettify as prettify, sexp_to_string, parse_sexp
+from kiutils.utils.string_utils import *
+
+
+@dataclass
+class Constraint:
+    """The ``Constraint`` token defines a design rule's constraint"""
+
+    type: str = "clearance"
+    """The ``type`` token defines the type of constraint. Defaults to ``clearance``. Allowed types:
+    - ``annular_width`` - Width of an annular ring
+    - ``clearance`` - Clearance between two items
+    - ``courtyard_clearance`` - Clearance between two courtyards
+    - ``diff_pair_gap`` - Gap between differential pairs
+    - ``diff_pair_uncoupled`` - ???
+    - ``disallow`` - ??? Do not allow this rule
+    - ``edge_clearance`` - Clearance between the item and board edges
+    - ``length`` - Length of the item
+    - ``hole_clearance`` - Clearance between the item and holes
+    - ``hole_size`` - Size of the holes associated with this item
+    - ``silk_clearance`` - Clearance to silk screen
+    - ``skew`` - Difference in length between the items associated with this constraint
+    - ``track_width`` - Width of the tracks associated with this constraint
+    - ``via_count`` - Number of vias
+    - ``via_diameter`` - Diameter of vias associated with this constraint
+    """
+
+    min: Optional[str] = None
+    """The ``min`` token defines the minimum allowed in this constraint"""
+
+    opt: Optional[str] = None
+    """The ``opt`` token defines the optimum allowed in this constraint"""
+
+    max: Optional[str] = None
+    """The ``max`` token defines the maximum allowed in this constraint"""
+
+    elements: List[str] = field(default_factory=list)
+    """The ``items`` token defines a list of zero or more element types to include in this constraint.
+    The following element types are available:
+    - ``buried_via``
+    - ``micro_via``
+    - ``via``
+    - ``graphic``
+    - ``hole``
+    - ``pad``
+    - ``text``
+    - ``track``
+    - ``zone``
+    """
+
+    @classmethod
+    def from_sexpr(cls, exp: list) -> Constraint:
+        """Convert the given S-Expresstion into a Constraint object
+
+        Args:
+            - exp (list): Part of parsed S-Expression ``(constraint ...)``
+
+        Raises:
+            - Exception: When given parameter's type is not a list
+            - Exception: When the list's first parameter is not the ``(constraint ..)`` token
+
+        Returns:
+            - Constraint: Object of the class initialized with the given S-Expression
+        """
+        if not isinstance(exp, list):
+            raise Exception("Expression does not have the correct type")
+
+        if exp[0] != "constraint":
+            raise Exception("Expression does not have the correct type")
+
+        object = cls()
+        object.type = exp[1]
+        for item in exp[2:]:
+            if not isinstance(item, list):
+                object.elements.append(item)
+            elif item[0] == "min":
+                object.min = item[1]
+            elif item[0] == "opt":
+                object.opt = item[1]
+            elif item[0] == "max":
+                object.max = item[1]
+
+        return object
+
+    def to_sexpr(self, indent=2, newline=True) -> str:
+        """Generate the S-Expression representing this object
+
+        Args:
+            - indent (int): Number of whitespaces used to indent the output. Defaults to 2.
+            - newline (bool): Adds a newline to the end of the output. Defaults to True.
+
+        Returns:
+            - str: S-Expression of this object
+        """
+        raw_expr = self._to_sexpr_raw()
+        return sexp_to_string(raw_expr)
+
+    def _to_sexpr_raw(self):
+        expr = ["constraint", self.type]
+
+        if self.min is not None:
+            expr.append(["min", escape_and_quote(self.min)])
+        if self.opt is not None:
+            expr.append(["opt", escape_and_quote(self.opt)])
+        if self.max is not None:
+            expr.append(["max", escape_and_quote(self.max)])
+
+        if len(self.elements) > 0:
+            expr.extend(self.elements)
+
+        return expr
+
+
+@dataclass
+class Rule:
+    """The ``Rule`` token defines a custom design rule"""
+
+    name: str = ""
+    """The ``name`` token defines the name of the custom design rule"""
+
+    constraints: List[Constraint] = field(default_factory=list)
+    """The ``constraints`` token defines a list of constraints for this custom design rule"""
+
+    condition: str = ""
+    """The ``condition`` token defines the conditions that apply for this rule. Check KiCad syntax
+    reference for more information. Example rule:
+    - `A.inDiffPair('*') && !AB.isCoupledDiffPair()`"""
+
+    layer: Optional[str] = None
+    """The optional ``layer`` token defines the canonical layer the rule applys to"""
+
+    severity: Optional[str] = None
+    """The optional ``severity`` token defines the severity of the design rule. Valid values are
+    ``warning``, ``error``, ``exclusion`` or ``ignore``.
+    
+    Available since KiCad v7"""
+
+    @classmethod
+    def from_sexpr(cls, exp: list) -> Rule:
+        """Convert the given S-Expresstion into a Rule object
+
+        Args:
+            - exp (list): Part of parsed S-Expression ``(rule ...)``
+
+        Raises:
+            - Exception: When given parameter's type is not a list
+            - Exception: When the list's first parameter is not the ``(rule ..)`` token
+
+        Returns:
+            - Rule: Object of the class initialized with the given S-Expression
+        """
+        if not isinstance(exp, list):
+            raise Exception("Expression does not have the correct type")
+
+        if exp[0] != "rule":
+            raise Exception("Expression does not have the correct type")
+
+        object = cls()
+        object.name = exp[1]
+        for item in exp[2:]:
+            if not isinstance(item, list):
+                raise ValueError(
+                    f"Expected list property [key, value], got: {item}. Full expression: {exp}"
+                )
+            elif item[0] == "constraint":
+                object.constraints.append(Constraint().from_sexpr(item))
+            elif item[0] == "condition":
+                object.condition = item[1]
+            elif item[0] == "layer":
+                object.layer = item[1]
+            elif item[0] == "severity":
+                object.severity = item[1]
+            else:
+                import warnings
+                warnings.warn(f"kiutils: unrecognized KiCad field {item[0]!r} — ignoring. Full expression: {item}", stacklevel=4)
+
+        return object
+
+    def to_sexpr(self, indent: int = 0) -> str:
+        """Generate the S-Expression representing this object
+
+        Args:
+            - indent (int): Number of whitespaces used to indent the output. Defaults to 0.
+
+        Returns:
+            - str: S-Expression of this object
+        """
+        raw_expr = self._to_sexpr_raw()
+        return sexp_to_string(raw_expr)
+
+    def _to_sexpr_raw(self, indent: int = 0):
+        expr = ["rule", escape_and_quote(self.name)]
+
+        if self.layer is not None:
+            expr.append(["layer", dequote(self.layer)])
+
+        for item in self.constraints:
+            expr.append(item._to_sexpr_raw())
+
+        expr.append(["condition", escape_and_quote(self.condition)])
+
+        if self.severity is not None:
+            expr.append(["severity", dequote(self.severity)])
+
+        return expr
+
+
+@dataclass
+class DesignRules:
+    """The ``DesignRules`` token defines a set of custom design rules (`.kicad_dru` files)"""
+
+    version: int = 1
+    """The ``version`` token defines the version of the file for the KiCad parser. Defaults to 1."""
+
+    rules: List[Rule] = field(default_factory=list)
+    """The ``rules`` token defines a list of custom design rules"""
+
+    filePath: Optional[str] = None
+    """The ``filePath`` token defines the path-like string to the schematic file. Automatically set when
+    ``self.from_file()`` is used. Allows the use of ``self.to_file()`` without parameters."""
+
+    @classmethod
+    def from_sexpr(cls, exp: list) -> DesignRules:
+        """Convert the given S-Expresstion into a DesignRules object
+
+        Args:
+            - exp (list): Part of parsed S-Expression ``(version ...)``
+
+        Raises:
+            - Exception: When given parameter's type is not a list
+            - Exception: When the list's first parameter is not the ``(version ..)`` token
+
+        Returns:
+            - DesignRules: Object of the class initialized with the given S-Expression
+        """
+        if not isinstance(exp, list):
+            raise Exception("Expression does not have the correct type")
+
+        if not isinstance(exp[0], list):
+            raise Exception("Expression does not have the correct type")
+
+        if exp[0][0] != "version":
+            raise Exception("Expression does not have the correct type")
+
+        object = cls()
+        for item in exp:
+            if item[0] == "version":
+                object.version = item[1]
+            elif item[0] == "rule":
+                object.rules.append(Rule().from_sexpr(item))
+
+        return object
+
+    @classmethod
+    def from_file(cls, filepath: str, encoding: Optional[str] = None) -> DesignRules:
+        """Load a custom design rules set directly from a KiCad design rules file (`.kicad_dru`) and
+        sets the ``self.filePath`` attribute to the given file path.
+
+        Args:
+            - filepath (str): Path or path-like object that points to the file
+            - encoding (str, optional): Encoding of the input file. Defaults to None (platform
+                                        dependent encoding).
+        Raises:
+            - Exception: If the given path is not a file
+
+        Returns:
+            - Footprint: Object of the DesignRules class initialized with the given KiCad file
+        """
+        if not path.isfile(filepath):
+            raise Exception("Given path is not a file!")
+
+        with open(filepath, "r", encoding=encoding) as infile:
+            # This dirty fix adds opening and closing brackets `(..)` to the read input to enable
+            # the S-Expression parser to work for the DRU-format as well.
+            data = f"({infile.read()})"
+            item = cls.from_sexpr(parse_sexp(data))
+            item.filePath = filepath
+            return item
+
+    @classmethod
+    def create_new(cls) -> DesignRules:
+        """Creates a new empty design rules set as KiCad would create it
+
+        Returns:
+            - DesignRules: Empty design rules set
+        """
+        return cls(version=1)
+
+    def to_file(self, filepath=None, encoding: Optional[str] = None):
+        """Save the object to a file in S-Expression format
+
+        Args:
+            - filepath (str, optional): Path-like string to the file. Defaults to None. If not set,
+                                        the attribute ``self.filePath`` will be used instead.
+            - encoding (str, optional): Encoding of the output file. Defaults to None (platform
+                                        dependent encoding).
+
+        Raises:
+            - Exception: If no file path is given via the argument or via `self.filePath`
+        """
+        if filepath is None:
+            if self.filePath is None:
+                raise Exception("File path not set")
+            filepath = self.filePath
+
+        with open(filepath, "w", encoding=encoding) as outfile:
+            pre_formatted_sexpr = self.to_sexpr()
+            outfile.write(prettify(pre_formatted_sexpr))
+
+    def to_sexpr(self, indent=0, newline=False) -> str:
+        """Generate the S-Expression representing this object
+
+        Args:
+            indent (int, optional): Number of whitespaces used to indent the output. Defaults to 0.
+            newline (bool, optional): Adds a newline to the end of the output. Defaults to False.
+
+        Returns:
+            str: S-Expression of this object
+        """
+        raw_expr = self._to_sexpr_raw()
+        # Join the expressions together without extra nesting
+        expr_str = " ".join(sexp_to_string(item) for item in raw_expr)
+        return expr_str
+
+    def _to_sexpr_raw(self):
+        expr = ["version", self.version]
+        rules_expr = [rule._to_sexpr_raw() for rule in self.rules]
+        return [expr] + rules_expr
