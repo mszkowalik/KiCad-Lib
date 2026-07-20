@@ -1358,8 +1358,19 @@ lasting rule. Follow their conventions.
 {skills_text}"""
 
 
-def run_chat(messages: list[dict]) -> dict:
-    """Run one Jaravis turn over the provided conversation. Blocking.
+# Bound on model calls per user turn — a stuck loop must not grind forever.
+# When hit, the runner just stops iterating; run_chat_events synthesizes an
+# honest "stopped, say continue" reply instead of returning silence.
+MAX_ITERATIONS = 80
+
+
+def run_chat_events(messages: list[dict]):
+    """Generator: run one Jaravis turn, yielding progress events as the agent
+    loop advances — {"type": "note", text} for interim narration text,
+    {"type": "tool", tool, input} the moment a tool call is issued, and one
+    final {"type": "done", reply, trace, proposals}. The chat router streams
+    these as NDJSON so the UI shows live activity; closing the generator
+    (client disconnect / Stop button) ends the run at the next event.
 
     The server tools (web_search / web_fetch) execute on Anthropic's side; a
     long research turn can stop with stop_reason="pause_turn", which the
@@ -1385,13 +1396,18 @@ def run_chat(messages: list[dict]) -> dict:
             system=system,
             tools=[*TOOLS, *SERVER_TOOLS],
             messages=convo,
+            max_iterations=MAX_ITERATIONS,
         )
         for message in runner:
             final = message
             convo.append({"role": "assistant", "content": message.content})
             for block in message.content:
-                if block.type in ("tool_use", "server_tool_use"):
-                    trace.append({"tool": block.name, "input": block.input})
+                if block.type == "text" and block.text.strip():
+                    yield {"type": "note", "text": block.text}
+                elif block.type in ("tool_use", "server_tool_use"):
+                    item = {"tool": block.name, "input": block.input}
+                    trace.append(item)
+                    yield {"type": "tool", **item}
             # cached by the runner — tools still execute exactly once
             tool_response = runner.generate_tool_call_response()
             if tool_response is not None:
@@ -1401,4 +1417,71 @@ def run_chat(messages: list[dict]) -> dict:
     reply = ""
     if final is not None:
         reply = "\n".join(b.text for b in final.content if b.type == "text")
-    return {"reply": reply, "trace": trace, "proposals": list(LAST_PROPOSALS)}
+    if not reply and final is not None and final.stop_reason == "tool_use":
+        reply = (f"(Stopped after {len(trace)} tool calls — the per-message cap of "
+                 f"{MAX_ITERATIONS} model iterations was reached. The work done so far is "
+                 "saved; say \"continue\" to keep going.)")
+    yield {"type": "done", "reply": reply, "trace": trace, "proposals": list(LAST_PROPOSALS)}
+
+
+def run_chat(messages: list[dict]) -> dict:
+    """Blocking variant of run_chat_events — drains the events and returns
+    only the final result (kept for the non-streaming /chat endpoint)."""
+    result = {"reply": "", "trace": [], "proposals": []}
+    for ev in run_chat_events(messages):
+        if ev["type"] == "done":
+            result = {"reply": ev["reply"], "trace": ev["trace"], "proposals": ev["proposals"]}
+    return result
+
+
+# --------------------------------------------------------- persisted sessions
+def _title_from(content: str) -> str:
+    """Derive a short session title from the first user message."""
+    line = next((ln.strip() for ln in content.splitlines() if ln.strip()), "")
+    line = line or "New chat"
+    return line if len(line) <= 60 else line[:57].rstrip() + "…"
+
+
+def run_session_chat_events(session_id: int, content: str):
+    """Persisted variant of run_chat_events. Appends the user message to the
+    session immediately (durable BEFORE the — possibly long — model turn),
+    replays the whole stored conversation to the agent, streams the same
+    events, and persists the assistant reply (text + trace + proposals) the
+    moment the turn completes (so a client disconnect after `done` can't lose
+    it). Yields a leading {"type": "session", ...} event carrying the
+    (possibly auto-generated) title so the UI can update the sidebar live.
+
+    Owns its own DB session for the whole stream rather than a request-scoped
+    one — the turn can outlive the HTTP handler's dependency lifecycle, and the
+    agent tools open their own SessionLocal()s regardless."""
+    db = SessionLocal()
+    try:
+        sess = db.get(M.JaravisSession, session_id)
+        if sess is None:
+            yield {"type": "error", "error": f"session {session_id} not found"}
+            return
+        prior = (db.query(M.JaravisMessage).filter_by(session_id=session_id)
+                 .order_by(M.JaravisMessage.id).all())
+        convo = [{"role": m.role, "content": m.content} for m in prior]
+        convo.append({"role": "user", "content": content})
+
+        db.add(M.JaravisMessage(session_id=session_id, role="user", content=content))
+        if not prior and (sess.title or "").strip() in ("", "New chat"):
+            sess.title = _title_from(content)
+        sess.updated_at = M.utcnow()
+        db.commit()
+        yield {"type": "session", "session_id": session_id, "title": sess.title}
+
+        for ev in run_chat_events(convo):
+            if ev.get("type") == "done":
+                db.add(M.JaravisMessage(
+                    session_id=session_id, role="assistant",
+                    content=ev.get("reply") or "",
+                    trace=ev.get("trace") or None,
+                    proposals=ev.get("proposals") or None,
+                ))
+                sess.updated_at = M.utcnow()
+                db.commit()
+            yield ev
+    finally:
+        db.close()

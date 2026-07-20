@@ -120,9 +120,32 @@ up in the UI automatically. Audit actions in use: `proposal.create`,
   execute on Anthropic's side, no beta header, `max_uses` caps cost).
 - **pause_turn**: the Python tool runner does NOT auto-resume a
   `stop_reason="pause_turn"` from a long server-tool turn — it silently
-  truncates. `run_chat` mirrors the conversation while iterating and restarts
+  truncates. The loop mirrors the conversation while iterating and restarts
   the runner with the paused turn appended (bounded). Keep that loop when
-  touching `run_chat`.
+  touching the runner code.
+- **The agent loop is a generator** (`run_chat_events`): it yields
+  `note`/`tool` progress events per iteration plus a final `done`; long runs
+  show live activity and a Stop button (client disconnect closes the generator
+  → run ends at the next event). `run_chat` is the blocking drain kept for
+  scripts. `MAX_ITERATIONS` (80) bounds model calls per turn — the runner
+  stops silently when hit, so `run_chat_events` synthesizes a "stopped, say
+  continue" reply.
+- **Persisted chat is server-authoritative** (`JaravisSession` +
+  `JaravisMessage`; the `messages` relationship cascades on delete). The UI
+  drives `POST /api/jaravis/sessions/{id}/chat/stream` (+ `GET/POST/PATCH/DELETE
+  /sessions[/{id}]`); the DB — not the browser — holds the conversation, so it
+  survives reloads and the user can keep several chats in parallel.
+  `run_session_chat_events` persists the user message BEFORE the (long) turn,
+  replays only role+text to the agent, and persists the assistant reply
+  (text + `trace` + `proposals`) the instant `done` is produced (so a
+  disconnect after `done` can't lose it); it owns its own `SessionLocal()` for
+  the whole stream because the turn outlives the request's `Depends(get_db)`.
+  Session titles auto-derive from the first user message. The stateless
+  `POST /chat` + `POST /chat/stream` (full message array, store nothing) stay
+  for scripts. NOTE: `LAST_PROPOSALS` is still a module global cleared per
+  turn — fine for one turn at a time, but two turns running concurrently (two
+  open sessions) can cross-attribute the "created N proposals" note; the drafts
+  themselves always land correctly in Proposals.
 - `read_datasheet` returns a LIST of content blocks (text + base64 PNG page
   images rendered with **pymupdf**) — tool results may be
   `Iterable[BetaContent]`, not just str. pymupdf is a pyproject dependency.

@@ -8,7 +8,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import {
   addComment,
   addComponentFile,
@@ -33,9 +33,11 @@ import {
   type DatasheetRow,
   type Model3DFile,
   type PricePointsResponse,
+  type PropertyRow,
   type VersionDetail,
 } from "../api";
 import { fileHref } from "../viewkind";
+import { useDialog } from "../components/Dialog";
 import {
   BaseSymbolSelect,
   buildProperties,
@@ -66,6 +68,128 @@ function LinkifyValue({ text }: { text: string }) {
     );
   }
   return <>{text}</>;
+}
+
+// ------------------------------------------------------ proposal diff view
+
+/** When a draft proposal is viewed against its current published version, each
+ *  property is one of these relative to the current version. Copper = proposed. */
+type DiffStatus = "same" | "added" | "changed" | "removed";
+
+interface DiffPropRow {
+  key: string;
+  /** The property in the draft (null when the draft removed it). */
+  draft: PropertyRow | null;
+  /** The property in the current version (null when the draft added it). */
+  base: PropertyRow | null;
+  status: DiffStatus;
+}
+
+function propEq(a: PropertyRow, b: PropertyRow): boolean {
+  return a.is_null === b.is_null && (a.value ?? "") === (b.value ?? "");
+}
+
+/** Diffs the draft property set against the current one, preserving draft
+ *  order, then appending anything the draft dropped as `removed`. */
+function buildPropDiff(draftProps: PropertyRow[], baseProps: PropertyRow[]): DiffPropRow[] {
+  const baseByKey = new Map(baseProps.map((p) => [p.key, p]));
+  const seen = new Set<string>();
+  const rows: DiffPropRow[] = [];
+  for (const p of [...draftProps].sort((a, b) => a.position - b.position)) {
+    seen.add(p.key);
+    const base = baseByKey.get(p.key) ?? null;
+    const status: DiffStatus = base === null ? "added" : propEq(p, base) ? "same" : "changed";
+    rows.push({ key: p.key, draft: p, base, status });
+  }
+  for (const b of [...baseProps].sort((a, b) => a.position - b.position)) {
+    if (!seen.has(b.key)) rows.push({ key: b.key, draft: null, base: b, status: "removed" });
+  }
+  return rows;
+}
+
+/** Read-only value cell for a property (value or `null`, plus a resolved-template line). */
+function PropValueView({ p }: { p: PropertyRow }) {
+  if (p.is_null) return <span className="null">null</span>;
+  return (
+    <>
+      <LinkifyValue text={p.value ?? ""} />
+      {p.resolved_value !== "" && p.resolved_value !== p.value ? (
+        <div className="resolved">
+          &rarr; <LinkifyValue text={p.resolved_value} />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+const plainVal = (p: PropertyRow): string => (p.is_null ? "null" : p.value ?? "");
+
+/** One property row, rendered plainly (`same`) or with the copper diff
+ *  treatment (`added` / `changed` / `removed`). */
+function DiffPropertyRow({ row }: { row: DiffPropRow }) {
+  const prop = row.draft ?? row.base;
+  if (prop === null) return null;
+  const hidden = prop.hide;
+  const trClass =
+    (row.status !== "same" ? `diff-${row.status}` : "") + (hidden ? " dim" : "");
+  return (
+    <tr className={trClass.trim() || undefined}>
+      <td className="mono prop-key">
+        {row.status === "removed" ? <span className="strike">{row.key}</span> : row.key}
+        {row.status === "added" ? <span className="diff-tag">added</span> : null}
+        {row.status === "removed" ? <span className="diff-tag">removed</span> : null}
+        {hidden ? <span className="tag-hidden">hidden</span> : null}
+      </td>
+      <td className="mono">
+        {row.status === "changed" && row.base && row.draft ? (
+          <>
+            <span className="diff-old diff-old-line">{plainVal(row.base)}</span>
+            <span className="diff-new">
+              <PropValueView p={row.draft} />
+            </span>
+          </>
+        ) : row.status === "added" && row.draft ? (
+          <span className="diff-new">
+            <PropValueView p={row.draft} />
+          </span>
+        ) : row.status === "removed" && row.base ? (
+          <span className="diff-old">{plainVal(row.base)}</span>
+        ) : row.draft ? (
+          <PropValueView p={row.draft} />
+        ) : null}
+      </td>
+    </tr>
+  );
+}
+
+/** Meta value that highlights in copper when it differs from the current
+ *  version, showing the previous value struck through beside it. */
+function DiffMeta({
+  changed,
+  oldText,
+  children,
+}: {
+  changed: boolean;
+  oldText: string;
+  children: ReactNode;
+}) {
+  if (!changed) return <>{children}</>;
+  return (
+    <span className="diff-meta">
+      <span className="diff-new">{children}</span>
+      <span className="diff-old"> was {oldText || "—"}</span>
+    </span>
+  );
+}
+
+/** Identity string for the pinned symbol (or base ref when unpinned). */
+function symKey(v: VersionDetail): string {
+  return v.symbol ? `${v.symbol.name} v${v.symbol.version_no}` : v.base_component || "—";
+}
+
+/** Identity string for the pinned footprint. */
+function fpKey(v: VersionDetail): string {
+  return v.footprint ? `${v.footprint.name} v${v.footprint.version_no}` : "not pinned";
 }
 
 // ------------------------------------------------------------ SVG preview
@@ -331,6 +455,7 @@ function NotesPanel({ compId }: { compId: number }) {
   const [posting, setPosting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const dialog = useDialog();
 
   const open =
     openState === "open" || (openState === "auto" && (comments?.length ?? 0) > 0);
@@ -369,7 +494,12 @@ function NotesPanel({ compId }: { compId: number }) {
   };
 
   const del = async (c: ComponentComment) => {
-    if (!window.confirm("Delete this note?")) return;
+    const confirmed = await dialog.confirm("Delete this note?", {
+      title: "Delete note",
+      confirmLabel: "Delete",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     setBusyId(c.id);
     setActionError(null);
     try {
@@ -723,12 +853,22 @@ export default function ComponentDetail() {
   const { id } = useParams();
   const compId = Number(id);
 
+  // Navigation state set by whoever linked here (Proposals, the filtered Browse
+  // list, …): `backTo` is where "← Back" returns to; `showVersion` pre-selects a
+  // version (a proposal link opens straight on its draft, no chip click needed).
+  const location = useLocation();
+  const navState = location.state as { backTo?: string; showVersion?: number | null } | null;
+  const backTo = navState?.backTo ?? "/";
+  const requestedVersion = navState?.showVersion ?? null;
+
   const [detail, setDetail] = useState<ComponentDetailT | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [selectedNo, setSelectedNo] = useState<number | null>(null);
   const [version, setVersion] = useState<VersionDetail | null>(null);
   const [versionLoading, setVersionLoading] = useState(false);
   const [versionError, setVersionError] = useState<string | null>(null);
+  // Current published version to diff a draft proposal against (null = not diffing).
+  const [baseline, setBaseline] = useState<VersionDetail | null>(null);
 
   const [dsRows, setDsRows] = useState<DatasheetRow[]>([]);
   const [dsBusyId, setDsBusyId] = useState<number | null>(null);
@@ -742,6 +882,7 @@ export default function ComponentDetail() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<string[] | null>(null);
   const { pickers, pickerError } = usePickers(editing);
+  const dialog = useDialog();
 
   useEffect(() => {
     if (!Number.isFinite(compId)) {
@@ -756,13 +897,18 @@ export default function ComponentDetail() {
       .then((d) => {
         setDetail(d);
         const fallback = d.versions.length > 0 ? d.versions[d.versions.length - 1].version_no : null;
-        setSelectedNo(d.current_version_no ?? fallback);
+        // A proposal link asks for its draft explicitly — honor it when present.
+        const wanted =
+          requestedVersion !== null && d.versions.some((v) => v.version_no === requestedVersion)
+            ? requestedVersion
+            : d.current_version_no ?? fallback;
+        setSelectedNo(wanted);
       })
       .catch((err) => {
         if (!isAbortError(err)) setDetailError(errorMessage(err));
       });
     return () => ctrl.abort();
-  }, [compId]);
+  }, [compId, requestedVersion]);
 
   useEffect(() => {
     if (!Number.isFinite(compId) || selectedNo === null) return;
@@ -785,6 +931,26 @@ export default function ComponentDetail() {
       });
     return () => ctrl.abort();
   }, [compId, selectedNo]);
+
+  // Viewing a draft proposal? Load the current published version so the meta
+  // and properties can be shown as a diff against it (copper = proposed).
+  const currentNo = detail?.current_version_no ?? null;
+  const baselineNo =
+    version?.status === "draft" && currentNo !== null && currentNo !== version.version_no
+      ? currentNo
+      : null;
+
+  useEffect(() => {
+    if (baselineNo === null) {
+      setBaseline(null);
+      return;
+    }
+    const ctrl = new AbortController();
+    getVersion(compId, baselineNo, ctrl.signal)
+      .then(setBaseline)
+      .catch(() => setBaseline(null));
+    return () => ctrl.abort();
+  }, [compId, baselineNo]);
 
   const hasCurrent = detail !== null && detail.current_version_no !== null;
   const isCurrentSelected =
@@ -830,9 +996,16 @@ export default function ComponentDetail() {
     setSaveError(null);
   };
 
-  const selectVersion = (no: number) => {
+  const selectVersion = async (no: number) => {
     if (no === selectedNo) return;
-    if (editing && dirty && !window.confirm("Discard unsaved changes?")) return;
+    if (editing && dirty) {
+      const confirmed = await dialog.confirm("Discard unsaved changes?", {
+        title: "Unsaved changes",
+        confirmLabel: "Discard",
+        tone: "danger",
+      });
+      if (!confirmed) return;
+    }
     exitEdit();
     setSelectedNo(no);
   };
@@ -966,7 +1139,7 @@ export default function ComponentDetail() {
         .then(setDetail)
         .catch(() => {});
     } catch (err) {
-      window.alert(`Adding the file failed: ${errorMessage(err)}`);
+      await dialog.alert(errorMessage(err), { title: "Adding the file failed" });
     } finally {
       setDsBusyId(null);
     }
@@ -982,10 +1155,12 @@ export default function ComponentDetail() {
     else void uploadDs(target, file);
   };
 
-  const promptAddFile = () => {
-    const label = window.prompt(
-      'Label for the new file (e.g. "2D drawing (DXF)", "Enclosure STEP"):',
-    );
+  const promptAddFile = async () => {
+    const label = await dialog.prompt("Label for the new file:", {
+      title: "Add file",
+      placeholder: 'e.g. "2D drawing (DXF)" or "Enclosure STEP"',
+      confirmLabel: "Choose file…",
+    });
     if (!label || !label.trim()) return;
     pickFile("new", label.trim());
   };
@@ -1038,8 +1213,8 @@ export default function ComponentDetail() {
     return (
       <div className="main-solo">
         <div className="page">
-          <Link to="/" className="backlink">
-            &larr; Browse
+          <Link to={backTo} className="backlink">
+            &larr; Back
           </Link>
           <ErrorBanner message={`Component failed to load: ${detailError}`} />
         </div>
@@ -1065,12 +1240,23 @@ export default function ComponentDetail() {
     ? `Footprint — ${version.footprint.name} v${version.footprint.version_no}`
     : "Footprint — not pinned";
 
+  // Diff mode: a draft is selected and its current published baseline loaded.
+  const diff = !editing && baseline !== null && version !== null;
+  const propRows: DiffPropRow[] =
+    diff && baseline && version
+      ? buildPropDiff(version.properties, baseline.properties)
+      : version
+        ? [...version.properties]
+            .sort((a, b) => a.position - b.position)
+            .map((p) => ({ key: p.key, draft: p, base: null, status: "same" as const }))
+        : [];
+
   return (
     <div className="detail-page">
       <div className="detail-left">
         <div className="detail-top">
-          <Link to="/" className="backlink">
-            &larr; Browse
+          <Link to={backTo} className="backlink">
+            &larr; Back
           </Link>
           <div className="detail-header">
             <h1 className="mono comp-name">{detail.name}</h1>
@@ -1139,6 +1325,13 @@ export default function ComponentDetail() {
         {version?.status === "draft" ? (
           <div className="banner-warn" role="status">
             Draft proposal — approve or reject in <Link to="/proposals">Proposals</Link>.
+            {diff ? (
+              <>
+                {" "}
+                Changes from the current v{baselineNo} are{" "}
+                <span className="diff-new">highlighted</span> below.
+              </>
+            ) : null}
           </div>
         ) : null}
         {saveNotice ? (
@@ -1169,30 +1362,46 @@ export default function ComponentDetail() {
                 {version.approved_by ?? <span className="null">—</span>}
               </MetaRow>
               <MetaRow label="Category">
-                {version.category_path || <span className="null">—</span>}
+                <DiffMeta
+                  changed={diff && baseline?.category_path !== version.category_path}
+                  oldText={baseline?.category_path ?? ""}
+                >
+                  {version.category_path || <span className="null">—</span>}
+                </DiffMeta>
               </MetaRow>
               <MetaRow label="Symbol">
-                {version.symbol ? (
-                  <span className="mono">
-                    {version.symbol.name} <span className="pin-ver">v{version.symbol.version_no}</span>
-                  </span>
-                ) : (
-                  // no pinned symbol — the base ref is the only information left
-                  <span className="mono">
-                    {version.base_component || <span className="null">not pinned</span>}
-                    {version.base_component ? <span className="null"> (unresolved)</span> : null}
-                  </span>
-                )}
+                <DiffMeta
+                  changed={diff && baseline !== null && symKey(baseline) !== symKey(version)}
+                  oldText={baseline ? symKey(baseline) : ""}
+                >
+                  {version.symbol ? (
+                    <span className="mono">
+                      {version.symbol.name}{" "}
+                      <span className="pin-ver">v{version.symbol.version_no}</span>
+                    </span>
+                  ) : (
+                    // no pinned symbol — the base ref is the only information left
+                    <span className="mono">
+                      {version.base_component || <span className="null">not pinned</span>}
+                      {version.base_component ? <span className="null"> (unresolved)</span> : null}
+                    </span>
+                  )}
+                </DiffMeta>
               </MetaRow>
               <MetaRow label="Footprint">
-                {version.footprint ? (
-                  <span className="mono">
-                    {version.footprint.name}{" "}
-                    <span className="pin-ver">v{version.footprint.version_no}</span>
-                  </span>
-                ) : (
-                  <span className="null">not pinned</span>
-                )}
+                <DiffMeta
+                  changed={diff && baseline !== null && fpKey(baseline) !== fpKey(version)}
+                  oldText={baseline ? fpKey(baseline) : ""}
+                >
+                  {version.footprint ? (
+                    <span className="mono">
+                      {version.footprint.name}{" "}
+                      <span className="pin-ver">v{version.footprint.version_no}</span>
+                    </span>
+                  ) : (
+                    <span className="null">not pinned</span>
+                  )}
+                </DiffMeta>
               </MetaRow>
               {version.datasheet_pins.map((pin) => (
                 <MetaRow key={pin.datasheet_id} label={pin.label}>
@@ -1403,31 +1612,10 @@ export default function ComponentDetail() {
                     </tr>
                   </thead>
                   <tbody>
-                    {[...version.properties]
-                      .sort((a, b) => a.position - b.position)
-                      .map((p) => (
-                        <tr key={p.key} className={p.hide ? "dim" : undefined}>
-                          <td className="mono prop-key">
-                            {p.key}
-                            {p.hide ? <span className="tag-hidden">hidden</span> : null}
-                          </td>
-                          <td className="mono">
-                            {p.is_null ? (
-                              <span className="null">null</span>
-                            ) : (
-                              <>
-                                <LinkifyValue text={p.value ?? ""} />
-                                {p.resolved_value !== "" && p.resolved_value !== p.value ? (
-                                  <div className="resolved">
-                                    &rarr; <LinkifyValue text={p.resolved_value} />
-                                  </div>
-                                ) : null}
-                              </>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    {version.properties.length === 0 ? (
+                    {propRows.map((d) => (
+                      <DiffPropertyRow key={d.key} row={d} />
+                    ))}
+                    {propRows.length === 0 ? (
                       <tr>
                         <td colSpan={2} className="empty">
                           No properties.

@@ -15,6 +15,7 @@ import {
   type ProductionInfo,
   type ProductionSet,
 } from "../../api";
+import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner } from "../Ui";
 
 /** Layer colors matching the KiCad-default board palette, by filename. */
@@ -51,6 +52,7 @@ export default function ProductionPanel({ runId }: { runId: number }) {
   const [selection, setSelection] = useState<Set<string>>(new Set());
   const [gerberUrl, setGerberUrl] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
+  const dialog = useDialog();
 
   const load = (signal?: AbortSignal) => {
     getRunProduction(runId, signal)
@@ -193,10 +195,12 @@ export default function ProductionPanel({ runId }: { runId: number }) {
                       View
                     </button>{" "}
                     <button className="btn btn-sm btn-danger"
-                      onClick={() => {
-                        if (window.confirm(`Delete production set v${s.version_no}?`)) {
-                          act("del", () => deleteProductionSet(s.id));
-                        }
+                      onClick={async () => {
+                        const confirmed = await dialog.confirm(
+                          `Delete production set v${s.version_no}?`,
+                          { title: "Delete production set", confirmLabel: "Delete", tone: "danger" },
+                        );
+                        if (confirmed) act("del", () => deleteProductionSet(s.id));
                       }}>
                       Delete
                     </button>

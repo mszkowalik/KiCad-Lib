@@ -1,11 +1,26 @@
-"""Jaravis chat endpoints. Non-streaming MVP: one POST runs the whole
-tool-use loop and returns the reply plus a tool trace."""
+"""Jaravis chat endpoints.
+
+Persisted sessions (the UI): a JaravisSession holds an ordered message log that
+survives page reloads, and the user can keep several in parallel.
+POST /sessions/{id}/chat/stream sends one user message, streams NDJSON progress
+events (interim notes + every tool call) while the agent loop runs, ending with
+a "done" event, and persists both turns server-side.
+
+The legacy stateless endpoints are kept for scripts: /chat/stream (NDJSON) and
+/chat (blocking) both take the full message array and store nothing."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+import json
 
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from .. import models as M
+from ..db import get_db
 from ..services import jaravis
+from .util import audit
 
 router = APIRouter(prefix="/api/jaravis", tags=["jaravis"])
 
@@ -19,6 +34,14 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage]
 
 
+class SessionRename(BaseModel):
+    title: str
+
+
+class SessionChatIn(BaseModel):
+    content: str
+
+
 @router.get("/status")
 def status():
     return {
@@ -29,15 +52,140 @@ def status():
     }
 
 
-@router.post("/chat")
-def chat(body: ChatRequest):
+def _validated_messages(body: ChatRequest) -> list[dict]:
     if not jaravis.available():
         raise HTTPException(503, "Jaravis is not configured — set ANTHROPIC_API_KEY for the api service.")
     if not body.messages or body.messages[-1].role != "user":
         raise HTTPException(422, "messages must end with a user message")
-    msgs = [{"role": m.role, "content": m.content} for m in body.messages]
+    return [{"role": m.role, "content": m.content} for m in body.messages]
+
+
+@router.post("/chat")
+def chat(body: ChatRequest):
+    msgs = _validated_messages(body)
     try:
         # sync endpoint → FastAPI runs it in a threadpool; the loop may take a while
         return jaravis.run_chat(msgs)
     except Exception as e:  # surfaced to the chat UI
         raise HTTPException(502, f"Jaravis run failed: {e}") from e
+
+
+@router.post("/chat/stream")
+def chat_stream(body: ChatRequest):
+    """NDJSON event stream: {"type": "note"|"tool"} progress lines while the
+    loop runs, then {"type": "done", reply, trace, proposals}. Errors become a
+    {"type": "error"} line (the HTTP status is already 200 by then). Client
+    disconnect (Stop button) closes the generator and ends the run at the
+    next event boundary."""
+    msgs = _validated_messages(body)
+
+    def gen():
+        try:
+            for ev in jaravis.run_chat_events(msgs):
+                yield json.dumps(ev) + "\n"
+        except Exception as e:
+            yield json.dumps({"type": "error", "error": f"Jaravis run failed: {e}"}) + "\n"
+
+    return StreamingResponse(gen(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# ------------------------------------------------------------ chat sessions
+def _session_summary(s: M.JaravisSession) -> dict:
+    return {
+        "id": s.id,
+        "title": s.title,
+        "created_at": s.created_at.isoformat(),
+        "updated_at": s.updated_at.isoformat(),
+        "message_count": len(s.messages),
+    }
+
+
+def _message_json(m: M.JaravisMessage) -> dict:
+    return {
+        "id": m.id,
+        "role": m.role,
+        "content": m.content,
+        "trace": m.trace or [],
+        "proposals": m.proposals or [],
+        "created_at": m.created_at.isoformat(),
+    }
+
+
+@router.get("/sessions")
+def list_sessions(db: Session = Depends(get_db)):
+    """Chat sessions, most recently active first."""
+    rows = (db.query(M.JaravisSession)
+            .order_by(M.JaravisSession.updated_at.desc(), M.JaravisSession.id.desc())
+            .all())
+    return [_session_summary(s) for s in rows]
+
+
+@router.post("/sessions")
+def create_session(db: Session = Depends(get_db)):
+    """Start a new empty conversation (titled from the first message on send)."""
+    s = M.JaravisSession(title="New chat")
+    db.add(s)
+    db.flush()
+    audit(db, "jaravis.session.create", "jaravis_session", s.id)
+    db.commit()
+    return _session_summary(s)
+
+
+@router.get("/sessions/{sid}")
+def get_session(sid: int, db: Session = Depends(get_db)):
+    """One conversation with its full ordered message log."""
+    s = db.get(M.JaravisSession, sid)
+    if s is None:
+        raise HTTPException(404, "session not found")
+    return {**_session_summary(s), "messages": [_message_json(m) for m in s.messages]}
+
+
+@router.patch("/sessions/{sid}")
+def rename_session(sid: int, body: SessionRename, db: Session = Depends(get_db)):
+    s = db.get(M.JaravisSession, sid)
+    if s is None:
+        raise HTTPException(404, "session not found")
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(422, "title must not be empty")
+    s.title = title[:300]
+    s.updated_at = M.utcnow()
+    db.commit()
+    return _session_summary(s)
+
+
+@router.delete("/sessions/{sid}")
+def delete_session(sid: int, db: Session = Depends(get_db)):
+    s = db.get(M.JaravisSession, sid)
+    if s is None:
+        raise HTTPException(404, "session not found")
+    db.delete(s)  # messages cascade
+    audit(db, "jaravis.session.delete", "jaravis_session", sid)
+    db.commit()
+    return {"deleted": sid}
+
+
+@router.post("/sessions/{sid}/chat/stream")
+def session_chat_stream(sid: int, body: SessionChatIn, db: Session = Depends(get_db)):
+    """Persisted streaming chat: appends the user message, runs one Jaravis turn
+    over the whole stored conversation, and persists the assistant reply. Same
+    NDJSON event shape as /chat/stream, preceded by a {"type": "session"} event
+    with the (possibly auto-generated) title."""
+    if not jaravis.available():
+        raise HTTPException(503, "Jaravis is not configured — set ANTHROPIC_API_KEY for the api service.")
+    if db.get(M.JaravisSession, sid) is None:
+        raise HTTPException(404, "session not found")
+    content = body.content.strip()
+    if not content:
+        raise HTTPException(422, "content must not be empty")
+
+    def gen():
+        try:
+            for ev in jaravis.run_session_chat_events(sid, content):
+                yield json.dumps(ev) + "\n"
+        except Exception as e:
+            yield json.dumps({"type": "error", "error": f"Jaravis run failed: {e}"}) + "\n"
+
+    return StreamingResponse(gen(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

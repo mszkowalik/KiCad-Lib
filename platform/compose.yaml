@@ -97,6 +97,16 @@ services:
     build: ./web
     environment:
       VITE_API_URL: http://localhost:8020
+      # Bind-mounted host edits don't emit fsevents into the container on
+      # macOS/Windows, so Vite's file watcher must poll to see changes.
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      # Dev: live-mount the web source so Vite HMR picks up host edits without
+      # an image rebuild (mirrors the api service's ./api/app mount). The
+      # anonymous volume preserves the image's linux node_modules so the host's
+      # native (macOS) modules don't shadow them.
+      - ./web:/srv
+      - /srv/node_modules
     ports:
       - "127.0.0.1:5173:5173"
     depends_on:

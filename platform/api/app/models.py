@@ -347,6 +347,43 @@ class SkillVersion(Base):
     __table_args__ = (UniqueConstraint("skill_id", "version_no", name="uq_skill_version"),)
 
 
+# ------------------------------------------------------------ jaravis chats
+class JaravisSession(Base):
+    """A persisted Jaravis conversation. Survives page reloads and the user can
+    keep several in parallel, returning to any of them. Messages are stored in
+    order; the newest `updated_at` sorts a session to the top of the list."""
+
+    __tablename__ = "jaravis_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(300), default="New chat")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    messages: Mapped[list["JaravisMessage"]] = relationship(
+        back_populates="session", order_by="JaravisMessage.id", cascade="all, delete-orphan"
+    )
+
+
+class JaravisMessage(Base):
+    """One turn in a JaravisSession. Only role + text are replayed to the agent;
+    `trace` (the turn's tool calls) and `proposals` (drafts it created) are kept
+    on assistant messages so a reloaded thread renders exactly like the live run
+    (tool list + proposal notes)."""
+
+    __tablename__ = "jaravis_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("jaravis_sessions.id"))
+    role: Mapped[str] = mapped_column(String(20))  # "user" | "assistant"
+    content: Mapped[str] = mapped_column(Text, default="")
+    trace: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    proposals: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    session: Mapped[JaravisSession] = relationship(back_populates="messages")
+
+
 # --------------------------------------------------------------------- audit
 class AuditLog(Base):
     __tablename__ = "audit_log"

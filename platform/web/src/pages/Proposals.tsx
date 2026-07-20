@@ -6,6 +6,7 @@ import {
   approveSkillProposal,
   errorMessage,
   geometryProposalPreviewUrl,
+  getProposalHistory,
   getProposals,
   isAbortError,
   rejectGeometryProposal,
@@ -13,8 +14,10 @@ import {
   rejectSkillProposal,
   type GeometryProposal,
   type Proposal,
+  type ProposalHistoryRow,
 } from "../api";
 import { ProposalsBadge } from "../App";
+import { useDialog } from "../components/Dialog";
 import { ErrorBanner, Spinner } from "../components/Ui";
 
 const isGeometry = (p: Proposal): p is GeometryProposal =>
@@ -22,11 +25,13 @@ const isGeometry = (p: Proposal): p is GeometryProposal =>
 
 export default function Proposals() {
   const [rows, setRows] = useState<Proposal[] | null>(null);
+  const [history, setHistory] = useState<ProposalHistoryRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [previewKey, setPreviewKey] = useState<string | null>(null);
   const { refresh: refreshBadge } = useContext(ProposalsBadge);
+  const dialog = useDialog();
 
   const load = useCallback((signal?: AbortSignal) => {
     getProposals(signal)
@@ -39,16 +44,31 @@ export default function Proposals() {
       });
   }, []);
 
+  const loadHistory = useCallback((signal?: AbortSignal) => {
+    getProposalHistory(200, signal)
+      .then(setHistory)
+      .catch((err) => {
+        // History is secondary — never let it mask the pending queue.
+        if (!isAbortError(err)) setHistory([]);
+      });
+  }, []);
+
   useEffect(() => {
     const ctrl = new AbortController();
     load(ctrl.signal);
+    loadHistory(ctrl.signal);
     return () => ctrl.abort();
-  }, [load]);
+  }, [load, loadHistory]);
 
   const act = async (p: Proposal, action: "approve" | "reject") => {
     const verb = action === "approve" ? "Approve" : "Reject";
     const what = p.kind === "skill" ? `skill ${p.skill_name}` : `${p.kind} ${p.component_name}`;
-    if (!window.confirm(`${verb} ${what} v${p.version_no}?`)) return;
+    const confirmed = await dialog.confirm(`${verb} ${what} v${p.version_no}?`, {
+      title: `${verb} proposal`,
+      confirmLabel: verb,
+      tone: action === "approve" ? "ok" : "danger",
+    });
+    if (!confirmed) return;
     setBusyId(p.proposal_id);
     setError(null);
     setNotice(null);
@@ -74,6 +94,7 @@ export default function Proposals() {
         await rejectProposal(p.proposal_id);
       }
       load();
+      loadHistory();
       refreshBadge();
     } catch (err) {
       setError(errorMessage(err));
@@ -108,7 +129,7 @@ export default function Proposals() {
           </div>
         ) : (
           <div className="card table-wrap">
-            <table className="data">
+            <table className="data data-fixed proposals-table">
               <thead>
                 <tr>
                   <th>Name</th>
@@ -132,6 +153,7 @@ export default function Proposals() {
                         ) : (
                           <Link
                             to={p.kind === "skill" ? "/skills" : `/components/${p.component_id}`}
+                            state={{ backTo: "/proposals", showVersion: p.version_no }}
                             className="mono comp-link"
                           >
                             {p.component_name}
@@ -197,7 +219,7 @@ export default function Proposals() {
                   if (isGeometry(p) && previewKey === key) {
                     rendered.push(
                       <tr key={`${key}-preview`}>
-                        <td colSpan={8}>
+                        <td colSpan={8} className="preview-cell">
                           <div className="proposal-preview">
                             {!p.is_new_component ? (
                               <div>
@@ -230,6 +252,67 @@ export default function Proposals() {
             </table>
           </div>
         )}
+
+        {history && history.length > 0 ? (
+          <section className="history-section">
+            <h2 className="history-title">History</h2>
+            <p className="muted">Approved and rejected proposals, most recent decision first.</p>
+            <div className="card table-wrap">
+              <table className="data data-fixed proposals-history-table">
+                <thead>
+                  <tr>
+                    <th>Outcome</th>
+                    <th>Name</th>
+                    <th>Kind</th>
+                    <th>Version</th>
+                    <th>By</th>
+                    <th>Comment</th>
+                    <th>Decided</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((h, i) => (
+                    <tr key={`${h.kind}-${h.proposal_id ?? "x"}-${i}`}>
+                      <td>
+                        <span className={`pill ${h.outcome === "approved" ? "ok" : "err"}`}>
+                          {h.outcome}
+                        </span>
+                      </td>
+                      <td title={h.component_name}>
+                        {h.kind === "component" && h.component_id !== null ? (
+                          <Link
+                            to={`/components/${h.component_id}`}
+                            state={{ backTo: "/proposals", showVersion: h.version_no }}
+                            className="mono comp-link"
+                          >
+                            {h.component_name}
+                          </Link>
+                        ) : h.kind === "skill" ? (
+                          <Link to="/skills" className="mono comp-link">
+                            {h.component_name}
+                          </Link>
+                        ) : (
+                          <span className="mono">{h.component_name}</span>
+                        )}
+                      </td>
+                      <td>
+                        <span className={`pill ${h.kind === "skill" ? "info" : "neutral"}`}>
+                          {h.kind}
+                        </span>
+                      </td>
+                      <td className="mono">{h.version_no !== null ? `v${h.version_no}` : "—"}</td>
+                      <td className="mono">{h.created_by ?? ""}</td>
+                      <td title={h.comment ?? undefined}>{h.comment ?? ""}</td>
+                      <td className="mono nowrap" title={`Decided by ${h.decided_by}`}>
+                        {new Date(h.decided_at).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ) : null}
       </div>
     </div>
   );

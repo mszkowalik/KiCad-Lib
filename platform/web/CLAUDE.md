@@ -86,19 +86,70 @@ a component. When you add an endpoint:
   hot-reload without a restart.
 - When a non-obvious frontend convention emerges, record it here.
 
-### Wide multi-column tables: fixed layout, not `overflow-x` scroll
+### No native browser popups — use the in-app dialog system
 
-`table.data` defaults to `table-layout: auto`, so a single long value in any
-unclamped column (a verbose component name, a long MPN) widens that column for
-every row, which can push the whole table past its `.table-wrap` container and
-trigger a horizontal scrollbar — even though most rows would fit fine. Per-cell
+Never call `window.confirm` / `window.prompt` / `window.alert` (or the bare
+globals) anywhere in the platform. All confirmations, small text inputs, and
+error notices go through the promise-based dialog system in
+`src/components/Dialog.tsx` (`DialogProvider` is mounted once in `App.tsx`):
+
+```tsx
+const dialog = useDialog();
+if (!(await dialog.confirm("Delete run X?", { title: "Delete run", confirmLabel: "Delete", tone: "danger" }))) return;
+const name = await dialog.prompt("New skill name:", { title: "New skill" }); // null = cancelled
+await dialog.alert(errorMessage(err), { title: "Adding the file failed" });
+```
+
+- `tone`: `"danger"` for destructive/discard actions, `"ok"` for approvals,
+  default `"primary"` otherwise.
+- Handlers become `async` — awaiting the dialog in an `onClick` is fine.
+- Styling lives in `styles.css` under the “modals” section (`.modal-backdrop`,
+  `.modal-card`, …) using the `--scrim` / `--modal-shadow` palette variables;
+  reuse the same classes for any future overlay instead of new ones.
+
+### Every table: fixed layout, no horizontal scroll, single-line rows
+
+This is a hard rule for **all** tables in the platform — not just BOM/costs or
+the component browser. **No table may scroll horizontally, and no row may fold
+to fit its cell contents.** Every row is exactly **one line of text tall**; long
+values truncate with an ellipsis, they never wrap.
+
+Why: `table.data` defaults to `table-layout: auto`, so a single long value in an
+unclamped column (a verbose name, a long MPN, a comment) widens that column for
+every row, pushing the whole table past its `.table-wrap` container into a
+horizontal scrollbar — even though most rows would fit fine. Per-cell
 `max-width` classes (`cell-desc`, `cell-fp`, `cell-cat`) help but don't
 guarantee the *sum* of columns fits the container.
 
-For a table where horizontal scrolling is undesirable, add a table-scoped
-modifier class (e.g. `jlc-stock-table`, see `JlcStock.tsx` / `styles.css`) that
-sets `table-layout: fixed` plus `nth-child` width percentages summing to
-**100%**, and `overflow: hidden; text-overflow: ellipsis; white-space: nowrap`
-on every `th`/`td`. This truncates long values with an ellipsis (add a `title`
-attribute for the full value on hover) instead of wrapping — wrapping would
-change row height, which is worse than truncation for dense data tables.
+The fix for any table (add it when you create the table, don't wait for it to
+overflow):
+
+1. Add a table-scoped modifier class (e.g. `jlc-stock-table`, `browse-table`,
+   `proposals-table`; see `styles.css`) and give it `table-layout: fixed` plus
+   `nth-child` width percentages summing to **100%**.
+2. Apply `overflow: hidden; text-overflow: ellipsis; white-space: nowrap` to
+   every `th`/`td` — the shared `.data-fixed` helper does exactly this, so
+   `className="data data-fixed <your-modifier>"` and the modifier only carries
+   the widths. Reuse `.data-fixed` rather than re-declaring the ellipsis rules.
+3. Add a `title` attribute with the full value on any cell that can truncate, so
+   the hidden text is available on hover.
+4. If one row genuinely must break the clamp (e.g. a full-width `colSpan`
+   expansion row like the proposals before/after preview), opt *that cell* out
+   with `white-space: normal; overflow: visible` — never relax the whole table.
+
+Compound selectors (`.data.proposals-table td:nth-child(n)`) are needed to
+outrank existing width rules such as `.data td.ctr { width: 1% }`.
+
+### Jaravis chat is server-persisted (multiple sessions)
+
+The Jaravis page (`pages/Jaravis.tsx`) no longer keeps the conversation in local
+state only. Conversations are `JaravisSession`s stored by the API; the page
+lists them in a left sidebar (`.chat-sessions` / `.session-item`, reusing the
+`--accent-soft` active style) and streams turns via `jaravisSessionChatStream`.
+Conventions to keep: the last-open session id is remembered in `localStorage`
+under `jaravis.activeSession` (reopened on mount, else the newest); a session is
+created **lazily on the first message** (and by the explicit "New chat" button)
+so idle empty sessions don't pile up; session switching is disabled while a turn
+is in flight (`busy`). The stored assistant message carries its `trace` +
+`proposals`, so a reloaded thread renders the same tool list and proposal notes
+as the live run.

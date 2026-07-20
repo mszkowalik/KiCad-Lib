@@ -1,6 +1,7 @@
 import { createContext, useCallback, useEffect, useState } from "react";
 import { Link, NavLink, Route, Routes } from "react-router-dom";
 import { getProposals } from "./api";
+import { DialogProvider } from "./components/Dialog";
 import Browse from "./pages/Browse";
 import ComponentDetail from "./pages/ComponentDetail";
 import FileViewer from "./pages/FileViewer";
@@ -56,53 +57,55 @@ export default function App() {
   }, [refresh]);
 
   return (
-    <ProposalsBadge.Provider value={{ count: proposalCount, refresh }}>
-      <div className="app">
-        <header className="topbar">
-          <Link to="/" className="brand">
-            Project Management Platform
-          </Link>
-          <nav className="topbar-nav">
-            <NavLink to="/projects" className={navClass}>
-              Projects
-            </NavLink>
-            <NavLink to="/jlc-stock" className={navClass}>
-              JLC Stock
-            </NavLink>
-            <NavLink to="/jaravis" className={navClass}>
-              Jaravis
-            </NavLink>
-            <NavLink to="/proposals" className={navClass}>
-              Proposals
-              {proposalCount > 0 ? <span className="badge">{proposalCount}</span> : null}
-            </NavLink>
-            <NavLink to="/skills" className={navClass}>
-              Skills
-            </NavLink>
-            <NavLink to="/import" className={navClass}>
-              Import
-            </NavLink>
-            <NavLink to="/kicad" className={navClass}>
-              KiCad
-            </NavLink>
-          </nav>
-        </header>
-        <Routes>
-          <Route path="/" element={<Browse />} />
-          <Route path="/components/new" element={<NewComponent />} />
-          <Route path="/components/:id" element={<ComponentDetail />} />
-          <Route path="/projects" element={<Projects />} />
-          <Route path="/projects/:id" element={<ProjectDetail />} />
-          <Route path="/jlc-stock" element={<JlcStock />} />
-          <Route path="/jaravis" element={<Jaravis />} />
-          <Route path="/proposals" element={<Proposals />} />
-          <Route path="/skills" element={<Skills />} />
-          <Route path="/import" element={<ImportStation />} />
-          <Route path="/kicad" element={<KicadPage />} />
-          <Route path="/view" element={<FileViewer />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </div>
-    </ProposalsBadge.Provider>
+    <DialogProvider>
+      <ProposalsBadge.Provider value={{ count: proposalCount, refresh }}>
+        <div className="app">
+          <header className="topbar">
+            <Link to="/" className="brand">
+              Project Management Platform
+            </Link>
+            <nav className="topbar-nav">
+              <NavLink to="/projects" className={navClass}>
+                Projects
+              </NavLink>
+              <NavLink to="/jlc-stock" className={navClass}>
+                JLC Stock
+              </NavLink>
+              <NavLink to="/jaravis" className={navClass}>
+                Jaravis
+              </NavLink>
+              <NavLink to="/proposals" className={navClass}>
+                Proposals
+                {proposalCount > 0 ? <span className="badge">{proposalCount}</span> : null}
+              </NavLink>
+              <NavLink to="/skills" className={navClass}>
+                Skills
+              </NavLink>
+              <NavLink to="/import" className={navClass}>
+                Import
+              </NavLink>
+              <NavLink to="/kicad" className={navClass}>
+                KiCad
+              </NavLink>
+            </nav>
+          </header>
+          <Routes>
+            <Route path="/" element={<Browse />} />
+            <Route path="/components/new" element={<NewComponent />} />
+            <Route path="/components/:id" element={<ComponentDetail />} />
+            <Route path="/projects" element={<Projects />} />
+            <Route path="/projects/:id" element={<ProjectDetail />} />
+            <Route path="/jlc-stock" element={<JlcStock />} />
+            <Route path="/jaravis" element={<Jaravis />} />
+            <Route path="/proposals" element={<Proposals />} />
+            <Route path="/skills" element={<Skills />} />
+            <Route path="/import" element={<ImportStation />} />
+            <Route path="/kicad" element={<KicadPage />} />
+            <Route path="/view" element={<FileViewer />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </div>
+      </ProposalsBadge.Provider>
+    </DialogProvider>
   );
 }

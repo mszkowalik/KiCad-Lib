@@ -344,7 +344,11 @@ export default function Browse() {
                 {visible.map((c) => (
                   <tr key={c.id}>
                     <td title={c.mfg_pn}>
-                      <Link to={`/components/${c.id}`} className="mono comp-link">
+                      <Link
+                        to={`/components/${c.id}`}
+                        state={{ backTo: `/${params.toString() ? `?${params.toString()}` : ""}` }}
+                        className="mono comp-link"
+                      >
                         {c.mfg_pn || <span className="muted">—</span>}
                       </Link>
                     </td>

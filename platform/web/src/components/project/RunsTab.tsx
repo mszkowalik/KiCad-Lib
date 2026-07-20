@@ -19,6 +19,7 @@ import {
   type RunInfo,
   type SnapshotInfo,
 } from "../../api";
+import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
 import ProductionPanel from "./ProductionPanel";
 
@@ -46,6 +47,7 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
   const [creating, setCreating] = useState(false);
   const [serialsDraft, setSerialsDraft] = useState("");
   const [overrideDrafts, setOverrideDrafts] = useState<Record<string, string>>({});
+  const dialog = useDialog();
 
   const load = (signal?: AbortSignal) => {
     getRuns(project.id, signal)
@@ -194,13 +196,16 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
                   <td className="nowrap">
                     <button className="btn btn-sm" onClick={() => openDetail(r.id)}>Open</button>{" "}
                     <button className="btn btn-sm btn-danger"
-                      onClick={() => {
-                        if (window.confirm(`Delete run "${r.label}" and its attachments?`)) {
-                          deleteRun(r.id).then(() => {
-                            if (openRun?.id === r.id) setOpenRun(null);
-                            load();
-                          });
-                        }
+                      onClick={async () => {
+                        const confirmed = await dialog.confirm(
+                          `Delete run "${r.label}" and its attachments?`,
+                          { title: "Delete production run", confirmLabel: "Delete", tone: "danger" },
+                        );
+                        if (!confirmed) return;
+                        deleteRun(r.id).then(() => {
+                          if (openRun?.id === r.id) setOpenRun(null);
+                          load();
+                        });
                       }}>
                       Delete
                     </button>

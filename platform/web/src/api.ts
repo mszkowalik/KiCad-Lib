@@ -509,13 +509,151 @@ export function getJaravisStatus(signal?: AbortSignal): Promise<JaravisStatus> {
 }
 
 /** SLOW: runs a whole agent loop server-side (10s–2min), non-streaming.
- *  Deliberately no timeout — the browser's own limit applies. */
+ *  Deliberately no timeout — the browser's own limit applies. Kept for
+ *  scripts; the chat UI uses jaravisChatStream. */
 export function jaravisChat(messages: ChatMessage[]): Promise<ChatResponse> {
   return request("/api/jaravis/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ messages }),
   });
+}
+
+/** One NDJSON progress event from a Jaravis chat stream. */
+export interface ChatStreamEvent {
+  type: "note" | "tool" | "done" | "error" | "session";
+  /** note: interim narration text from the agent */
+  text?: string;
+  /** tool: tool name + input the moment the call is issued */
+  tool?: string;
+  input?: unknown;
+  /** done: the final result (same shape as ChatResponse) */
+  reply?: string;
+  trace?: ChatTraceItem[];
+  proposals?: ChatProposalRef[];
+  /** error: server-side failure after the stream started */
+  error?: string;
+  /** session: the session id + its (possibly auto-generated) title */
+  session_id?: number;
+  title?: string;
+}
+
+/** POST a JSON body and return the streaming Response, mapping connection and
+ *  non-2xx failures to ApiError (aborts re-thrown untouched). */
+async function openStream(path: string, body: unknown, signal?: AbortSignal): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err) {
+    if (isAbortError(err)) throw err;
+    throw new ApiError(0, `Cannot reach API at ${API_URL} (${errorMessage(err)})`);
+  }
+  if (!res.ok || !res.body) {
+    let detail = "";
+    try {
+      const b = (await res.json()) as { detail?: unknown };
+      if (typeof b.detail === "string") detail = b.detail;
+    } catch {
+      // non-JSON error body — fall through to statusText
+    }
+    throw new ApiError(res.status, detail || `${res.status} ${res.statusText}`);
+  }
+  return res;
+}
+
+/** Read an NDJSON stream to completion, firing onEvent per parsed line. */
+async function pumpNdjson(res: Response, onEvent: (ev: ChatStreamEvent) => void): Promise<void> {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (line) onEvent(JSON.parse(line) as ChatStreamEvent);
+    }
+  }
+}
+
+/** Stateless streaming chat (kept for scripts). Aborting the signal (Stop
+ *  button) closes the connection, which ends the run server-side at the next
+ *  event boundary. The chat UI uses jaravisSessionChatStream instead. */
+export async function jaravisChatStream(
+  messages: ChatMessage[],
+  onEvent: (ev: ChatStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await openStream("/api/jaravis/chat/stream", { messages }, signal);
+  await pumpNdjson(res, onEvent);
+}
+
+// ------------------------------------------------------- jaravis sessions
+
+export interface JaravisSessionSummary {
+  id: number;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+}
+
+export interface StoredChatMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  trace: ChatTraceItem[];
+  proposals: ChatProposalRef[];
+  created_at: string;
+}
+
+export interface JaravisSessionDetail extends JaravisSessionSummary {
+  messages: StoredChatMessage[];
+}
+
+export function listJaravisSessions(signal?: AbortSignal): Promise<JaravisSessionSummary[]> {
+  return request("/api/jaravis/sessions", { signal });
+}
+
+export function createJaravisSession(): Promise<JaravisSessionSummary> {
+  return request("/api/jaravis/sessions", { method: "POST" });
+}
+
+export function getJaravisSession(id: number, signal?: AbortSignal): Promise<JaravisSessionDetail> {
+  return request(`/api/jaravis/sessions/${id}`, { signal });
+}
+
+export function renameJaravisSession(id: number, title: string): Promise<JaravisSessionSummary> {
+  return request(`/api/jaravis/sessions/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+}
+
+export function deleteJaravisSession(id: number): Promise<{ deleted: number }> {
+  return request(`/api/jaravis/sessions/${id}`, { method: "DELETE" });
+}
+
+/** Persisted streaming chat: sends one user message into a session; the server
+ *  stores both turns. Same event stream as jaravisChatStream, preceded by a
+ *  "session" event carrying the (possibly auto-generated) title. */
+export async function jaravisSessionChatStream(
+  sessionId: number,
+  content: string,
+  onEvent: (ev: ChatStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await openStream(`/api/jaravis/sessions/${sessionId}/chat/stream`, { content }, signal);
+  await pumpNdjson(res, onEvent);
 }
 
 // ---------------------------------------------------------------- comments
@@ -671,6 +809,25 @@ export interface GeometryProposal {
 
 export type Proposal = ComponentProposal | SkillProposal | GeometryProposal;
 
+/** A decided proposal (approved/rejected) — one row of the proposals history,
+ *  sourced from the audit log so all four kinds share one shape. */
+export interface ProposalHistoryRow {
+  kind: "component" | "skill" | "symbol" | "footprint";
+  outcome: "approved" | "rejected";
+  decided_at: string;
+  decided_by: string;
+  proposal_id: number | null;
+  /** Present for component kind — lets the row link to the component detail. */
+  component_id: number | null;
+  /** Display name (component / skill / symbol / footprint). */
+  component_name: string;
+  version_no: number | null;
+  created_by: string | null;
+  created_at: string | null;
+  comment: string | null;
+  category_path: string;
+}
+
 /** Approve/reject responses for component proposals (no `kind` field). */
 export interface ComponentProposalAction {
   proposal_id: number;
@@ -698,6 +855,13 @@ export interface SkillProposalAction {
 
 export function getProposals(signal?: AbortSignal): Promise<Proposal[]> {
   return request("/api/proposals", { signal });
+}
+
+export function getProposalHistory(
+  limit = 200,
+  signal?: AbortSignal,
+): Promise<ProposalHistoryRow[]> {
+  return request(`/api/proposals/history?limit=${limit}`, { signal });
 }
 
 export function approveProposal(id: number): Promise<ComponentProposalAction> {

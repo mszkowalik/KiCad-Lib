@@ -6,6 +6,7 @@ import {
   updateCategory,
   type CategoryNode,
 } from "../api";
+import { useDialog } from "./Dialog";
 
 interface Props {
   tree: CategoryNode[];
@@ -159,6 +160,7 @@ export default function CategoryTree({ tree, selectedId, onSelect, onChanged }: 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [manage, setManage] = useState(false);
   const [opError, setOpError] = useState<string | null>(null);
+  const dialog = useDialog();
 
   // Make sure the path to the selected category is visible (e.g. deep link).
   useEffect(() => {
@@ -192,20 +194,30 @@ export default function CategoryTree({ tree, selectedId, onSelect, onChanged }: 
   };
 
   const ops: ManageOps = {
-    addChild: (parent) => {
-      const name = window.prompt(
+    addChild: async (parent) => {
+      const name = await dialog.prompt(
         parent ? `New subcategory under "${parent.name}":` : "New top-level category:",
+        { title: "New category", confirmLabel: "Create" },
       );
       if (!name || !name.trim()) return;
       run(createCategory(name.trim(), parent ? parent.id : null), parent?.id);
     },
-    rename: (node) => {
-      const name = window.prompt(`Rename "${node.name}" to:`, node.name);
+    rename: async (node) => {
+      const name = await dialog.prompt(`Rename "${node.name}" to:`, {
+        title: "Rename category",
+        initial: node.name,
+        confirmLabel: "Rename",
+      });
       if (!name || !name.trim() || name.trim() === node.name) return;
       run(updateCategory(node.id, { name: name.trim() }));
     },
-    remove: (node) => {
-      if (!window.confirm(`Delete category "${node.name}"?`)) return;
+    remove: async (node) => {
+      const confirmed = await dialog.confirm(`Delete category "${node.name}"?`, {
+        title: "Delete category",
+        confirmLabel: "Delete",
+        tone: "danger",
+      });
+      if (!confirmed) return;
       run(deleteCategory(node.id));
     },
   };

@@ -12,6 +12,7 @@ import {
   type SkillListItem,
   type SkillVersionDetail,
 } from "../api";
+import { useDialog } from "../components/Dialog";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { useStickyState } from "../useStickyState";
 
@@ -50,6 +51,7 @@ export default function Skills() {
   const [savedBanner, setSavedBanner] = useState<string | null>(null);
 
   const [newDraft, setNewDraft] = useState<NewSkillDraft | null>(null);
+  const dialog = useDialog();
 
   const dirty =
     newDraft !== null ? editorText.trim() !== "" : detail !== null && editorText !== detail.content;
@@ -121,29 +123,37 @@ export default function Skills() {
     return () => ctrl.abort();
   }, [selectedId, viewNo]);
 
-  const confirmDiscard = (): boolean =>
-    !dirty || window.confirm("Discard unsaved changes?");
+  const confirmDiscard = async (): Promise<boolean> =>
+    !dirty ||
+    dialog.confirm("Discard unsaved changes?", {
+      title: "Unsaved changes",
+      confirmLabel: "Discard",
+      tone: "danger",
+    });
 
-  const selectSkill = (id: number) => {
+  const selectSkill = async (id: number) => {
     if (id === selectedId && newDraft === null) return;
-    if (!confirmDiscard()) return;
+    if (!(await confirmDiscard())) return;
     setNewDraft(null);
     setSelectedId(id);
   };
 
-  const selectVersion = (no: number | null) => {
+  const selectVersion = async (no: number | null) => {
     if (no === viewNo) return;
     // Only leaving the editable current view can lose edits.
-    if (viewNo === null && !confirmDiscard()) return;
+    if (viewNo === null && !(await confirmDiscard())) return;
     if (viewNo === null && detail !== null) setEditorText(detail.content);
     setViewNo(no);
     setSavedBanner(null);
     setSaveError(null);
   };
 
-  const startNewSkill = () => {
-    if (!confirmDiscard()) return;
-    const name = window.prompt("New skill name:");
+  const startNewSkill = async () => {
+    if (!(await confirmDiscard())) return;
+    const name = await dialog.prompt("New skill name:", {
+      title: "New skill",
+      confirmLabel: "Create",
+    });
     if (name === null) return;
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -192,13 +202,11 @@ export default function Skills() {
   const restore = async () => {
     if (selectedId === null || viewVersion === null || saving) return;
     if (viewVersion.status === "draft") return; // drafts go through Proposals
-    if (
-      !window.confirm(
-        `Restore v${viewVersion.version_no} as the new current version of ${viewVersion.name}?`,
-      )
-    ) {
-      return;
-    }
+    const confirmed = await dialog.confirm(
+      `Restore v${viewVersion.version_no} as the new current version of ${viewVersion.name}?`,
+      { title: "Restore version", confirmLabel: "Restore" },
+    );
+    if (!confirmed) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -304,8 +312,8 @@ export default function Skills() {
                 type="button"
                 className="btn"
                 disabled={saving}
-                onClick={() => {
-                  if (confirmDiscard()) setNewDraft(null);
+                onClick={async () => {
+                  if (await confirmDiscard()) setNewDraft(null);
                 }}
               >
                 Cancel

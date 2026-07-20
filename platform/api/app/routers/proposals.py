@@ -87,6 +87,91 @@ def list_proposals(db: Session = Depends(get_db)):
     return out
 
 
+# entity_type (audit log) -> proposal kind shown in the history table
+_HISTORY_ENTITY = {
+    "component_version": "component",
+    "skill_version": "skill",
+    "symbol_version": "symbol",
+    "footprint_version": "footprint",
+}
+
+
+@router.get("/history")
+def list_history(limit: int = 200, db: Session = Depends(get_db)):
+    """Decided proposals — the audit trail of the approval queue, newest
+    decision first. Sourced from the audit log (`proposal.approve` /
+    `proposal.reject`) so all four proposal kinds share one uniform history;
+    each row is enriched from its still-present version row (append-only /
+    tombstoned), falling back to the audit `details` name if it is gone."""
+    rows = (
+        db.query(M.AuditLog)
+        .filter(M.AuditLog.action.in_(("proposal.approve", "proposal.reject")))
+        .order_by(M.AuditLog.ts.desc())
+        .limit(max(1, min(limit, 1000)))
+        .all()
+    )
+    out = []
+    for a in rows:
+        kind = _HISTORY_ENTITY.get(a.entity_type)
+        if kind is None:
+            continue
+        details = a.details or {}
+        vid = int(a.entity_id) if a.entity_id and a.entity_id.isdigit() else None
+        row = {
+            "kind": kind,
+            "outcome": "approved" if a.action == "proposal.approve" else "rejected",
+            "decided_at": a.ts.isoformat(),
+            "decided_by": a.actor,
+            "proposal_id": vid,
+            "component_id": None,
+            "component_name": details.get(kind, ""),
+            "version_no": None,
+            "created_by": None,
+            "created_at": None,
+            "comment": None,
+            "category_path": "",
+        }
+        if vid is not None:
+            if kind == "component":
+                cv = db.get(M.ComponentVersion, vid)
+                if cv is not None:
+                    comp = db.get(M.Component, cv.component_id)
+                    row.update(
+                        component_id=cv.component_id,
+                        component_name=comp.name if comp else row["component_name"],
+                        version_no=cv.version_no,
+                        created_by=cv.created_by,
+                        created_at=cv.created_at.isoformat(),
+                        comment=cv.comment,
+                        category_path=category_path(cv.category) if cv.category else "",
+                    )
+            elif kind == "skill":
+                sv = db.get(M.SkillVersion, vid)
+                if sv is not None:
+                    skill = db.get(M.Skill, sv.skill_id)
+                    row.update(
+                        component_name=skill.name if skill else row["component_name"],
+                        version_no=sv.version_no,
+                        created_by=sv.created_by,
+                        created_at=sv.created_at.isoformat(),
+                        comment=sv.comment,
+                    )
+            else:
+                model = M.SymbolVersion if kind == "symbol" else M.FootprintVersion
+                v = db.get(model, vid)
+                if v is not None:
+                    parent = v.symbol if kind == "symbol" else v.footprint
+                    row.update(
+                        component_name=parent.name if parent else row["component_name"],
+                        version_no=v.version_no,
+                        created_by=v.created_by,
+                        created_at=v.created_at.isoformat(),
+                        comment=v.comment,
+                    )
+        out.append(row)
+    return out
+
+
 @router.post("/{cv_id}/approve")
 def approve(cv_id: int, db: Session = Depends(get_db)):
     cv = db.get(M.ComponentVersion, cv_id)
