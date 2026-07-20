@@ -1,6 +1,9 @@
 import { useContext, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import {
+  ApiError,
+  attachJaravisRun,
+  cancelJaravisRun,
   createJaravisSession,
   deleteJaravisSession,
   errorMessage,
@@ -11,6 +14,7 @@ import {
   listJaravisSessions,
   renameJaravisSession,
   type ChatProposalRef,
+  type ChatStreamEvent,
   type ChatTraceItem,
   type JaravisSessionSummary,
   type JaravisStatus,
@@ -68,7 +72,8 @@ export default function Jaravis() {
   const [thread, setThread] = useState<ThreadMsg[]>([]);
   const [loadingSession, setLoadingSession] = useState(false);
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(false); // a turn is streaming (sent or reattached)
+  const [attaching, setAttaching] = useState(false); // probing/attaching to an existing run
   const [elapsed, setElapsed] = useState(0);
   const [chatError, setChatError] = useState<string | null>(null);
   const [progress, setProgress] = useState<ChatTraceItem[]>([]);
@@ -79,6 +84,9 @@ export default function Jaravis() {
   const abortRef = useRef<AbortController | null>(null);
   const sessionLoadRef = useRef<AbortController | null>(null);
   const progressRef = useRef<ChatTraceItem[]>([]);
+  // Mirrors activeId for async callbacks that must ignore results from a
+  // session the user has since switched away from.
+  const activeIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -131,9 +139,75 @@ export default function Jaravis() {
     }
   };
 
+  /** Progress-event handling shared by a fresh send and a reattach. Returns
+   *  true when the event was consumed here; the caller handles "done". */
+  const applyProgressEvent = (ev: ChatStreamEvent, sessionId: number): boolean => {
+    if (ev.type === "tool" && ev.tool) {
+      progressRef.current = [...progressRef.current, { tool: ev.tool, input: ev.input }];
+      setProgress(progressRef.current);
+      return true;
+    }
+    if (ev.type === "note") {
+      setNote(ev.text ?? null);
+      return true;
+    }
+    if (ev.type === "session") {
+      if (ev.title) {
+        const title = ev.title;
+        setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, title } : s)));
+      }
+      return true;
+    }
+    if (ev.type === "error") {
+      setChatError(ev.error ?? "Jaravis failed");
+      return true;
+    }
+    return false; // "done"
+  };
+
+  /** After a reload, re-attach to a run still executing for this session (or
+   *  reconcile a turn that just finished). Only called when the loaded thread
+   *  ends on a user message — the signature of an unfinished turn. */
+  const reattach = async (id: number) => {
+    setAttaching(true);
+    setChatError(null);
+    progressRef.current = [];
+    setProgress([]);
+    setNote("Reattaching to a run in progress…");
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    try {
+      await attachJaravisRun(
+        id,
+        (ev) => {
+          setBusy(true); // events arriving ⇒ a run is live
+          if (applyProgressEvent(ev, id)) return;
+          if (ev.type === "done" && (ev.proposals?.length ?? 0) > 0) refreshBadge();
+        },
+        ctrl.signal,
+      );
+      // The run (if any) persisted the reply; the stored messages are now
+      // authoritative. Reload them rather than appending, to avoid duplicates.
+      if (id === activeIdRef.current) {
+        const d = await getJaravisSession(id);
+        if (id === activeIdRef.current) setThread(d.messages.map(toThreadMsg));
+        void refreshSessions();
+      }
+    } catch (err) {
+      if (!isAbortError(err) && id === activeIdRef.current) setChatError(errorMessage(err));
+    } finally {
+      if (abortRef.current === ctrl) abortRef.current = null;
+      setAttaching(false);
+      setBusy(false);
+      setProgress([]);
+      setNote(null);
+    }
+  };
+
   const openSession = async (id: number) => {
-    if (busy || id === activeId) return;
+    if (busy || attaching || id === activeId) return;
     setActiveId(id);
+    activeIdRef.current = id;
     localStorage.setItem(ACTIVE_KEY, String(id));
     setChatError(null);
     setLoadingSession(true);
@@ -142,7 +216,10 @@ export default function Jaravis() {
     sessionLoadRef.current = ctrl;
     try {
       const detail = await getJaravisSession(id, ctrl.signal);
-      setThread(detail.messages.map(toThreadMsg));
+      const msgs = detail.messages.map(toThreadMsg);
+      setThread(msgs);
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === "user") void reattach(id); // unfinished turn
     } catch (err) {
       if (!isAbortError(err)) setChatError(errorMessage(err));
     } finally {
@@ -151,11 +228,12 @@ export default function Jaravis() {
   };
 
   const newSession = async () => {
-    if (busy) return;
+    if (busy || attaching) return;
     try {
       const s = await createJaravisSession();
       setSessions((prev) => [s, ...prev]);
       setActiveId(s.id);
+      activeIdRef.current = s.id;
       localStorage.setItem(ACTIVE_KEY, String(s.id));
       setThread([]);
       setChatError(null);
@@ -187,6 +265,7 @@ export default function Jaravis() {
       setSessions((prev) => prev.filter((x) => x.id !== s.id));
       if (activeId === s.id) {
         setActiveId(null);
+        activeIdRef.current = null;
         setThread([]);
         localStorage.removeItem(ACTIVE_KEY);
       }
@@ -195,10 +274,24 @@ export default function Jaravis() {
     }
   };
 
-  const canSend = status?.available === true && !busy && input.trim() !== "";
+  /** Stop the current run server-side (it keeps going otherwise) and detach. */
+  const stop = async () => {
+    const id = activeIdRef.current;
+    abortRef.current?.abort();
+    if (id != null) {
+      try {
+        await cancelJaravisRun(id);
+      } catch {
+        /* best-effort */
+      }
+    }
+  };
+
+  const canSend =
+    status?.available === true && !busy && !attaching && input.trim() !== "";
 
   const send = async () => {
-    if (!canSend) return;
+    if (canSend !== true) return;
     const text = input.trim();
 
     // Create a conversation lazily on the first message, so idle empty
@@ -210,6 +303,7 @@ export default function Jaravis() {
         sessionId = s.id;
         setSessions((prev) => [s, ...prev]);
         setActiveId(s.id);
+        activeIdRef.current = s.id;
         localStorage.setItem(ACTIVE_KEY, String(s.id));
       } catch (err) {
         setChatError(errorMessage(err));
@@ -231,18 +325,8 @@ export default function Jaravis() {
         sessionId,
         text,
         (ev) => {
-          if (ev.type === "tool" && ev.tool) {
-            const item = { tool: ev.tool, input: ev.input };
-            progressRef.current = [...progressRef.current, item];
-            setProgress(progressRef.current);
-          } else if (ev.type === "note") {
-            setNote(ev.text ?? null);
-          } else if (ev.type === "session") {
-            if (ev.title) {
-              const title = ev.title;
-              setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, title } : s)));
-            }
-          } else if (ev.type === "done") {
+          if (applyProgressEvent(ev, sessionId)) return;
+          if (ev.type === "done") {
             setThread((prev) => [
               ...prev,
               {
@@ -253,8 +337,6 @@ export default function Jaravis() {
               },
             ]);
             if ((ev.proposals?.length ?? 0) > 0) refreshBadge();
-          } else if (ev.type === "error") {
-            setChatError(ev.error ?? "Jaravis failed");
           }
         },
         ctrl.signal,
@@ -266,11 +348,15 @@ export default function Jaravis() {
           {
             role: "assistant",
             content:
-              "(Stopped by you. The run ends server-side after the step that was in flight; " +
-              "any drafts already created are in Proposals.)",
+              "(Stopped by you. The run was cancelled server-side; any drafts already created are in Proposals.)",
             trace: progressRef.current,
           },
         ]);
+      } else if (err instanceof ApiError && err.status === 409) {
+        // A turn is already running for this session (e.g. started in another
+        // tab). Drop the optimistic bubble and attach to the existing run.
+        setThread((prev) => prev.slice(0, -1));
+        void reattach(sessionId);
       } else {
         setChatError(errorMessage(err));
       }
@@ -290,13 +376,17 @@ export default function Jaravis() {
     }
   };
 
+  const running = busy || attaching;
+  const lastMsg = thread[thread.length - 1];
+  const danglingTurn = !running && !loadingSession && lastMsg?.role === "user";
+
   return (
     <div className="main-solo chat-solo">
       <aside className="chat-sessions">
         <button
           type="button"
           className="btn btn-sm btn-accent chat-new"
-          disabled={busy}
+          disabled={running}
           onClick={() => void newSession()}
         >
           + New chat
@@ -308,7 +398,7 @@ export default function Jaravis() {
                 type="button"
                 className="session-open"
                 title={s.title}
-                disabled={busy && s.id !== activeId}
+                disabled={running && s.id !== activeId}
                 onClick={() => void openSession(s.id)}
               >
                 <span className="session-title">{s.title}</span>
@@ -363,7 +453,8 @@ export default function Jaravis() {
             <p className="muted chat-empty">
               Ask the librarian — look things up, check consistency, or propose new parts and
               edits. Changes land as drafts in <Link to="/proposals">Proposals</Link>. Your
-              conversations are saved; start a fresh one any time with <strong>New chat</strong>.
+              conversations are saved and keep running even if you close the page; start a fresh
+              one any time with <strong>New chat</strong>.
             </p>
           ) : null}
           {thread.map((m, i) => (
@@ -382,6 +473,12 @@ export default function Jaravis() {
               ) : null}
             </div>
           ))}
+          {danglingTurn ? (
+            <p className="muted dim chat-empty">
+              This turn didn’t finish — it may have been stopped, or the server restarted while it
+              was running. Send another message to continue.
+            </p>
+          ) : null}
           {busy ? (
             <div className="msg assistant">
               <div className="msg-meta mono">jaravis</div>
@@ -393,11 +490,7 @@ export default function Jaravis() {
                     <span className="mono"> · {progress.length} tool call{progress.length === 1 ? "" : "s"}</span>
                   ) : null}
                 </span>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-danger"
-                  onClick={() => abortRef.current?.abort()}
-                >
+                <button type="button" className="btn btn-sm btn-danger" onClick={() => void stop()}>
                   Stop
                 </button>
               </div>
@@ -425,7 +518,7 @@ export default function Jaravis() {
               status?.available ? "Message Jaravis… (Enter to send, Shift+Enter for newline)" : "Jaravis is unavailable"
             }
             value={input}
-            disabled={status?.available !== true || busy}
+            disabled={status?.available !== true || running}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             aria-label="Message Jaravis"

@@ -150,6 +150,15 @@ Conventions to keep: the last-open session id is remembered in `localStorage`
 under `jaravis.activeSession` (reopened on mount, else the newest); a session is
 created **lazily on the first message** (and by the explicit "New chat" button)
 so idle empty sessions don't pile up; session switching is disabled while a turn
-is in flight (`busy`). The stored assistant message carries its `trace` +
-`proposals`, so a reloaded thread renders the same tool list and proposal notes
-as the live run.
+is in flight (`busy || attaching`). The stored assistant message carries its
+`trace` + `proposals`, so a reloaded thread renders the same tool list and
+proposal notes as the live run.
+
+Turns run server-side and survive a refresh (see the api CLAUDE.md background-run
+note). Because of that: **Stop calls `cancelJaravisRun`**, not just an abort — a
+client abort no longer stops the run. On opening a session whose last stored
+message is a `user` message (the signature of an unfinished turn), the page
+calls `reattach()` → `attachJaravisRun`, which replays the run's events for live
+progress and then reloads the stored messages as the source of truth (reload,
+don't append, to avoid duplicating the reply). `activeIdRef` mirrors `activeId`
+so these async callbacks ignore results after the user switches conversations.

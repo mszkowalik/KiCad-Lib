@@ -10,8 +10,10 @@ Auth: the anthropic client resolves credentials from the environment
 """
 from __future__ import annotations
 
+import contextvars
 import json
 import os
+import threading
 
 import anthropic
 from anthropic import beta_tool
@@ -26,8 +28,18 @@ from ..services.lcsc import fetch_metadata
 MODEL = settings.jaravis_model  # user preference: Sonnet; Opus via JARAVIS_MODEL
 MAX_TOKENS = 16000
 
-# Proposals created during the current chat call (single-user app).
-LAST_PROPOSALS: list[dict] = []
+# Proposals created during the CURRENT chat turn. A ContextVar (not a module
+# global) so overlapping turns — runs now execute in background threads, and two
+# sessions can run at once — never cross-attribute each other's drafts. Set to a
+# fresh list at the start of each run_chat_events turn.
+_turn_proposals: contextvars.ContextVar[list] = contextvars.ContextVar("jaravis_turn_proposals")
+
+
+def _record_proposal(entry: dict) -> None:
+    try:
+        _turn_proposals.get().append(entry)
+    except LookupError:
+        pass  # proposal created outside a chat turn (e.g. a direct tool call) — ignore
 
 
 def available() -> bool:
@@ -518,8 +530,8 @@ def propose_skill_update(skill_name: str, content: str, comment: str) -> str:
         db.add(M.AuditLog(actor="jaravis", action="proposal.create", entity_type="skill_version",
                           entity_id=str(sv.id), details={"skill": s.name}))
         db.commit()
-        LAST_PROPOSALS.append({"proposal_id": sv.id, "component": s.name, "kind": "skill",
-                               "version_no": new_no})
+        _record_proposal({"proposal_id": sv.id, "component": s.name, "kind": "skill",
+                          "version_no": new_no})
         return json.dumps({"ok": True, "proposal_id": sv.id, "skill": s.name, "version_no": new_no,
                            "status": "draft — awaiting user approval in the Proposals view"})
     finally:
@@ -974,7 +986,7 @@ def propose_new_component(
         db.add(M.AuditLog(actor="jaravis", action="proposal.create", entity_type="component_version",
                           entity_id=str(cv.id), details={"component": comp.name, "new": True}))
         db.commit()
-        LAST_PROPOSALS.append({"proposal_id": cv.id, "component": comp.name, "kind": "new"})
+        _record_proposal({"proposal_id": cv.id, "component": comp.name, "kind": "new"})
         return json.dumps({"ok": True, "proposal_id": cv.id, "component": comp.name,
                            "status": "draft — awaiting user approval in the Proposals view"})
     finally:
@@ -1049,8 +1061,8 @@ def propose_component_edit(
         db.add(M.AuditLog(actor="jaravis", action="proposal.create", entity_type="component_version",
                           entity_id=str(cv.id), details={"component": comp.name, "new": False}))
         db.commit()
-        LAST_PROPOSALS.append({"proposal_id": cv.id, "component": comp.name, "kind": "edit",
-                               "version_no": new_no})
+        _record_proposal({"proposal_id": cv.id, "component": comp.name, "kind": "edit",
+                          "version_no": new_no})
         return json.dumps({"ok": True, "proposal_id": cv.id, "component": comp.name,
                            "version_no": new_no,
                            "status": "draft — awaiting user approval in the Proposals view"})
@@ -1112,8 +1124,8 @@ def propose_symbol_edit(name: str, source_text: str, comment: str) -> str:
         db.add(M.AuditLog(actor="jaravis", action="proposal.create", entity_type="symbol_version",
                           entity_id=str(sv.id), details={"symbol": name, "new": is_new}))
         db.commit()
-        LAST_PROPOSALS.append({"proposal_id": sv.id, "component": name, "kind": "symbol",
-                               "version_no": new_no})
+        _record_proposal({"proposal_id": sv.id, "component": name, "kind": "symbol",
+                          "version_no": new_no})
         return json.dumps({
             "ok": True, "proposal_id": sv.id, "symbol": name, "version_no": new_no,
             "is_new_symbol": is_new, "pin_count": parsed.get("pin_count"),
@@ -1190,8 +1202,8 @@ def propose_footprint_edit(name: str, source_text: str, comment: str) -> str:
         db.add(M.AuditLog(actor="jaravis", action="proposal.create", entity_type="footprint_version",
                           entity_id=str(fv.id), details={"footprint": name, "new": is_new}))
         db.commit()
-        LAST_PROPOSALS.append({"proposal_id": fv.id, "component": name, "kind": "footprint",
-                               "version_no": new_no})
+        _record_proposal({"proposal_id": fv.id, "component": name, "kind": "footprint",
+                          "version_no": new_no})
         return json.dumps({
             "ok": True, "proposal_id": fv.id, "footprint": name, "version_no": new_no,
             "is_new_footprint": is_new, "pad_count": parsed.get("pad_count"),
@@ -1377,7 +1389,7 @@ def run_chat_events(messages: list[dict]):
     Python tool runner does NOT auto-resume — it would silently truncate the
     answer. So the conversation is mirrored while iterating and the runner is
     restarted with the paused turn appended (bounded)."""
-    LAST_PROPOSALS.clear()
+    _turn_proposals.set([])
     db = SessionLocal()
     try:
         system = _build_system(db)
@@ -1421,7 +1433,8 @@ def run_chat_events(messages: list[dict]):
         reply = (f"(Stopped after {len(trace)} tool calls — the per-message cap of "
                  f"{MAX_ITERATIONS} model iterations was reached. The work done so far is "
                  "saved; say \"continue\" to keep going.)")
-    yield {"type": "done", "reply": reply, "trace": trace, "proposals": list(LAST_PROPOSALS)}
+    yield {"type": "done", "reply": reply, "trace": trace,
+           "proposals": list(_turn_proposals.get([]))}
 
 
 def run_chat(messages: list[dict]) -> dict:
@@ -1442,37 +1455,66 @@ def _title_from(content: str) -> str:
     return line if len(line) <= 60 else line[:57].rstrip() + "…"
 
 
-def run_session_chat_events(session_id: int, content: str):
-    """Persisted variant of run_chat_events. Appends the user message to the
-    session immediately (durable BEFORE the — possibly long — model turn),
-    replays the whole stored conversation to the agent, streams the same
-    events, and persists the assistant reply (text + trace + proposals) the
-    moment the turn completes (so a client disconnect after `done` can't lose
-    it). Yields a leading {"type": "session", ...} event carrying the
-    (possibly auto-generated) title so the UI can update the sidebar live.
+# ------------------------------------------------------- background chat runs
+# A Jaravis turn runs in a BACKGROUND THREAD, decoupled from the HTTP client, so
+# a page refresh / closed tab does NOT cancel it — the run finishes and the
+# assistant reply is persisted regardless. Clients (including one that
+# reconnects after a refresh) subscribe to the run's event buffer and replay it
+# from the start. The registry is in-process (single uvicorn worker, single-user
+# app) and does NOT survive a process restart: a run in flight when the server
+# restarts — including a `--reload` triggered by a code edit — is lost, the same
+# class of event as any crash. There is at most one active run per session.
 
-    Owns its own DB session for the whole stream rather than a request-scoped
-    one — the turn can outlive the HTTP handler's dependency lifecycle, and the
-    agent tools open their own SessionLocal()s regardless."""
+
+class _Run:
+    def __init__(self, session_id: int):
+        self.session_id = session_id
+        self.events: list[dict] = []      # every event emitted so far (replayable)
+        self.done = False
+        self.cancelled = False
+        self.cond = threading.Condition()  # notifies subscribers of new events / done
+
+
+_RUNS: dict[int, _Run] = {}
+_RUNS_LOCK = threading.Lock()
+
+
+def has_active_run(session_id: int) -> bool:
+    with _RUNS_LOCK:
+        run = _RUNS.get(session_id)
+        return run is not None and not run.done
+
+
+def _emit(run: _Run, ev: dict) -> None:
+    with run.cond:
+        run.events.append(ev)
+        run.cond.notify_all()
+
+
+def _run_worker(session_id: int, content: str) -> None:
+    run = _RUNS[session_id]
     db = SessionLocal()
     try:
         sess = db.get(M.JaravisSession, session_id)
         if sess is None:
-            yield {"type": "error", "error": f"session {session_id} not found"}
+            _emit(run, {"type": "error", "error": f"session {session_id} not found"})
             return
         prior = (db.query(M.JaravisMessage).filter_by(session_id=session_id)
                  .order_by(M.JaravisMessage.id).all())
         convo = [{"role": m.role, "content": m.content} for m in prior]
         convo.append({"role": "user", "content": content})
 
+        # Persist the user message BEFORE the (possibly long) turn.
         db.add(M.JaravisMessage(session_id=session_id, role="user", content=content))
         if not prior and (sess.title or "").strip() in ("", "New chat"):
             sess.title = _title_from(content)
         sess.updated_at = M.utcnow()
         db.commit()
-        yield {"type": "session", "session_id": session_id, "title": sess.title}
+        _emit(run, {"type": "session", "session_id": session_id, "title": sess.title})
 
         for ev in run_chat_events(convo):
+            if run.cancelled:
+                break  # closes run_chat_events (GeneratorExit) at this boundary
             if ev.get("type") == "done":
                 db.add(M.JaravisMessage(
                     session_id=session_id, role="assistant",
@@ -1482,6 +1524,65 @@ def run_session_chat_events(session_id: int, content: str):
                 ))
                 sess.updated_at = M.utcnow()
                 db.commit()
-            yield ev
+            _emit(run, ev)
+    except Exception as e:  # a worker must never die silently
+        _emit(run, {"type": "error", "error": f"Jaravis run failed: {e}"})
     finally:
         db.close()
+        with run.cond:
+            run.done = True
+            run.cond.notify_all()
+        with _RUNS_LOCK:
+            # Drop from the registry so has_active_run() flips False at once;
+            # subscribers already streaming keep their local ref and drain.
+            if _RUNS.get(session_id) is run:
+                del _RUNS[session_id]
+
+
+def start_session_run(session_id: int, content: str) -> bool:
+    """Begin a background turn. Returns False if one is already running for the
+    session (the caller should attach to it instead of starting a second)."""
+    with _RUNS_LOCK:
+        existing = _RUNS.get(session_id)
+        if existing is not None and not existing.done:
+            return False
+        _RUNS[session_id] = _Run(session_id)
+    threading.Thread(target=_run_worker, args=(session_id, content),
+                     name=f"jaravis-run-{session_id}", daemon=True).start()
+    return True
+
+
+def cancel_session_run(session_id: int) -> bool:
+    """Signal the session's active run to stop at the next event boundary (the
+    server-side equivalent of the old Stop button). No assistant message is
+    persisted for a cancelled turn."""
+    with _RUNS_LOCK:
+        run = _RUNS.get(session_id)
+    if run is None or run.done:
+        return False
+    with run.cond:
+        run.cancelled = True
+        run.cond.notify_all()
+    return True
+
+
+def stream_run_events(session_id: int):
+    """Replay a run's events from the start, blocking for new ones, until the
+    run is done AND fully drained. Ends immediately if there is no run. Safe for
+    multiple concurrent subscribers; never yields while holding the lock."""
+    with _RUNS_LOCK:
+        run = _RUNS.get(session_id)
+    if run is None:
+        return
+    idx = 0
+    while True:
+        with run.cond:
+            while idx >= len(run.events) and not run.done:
+                run.cond.wait(timeout=30.0)
+            batch = run.events[idx:]
+            idx += len(batch)
+            finished = run.done and idx >= len(run.events)
+        for ev in batch:
+            yield ev
+        if finished:
+            return

@@ -131,21 +131,37 @@ up in the UI automatically. Audit actions in use: `proposal.create`,
   stops silently when hit, so `run_chat_events` synthesizes a "stopped, say
   continue" reply.
 - **Persisted chat is server-authoritative** (`JaravisSession` +
-  `JaravisMessage`; the `messages` relationship cascades on delete). The UI
-  drives `POST /api/jaravis/sessions/{id}/chat/stream` (+ `GET/POST/PATCH/DELETE
-  /sessions[/{id}]`); the DB — not the browser — holds the conversation, so it
-  survives reloads and the user can keep several chats in parallel.
-  `run_session_chat_events` persists the user message BEFORE the (long) turn,
-  replays only role+text to the agent, and persists the assistant reply
-  (text + `trace` + `proposals`) the instant `done` is produced (so a
-  disconnect after `done` can't lose it); it owns its own `SessionLocal()` for
-  the whole stream because the turn outlives the request's `Depends(get_db)`.
-  Session titles auto-derive from the first user message. The stateless
-  `POST /chat` + `POST /chat/stream` (full message array, store nothing) stay
-  for scripts. NOTE: `LAST_PROPOSALS` is still a module global cleared per
-  turn — fine for one turn at a time, but two turns running concurrently (two
-  open sessions) can cross-attribute the "created N proposals" note; the drafts
-  themselves always land correctly in Proposals.
+  `JaravisMessage`; the `messages` relationship cascades on delete). The DB —
+  not the browser — holds the conversation, so it survives reloads and the user
+  can keep several chats in parallel. Session titles auto-derive from the first
+  user message. The stateless `POST /chat` + `POST /chat/stream` (full message
+  array, store nothing) stay for scripts.
+- **A turn runs in a BACKGROUND THREAD, decoupled from the HTTP client**, so a
+  refresh / closed tab does NOT cancel it — this is the whole point of the
+  persistence (a request-scoped run is cancelled on disconnect and its answer,
+  and tokens, are lost). `start_session_run(sid, content)` spawns
+  `_run_worker` (persists the user message BEFORE the long turn, replays only
+  role+text to `run_chat_events`, persists the assistant reply — text+trace+
+  proposals — the instant `done` is produced) and appends every event to an
+  in-process `_Run.events` buffer under a `Condition`. `POST
+  /sessions/{id}/chat/stream` starts the run then tails the buffer via
+  `stream_run_events` (409 if one is already running); `GET
+  /sessions/{id}/run/stream` re-attaches after a reload and replays the buffer
+  from the start (204 when nothing is running — stored messages are then
+  authoritative); `POST /sessions/{id}/run/cancel` sets `_Run.cancelled` so the
+  worker breaks the loop at the next event boundary (the server-side Stop
+  button; no assistant message is persisted for a cancelled turn). At most one
+  active run per session; `_run_worker` removes itself from `_RUNS` on finish
+  (subscribers keep their local ref and drain). The registry is **in-process
+  and does NOT survive a restart** — a run in flight when uvicorn restarts
+  (including a `--reload` from a code edit) is lost; the reloaded page then sees
+  a dangling trailing user message and reconciles. Never yield while holding
+  `_Run.cond`.
+- **Per-turn proposals use a `ContextVar` (`_turn_proposals`), not a module
+  global** — set to a fresh list at the start of each `run_chat_events` turn and
+  read into the `done` event; `_record_proposal` appends. This isolates
+  overlapping turns (background threads; two sessions at once) so drafts are
+  never cross-attributed. Do not reintroduce a shared module-level list.
 - `read_datasheet` returns a LIST of content blocks (text + base64 PNG page
   images rendered with **pymupdf**) — tool results may be
   `Iterable[BetaContent]`, not just str. pymupdf is a pyproject dependency.

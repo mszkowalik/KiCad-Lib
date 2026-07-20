@@ -2,9 +2,12 @@
 
 Persisted sessions (the UI): a JaravisSession holds an ordered message log that
 survives page reloads, and the user can keep several in parallel.
-POST /sessions/{id}/chat/stream sends one user message, streams NDJSON progress
-events (interim notes + every tool call) while the agent loop runs, ending with
-a "done" event, and persists both turns server-side.
+POST /sessions/{id}/chat/stream sends one user message; the turn runs in a
+BACKGROUND thread (see services.jaravis) so it survives a refresh / closed tab,
+and the request just streams NDJSON progress events off the run's buffer. A
+reloaded page re-attaches via GET /sessions/{id}/run/stream, and POST
+/sessions/{id}/run/cancel stops an in-flight run server-side. Both turns are
+persisted regardless of the client connection.
 
 The legacy stateless endpoints are kept for scripts: /chat/stream (NDJSON) and
 /chat (blocking) both take the full message array and store nothing."""
@@ -12,7 +15,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -166,12 +169,29 @@ def delete_session(sid: int, db: Session = Depends(get_db)):
     return {"deleted": sid}
 
 
+def _ndjson_run_stream(sid: int) -> StreamingResponse:
+    """Stream a session's background run as NDJSON. Client disconnect closes
+    this generator but NOT the run (it lives in its own thread)."""
+    def gen():
+        try:
+            for ev in jaravis.stream_run_events(sid):
+                yield json.dumps(ev) + "\n"
+        except Exception as e:
+            yield json.dumps({"type": "error", "error": f"Jaravis stream failed: {e}"}) + "\n"
+
+    return StreamingResponse(gen(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @router.post("/sessions/{sid}/chat/stream")
 def session_chat_stream(sid: int, body: SessionChatIn, db: Session = Depends(get_db)):
-    """Persisted streaming chat: appends the user message, runs one Jaravis turn
-    over the whole stored conversation, and persists the assistant reply. Same
-    NDJSON event shape as /chat/stream, preceded by a {"type": "session"} event
-    with the (possibly auto-generated) title."""
+    """Start a Jaravis turn for the session and stream it. The turn runs in a
+    background thread that survives this connection closing, so a refresh /
+    closed tab never loses it; the user message is persisted immediately and the
+    assistant reply the moment the turn completes. Same NDJSON event shape as
+    /chat/stream, preceded by a {"type": "session"} event with the (possibly
+    auto-generated) title. 409 if a turn is already running for this session
+    (the client should attach to it instead)."""
     if not jaravis.available():
         raise HTTPException(503, "Jaravis is not configured — set ANTHROPIC_API_KEY for the api service.")
     if db.get(M.JaravisSession, sid) is None:
@@ -179,13 +199,27 @@ def session_chat_stream(sid: int, body: SessionChatIn, db: Session = Depends(get
     content = body.content.strip()
     if not content:
         raise HTTPException(422, "content must not be empty")
+    if not jaravis.start_session_run(sid, content):
+        raise HTTPException(409, "a turn is already running for this session — attach instead")
+    return _ndjson_run_stream(sid)
 
-    def gen():
-        try:
-            for ev in jaravis.run_session_chat_events(sid, content):
-                yield json.dumps(ev) + "\n"
-        except Exception as e:
-            yield json.dumps({"type": "error", "error": f"Jaravis run failed: {e}"}) + "\n"
 
-    return StreamingResponse(gen(), media_type="application/x-ndjson",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+@router.get("/sessions/{sid}/run/stream")
+def attach_session_run(sid: int, db: Session = Depends(get_db)):
+    """Re-attach to a session's in-flight run and replay its events from the
+    start (used after a page reload). 204 if no turn is currently running — the
+    stored messages are then authoritative."""
+    if db.get(M.JaravisSession, sid) is None:
+        raise HTTPException(404, "session not found")
+    if not jaravis.has_active_run(sid):
+        return Response(status_code=204)
+    return _ndjson_run_stream(sid)
+
+
+@router.post("/sessions/{sid}/run/cancel")
+def cancel_session_run(sid: int, db: Session = Depends(get_db)):
+    """Stop a session's in-flight run at the next step boundary (server-side
+    Stop). Returns whether a run was actually cancelled."""
+    if db.get(M.JaravisSession, sid) is None:
+        raise HTTPException(404, "session not found")
+    return {"cancelled": jaravis.cancel_session_run(sid)}

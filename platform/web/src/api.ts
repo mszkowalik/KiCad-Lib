@@ -643,9 +643,12 @@ export function deleteJaravisSession(id: number): Promise<{ deleted: number }> {
   return request(`/api/jaravis/sessions/${id}`, { method: "DELETE" });
 }
 
-/** Persisted streaming chat: sends one user message into a session; the server
- *  stores both turns. Same event stream as jaravisChatStream, preceded by a
- *  "session" event carrying the (possibly auto-generated) title. */
+/** Persisted streaming chat: starts a turn in a session. The turn runs
+ *  server-side in a background thread that survives this connection closing, so
+ *  the answer is persisted even if the tab is closed. Same event stream as
+ *  jaravisChatStream, preceded by a "session" event carrying the (possibly
+ *  auto-generated) title. Throws ApiError 409 if a turn is already running for
+ *  the session (attach with attachJaravisRun instead). */
 export async function jaravisSessionChatStream(
   sessionId: number,
   content: string,
@@ -654,6 +657,33 @@ export async function jaravisSessionChatStream(
 ): Promise<void> {
   const res = await openStream(`/api/jaravis/sessions/${sessionId}/chat/stream`, { content }, signal);
   await pumpNdjson(res, onEvent);
+}
+
+/** Re-attach to a session's in-flight run and replay its events (used after a
+ *  page reload). Resolves false if no turn is currently running (HTTP 204) —
+ *  the stored messages are then authoritative; resolves true once the attached
+ *  stream has been fully drained. */
+export async function attachJaravisRun(
+  sessionId: number,
+  onEvent: (ev: ChatStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/jaravis/sessions/${sessionId}/run/stream`, { signal });
+  } catch (err) {
+    if (isAbortError(err)) throw err;
+    throw new ApiError(0, `Cannot reach API at ${API_URL} (${errorMessage(err)})`);
+  }
+  if (res.status === 204) return false;
+  if (!res.ok || !res.body) return false; // treat as "no run" rather than a hard error
+  await pumpNdjson(res, onEvent);
+  return true;
+}
+
+/** Stop a session's in-flight run server-side (the Stop button). */
+export function cancelJaravisRun(sessionId: number): Promise<{ cancelled: boolean }> {
+  return request(`/api/jaravis/sessions/${sessionId}/run/cancel`, { method: "POST" });
 }
 
 // ---------------------------------------------------------------- comments
