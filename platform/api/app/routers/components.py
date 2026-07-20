@@ -406,7 +406,7 @@ def symbol_svg(comp_id: int, version_no: int, db: Session = Depends(get_db)):
     template = provider.get(cv.base_component, sv.source_text, cache_key=f"{cv.base_component}@{sv.id}")
     meta_lib = load_symbol_lib_from_text(sv.source_text)
     props = [property_row_to_dict(p) for p in cv.properties] + injected_props(
-        _price_row(db, comp.id), _datasheet_rows(db, comp.id)
+        _datasheet_rows(db, comp.id)
     )
     sym = build_component_symbol(template, comp.name, props, cv.removed_properties)
     lib_text = build_library_text(meta_lib, [sym])

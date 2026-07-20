@@ -109,7 +109,40 @@ up in the UI automatically. Audit actions in use: `proposal.create`,
   them. Edits follow the same structural gate as components: its tools create
   `SymbolVersion`/`FootprintVersion` DRAFTS that the user approves in the
   Proposals view ("with user permission" = the approval gate, never bypassed).
-- Writes of any kind stay draft-gated; read access is unrestricted.
+- Writes of any kind stay draft-gated; read access is unrestricted. The only
+  robot-owned exception: `refresh_supply` re-fetches auto-managed
+  LCSC/JLC data live (same domain the background refresher owns).
+
+### Jaravis implementation notes (`services/jaravis.py`)
+
+- 26 client tools + 2 Anthropic **server tools** (`web_search_20260209`,
+  `web_fetch_20260209` — plain dicts appended to the runner's tools list; they
+  execute on Anthropic's side, no beta header, `max_uses` caps cost).
+- **pause_turn**: the Python tool runner does NOT auto-resume a
+  `stop_reason="pause_turn"` from a long server-tool turn — it silently
+  truncates. `run_chat` mirrors the conversation while iterating and restarts
+  the runner with the paused turn appended (bounded). Keep that loop when
+  touching `run_chat`.
+- `read_datasheet` returns a LIST of content blocks (text + base64 PNG page
+  images rendered with **pymupdf**) — tool results may be
+  `Iterable[BetaContent]`, not just str. pymupdf is a pyproject dependency.
+- Geometry proposals: `propose_symbol_edit` / `propose_footprint_edit` accept
+  full source, validate (kiutils/sexpr parse, footprint header must equal the
+  name with NO prefix, 3D paths must start `${SEVENSIGMA_DIR}/3DModels/`;
+  note the footprint node IS the sexpr tree root — reuse parse_cache's
+  fallback). New names create the parent row with `current_version_id=None`,
+  same as components.
+- Approval lives in `routers/proposals.py`: `/symbols/{id}/approve|reject`,
+  `/footprints/{id}/approve|reject`, plus
+  `/{kind}s/{id}/preview.svg?which=draft|current` (kicad-cli render via the
+  render container) for the before/after review in the Proposals UI. Symbol
+  approve rebuilds the base lib + affected top-level libs
+  (`update_mirror_symbols`); footprint approve writes the one `.kicad_mod`
+  (`mirror.update_mirror_footprint`). The PCM packages pick the change up
+  lazily via the manifest hash. Components keep their pinned
+  `symbol_version_id`/`footprint_version_id`; the KiCad-facing base lib,
+  footprint mirror, and HTTP catalog always follow the newest published
+  geometry.
 
 ## Importing from YAML — two modes
 

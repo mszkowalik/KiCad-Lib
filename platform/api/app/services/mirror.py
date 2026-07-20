@@ -158,6 +158,23 @@ def update_mirror_symbols(db: Session, settings: Settings, top_names: set[str]) 
     return result
 
 
+def update_mirror_footprint(db: Session, settings: Settings, name: str) -> dict:
+    """Incremental mirror update after a footprint publish: rewrite the one
+    .kicad_mod from the footprint's current published version, then refresh
+    the manifest (which the PCM builder and sync clients key off)."""
+    fp = db.execute(select(M.Footprint).where(M.Footprint.name == name)).scalar_one_or_none()
+    fv = None
+    if fp is not None:
+        fv = next((v for v in fp.versions if v.id == fp.current_version_id), None)
+    if fv is None or fv.status != "published":
+        return {"footprints": 0, "manifest_files": write_manifest(settings),
+                "warnings": [f"footprint {name}: no published version — mirror unchanged"]}
+    pretty = settings.mirror_dir / "Footprints" / "7Sigma.pretty"
+    pretty.mkdir(parents=True, exist_ok=True)
+    (pretty / f"{fp.name}.kicad_mod").write_text(fv.source_text, encoding="utf-8")
+    return {"footprints": 1, "manifest_files": write_manifest(settings), "warnings": []}
+
+
 def rebuild_mirror(db: Session, settings: Settings) -> dict:
     settings.ensure_dirs()
     mirror = settings.mirror_dir

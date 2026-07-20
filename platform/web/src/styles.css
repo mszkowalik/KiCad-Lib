@@ -913,6 +913,22 @@ a.btn:hover {
   padding: 12px;
 }
 
+/* side-by-side current/draft compare inside a proposals table row */
+.proposal-preview {
+  display: flex;
+  gap: 12px;
+  padding: 8px 4px 10px;
+}
+
+.proposal-preview > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.proposal-preview .preview-fill {
+  height: 280px;
+}
+
 /* placeholder/spinner text sits on the dark canvas in both themes */
 .preview-fill .placeholder,
 .preview-fill .spinner-label {

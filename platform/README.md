@@ -154,22 +154,32 @@ Frontend: `cd web && npm install && npm run dev`.
 
 ## Jaravis
 
-The library agent runs on the Anthropic SDK tool runner (`claude-opus-4-8`,
-adaptive thinking) inside the api service. **Activate it by setting
+The library agent runs on the Anthropic SDK tool runner (`claude-sonnet-5` by
+default — set `JARAVIS_MODEL=claude-opus-4-8` for harder tasks; adaptive
+thinking) inside the api service. **Activate it by setting
 `ANTHROPIC_API_KEY` in `platform/.env`** (compose passes it through; dev mode:
 export it before starting uvicorn). Claude subscription plans include monthly
 Agent SDK credits tied to your account's API key.
 
-The gate is structural: Jaravis's write tools can only create **draft**
-component versions. Nothing is published until you approve it in the
-Proposals view. Read tools (search/get/categories/LCSC lookup) answer
-questions directly. It also reads component Notes as context.
+The gate is structural: Jaravis's write tools can only create **drafts** —
+component versions, symbol/footprint geometry versions, and skill updates.
+Nothing is published until you approve it in the Proposals view
+(symbol/footprint proposals show a rendered before/after preview there).
+
+Jaravis has **full read access** to everything the platform stores: the
+library (including pin/pad tables and raw symbol/footprint sources), the
+archived datasheet PDFs (returned as text + page images, so it can visually
+verify pinouts and package drawings), price history, stock, projects, BOMs,
+production-run economics, notes and the audit log. It also has **internet
+access**: Anthropic-hosted web search + web fetch (reads PDFs, cites sources),
+JLCPCB parts-catalog search, the official JLC detail API, and LCSC lookup —
+plus `refresh_supply` for a live re-check of one part's prices/stock.
 
 Jaravis's prompt is two layers. Its **operating manual** — identity, the tools
 it has, that it reads the DB in-process (not over HTTP), the draft-only gate,
-and what it cannot do (no shell/scripts, cannot draw footprints or symbols) —
-lives in code (`_build_system` in `services/jaravis.py`), so it always matches
-the actual tools. The **skills** carry only editable *conventions*.
+and what it cannot do (no shell/scripts, no 3D-model editing) — lives in code
+(`_build_system` in `services/jaravis.py`), so it always matches the actual
+tools. The **skills** carry only editable *conventions*.
 
 **Skills** (the Skills page): on every chat Jaravis's system prompt appends the
 *current version* of every skill — the convention documents `conventions-library`

@@ -193,6 +193,281 @@ def list_footprints(query: str = "") -> str:
         db.close()
 
 
+# ---------------------------------------------------- geometry + archive reads
+def _current_of(parent):
+    return next((v for v in parent.versions if v.id == parent.current_version_id), None)
+
+
+@beta_tool
+def get_symbol(name: str) -> str:
+    """Full detail of one base symbol: pin table (number, name, electrical
+    type), unit count, which components use it, version history, and the raw
+    .kicad_sym s-expression source (edit it with propose_symbol_edit).
+
+    Args:
+        name: Exact base symbol name (find it with list_base_symbols).
+    """
+    db = SessionLocal()
+    try:
+        sym = db.query(M.Symbol).filter_by(name=name.strip()).first()
+        if sym is None:
+            return json.dumps({"error": f"base symbol {name!r} not found"})
+        cur = _current_of(sym)
+        used_by = []
+        for comp in db.query(M.Component).order_by(M.Component.name):
+            cv = current_version(comp)
+            if cv is not None and cv.base_component == sym.name:
+                used_by.append(comp.name)
+        parsed = (cur.parsed or {}) if cur else {}
+        return json.dumps({
+            "name": sym.name,
+            "current_version_no": cur.version_no if cur else None,
+            "pin_count": parsed.get("pin_count"),
+            "pins": parsed.get("pins"),
+            "unit_entry_count": parsed.get("unit_entry_count"),
+            "used_by_count": len(used_by),
+            "used_by_components": used_by[:100],
+            "versions": [{"version_no": v.version_no, "status": v.status,
+                          "created_by": v.created_by, "comment": v.comment}
+                         for v in sym.versions],
+            "source": cur.source_text if cur else None,
+        })
+    finally:
+        db.close()
+
+
+@beta_tool
+def get_footprint(name: str) -> str:
+    """Full detail of one footprint: pad table (number, type, shape, size,
+    drill, layers), courtyard/fab presence, referenced 3D models, which
+    components use it, version history, and the raw .kicad_mod source (edit it
+    with propose_footprint_edit).
+
+    Args:
+        name: Exact footprint name WITHOUT the 7Sigma: prefix (see list_footprints).
+    """
+    db = SessionLocal()
+    try:
+        fp = db.query(M.Footprint).filter_by(name=name.strip()).first()
+        if fp is None:
+            return json.dumps({"error": f"footprint {name!r} not found"})
+        cur = _current_of(fp)
+        fv_ids = {v.id for v in fp.versions}
+        used_by = []
+        for comp in db.query(M.Component).order_by(M.Component.name):
+            cv = current_version(comp)
+            if cv is not None and cv.footprint_version_id in fv_ids:
+                used_by.append(comp.name)
+        parsed = (cur.parsed or {}) if cur else {}
+        return json.dumps({
+            "name": fp.name,
+            "current_version_no": cur.version_no if cur else None,
+            "pad_count": parsed.get("pad_count"),
+            "smd_pad_count": parsed.get("smd_pad_count"),
+            "tht_pad_count": parsed.get("tht_pad_count"),
+            "pads": (parsed.get("pads") or [])[:400],
+            "has_courtyard": parsed.get("has_courtyard"),
+            "has_fab": parsed.get("has_fab"),
+            "models_3d": parsed.get("models"),
+            "used_by_count": len(used_by),
+            "used_by_components": used_by[:100],
+            "versions": [{"version_no": v.version_no, "status": v.status,
+                          "created_by": v.created_by, "comment": v.comment}
+                         for v in fp.versions],
+            "source": cur.source_text if cur else None,
+        })
+    finally:
+        db.close()
+
+
+_MAX_DS_PAGES = 6
+
+
+def _parse_pages(spec: str, page_count: int) -> list[int]:
+    """'3,14-15' (1-based) -> unique zero-based indexes, clamped, capped."""
+    picked: list[int] = []
+    for part in (spec or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        lo, _, hi = part.partition("-")
+        try:
+            picked.extend(range(int(lo), int(hi or lo) + 1))
+        except ValueError:
+            continue
+    if not picked:
+        picked = [1]
+    uniq: list[int] = []
+    for p in picked:
+        if 1 <= p <= page_count and p not in uniq:
+            uniq.append(p)
+    return [p - 1 for p in uniq[:_MAX_DS_PAGES]]
+
+
+@beta_tool
+def read_datasheet(component: str, pages: str = "", datasheet_label: str = "") -> list:
+    """Open a component's locally archived datasheet PDF: returns the
+    requested pages as extracted text AND rendered page images, so pinout
+    drawings, package dimensions and tables can be inspected visually.
+    First call it without `pages` — that returns page 1 plus the total page
+    count — then request the exact pages you need (e.g. "3,14-15").
+    Max 6 pages per call. If there is no local copy yet it is fetched from
+    the datasheet's source URL first.
+
+    Args:
+        component: Exact component name.
+        pages: Page selection like "2", "1-3" or "3,14-15" (1-based). Empty = page 1.
+        datasheet_label: Which datasheet when the component has several
+            (case-insensitive substring of its label). Empty = the primary one.
+    """
+    import base64
+
+    import fitz  # pymupdf
+
+    db = SessionLocal()
+    try:
+        comp = db.query(M.Component).filter_by(name=component.strip()).first()
+        if comp is None:
+            return [{"type": "text", "text": json.dumps({"error": f"component {component!r} not found"})}]
+        sheets = (db.query(M.Datasheet)
+                  .filter_by(component_id=comp.id, archived=False)
+                  .order_by(M.Datasheet.position).all())
+        if not sheets:
+            return [{"type": "text", "text": json.dumps({"error": f"{component!r} has no datasheets"})}]
+        needle = datasheet_label.strip().lower()
+        ds = next((d for d in sheets if needle and needle in d.label.lower()), None if needle else sheets[0])
+        if ds is None:
+            return [{"type": "text", "text": json.dumps(
+                {"error": f"no datasheet label matches {datasheet_label!r}",
+                 "available": [d.label for d in sheets]})}]
+        if ds.current_version_id is None:
+            if not (ds.source_url or "").strip():
+                return [{"type": "text", "text": json.dumps(
+                    {"error": f"datasheet {ds.label!r} has no local copy and no source URL"})}]
+            from .datasheet_store import fetch_datasheet
+            try:
+                fetch_datasheet(db, ds)
+            except Exception as e:
+                return [{"type": "text", "text": json.dumps(
+                    {"error": f"no local copy and fetching failed: {e}",
+                     "source_url": ds.source_url,
+                     "hint": "try web_fetch on the source URL instead"})}]
+            db.refresh(ds)
+        dv = next((v for v in ds.versions if v.id == ds.current_version_id), None)
+        if dv is None:
+            return [{"type": "text", "text": json.dumps({"error": "datasheet has no stored version"})}]
+        data = dv.data
+        is_pdf = data[:5] == b"%PDF-" or "pdf" in (dv.content_type or "").lower()
+        if not is_pdf:
+            return [{"type": "text", "text": json.dumps(
+                {"error": f"datasheet {ds.label!r} is not a PDF (a web page was archived)",
+                 "content_type": dv.content_type, "source_url": ds.source_url,
+                 "hint": "use web_fetch on the source URL to read it"})}]
+
+        doc = fitz.open(stream=data, filetype="pdf")
+        try:
+            idxs = _parse_pages(pages, doc.page_count)
+            blocks: list = [{"type": "text", "text": json.dumps({
+                "component": comp.name, "datasheet": ds.label, "filename": dv.filename,
+                "page_count": doc.page_count,
+                "pages_returned": [i + 1 for i in idxs],
+                "fetched_at": dv.fetched_at.isoformat(),
+            })}]
+            for i in idxs:
+                page = doc[i]
+                text = page.get_text("text")[:4000]
+                png = page.get_pixmap(matrix=fitz.Matrix(2, 2)).tobytes("png")
+                if len(png) > 4 * 1024 * 1024:  # stay under the API's 5 MB image cap
+                    png = page.get_pixmap(matrix=fitz.Matrix(1.2, 1.2)).tobytes("png")
+                blocks.append({"type": "image", "source": {
+                    "type": "base64", "media_type": "image/png",
+                    "data": base64.b64encode(png).decode(),
+                }})
+                blocks.append({"type": "text",
+                               "text": f"--- page {i + 1} extracted text ---\n{text}"})
+            return blocks
+        finally:
+            doc.close()
+    finally:
+        db.close()
+
+
+@beta_tool
+def get_price_history(component: str, limit: int = 12) -> str:
+    """Historical price timeline of a component, newest first. Each entry is
+    the COMPLETE set of price points effective at that moment (all sources —
+    LCSC ladder tiers + manual levels; empty = prices were deleted).
+    Production-run economics resolve prices from this timeline by run date.
+
+    Args:
+        component: Exact component name.
+        limit: Max history entries to return (default 12, cap 50).
+    """
+    db = SessionLocal()
+    try:
+        comp = db.query(M.Component).filter_by(name=component.strip()).first()
+        if comp is None:
+            return json.dumps({"error": f"component {component!r} not found"})
+        rows = (db.query(M.ComponentPriceHistory)
+                .filter_by(component_id=comp.id)
+                .order_by(M.ComponentPriceHistory.recorded_at.desc())
+                .limit(max(1, min(limit, 50))).all())
+        return json.dumps({
+            "component": comp.name,
+            "entries": [{"recorded_at": r.recorded_at.isoformat(), "points": r.points}
+                        for r in rows],
+        })
+    finally:
+        db.close()
+
+
+@beta_tool
+def get_audit_log(limit: int = 30, entity_type: str = "", actor: str = "") -> str:
+    """Recent platform audit log entries, newest first: who did what when
+    (imports, proposals, approvals, edits...).
+
+    Args:
+        limit: Max entries (default 30, cap 100).
+        entity_type: Optional filter (e.g. "component_version", "symbol_version", "skill_version").
+        actor: Optional filter (e.g. "user", "jaravis", "import").
+    """
+    db = SessionLocal()
+    try:
+        q = db.query(M.AuditLog).order_by(M.AuditLog.ts.desc())
+        if entity_type.strip():
+            q = q.filter(M.AuditLog.entity_type == entity_type.strip())
+        if actor.strip():
+            q = q.filter(M.AuditLog.actor == actor.strip())
+        rows = q.limit(max(1, min(limit, 100))).all()
+        return json.dumps([
+            {"ts": r.ts.isoformat(), "actor": r.actor, "action": r.action,
+             "entity_type": r.entity_type, "entity_id": r.entity_id, "details": r.details}
+            for r in rows
+        ])
+    finally:
+        db.close()
+
+
+@beta_tool
+def list_models3d(query: str = "", limit: int = 100) -> str:
+    """List stored 3D model files (STEP/WRL) by relative path under 3DModels/.
+
+    Args:
+        query: Optional case-insensitive path filter.
+        limit: Max rows (default 100, cap 300).
+    """
+    db = SessionLocal()
+    try:
+        rows = db.query(M.Model3D).order_by(M.Model3D.rel_path).all()
+        needle = query.strip().lower()
+        out = [{"rel_path": m.rel_path, "size_bytes": m.size_bytes}
+               for m in rows if not needle or needle in m.rel_path.lower()]
+        return json.dumps({"total_matching": len(out),
+                           "models": out[:max(1, min(limit, 300))]})
+    finally:
+        db.close()
+
+
 @beta_tool
 def get_skill(name: str) -> str:
     """Read the CURRENT content of one of your skill documents by name
@@ -392,6 +667,214 @@ def component_where_used(component_name: str) -> str:
         db.close()
 
 
+@beta_tool
+def get_project(name: str) -> str:
+    """Full detail of one tracked project: description, git URL, recent
+    snapshots with boards/variants, the user's project notes, and its
+    production runs (get_production_run for run economics).
+
+    Args:
+        name: Project name (exact, case-insensitive).
+    """
+    from .project_bom import display_currency
+
+    db = SessionLocal()
+    try:
+        p = _find_project(db, name)
+        if p is None:
+            return json.dumps({"error": f"project {name!r} not found"})
+        snaps = (db.query(M.ProjectSnapshot)
+                 .filter_by(project_id=p.id, status="ready")
+                 .order_by(M.ProjectSnapshot.created_at.desc()).limit(3).all())
+        notes = (db.query(M.ProjectNote).filter_by(project_id=p.id)
+                 .order_by(M.ProjectNote.created_at).all())
+        runs = (db.query(M.ProductionRun).filter_by(project_id=p.id)
+                .order_by(M.ProductionRun.created_at.desc()).all())
+        return json.dumps({
+            "name": p.name,
+            "description": p.description,
+            "git_url": p.git_url,
+            "display_currency": display_currency(p),
+            "snapshots": [{
+                "ref": s.ref_name, "sha": s.sha[:10],
+                "created_at": s.created_at.isoformat(),
+                "boards": [b["name"] for b in s.boards or []],
+                "variants": {b["name"]: [v["name"] for v in b.get("variants", [])]
+                             for b in s.boards or []},
+            } for s in snaps],
+            "notes": [{"author": n.author, "date": n.created_at.date().isoformat(),
+                       "note": n.body} for n in notes],
+            "production_runs": [{
+                "id": r.id, "label": r.label, "qty": r.qty, "status": r.status,
+                "run_date": r.run_date, "board": r.board, "variant": r.variant or "(default)",
+                "created_at": r.created_at.date().isoformat(),
+            } for r in runs],
+        })
+    finally:
+        db.close()
+
+
+@beta_tool
+def get_production_run(project: str, run: str) -> str:
+    """Economics of one production run, computed from HISTORICAL pricing at
+    the run's date (with the user's per-line overrides applied): every line
+    with unit price and total, cost items, and run totals.
+
+    Args:
+        project: Project name (exact, case-insensitive).
+        run: Run label (case-insensitive) or numeric run id (see get_project).
+    """
+    from .project_bom import run_effective
+
+    db = SessionLocal()
+    try:
+        p = _find_project(db, project)
+        if p is None:
+            return json.dumps({"error": f"project {project!r} not found"})
+        runs = db.query(M.ProductionRun).filter_by(project_id=p.id).all()
+        needle = run.strip().lower()
+        r = next((x for x in runs if x.label.lower() == needle
+                  or (needle.isdigit() and x.id == int(needle))), None)
+        if r is None:
+            return json.dumps({"error": f"run {run!r} not found",
+                               "available": [{"id": x.id, "label": x.label} for x in runs]})
+        eff = run_effective(db, r)
+        lines = [{
+            "key": li.get("key"), "refs": li.get("refs"), "label": li.get("label"),
+            "component": li.get("component_name"), "lcsc": li.get("lcsc"),
+            "qty_total": li.get("qty_total"), "unit_price": li.get("unit_price"),
+            "line_total": li.get("line_total"), "overridden": li.get("overridden"),
+            "dropped": li.get("dropped"), "excluded": li.get("excluded"),
+        } for li in eff["lines"]]
+        costs = [{
+            "label": c.get("label"), "basis": c.get("basis"), "price": c.get("price"),
+            "run_cost": c.get("run_cost"), "overridden": c.get("overridden"),
+            "dropped": c.get("dropped"),
+        } for c in eff["costs"]]
+        return json.dumps({
+            "project": p.name, "run": r.label, "run_id": r.id, "status": r.status,
+            "qty": eff["qty"], "run_date": r.run_date, "notes": r.notes,
+            "priced_at": eff["priced_at"], "currency": eff["currency"],
+            "totals": eff["totals"], "lines": lines, "costs": costs,
+            "added_lines": eff["added"],
+        })
+    finally:
+        db.close()
+
+
+# ------------------------------------------------------------ external lookup
+@beta_tool
+def search_jlc_parts(keyword: str, limit: int = 10) -> str:
+    """Search the PUBLIC JLCPCB assembly-parts catalog (jlcpcb.com/parts) by
+    keyword. Returns LCSC code, MPN, brand, package, description, JLCPCB
+    assembly stock and library type (basic parts avoid the extended-part
+    setup fee). Quirks: `+` acts as AND between words; the index stores MPNs
+    UNHYPHENATED (search "TPS7B6950QDBVRQ1", not "TPS7B69-50..."); results may
+    include eval boards whose names merely contain the chip MPN.
+
+    Args:
+        keyword: Search keywords (e.g. "TI+TPS7B6950" or "47uF 1210 X7R").
+        limit: Max rows (default 10, cap 20).
+    """
+    from . import jlc
+
+    try:
+        rows = jlc.search_parts(keyword, page_size=max(1, min(limit, 20)))
+    except jlc.JlcError as e:
+        return json.dumps({"error": str(e)})
+    out = []
+    for r in rows:
+        out.append({
+            "lcsc": r.get("componentCode"),
+            "mpn": r.get("componentModelEn"),
+            "brand": r.get("componentBrandEn"),
+            "package": r.get("componentSpecificationEn") or r.get("encapStandard"),
+            "description": r.get("describe"),
+            "jlc_assembly_stock": r.get("stockCount"),
+            "library_type": r.get("componentLibraryType"),
+            "prices": r.get("componentPrices") or r.get("prices"),
+        })
+    return json.dumps({"count": len(out), "parts": out})
+
+
+@beta_tool
+def get_jlc_details(lcsc_codes: str) -> str:
+    """Batch detail from the OFFICIAL JLCPCB OpenAPI for LCSC part codes:
+    JLCPCB assembly stock, JLC price ladder, library type, attributes.
+    Requires configured JLC API credentials (returns an error if absent).
+
+    Args:
+        lcsc_codes: Comma/space-separated LCSC codes (e.g. "C25905, C5440143").
+    """
+    from . import jlc
+
+    codes = [c for c in (x.strip() for x in lcsc_codes.replace(",", " ").split()) if c]
+    if not codes:
+        return json.dumps({"error": "no LCSC codes given"})
+    try:
+        details = jlc.fetch_component_details(codes[:40])
+    except jlc.JlcError as e:
+        return json.dumps({"error": str(e)})
+    shown_keys = ("componentCode", "componentModelEn", "componentModel", "componentBrandEn",
+                  "describe", "componentSpecificationEn", "encapStandard", "stockCount",
+                  "componentPrices", "priceList", "priceRanges", "componentLibraryType",
+                  "leastNumber", "minPurchaseNum", "lossNumber", "componentTypeEn")
+    out = {}
+    for code, row in details.items():
+        trimmed = {k: row[k] for k in shown_keys if k in row and row[k] not in (None, "")}
+        trimmed["other_keys"] = sorted(set(row) - set(shown_keys))
+        out[code] = trimmed
+    missing = [c for c in codes if c not in details]
+    return json.dumps({"found": out, "not_found": missing})
+
+
+@beta_tool
+def refresh_supply(component: str) -> str:
+    """Live re-check of a component's supplier data RIGHT NOW: refetches the
+    LCSC price ladder + LCSC retail stock and the JLCPCB assembly stock, and
+    records price history. Use when a stock/price figure looks stale
+    (check `checked_at` from get_component). This data is auto-managed, so no
+    user approval is needed. Manual price entries are never touched.
+
+    Args:
+        component: Exact component name (must have an LCSC Part property).
+    """
+    from .ladder import lcsc_part_of, refresh_component
+
+    db = SessionLocal()
+    try:
+        comp = db.query(M.Component).filter_by(name=component.strip()).first()
+        if comp is None:
+            return json.dumps({"error": f"component {component!r} not found"})
+        cv = current_version(comp)
+        if cv is None:
+            return json.dumps({"error": f"{component!r} has no published version"})
+        lcsc = lcsc_part_of(cv)
+        if not lcsc:
+            return json.dumps({"error": f"{component!r} has no LCSC Part property — nothing to refresh"})
+        wrote = refresh_component(db, comp.id, lcsc)
+        supply = db.query(M.ComponentSupply).filter_by(component_id=comp.id).first()
+        points = (db.query(M.ComponentPricePoint).filter_by(component_id=comp.id)
+                  .order_by(M.ComponentPricePoint.qty_from).all())
+        private = db.query(M.JlcStockItem).filter_by(component_id=comp.id).first()
+        return json.dumps({
+            "component": comp.name, "lcsc": lcsc, "ladder_updated": wrote,
+            "stock": {
+                "lcsc_retail": supply.stock if supply else None,
+                "jlcpcb_assembly": supply.jlc_stock if supply else None,
+                "private_jlc_library": private.qty if private else 0,
+                "moq": supply.moq if supply else None,
+                "checked_at": (supply.checked_at.isoformat()
+                               if supply and supply.checked_at else None),
+            },
+            "price_ladder": [{"source": p.source, "qty_from": p.qty_from,
+                              "unit_price": p.unit_price, "currency": p.currency}
+                             for p in points],
+        })
+    finally:
+        db.close()
+
+
 # ----------------------------------------------------------------- write tools
 def _resolve_category(db, path: str) -> M.Category | None:
     needle = path.strip().lower()
@@ -575,11 +1058,171 @@ def propose_component_edit(
         db.close()
 
 
+@beta_tool
+def propose_symbol_edit(name: str, source_text: str, comment: str) -> str:
+    """Propose a new version of a base symbol — or a brand-new base symbol —
+    as a DRAFT the user must approve in the Proposals view (with a visual
+    before/after preview). source_text must be a complete .kicad_sym library
+    text containing a symbol named exactly `name`: call get_symbol first,
+    take its `source`, and edit that. Follow the symbol conventions from your
+    skill documents (pin grouping, grid, electrical types).
+
+    Args:
+        name: Base symbol name. Existing name = edit proposal; new name = creation proposal.
+        source_text: The complete .kicad_sym file text with the symbol drawing.
+        comment: What changed and why (shown in the proposal review).
+    """
+    from .generator import load_symbol_lib_from_text
+    from .parse_cache import symbol_parsed
+
+    name = name.strip()
+    if not name or not source_text.strip():
+        return json.dumps({"error": "name and source_text must not be empty"})
+    try:
+        lib = load_symbol_lib_from_text(source_text)
+    except Exception as e:
+        return json.dumps({"error": f"source_text does not parse as a .kicad_sym library: {e}"})
+    entry_names = [s.entryName for s in lib.symbols]
+    if name not in entry_names:
+        return json.dumps({"error": f"source_text contains no symbol named {name!r}",
+                           "symbols_found": entry_names})
+    try:
+        parsed = symbol_parsed(source_text)
+    except Exception as e:
+        return json.dumps({"error": f"symbol metadata extraction failed: {e}"})
+
+    db = SessionLocal()
+    try:
+        sym = db.query(M.Symbol).filter_by(name=name).first()
+        is_new = sym is None
+        old_pins = None
+        if is_new:
+            sym = M.Symbol(name=name)  # current_version_id stays None until approved
+            db.add(sym)
+            db.flush()
+        else:
+            cur = _current_of(sym)
+            old_pins = (cur.parsed or {}).get("pin_count") if cur else None
+        new_no = max((v.version_no for v in sym.versions), default=0) + 1
+        sv = M.SymbolVersion(symbol_id=sym.id, version_no=new_no, source_text=source_text,
+                             parsed=parsed, status="draft", created_by="jaravis",
+                             comment=comment or None)
+        db.add(sv)
+        db.flush()
+        db.add(M.AuditLog(actor="jaravis", action="proposal.create", entity_type="symbol_version",
+                          entity_id=str(sv.id), details={"symbol": name, "new": is_new}))
+        db.commit()
+        LAST_PROPOSALS.append({"proposal_id": sv.id, "component": name, "kind": "symbol",
+                               "version_no": new_no})
+        return json.dumps({
+            "ok": True, "proposal_id": sv.id, "symbol": name, "version_no": new_no,
+            "is_new_symbol": is_new, "pin_count": parsed.get("pin_count"),
+            "previous_pin_count": old_pins,
+            "status": "draft — awaiting user approval in the Proposals view",
+        })
+    finally:
+        db.close()
+
+
+@beta_tool
+def propose_footprint_edit(name: str, source_text: str, comment: str) -> str:
+    """Propose a new version of a footprint — or a brand-new footprint — as a
+    DRAFT the user must approve in the Proposals view (with a visual
+    before/after preview). source_text must be a complete .kicad_mod text
+    whose header reads (footprint "<name>" ...) with NO library prefix: call
+    get_footprint first, take its `source`, and edit that. 3D model paths
+    must use ${SEVENSIGMA_DIR}/3DModels/... . Follow the footprint
+    conventions from your skill documents.
+
+    Args:
+        name: Footprint name WITHOUT the 7Sigma: prefix. Existing = edit; new = creation.
+        source_text: The complete .kicad_mod file text.
+        comment: What changed and why (shown in the proposal review).
+    """
+    from ..util.sexpr import _norm, find_node, parse_sexpr
+    from .parse_cache import footprint_parsed
+
+    name = name.strip()
+    if not name or not source_text.strip():
+        return json.dumps({"error": "name and source_text must not be empty"})
+    try:
+        parsed = footprint_parsed(source_text)
+        tree = parse_sexpr(source_text)
+    except Exception as e:
+        return json.dumps({"error": f"source_text does not parse as a .kicad_mod footprint: {e}"})
+    # the footprint node may BE the tree root rather than a child (same
+    # fallback as parse_cache.footprint_parsed)
+    fp_node = find_node(tree, "footprint") or (tree[0] if tree and isinstance(tree[0], list) else tree)
+    valid = isinstance(fp_node, list) and len(fp_node) > 1 and _norm(fp_node[0]) == "footprint"
+    header = _norm(fp_node[1]) if valid else ""
+    if header != name:
+        return json.dumps({"error": f"footprint header is {header!r} but must be exactly {name!r} "
+                                    "(no easyeda2kicad:/7Sigma: prefix inside the file)"})
+    model_prefix = "${SEVENSIGMA_DIR}/3DModels/"
+    bad_models = [m for m in parsed.get("models") or [] if not m.startswith(model_prefix)]
+    if bad_models:
+        return json.dumps({"error": f"3D model paths must start with {model_prefix}",
+                           "offending": bad_models})
+
+    db = SessionLocal()
+    try:
+        warnings = []
+        for m in parsed.get("models") or []:
+            rel = m[len(model_prefix):]
+            if db.query(M.Model3D).filter_by(rel_path=rel).first() is None:
+                warnings.append(f"referenced 3D model not in the library: {rel}")
+        fp = db.query(M.Footprint).filter_by(name=name).first()
+        is_new = fp is None
+        old_pads = None
+        if is_new:
+            fp = M.Footprint(name=name)  # current_version_id stays None until approved
+            db.add(fp)
+            db.flush()
+        else:
+            cur = _current_of(fp)
+            old_pads = (cur.parsed or {}).get("pad_count") if cur else None
+        new_no = max((v.version_no for v in fp.versions), default=0) + 1
+        fv = M.FootprintVersion(footprint_id=fp.id, version_no=new_no, source_text=source_text,
+                                parsed=parsed, models=parsed.get("models"), status="draft",
+                                created_by="jaravis", comment=comment or None)
+        db.add(fv)
+        db.flush()
+        db.add(M.AuditLog(actor="jaravis", action="proposal.create", entity_type="footprint_version",
+                          entity_id=str(fv.id), details={"footprint": name, "new": is_new}))
+        db.commit()
+        LAST_PROPOSALS.append({"proposal_id": fv.id, "component": name, "kind": "footprint",
+                               "version_no": new_no})
+        return json.dumps({
+            "ok": True, "proposal_id": fv.id, "footprint": name, "version_no": new_no,
+            "is_new_footprint": is_new, "pad_count": parsed.get("pad_count"),
+            "previous_pad_count": old_pads, "warnings": warnings,
+            "status": "draft — awaiting user approval in the Proposals view",
+        })
+    finally:
+        db.close()
+
+
 TOOLS = [
+    # library reads
     search_components, get_component, list_categories, list_base_symbols,
-    list_footprints, lcsc_lookup, propose_new_component, propose_component_edit,
-    get_skill, propose_skill_update,
-    list_projects, get_project_bom, component_where_used,
+    list_footprints, get_symbol, get_footprint, read_datasheet,
+    get_price_history, get_audit_log, list_models3d, get_skill,
+    # external lookup
+    lcsc_lookup, search_jlc_parts, get_jlc_details, refresh_supply,
+    # projects
+    list_projects, get_project, get_project_bom, get_production_run,
+    component_where_used,
+    # proposals (draft-gated writes)
+    propose_new_component, propose_component_edit,
+    propose_symbol_edit, propose_footprint_edit, propose_skill_update,
+]
+
+# Anthropic-hosted server tools — executed on the API side, no local dispatch.
+# max_uses caps cost per turn; web_fetch reads PDFs (datasheets) natively.
+SERVER_TOOLS = [
+    {"type": "web_search_20260209", "name": "web_search", "max_uses": 8},
+    {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 8,
+     "max_content_tokens": 40000},
 ]
 
 
@@ -593,14 +1236,15 @@ def _build_system(db) -> str:
     return f"""You are Jaravis, the librarian agent of the 7Sigma KiCad component library platform.
 
 ## Your role
-You help the user browse the component library, answer questions about it, and draft new
-components or edits to existing ones. You are a specialist librarian, not a general
-assistant: you act ONLY through the tools below.
+You help the user browse the component library, answer questions about it, draft new
+components or edits (including symbol and footprint geometry), verify parts against their
+datasheets, and research parts on the internet. You act through the tools below.
 
 ## How you access the library
 You run *inside* the platform's API service. Your tools query the platform's Postgres
-database directly, in-process — there is no HTTP request, no file access, and no shell
-between you and the data. The database is the library's source of truth.
+database directly, in-process. The database is the library's source of truth, and you
+have FULL READ ACCESS to everything it holds — components, geometry, archived datasheet
+PDFs, prices + history, stock, projects, BOMs, production runs, notes, and the audit log.
 
 Read / browse (use these to answer questions directly):
 - search_components(query, category) — find components by text and/or category
@@ -613,46 +1257,68 @@ Read / browse (use these to answer questions directly):
   consignment at JLC). Never treat one pool's zero as "unavailable" without checking the
   other two, and always say which pool a number came from.
 - list_categories() — the category tree with per-category counts
-- list_base_symbols(query) — base symbols (graphical templates) that exist, with pin counts
-- list_footprints(query) — 7Sigma footprints that exist, with pad counts
+- list_base_symbols(query) / list_footprints(query) — name lists with pin/pad counts
+- get_symbol(name) — one base symbol in full: pin table (number, name, electrical type),
+  units, which components use it, version history, raw s-expression source
+- get_footprint(name) — one footprint in full: pad table (number, type, shape, size,
+  drill, layers), courtyard/fab flags, 3D model refs, users, raw source
+- read_datasheet(component, pages, datasheet_label) — the locally archived datasheet PDF
+  as extracted text AND rendered page images (you can SEE pinout drawings and package
+  dimensions). Call without pages first to learn the page count, then request specific
+  pages.
+- get_price_history(component) — the append-only price timeline runs are priced from
+- get_audit_log(limit, entity_type, actor) — who changed what, when
+- list_models3d(query) — stored 3D model files
 - get_skill(name) — read the current text of one of your skill documents
 
-External lookup:
-- lcsc_lookup(lcsc_id) — fetch part metadata from LCSC (manufacturer, MPN, description,
-  datasheet URL, category, package). This is your only source of data outside the library.
+Internet access:
+- web_search / web_fetch — general web research: manufacturer pages, app notes,
+  alternatives, package standards. web_fetch reads PDFs, so it can open datasheets that
+  are not archived locally (prefer read_datasheet for archived ones — it is faster and
+  returns page images).
+- lcsc_lookup(lcsc_id) — LCSC part metadata (manufacturer, MPN, description, datasheet
+  URL, category, package)
+- search_jlc_parts(keyword) — public JLCPCB assembly-parts catalog search (find
+  alternatives that JLC can actually assemble; `+` = AND, MPNs unhyphenated)
+- get_jlc_details(lcsc_codes) — official JLC API batch detail (assembly stock, JLC price
+  ladder); needs configured credentials
+- refresh_supply(component) — live re-fetch of LCSC ladder/stock + JLCPCB assembly stock
+  for one component (auto-managed data — allowed without approval)
 
-Projects (read-only — the platform also tracks the user's KiCad design projects):
-- list_projects() — tracked projects with their latest ingested git snapshot, boards,
-  variants and production-run count
-- get_project_bom(project, board, variant, volume) — the priced BOM of a project's latest
-  snapshot at a given production volume: unit prices from current LCSC price ladders, the
-  project's manual cost items, per-device and per-run totals
-- component_where_used(component_name) — which projects use a library component (refs,
-  quantity, DNP state). Check this before recommending edits to a part that is in use.
+Projects (the platform also tracks the user's KiCad design projects):
+- list_projects() — tracked projects with latest snapshot, boards, variants, run count
+- get_project(name) — one project in full: snapshots, notes, production runs
+- get_project_bom(project, board, variant, volume) — priced BOM at a production volume
+- get_production_run(project, run) — run economics from historical pricing at the run
+  date, with the user's overrides applied
+- component_where_used(component_name) — which projects use a library component. Check
+  this before recommending edits to a part that is in use.
 
 Propose (each creates a DRAFT the user must approve — see the gate):
 - propose_new_component(...) — draft a brand-new component
 - propose_component_edit(...) — draft a new version of an existing component
+- propose_symbol_edit(name, source_text, comment) — draft a new version of a base symbol
+  (or a new base symbol). Call get_symbol first and edit its returned source.
+- propose_footprint_edit(name, source_text, comment) — draft a new version of a footprint
+  (or a new footprint). Call get_footprint first and edit its returned source.
 - propose_skill_update(skill_name, content, comment) — draft an update to one of your own
   skill documents (call get_skill first; content replaces the whole document)
 
 ## What you cannot do
-- You have no shell, no Python, and no filesystem. The previous file-based workflow — a
-  command-line generation-and-validation pipeline and CLI import tools — is not available
-  to you. Never tell the user to run it, and never claim to have run anything yourself.
-- You cannot draw or edit footprints, base symbols, or 3D models. You can only *reference*
-  ones that already exist (find them with list_footprints / list_base_symbols). If a part
-  needs a footprint or base symbol that does not exist yet, say so and stop — ask the user
-  to add it. Do not invent a name; the propose_* tools reject references to things that
-  do not exist.
+- You have no shell, no Python interpreter, and no filesystem. The previous file-based
+  workflow — a command-line generation-and-validation pipeline and CLI import tools — is
+  not available to you. Never tell the user to run it, and never claim to have run
+  anything yourself.
+- You cannot create or edit 3D models — only reference ones that exist (list_models3d).
 - You cannot publish. Everything you write is a draft.
 
 ## The approval gate (structural)
 Your propose_* tools can only create DRAFTS. Nothing changes the live library until the
-user reviews and approves it in the Proposals view. After proposing, ALWAYS tell the user
-you created a draft awaiting their approval. Prices are auto-managed (refreshed from LCSC)
-— never set price properties. Datasheets are managed separately — pass a URL via
-datasheet_url, never as a "Datasheet" property.
+user reviews and approves it in the Proposals view (symbol/footprint proposals show a
+visual before/after preview there). After proposing, ALWAYS tell the user you created a
+draft awaiting their approval. Prices are auto-managed (refreshed from LCSC) — never set
+price properties. Datasheets are managed separately — pass a URL via datasheet_url, never
+as a "Datasheet" property.
 
 ## Adding a component (typical flow)
 1. Given an LCSC number, call lcsc_lookup first for real metadata — never guess values.
@@ -660,8 +1326,28 @@ datasheet_url, never as a "Datasheet" property.
    footprint (list_footprints) that match the part's package and pin count.
 3. Open a similar existing component in the same category with get_component and mirror its
    property set and order.
-4. Call propose_new_component (or propose_component_edit), then tell the user the draft is
+4. If a needed footprint or base symbol does not exist, you may draft one with
+   propose_footprint_edit / propose_symbol_edit (new name = creation) — but prefer reusing
+   an existing one, and say clearly that the geometry draft needs review.
+5. Call propose_new_component (or propose_component_edit), then tell the user the draft is
    awaiting approval.
+
+## Verifying a part against its datasheet (typical flow)
+1. read_datasheet for the pinout and package-drawing pages (look at the IMAGES — pin-1
+   markers, pad dimensions and pitch are graphical).
+2. get_symbol — compare pin numbers, names and electrical types against the pinout.
+3. get_footprint — compare pad numbering, pitch, pad sizes and courtyard against the
+   package drawing (all dimensions in mm).
+4. Report what is confirmed vs. mismatched, citing datasheet page numbers. Propose fixes
+   as drafts only when the user asks for them.
+
+## Editing geometry (symbols / footprints)
+Symbol and footprint sources are KiCad s-expressions; edit them exactly (grid-aligned
+coordinates in mm, matching the conventions in your skill documents). Keep edits minimal —
+change what the task needs, preserve everything else. Note: components pin the symbol
+drawing version they were generated with; the KiCad-facing base library and HTTP catalog
+always use the newest published drawing, so an approved symbol edit takes effect there
+immediately.
 
 ## Your skill documents
 Below are your editable convention guides — naming, properties, and how to choose
@@ -673,7 +1359,13 @@ lasting rule. Follow their conventions.
 
 
 def run_chat(messages: list[dict]) -> dict:
-    """Run one Jaravis turn over the provided conversation. Blocking."""
+    """Run one Jaravis turn over the provided conversation. Blocking.
+
+    The server tools (web_search / web_fetch) execute on Anthropic's side; a
+    long research turn can stop with stop_reason="pause_turn", which the
+    Python tool runner does NOT auto-resume — it would silently truncate the
+    answer. So the conversation is mirrored while iterating and the runner is
+    restarted with the paused turn appended (bounded)."""
     LAST_PROPOSALS.clear()
     db = SessionLocal()
     try:
@@ -682,21 +1374,30 @@ def run_chat(messages: list[dict]) -> dict:
         db.close()
 
     client = anthropic.Anthropic()
-    runner = client.beta.messages.tool_runner(
-        model=MODEL,
-        max_tokens=MAX_TOKENS,
-        thinking={"type": "adaptive"},
-        system=system,
-        tools=TOOLS,
-        messages=messages,
-    )
+    convo: list[dict] = [dict(m) for m in messages]
     trace: list[dict] = []
     final = None
-    for message in runner:
-        final = message
-        for block in message.content:
-            if block.type == "tool_use":
-                trace.append({"tool": block.name, "input": block.input})
+    for _ in range(4):  # initial run + up to 3 pause_turn resumes
+        runner = client.beta.messages.tool_runner(
+            model=MODEL,
+            max_tokens=MAX_TOKENS,
+            thinking={"type": "adaptive"},
+            system=system,
+            tools=[*TOOLS, *SERVER_TOOLS],
+            messages=convo,
+        )
+        for message in runner:
+            final = message
+            convo.append({"role": "assistant", "content": message.content})
+            for block in message.content:
+                if block.type in ("tool_use", "server_tool_use"):
+                    trace.append({"tool": block.name, "input": block.input})
+            # cached by the runner — tools still execute exactly once
+            tool_response = runner.generate_tool_call_response()
+            if tool_response is not None:
+                convo.append(tool_response)
+        if final is None or final.stop_reason != "pause_turn":
+            break
     reply = ""
     if final is not None:
         reply = "\n".join(b.text for b in final.content if b.type == "text")

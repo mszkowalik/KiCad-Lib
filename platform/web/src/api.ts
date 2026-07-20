@@ -494,7 +494,7 @@ export interface ChatTraceItem {
 export interface ChatProposalRef {
   proposal_id: number;
   component: string;
-  kind: string; // "new" | "edit"
+  kind: string; // "new" | "edit" | "skill" | "symbol" | "footprint"
   version_no?: number;
 }
 
@@ -655,7 +655,21 @@ export interface SkillProposal {
   status: string;
 }
 
-export type Proposal = ComponentProposal | SkillProposal;
+/** Symbol / footprint geometry proposal (drafted by Jaravis). */
+export interface GeometryProposal {
+  kind: "symbol" | "footprint";
+  proposal_id: number;
+  /** The symbol/footprint name — field named like the others to keep the table simple. */
+  component_name: string;
+  version_no: number;
+  is_new_component: boolean;
+  created_by: string | null;
+  created_at: string;
+  comment: string | null;
+  status: string;
+}
+
+export type Proposal = ComponentProposal | SkillProposal | GeometryProposal;
 
 /** Approve/reject responses for component proposals (no `kind` field). */
 export interface ComponentProposalAction {
@@ -700,6 +714,39 @@ export function approveSkillProposal(id: number): Promise<SkillProposalAction> {
 
 export function rejectSkillProposal(id: number): Promise<SkillProposalAction> {
   return request(`/api/proposals/skills/${id}/reject`, { method: "POST" });
+}
+
+export interface GeometryProposalAction {
+  kind: string;
+  proposal_id: number;
+  component_name: string;
+  version_no: number;
+  status: string;
+  mirror?: Record<string, number>;
+  mirror_warnings?: string[];
+}
+
+export function approveGeometryProposal(
+  kind: "symbol" | "footprint",
+  id: number,
+): Promise<GeometryProposalAction> {
+  return request(`/api/proposals/${kind}s/${id}/approve`, { method: "POST" });
+}
+
+export function rejectGeometryProposal(
+  kind: "symbol" | "footprint",
+  id: number,
+): Promise<GeometryProposalAction> {
+  return request(`/api/proposals/${kind}s/${id}/reject`, { method: "POST" });
+}
+
+/** SVG preview of a geometry proposal — draft or the live current version. */
+export function geometryProposalPreviewUrl(
+  kind: "symbol" | "footprint",
+  id: number,
+  which: "draft" | "current",
+): string {
+  return `${API_URL}/api/proposals/${kind}s/${id}/preview.svg?which=${which}`;
 }
 
 export function startImport(): Promise<{ status: string }> {
