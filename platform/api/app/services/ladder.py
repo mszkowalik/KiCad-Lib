@@ -143,6 +143,9 @@ def refresh_component(db: Session, component_id: int, lcsc_id: str, jlc_row=_JLC
             continue
     now = utcnow()
     if tiers:
+        # capture the pre-change state first (no-op when already recorded) so
+        # the timeline keeps what prices were in effect before this refresh
+        record_price_history(db, component_id)
         db.query(M.ComponentPricePoint).filter_by(component_id=component_id, source="LCSC").delete()
         for qty_from, price in sorted(tiers):
             db.add(
@@ -156,6 +159,7 @@ def refresh_component(db: Session, component_id: int, lcsc_id: str, jlc_row=_JLC
                 )
             )
         _update_price_summary(db, component_id, tiers, now)
+        record_price_history(db, component_id)
     supply = db.query(M.ComponentSupply).filter_by(component_id=component_id).first()
     if supply is None:
         supply = M.ComponentSupply(component_id=component_id)
@@ -227,6 +231,115 @@ def start_background_refresh(delay_s: float = 20.0) -> None:
     t = threading.Timer(delay_s, lambda: refresh_stale())
     t.daemon = True
     t.start()
+
+
+# ----------------------------------------------------------- price history
+
+def summary_points(pr: M.ComponentPrice) -> list[M.ComponentPricePoint]:
+    """Synthesize ladder points from the legacy 3-point `component_prices`
+    summary, so a part that has a summary price but no ladder still prices in
+    the BOM. Summary values are USD strings. Transient objects: never added
+    to the session."""
+    def _num(s: str | None) -> float | None:
+        try:
+            return float(s) if s not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    def _qty(s: str | None, default: int) -> int:
+        try:
+            n = int(float(s))  # type: ignore[arg-type]
+            return n if n > 0 else default
+        except (TypeError, ValueError):
+            return default
+
+    tiers: list[tuple[int, float]] = []
+    p1, p100, pbulk = _num(pr.price_1), _num(pr.price_100), _num(pr.price_bulk)
+    if p1 is not None:
+        tiers.append((1, p1))
+    if p100 is not None:
+        tiers.append((100, p100))
+    if pbulk is not None:
+        # only tier present → apply from qty 1; otherwise at the recorded bulk break
+        tiers.append((1 if not tiers else _qty(pr.bulk_qty, 1000), pbulk))
+    source = pr.source or "Manual"
+    return [
+        M.ComponentPricePoint(component_id=pr.component_id, source=source,
+                              qty_from=qf, unit_price=up, currency="USD", updated_at=None)
+        for qf, up in tiers
+    ]
+
+
+def _effective_state(db: Session, component_id: int) -> list[dict]:
+    """The component's complete effective point set as plain sorted dicts —
+    real ladder points when any exist, else points synthesized from the
+    legacy summary. This is the unit of price history."""
+    rows = db.query(M.ComponentPricePoint).filter_by(component_id=component_id).all()
+    if not rows:
+        pr = db.query(M.ComponentPrice).filter_by(component_id=component_id).first()
+        rows = summary_points(pr) if pr is not None else []
+    state = [
+        {"source": p.source, "qty_from": p.qty_from,
+         "unit_price": p.unit_price, "currency": p.currency}
+        for p in rows
+    ]
+    state.sort(key=lambda d: (d["source"], d["qty_from"]))
+    return state
+
+
+def record_price_history(db: Session, component_id: int) -> bool:
+    """Append a ComponentPriceHistory snapshot if the effective point set
+    changed since the last one (an empty set records a deletion). Call after
+    ANY price mutation, before commit — does not commit itself. Returns True
+    when a row was appended."""
+    db.flush()
+    state = _effective_state(db, component_id)
+    last = (
+        db.query(M.ComponentPriceHistory).filter_by(component_id=component_id)
+        .order_by(M.ComponentPriceHistory.recorded_at.desc(), M.ComponentPriceHistory.id.desc())
+        .first()
+    )
+    if last is not None and last.points == state:
+        return False
+    db.add(M.ComponentPriceHistory(component_id=component_id, points=state, recorded_at=utcnow()))
+    return True
+
+
+def history_points_at(db: Session, component_ids: set[int], at) -> dict[int, list[M.ComponentPricePoint]]:
+    """Resolve each component's price points AS OF `at` from history: the
+    latest snapshot at-or-before `at`, else the earliest one after it (the
+    closest available). Components with no history rows are absent from the
+    result — callers fall back to live points. Returned points are transient
+    objects, never added to the session."""
+    out: dict[int, list[M.ComponentPricePoint]] = {}
+    if not component_ids:
+        return out
+    rows = (
+        db.query(M.ComponentPriceHistory)
+        .filter(M.ComponentPriceHistory.component_id.in_(component_ids))
+        .order_by(M.ComponentPriceHistory.recorded_at, M.ComponentPriceHistory.id)
+        .all()
+    )
+    by_comp: dict[int, list[M.ComponentPriceHistory]] = {}
+    for r in rows:
+        by_comp.setdefault(r.component_id, []).append(r)
+    for cid, hist in by_comp.items():
+        chosen = hist[0]
+        for r in hist:
+            if r.recorded_at <= at:
+                chosen = r
+        out[cid] = [
+            M.ComponentPricePoint(
+                component_id=cid,
+                source=str(p.get("source") or "Manual"),
+                qty_from=int(p.get("qty_from") or 1),
+                unit_price=float(p.get("unit_price") or 0.0),
+                currency=str(p.get("currency") or "USD"),
+                updated_at=chosen.recorded_at,
+            )
+            for p in (chosen.points or [])
+        ]
+    return out
 
 
 def price_at(points: list[M.ComponentPricePoint], qty: int) -> M.ComponentPricePoint | None:

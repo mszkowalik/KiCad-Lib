@@ -78,6 +78,40 @@ export default function KicadPage() {
         {error ? <ErrorBanner message={error} /> : null}
 
         <div className="card pad">
+          <h2>Install as a KiCad plugin (recommended)</h2>
+          <p className="muted">
+            The platform serves a Plugin and Content Manager repository. Add it once; the
+            library then installs from inside KiCad — no scripts. Three packages:{" "}
+            <b>7Sigma Library</b> (the deduplicated base symbol drawings + footprints —
+            parts are picked from the live HTTP catalog below, which references these, so
+            adding components never requires a library update), <b>7Sigma 3D Models</b>{" "}
+            and <b>7Sigma Library Sync</b> — a toolbar button in the PCB and schematic
+            editors that pulls updates on click (changed 3D models transfer as a small
+            compressed delta, not the full package).
+          </p>
+          <pre className="code-block">{config?.pcm_repo_url ?? "…"}</pre>
+          <ol className="kicad-steps">
+            <li>
+              KiCad → Tools → <b>Plugin and Content Manager</b> → Manage… (repository icon) →
+              add the URL above
+            </li>
+            <li>
+              Select the <b>7Sigma Library Platform</b> repository, install{" "}
+              <b>7Sigma Library</b>, <b>7Sigma 3D Models</b> and <b>7Sigma Library Sync</b>
+            </li>
+            <li>
+              When KiCad asks, let it <b>add the libraries to the global tables</b> — they appear
+              as <code>PCM_7Sigma_Base</code> (symbol drawings) and <code>PCM_7Sigma</code>{" "}
+              (footprints)
+            </li>
+            <li>
+              To pull library updates later, press the <b>Sync 7Sigma Library</b> toolbar
+              button in the PCB or schematic editor (or use PCM's Update — both work)
+            </li>
+          </ol>
+        </div>
+
+        <div className="card pad">
           <h2>Live part catalog (HTTP library)</h2>
           <p className="muted">
             KiCad browses parts, fields and prices live from this platform. Symbols and
@@ -97,10 +131,13 @@ export default function KicadPage() {
         </div>
 
         <div className="card pad">
-          <h2>Sync symbols, footprints &amp; 3D models</h2>
+          <h2>Sync via CLI (alternative to the plugin)</h2>
           <p className="muted">
             The sync CLI mirrors the published library files to your machine — incremental,
-            checksum-based. Re-run it any time; only changed files are transferred.
+            checksum-based. Re-run it any time; only changed files are transferred. Use this
+            OR the plugin install above, not both (the CLI flow uses unprefixed nicknames —
+            set <code>SYMBOL_LIB_NICKNAME_TEMPLATE</code> / <code>FOOTPRINT_LIB_NICKNAME</code>{" "}
+            in <code>platform/.env</code> to match your choice).
           </p>
           <a className="btn" href={syncScriptUrl} download>
             Download kicadlib.py

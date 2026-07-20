@@ -59,6 +59,10 @@ services:
       JLC_APP_ID: ${JLC_APP_ID:-}
       JLC_ACCESS_KEY: ${JLC_ACCESS_KEY:-}
       JLC_SECRET_KEY: ${JLC_SECRET_KEY:-}
+      # KiCad library nicknames as referenced by the live HTTP catalog —
+      # defaults match the PCM install (PCM_7Sigma_Base / PCM_7Sigma)
+      HTTPLIB_SYMBOL_LIB: ${HTTPLIB_SYMBOL_LIB:-PCM_7Sigma_Base}
+      FOOTPRINT_LIB_NICKNAME: ${FOOTPRINT_LIB_NICKNAME:-PCM_7Sigma}
     volumes:
       # The existing library repo, mounted read-only — the import station reads from here.
       - ..:/repo:ro

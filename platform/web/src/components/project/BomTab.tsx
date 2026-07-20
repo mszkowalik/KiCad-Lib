@@ -125,38 +125,38 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
     ...(bom?.extra ?? []).map((x): BomRow => ({ kind: "extra", x })),
   ];
 
+  // 1,492,500 → "1.5M": the cells are too narrow for full numbers; exact
+  // values live in the pill tooltips
+  const compact = (n: number) =>
+    n.toLocaleString("en", { notation: "compact", maximumFractionDigits: 1 });
+
+  // One pill per row (constant row height): the best procurable quantity =
+  // own JLC stock + the larger market pool (LCSC retail and JLCPCB assembly
+  // are alternatives, not additive). Per-pool breakdown in the tooltip.
   const stockCell = (li: BomLine) => {
     const s = stockByKey.get(li.refs);
     const lcsc = s ? s.stock : li.stock;
     const jlc = s ? s.jlc_stock : li.jlc_stock;
+    const own = s ? s.private_stock : 0;
     const ok = s ? s.ok : li.stock_ok;
+    if (lcsc == null && jlc == null && !own) return <span className="muted">—</span>;
+    const best = own + Math.max(lcsc ?? 0, jlc ?? 0);
     const tone = ok === false ? "err" : ok ? "ok" : "neutral";
+    const detail = [
+      `LCSC retail: ${lcsc == null ? "unknown" : lcsc.toLocaleString()}`,
+      `JLCPCB assembly: ${jlc == null ? "unknown" : jlc.toLocaleString()}`,
+    ];
+    if (own > 0) detail.push(`Your JLC library: ${own.toLocaleString()}`);
+    if (s) {
+      detail.push(
+        `Needed: ${s.needed.toLocaleString()}${s.to_buy > 0 ? ` — to buy ${s.to_buy.toLocaleString()}` : " — covered by your stock"}`,
+      );
+    }
+    detail.push("Shown: own stock + larger market pool");
     return (
-      <>
-        {s && s.private_stock > 0 ? (
-          <span
-            className={`pill ${s.private_ok ? "ok" : "warn"}`}
-            title={`${s.private_stock.toLocaleString()} held in your private JLC library${s.private_ok ? " — covers this line" : ` — still to buy ${s.to_buy.toLocaleString()}`}`}
-          >
-            own {s.private_stock.toLocaleString()}
-          </span>
-        ) : null}
-        {lcsc == null && jlc == null ? (
-          <span className="muted">—</span>
-        ) : (
-          <>
-            <span className={`pill ${tone}`} title="LCSC retail stock (lcsc.com webshop)">
-              LCSC {lcsc == null ? "?" : lcsc.toLocaleString()}
-            </span>
-            <span
-              className={`pill ${tone}`}
-              title="JLCPCB assembly-parts stock (jlcpcb.com/parts) — a separate pool from LCSC retail"
-            >
-              JLC {jlc == null ? "?" : jlc.toLocaleString()}
-            </span>
-          </>
-        )}
-      </>
+      <span className={`pill ${tone}`} title={detail.join("\n")}>
+        {compact(best)}
+      </span>
     );
   };
 

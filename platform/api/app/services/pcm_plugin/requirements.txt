@@ -1,0 +1,3 @@
+# No dependencies — sync.py is Python stdlib only.
+# This file must exist: KiCad's API plugin manager refuses to finish the
+# plugin's Python environment setup without it ("requirements.txt not found").

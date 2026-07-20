@@ -29,6 +29,44 @@ def get_rates(db: Session) -> dict[str, float]:
     return rates
 
 
+def record_rate_history(db: Session, currency: str, rate_usd: float) -> bool:
+    """Append an ExchangeRateHistory row if the rate changed since the last
+    recorded one. No commit. Returns True when appended."""
+    cur = currency.upper()
+    last = (
+        db.query(M.ExchangeRateHistory).filter_by(currency=cur)
+        .order_by(M.ExchangeRateHistory.recorded_at.desc(), M.ExchangeRateHistory.id.desc())
+        .first()
+    )
+    if last is not None and last.rate_usd == rate_usd:
+        return False
+    db.add(M.ExchangeRateHistory(currency=cur, rate_usd=rate_usd, recorded_at=utcnow()))
+    return True
+
+
+def rates_at(db: Session, at) -> dict[str, float]:
+    """Rates AS OF `at` from history — per currency the latest row
+    at-or-before `at`, else the earliest after it. Currencies with no history
+    fall back to the current live rate (better than dropping the line)."""
+    rates = get_rates(db)
+    rows = (
+        db.query(M.ExchangeRateHistory)
+        .order_by(M.ExchangeRateHistory.recorded_at, M.ExchangeRateHistory.id)
+        .all()
+    )
+    by_cur: dict[str, list[M.ExchangeRateHistory]] = {}
+    for r in rows:
+        by_cur.setdefault(r.currency.upper(), []).append(r)
+    for cur, hist in by_cur.items():
+        chosen = hist[0]
+        for r in hist:
+            if r.recorded_at <= at:
+                chosen = r
+        rates[cur] = chosen.rate_usd
+    rates["USD"] = 1.0
+    return rates
+
+
 def convert(amount: float, currency: str, target: str, rates: dict[str, float]) -> tuple[float, bool]:
     """Returns (converted_amount, rate_known). Falls back to 1:1 when a
     currency has no stored rate."""
@@ -56,10 +94,12 @@ def refresh_rates(db: Session) -> dict:
         row = existing.get(currency.upper())
         if row is None:
             db.add(M.ExchangeRate(currency=currency.upper(), rate_usd=rate_usd, source="auto"))
+            record_rate_history(db, currency, rate_usd)
             updated += 1
         elif row.source != "manual":
             row.rate_usd = rate_usd
             row.updated_at = utcnow()
+            record_rate_history(db, currency, rate_usd)
             updated += 1
     db.commit()
     return {"updated": updated, "currencies": len(data)}

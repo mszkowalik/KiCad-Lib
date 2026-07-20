@@ -162,13 +162,17 @@ PRICE_PROP_ORDER = (
 PRICE_KEY_TO_COL = dict(PRICE_PROP_ORDER)
 
 
-def injected_props(price, datasheets) -> list[dict]:
-    """Prices and datasheets live in their own tables, but are injected back
-    into generated symbols (and the KiCad HTTP library). First datasheet ->
+def injected_props(datasheets) -> list[dict]:
+    """Datasheets live in their own table, but are injected back into
+    generated symbols (and the KiCad HTTP library). First datasheet ->
     native Datasheet field; extras -> hidden custom fields "Datasheet 2", ...
 
     When a datasheet has a locally stored copy, the injected link points at
     the platform's local file instead of the internet URL.
+
+    Prices are deliberately NOT injected — pricing lives on the platform
+    (BOMs, ladders, run economics), not in KiCad symbols. PRICE_PROP_ORDER
+    stays: the importer uses it to strip legacy price keys from YAML.
     """
     from ..config import settings
 
@@ -191,8 +195,4 @@ def injected_props(price, datasheets) -> list[dict]:
         else:
             value = ds.source_url or ""
         out.append({"key": key, "value": value})
-    for key, attr in PRICE_PROP_ORDER:
-        value = getattr(price, attr, None) if price is not None else None
-        if value is not None:
-            out.append({"key": key, "value": value})
     return out

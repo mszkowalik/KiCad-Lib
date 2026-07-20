@@ -832,6 +832,7 @@ def set_rate(body: RateIn, db: Session = Depends(get_db)):
         row.rate_usd = body.rate_usd
         row.source = body.source
         row.updated_at = utcnow()
+    fx.record_rate_history(db, cur, body.rate_usd)
     db.commit()
     return {"currency": cur, "rate_usd": body.rate_usd, "source": body.source}
 
@@ -878,6 +879,9 @@ def set_price_points(comp_id: int, points: list[PricePointIn], db: Session = Dep
     robot-managed."""
     if db.get(M.Component, comp_id) is None:
         raise HTTPException(404, "component not found")
+    # capture the pre-change state first (no-op when already recorded) so the
+    # history timeline keeps what was in effect before this edit
+    ladder.record_price_history(db, comp_id)
     db.query(M.ComponentPricePoint).filter(
         M.ComponentPricePoint.component_id == comp_id,
         M.ComponentPricePoint.source != "LCSC",
@@ -894,6 +898,7 @@ def set_price_points(comp_id: int, points: list[PricePointIn], db: Session = Dep
                 currency=pt.currency.strip().upper() or "USD", updated_at=utcnow(),
             )
         )
+    ladder.record_price_history(db, comp_id)
     db.commit()
     return list_price_points(comp_id, db)
 

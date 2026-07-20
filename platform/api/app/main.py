@@ -115,6 +115,36 @@ def startup() -> None:
                   AND r.project_id = c.project_id AND r.effective_sha = ''
                 """
             ))
+            # Seed price history from the current point sets (idempotent —
+            # only components with no history yet). recorded_at = the set's
+            # last refresh, so pre-existing runs resolve to it as the
+            # closest snapshot.
+            conn.execute(text(
+                """
+                INSERT INTO component_price_history (component_id, points, recorded_at)
+                SELECT p.component_id,
+                       jsonb_agg(jsonb_build_object(
+                           'source', p.source, 'qty_from', p.qty_from,
+                           'unit_price', p.unit_price, 'currency', p.currency
+                       ) ORDER BY p.source, p.qty_from),
+                       max(p.updated_at)
+                FROM component_price_points p
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM component_price_history h
+                    WHERE h.component_id = p.component_id
+                )
+                GROUP BY p.component_id
+                """
+            ))
+            conn.execute(text(
+                """
+                INSERT INTO exchange_rate_history (currency, rate_usd, recorded_at)
+                SELECT r.currency, r.rate_usd, r.updated_at FROM exchange_rates r
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM exchange_rate_history h WHERE h.currency = r.currency
+                )
+                """
+            ))
     except Exception:
         # DB may still be starting; the import endpoint will create tables anyway.
         pass
@@ -134,6 +164,11 @@ def startup() -> None:
         from .services.ladder import start_background_refresh
 
         start_background_refresh()
+    # warm the KiCad PCM packages so the first PCM request doesn't wait for
+    # the 1.4 GB models zip to build
+    from .services import pcm
+
+    pcm.start_background_build()
 
 
 @app.get("/api/health")

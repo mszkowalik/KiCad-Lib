@@ -38,4 +38,5 @@ include = ["app*", "kiutils*"]
 [tool.setuptools.package-data]
 # Jaravis's seed skill documents are read at import time via importlib path
 # (app/seed_skills/*.md) — ship them in the non-editable Docker install too.
-app = ["seed_skills/*.md"]
+# Same for the KiCad sync plugin sources packaged by services/pcm.py.
+app = ["seed_skills/*.md", "services/pcm_plugin/*"]

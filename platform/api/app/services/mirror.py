@@ -52,7 +52,6 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
     meta_lib = load_symbol_lib_from_text(sample_sv.source_text)
     provider = BaseSymbolProvider()
 
-    prices = {p.component_id: p for p in db.execute(select(M.ComponentPrice)).scalars()}
     sheets: dict[int, list] = {}
     for ds in db.execute(
         select(M.Datasheet).where(M.Datasheet.archived.is_(False)).order_by(M.Datasheet.position)
@@ -96,7 +95,7 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
                     cv.base_component, sv.source_text, cache_key=f"{cv.base_component}@{sv.id}"
                 )
                 props = [property_row_to_dict(p) for p in cv.properties] + injected_props(
-                    prices.get(comp.id), sheets.get(comp.id)
+                    sheets.get(comp.id)
                 )
                 syms.append(
                     build_component_symbol(template, comp.name, props, cv.removed_properties, warnings)
@@ -109,7 +108,30 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
         )
         symbol_lib_count += 1
 
-    return {"symbol_libs": symbol_lib_count, "components_in_libs": component_count, "warnings": warnings}
+    # Deduplicated base-symbol library: the ~50 unique graphical templates
+    # every component derives from. This is what the PCM library package
+    # ships and what HTTP-catalog parts reference (symbolIdStr) — adding a
+    # component never changes it, only a new base drawing does.
+    base_syms = []
+    for sym in db.execute(select(M.Symbol).order_by(M.Symbol.name)).scalars():
+        sv = next((v for v in sym.versions if v.id == sym.current_version_id), None)
+        if sv is None:
+            continue
+        try:
+            lib = load_symbol_lib_from_text(sv.source_text)
+            entry = next((s for s in lib.symbols if s.entryName == sym.name), None)
+            if entry is None and lib.symbols:
+                entry = lib.symbols[0]
+            if entry is not None:
+                base_syms.append(entry)
+        except Exception as e:
+            warnings.append(f"base symbol {sym.name}: mirror generation failed — {e}")
+    (symbols_dir / "7Sigma_Base.kicad_sym").write_text(
+        build_library_text(meta_lib, base_syms), encoding="utf-8"
+    )
+
+    return {"symbol_libs": symbol_lib_count, "components_in_libs": component_count,
+            "base_symbols": len(base_syms), "warnings": warnings}
 
 
 def write_manifest(settings: Settings) -> int:

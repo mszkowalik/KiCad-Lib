@@ -1,0 +1,253 @@
+#!/usr/bin/env python3
+"""7Sigma Library Sync — KiCad IPC action plugin entrypoint.
+
+Toolbar button (PCB + schematic editors): fetches the platform's current PCM
+library packages and refreshes the installed copies IN PLACE under the
+3rd-party directory, incrementally (whole package skipped when its content
+sha256 matches the last synced one). Stdlib only — no pip requirements.
+
+The 3rd-party root is derived from this file's own install location
+(3rdparty/plugins/<id>/sync.py), so custom KiCad paths work automatically.
+
+Reopen the symbol chooser / footprint viewer after a sync — KiCad re-reads
+changed library files; a KiCad restart is only needed after very large
+changes.
+"""
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import subprocess
+import sys
+import urllib.request
+import zipfile
+from pathlib import Path
+
+BASE_URL = "__BASE_URL__"
+MANAGED_KINDS = ("symbols", "footprints", "3dmodels")
+MODELS_ID = "com.sevensigma.models3d"
+DELTA_MAX_FILES = 500  # larger deltas fall back to the full package zip
+HERE = Path(__file__).resolve().parent
+THIRD_PARTY = HERE.parents[1]  # .../3rdparty/plugins/<id>/ -> .../3rdparty
+STATE_FILE = HERE / "sync_state.json"
+MODELS_STATE_FILE = HERE / "models_state.json"  # relpath -> sha256 of installed models
+LOCK_FILE = HERE / "sync.lock"
+LOCK_STALE_S = 30 * 60  # a lock this old is a crash leftover — take it over
+
+
+def _get(url: str, timeout: int = 600) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": "sevensigma-sync/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
+
+def _post_json(url: str, payload: dict, timeout: int = 600) -> bytes:
+    req = urllib.request.Request(
+        url, data=json.dumps(payload).encode(),
+        headers={"User-Agent": "sevensigma-sync/1.0", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
+
+def _notify(message: str) -> None:
+    print(message)
+    if sys.platform == "darwin":
+        try:
+            # ensure_ascii=False: AppleScript chokes on \uXXXX escapes
+            quoted = json.dumps(message, ensure_ascii=False)
+            subprocess.run(
+                ["osascript", "-e",
+                 f'display notification {quoted} with title "7Sigma Library"'],
+                check=False, timeout=10,
+            )
+        except Exception:
+            pass
+
+
+def _acquire_lock() -> bool:
+    """One sync at a time — repeated button presses while a sync runs must
+    not stack downloads. Atomic create; stale locks are taken over."""
+    import os
+    import time
+    for _ in range(2):
+        try:
+            fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            return True
+        except FileExistsError:
+            try:
+                if time.time() - LOCK_FILE.stat().st_mtime > LOCK_STALE_S:
+                    LOCK_FILE.unlink()
+                    continue
+            except OSError:
+                pass
+            return False
+    return False
+
+
+def _sync_models_delta(pkg: dict, state: dict) -> str:
+    """Incremental models update: diff the mirror manifest against what is
+    installed and fetch ONLY changed files as an LZMA-compressed batch.
+    Raises to signal 'use the full package zip instead' (first install or
+    huge delta)."""
+    ident = pkg["identifier"]
+    sha = pkg["versions"][0]["download_sha256"]
+    dest = THIRD_PARTY / "3dmodels" / ident.replace(".", "_")
+    if state.get(ident) == sha and dest.exists():
+        return "fresh"
+    if not dest.exists():
+        raise RuntimeError("first install — full package needed")
+
+    manifest = json.loads(_get(f"{BASE_URL}/files/manifest.json", timeout=120))
+    upstream = {e["path"]: e["sha256"] for e in manifest["files"]
+                if e["path"].startswith("3DModels/")}
+    local: dict = {}
+    if MODELS_STATE_FILE.exists():
+        try:
+            local = json.loads(MODELS_STATE_FILE.read_text())
+        except ValueError:
+            pass
+
+    def local_sha(rel: str):
+        f = dest / rel[len("3DModels/"):]
+        if not f.is_file():
+            return None
+        if rel not in local:  # seed lazily (first delta after a PCM install)
+            local[rel] = hashlib.sha256(f.read_bytes()).hexdigest()
+        return local[rel]
+
+    need = [rel for rel, s in upstream.items() if local_sha(rel) != s]
+    if len(need) > DELTA_MAX_FILES:
+        raise RuntimeError("delta too large — full package needed")
+
+    if need:
+        _notify(f"Downloading {len(need)} changed model file(s)…")
+        data = _post_json(f"{BASE_URL}/api/kicad/pcm/models-delta", {"paths": need})
+        zf = zipfile.ZipFile(io.BytesIO(data))
+        for member in zf.infolist():
+            if member.is_dir():
+                continue
+            rel = member.filename
+            if not rel.startswith("3DModels/") or ".." in rel:
+                continue
+            target = dest / rel[len("3DModels/"):]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            payload = zf.read(member)
+            target.write_bytes(payload)
+            local[rel] = hashlib.sha256(payload).hexdigest()
+
+    # prune models removed upstream
+    removed = 0
+    for f in list(dest.rglob("*")):
+        if f.is_file() and f"3DModels/{f.relative_to(dest).as_posix()}" not in upstream:
+            f.unlink()
+            removed += 1
+    local = {rel: s for rel, s in local.items() if rel in upstream}
+
+    MODELS_STATE_FILE.write_text(json.dumps(local, indent=0))
+    state[ident] = sha
+    STATE_FILE.write_text(json.dumps(state, indent=1))
+    return "updated" if (need or removed) else "fresh"
+
+
+def _apply_package(pkg: dict, state: dict) -> str:
+    """Install/refresh one library package. Returns 'updated' | 'fresh'."""
+    ident = pkg["identifier"]
+    dest_name = ident.replace(".", "_")  # KiCad's install-directory convention
+    ver = pkg["versions"][0]
+    sha = ver["download_sha256"]
+    targets_exist = any((THIRD_PARTY / kind / dest_name).exists() for kind in MANAGED_KINDS)
+    if state.get(ident) == sha and targets_exist:
+        return "fresh"
+
+    data = _get(ver["download_url"])
+    if hashlib.sha256(data).hexdigest() != sha:
+        raise RuntimeError(f"{pkg['name']}: download checksum mismatch")
+
+    zf = zipfile.ZipFile(io.BytesIO(data))
+    written: dict[str, set[str]] = {}
+    for member in zf.infolist():
+        if member.is_dir():
+            continue
+        parts = Path(member.filename).parts
+        if len(parts) < 2 or parts[0] not in MANAGED_KINDS:
+            continue
+        kind, rel = parts[0], Path(*parts[1:])
+        target = THIRD_PARTY / kind / dest_name / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(zf.read(member))
+        written.setdefault(kind, set()).add(rel.as_posix())
+
+    # prune files we manage that no longer exist upstream
+    for kind, keep in written.items():
+        root = THIRD_PARTY / kind / dest_name
+        for f in root.rglob("*"):
+            if f.is_file() and f.relative_to(root).as_posix() not in keep:
+                f.unlink()
+
+    state[ident] = sha
+    STATE_FILE.write_text(json.dumps(state, indent=1))
+    if ident == MODELS_ID:
+        # full-zip path invalidates the per-file delta bookkeeping
+        MODELS_STATE_FILE.unlink(missing_ok=True)
+    return "updated"
+
+
+def main() -> int:
+    if not _acquire_lock():
+        _notify("A sync is already running — hold on, it will notify when done.")
+        return 0
+    try:
+        _notify("Checking for 7Sigma library updates…")
+        try:
+            repo = json.loads(_get(f"{BASE_URL}/api/kicad/pcm/repository.json", timeout=120))
+            packages = json.loads(_get(repo["packages"]["url"], timeout=120))["packages"]
+        except Exception as e:
+            _notify(f"Sync failed: cannot reach the platform — {e}")
+            return 1
+
+        state: dict = {}
+        if STATE_FILE.exists():
+            try:
+                state = json.loads(STATE_FILE.read_text())
+            except ValueError:
+                pass
+
+        updated, fresh, failed = [], [], []
+        for pkg in packages:
+            if pkg.get("type") != "library":
+                continue  # never self-update the plugin from inside itself
+            try:
+                result = None
+                if pkg["identifier"] == MODELS_ID:
+                    # models: incremental per-file delta (LZMA) when possible
+                    try:
+                        result = _sync_models_delta(pkg, state)
+                    except Exception:
+                        result = None  # fall back to the full package zip
+                if result is None:
+                    if state.get(pkg["identifier"]) != pkg["versions"][0]["download_sha256"] \
+                            and pkg["versions"][0]["download_size"] > 10 * 1024 * 1024:
+                        _notify(f"Downloading {pkg['name']} "
+                                f"({pkg['versions'][0]['download_size'] >> 20} MB)…")
+                    result = _apply_package(pkg, state)
+                (updated if result == "updated" else fresh).append(pkg["name"])
+            except Exception as e:
+                failed.append(f"{pkg['name']}: {e}")
+
+        if failed:
+            _notify("Sync errors: " + "; ".join(failed))
+            return 1
+        if updated:
+            _notify(f"Updated: {', '.join(updated)}. Reopen the symbol chooser to pick up changes.")
+        else:
+            _notify("Library already up to date.")
+        return 0
+    finally:
+        LOCK_FILE.unlink(missing_ok=True)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

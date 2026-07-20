@@ -76,10 +76,13 @@ class Settings(BaseSettings):
     jlc_secret_key: str = ""
     jlc_endpoint: str = "https://open.jlcpcb.com"
 
-    # How symbolIdStr is built for the KiCad HTTP library: must match the
-    # nickname of the synced symbol library in the user's sym-lib-table.
-    symbol_lib_nickname_template: str = "{category}"
-    footprint_lib_nickname: str = "7Sigma"
+    # How the KiCad HTTP library references local geometry — must match the
+    # client's library-table nicknames. Defaults assume the PCM install:
+    # symbolIdStr points at the component's BASE drawing in the deduplicated
+    # base library (adding components then needs no library update at all);
+    # footprint refs are remapped to the PCM footprint nickname.
+    httplib_symbol_lib: str = "PCM_7Sigma_Base"
+    footprint_lib_nickname: str = "PCM_7Sigma"
 
     @property
     def mirror_dir(self) -> Path:

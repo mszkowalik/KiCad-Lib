@@ -395,6 +395,24 @@ class ComponentPricePoint(Base):
     )
 
 
+class ComponentPriceHistory(Base):
+    """Append-only historical pricing. One row = the component's COMPLETE
+    effective point set (all sources — LCSC ladder + manual levels, or points
+    synthesized from the legacy summary for ladder-less parts) at
+    `recorded_at`; `points` = [{source, qty_from, unit_price, currency}].
+    A new row is appended only when the set actually changed (an empty list
+    records a deletion). Production-run economics resolve prices from here by
+    run date — latest row at-or-before the date, else the earliest after
+    ("closest you can find"). Never mutate or delete rows."""
+
+    __tablename__ = "component_price_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    component_id: Mapped[int] = mapped_column(ForeignKey("components.id"), index=True)
+    points: Mapped[list] = mapped_column(JSONB)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
 class ComponentSupply(Base):
     """Supplier availability bookkeeping. `stock` is LCSC retail stock
     (lcsc.com webshop); `jlc_stock` is JLCPCB assembly-parts stock
@@ -448,6 +466,19 @@ class ExchangeRate(Base):
     rate_usd: Mapped[float] = mapped_column(Float)  # 1 <currency> = rate_usd USD
     source: Mapped[str] = mapped_column(String(20), default="auto")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ExchangeRateHistory(Base):
+    """Append-only FX history — one row per (currency, change). Run economics
+    convert historical prices with the rate closest to the run date, same
+    resolution rule as ComponentPriceHistory. Never mutate or delete rows."""
+
+    __tablename__ = "exchange_rate_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    currency: Mapped[str] = mapped_column(String(10), index=True)
+    rate_usd: Mapped[float] = mapped_column(Float)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
 # ----------------------------------------------------------------- projects
@@ -638,11 +669,12 @@ class ProjectNote(Base):
 
 # ---------------------------------------------------------- production runs
 class ProductionRun(Base):
-    """A physical production batch. `frozen` captures the full priced BOM +
-    cost breakdown (and FX rates) at creation time, so the run's economics
-    are immune to later price drift; `overrides` layers user corrections
-    (final negotiated prices, changed quantities, extra lines) on top of the
-    frozen lines by line key."""
+    """A physical production batch. Economics are computed ON DEMAND from
+    historical pricing (ComponentPriceHistory / ExchangeRateHistory) resolved
+    at the run's date — see project_bom.run_effective; `overrides` layers user
+    corrections (final negotiated prices, changed quantities, extra lines) on
+    top by line key. `frozen` is a LEGACY blob from the old freeze-at-creation
+    model — kept for archival, no longer written or read."""
 
     __tablename__ = "production_runs"
 

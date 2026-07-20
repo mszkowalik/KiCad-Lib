@@ -16,7 +16,6 @@ from .. import models as M
 from ..config import settings
 from ..db import get_db
 from ..services.generator import injected_props
-from ..services.mirror import top_level_of
 from .util import category_path, current_version, props_dict, resolved_value
 
 router = APIRouter(prefix="/kicad/v1", tags=["kicad-http-library"])
@@ -83,15 +82,12 @@ def part_detail(part_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "part has no published version")
 
     props = props_dict(cv)
-    top = top_level_of(cv.category)
-    nickname = settings.symbol_lib_nickname_template.format(category=top.name)
 
-    price = db.query(M.ComponentPrice).filter_by(component_id=comp.id).first()
     sheets = db.query(M.Datasheet).filter_by(component_id=comp.id).order_by(M.Datasheet.position).all()
 
-    # user properties + injected auto-managed fields (prices, datasheets)
+    # user properties + injected datasheet links (prices stay on the platform)
     entries = [(p.key, resolved_value(None if p.is_null else p.value, props), p.hide) for p in cv.properties]
-    entries += [(d["key"], d["value"], True) for d in injected_props(price, sheets)]
+    entries += [(d["key"], d["value"], True) for d in injected_props(sheets)]
 
     description = ""
     keywords = ""
@@ -104,6 +100,11 @@ def part_detail(part_id: int, db: Session = Depends(get_db)):
         elif key == "ki_fp_filters":
             continue  # not part of the fields payload
         elif key == "Footprint":
+            # remap the repo's footprint-lib nickname to what the client's
+            # fp-lib-table actually calls it (PCM installs register the
+            # library as PCM_7Sigma — set FOOTPRINT_LIB_NICKNAME accordingly)
+            if val and val.startswith("7Sigma:"):
+                val = f"{settings.footprint_lib_nickname}:{val.split(':', 1)[1]}"
             fields["footprint"] = {"value": val, "visible": "false"}
         elif key == "Datasheet":
             fields["datasheet"] = {"value": val, "visible": "false"}
@@ -115,7 +116,9 @@ def part_detail(part_id: int, db: Session = Depends(get_db)):
     return {
         "id": str(comp.id),
         "name": comp.name,
-        "symbolIdStr": f"{nickname}:{comp.name}",
+        # the component's BASE drawing — all components sharing a template
+        # reuse one symbol, so the local library never needs per-part updates
+        "symbolIdStr": f"{settings.httplib_symbol_lib}:{cv.base_component}",
         "description": description,
         "keywords": keywords,
         "fields": fields,

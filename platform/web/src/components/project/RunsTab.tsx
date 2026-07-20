@@ -1,4 +1,4 @@
-/** Production runs: create (freezes the priced BOM at current prices),
+/** Production runs: priced on demand from historical prices at the run date,
  *  override final prices per line, attach files, register serial numbers. */
 import { useEffect, useState } from "react";
 import {
@@ -11,7 +11,6 @@ import {
   getRun,
   getRuns,
   isAbortError,
-  refreezeRun,
   runAttachmentUrl,
   updateRun,
   uploadRunAttachment,
@@ -154,11 +153,11 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
           </div>
           <p className="muted">
             {snapshot
-              ? `Freezes the priced BOM of ${snapshot.ref_name} / ${board}${variant ? ` (variant ${variant})` : ""} at today's prices.`
-              : "No snapshot selected — the run will freeze only extra items and cost items."}
+              ? `Prices the BOM of ${snapshot.ref_name} / ${board}${variant ? ` (variant ${variant})` : ""} from price history at the run date (today if empty).`
+              : "No snapshot selected — the run will price only extra items and cost items."}
           </p>
           <button className="btn btn-primary" disabled={creating || !label.trim()} onClick={create}>
-            {creating ? "Freezing prices…" : "Create + freeze"}
+            {creating ? "Creating…" : "Create run"}
           </button>
         </div>
       ) : null}
@@ -229,10 +228,6 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
-              <button className="btn btn-sm" title="Recompute frozen prices at current ladder/FX"
-                onClick={() => refreezeRun(openRun.id).then((r) => setOpenRun(r))}>
-                Re-freeze prices
-              </button>
               <button className="btn btn-sm" onClick={() => setOpenRun(null)}>Close</button>
             </div>
           </div>
@@ -258,8 +253,10 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
                 </div>
               </div>
               <p className="muted">
-                Prices frozen {eff.frozen_at ? new Date(eff.frozen_at).toLocaleString() : "—"}.
-                Type a final price and press Apply to override a line; blank + Apply clears it.
+                Prices resolved from history as of{" "}
+                {eff.priced_at ? new Date(eff.priced_at).toLocaleString() : "—"} (the run
+                date — change it to reprice). Type a final price and press Apply to
+                override a line; blank + Apply clears it.
               </p>
               <div className="table-wrap">
                 <table className="data">
@@ -267,7 +264,7 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
                     <tr>
                       <th>Line</th>
                       <th className="num">Qty</th>
-                      <th className="num">Frozen unit</th>
+                      <th className="num">Unit (at run date)</th>
                       <th className="num">Line total</th>
                       <th className="num">Final price override</th>
                     </tr>
@@ -321,7 +318,7 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
               </div>
             </>
           ) : (
-            <p className="muted">This run has no frozen snapshot.</p>
+            <p className="muted">No priced economics for this run.</p>
           )}
 
           <div className="edit-grid">

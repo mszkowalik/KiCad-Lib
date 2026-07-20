@@ -67,6 +67,10 @@ Read this before touching components, symbols, footprints, or skills.
   and `datasheets` (component-scoped, auto-managed). Keep them out of
   `ComponentProperty`; the price keys (`PRICE_KEY_TO_COL`) and `Datasheet*` keys
   are stripped on import and rejected by Jaravis's `_parse_properties`.
+  **Prices are never emitted to KiCad** (user decision 2026-07): neither the
+  generated mirror symbols nor the HTTP catalog carry `Price *` fields —
+  `injected_props(datasheets)` injects datasheet links only. Pricing lives on
+  the platform (BOMs, ladders, run economics).
 - **Project manual cost data is commit-versioned** (`services/cost_state.py`).
   `ProjectCostItem` + `ProjectExtraBomItem` rows belong to an immutable
   `ProjectCostRevision` anchored at the git commit (snapshot) where it was
@@ -92,6 +96,20 @@ status="draft", created_by=<actor>, comment=…)`; `ComponentProperty` rows with
 Proposals list keys purely off `status=="draft"`, so a well-formed draft shows
 up in the UI automatically. Audit actions in use: `proposal.create`,
 `proposal.approve`, `proposal.reject`, `import`.
+
+## Jaravis capability policy (user directive, 2026-07)
+
+- **Full read access to ALL platform data.** Jaravis must never be blind to
+  data the platform holds — components, symbols, footprints, geometry, 3D
+  models, datasheets (including archived PDF content), prices + history,
+  stock, projects, snapshots, BOMs, production runs, notes, audit log. When a
+  new table/service lands, add a matching Jaravis read tool; withholding data
+  from it is a bug, not a safety feature.
+- **Jaravis may view AND edit symbols and footprints** — not just reference
+  them. Edits follow the same structural gate as components: its tools create
+  `SymbolVersion`/`FootprintVersion` DRAFTS that the user approves in the
+  Proposals view ("with user permission" = the approval gate, never bypassed).
+- Writes of any kind stay draft-gated; read access is unrestricted.
 
 ## Importing from YAML — two modes
 
@@ -149,8 +167,8 @@ token injected per-invocation via `http.extraheader` — never written to disk),
 - **NUL is illegal in argv**: git `--format` separators use `\x1f`, never `\x00`.
 - **Price ladders**: `component_price_points` rows with `source="LCSC"` are
   replaced wholesale by the refresher; other sources (`Manual`, …) are never
-  touched by robots. The legacy 3-point `ComponentPrice` summary (what gets
-  injected into generated KiCad symbols and served to the KiCad HTTP plugin)
+  touched by robots. The legacy 3-point `ComponentPrice` summary (browse-list
+  price column + BOM fallback for ladder-less parts; NOT emitted to KiCad)
   is DERIVED from the ladder on every refresh (`ladder._update_price_summary`,
   same @1/@100/@Bulk rules as `kicad_lib/pricing.py`) — unless its `source`
   is non-LCSC (e.g. `Manual`), which pins it. It has no UI card of its own;
@@ -173,10 +191,18 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   idempotent `ALTER TABLE` in `main.py` startup — `create_all` never alters
   existing tables). Excluded in `mirror.write_symbol_libs` and both
   `kicad_http` part endpoints; needs no symbol/footprint.
-- **Run economics**: `ProductionRun.frozen` (JSONB, written by
-  `project_bom.freeze_run` at creation) + `overrides` (per-line, applied by
-  `run_effective`). Never recompute a run's costs from live prices — that's
-  what freezing is for; `POST /runs/{id}/refreeze` is the explicit exception.
+- **Run economics are computed on READ, never stored**: `run_effective(db,
+  run)` prices the run's BOM + costs from **historical pricing** at
+  `run_pricing_date(run)` (the user-entered `run_date` as end-of-day UTC,
+  else `created_at`) and applies `overrides` on top. History lives in
+  `component_price_history` (append-only; one row = the component's complete
+  point set as JSONB, appended by `ladder.record_price_history` whenever the
+  set changes) and `exchange_rate_history` (same pattern, via
+  `fx.record_rate_history`). Resolution rule everywhere: latest snapshot
+  at-or-before the date, else the earliest after (the closest available);
+  components with no history fall back to live points. Never mutate or
+  delete history rows. `ProductionRun.frozen` is a LEGACY blob from the old
+  freeze-at-creation model — kept for archival, never written or read.
 - **Production files belong to RUNS, not snapshots** (`services/production.py`):
   versioned `ProductionFileSet`s (repo | upload | generated), auto-imported
   from the repo's `production/` dir (JLCPCB Fabrication Toolkit; skip
@@ -228,4 +254,17 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   is stale and `current_version(comp)` returns None, silently skipping
   `update_mirror_symbols`. Precedents: `create_version`, `proposals.approve`,
   `components.add_file`.
+- **KiCad PCM/plugin gotchas** (`services/pcm.py`, `services/pcm_plugin/`):
+  package identifiers allow NO underscores (dots/dashes only) but KiCad
+  replaces dots with underscores for install directories; `license` must be
+  a value from the schema enum (`unrestricted` for in-house); python-runtime
+  IPC plugins REQUIRE a `requirements.txt` or env setup silently aborts and
+  the toolbar button never appears; validate generated metadata against
+  `go.kicad.org/pcm/schemas/v1` and the plugin manifest against KiCad's
+  shipped `api.v1.schema.json` before shipping. The library package ships
+  ONLY the deduplicated `7Sigma_Base.kicad_sym` (written by
+  `mirror.write_symbol_libs`) + footprints — HTTP-catalog parts reference
+  base drawings (`symbolIdStr = HTTPLIB_SYMBOL_LIB:<base_component>`), so
+  adding components must never bump the library package. 3D model updates
+  flow as LZMA deltas (`POST /api/kicad/pcm/models-delta`).
 - When a non-obvious backend convention or workaround emerges, record it here.

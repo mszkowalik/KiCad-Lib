@@ -89,58 +89,30 @@ def _cost_price_at(c: M.ProjectCostItem, volume: int) -> float:
     return price
 
 
-def _summary_points(pr: M.ComponentPrice) -> list[M.ComponentPricePoint]:
-    """Synthesize ladder points from the legacy 3-point `component_prices`
-    summary, so a part that has a summary price but no ladder still prices in the
-    BOM. This is what bridges a MANUALLY-entered price (source "Manual", set in
-    the component's Prices editor) — and any summary-only part — into BOM costs.
-    Summary values are USD strings. Transient objects: never added to the session."""
-    def _num(s: str | None) -> float | None:
-        try:
-            return float(s) if s not in (None, "") else None
-        except (TypeError, ValueError):
-            return None
-
-    def _qty(s: str | None, default: int) -> int:
-        try:
-            n = int(float(s))  # type: ignore[arg-type]
-            return n if n > 0 else default
-        except (TypeError, ValueError):
-            return default
-
-    tiers: list[tuple[int, float]] = []
-    p1, p100, pbulk = _num(pr.price_1), _num(pr.price_100), _num(pr.price_bulk)
-    if p1 is not None:
-        tiers.append((1, p1))
-    if p100 is not None:
-        tiers.append((100, p100))
-    if pbulk is not None:
-        # only tier present → apply from qty 1; otherwise at the recorded bulk break
-        tiers.append((1 if not tiers else _qty(pr.bulk_qty, 1000), pbulk))
-    source = pr.source or "Manual"
-    return [
-        M.ComponentPricePoint(component_id=pr.component_id, source=source,
-                              qty_from=qf, unit_price=up, currency="USD", updated_at=None)
-        for qf, up in tiers
-    ]
-
-
-def _component_data(db: Session, component_ids: set[int]):
+def _component_data(db: Session, component_ids: set[int], at: datetime | None = None):
+    """Points / supply / names per component. With `at` set, points come from
+    ComponentPriceHistory resolved at that instant (latest snapshot at-or-
+    before, else earliest after); components with no history yet fall back to
+    live points — the closest data we have."""
     points: dict[int, list[M.ComponentPricePoint]] = {}
-    if component_ids:
+    live_ids = set(component_ids)
+    if component_ids and at is not None:
+        points = ladder.history_points_at(db, component_ids, at)
+        live_ids = {cid for cid in component_ids if cid not in points}
+    if live_ids:
         for p in db.query(M.ComponentPricePoint).filter(
-            M.ComponentPricePoint.component_id.in_(component_ids)
+            M.ComponentPricePoint.component_id.in_(live_ids)
         ).all():
             points.setdefault(p.component_id, []).append(p)
         # Fallback: parts with no ladder fall back to their component_prices
         # summary (which is where manually-entered prices live), so a manual
         # price on a BOM-only part like an enclosure reaches the BOM.
-        missing = [cid for cid in component_ids if cid not in points]
+        missing = [cid for cid in live_ids if cid not in points]
         if missing:
             for pr in db.query(M.ComponentPrice).filter(
                 M.ComponentPrice.component_id.in_(missing)
             ).all():
-                synth = _summary_points(pr)
+                synth = ladder.summary_points(pr)
                 if synth:
                     points[pr.component_id] = synth
     supply: dict[int, M.ComponentSupply] = {}
@@ -164,10 +136,13 @@ def priced_bom(
     variant: str,
     volume: int,
     currency: str | None = None,
+    at: datetime | None = None,
 ) -> dict:
+    """Priced BOM at a production volume. `at` prices it AS OF that instant
+    (historical points + FX); None = current prices."""
     cur = display_currency(project, currency)
     volume = max(int(volume), 1)
-    rates = fx.get_rates(db)
+    rates = fx.rates_at(db, at) if at is not None else fx.get_rates(db)
 
     lines = (
         db.query(M.SnapshotBomLine)
@@ -179,7 +154,7 @@ def priced_bom(
     # Manual cost data as of this snapshot's commit (forward-only revisions).
     extras, costs, cost_rev = cost_state.items_for(db, project.id, snapshot)
     comp_ids |= {x.component_id for x in extras if x.component_id}
-    points, supply, names = _component_data(db, comp_ids)
+    points, supply, names = _component_data(db, comp_ids, at=at)
 
     out_lines = []
     bom_per_device = 0.0
@@ -464,43 +439,34 @@ def stock_check(db: Session, snapshot: M.ProjectSnapshot, board: str, variant: s
 
 # ------------------------------------------------------------ production runs
 
-def freeze_run(db: Session, project: M.Project, run: M.ProductionRun) -> dict:
-    """Compute and store the frozen cost snapshot for a run."""
-    snap = db.get(M.ProjectSnapshot, run.snapshot_id) if run.snapshot_id else None
-    frozen: dict = {
-        "computed_at": datetime.now(timezone.utc).isoformat(),
-        "currency": display_currency(project),
-        "qty": run.qty,
-        "board": run.board,
-        "variant": run.variant,
-        "sha": snap.sha if snap else None,
-    }
-    if snap is not None:
-        bom = priced_bom(db, project, snap, run.board, run.variant, run.qty)
-        frozen.update(lines=bom["lines"], extra=bom["extra"], costs=bom["costs"],
-                      rates=bom["rates"], totals=bom["totals"],
-                      cost_revision=bom.get("cost_revision"))
-    else:
-        # no snapshot linked: freeze just the manual cost structure
-        bom = priced_bom_costs_only(db, project, run.qty)
-        frozen.update(lines=[], extra=bom["extra"], costs=bom["costs"],
-                      rates=bom["rates"], totals=bom["totals"],
-                      cost_revision=bom.get("cost_revision"))
-    run.frozen = frozen
-    db.commit()
-    return frozen
+def run_pricing_date(run: M.ProductionRun) -> datetime:
+    """The instant a run's prices resolve at: the user-entered run_date (ISO,
+    taken as end-of-day UTC so same-day price records count), else the run's
+    creation time."""
+    s = (run.run_date or "").strip()
+    if s:
+        try:
+            d = datetime.fromisoformat(s)
+            if d.tzinfo is None:
+                d = d.replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
+            return d
+        except ValueError:
+            pass
+    return run.created_at
 
 
-def priced_bom_costs_only(db: Session, project: M.Project, volume: int) -> dict:
-    """Extra items + cost items without a snapshot (runs not tied to a ref)."""
-    rates = fx.get_rates(db)
+def priced_bom_costs_only(db: Session, project: M.Project, volume: int,
+                          at: datetime | None = None) -> dict:
+    """Extra items + cost items without a snapshot (runs not tied to a ref).
+    `at` prices as of that instant, like priced_bom."""
+    rates = fx.rates_at(db, at) if at is not None else fx.get_rates(db)
     cur = display_currency(project)
     volume = max(int(volume), 1)
     comp_ids = set()
     # No commit context → the current (latest-anchored) cost revision.
     extras, costs, cost_rev = cost_state.items_for(db, project.id, None)
     comp_ids |= {x.component_id for x in extras if x.component_id}
-    points, supply, names = _component_data(db, comp_ids)
+    points, supply, names = _component_data(db, comp_ids, at=at)
     out_extra = []
     extra_per_device = 0.0
     for x in extras:
@@ -548,18 +514,28 @@ def priced_bom_costs_only(db: Session, project: M.Project, volume: int) -> dict:
     }
 
 
-def run_effective(run: M.ProductionRun) -> dict:
-    """Frozen snapshot + overrides applied → effective run economics.
-    Overrides: {<line key>: {unit_price?, qty_total?, label?, note?, drop?}}
-    plus {"added": [{label, qty, unit_price, note}]} — prices in the frozen
+def run_effective(db: Session, run: M.ProductionRun) -> dict:
+    """Run economics computed ON DEMAND from historical pricing at the run's
+    date (run_pricing_date), with overrides applied. Overrides:
+    {<line key>: {unit_price?, qty_total?, label?, note?, drop?}} plus
+    {"added": [{label, qty, unit_price, note}]} — prices in the project's
     display currency."""
-    frozen = run.frozen or {}
+    project = db.get(M.Project, run.project_id)
+    at = run_pricing_date(run)
+    snap = db.get(M.ProjectSnapshot, run.snapshot_id) if run.snapshot_id else None
+    if snap is not None:
+        bom = priced_bom(db, project, snap, run.board, run.variant, run.qty, at=at)
+        bom_lines = bom["lines"]
+    else:
+        bom = priced_bom_costs_only(db, project, run.qty, at=at)
+        bom_lines = []
+    base = {"lines": bom_lines, "extra": bom["extra"], "costs": bom["costs"]}
     overrides = run.overrides or {}
     qty = max(run.qty or 1, 1)
     lines = []
     totals_parts = 0.0
     for section in ("lines", "extra"):
-        for row in frozen.get(section, []):
+        for row in base.get(section, []):
             eff = dict(row)
             ov = overrides.get(row["key"]) or {}
             eff["overridden"] = bool(ov)
@@ -581,7 +557,7 @@ def run_effective(run: M.ProductionRun) -> dict:
             lines.append(eff)
     costs = []
     cost_total = 0.0
-    for row in frozen.get("costs", []):
+    for row in base.get("costs", []):
         eff = dict(row)
         ov = overrides.get(row["key"]) or {}
         eff["overridden"] = bool(ov)
@@ -611,8 +587,9 @@ def run_effective(run: M.ProductionRun) -> dict:
                       "unit_price": unit, "line_total": total, "note": ov.get("note", "")})
     run_total = totals_parts + cost_total
     return {
-        "frozen_at": frozen.get("computed_at"),
-        "currency": frozen.get("currency"),
+        "priced_at": at.isoformat(),
+        "currency": display_currency(project),
+        "cost_revision": bom.get("cost_revision"),
         "qty": qty,
         "lines": lines,
         "costs": costs,

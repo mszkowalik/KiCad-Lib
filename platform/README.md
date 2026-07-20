@@ -51,19 +51,35 @@ Frontend: `cd web && npm install && npm run dev`.
 
 ## Hooking up KiCad
 
-1. **Live catalog** — add `clients/7Sigma.kicad_httplib` to your KiCad symbol
+1. **Plugin install (recommended)** — the platform serves a **PCM repository**
+   (`/api/kicad/pcm/repository.json`, built by `services/pcm.py` from the file
+   mirror). Add the URL in KiCad → Plugin and Content Manager → Manage
+   Repositories, then install **7Sigma Library** (the DEDUPLICATED
+   `7Sigma_Base.kicad_sym` — only the unique base drawings — plus footprints;
+   registered as `PCM_7Sigma_Base` / `PCM_7Sigma`), **7Sigma 3D Models** and
+   **7Sigma Library Sync** (an IPC action plugin — source in
+   `services/pcm_plugin/` — that adds a toolbar button to the PCB AND
+   schematic editors which pulls updates in place; changed 3D models come as
+   an LZMA delta via `POST /api/kicad/pcm/models-delta`, never the full
+   package; note KiCad requires `requirements.txt` in python plugins). The
+   packages are rewritten to be self-consistent (footprint refs →
+   `PCM_7Sigma:`, 3D paths →
+   `${KICAD10_3RD_PARTY}/3dmodels/com_sevensigma_models3d/`). Each package is
+   versioned from its own content, so adding components changes NOTHING here
+   — parts flow through the live catalog.
+2. **Live catalog** — add `clients/7Sigma.kicad_httplib` to your KiCad symbol
    library table (Preferences → Manage Symbol Libraries → add, type will be
    detected from the file). Token must match `HTTPLIB_TOKEN` (default
-   `dev-token`). Parts become searchable in the chooser with live fields.
-2. **Geometry** — KiCad cannot fetch symbol/footprint geometry over HTTP; the
-   local libraries referenced by `symbolIdStr` (e.g. `Resistor:0402WGF...`)
-   must exist locally. Until `kicadlib sync` ships (Phase 02), the mirror at
-   `http://localhost:8020/files/` serves the exact same `Symbols/*.kicad_sym` +
-   `Footprints/7Sigma.pretty/` + `3DModels/` tree the repo already gives you —
-   your existing local library setup keeps working as-is.
-   The `symbolIdStr` nickname is built from `SYMBOL_LIB_NICKNAME_TEMPLATE`
-   (default `{category}` — i.e. the top-level category name must equal your
-   sym-lib-table nickname).
+   `dev-token`). Parts become searchable in the chooser with live fields;
+   each part's `symbolIdStr` references its BASE drawing
+   (`PCM_7Sigma_Base:<base>`, override lib nickname via `HTTPLIB_SYMBOL_LIB`)
+   and footprints are remapped to `FOOTPRINT_LIB_NICKNAME` (default
+   `PCM_7Sigma`). This is THE way to place parts — new components appear here
+   instantly with no client-side update at all.
+3. **CLI sync (alternative)** — `python3 kicadlib.py sync` mirrors
+   `http://localhost:8020/files/` (`Symbols/*.kicad_sym` +
+   `Footprints/7Sigma.pretty/` + `3DModels/`) locally with unprefixed
+   nicknames; see the KiCad page in the web UI for the steps.
 
 ## Configuration (env)
 
@@ -202,8 +218,9 @@ Per project:
   (`in_library=false`): priceable, usable in BOMs, never emitted into the
   KiCad libraries or the HTTP catalog.
 - **Production runs** — qty, status, date, notes, file attachments (serial
-  lists, invoices → MinIO), a serial-number registry, and a **frozen price
-  snapshot** taken at creation (immune to later price drift) with per-line
+  lists, invoices → MinIO), a serial-number registry, and economics computed
+  on demand from **historical pricing at the run date** (append-only price +
+  FX history; the closest recorded snapshot wins) with per-line
   **final-price overrides** and extra lines (e.g. shipping).
 - **Production files live on runs** (not snapshots), as **versioned sets**:
   on run creation the repo's `production/` directory (JLCPCB Fabrication

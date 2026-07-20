@@ -1,5 +1,6 @@
-"""Production runs: batches with a frozen cost snapshot, price overrides,
-file attachments (MinIO) and a serial-number registry."""
+"""Production runs: batches priced on demand from historical pricing at the
+run's date (project_bom.run_effective), with price overrides, file
+attachments (MinIO) and a serial-number registry."""
 from __future__ import annotations
 
 import uuid
@@ -45,7 +46,7 @@ def _run_snapshot_board(db: Session, r: M.ProductionRun) -> tuple[M.ProjectSnaps
     return snap, board
 
 
-def _run_json(r: M.ProductionRun, with_detail: bool = False) -> dict:
+def _run_json(r: M.ProductionRun, db: Session | None = None, with_detail: bool = False) -> dict:
     out = {
         "id": r.id,
         "project_id": r.project_id,
@@ -58,13 +59,13 @@ def _run_json(r: M.ProductionRun, with_detail: bool = False) -> dict:
         "run_date": r.run_date,
         "notes": r.notes,
         "created_at": r.created_at.isoformat(),
-        "has_frozen": bool(r.frozen),
         "attachment_count": len(r.attachments),
         "device_count": len(r.devices),
         "production_set_count": _pset_count(r),
     }
-    if with_detail:
-        out["effective"] = project_bom.run_effective(r) if r.frozen else None
+    if with_detail and db is not None:
+        # computed on demand from price history at the run's date — never stored
+        out["effective"] = project_bom.run_effective(db, r)
         out["overrides"] = r.overrides or {}
         out["attachments"] = [
             {
@@ -129,9 +130,8 @@ def create_run(project_id: int, body: RunIn, db: Session = Depends(get_db)):
     r = M.ProductionRun(project_id=project_id, **body.model_dump())
     db.add(r)
     db.flush()
-    # freeze the priced BOM + costs at creation — later price drift never
-    # changes what this run cost
-    project_bom.freeze_run(db, project, r)
+    # economics are not stored — they resolve from price history at the
+    # run's date whenever the run is read
     audit(db, "run.create", "production_run", r.id, {"project_id": project_id, "qty": r.qty})
     db.commit()
     # default production info: the repo's production/ dir (JLCPCB exporter
@@ -142,12 +142,12 @@ def create_run(project_id: int, body: RunIn, db: Session = Depends(get_db)):
             production.import_from_repo(db, r, snap, board)
         except Exception:
             db.rollback()
-    return _run_json(r, with_detail=True)
+    return _run_json(r, db, with_detail=True)
 
 
 @router.get("/runs/{run_id}")
 def get_run(run_id: int, db: Session = Depends(get_db)):
-    return _run_json(_run(db, run_id), with_detail=True)
+    return _run_json(_run(db, run_id), db, with_detail=True)
 
 
 @router.patch("/runs/{run_id}")
@@ -169,19 +169,7 @@ def update_run(run_id: int, body: RunPatch, db: Session = Depends(get_db)):
         r.overrides = body.overrides
     audit(db, "run.update", "production_run", r.id)
     db.commit()
-    return _run_json(r, with_detail=True)
-
-
-@router.post("/runs/{run_id}/refreeze")
-def refreeze_run(run_id: int, db: Session = Depends(get_db)):
-    """Recompute the frozen snapshot at current prices (e.g. after changing
-    qty or cost items, before the run is actually ordered)."""
-    r = _run(db, run_id)
-    project = db.get(M.Project, r.project_id)
-    project_bom.freeze_run(db, project, r)
-    audit(db, "run.refreeze", "production_run", r.id)
-    db.commit()
-    return _run_json(r, with_detail=True)
+    return _run_json(r, db, with_detail=True)
 
 
 @router.delete("/runs/{run_id}")

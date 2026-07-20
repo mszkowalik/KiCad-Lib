@@ -407,6 +407,8 @@ export interface KicadConfig {
   public_base_url: string;
   httplib_root_url: string;
   mirror_url: string;
+  /** PCM repository URL — add in KiCad's Plugin and Content Manager. */
+  pcm_repo_url: string;
   token_hint: string;
 }
 
@@ -1389,8 +1391,10 @@ export interface RunEffectiveLine {
 }
 
 export interface RunEffective {
-  frozen_at: string | null;
+  /** The instant prices were resolved at (run date; recomputed on every read). */
+  priced_at: string | null;
   currency: string | null;
+  cost_revision?: CostRevisionInfo | null;
   qty: number;
   lines: RunEffectiveLine[];
   costs: (CostLine & { overridden: boolean; dropped?: boolean; run_cost?: number | null })[];
@@ -1430,7 +1434,6 @@ export interface RunInfo {
   run_date: string;
   notes: string;
   created_at: string;
-  has_frozen: boolean;
   attachment_count: number;
   device_count: number;
   effective?: RunEffective | null;
@@ -1481,10 +1484,6 @@ export function updateRun(runId: number, body: RunPatchBody): Promise<RunInfo> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-}
-
-export function refreezeRun(runId: number): Promise<RunInfo> {
-  return request(`/api/runs/${runId}/refreeze`, { method: "POST" });
 }
 
 export function deleteRun(runId: number): Promise<{ deleted: number }> {
