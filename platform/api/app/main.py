@@ -145,6 +145,18 @@ def startup() -> None:
                 )
                 """
             ))
+            # Fold the legacy component_comments table into the generic
+            # `comments` table (target_type='component'), then DRAIN the source
+            # so this is idempotent — a second startup copies zero rows and can
+            # never resurrect comments deleted through the new path.
+            conn.execute(text(
+                """
+                INSERT INTO comments (target_type, target_id, author, body, created_at)
+                SELECT 'component', component_id, author, body, created_at
+                FROM component_comments
+                """
+            ))
+            conn.execute(text("DELETE FROM component_comments"))
     except Exception:
         # DB may still be starting; the import endpoint will create tables anyway.
         pass

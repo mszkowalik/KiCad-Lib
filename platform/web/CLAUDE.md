@@ -35,7 +35,11 @@ component:
   `<StatusPill status/>` (which already maps statuses → ok/warn/err tones — feed
   it `"draft"`, `"published"`, `"rejected"`, `"running"`, etc.). Other reusable
   components: `CategoryTree`, `ModelViewer`, and the form pieces in
-  `components/editing.tsx`.
+  `components/editing.tsx`. **Notes/comments on anything** (component, symbol,
+  footprint) use the shared `components/CommentsPanel.tsx`
+  (`<CommentsPanel kind="components|symbols|footprints" id={n} noun="…" />`) —
+  it wraps the generic `getComments/addComment/deleteComment(kind, id)` client
+  fns; never re-implement the notes list/form.
 - **Data tables use `components/DataTable.tsx`** — sortable header, per-column
   filter row, fixed column widths with ellipsis (never scrolls horizontally).
   Every BOM/costs table (BomTab, CostsTab) goes through it; pass `Column[]`

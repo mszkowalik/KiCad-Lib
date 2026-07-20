@@ -47,6 +47,16 @@ def available() -> bool:
 
 
 # ------------------------------------------------------------------ read tools
+def _user_notes(db, target_type: str, target_id: int) -> list:
+    """Human comments on any entity (component/symbol/footprint) as context."""
+    return [
+        {"author": c.author, "date": c.created_at.date().isoformat(), "note": c.body}
+        for c in db.query(M.Comment)
+        .filter_by(target_type=target_type, target_id=target_id)
+        .order_by(M.Comment.created_at)
+    ]
+
+
 @beta_tool
 def search_components(query: str = "", category: str = "") -> str:
     """Search the component library. Returns a compact JSON list of matching
@@ -144,11 +154,7 @@ def get_component(name: str) -> str:
                  "comment": v.comment}
                 for v in comp.versions
             ],
-            "user_notes": [
-                {"author": c.author, "date": c.created_at.date().isoformat(), "note": c.body}
-                for c in db.query(M.ComponentComment).filter_by(component_id=comp.id)
-                .order_by(M.ComponentComment.created_at)
-            ],
+            "user_notes": _user_notes(db, "component", comp.id),
         })
     finally:
         db.close()
@@ -242,6 +248,7 @@ def get_symbol(name: str) -> str:
             "versions": [{"version_no": v.version_no, "status": v.status,
                           "created_by": v.created_by, "comment": v.comment}
                          for v in sym.versions],
+            "user_notes": _user_notes(db, "symbol", sym.id),
             "source": cur.source_text if cur else None,
         })
     finally:
@@ -286,6 +293,7 @@ def get_footprint(name: str) -> str:
             "versions": [{"version_no": v.version_no, "status": v.status,
                           "created_by": v.created_by, "comment": v.comment}
                          for v in fp.versions],
+            "user_notes": _user_notes(db, "footprint", fp.id),
             "source": cur.source_text if cur else None,
         })
     finally:

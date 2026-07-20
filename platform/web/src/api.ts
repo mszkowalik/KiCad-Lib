@@ -141,15 +141,19 @@ export interface VersionDetail extends VersionSummary {
 // ------------------------------------------------------------------ editing
 
 export interface SymbolListItem {
+  id: number;
   name: string;
   version_no: number | null;
   pin_count: number | null;
+  comment_count: number;
 }
 
 export interface FootprintListItem {
+  id: number;
   name: string;
   version_no: number | null;
   pad_count: number | null;
+  comment_count: number;
 }
 
 export interface PropertyIn {
@@ -371,6 +375,43 @@ export function getSymbols(signal?: AbortSignal): Promise<SymbolListItem[]> {
 
 export function getFootprints(signal?: AbortSignal): Promise<FootprintListItem[]> {
   return request("/api/footprints", { signal });
+}
+
+// -------------------------------------------------------- template detail
+
+/** URL path segment for template endpoints and routes. */
+export type TemplateKind = "symbols" | "footprints";
+
+export interface TemplateUse {
+  id: number;
+  name: string;
+}
+
+export interface TemplateDetail {
+  id: number;
+  name: string;
+  kind: "symbol" | "footprint";
+  version_no: number | null;
+  created_at: string | null;
+  created_by: string | null;
+  comment: string | null;
+  parsed: Record<string, unknown>;
+  source_text: string | null;
+  /** footprints only */
+  models?: string[];
+  used_by: TemplateUse[];
+}
+
+export function getTemplate(
+  kind: TemplateKind,
+  id: number,
+  signal?: AbortSignal,
+): Promise<TemplateDetail> {
+  return request(`/api/${kind}/${id}`, { signal });
+}
+
+export function templatePreviewUrl(kind: TemplateKind, id: number): string {
+  return `${API_URL}/api/${kind}/${id}/preview.svg`;
 }
 
 // -------------------------------------------------------------- datasheets
@@ -688,21 +729,29 @@ export function cancelJaravisRun(sessionId: number): Promise<{ cancelled: boolea
 
 // ---------------------------------------------------------------- comments
 
-/** Free-form component-scoped note (not versioned). */
-export interface ComponentComment {
+/** Which entity family a comment hangs off — matches the URL path segment. */
+export type CommentTargetKind = "components" | "symbols" | "footprints";
+
+/** Free-form note on any entity (not versioned). */
+export interface Comment {
   id: number;
-  component_id: number;
+  target_type: string; // "component" | "symbol" | "footprint"
+  target_id: number;
   author: string;
   body: string;
   created_at: string;
 }
 
-export function getComments(compId: number, signal?: AbortSignal): Promise<ComponentComment[]> {
-  return request(`/api/components/${compId}/comments`, { signal });
+export function getComments(
+  kind: CommentTargetKind,
+  id: number,
+  signal?: AbortSignal,
+): Promise<Comment[]> {
+  return request(`/api/${kind}/${id}/comments`, { signal });
 }
 
-export function addComment(compId: number, body: string): Promise<ComponentComment> {
-  return request(`/api/components/${compId}/comments`, {
+export function addComment(kind: CommentTargetKind, id: number, body: string): Promise<Comment> {
+  return request(`/api/${kind}/${id}/comments`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ body }),

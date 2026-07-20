@@ -14,6 +14,8 @@ import ProjectDetail from "./pages/ProjectDetail";
 import Projects from "./pages/Projects";
 import Proposals from "./pages/Proposals";
 import Skills from "./pages/Skills";
+import Templates from "./pages/Templates";
+import TemplateDetail from "./pages/TemplateDetail";
 
 /** Live pending-proposals count for the nav badge. `refresh()` after any
  *  approve/reject or when Jaravis reports new proposals. */
@@ -65,6 +67,9 @@ export default function App() {
               Project Management Platform
             </Link>
             <nav className="topbar-nav">
+              <NavLink to="/templates" className={navClass}>
+                Templates
+              </NavLink>
               <NavLink to="/projects" className={navClass}>
                 Projects
               </NavLink>
@@ -93,6 +98,8 @@ export default function App() {
             <Route path="/" element={<Browse />} />
             <Route path="/components/new" element={<NewComponent />} />
             <Route path="/components/:id" element={<ComponentDetail />} />
+            <Route path="/templates" element={<Templates />} />
+            <Route path="/templates/:kind/:id" element={<TemplateDetail />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/projects/:id" element={<ProjectDetail />} />
             <Route path="/jlc-stock" element={<JlcStock />} />

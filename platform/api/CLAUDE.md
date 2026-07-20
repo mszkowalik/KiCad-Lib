@@ -22,6 +22,7 @@ new parallel implementations are the main thing to avoid.
 | Price key → column map | `services/generator.py` → `PRICE_KEY_TO_COL` |
 | Create a draft proposal | the pattern in `services/jaravis.py` (`propose_new_component` / `propose_component_edit`) |
 | S-expr parsing / symbol+footprint parse cache | `util/sexpr.py`, `services/parse_cache.py` |
+| Free-form notes on ANY entity | the generic `comments` table (`M.Comment`, `target_type`+`target_id`) via `routers/comments.py` — never add a per-entity comment table |
 
 If a helper is *almost* right, extend it in place rather than forking a near-copy.
 
@@ -339,4 +340,14 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   base drawings (`symbolIdStr = HTTPLIB_SYMBOL_LIB:<base_component>`), so
   adding components must never bump the library package. 3D model updates
   flow as LZMA deltas (`POST /api/kicad/pcm/models-delta`).
+- **Comments are one generic table** (`M.Comment`: `target_type` ∈
+  {`component`,`symbol`,`footprint`} + `target_id`), NOT per-entity. Component,
+  symbol and footprint notes all flow through `routers/comments.py`
+  (`GET/POST /api/{components|symbols|footprints}/{id}/comments`, generic
+  `DELETE /api/comments/{id}`). The legacy `component_comments` table is drained
+  into `comments` by a one-time idempotent startup migration in `main.py` and is
+  never written again. When a new commentable entity appears, add a
+  `target_type` + URL pair — don't fork a table. Jaravis surfaces these as
+  `user_notes` (via `_user_notes(db, target_type, id)`) on every read tool
+  (full-read policy), so new comment targets get a matching read.
 - When a non-obvious backend convention or workaround emerges, record it here.

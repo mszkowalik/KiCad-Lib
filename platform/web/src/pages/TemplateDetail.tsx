@@ -1,0 +1,183 @@
+import { useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import {
+  errorMessage,
+  getTemplate,
+  isAbortError,
+  templatePreviewUrl,
+  type TemplateDetail as TemplateDetailT,
+  type TemplateKind,
+} from "../api";
+import CommentsPanel from "../components/CommentsPanel";
+import { ErrorBanner, Spinner } from "../components/Ui";
+
+function isKind(k: string | undefined): k is TemplateKind {
+  return k === "symbols" || k === "footprints";
+}
+
+/** Scalar parsed facts (skip the big pin/pad arrays), prettified keys. */
+function scalarFacts(parsed: Record<string, unknown>): [string, string][] {
+  const out: [string, string][] = [];
+  for (const [k, v] of Object.entries(parsed ?? {})) {
+    if (v === null || v === undefined || typeof v === "object") continue;
+    const label = k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    out.push([label, typeof v === "boolean" ? (v ? "yes" : "no") : String(v)]);
+  }
+  return out;
+}
+
+export default function TemplateDetail() {
+  const { kind, id: idParam } = useParams<{ kind: string; id: string }>();
+  const id = Number(idParam);
+  const [data, setData] = useState<TemplateDetailT | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [previewFailed, setPreviewFailed] = useState(false);
+
+  useEffect(() => {
+    if (!isKind(kind) || !Number.isFinite(id)) {
+      setError("Unknown template.");
+      return;
+    }
+    const ctrl = new AbortController();
+    setData(null);
+    setError(null);
+    setPreviewFailed(false);
+    getTemplate(kind, id, ctrl.signal)
+      .then(setData)
+      .catch((err) => {
+        if (!isAbortError(err)) setError(errorMessage(err));
+      });
+    return () => ctrl.abort();
+  }, [kind, id]);
+
+  const noun = kind === "footprints" ? "footprint" : "symbol";
+
+  if (error) {
+    return (
+      <div className="main-solo">
+        <div className="page">
+          <Link to="/templates" className="backlink">
+            ← All templates
+          </Link>
+          <ErrorBanner message={error} />
+        </div>
+      </div>
+    );
+  }
+
+  if (!isKind(kind) || data === null) {
+    return (
+      <div className="main-solo">
+        <div className="page">
+          <Link to="/templates" className="backlink">
+            ← All templates
+          </Link>
+          <Spinner label="Loading template" />
+        </div>
+      </div>
+    );
+  }
+
+  const facts = scalarFacts(data.parsed);
+
+  return (
+    <div className="main-solo">
+      <div className="page">
+        <Link to="/templates" className="backlink">
+          ← All templates
+        </Link>
+        <div className="toolbar">
+          <h1 className="mono">{data.name}</h1>
+          <span className="pill neutral">{data.kind}</span>
+          {data.version_no !== null ? (
+            <span className="toolbar-total">v{data.version_no}</span>
+          ) : null}
+        </div>
+
+        <div className="card pad">
+          <h2 className="card-title">Preview</h2>
+          <div className="preview-fill template-preview">
+            {previewFailed ? (
+              <p className="placeholder">
+                Preview unavailable — the render service (kicad-cli) is offline.
+              </p>
+            ) : (
+              <img
+                src={templatePreviewUrl(kind, id)}
+                alt={`${data.name} preview`}
+                onError={() => setPreviewFailed(true)}
+              />
+            )}
+          </div>
+        </div>
+
+        <div className="card pad">
+          <h2 className="card-title">Details</h2>
+          <table className="kv">
+            <tbody>
+              {data.created_at ? (
+                <tr>
+                  <td>Published</td>
+                  <td>{new Date(data.created_at).toLocaleString()}</td>
+                </tr>
+              ) : null}
+              {data.created_by ? (
+                <tr>
+                  <td>Author</td>
+                  <td>{data.created_by}</td>
+                </tr>
+              ) : null}
+              {data.comment ? (
+                <tr>
+                  <td>Version note</td>
+                  <td>{data.comment}</td>
+                </tr>
+              ) : null}
+              {facts.map(([label, value]) => (
+                <tr key={label}>
+                  <td>{label}</td>
+                  <td className="mono">{value}</td>
+                </tr>
+              ))}
+              {data.models && data.models.length > 0 ? (
+                <tr>
+                  <td>3D models</td>
+                  <td className="mono">{data.models.join(", ")}</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="card pad">
+          <h2 className="card-title">
+            Used by {data.used_by.length} component{data.used_by.length === 1 ? "" : "s"}
+          </h2>
+          {data.used_by.length === 0 ? (
+            <p className="muted">Not used by any component yet.</p>
+          ) : (
+            <p>
+              {data.used_by.map((u, i) => (
+                <span key={u.id}>
+                  {i > 0 ? ", " : ""}
+                  <Link to={`/components/${u.id}`} className="comp-link">
+                    {u.name}
+                  </Link>
+                </span>
+              ))}
+            </p>
+          )}
+        </div>
+
+        {data.source_text ? (
+          <details className="card pad">
+            <summary>Source ({noun === "footprint" ? ".kicad_mod" : ".kicad_sym"})</summary>
+            <pre className="code-block">{data.source_text}</pre>
+          </details>
+        ) : null}
+
+        <CommentsPanel kind={kind} id={id} noun={noun} />
+      </div>
+    </div>
+  );
+}

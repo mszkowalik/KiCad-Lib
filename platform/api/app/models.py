@@ -17,6 +17,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -287,9 +288,9 @@ class ComponentVersionDatasheet(Base):
 
 # ------------------------------------------------------------------ comments
 class ComponentComment(Base):
-    """Free-form notes on a component — future-reference remarks, gotchas,
-    sourcing notes. Component-scoped (not versioned); Jaravis reads them as
-    context."""
+    """LEGACY component-only notes table. Superseded by the generic ``Comment``
+    table below; kept only as the source for the one-time startup migration in
+    ``main.py`` (rows are copied out and the table drained). Do not write here."""
 
     __tablename__ = "component_comments"
 
@@ -298,6 +299,26 @@ class ComponentComment(Base):
     author: Mapped[str] = mapped_column(String(100), default="user")
     body: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Comment(Base):
+    """Free-form notes on any entity — future-reference remarks, gotchas,
+    sourcing notes. Not versioned; Jaravis reads them as context. One table
+    for all targets; ``target_type`` selects the parent family.
+
+    target_type ∈ {"component", "symbol", "footprint"}; ``target_id`` is that
+    parent's id. (No FK — the parent is polymorphic; routers validate existence.)"""
+
+    __tablename__ = "comments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    target_type: Mapped[str] = mapped_column(String(20))
+    target_id: Mapped[int] = mapped_column(Integer)
+    author: Mapped[str] = mapped_column(String(100), default="user")
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (Index("ix_comments_target", "target_type", "target_id"),)
 
 
 # --------------------------------------------------------------------- rules

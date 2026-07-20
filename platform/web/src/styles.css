@@ -1015,6 +1015,11 @@ a.btn:hover {
   height: 280px;
 }
 
+/* template detail: fixed-height preview canvas (same dark canvas as proposals) */
+.template-preview {
+  height: 360px;
+}
+
 /* placeholder/spinner text sits on the dark canvas in both themes */
 .preview-fill .placeholder,
 .preview-fill .spinner-label {
