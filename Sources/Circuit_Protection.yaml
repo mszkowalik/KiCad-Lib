@@ -72,17 +72,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2410010300_BHFUSE-BSMD2920-500-30V_C20539728.pdf
       - key: Price @1 USD
-        value: "0.2243"
+        value: "0.2241"
       - key: Price @100 USD
-        value: "0.1751"
+        value: "0.1748"
       - key: Price @Bulk USD
-        value: "0.1540"
+        value: "0.1538"
       - key: Price Bulk Qty
         value: "150"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: BSMD0805-005-33V
     base_component: Polyfuse
     properties:
@@ -115,17 +115,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411041821_BHFUSE-BSMD0805-005-33V_C883098.pdf
       - key: Price @1 USD
-        value: "0.0544"
+        value: "0.0549"
       - key: Price @100 USD
-        value: "0.0421"
+        value: "0.0423"
       - key: Price @Bulk USD
-        value: "0.0313"
+        value: "0.0314"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: BSMD1206-050-33V
     base_component: Polyfuse
     properties:
@@ -160,15 +160,15 @@ components:
       - key: Price @1 USD
         value: "0.0692"
       - key: Price @100 USD
-        value: "0.0535"
+        value: "0.0536"
       - key: Price @Bulk USD
-        value: "0.0398"
+        value: "0.0397"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: BSMD1206-110-30V
     base_component: Polyfuse
     properties:
@@ -201,17 +201,17 @@ components:
       - key: Datasheet
         value: https://datasheet.lcsc.com/datasheet/pdf/536516336d784fb8e1d4d3f7dabf668c.pdf?productCode=C21714343
       - key: Price @1 USD
-        value: "0.1468"
+        value: "0.1499"
       - key: Price @100 USD
-        value: "0.1135"
+        value: "0.1159"
       - key: Price @Bulk USD
-        value: "0.0844"
+        value: "0.0861"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-17"
+        value: "2026-07-21"
   - name: PTF-77
     base_component: Fuse
     properties:
@@ -244,12 +244,12 @@ components:
       - key: Price @1 USD
         value: "0.1729"
       - key: Price @100 USD
-        value: "0.1363"
+        value: "0.1362"
       - key: Price @Bulk USD
         value: "0.0996"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"

@@ -68,17 +68,17 @@ components:
       - key: Datasheet
         value: "https://datasheet.lcsc.com/lcsc/2201180430_Murata-Electronics-GRM155R61H105KE05D_C1518208.pdf?_gl=1*1ue1ana*_ga*MjA3NTA3NDE1NC4xNzE1NDMyNTIw*_ga_98M84MKSZH*MTcxNzQwNTAzMi45LjEuMTcxNzQwNTIwOS41OS4wLjA."
       - key: Price @1 USD
-        value: "0.0914"
+        value: "0.0918"
       - key: Price @100 USD
-        value: "0.0755"
+        value: "0.0759"
       - key: Price @Bulk USD
-        value: "0.0607"
+        value: "0.0609"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CL21A106KAYNNNE
     base_component: C
     properties:
@@ -109,17 +109,17 @@ components:
       - key: Datasheet
         value: https://jlcpcb.com/api/file/downloadByFileSystemAccessId/8579706853615591424
       - key: Price @1 USD
-        value: "0.1297"
+        value: "0.1201"
       - key: Price @100 USD
-        value: "0.1297"
+        value: "0.1201"
       - key: Price @Bulk USD
-        value: "0.0973"
+        value: "0.0900"
       - key: Price Bulk Qty
         value: "600"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: T491D107K016AT
     base_component: C_Polarized
     properties:
@@ -148,17 +148,17 @@ components:
       - key: Datasheet
         value: "https://lcsc.com/product-detail/Tantalum-Capacitors_KEMET_T491D107K016AT_100uF-107-10-16V_C110548.html"
       - key: Price @1 USD
-        value: "1.4965"
+        value: "1.4984"
       - key: Price @100 USD
-        value: "1.1098"
+        value: "1.1112"
       - key: Price @Bulk USD
-        value: "0.6727"
+        value: "0.6736"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CL21A226MAQNNNE
     base_component: C
     properties:
@@ -191,17 +191,17 @@ components:
       - key: JLCPCB Part Class
         value: Basic Part
       - key: Price @1 USD
-        value: "0.4016"
+        value: "0.3881"
       - key: Price @100 USD
-        value: "0.4016"
+        value: "0.3881"
       - key: Price @Bulk USD
-        value: "0.3287"
+        value: "0.3176"
       - key: Price Bulk Qty
         value: "600"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CL05B104KO5NNNC
     base_component: C
     properties:
@@ -242,9 +242,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CC0402FRNPO9BN270
     base_component: C
     properties:
@@ -285,9 +285,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CS3225X7R476K160NRL
     base_component: C
     properties:
@@ -318,17 +318,17 @@ components:
       - key: Datasheet
         value: "https://datasheet.lcsc.com/lcsc/2411201415_SAMWHA-CS3225X7R476K160NRL_C5440143.pdf"
       - key: Price @1 USD
-        value: "0.3615"
+        value: "0.3614"
       - key: Price @100 USD
-        value: "0.2960"
+        value: "0.2958"
       - key: Price @Bulk USD
-        value: "0.2339"
+        value: "0.2338"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: GRM21BR71H104KA01L
     base_component: C
     properties:
@@ -359,17 +359,17 @@ components:
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200305/C490387_23319AE8C154DEB24C505E6C82A8106A.pdf
       - key: Price @1 USD
-        value: "0.0214"
+        value: "0.0215"
       - key: Price @100 USD
-        value: "0.0214"
+        value: "0.0215"
       - key: Price @Bulk USD
-        value: "0.0188"
+        value: "0.0189"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CC0402JRNPO9BN180
     base_component: C
     properties:
@@ -408,9 +408,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CC0402JRNPO9BN221
     base_component: C
     properties:
@@ -441,17 +441,17 @@ components:
       - key: Datasheet
         value: https://datasheet.lcsc.com/datasheet/pdf/4eca2bb4b507f1633db47e922d632b95.pdf?productCode=C107001
       - key: Price @1 USD
-        value: "0.0060"
+        value: "0.0061"
       - key: Price @100 USD
-        value: "0.0060"
+        value: "0.0061"
       - key: Price @Bulk USD
-        value: "0.0051"
+        value: "0.0052"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CC0402JRNPO9BN330
     base_component: C
     properties:
@@ -490,9 +490,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CC0805JRNPO9BN180
     base_component: C
     properties:
@@ -523,17 +523,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0805JRNPO9BN180_C113825.pdf
       - key: Price @1 USD
-        value: "0.0110"
+        value: "0.0194"
       - key: Price @100 USD
-        value: "0.0110"
+        value: "0.0194"
       - key: Price @Bulk USD
-        value: "0.0096"
+        value: "0.0170"
       - key: Price Bulk Qty
-        value: "1000"
+        value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CC0805KRX7R9BB103
     base_component: C
     properties:
@@ -568,13 +568,13 @@ components:
       - key: Price @100 USD
         value: "0.0192"
       - key: Price @Bulk USD
-        value: "0.0164"
+        value: "0.0165"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CL21B105KBFNNNE
     base_component: C
     properties:
@@ -605,17 +605,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Samsung-Electro-Mechanics-CL21B105KBFNNNE_C28323.pdf
       - key: Price @1 USD
-        value: "0.0771"
+        value: "0.0872"
       - key: Price @100 USD
-        value: "0.0771"
+        value: "0.0872"
       - key: Price @Bulk USD
-        value: "0.0647"
+        value: "0.0733"
       - key: Price Bulk Qty
         value: "600"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CL05B103KB5NNNC
     base_component: C
     properties:
@@ -654,9 +654,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: GRM1555C1H100JA01D
     base_component: C
     properties:
@@ -695,9 +695,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CL05A106MP5NUNC
     base_component: C
     properties:
@@ -728,17 +728,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C315248.pdf
       - key: Price @1 USD
-        value: "0.0556"
+        value: "0.0555"
       - key: Price @100 USD
-        value: "0.0556"
+        value: "0.0555"
       - key: Price @Bulk USD
-        value: "0.0403"
+        value: "0.0402"
       - key: Price Bulk Qty
         value: "600"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 35TZV100M6.3X8
     base_component: CE
     properties:
@@ -769,17 +769,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C88744.pdf
       - key: Price @1 USD
-        value: "0.1319"
+        value: "0.1318"
       - key: Price @100 USD
-        value: "0.1049"
+        value: "0.1048"
       - key: Price @Bulk USD
-        value: "0.0813"
+        value: "0.0814"
       - key: Price Bulk Qty
         value: "900"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: EEEFK1H221GP
     base_component: CE
     properties:
@@ -810,17 +810,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C343913.pdf
       - key: Price @1 USD
-        value: "0.4484"
+        value: "0.4491"
       - key: Price @100 USD
-        value: "0.2649"
+        value: "0.2652"
       - key: Price @Bulk USD
-        value: "0.2291"
+        value: "0.2294"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CL21A475KBQNNNE
     base_component: C
     properties:
@@ -851,17 +851,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C98192.pdf
       - key: Price @1 USD
-        value: "0.1240"
+        value: "0.1461"
       - key: Price @100 USD
-        value: "0.1086"
+        value: "0.1279"
       - key: Price @Bulk USD
-        value: "0.1007"
+        value: "0.1186"
       - key: Price Bulk Qty
         value: "300"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CC0402KRX7R8BB473
     base_component: C
     properties:
@@ -900,9 +900,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CC0402JRNPO9BN101
     base_component: C
     properties:
@@ -933,17 +933,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C106200.pdf
       - key: Price @1 USD
-        value: "0.0053"
+        value: "0.0069"
       - key: Price @100 USD
-        value: "0.0053"
+        value: "0.0069"
       - key: Price @Bulk USD
-        value: "0.0044"
+        value: "0.0057"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: FZ100UF35V90RV0145
     base_component: C_Polarized
     properties:
@@ -972,17 +972,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5155339.pdf
       - key: Price @1 USD
-        value: "0.0622"
+        value: "0.0632"
       - key: Price @100 USD
-        value: "0.0512"
+        value: "0.0519"
       - key: Price @Bulk USD
-        value: "0.0368"
+        value: "0.0376"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: GRM1555C1H3R3CA01D
     base_component: C
     properties:
@@ -1021,9 +1021,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CC0402JRNPO9BN301
     base_component: C
     properties:
@@ -1058,13 +1058,13 @@ components:
       - key: Price @100 USD
         value: "0.0111"
       - key: Price @Bulk USD
-        value: "0.0096"
+        value: "0.0097"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CC0402JRNPO9BN390
     base_component: C
     properties:
@@ -1095,17 +1095,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C106223.pdf
       - key: Price @1 USD
-        value: "0.0099"
+        value: "0.0098"
       - key: Price @100 USD
-        value: "0.0099"
+        value: "0.0098"
       - key: Price @Bulk USD
-        value: "0.0089"
+        value: "0.0088"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CC0402JRNPO9BN102
     base_component: C
     properties:
@@ -1136,17 +1136,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C113780.pdf
       - key: Price @1 USD
-        value: "0.0068"
+        value: "0.0209"
       - key: Price @100 USD
-        value: "0.0068"
+        value: "0.0209"
       - key: Price @Bulk USD
-        value: "0.0058"
+        value: "0.0183"
       - key: Price Bulk Qty
-        value: "1000"
+        value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CL05A225KO5NQNC
     base_component: C
     properties:
@@ -1177,17 +1177,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C170151.pdf
       - key: Price @1 USD
-        value: "0.0100"
+        value: "0.0433"
       - key: Price @100 USD
-        value: "0.0100"
+        value: "0.0433"
       - key: Price @Bulk USD
-        value: "0.0086"
+        value: "0.0373"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: GRM21BR61H106KE43L
     base_component: C
     properties:
@@ -1218,17 +1218,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C440198.pdf
       - key: Price @1 USD
-        value: "0.4609"
+        value: "0.2852"
       - key: Price @100 USD
-        value: "0.4119"
+        value: "0.2475"
       - key: Price @Bulk USD
-        value: "0.3666"
+        value: "0.2125"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: GJM1555C1H1R2WB01D
     base_component: C
     properties:
@@ -1263,17 +1263,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C76899.pdf
       - key: Price @1 USD
-        value: "0.0449"
+        value: "0.0451"
       - key: Price @100 USD
-        value: "0.0449"
+        value: "0.0451"
       - key: Price @Bulk USD
-        value: "0.0355"
+        value: "0.0357"
       - key: Price Bulk Qty
         value: "600"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: EEHZK1E471P
     base_component: CE
     properties:
@@ -1304,17 +1304,17 @@ components:
       - key: Datasheet
         value: https://datasheet.lcsc.com/datasheet/pdf/242ede0bfb543b5edcc6a9353c456beb.pdf?productCode=C242138
       - key: Price @1 USD
-        value: "0.6403"
+        value: "0.6410"
       - key: Price @100 USD
-        value: "0.3965"
+        value: "0.3970"
       - key: Price @Bulk USD
-        value: "0.3413"
+        value: "0.3417"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: C3216X5R1E476MTJ00E
     base_component: C
     properties:
@@ -1345,17 +1345,17 @@ components:
       - key: Supplier Part Number 1
         value: C76659
       - key: Price @1 USD
-        value: "1.0271"
+        value: "0.8834"
       - key: Price @100 USD
-        value: "0.7243"
+        value: "0.5808"
       - key: Price @Bulk USD
-        value: "0.6739"
+        value: "0.5304"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CC0402JRNPO9BN120
     base_component: C
     properties:
@@ -1394,9 +1394,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402CG101J500NT
     base_component: C
     properties:
@@ -1435,9 +1435,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: GRM32EC81C476KE15L
     base_component: C
     properties:
@@ -1468,14 +1468,14 @@ components:
       - key: Datasheet
         value: "https://datasheet.lcsc.com/datasheet/pdf/edce10aa94c282363bc210de8811a68a.pdf?productCode=C162512"
       - key: Price @1 USD
-        value: "0.4701"
+        value: "0.4707"
       - key: Price @100 USD
-        value: "0.4232"
+        value: "0.4237"
       - key: Price @Bulk USD
-        value: "0.3717"
+        value: "0.3723"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"

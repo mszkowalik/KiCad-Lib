@@ -875,8 +875,8 @@ class PricePointIn(BaseModel):
 
 @router.put("/components/{comp_id}/price-points")
 def set_price_points(comp_id: int, points: list[PricePointIn], db: Session = Depends(get_db)):
-    """Replaces all NON-LCSC points (manual ladder) — LCSC rows stay
-    robot-managed."""
+    """Replaces all user-owned points (manual ladder) — JLCPCB and LCSC rows
+    stay robot-managed."""
     if db.get(M.Component, comp_id) is None:
         raise HTTPException(404, "component not found")
     # capture the pre-change state first (no-op when already recorded) so the
@@ -884,11 +884,11 @@ def set_price_points(comp_id: int, points: list[PricePointIn], db: Session = Dep
     ladder.record_price_history(db, comp_id)
     db.query(M.ComponentPricePoint).filter(
         M.ComponentPricePoint.component_id == comp_id,
-        M.ComponentPricePoint.source != "LCSC",
-    ).delete()
+        M.ComponentPricePoint.source.notin_(ladder.AUTO_SOURCES),
+    ).delete(synchronize_session=False)
     for pt in points:
-        if pt.source == "LCSC":
-            raise HTTPException(422, "source LCSC is reserved for the auto-refresher")
+        if pt.source.strip() in ladder.AUTO_SOURCES:
+            raise HTTPException(422, f"source {pt.source.strip()} is reserved for the auto-refresher")
         if pt.qty_from < 1 or pt.unit_price < 0:
             raise HTTPException(422, "qty_from must be >=1 and unit_price >=0")
         db.add(
@@ -913,5 +913,5 @@ def refresh_price_points(comp_id: int, db: Session = Depends(get_db)):
     if not lcsc:
         raise HTTPException(422, "component has no LCSC Part")
     if not ladder.refresh_component(db, comp_id, lcsc):
-        raise HTTPException(502, "LCSC returned no price ladder")
+        raise HTTPException(502, "neither JLCPCB nor LCSC returned a price ladder")
     return list_price_points(comp_id, db)

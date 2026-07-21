@@ -24,7 +24,6 @@
 		)
 		(property "Value" "TestPoint"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -33,7 +32,6 @@
 		)
 		(property "Footprint" "7Sigma:SMD_RH-5015"
 			(at 5.08 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -42,7 +40,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C5199798.pdf"
 			(at 5.08 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -51,7 +48,6 @@
 		)
 		(property "Description" "test point"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -60,7 +56,6 @@
 		)
 		(property "ki_keywords" "test point tp"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -69,7 +64,6 @@
 		)
 		(property "ki_fp_filters" "Pin* Test*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -130,7 +124,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0913"
+		(property "Price @1 USD" "0.0960"
 			(at 0 0 0)
 			(effects
 				(font
@@ -139,7 +133,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0741"
+		(property "Price @100 USD" "0.0783"
 			(at 0 0 0)
 			(effects
 				(font
@@ -148,7 +142,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0587"
+		(property "Price @Bulk USD" "0.0570"
 			(at 0 0 0)
 			(effects
 				(font
@@ -166,7 +160,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -175,7 +169,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -241,7 +235,6 @@
 		)
 		(property "Value" "TestPoint"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -250,7 +243,6 @@
 		)
 		(property "Footprint" "7Sigma:TestPoint_Pad_1.5x1.5mm"
 			(at 5.08 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -259,7 +251,6 @@
 		)
 		(property "Datasheet" ""
 			(at 5.08 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -268,7 +259,6 @@
 		)
 		(property "Description" "test point"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -277,7 +267,6 @@
 		)
 		(property "ki_keywords" "test point tp"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -286,7 +275,6 @@
 		)
 		(property "ki_fp_filters" "Pin* Test*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -377,7 +365,6 @@
 		)
 		(property "Value" "TestPoint"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -386,7 +373,6 @@
 		)
 		(property "Footprint" "7Sigma:TestPoint_Pad_D1.5mm"
 			(at 5.08 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -395,7 +381,6 @@
 		)
 		(property "Datasheet" ""
 			(at 5.08 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -404,7 +389,6 @@
 		)
 		(property "Description" "test point"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -413,7 +397,6 @@
 		)
 		(property "ki_keywords" "test point tp"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -422,7 +405,6 @@
 		)
 		(property "ki_fp_filters" "Pin* Test*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)

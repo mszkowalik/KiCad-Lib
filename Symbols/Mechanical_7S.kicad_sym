@@ -31,7 +31,6 @@
 		)
 		(property "Footprint" "7Sigma:7Sigma_Logo"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -40,7 +39,6 @@
 		)
 		(property "Datasheet" ""
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -49,7 +47,6 @@
 		)
 		(property "Description" "7Sigma Logo"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -58,7 +55,6 @@
 		)
 		(property "ki_keywords" "logo graphic symbol"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -164,7 +160,6 @@
 		)
 		(property "Footprint" "7Sigma:MountingHole_2.5mm_Pad_4mm"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -173,7 +168,6 @@
 		)
 		(property "Datasheet" ""
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -182,7 +176,6 @@
 		)
 		(property "Description" "Mounting Hole with connection"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -191,7 +184,6 @@
 		)
 		(property "ki_keywords" "mounting hole pad"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -200,7 +192,6 @@
 		)
 		(property "ki_fp_filters" "MountingHole*Pad*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -299,7 +290,6 @@
 		)
 		(property "Footprint" "7Sigma:MountingHole_3.2mm_M3_Pad_6mm"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -308,7 +298,6 @@
 		)
 		(property "Datasheet" ""
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -317,7 +306,6 @@
 		)
 		(property "Description" "Mounting Hole with connection"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -326,7 +314,6 @@
 		)
 		(property "ki_keywords" "mounting hole pad M3"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -335,7 +322,6 @@
 		)
 		(property "ki_fp_filters" "MountingHole*Pad*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -433,7 +419,6 @@
 		)
 		(property "Footprint" "7Sigma:HAMMOND_1551RFLGY"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -442,7 +427,6 @@
 		)
 		(property "Datasheet" ""
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -451,7 +435,6 @@
 		)
 		(property "Description" "Enclosure, case, housing"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -460,7 +443,6 @@
 		)
 		(property "ki_keywords" "hammond enclosure case housing mechanical"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -558,7 +540,6 @@
 		)
 		(property "Footprint" "7Sigma:HAMMOND_1551XFLGY"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -567,7 +548,6 @@
 		)
 		(property "Datasheet" ""
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -576,7 +556,6 @@
 		)
 		(property "Description" "Enclosure, case, housing"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -585,7 +564,6 @@
 		)
 		(property "ki_keywords" "hammond enclosure case housing mechanical flanged"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -719,7 +697,6 @@
 		)
 		(property "Footprint" "7Sigma:HAMMOND_1551TFLGY"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -728,7 +705,6 @@
 		)
 		(property "Datasheet" ""
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -737,7 +713,6 @@
 		)
 		(property "Description" "Enclosure, case, housing"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -746,7 +721,6 @@
 		)
 		(property "ki_keywords" "hammond enclosure case housing mechanical flanged"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -844,7 +818,6 @@
 		)
 		(property "Footprint" "7Sigma:FIX-LEMB2-4.8V0-F"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -853,7 +826,6 @@
 		)
 		(property "Datasheet" "https://www.tme.eu/Document/ff2728ec20ffc962365f3d27dbd8df78/FIX-LEMB.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -862,7 +834,6 @@
 		)
 		(property "Description" "Light pipe, optical, mechanical"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -871,7 +842,6 @@
 		)
 		(property "ki_keywords" "lightpipe light pipe optical lens transparent PC mechanical"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1025,7 +995,6 @@
 		)
 		(property "Footprint" "7Sigma:FIX-LEMB2-7V0-F"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1034,7 +1003,6 @@
 		)
 		(property "Datasheet" "https://www.tme.eu/Document/ff2728ec20ffc962365f3d27dbd8df78/FIX-LEMB.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1043,7 +1011,6 @@
 		)
 		(property "Description" "Light pipe, optical, mechanical"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1052,7 +1019,6 @@
 		)
 		(property "ki_keywords" "lightpipe light pipe optical lens transparent PC mechanical"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1179,7 +1145,6 @@
 		)
 		(property "Footprint" "7Sigma:FIX-LEMB3-8V0-F"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1188,7 +1153,6 @@
 		)
 		(property "Datasheet" "https://www.tme.eu/Document/ff2728ec20ffc962365f3d27dbd8df78/FIX-LEMB.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1197,7 +1161,6 @@
 		)
 		(property "Description" "Light pipe, optical, mechanical"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1206,7 +1169,6 @@
 		)
 		(property "ki_keywords" "lightpipe light pipe optical lens transparent PC mechanical"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1333,7 +1295,6 @@
 		)
 		(property "Footprint" "7Sigma:HAMMOND_1556CGY"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1342,7 +1303,6 @@
 		)
 		(property "Datasheet" ""
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1351,7 +1311,6 @@
 		)
 		(property "Description" "Enclosure, case, housing"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1360,7 +1319,6 @@
 		)
 		(property "ki_keywords" "hammond enclosure case housing mechanical"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1458,7 +1416,6 @@
 		)
 		(property "Footprint" "7Sigma:TAKACHI_SIM6-12-3W"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1467,7 +1424,6 @@
 		)
 		(property "Datasheet" "https://www.takachi-enclosure.com/products/SIM"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1476,7 +1432,6 @@
 		)
 		(property "Description" "Enclosure, case, housing"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1485,7 +1440,6 @@
 		)
 		(property "ki_keywords" "takachi enclosure case housing mechanical wall mount IoT"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)

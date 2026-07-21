@@ -12,7 +12,9 @@ dependencies = [
     "pyyaml",
     "ruamel.yaml",
     "kiutils @ git+https://github.com/mszkowalik/kiutils.git@kicad10-compat",
-    "easyeda2kicad",
+    # 1.x drops easyeda2kicad.helpers (add_component_in_symbol_lib_file) —
+    # kicad_lib/easyeda/importer.py needs the 0.x layout
+    "easyeda2kicad<1.0",
 ]
 
 [project.scripts]

@@ -83,13 +83,13 @@ components:
       - key: Price @100 USD
         value: "0.0682"
       - key: Price @Bulk USD
-        value: "0.0528"
+        value: "0.0529"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: AO3401A
     base_component: Q_PMOS_GSD
     properties:
@@ -122,17 +122,17 @@ components:
       - key: Datasheet
         value: https://lcsc.com/product-detail/MOSFET_AOS_AO3401A_AO3401A_C15127.html
       - key: Price @1 USD
-        value: "0.0996"
+        value: "0.0999"
       - key: Price @100 USD
-        value: "0.0837"
+        value: "0.0838"
       - key: Price @Bulk USD
-        value: "0.0688"
+        value: "0.0690"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: SI2319A
     base_component: Q_PMOS_GSD
     properties:
@@ -165,17 +165,17 @@ components:
       - key: Supplier Part Number 1
         value: C545576
       - key: Price @1 USD
-        value: "0.0585"
+        value: "0.0586"
       - key: Price @100 USD
-        value: "0.0455"
+        value: "0.0456"
       - key: Price @Bulk USD
-        value: "0.0390"
+        value: "0.0391"
       - key: Price Bulk Qty
         value: "300"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: MMBT3904,215
     base_component: Q_NPN_BEC
     properties:
@@ -206,17 +206,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2410010131_Nexperia-MMBT3904-215_C426835.pdf
       - key: Price @1 USD
-        value: "0.0307"
+        value: "0.0295"
       - key: Price @100 USD
-        value: "0.0307"
+        value: "0.0295"
       - key: Price @Bulk USD
-        value: "0.0208"
+        value: "0.0196"
       - key: Price Bulk Qty
         value: "600"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: DMN6075S-7
     base_component: DMN6075S
     properties:
@@ -249,17 +249,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_1809081631_Diodes-Incorporated-DMN6075S-7_C155242.pdf
       - key: Price @1 USD
-        value: "0.1600"
+        value: "0.1533"
       - key: Price @100 USD
-        value: "0.1273"
+        value: "0.1198"
       - key: Price @Bulk USD
-        value: "0.0958"
+        value: "0.0874"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: AON7264E
     base_component: AON7264E
     properties:
@@ -292,17 +292,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2410121847_Alpha---Omega-Semicon-AON7264E_C431191.pdf
       - key: Price @1 USD
-        value: "0.2896"
+        value: "0.2768"
       - key: Price @100 USD
-        value: "0.2362"
+        value: "0.2233"
       - key: Price @Bulk USD
-        value: "0.1847"
+        value: "0.1717"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: HSBB6115
     base_component: HSBB6115
     properties:
@@ -335,17 +335,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2410121456_HUASHUO-HSBB6115_C845604.pdf
       - key: Price @1 USD
-        value: "0.4452"
+        value: "0.4458"
       - key: Price @100 USD
-        value: "0.2714"
+        value: "0.2717"
       - key: Price @Bulk USD
-        value: "0.2177"
+        value: "0.2180"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: BSC0702LS
     base_component: BSC0702LS
     properties:
@@ -378,17 +378,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C501503.pdf
       - key: Price @1 USD
-        value: "1.2995"
+        value: "1.3829"
       - key: Price @100 USD
-        value: "0.9958"
+        value: "1.0787"
       - key: Price @Bulk USD
-        value: "0.9747"
+        value: "1.0575"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: DMN2310UT-13
     base_component: Q_NMOS_GSD
     properties:
@@ -423,15 +423,15 @@ components:
       - key: Price @1 USD
         value: "0.0812"
       - key: Price @100 USD
-        value: "0.0719"
+        value: "0.0720"
       - key: Price @Bulk USD
         value: "0.0638"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: SK2301AAT
     base_component: Q_PMOS_GSD
     properties:
@@ -468,13 +468,13 @@ components:
       - key: Price @100 USD
         value: "0.0428"
       - key: Price @Bulk USD
-        value: "0.0294"
+        value: "0.0295"
       - key: Price Bulk Qty
         value: "600"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: BC817-40-7-F
     base_component: Q_NPN_BEC
     properties:
@@ -505,17 +505,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C435867.pdf
       - key: Price @1 USD
-        value: "0.2386"
+        value: "0.2394"
       - key: Price @100 USD
-        value: "0.1944"
+        value: "0.1951"
       - key: Price @Bulk USD
-        value: "0.1519"
+        value: "0.1523"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CSD17577Q3A
     base_component: CSD17577Q3A
     properties:
@@ -548,17 +548,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C201632.pdf
       - key: Price @1 USD
-        value: "0.7717"
+        value: "0.4881"
       - key: Price @100 USD
-        value: "0.5167"
+        value: "0.2701"
       - key: Price @Bulk USD
-        value: "0.4631"
+        value: "0.2311"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: SI2308A
     base_component: Q_NMOS_GSD
     properties:
@@ -591,17 +591,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C347491.pdf
       - key: Price @1 USD
-        value: "0.0458"
+        value: "0.0459"
       - key: Price @100 USD
-        value: "0.0354"
+        value: "0.0355"
       - key: Price @Bulk USD
         value: "0.0303"
       - key: Price Bulk Qty
         value: "300"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: BC847CLT1G
     base_component: Q_NPN_BEC
     properties:
@@ -632,14 +632,14 @@ components:
       - key: Datasheet
         value: https://datasheet.lcsc.com/lcsc/2410121940_onsemi-BC847CLT1G_C150094.pdf
       - key: Price @1 USD
-        value: "0.0437"
+        value: "0.0349"
       - key: Price @100 USD
-        value: "0.0437"
+        value: "0.0349"
       - key: Price @Bulk USD
-        value: "0.0296"
+        value: "0.0241"
       - key: Price Bulk Qty
         value: "600"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"

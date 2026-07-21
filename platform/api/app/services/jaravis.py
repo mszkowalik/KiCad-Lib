@@ -111,9 +111,13 @@ def get_component(name: str) -> str:
         if cv is None:
             drafts = [v.version_no for v in comp.versions if v.status == "draft"]
             return json.dumps({"error": f"{name!r} has no published version", "draft_versions": drafts})
+        from .ladder import effective_points
+
         price = db.query(M.ComponentPrice).filter_by(component_id=comp.id).first()
-        points = (db.query(M.ComponentPricePoint).filter_by(component_id=comp.id)
-                  .order_by(M.ComponentPricePoint.qty_from).all())
+        points = effective_points(
+            db.query(M.ComponentPricePoint).filter_by(component_id=comp.id)
+            .order_by(M.ComponentPricePoint.qty_from).all()
+        )
         supply = db.query(M.ComponentSupply).filter_by(component_id=comp.id).first()
         private = db.query(M.JlcStockItem).filter_by(component_id=comp.id).first()
         sheets = (db.query(M.Datasheet)
@@ -851,15 +855,16 @@ def get_jlc_details(lcsc_codes: str) -> str:
 @beta_tool
 def refresh_supply(component: str) -> str:
     """Live re-check of a component's supplier data RIGHT NOW: refetches the
-    LCSC price ladder + LCSC retail stock and the JLCPCB assembly stock, and
-    records price history. Use when a stock/price figure looks stale
-    (check `checked_at` from get_component). This data is auto-managed, so no
-    user approval is needed. Manual price entries are never touched.
+    JLCPCB assembly price ladder + stock (the default price source) and the
+    LCSC retail ladder + stock (fallback), and records price history. Use when
+    a stock/price figure looks stale (check `checked_at` from get_component).
+    This data is auto-managed, so no user approval is needed. Manual price
+    entries are never touched.
 
     Args:
         component: Exact component name (must have an LCSC Part property).
     """
-    from .ladder import lcsc_part_of, refresh_component
+    from .ladder import effective_points, lcsc_part_of, refresh_component
 
     db = SessionLocal()
     try:
@@ -874,8 +879,10 @@ def refresh_supply(component: str) -> str:
             return json.dumps({"error": f"{component!r} has no LCSC Part property — nothing to refresh"})
         wrote = refresh_component(db, comp.id, lcsc)
         supply = db.query(M.ComponentSupply).filter_by(component_id=comp.id).first()
-        points = (db.query(M.ComponentPricePoint).filter_by(component_id=comp.id)
-                  .order_by(M.ComponentPricePoint.qty_from).all())
+        points = effective_points(
+            db.query(M.ComponentPricePoint).filter_by(component_id=comp.id)
+            .order_by(M.ComponentPricePoint.qty_from).all()
+        )
         private = db.query(M.JlcStockItem).filter_by(component_id=comp.id).first()
         return json.dumps({
             "component": comp.name, "lcsc": lcsc, "ladder_updated": wrote,

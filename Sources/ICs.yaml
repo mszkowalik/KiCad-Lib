@@ -99,17 +99,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/bq24092.pdf"
       - key: Price @1 USD
-        value: "0.8351"
+        value: "0.8379"
       - key: Price @100 USD
-        value: "0.7930"
+        value: "0.7956"
       - key: Price @Bulk USD
-        value: "0.7930"
+        value: "0.7956"
       - key: Price Bulk Qty
-        value: "100"
+        value: "104"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
     remove_properties: []
   - name: STM32C071G8U6
     base_component: STM32C071G8U6
@@ -131,17 +131,17 @@ components:
       - key: Datasheet
         value: "https://datasheet.lcsc.com/datasheet/pdf/b96eda3d04ec68a8f52839538fc3b7d2.pdf?productCode=C44521811"
       - key: Price @1 USD
-        value: "1.7089"
+        value: "1.7164"
       - key: Price @100 USD
-        value: "1.0950"
+        value: "1.0998"
       - key: Price @Bulk USD
-        value: "0.9832"
+        value: "0.9876"
       - key: Price Bulk Qty
         value: "980"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
     remove_properties: []
   - name: "XC7A35T-2FTG256I"
     base_component: "XC7A35T-FTG256"
@@ -163,17 +163,17 @@ components:
       - key: Datasheet
         value: "https://datasheet.lcsc.com/datasheet/pdf/9a1a25a038fbd05e37c20b75ac1310f8.pdf?productCode=C1521744"
       - key: Price @1 USD
-        value: "52.6734"
+        value: "74.4715"
       - key: Price @100 USD
-        value: "50.1257"
+        value: "70.8696"
       - key: Price @Bulk USD
-        value: "50.1257"
+        value: "70.8696"
       - key: Price Bulk Qty
-        value: "30"
+        value: "36"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
     remove_properties: []
   - name: "XC7A100T-2FGG484I"
     base_component: "XC7A100T-FGG484"
@@ -195,17 +195,17 @@ components:
       - key: Datasheet
         value: "https://www.xilinx.com/support/documentation/data_sheets/ds182_Artix_7.pdf"
       - key: Price @1 USD
-        value: "52.7024"
+        value: "67.9510"
       - key: Price @100 USD
-        value: "47.0761"
+        value: "62.3318"
       - key: Price @Bulk USD
-        value: "47.0761"
+        value: "62.3318"
       - key: Price Bulk Qty
-        value: "30"
+        value: "34"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
     remove_properties: []
   - name: W25Q16JVUXIQ
     base_component: W25Q16JV
@@ -227,17 +227,17 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/lcsc_datasheet_2205122030_Winbond-Elec-W25Q16JVUXIQ_C2843335.pdf"
       - key: Price @1 USD
-        value: "2.1645"
+        value: "2.1735"
       - key: Price @100 USD
-        value: "2.1645"
+        value: "1.9002"
       - key: Price @Bulk USD
-        value: "1.7449"
+        value: "1.5830"
       - key: Price Bulk Qty
-        value: "450"
+        value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
     remove_properties: []
   - name: W25Q64JVSSIQ
     base_component: W25Q_SOIC8
@@ -261,17 +261,17 @@ components:
       - key: Datasheet
         value: "https://datasheet.lcsc.com/datasheet/pdf/d77c353a9728c34cf393902d06a1ff29.pdf?productCode=C179171"
       - key: Price @1 USD
-        value: "1.8473"
+        value: "1.8530"
       - key: Price @100 USD
-        value: "1.8473"
+        value: "1.8530"
       - key: Price @Bulk USD
-        value: "1.4514"
+        value: "1.4480"
       - key: Price Bulk Qty
         value: "420"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
     remove_properties: []
   - name: WS2811N
     base_component: WS2811N
@@ -293,17 +293,17 @@ components:
       - key: Supplier Part Number 1
         value: C3034985
       - key: Price @1 USD
-        value: "0.1231"
+        value: "0.1232"
       - key: Price @100 USD
-        value: "0.0981"
+        value: "0.0983"
       - key: Price @Bulk USD
         value: "0.0763"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
     remove_properties: []
   - name: "WS2812E-1313"
     base_component: WS2812
@@ -325,7 +325,7 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/lcsc_datasheet_2402291527_Worldsemi-WS2812E-1313_C5446700.pdf"
       - key: Price @1 USD
-        value: "0.0987"
+        value: "0.0986"
       - key: Price @100 USD
         value: "0.0780"
       - key: Price @Bulk USD
@@ -333,9 +333,9 @@ components:
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
     remove_properties: []
   - name: "WS2816C-1313"
     base_component: WS2812
@@ -359,15 +359,15 @@ components:
       - key: Price @1 USD
         value: "0.0905"
       - key: Price @100 USD
-        value: "0.0725"
+        value: "0.0724"
       - key: Price @Bulk USD
         value: "0.0568"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: "XC6206P332MR-G"
     base_component: XC6206PxxxMR
     properties:
@@ -398,17 +398,17 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Torex-Semicon-XC6206P332MR-G_C5446.pdf"
       - key: Price @1 USD
-        value: "0.1318"
+        value: "0.1317"
       - key: Price @100 USD
-        value: "0.1080"
+        value: "0.1079"
       - key: Price @Bulk USD
-        value: "0.0857"
+        value: "0.0856"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: "LSM6DS3TR-C"
     base_component: LSM6DS3
     properties:
@@ -429,17 +429,17 @@ components:
       - key: Datasheet
         value: "https://www.mouser.pl/datasheet/2/389/lsm6ds3tr_c-1761429.pdf"
       - key: Price @1 USD
-        value: "1.5942"
+        value: "1.6009"
       - key: Price @100 USD
-        value: "1.1244"
+        value: "1.1291"
       - key: Price @Bulk USD
-        value: "1.0418"
+        value: "1.0461"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: "ESP32-WROOM-32UE-N4"
     base_component: "ESP32-WROOM-32U"
     properties:
@@ -460,17 +460,17 @@ components:
       - key: Datasheet
         value: "https://www.espressif.com/sites/default/files/documentation/esp32-wroom-32d_esp32-wroom-32u_datasheet_en.pdf"
       - key: Price @1 USD
-        value: "4.0778"
+        value: "4.0835"
       - key: Price @100 USD
-        value: "3.1908"
+        value: "3.1952"
       - key: Price @Bulk USD
-        value: "3.0494"
+        value: "3.0537"
       - key: Price Bulk Qty
         value: "650"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: RP2040
     base_component: RP2040
     properties:
@@ -491,17 +491,17 @@ components:
       - key: Datasheet
         value: "https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf"
       - key: Price @1 USD
-        value: "0.9930"
+        value: "0.9941"
       - key: Price @100 USD
-        value: "0.7639"
+        value: "0.7647"
       - key: Price @Bulk USD
-        value: "0.7249"
+        value: "0.7256"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: CH340B
     base_component: CH340B
     properties:
@@ -522,17 +522,17 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/lcsc_datasheet_2403131142_WCH-Jiangsu-Qin-Heng-CH340B_C81010.pdf"
       - key: Price @1 USD
-        value: "1.1765"
+        value: "1.0071"
       - key: Price @100 USD
-        value: "0.7714"
+        value: "0.6459"
       - key: Price @Bulk USD
-        value: "0.6952"
+        value: "0.5646"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: "M3535N1UVS8U12-365NM"
     base_component: M3535N1
     properties:
@@ -553,17 +553,17 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/lcsc_datasheet_2105281611_Silverlight-M3535N1UVS8U12-365nm_C2833504.pdf"
       - key: Price @1 USD
-        value: "1.1421"
+        value: "1.2007"
       - key: Price @100 USD
-        value: "0.6825"
+        value: "0.7175"
       - key: Price @Bulk USD
-        value: "0.6082"
+        value: "0.6394"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: "MP34DT05TR-A"
     base_component: MP34DT05
     properties:
@@ -583,6 +583,18 @@ components:
         value: C2688664
       - key: Datasheet
         value: "https://www.mouser.pl/datasheet/2/389/mp34dt05_a-1850143.pdf"
+      - key: Price @1 USD
+        value: "2.5526"
+      - key: Price @100 USD
+        value: "1.6399"
+      - key: Price @Bulk USD
+        value: "1.4724"
+      - key: Price Bulk Qty
+        value: "1000"
+      - key: Price Source
+        value: JLCPCB
+      - key: Price Updated
+        value: "2026-07-21"
   - name: "SP3485EN-L/TR"
     base_component: SP3485
     properties:
@@ -603,17 +615,17 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_MaxLinear-SP3485EN-L-TR_C8963.pdf"
       - key: Price @1 USD
-        value: "0.3051"
+        value: "0.3061"
       - key: Price @100 USD
-        value: "0.2069"
+        value: "0.2075"
       - key: Price @Bulk USD
-        value: "0.1702"
+        value: "0.1708"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: TPS61023DRLR
     base_component: TPS61023
     properties:
@@ -636,17 +648,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/tps61023.pdf"
       - key: Price @1 USD
-        value: "0.2673"
+        value: "0.2680"
       - key: Price @100 USD
-        value: "0.2149"
+        value: "0.2154"
       - key: Price @Bulk USD
-        value: "0.1666"
+        value: "0.1670"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 74LVC1G175GW,125
     base_component: 74LVC1G175GW,125
     properties:
@@ -669,17 +681,17 @@ components:
       - key: Datasheet
         value: "https://assets.nexperia.com/documents/data-sheet/74LVC1G175.pdf"
       - key: Price @1 USD
-        value: "0.1448"
+        value: "0.1455"
       - key: Price @100 USD
-        value: "0.1147"
+        value: "0.1152"
       - key: Price @Bulk USD
-        value: "0.0883"
+        value: "0.0887"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: BTT60501ERAXUMA1
     base_component: "BTT6050-1ERA"
     properties:
@@ -702,17 +714,17 @@ components:
       - key: Datasheet
         value: "https://www.infineon.com/dgdl/Infineon-BTT6050-1ERA-DS-v01_00-EN.pdf?fileId=5546d46269e1c019016a21fa5b7a0d8a"
       - key: Price @1 USD
-        value: "2.8318"
+        value: "2.8324"
       - key: Price @100 USD
-        value: "1.8136"
+        value: "1.8140"
       - key: Price @Bulk USD
-        value: "1.6266"
+        value: "1.6269"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: SN74LVC1G17DCKR
     base_component: 74LVC1G17
     properties:
@@ -737,15 +749,15 @@ components:
       - key: Price @1 USD
         value: "0.0824"
       - key: Price @100 USD
-        value: "0.0667"
+        value: "0.0666"
       - key: Price @Bulk USD
         value: "0.0529"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: SN74LVC1G14DCKR
     base_component: 74LVC1G14
     properties:
@@ -768,7 +780,7 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/lcsc_datasheet_1811032110_Texas-Instruments-SN74LVC1G14DCKR_C35740.pdf"
       - key: Price @1 USD
-        value: "0.0654"
+        value: "0.0653"
       - key: Price @100 USD
         value: "0.0513"
       - key: Price @Bulk USD
@@ -776,9 +788,9 @@ components:
       - key: Price Bulk Qty
         value: "300"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: SN74HC21DR
     base_component: SN74HC21
     properties:
@@ -801,17 +813,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/sn74hc21.pdf"
       - key: Price @1 USD
-        value: "0.5185"
+        value: "0.5206"
       - key: Price @100 USD
-        value: "0.3127"
+        value: "0.3140"
       - key: Price @Bulk USD
-        value: "0.2431"
+        value: "0.2441"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: UCC27538DBVR
     base_component: UCC27538
     properties:
@@ -834,17 +846,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/ucc27538.pdf"
       - key: Price @1 USD
-        value: "1.2826"
+        value: "1.2836"
       - key: Price @100 USD
-        value: "0.8892"
+        value: "0.8899"
       - key: Price @Bulk USD
-        value: "0.8258"
+        value: "0.8265"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: LMR33630ADDAR
     base_component: LMR33630
     properties:
@@ -867,17 +879,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/lmr33630.pdf?ts=1739431504302"
       - key: Price @1 USD
-        value: "0.6955"
+        value: "0.6947"
       - key: Price @100 USD
-        value: "0.4642"
+        value: "0.4637"
       - key: Price @Bulk USD
-        value: "0.4365"
+        value: "0.4360"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: "ESP32-S3FN8"
     base_component: "ESP32-S3"
     properties:
@@ -900,17 +912,17 @@ components:
       - key: Datasheet
         value: "https://www.espressif.com/sites/default/files/documentation/esp32-s3_datasheet_en.pdf"
       - key: Price @1 USD
-        value: "3.6546"
+        value: "3.6605"
       - key: Price @100 USD
-        value: "2.8766"
+        value: "2.8812"
       - key: Price @Bulk USD
-        value: "2.6979"
+        value: "2.7023"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: "LBUA5QJ2AB-828"
     base_component: "LBUA5QJ2AB-828"
     properties:
@@ -933,17 +945,17 @@ components:
       - key: Datasheet
         value: "https://www.mouser.pl/datasheet/2/281/1/Murata_UWB_module_2AB_828_Product_Brief_Rev_D-3049200.pdf"
       - key: Price @1 USD
-        value: "34.6956"
+        value: "34.6783"
       - key: Price @100 USD
-        value: "33.8411"
+        value: "33.8242"
       - key: Price @Bulk USD
-        value: "33.8411"
+        value: "33.8242"
       - key: Price Bulk Qty
-        value: "10"
+        value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: TPS63020DSJR
     base_component: TPS6302X
     properties:
@@ -966,17 +978,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/tps63020.pdf"
       - key: Price @1 USD
-        value: "0.8604"
+        value: "0.8623"
       - key: Price @100 USD
-        value: "0.5374"
+        value: "0.5385"
       - key: Price @Bulk USD
-        value: "0.5130"
+        value: "0.5141"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: LIS2MDLTR
     base_component: LIS2MDL
     properties:
@@ -999,17 +1011,17 @@ components:
       - key: Datasheet
         value: "https://www.st.com/resource/en/datasheet/lis2mdl.pdf"
       - key: Price @1 USD
-        value: "3.6393"
+        value: "3.6377"
       - key: Price @100 USD
-        value: "2.7230"
+        value: "2.7218"
       - key: Price @Bulk USD
-        value: "2.5765"
+        value: "2.5754"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: "BQ27441DRZR-G1A"
     base_component: BQ27441
     properties:
@@ -1036,17 +1048,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/gpn/bq27441-g1"
       - key: Price @1 USD
-        value: "3.1620"
+        value: "3.1562"
       - key: Price @100 USD
-        value: "2.3308"
+        value: "2.3265"
       - key: Price @Bulk USD
-        value: "2.1727"
+        value: "2.1687"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: BQ25185DLHR
     base_component: BQ25185
     properties:
@@ -1073,17 +1085,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/bq25185.pdf"
       - key: Price @1 USD
-        value: "1.6290"
+        value: "1.6269"
       - key: Price @100 USD
-        value: "1.0735"
+        value: "1.0722"
       - key: Price @Bulk USD
-        value: "0.9709"
+        value: "0.9697"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: LC76GPAMD
     base_component: LC76G
     properties:
@@ -1135,17 +1147,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com.cn/cn/lit/ds/symlink/bq25186.pdf"
       - key: Price @1 USD
-        value: "2.2455"
+        value: "2.2549"
       - key: Price @100 USD
-        value: "1.4695"
+        value: "1.4756"
       - key: Price @Bulk USD
-        value: "1.3285"
+        value: "1.3341"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: LIS3MDLTR
     base_component: LIS3MDL
     properties:
@@ -1168,17 +1180,17 @@ components:
       - key: Datasheet
         value: "https://www.st.com/resource/en/datasheet/lis3mdl.pdf"
       - key: Price @1 USD
-        value: "5.7320"
+        value: "5.7559"
       - key: Price @100 USD
-        value: "4.0843"
+        value: "4.1014"
       - key: Price @Bulk USD
-        value: "3.7814"
+        value: "3.7972"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: AT2659
     base_component: AT2659
     properties:
@@ -1201,17 +1213,17 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/C92450.pdf"
       - key: Price @1 USD
-        value: "0.1163"
+        value: "0.1165"
       - key: Price @100 USD
-        value: "0.0952"
+        value: "0.0954"
       - key: Price @Bulk USD
-        value: "0.0768"
+        value: "0.0770"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: "NID65-12"
     base_component: NID65
     properties:
@@ -1275,17 +1287,17 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/C81363.pdf"
       - key: Price @1 USD
-        value: "0.1393"
+        value: "0.1390"
       - key: Price @100 USD
-        value: "0.1094"
+        value: "0.1092"
       - key: Price @Bulk USD
-        value: "0.0832"
+        value: "0.0830"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 74LVC2G34GV,125
     base_component: 74LVC2G34
     properties:
@@ -1308,17 +1320,17 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/C548649.pdf"
       - key: Price @1 USD
-        value: "0.1935"
+        value: "0.1933"
       - key: Price @100 USD
-        value: "0.1534"
+        value: "0.1533"
       - key: Price @Bulk USD
-        value: "0.1148"
+        value: "0.1147"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: NCP115ASN330T2G
     base_component: NCP115ASN
     properties:
@@ -1341,17 +1353,17 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/C603505.pdf"
       - key: Price @1 USD
-        value: "0.0735"
+        value: "0.0736"
       - key: Price @100 USD
-        value: "0.0575"
+        value: "0.0576"
       - key: Price @Bulk USD
         value: "0.0436"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: MAX3222EIPWR
     base_component: MAX3222E
     properties:
@@ -1374,17 +1386,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/cn/lit/gpn/max3222e"
       - key: Price @1 USD
-        value: "2.0710"
+        value: "2.0776"
       - key: Price @100 USD
-        value: "1.4596"
+        value: "1.4642"
       - key: Price @Bulk USD
-        value: "1.3461"
+        value: "1.3503"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: "SP3222EEY-L/TR"
     base_component: MAX3222E
     properties:
@@ -1407,17 +1419,17 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/C916160.pdf"
       - key: Price @1 USD
-        value: "0.9192"
+        value: "0.9762"
       - key: Price @100 USD
-        value: "0.5814"
+        value: "0.6362"
       - key: Price @Bulk USD
-        value: "0.4564"
+        value: "0.5109"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-06-22"
+        value: "2026-07-21"
   - name: "AP63357QZV-7"
     base_component: AP6335XQ
     properties:
@@ -1440,17 +1452,17 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/C3194572.pdf"
       - key: Price @1 USD
-        value: "0.7000"
+        value: "0.7159"
       - key: Price @100 USD
-        value: "0.5123"
+        value: "0.5239"
       - key: Price @Bulk USD
-        value: "0.4757"
+        value: "0.4865"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: "ZED-F9P-04B"
     base_component: "ZED-F9P"
     properties:
@@ -1473,17 +1485,17 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/C5120257.pdf"
       - key: Price @1 USD
-        value: "82.5183"
+        value: "82.8628"
       - key: Price @100 USD
-        value: "82.5183"
+        value: "82.8628"
       - key: Price @Bulk USD
-        value: "82.5183"
+        value: "82.8628"
       - key: Price Bulk Qty
-        value: "1"
+        value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: "LM2594M-5.0"
     base_component: "LM2594M-XX"
     properties:
@@ -1506,17 +1518,17 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/C2904795.pdf"
       - key: Price @1 USD
-        value: "0.6903"
+        value: "0.9274"
       - key: Price @100 USD
-        value: "0.4536"
+        value: "0.5825"
       - key: Price @Bulk USD
-        value: "0.3968"
+        value: "0.4003"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: LD1117S33CTR
     base_component: LD1117S
     properties:
@@ -1539,17 +1551,17 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/C35879.pdf"
       - key: Price @1 USD
-        value: "0.1754"
+        value: "0.1751"
       - key: Price @100 USD
-        value: "0.1376"
+        value: "0.1375"
       - key: Price @Bulk USD
-        value: "0.1028"
+        value: "0.1027"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: "LTC6268HS8-10#PBF"
     base_component: "LTC6268xS8-10"
     properties:
@@ -1618,17 +1630,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/tps7a20.pdf"
       - key: Price @1 USD
-        value: "0.2694"
+        value: "0.2693"
       - key: Price @100 USD
         value: "0.2124"
       - key: Price @Bulk USD
-        value: "0.1576"
+        value: "0.1575"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: TPS7A2033PDBVR
     base_component: TPS7A20xxxDBV
     properties:
@@ -1655,17 +1667,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/tps7a20.pdf"
       - key: Price @1 USD
-        value: "0.1986"
+        value: "0.2003"
       - key: Price @100 USD
-        value: "0.1564"
+        value: "0.1579"
       - key: Price @Bulk USD
-        value: "0.1175"
+        value: "0.1185"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: "ADA4945-1ACPZ-R7"
     base_component: "ADA4945-1"
     properties:
@@ -1692,17 +1704,17 @@ components:
       - key: Datasheet
         value: "https://www.analog.com/media/en/technical-documentation/data-sheets/ada4945-1.pdf"
       - key: Price @1 USD
-        value: "6.4941"
+        value: "7.6789"
       - key: Price @100 USD
-        value: "4.8584"
+        value: "5.6241"
       - key: Price @Bulk USD
-        value: "4.6517"
+        value: "5.6241"
       - key: Price Bulk Qty
-        value: "500"
+        value: "104"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: TPS65135RTER
     base_component: TPS65135
     properties:
@@ -1729,17 +1741,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/tps65135.pdf"
       - key: Price @1 USD
-        value: "1.4608"
+        value: "1.4626"
       - key: Price @100 USD
-        value: "0.9912"
+        value: "0.9924"
       - key: Price @Bulk USD
-        value: "0.8125"
+        value: "0.8135"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: TPS7A3901DSCR
     base_component: TPS7A39
     properties:
@@ -1766,17 +1778,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/tps7a39.pdf"
       - key: Price @1 USD
-        value: "3.2861"
+        value: "3.3107"
       - key: Price @100 USD
-        value: "2.5521"
+        value: "2.5705"
       - key: Price @Bulk USD
-        value: "2.4414"
+        value: "2.4599"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: STM32H725RGV3
     base_component: STM32H725RGVx
     properties:
@@ -1803,17 +1815,17 @@ components:
       - key: Datasheet
         value: "https://www.st.com/resource/en/datasheet/stm32h725ag.pdf"
       - key: Price @1 USD
-        value: "18.8295"
+        value: "18.8522"
       - key: Price @100 USD
-        value: "15.1783"
+        value: "15.1966"
       - key: Price @Bulk USD
-        value: "15.1783"
+        value: "15.1966"
       - key: Price Bulk Qty
-        value: "100"
+        value: "104"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: OPA354AIDBVR
     base_component: OPA354AXDBV
     properties:
@@ -1840,17 +1852,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/opa354a-q1.pdf"
       - key: Price @1 USD
-        value: "1.3399"
+        value: "1.3455"
       - key: Price @100 USD
-        value: "0.8069"
+        value: "0.8102"
       - key: Price @Bulk USD
-        value: "0.7178"
+        value: "0.7208"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: TPS54302DDCR
     base_component: TPS54302
     properties:
@@ -1873,17 +1885,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/tps54302.pdf"
       - key: Price @1 USD
-        value: "0.2507"
+        value: "0.2519"
       - key: Price @100 USD
-        value: "0.2126"
+        value: "0.2135"
       - key: Price @Bulk USD
-        value: "0.1774"
+        value: "0.1782"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: "ESP32-C6"
     base_component: "ESP32-C6"
     properties:
@@ -1906,17 +1918,17 @@ components:
       - key: Datasheet
         value: "https://www.espressif.com/sites/default/files/documentation/esp32-c6_datasheet_en.pdf"
       - key: Price @1 USD
-        value: "2.9174"
+        value: "2.9219"
       - key: Price @100 USD
-        value: "2.2141"
+        value: "2.2175"
       - key: Price @Bulk USD
-        value: "2.0516"
+        value: "2.0548"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: W25Q64JWUUIQ
     base_component: W25Q64JW
     properties:
@@ -1939,17 +1951,17 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/C6604692.pdf"
       - key: Price @1 USD
-        value: "3.0413"
+        value: "3.0374"
       - key: Price @100 USD
-        value: "2.7888"
+        value: "2.7852"
       - key: Price @Bulk USD
-        value: "2.4679"
+        value: "2.4648"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: PCF8574RGTR
     base_component: PCF8574RGTR
     properties:
@@ -1972,17 +1984,17 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/C22396384.pdf"
       - key: Price @1 USD
-        value: "0.5865"
+        value: "0.5873"
       - key: Price @100 USD
-        value: "0.3656"
+        value: "0.3661"
       - key: Price @Bulk USD
-        value: "0.3168"
+        value: "0.3173"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: TMUX1208RSVR
     base_component: TMUX1208QRSVRQ1
     properties:
@@ -2005,7 +2017,7 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/tmux1208.pdf"
       - key: Price @1 USD
-        value: "0.5710"
+        value: "0.5711"
       - key: Price @100 USD
         value: "0.3449"
       - key: Price @Bulk USD
@@ -2013,9 +2025,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: TMUX1208QRSVRQ1
     base_component: TMUX1208QRSVRQ1
     properties:
@@ -2038,17 +2050,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/tmux1208-q1.pdf"
       - key: Price @1 USD
-        value: "0.5865"
+        value: "0.5873"
       - key: Price @100 USD
-        value: "0.3835"
+        value: "0.3840"
       - key: Price @Bulk USD
-        value: "0.3575"
+        value: "0.3580"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: TPS70950DBVR
     base_component: TPS709xxDBV
     properties:
@@ -2071,17 +2083,17 @@ components:
       - key: Datasheet
         value: "https://www.lcsc.com/datasheet/C96028.pdf"
       - key: Price @1 USD
-        value: "0.6368"
+        value: "0.6378"
       - key: Price @100 USD
-        value: "0.3818"
+        value: "0.3824"
       - key: Price @Bulk USD
-        value: "0.3249"
+        value: "0.3254"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: STM32G031G8U6
     base_component: STM32G031G8U6
     properties:
@@ -2104,17 +2116,17 @@ components:
       - key: Datasheet
         value: https://datasheet.lcsc.com/lcsc/1912111437_ST-STM32G031G8U6_C432211.pdf
       - key: Price @1 USD
-        value: "1.1015"
+        value: "1.1031"
       - key: Price @100 USD
-        value: "0.7766"
+        value: "0.7777"
       - key: Price @Bulk USD
-        value: "0.7230"
+        value: "0.7240"
       - key: Price Bulk Qty
         value: "980"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: MMICT390200012
     base_component: MMICT390200012
     properties:
@@ -2137,17 +2149,17 @@ components:
       - key: Datasheet
         value: "https://datasheet.lcsc.com/datasheet/pdf/d835e51d402815d71771c5f8c876c44e.pdf?productCode=C3171752"
       - key: Price @1 USD
-        value: "1.7792"
+        value: "1.7831"
       - key: Price @100 USD
-        value: "1.1721"
+        value: "1.1746"
       - key: Price @Bulk USD
-        value: "1.0601"
+        value: "1.0624"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: TLV62585DRLR
     base_component: TLV62585DRLR
     properties:
@@ -2168,17 +2180,17 @@ components:
       - key: Footprint
         value: 7Sigma:SOT-563
       - key: Price @1 USD
-        value: "0.2334"
+        value: "0.2338"
       - key: Price @100 USD
-        value: "0.1832"
+        value: "0.1836"
       - key: Price @Bulk USD
-        value: "0.1369"
+        value: "0.1372"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: W25Q128JVPIQ
     base_component: W25Q16JV
     properties:
@@ -2199,17 +2211,17 @@ components:
       - key: Supplier Part Number 1
         value: C190862
       - key: Price @1 USD
-        value: "3.6230"
+        value: "3.7044"
       - key: Price @100 USD
-        value: "3.2520"
+        value: "3.3351"
       - key: Price @Bulk USD
-        value: "2.5391"
+        value: "2.6226"
       - key: Price Bulk Qty
         value: "700"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: RPi_CM5
     base_component: RPi_CM5
     properties:
@@ -2249,17 +2261,17 @@ components:
       - key: Footprint
         value: 7Sigma:QFN-60_L7.0-W7.0-P0.40-TL-EP5.3
       - key: Price @1 USD
-        value: "3.6668"
+        value: "3.6719"
       - key: Price @100 USD
-        value: "2.3752"
+        value: "2.3785"
       - key: Price @Bulk USD
-        value: "2.1640"
+        value: "2.1670"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: TPS62826DMQR
     base_component: TPS62826DMQR
     properties:
@@ -2280,17 +2292,17 @@ components:
       - key: Footprint
         value: 7Sigma:VSON-6_L1.5-W1.5-P0.50-TL
       - key: Price @1 USD
-        value: "0.5811"
+        value: "0.5808"
       - key: Price @100 USD
-        value: "0.4004"
+        value: "0.4003"
       - key: Price @Bulk USD
-        value: "0.3776"
+        value: "0.3775"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: LE310X1-EU
     base_component: LE310X1
     properties:
@@ -2368,17 +2380,17 @@ components:
       - key: Datasheet
         value: https://datasheet.lcsc.com/datasheet/pdf/93ffe3bdc8853048e78de32fac4986b7.pdf?productCode=C7471302
       - key: Price @1 USD
-        value: "12.1260"
+        value: "12.1137"
       - key: Price @100 USD
-        value: "8.1426"
+        value: "8.1344"
       - key: Price @Bulk USD
-        value: "8.1426"
+        value: "8.1344"
       - key: Price Bulk Qty
-        value: "100"
+        value: "104"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: TXS0104ERGYR
     base_component: TXS0104ERGYR
     properties:
@@ -2401,17 +2413,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/txs0104e.pdf"
       - key: Price @1 USD
-        value: "0.4573"
+        value: "0.4580"
       - key: Price @100 USD
-        value: "0.3672"
+        value: "0.3677"
       - key: Price @Bulk USD
-        value: "0.2479"
+        value: "0.2483"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: TXS0108ERGYR
     base_component: TXS0108ERGYR
     properties:
@@ -2434,17 +2446,17 @@ components:
       - key: Datasheet
         value: "https://www.ti.com/lit/ds/symlink/txs0108e.pdf"
       - key: Price @1 USD
-        value: "0.5936"
+        value: "0.6524"
       - key: Price @100 USD
-        value: "0.3876"
+        value: "0.4621"
       - key: Price @Bulk USD
-        value: "0.3666"
+        value: "0.4377"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: TPS7B6950QDBVRQ1
     base_component: TPS7B69xx
     properties:
@@ -2473,14 +2485,14 @@ components:
       - key: Footprint
         value: 7Sigma:SOT-23-5
       - key: Price @1 USD
-        value: "0.3638"
+        value: "0.3643"
       - key: Price @100 USD
-        value: "0.2913"
+        value: "0.2917"
       - key: Price @Bulk USD
-        value: "0.2216"
+        value: "0.2220"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"

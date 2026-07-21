@@ -459,9 +459,11 @@ function PoolPill({ label, value, title }: { label: string; value: number | null
   );
 }
 
-/** Full price ladder (every quantity break): LCSC rows are robot-managed and
- *  read-only; manual levels (any other source) are editable here and saved
- *  wholesale via PUT /price-points. Project BOMs price from this ladder. */
+/** Full price ladder (every quantity break): JLCPCB + LCSC rows are
+ *  robot-managed and read-only — JLCPCB is the default price source, LCSC the
+ *  fallback for parts JLC doesn't carry; manual levels (any other source) are
+ *  editable here and saved wholesale via PUT /price-points. Project BOMs
+ *  price from this ladder. */
 function PriceLadderCard({ compId }: { compId: number }) {
   interface DraftPoint {
     qty_from: string;
@@ -489,8 +491,13 @@ function PriceLadderCard({ compId }: { compId: number }) {
     return () => ctrl.abort();
   }, [compId]);
 
-  const lcscPoints = data?.points.filter((p) => p.source === "LCSC") ?? [];
-  const manualPoints = data?.points.filter((p) => p.source !== "LCSC") ?? [];
+  const ROBOT_SOURCES = ["JLCPCB", "LCSC"];
+  const autoPoints = data?.points.filter((p) => ROBOT_SOURCES.includes(p.source)) ?? [];
+  const hasJlc = autoPoints.some((p) => p.source === "JLCPCB");
+  // JLCPCB is the default price source; LCSC rows appear only IN PLACE of a
+  // missing JLCPCB ladder, never alongside it (the API stores both).
+  const robotPoints = autoPoints.filter((p) => p.source === (hasJlc ? "JLCPCB" : "LCSC"));
+  const manualPoints = data?.points.filter((p) => !ROBOT_SOURCES.includes(p.source)) ?? [];
 
   const startEdit = () =>
     setDraft(
@@ -534,7 +541,7 @@ function PriceLadderCard({ compId }: { compId: number }) {
       .then((r) => {
         setData(r);
         setBusy(null);
-        setNote("LCSC ladder refreshed.");
+        setNote("Supplier ladders refreshed.");
       })
       .catch((err) => {
         setError(errorMessage(err));
@@ -581,7 +588,7 @@ function PriceLadderCard({ compId }: { compId: number }) {
           </div>
           {data.points.length === 0 && draft === null ? (
             <p className="muted">
-              No price levels yet — refresh the LCSC ladder or add manual levels.
+              No price levels yet — refresh the supplier ladders or add manual levels.
             </p>
           ) : null}
           {data.points.length > 0 ? (
@@ -595,11 +602,19 @@ function PriceLadderCard({ compId }: { compId: number }) {
                 </tr>
               </thead>
               <tbody>
-                {[...lcscPoints, ...(draft === null ? manualPoints : [])]
+                {[...robotPoints, ...(draft === null ? manualPoints : [])]
                   .sort((a, b) => a.qty_from - b.qty_from)
                   .map((p) => (
                     <tr key={p.id}>
-                      <td className={p.source === "LCSC" ? "muted" : undefined}>{p.source}</td>
+                      <td
+                        className={ROBOT_SOURCES.includes(p.source) ? "muted" : undefined}
+                        title={
+                          p.source === "LCSC"
+                            ? "LCSC retail fallback — JLCPCB has no ladder for this part"
+                            : undefined
+                        }>
+                        {p.source}
+                      </td>
                       <td className="num mono">{p.qty_from.toLocaleString()}</td>
                       <td className="num mono">
                         {p.unit_price} {p.currency}
@@ -614,8 +629,8 @@ function PriceLadderCard({ compId }: { compId: number }) {
           {draft !== null ? (
             <div className="ladder-edit">
               <p className="muted">
-                Manual levels (LCSC rows above stay robot-managed). Each line: from this
-                quantity up, this unit price applies.
+                Manual levels (JLCPCB/LCSC rows above stay robot-managed). Each line: from
+                this quantity up, this unit price applies.
               </p>
               {draft.map((d, i) => (
                 <div key={i} className="ladder-edit-row">
@@ -667,7 +682,7 @@ function PriceLadderCard({ compId }: { compId: number }) {
                 {manualPoints.length > 0 ? "Edit manual levels" : "＋ Add manual levels"}
               </button>
               <button type="button" className="btn btn-sm" disabled={busy !== null} onClick={refresh}>
-                {busy === "refresh" ? "Refreshing…" : "Refresh LCSC ladder"}
+                {busy === "refresh" ? "Refreshing…" : "Refresh supplier ladders"}
               </button>
             </div>
           )}

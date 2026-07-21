@@ -36,7 +36,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -45,7 +44,6 @@
 		)
 		(property "Datasheet" "https://datasheet.lcsc.com/lcsc/2201180430_Murata-Electronics-GRM155R61H105KE05D_C1518208.pdf?_gl=1*1ue1ana*_ga*MjA3NTA3NDE1NC4xNzE1NDMyNTIw*_ga_98M84MKSZH*MTcxNzQwNTAzMi45LjEuMTcxNzQwNTIwOS41OS4wLjA."
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -54,7 +52,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -81,7 +78,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -90,7 +86,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -169,7 +164,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0914"
+		(property "Price @1 USD" "0.0918"
 			(at 0 0 0)
 			(effects
 				(font
@@ -178,7 +173,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0755"
+		(property "Price @100 USD" "0.0759"
 			(at 0 0 0)
 			(effects
 				(font
@@ -187,7 +182,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0607"
+		(property "Price @Bulk USD" "0.0609"
 			(at 0 0 0)
 			(effects
 				(font
@@ -205,7 +200,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -214,7 +209,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -323,7 +318,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0805_2012Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -332,7 +326,6 @@
 		)
 		(property "Datasheet" "https://jlcpcb.com/api/file/downloadByFileSystemAccessId/8579706853615591424"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -341,7 +334,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -368,7 +360,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -377,7 +368,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -456,7 +446,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.1297"
+		(property "Price @1 USD" "0.1201"
 			(at 0 0 0)
 			(effects
 				(font
@@ -465,7 +455,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.1297"
+		(property "Price @100 USD" "0.1201"
 			(at 0 0 0)
 			(effects
 				(font
@@ -474,7 +464,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0973"
+		(property "Price @Bulk USD" "0.0900"
 			(at 0 0 0)
 			(effects
 				(font
@@ -492,7 +482,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -501,7 +491,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -607,7 +597,6 @@
 		)
 		(property "Footprint" "7Sigma:CP_EIA-7343-31_Kemet-D"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -616,7 +605,6 @@
 		)
 		(property "Datasheet" "https://lcsc.com/product-detail/Tantalum-Capacitors_KEMET_T491D107K016AT_100uF-107-10-16V_C110548.html"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -625,7 +613,6 @@
 		)
 		(property "Description" "Polarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -634,7 +621,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -643,7 +629,6 @@
 		)
 		(property "ki_fp_filters" "CP_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -731,7 +716,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "1.4965"
+		(property "Price @1 USD" "1.4984"
 			(at 0 0 0)
 			(effects
 				(font
@@ -740,7 +725,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "1.1098"
+		(property "Price @100 USD" "1.1112"
 			(at 0 0 0)
 			(effects
 				(font
@@ -749,7 +734,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.6727"
+		(property "Price @Bulk USD" "0.6736"
 			(at 0 0 0)
 			(effects
 				(font
@@ -767,7 +752,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -776,7 +761,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -907,7 +892,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0805_2012Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -916,7 +900,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Samsung-Electro-Mechanics-CL21A226MAQNNNE_C45783.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -925,7 +908,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -952,7 +934,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -961,7 +942,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1049,7 +1029,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.4016"
+		(property "Price @1 USD" "0.3881"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1058,7 +1038,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.4016"
+		(property "Price @100 USD" "0.3881"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1067,7 +1047,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.3287"
+		(property "Price @Bulk USD" "0.3176"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1085,7 +1065,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1094,7 +1074,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1203,7 +1183,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1212,7 +1191,6 @@
 		)
 		(property "Datasheet" "https://wmsc.lcsc.com/wmsc/upload/file/pdf/v2/lcsc/2304140030_Samsung-Electro-Mechanics-CL05B104KO5NNNC_C1525.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1221,7 +1199,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1248,7 +1225,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1257,7 +1233,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1381,7 +1356,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1390,7 +1365,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1499,7 +1474,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1508,7 +1482,6 @@
 		)
 		(property "Datasheet" "https://atta.szlcsc.com/upload/public/pdf/source/20181008/C309499_21CC21451B82C39E3D92150FD6B30293.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1517,7 +1490,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1544,7 +1516,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1553,7 +1524,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1677,7 +1647,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1686,7 +1656,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1795,7 +1765,6 @@
 		)
 		(property "Footprint" "7Sigma:C_1210_3225Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1804,7 +1773,6 @@
 		)
 		(property "Datasheet" "https://datasheet.lcsc.com/lcsc/2411201415_SAMWHA-CS3225X7R476K160NRL_C5440143.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1813,7 +1781,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1840,7 +1807,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1849,7 +1815,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1928,7 +1893,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.3615"
+		(property "Price @1 USD" "0.3614"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1937,7 +1902,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.2960"
+		(property "Price @100 USD" "0.2958"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1946,7 +1911,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.2339"
+		(property "Price @Bulk USD" "0.2338"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1964,7 +1929,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1973,7 +1938,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2082,7 +2047,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0805_2012Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2091,7 +2055,6 @@
 		)
 		(property "Datasheet" "https://atta.szlcsc.com/upload/public/pdf/source/20200305/C490387_23319AE8C154DEB24C505E6C82A8106A.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2100,7 +2063,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2127,7 +2089,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2136,7 +2097,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2215,7 +2175,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0214"
+		(property "Price @1 USD" "0.0215"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2224,7 +2184,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0214"
+		(property "Price @100 USD" "0.0215"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2233,7 +2193,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0188"
+		(property "Price @Bulk USD" "0.0189"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2251,7 +2211,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2260,7 +2220,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2369,7 +2329,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2378,7 +2337,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0402JRNPO9BN180_C106202.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2387,7 +2345,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2414,7 +2371,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2423,7 +2379,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2538,7 +2493,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2547,7 +2502,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2656,7 +2611,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2665,7 +2619,6 @@
 		)
 		(property "Datasheet" "https://datasheet.lcsc.com/datasheet/pdf/4eca2bb4b507f1633db47e922d632b95.pdf?productCode=C107001"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2674,7 +2627,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2701,7 +2653,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2710,7 +2661,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2789,7 +2739,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0060"
+		(property "Price @1 USD" "0.0061"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2798,7 +2748,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0060"
+		(property "Price @100 USD" "0.0061"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2807,7 +2757,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0051"
+		(property "Price @Bulk USD" "0.0052"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2825,7 +2775,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2834,7 +2784,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2943,7 +2893,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2952,7 +2901,6 @@
 		)
 		(property "Datasheet" "https://datasheet.lcsc.com/datasheet/pdf/4eca2bb4b507f1633db47e922d632b95.pdf?productCode=C107005"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2961,7 +2909,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2988,7 +2935,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2997,7 +2943,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3112,7 +3057,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3121,7 +3066,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3230,7 +3175,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0805_2012Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3239,7 +3183,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0805JRNPO9BN180_C113825.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3248,7 +3191,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3275,7 +3217,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3284,7 +3225,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3363,7 +3303,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0110"
+		(property "Price @1 USD" "0.0194"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3372,7 +3312,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0110"
+		(property "Price @100 USD" "0.0194"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3381,7 +3321,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0096"
+		(property "Price @Bulk USD" "0.0170"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3390,7 +3330,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Bulk Qty" "1000"
+		(property "Price Bulk Qty" "500"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3399,7 +3339,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3408,7 +3348,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3517,7 +3457,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0805_2012Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3526,7 +3465,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_YAGEO-CC0805KRX7R9BB103_C83170.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3535,7 +3473,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3562,7 +3499,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3571,7 +3507,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3668,7 +3603,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0164"
+		(property "Price @Bulk USD" "0.0165"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3686,7 +3621,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3695,7 +3630,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3804,7 +3739,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0805_2012Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3813,7 +3747,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Samsung-Electro-Mechanics-CL21B105KBFNNNE_C28323.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3822,7 +3755,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3849,7 +3781,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3858,7 +3789,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3937,7 +3867,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0771"
+		(property "Price @1 USD" "0.0872"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3946,7 +3876,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0771"
+		(property "Price @100 USD" "0.0872"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3955,7 +3885,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0647"
+		(property "Price @Bulk USD" "0.0733"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3973,7 +3903,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3982,7 +3912,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4091,7 +4021,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4100,7 +4029,6 @@
 		)
 		(property "Datasheet" "https://atta.szlcsc.com/upload/public/pdf/source/20160218/1457707763339.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4109,7 +4037,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4136,7 +4063,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4145,7 +4071,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4260,7 +4185,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4269,7 +4194,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4378,7 +4303,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4387,7 +4311,6 @@
 		)
 		(property "Datasheet" "https://lcsc.com/datasheet/lcsc_datasheet_2410121857_muRata-GRM1555C1H100JA01D_C76946.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4396,7 +4319,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4423,7 +4345,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4432,7 +4353,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4547,7 +4467,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4556,7 +4476,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4665,7 +4585,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4674,7 +4593,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C315248.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4683,7 +4601,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4710,7 +4627,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4719,7 +4635,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4798,7 +4713,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0556"
+		(property "Price @1 USD" "0.0555"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4807,7 +4722,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0556"
+		(property "Price @100 USD" "0.0555"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4816,7 +4731,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0403"
+		(property "Price @Bulk USD" "0.0402"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4834,7 +4749,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4843,7 +4758,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -4952,7 +4867,6 @@
 		)
 		(property "Footprint" "7Sigma:CP_Elec_6.3x7.7"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4961,7 +4875,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C88744.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4970,7 +4883,6 @@
 		)
 		(property "Description" "Polarized Capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4980,7 +4892,6 @@
 		(property "Dielectric" "Al Elec"
 			(at -1.27 -1.524 0)
 			(do_not_autoplace)
-			(hide yes)
 			(effects
 				(font
 					(size 0.635 0.635)
@@ -4998,7 +4909,6 @@
 		)
 		(property "ki_keywords" "cap capacitor electrolytic"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5007,7 +4917,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5086,7 +4995,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.1319"
+		(property "Price @1 USD" "0.1318"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5095,7 +5004,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.1049"
+		(property "Price @100 USD" "0.1048"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5104,7 +5013,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0813"
+		(property "Price @Bulk USD" "0.0814"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5122,7 +5031,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5131,7 +5040,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5240,7 +5149,6 @@
 		)
 		(property "Footprint" "7Sigma:CP_Elec_10x10"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5249,7 +5157,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C343913.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5258,7 +5165,6 @@
 		)
 		(property "Description" "Polarized Capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5268,7 +5174,6 @@
 		(property "Dielectric" "Al Elec"
 			(at -1.27 -1.524 0)
 			(do_not_autoplace)
-			(hide yes)
 			(effects
 				(font
 					(size 0.635 0.635)
@@ -5286,7 +5191,6 @@
 		)
 		(property "ki_keywords" "cap capacitor electrolytic"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5295,7 +5199,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5374,7 +5277,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.4484"
+		(property "Price @1 USD" "0.4491"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5383,7 +5286,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.2649"
+		(property "Price @100 USD" "0.2652"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5392,7 +5295,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.2291"
+		(property "Price @Bulk USD" "0.2294"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5410,7 +5313,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5419,7 +5322,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5528,7 +5431,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0805_2012Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5537,7 +5439,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C98192.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5546,7 +5447,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5573,7 +5473,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5582,7 +5481,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5661,7 +5559,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.1240"
+		(property "Price @1 USD" "0.1461"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5670,7 +5568,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.1086"
+		(property "Price @100 USD" "0.1279"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5679,7 +5577,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.1007"
+		(property "Price @Bulk USD" "0.1186"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5697,7 +5595,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5706,7 +5604,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5815,7 +5713,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5824,7 +5721,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C107020.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5833,7 +5729,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5860,7 +5755,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5869,7 +5763,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5984,7 +5877,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -5993,7 +5886,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -6102,7 +5995,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6111,7 +6003,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C106200.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6120,7 +6011,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6147,7 +6037,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6156,7 +6045,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6235,7 +6123,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0053"
+		(property "Price @1 USD" "0.0069"
 			(at 0 0 0)
 			(effects
 				(font
@@ -6244,7 +6132,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0053"
+		(property "Price @100 USD" "0.0069"
 			(at 0 0 0)
 			(effects
 				(font
@@ -6253,7 +6141,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0044"
+		(property "Price @Bulk USD" "0.0057"
 			(at 0 0 0)
 			(effects
 				(font
@@ -6271,7 +6159,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -6280,7 +6168,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -6386,7 +6274,6 @@
 		)
 		(property "Footprint" "7Sigma:CP_Elec_6.3x7.7"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6395,7 +6282,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C5155339.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6404,7 +6290,6 @@
 		)
 		(property "Description" "Polarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6413,7 +6298,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6422,7 +6306,6 @@
 		)
 		(property "ki_fp_filters" "CP_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6510,7 +6393,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0622"
+		(property "Price @1 USD" "0.0632"
 			(at 0 0 0)
 			(effects
 				(font
@@ -6519,7 +6402,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0512"
+		(property "Price @100 USD" "0.0519"
 			(at 0 0 0)
 			(effects
 				(font
@@ -6528,7 +6411,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0368"
+		(property "Price @Bulk USD" "0.0376"
 			(at 0 0 0)
 			(effects
 				(font
@@ -6546,7 +6429,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -6555,7 +6438,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -6686,7 +6569,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6695,7 +6577,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C76968.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6704,7 +6585,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6731,7 +6611,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6740,7 +6619,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6855,7 +6733,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -6864,7 +6742,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -6973,7 +6851,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6982,7 +6859,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C5182429.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6991,7 +6867,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7018,7 +6893,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7027,7 +6901,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7124,7 +6997,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0096"
+		(property "Price @Bulk USD" "0.0097"
 			(at 0 0 0)
 			(effects
 				(font
@@ -7142,7 +7015,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -7151,7 +7024,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -7260,7 +7133,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7269,7 +7141,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C106223.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7278,7 +7149,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7305,7 +7175,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7314,7 +7183,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7393,7 +7261,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0099"
+		(property "Price @1 USD" "0.0098"
 			(at 0 0 0)
 			(effects
 				(font
@@ -7402,7 +7270,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0099"
+		(property "Price @100 USD" "0.0098"
 			(at 0 0 0)
 			(effects
 				(font
@@ -7411,7 +7279,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0089"
+		(property "Price @Bulk USD" "0.0088"
 			(at 0 0 0)
 			(effects
 				(font
@@ -7429,7 +7297,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -7438,7 +7306,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -7547,7 +7415,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7556,7 +7423,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C113780.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7565,7 +7431,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7592,7 +7457,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7601,7 +7465,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7680,7 +7543,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0068"
+		(property "Price @1 USD" "0.0209"
 			(at 0 0 0)
 			(effects
 				(font
@@ -7689,7 +7552,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0068"
+		(property "Price @100 USD" "0.0209"
 			(at 0 0 0)
 			(effects
 				(font
@@ -7698,7 +7561,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0058"
+		(property "Price @Bulk USD" "0.0183"
 			(at 0 0 0)
 			(effects
 				(font
@@ -7707,7 +7570,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Bulk Qty" "1000"
+		(property "Price Bulk Qty" "500"
 			(at 0 0 0)
 			(effects
 				(font
@@ -7716,7 +7579,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -7725,7 +7588,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -7834,7 +7697,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7843,7 +7705,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C170151.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7852,7 +7713,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7879,7 +7739,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7888,7 +7747,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7967,7 +7825,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0100"
+		(property "Price @1 USD" "0.0433"
 			(at 0 0 0)
 			(effects
 				(font
@@ -7976,7 +7834,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0100"
+		(property "Price @100 USD" "0.0433"
 			(at 0 0 0)
 			(effects
 				(font
@@ -7985,7 +7843,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0086"
+		(property "Price @Bulk USD" "0.0373"
 			(at 0 0 0)
 			(effects
 				(font
@@ -8003,7 +7861,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -8012,7 +7870,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -8121,7 +7979,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0805_2012Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8130,7 +7987,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C440198.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8139,7 +7995,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8166,7 +8021,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8175,7 +8029,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8254,7 +8107,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.4609"
+		(property "Price @1 USD" "0.2852"
 			(at 0 0 0)
 			(effects
 				(font
@@ -8263,7 +8116,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.4119"
+		(property "Price @100 USD" "0.2475"
 			(at 0 0 0)
 			(effects
 				(font
@@ -8272,7 +8125,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.3666"
+		(property "Price @Bulk USD" "0.2125"
 			(at 0 0 0)
 			(effects
 				(font
@@ -8290,7 +8143,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -8299,7 +8152,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -8408,7 +8261,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8417,7 +8269,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C76899.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8426,7 +8277,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8453,7 +8303,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8462,7 +8311,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8559,7 +8407,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0449"
+		(property "Price @1 USD" "0.0451"
 			(at 0 0 0)
 			(effects
 				(font
@@ -8568,7 +8416,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0449"
+		(property "Price @100 USD" "0.0451"
 			(at 0 0 0)
 			(effects
 				(font
@@ -8577,7 +8425,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0355"
+		(property "Price @Bulk USD" "0.0357"
 			(at 0 0 0)
 			(effects
 				(font
@@ -8595,7 +8443,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -8604,7 +8452,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -8713,7 +8561,6 @@
 		)
 		(property "Footprint" "7Sigma:CP_Elec_10x10"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8722,7 +8569,6 @@
 		)
 		(property "Datasheet" "https://datasheet.lcsc.com/datasheet/pdf/242ede0bfb543b5edcc6a9353c456beb.pdf?productCode=C242138"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8731,7 +8577,6 @@
 		)
 		(property "Description" "Polarized Capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8741,7 +8586,6 @@
 		(property "Dielectric" "Al Elec"
 			(at -1.27 -1.524 0)
 			(do_not_autoplace)
-			(hide yes)
 			(effects
 				(font
 					(size 0.635 0.635)
@@ -8759,7 +8603,6 @@
 		)
 		(property "ki_keywords" "cap capacitor electrolytic"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8768,7 +8611,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8847,7 +8689,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.6403"
+		(property "Price @1 USD" "0.6410"
 			(at 0 0 0)
 			(effects
 				(font
@@ -8856,7 +8698,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.3965"
+		(property "Price @100 USD" "0.3970"
 			(at 0 0 0)
 			(effects
 				(font
@@ -8865,7 +8707,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.3413"
+		(property "Price @Bulk USD" "0.3417"
 			(at 0 0 0)
 			(effects
 				(font
@@ -8883,7 +8725,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -8892,7 +8734,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -9001,7 +8843,6 @@
 		)
 		(property "Footprint" "7Sigma:C_1206_3216Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9010,7 +8851,6 @@
 		)
 		(property "Datasheet" "https://datasheet.lcsc.com/datasheet/pdf/38af89a3abb50324a7de8b759d1fdf7e.pdf?productCode=C76659"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9019,7 +8859,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9046,7 +8885,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9055,7 +8893,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9134,7 +8971,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "1.0271"
+		(property "Price @1 USD" "0.8834"
 			(at 0 0 0)
 			(effects
 				(font
@@ -9143,7 +8980,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.7243"
+		(property "Price @100 USD" "0.5808"
 			(at 0 0 0)
 			(effects
 				(font
@@ -9152,7 +8989,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.6739"
+		(property "Price @Bulk USD" "0.5304"
 			(at 0 0 0)
 			(effects
 				(font
@@ -9170,7 +9007,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -9179,7 +9016,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -9288,7 +9125,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9297,7 +9133,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C106201.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9306,7 +9141,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9333,7 +9167,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9342,7 +9175,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9457,7 +9289,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -9466,7 +9298,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -9575,7 +9407,6 @@
 		)
 		(property "Footprint" "7Sigma:C_0402_1005Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9584,7 +9415,6 @@
 		)
 		(property "Datasheet" "https://datasheet.lcsc.com/datasheet/pdf/9f6ef17093b8d551f8b17af0626ff758.pdf?productCode=C1546"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9593,7 +9423,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9620,7 +9449,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9629,7 +9457,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9744,7 +9571,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -9753,7 +9580,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -9862,7 +9689,6 @@
 		)
 		(property "Footprint" "7Sigma:C_1210_3225Metric"
 			(at 0.9652 -3.81 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9871,7 +9697,6 @@
 		)
 		(property "Datasheet" "https://datasheet.lcsc.com/datasheet/pdf/edce10aa94c282363bc210de8811a68a.pdf?productCode=C162512"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9880,7 +9705,6 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9907,7 +9731,6 @@
 		)
 		(property "ki_keywords" "cap capacitor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9916,7 +9739,6 @@
 		)
 		(property "ki_fp_filters" "C_*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9995,7 +9817,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.4701"
+		(property "Price @1 USD" "0.4707"
 			(at 0 0 0)
 			(effects
 				(font
@@ -10004,7 +9826,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.4232"
+		(property "Price @100 USD" "0.4237"
 			(at 0 0 0)
 			(effects
 				(font
@@ -10013,7 +9835,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.3717"
+		(property "Price @Bulk USD" "0.3723"
 			(at 0 0 0)
 			(effects
 				(font
@@ -10031,7 +9853,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -10040,7 +9862,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font

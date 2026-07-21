@@ -42,17 +42,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C5199798.pdf
       - key: Price @1 USD
-        value: "0.0913"
+        value: "0.0960"
       - key: Price @100 USD
-        value: "0.0741"
+        value: "0.0783"
       - key: Price @Bulk USD
-        value: "0.0587"
+        value: "0.0570"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: TestPoint_Pad_1.5x1.5mm
     base_component: TestPoint
     properties:

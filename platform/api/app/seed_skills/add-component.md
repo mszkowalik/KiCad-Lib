@@ -27,7 +27,7 @@ Preferred: an LCSC part number (Cxxxxx). Otherwise: manufacturer part number + d
    Footprint_Name, ki_description (template, e.g. "{Value} {Power} {Tolerance}
    {Footprint_Name}"), Manufacturer 1, Manufacturer Part Number 1, Supplier 1 = LCSC,
    Supplier Part Number 1, LCSC Part.
-7. **Never set**: any Price key (prices are auto-managed and refreshed from LCSC), or
+7. **Never set**: any Price key (prices are auto-managed — JLCPCB ladder by default, LCSC fallback), or
    Datasheet as a property (datasheets are managed separately; pass datasheet_url —
    locally stored copies are linked into the library automatically).
 8. **Propose** — the new component is created as a DRAFT; the user reviews and approves

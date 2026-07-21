@@ -36,6 +36,39 @@ SOURCE_BASE_MAP = {
 # ---------------------------------------------------------------------------
 LCSC_API_URL = "https://wmsc.lcsc.com/ftps/wm/product/detail?productCode={}"
 
+
+# ---------------------------------------------------------------------------
+# JLCPCB OpenAPI credentials (JLC-first pricing; LCSC is the fallback)
+# ---------------------------------------------------------------------------
+def _platform_env() -> dict[str, str]:
+    """KEY=VALUE pairs from platform/.env, so the pipeline shares the
+    platform deployment's JLC credentials without duplicating them."""
+    out: dict[str, str] = {}
+    try:
+        with open(os.path.abspath("./platform/.env"), encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                out[key.strip()] = value.strip().strip("'\"")
+    except OSError:
+        pass
+    return out
+
+
+_PLATFORM_ENV = _platform_env()
+
+
+def _jlc_setting(key: str, default: str = "") -> str:
+    return os.environ.get(key) or _PLATFORM_ENV.get(key) or default
+
+
+JLC_APP_ID = _jlc_setting("JLC_APP_ID")
+JLC_ACCESS_KEY = _jlc_setting("JLC_ACCESS_KEY")
+JLC_SECRET_KEY = _jlc_setting("JLC_SECRET_KEY")
+JLC_ENDPOINT = _jlc_setting("JLC_ENDPOINT", "https://open.jlcpcb.com")
+
 # ---------------------------------------------------------------------------
 # Cache files
 # ---------------------------------------------------------------------------

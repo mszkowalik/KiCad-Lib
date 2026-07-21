@@ -52,17 +52,17 @@ components:
       - key: Datasheet
         value: https://wmsc.lcsc.com/wmsc/upload/file/pdf/v2/lcsc/2404241539_SHOU-HAN-TS24CA_C393942.pdf
       - key: Price @1 USD
-        value: "0.0251"
+        value: "0.0253"
       - key: Price @100 USD
-        value: "0.0251"
+        value: "0.0253"
       - key: Price @Bulk USD
-        value: "0.0170"
+        value: "0.0171"
       - key: Price Bulk Qty
         value: "600"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: GT-TC025D-H0065-L1
     base_component: SW_Push
     properties:
@@ -87,17 +87,17 @@ components:
       - key: LCSC Part Class
         value: Extended Part
       - key: Price @1 USD
-        value: "0.0462"
+        value: "0.0464"
       - key: Price @100 USD
-        value: "0.0408"
+        value: "0.0410"
       - key: Price @Bulk USD
-        value: "0.0362"
+        value: "0.0363"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: KH-6X6X9H-TJ
     base_component: SW_Push_4pin
     properties:
@@ -128,9 +128,9 @@ components:
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: KH-6X6X4.3H-STM
     base_component: SW_Push_4pin
     properties:
@@ -153,17 +153,17 @@ components:
       - key: Datasheet
         value: https://wmsc.lcsc.com/wmsc/upload/file/pdf/v2/lcsc/2212051012_Shenzhen-Kinghelm-Elec-KH-6X6X4-3H-STM_C2837530.pdf
       - key: Price @1 USD
-        value: "0.0213"
+        value: "0.0214"
       - key: Price @100 USD
-        value: "0.0213"
+        value: "0.0214"
       - key: Price @Bulk USD
         value: "0.0170"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: KH-6X6X7H-STM
     base_component: SW_Push_4pin
     properties:
@@ -186,17 +186,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C2837533.pdf
       - key: Price @1 USD
-        value: "0.0261"
+        value: "0.0262"
       - key: Price @100 USD
-        value: "0.0261"
+        value: "0.0262"
       - key: Price @Bulk USD
         value: "0.0162"
       - key: Price Bulk Qty
         value: "800"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: GT-TC048D-H025-L1
     base_component: SW_Push_4pin
     properties:
@@ -219,17 +219,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C843674.pdf
       - key: Price @1 USD
-        value: "0.0708"
+        value: "0.0710"
       - key: Price @100 USD
         value: "0.0568"
       - key: Price @Bulk USD
-        value: "0.0497"
+        value: "0.0498"
       - key: Price Bulk Qty
         value: "300"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: TS3625A
     base_component: SW_Push
     properties:
@@ -256,13 +256,13 @@ components:
       - key: Price @100 USD
         value: "0.0422"
       - key: Price @Bulk USD
-        value: "0.0290"
+        value: "0.0288"
       - key: Price Bulk Qty
         value: "600"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: TC-6615-9.0-160G
     base_component: SW_Push_4pin
     properties:
@@ -285,14 +285,14 @@ components:
       - key: Datasheet
         value: https://datasheet.lcsc.com/datasheet/pdf/00ba1333f734c320d9923544e703b5e6.pdf?productCode=C6575016
       - key: Price @1 USD
-        value: "0.0365"
+        value: "0.0368"
       - key: Price @100 USD
-        value: "0.0365"
+        value: "0.0368"
       - key: Price @Bulk USD
-        value: "0.0243"
+        value: "0.0245"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"

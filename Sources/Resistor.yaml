@@ -64,17 +64,17 @@ components:
       - key: Datasheet
         value: "https://lcsc.com/product-detail/Chip-Resistor-Surface-Mount-UniOhm_5-1KR-5101-1_C25905.html"
       - key: Price @1 USD
-        value: "0.0014"
+        value: "0.0068"
       - key: Price @100 USD
-        value: "0.0014"
+        value: "0.0068"
       - key: Price @Bulk USD
-        value: "0.0012"
+        value: "0.0061"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF220JTCE
     base_component: R
     properties:
@@ -111,9 +111,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
     remove_properties: []
   - name: 0402WGF100JTCE
     base_component: R
@@ -143,17 +143,17 @@ components:
       - key: Datasheet
         value: "https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf"
       - key: Price @1 USD
-        value: "0.0014"
+        value: "0.0035"
       - key: Price @100 USD
-        value: "0.0014"
+        value: "0.0035"
       - key: Price @Bulk USD
-        value: "0.0012"
+        value: "0.0030"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF1001TCE
     base_component: R
     properties:
@@ -190,9 +190,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF1002TCE
     base_component: R
     properties:
@@ -221,17 +221,17 @@ components:
       - key: Datasheet
         value: "https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf"
       - key: Price @1 USD
-        value: "0.0093"
+        value: "0.0077"
       - key: Price @100 USD
-        value: "0.0093"
+        value: "0.0077"
       - key: Price @Bulk USD
-        value: "0.0084"
+        value: "0.0069"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF1003TCE
     base_component: R
     properties:
@@ -268,9 +268,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF1200TCE
     base_component: R
     properties:
@@ -299,17 +299,17 @@ components:
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
       - key: Price @1 USD
-        value: "0.0083"
+        value: "0.0084"
       - key: Price @100 USD
-        value: "0.0083"
+        value: "0.0084"
       - key: Price @Bulk USD
         value: "0.0076"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF2001TCE
     base_component: R
     properties:
@@ -346,9 +346,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF5100TCE
     base_component: R
     properties:
@@ -385,9 +385,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 1206W4F100LT5E
     base_component: R
     properties:
@@ -424,9 +424,9 @@ components:
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: NCP15XH103F03RC
     base_component: Thermistor_NTC
     properties:
@@ -465,9 +465,9 @@ components:
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
     remove_properties: []
   - name: 0402WGF4532TCE
     base_component: R
@@ -505,9 +505,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF4533TCE
     base_component: R
     properties:
@@ -544,9 +544,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W8F100JT5E
     base_component: R
     properties:
@@ -579,13 +579,13 @@ components:
       - key: Price @100 USD
         value: "0.0122"
       - key: Price @Bulk USD
-        value: "0.0110"
+        value: "0.0109"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W8F1200T5E
     base_component: R
     properties:
@@ -614,17 +614,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_UNI-ROYAL-Uniroyal-Elec-0805W8F1200T5E_C17437.pdf
       - key: Price @1 USD
-        value: "0.0146"
+        value: "0.0171"
       - key: Price @100 USD
-        value: "0.0146"
+        value: "0.0171"
       - key: Price @Bulk USD
-        value: "0.0130"
+        value: "0.0153"
       - key: Price Bulk Qty
-        value: "1000"
+        value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W8F1001T5E
     base_component: R
     properties:
@@ -653,17 +653,17 @@ components:
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
       - key: Price @1 USD
-        value: "0.0131"
+        value: "0.0047"
       - key: Price @100 USD
-        value: "0.0131"
+        value: "0.0047"
       - key: Price @Bulk USD
-        value: "0.0118"
+        value: "0.0042"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W8F3300T5E
     base_component: R
     properties:
@@ -700,9 +700,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W8F4701T5E
     base_component: R
     properties:
@@ -731,17 +731,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_UNI-ROYAL-Uniroyal-Elec-0805W8F4701T5E_C17673.pdf
       - key: Price @1 USD
-        value: "0.0111"
+        value: "0.0110"
       - key: Price @100 USD
-        value: "0.0111"
+        value: "0.0110"
       - key: Price @Bulk USD
         value: "0.0098"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W8F5101T5E
     base_component: R
     properties:
@@ -770,17 +770,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221127_UNI-ROYAL-Uniroyal-Elec-0805W8F5101T5E_C27834.pdf
       - key: Price @1 USD
-        value: "0.0143"
+        value: "0.0137"
       - key: Price @100 USD
-        value: "0.0143"
+        value: "0.0137"
       - key: Price @Bulk USD
-        value: "0.0129"
+        value: "0.0123"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W8F1002T5E
     base_component: R
     properties:
@@ -809,17 +809,17 @@ components:
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
       - key: Price @1 USD
-        value: "0.0171"
+        value: "0.0134"
       - key: Price @100 USD
-        value: "0.0171"
+        value: "0.0134"
       - key: Price @Bulk USD
-        value: "0.0155"
+        value: "0.0122"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W8F1003T5E
     base_component: R
     properties:
@@ -848,17 +848,17 @@ components:
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
       - key: Price @1 USD
-        value: "0.0160"
+        value: "0.0111"
       - key: Price @100 USD
-        value: "0.0160"
+        value: "0.0111"
       - key: Price @Bulk USD
-        value: "0.0145"
+        value: "0.0098"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W8F4700T5E
     base_component: R
     properties:
@@ -887,17 +887,17 @@ components:
       - key: Datasheet
         value: https://atta.szlcsc.com/upload/public/pdf/source/20200306/C422600_1E6D84923E4A46A82E41ADD87F860B5C.pdf
       - key: Price @1 USD
-        value: "0.0145"
+        value: "0.0114"
       - key: Price @100 USD
-        value: "0.0145"
+        value: "0.0114"
       - key: Price @Bulk USD
-        value: "0.0129"
+        value: "0.0102"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W8F1000T5E
     base_component: R
     properties:
@@ -934,9 +934,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W8F2002T5E
     base_component: R
     properties:
@@ -965,17 +965,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/lcsc_datasheet_2411221126_UNI-ROYAL-Uniroyal-Elec-0805W8F2002T5E_C4328.pdf
       - key: Price @1 USD
-        value: "0.0155"
+        value: "0.0122"
       - key: Price @100 USD
-        value: "0.0155"
+        value: "0.0122"
       - key: Price @Bulk USD
-        value: "0.0139"
+        value: "0.0110"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W4F100MT5E
     base_component: R
     properties:
@@ -1008,13 +1008,13 @@ components:
       - key: Price @100 USD
         value: "0.0181"
       - key: Price @Bulk USD
-        value: "0.0161"
+        value: "0.0162"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF1373TCE
     base_component: R
     properties:
@@ -1051,9 +1051,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF7683TCE
     base_component: R
     properties:
@@ -1090,9 +1090,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W8F0000T5E
     base_component: R
     properties:
@@ -1121,17 +1121,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C17477.pdf
       - key: Price @1 USD
-        value: "0.0152"
+        value: "0.0109"
       - key: Price @100 USD
-        value: "0.0152"
+        value: "0.0109"
       - key: Price @Bulk USD
-        value: "0.0136"
+        value: "0.0098"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF1583TCE
     base_component: R
     properties:
@@ -1168,9 +1168,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF3002TCE
     base_component: R
     properties:
@@ -1207,9 +1207,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W8F100KT5E
     base_component: R
     properties:
@@ -1238,17 +1238,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C25271.pdf
       - key: Price @1 USD
-        value: "0.0295"
+        value: "0.0297"
       - key: Price @100 USD
-        value: "0.0295"
+        value: "0.0297"
       - key: Price @Bulk USD
-        value: "0.0268"
+        value: "0.0269"
       - key: Price Bulk Qty
         value: "500"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W8J0100T5E
     base_component: R
     properties:
@@ -1285,9 +1285,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W8F6800T5E
     base_component: R
     properties:
@@ -1316,17 +1316,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C17798.pdf
       - key: Price @1 USD
-        value: "0.0144"
+        value: "0.0143"
       - key: Price @100 USD
-        value: "0.0144"
+        value: "0.0143"
       - key: Price @Bulk USD
         value: "0.0128"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF1301TCE
     base_component: R
     properties:
@@ -1363,9 +1363,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF6492TCE
     base_component: R
     properties:
@@ -1402,9 +1402,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF2611TCE
     base_component: R
     properties:
@@ -1441,9 +1441,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF750JTCE
     base_component: R
     properties:
@@ -1480,9 +1480,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF4020TCE
     base_component: R
     properties:
@@ -1519,9 +1519,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF9531TCE
     base_component: R
     properties:
@@ -1558,9 +1558,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF1000TCE
     base_component: R
     properties:
@@ -1597,9 +1597,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF249JTCE
     base_component: R
     properties:
@@ -1636,9 +1636,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W8F1503T5E
     base_component: R
     properties:
@@ -1675,9 +1675,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF1203TCE
     base_component: R
     properties:
@@ -1714,9 +1714,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF4123TCE
     base_component: R
     properties:
@@ -1751,11 +1751,11 @@ components:
       - key: Price @Bulk USD
         value: "0.0006"
       - key: Price Bulk Qty
-        value: "100"
+        value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF5103TCE
     base_component: R
     properties:
@@ -1792,9 +1792,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF4302TCE
     base_component: R
     properties:
@@ -1831,9 +1831,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF3242TCE
     base_component: R
     properties:
@@ -1862,17 +1862,17 @@ components:
       - key: Datasheet
         value: https://www.lcsc.com/datasheet/C26974.pdf
       - key: Price @1 USD
-        value: "0.0012"
+        value: "0.0063"
       - key: Price @100 USD
-        value: "0.0012"
+        value: "0.0063"
       - key: Price @Bulk USD
-        value: "0.0011"
+        value: "0.0056"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF0000TCE
     base_component: R
     properties:
@@ -1909,9 +1909,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF1183TCE
     base_component: R
     properties:
@@ -1948,9 +1948,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF2202TCE
     base_component: R
     properties:
@@ -1983,13 +1983,13 @@ components:
       - key: Price @100 USD
         value: "0.0075"
       - key: Price @Bulk USD
-        value: "0.0067"
+        value: "0.0068"
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0805W8F1602T5E
     base_component: R
     properties:
@@ -2026,9 +2026,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF1623TCE
     base_component: R
     properties:
@@ -2065,9 +2065,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF3323TCE
     base_component: R
     properties:
@@ -2104,9 +2104,9 @@ components:
       - key: Price Bulk Qty
         value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"
   - name: 0402WGF3743TCE
     base_component: R
     properties:
@@ -2135,14 +2135,14 @@ components:
       - key: Manufacturer Part Number 1
         value: 0402WGF3743TCE
       - key: Price @1 USD
-        value: "0.0004"
+        value: "0.0005"
       - key: Price @100 USD
-        value: "0.0004"
+        value: "0.0005"
       - key: Price @Bulk USD
         value: "0.0004"
       - key: Price Bulk Qty
-        value: "100"
+        value: "1000"
       - key: Price Source
-        value: LCSC
+        value: JLCPCB
       - key: Price Updated
-        value: "2026-07-16"
+        value: "2026-07-21"

@@ -21,6 +21,7 @@ new parallel implementations are the main thing to avoid.
 | DB session in a route | `Depends(get_db)` from `db.py` |
 | Price key → column map | `services/generator.py` → `PRICE_KEY_TO_COL` |
 | Create a draft proposal | the pattern in `services/jaravis.py` (`propose_new_component` / `propose_component_edit`) |
+| Expose an agent capability over HTTP | `routers/agent.py` dispatches `services/jaravis.py::TOOLS` by name — add a tool there and it's exposed to the MCP server automatically; never hand-write a per-tool agent route |
 | S-expr parsing / symbol+footprint parse cache | `util/sexpr.py`, `services/parse_cache.py` |
 | Free-form notes on ANY entity | the generic `comments` table (`M.Comment`, `target_type`+`target_id`) via `routers/comments.py` — never add a per-entity comment table |
 
@@ -238,14 +239,26 @@ token injected per-invocation via `http.extraheader` — never written to disk),
 - **`project_ops.py` exists twice** — `api/app/services/` and `platform/render/`
   must stay byte-identical (same pattern as `render.py`/`server.py`).
 - **NUL is illegal in argv**: git `--format` separators use `\x1f`, never `\x00`.
-- **Price ladders**: `component_price_points` rows with `source="LCSC"` are
-  replaced wholesale by the refresher; other sources (`Manual`, …) are never
-  touched by robots. The legacy 3-point `ComponentPrice` summary (browse-list
-  price column + BOM fallback for ladder-less parts; NOT emitted to KiCad)
-  is DERIVED from the ladder on every refresh (`ladder._update_price_summary`,
-  same @1/@100/@Bulk rules as `kicad_lib/pricing.py`) — unless its `source`
-  is non-LCSC (e.g. `Manual`), which pins it. It has no UI card of its own;
-  the component page's single pricing surface is the ladder card.
+- **Price ladders — JLCPCB first, LCSC fallback** (user decision 2026-07-21):
+  `component_price_points` rows with a source in `ladder.AUTO_SOURCES`
+  (`"JLCPCB"`, `"LCSC"`) are replaced wholesale by the refresher — the JLCPCB
+  assembly ladder comes from the official OpenAPI (`priceRanges` in the same
+  batched `jlc.fetch_component_details` call that feeds `jlc_stock`, so it
+  refreshes for every component on every run), the LCSC retail ladder from
+  the per-component wmsc detail fetch. Other sources (`Manual`, …) are never
+  touched by robots. `ladder.effective_points` DROPS LCSC points whenever the
+  component has any JLCPCB points — LCSC appears only in place of a missing
+  JLCPCB ladder, never alongside it. This applies to resolution
+  (`price_at` — BOMs, run economics, valuations) AND to every display
+  surface (the web ladder card, Jaravis/MCP `get_component` and
+  `refresh_supply`); both ladders are still STORED, so the fallback stays
+  available. Only raw price history shows complete point sets. The legacy 3-point `ComponentPrice` summary (browse-list price
+  column + BOM fallback for ladder-less parts; NOT emitted to KiCad) is
+  DERIVED from the preferred ladder on every refresh
+  (`ladder._update_price_summary`, same @1/@100/@Bulk rules as
+  `kicad_lib/pricing.py`; its `source` records which ladder) — unless its
+  `source` is non-auto (e.g. `Manual`), which pins it. It has no UI card of
+  its own; the component page's single pricing surface is the ladder card.
 - **Three stock pools, never conflate them**: `ComponentSupply.stock` = LCSC
   retail (lcsc.com, `wmsc.lcsc.com` detail `stockNumber`);
   `ComponentSupply.jlc_stock` = JLCPCB assembly parts (jlcpcb.com/parts,
@@ -351,3 +364,48 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   `user_notes` (via `_user_notes(db, target_type, id)`) on every read tool
   (full-read policy), so new comment targets get a matching read.
 - When a non-obvious backend convention or workaround emerges, record it here.
+
+## Agent tool surface + MCP server (Claude Code)
+
+The library agent is reachable two ways over the **same** tool set
+(`services/jaravis.py::TOOLS` — 26 client tools):
+
+1. **In-app Jaravis** — the Anthropic tool-runner chat (`services/jaravis.py`,
+   `routers/jaravis.py`). Burns Anthropic API tokens; has the web chat UI.
+2. **MCP / Claude Code** — `routers/agent.py` exposes the identical tools over
+   HTTP so an external MCP server drives them under a Claude Code subscription
+   (no per-token API metering). This is the primary entry point going forward;
+   Jaravis's chat loop is kept but superseded (do not delete it yet).
+
+**`routers/agent.py` — dispatch, never reimplement.** `GET /api/agent/tools`
+returns `[t.to_dict() for t in jaravis.TOOLS]` (name + description + JSON
+schema); `POST /api/agent/tools/{name}` looks the tool up in
+`{t.name: t for t in TOOLS}` and runs `t.func(**json_body)` in a threadpool. The
+`@beta_tool` objects are callable and carry `.name/.description/.input_schema/
+.to_dict()/.func`, so **adding a tool to `TOOLS` exposes it over HTTP and to
+Claude Code automatically** — never write per-tool routes. Anthropic server
+tools (`web_search`/`web_fetch`, in `SERVER_TOOLS`) are intentionally NOT
+exposed — Claude Code brings its own web tools.
+
+**Auth:** `settings.mcp_token` (env `MCP_TOKEN`), checked as
+`Authorization: Bearer <token>`. Empty = open (fine on localhost); set it before
+the platform is reachable remotely, since these endpoints can create drafts.
+
+**MCP server (`platform/mcp/server.py`):** a stateless stdio client run via
+`uv run --script` (self-contained PEP 723 deps: `mcp`, `httpx`). It imports NO
+app code — it fetches the catalog from `/api/agent/tools` and proxies each call
+to `/api/agent/tools/{name}`, needing only `KICAD_API_URL`
+(default `http://localhost:8020`) + optional `KICAD_MCP_TOKEN`.
+`read_datasheet`'s list-of-content-blocks return (text + base64 PNG pages) is
+converted to MCP image content; every other tool returns a JSON string as text.
+
+**Claude Code wiring (`.mcp.json` at repo root):** a project-scoped stdio entry
+`kicad-library` that runs the server via `uv`, with `KICAD_API_URL` /
+`KICAD_MCP_TOKEN` from env (`${VAR:-default}` expansion keeps them out of git).
+MCP config is OS-user-scoped, **not** tied to a Claude account, so it works
+across both logins and survives account switches. (The pre-existing `kicad`
+entry is a separate Node KiCad-IPC server — leave it.)
+
+**Run it:** `docker compose up -d db` + the platform API (dev:
+`uvicorn app.main:app` from `platform/api`, or `docker compose up -d`), then open
+the repo in Claude Code — the `kicad-library` server connects to the running API.

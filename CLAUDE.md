@@ -62,7 +62,7 @@ Managed via `pyproject.toml` — install with `pip install -e .` inside `.venv`:
 
 - **kiutils** — custom fork: `git+https://github.com/Wittmann-MEE/kiutils.git`
 - **pyyaml** / **ruamel.yaml** — YAML parsing
-- **easyeda2kicad** — LCSC component importing
+- **easyeda2kicad** — LCSC component importing. Pinned `<1.0` in `pyproject.toml`: the 1.x releases drop `easyeda2kicad.helpers` (`add_component_in_symbol_lib_file`), which `kicad_lib/easyeda/importer.py` needs
 
 ## Running the Pipeline
 
@@ -77,9 +77,9 @@ The pipeline runs in order: auto-import → fill metadata → refresh prices →
 
 Every component gets `Supplier 1` / `Supplier Part Number 1`. When a component has an `LCSC Part`, `Supplier 1` is made authoritative as `LCSC` (with the `Cxxxx` as the part number). If `Supplier 1` already names a **different** supplier (e.g. `Mouser`), that supplier is **not discarded** — it is relocated to the next free `Supplier N` / `Supplier Part Number N` slot (so Mouser becomes `Supplier 2`, etc.). Components without an `LCSC Part` keep whatever `Supplier 1` they have, and missing keys are added empty. Key presence (not value) decides whether a key is added, so empty values never produce duplicate keys.
 
-### LCSC price properties
+### Supplier price properties (JLCPCB first, LCSC fallback)
 
-Each component with an `LCSC Part` (Cxxxxx) gets six auto-managed properties refreshed by `pricing.py` during `main.py`:
+Each component with an `LCSC Part` (Cxxxxx) gets six auto-managed properties refreshed by `pricing.py` during `main.py`. **JLCPCB assembly pricing is the default everywhere** (user decision 2026-07-21): the refresher prices from the JLCPCB assembly ladder (official OpenAPI, batched via `kicad_lib/jlc.py`; credentials `JLC_APP_ID`/`JLC_ACCESS_KEY`/`JLC_SECRET_KEY` from env, falling back to `platform/.env`) and only falls back to the LCSC retail ladder for parts JLC doesn't carry:
 
 | Key | Value |
 |---|---|
@@ -87,10 +87,12 @@ Each component with an `LCSC Part` (Cxxxxx) gets six auto-managed properties ref
 | `Price @100 USD` | Unit price at qty=100 |
 | `Price @Bulk USD` | Unit price at the 1000-qty break, or 5000 if no ladder tier ≤1000 |
 | `Price Bulk Qty` | Which ladder tier `Price @Bulk USD` was sourced from (e.g. `1000`, `5000`, `600`) |
-| `Price Source` | `LCSC` for auto-managed entries. Set to anything else (e.g. `Manual`) to lock the prices — they will never be overwritten |
-| `Price Updated` | ISO date of last refresh. Entries older than 30 days are refetched; fresher ones are skipped |
+| `Price Source` | `JLCPCB` or `LCSC` for auto-managed entries (records which ladder priced it). Set to anything else (e.g. `Manual`) to lock the prices — they will never be overwritten |
+| `Price Updated` | ISO date of last refresh. Entries older than 30 days are refetched; fresher ones are skipped — except LCSC-sourced entries, which upgrade to JLCPCB as soon as JLC carries the part |
 
-If LCSC returns no price ladder the price fields are not added (component is silently skipped). Components with no `LCSC Part` are skipped entirely. To manually pin a price, set `Price Source: Manual` (or any non-`LCSC` value) and the refresher will leave that component untouched.
+If neither supplier returns a price ladder the price fields are not added (component is silently skipped). Components with no `LCSC Part` are skipped entirely. To manually pin a price, set `Price Source: Manual` (or any other non-auto value) and the refresher will leave that component untouched.
+
+The platform mirrors the same rule (`platform/api/app/services/ladder.py`): both ladders are stored as `component_price_points` (`AUTO_SOURCES = ("JLCPCB", "LCSC")`), and price resolution ignores LCSC tiers whenever JLCPCB tiers exist — BOMs, run economics, and the browse-list price all show JLC pricing by default.
 
 **Always run `main.py` after editing any `Sources/*.yaml` file.** The YAML is the source of truth, but KiCad reads the generated `Symbols/<Type>.kicad_sym` files. If `main.py` is not re-run, the YAML change is invisible in KiCad and the task is effectively undone. This applies to all YAML edits — property changes, footprint renames, new components, anything.
 

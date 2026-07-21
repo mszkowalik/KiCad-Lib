@@ -31,7 +31,6 @@
 		)
 		(property "Footprint" "7Sigma:Crystal_SMD_3225-4Pin_3.2x2.5mm"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -40,7 +39,6 @@
 		)
 		(property "Datasheet" "https://atta.szlcsc.com/upload/public/pdf/source/20190712/C403945_BA479055B724E986F735DE30F05BF37D.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -49,7 +47,6 @@
 		)
 		(property "Description" "Four pin crystal, GND on pins 2 and 4, small symbol"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -58,7 +55,6 @@
 		)
 		(property "ki_keywords" "quartz ceramic resonator oscillator"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -67,7 +63,6 @@
 		)
 		(property "ki_fp_filters" "Crystal*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -155,7 +150,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0775"
+		(property "Price @1 USD" "0.0777"
 			(at 0 0 0)
 			(effects
 				(font
@@ -164,7 +159,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0617"
+		(property "Price @100 USD" "0.0619"
 			(at 0 0 0)
 			(effects
 				(font
@@ -173,7 +168,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0538"
+		(property "Price @Bulk USD" "0.0539"
 			(at 0 0 0)
 			(effects
 				(font
@@ -191,7 +186,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -200,7 +195,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -375,7 +370,6 @@
 		)
 		(property "Footprint" "7Sigma:Crystal_SMD_3225-4Pin_3.2x2.5mm"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -384,7 +378,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2411121006_YXC-Crystal-Oscillators-X322525MMB4SI_C70582.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -393,7 +386,6 @@
 		)
 		(property "Description" "Four pin crystal, GND on pins 2 and 4, small symbol"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -402,7 +394,6 @@
 		)
 		(property "ki_keywords" "quartz ceramic resonator oscillator"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -411,7 +402,6 @@
 		)
 		(property "ki_fp_filters" "Crystal*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -499,7 +489,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.1047"
+		(property "Price @1 USD" "0.1019"
 			(at 0 0 0)
 			(effects
 				(font
@@ -508,7 +498,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0847"
+		(property "Price @100 USD" "0.0819"
 			(at 0 0 0)
 			(effects
 				(font
@@ -517,7 +507,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0673"
+		(property "Price @Bulk USD" "0.0645"
 			(at 0 0 0)
 			(effects
 				(font
@@ -535,7 +525,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -544,7 +534,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -719,7 +709,6 @@
 		)
 		(property "Footprint" "7Sigma:Crystal_SMD_3225-4Pin_3.2x2.5mm"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -728,7 +717,6 @@
 		)
 		(property "Datasheet" "https://www.mouser.pl/datasheet/2/122/ECS_33B-1222132.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -737,7 +725,6 @@
 		)
 		(property "Description" "Four pin crystal, GND on pins 2 and 4, small symbol"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -746,7 +733,6 @@
 		)
 		(property "ki_keywords" "quartz ceramic resonator oscillator"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -755,7 +741,6 @@
 		)
 		(property "ki_fp_filters" "Crystal*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -843,7 +828,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.9987"
+		(property "Price @1 USD" "1.0233"
 			(at 0 0 0)
 			(effects
 				(font
@@ -852,7 +837,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.5923"
+		(property "Price @100 USD" "0.6069"
 			(at 0 0 0)
 			(effects
 				(font
@@ -861,7 +846,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.5002"
+		(property "Price @Bulk USD" "0.5125"
 			(at 0 0 0)
 			(effects
 				(font
@@ -879,7 +864,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -888,7 +873,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1063,7 +1048,6 @@
 		)
 		(property "Footprint" "7Sigma:Crystal_SMD_3225-4Pin_3.2x2.5mm"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1072,7 +1056,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C37635390.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1081,7 +1064,6 @@
 		)
 		(property "Description" "Four pin crystal, GND on pins 2 and 4, small symbol"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1090,7 +1072,6 @@
 		)
 		(property "ki_keywords" "quartz ceramic resonator oscillator"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1099,7 +1080,6 @@
 		)
 		(property "ki_fp_filters" "Crystal*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1187,7 +1167,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0824"
+		(property "Price @1 USD" "0.0825"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1196,7 +1176,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0660"
+		(property "Price @100 USD" "0.0663"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1205,7 +1185,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0517"
+		(property "Price @Bulk USD" "0.0518"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1223,7 +1203,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1232,7 +1212,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1406,7 +1386,6 @@
 		)
 		(property "Footprint" "7Sigma:Crystal_SMD_3225-4Pin_3.2x2.5mm"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1415,7 +1394,6 @@
 		)
 		(property "Datasheet" "https://datasheet.lcsc.com/datasheet/pdf/647e27ef195e0290201e020f027d7870.pdf?productCode=C2901575"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1424,7 +1402,6 @@
 		)
 		(property "Description" "CMOS SMD Crystal Clock Oscillator, 4 pin (EN, GND, OUT, Vdd)"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1433,7 +1410,6 @@
 		)
 		(property "ki_keywords" "CMOS SMD Crystal Clock Oscillator"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1503,7 +1479,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.4140"
+		(property "Price @1 USD" "0.4149"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1512,7 +1488,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.2371"
+		(property "Price @100 USD" "0.2376"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1521,7 +1497,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.1965"
+		(property "Price @Bulk USD" "0.1969"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1539,7 +1515,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1548,7 +1524,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font

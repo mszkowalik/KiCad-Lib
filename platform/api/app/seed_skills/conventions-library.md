@@ -59,8 +59,9 @@ them correctly so the draft reads right.
 
 - **Prices** — `Price @1 USD`, `Price @100 USD`, `Price @Bulk USD`,
   `Price Bulk Qty`, `Price Source`, `Price Updated` are auto-managed (refreshed
-  from LCSC in their own table). Never include them; the proposal tools reject
-  them.
+  into their own table from the JLCPCB assembly ladder by default, with the
+  LCSC retail ladder as fallback for parts JLC doesn't carry). Never include
+  them; the proposal tools reject them.
 - **Datasheets** — do not add a `Datasheet` (or `Datasheet 2`, …) property.
   Pass the URL through the `datasheet_url` argument of `propose_new_component`
   instead; datasheets live in their own table and can have a stored copy.

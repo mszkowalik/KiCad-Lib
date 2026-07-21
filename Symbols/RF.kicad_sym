@@ -34,7 +34,6 @@
 		)
 		(property "Footprint" "7Sigma:Texas_SWRA117D_2.4GHz_Left"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -43,7 +42,6 @@
 		)
 		(property "Datasheet" ""
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -52,7 +50,6 @@
 		)
 		(property "Description" "Antenna"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -61,7 +58,6 @@
 		)
 		(property "ki_keywords" "antenna"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -202,7 +198,6 @@
 		)
 		(property "Footprint" "7Sigma:Kinghelm_KH5220-A36"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -211,7 +206,6 @@
 		)
 		(property "Datasheet" "https://lcsc.com/datasheet/lcsc_datasheet_2410121246_Shenzhen-Kinghelm-Elec-KH5220-A36_C484543.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -220,7 +214,6 @@
 		)
 		(property "Description" "Antenna"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -229,7 +222,6 @@
 		)
 		(property "ki_keywords" "antenna"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -317,7 +309,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.2301"
+		(property "Price @1 USD" "0.2307"
 			(at 0 0 0)
 			(effects
 				(font
@@ -326,7 +318,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.1819"
+		(property "Price @100 USD" "0.1824"
 			(at 0 0 0)
 			(effects
 				(font
@@ -335,7 +327,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.1354"
+		(property "Price @Bulk USD" "0.1357"
 			(at 0 0 0)
 			(effects
 				(font
@@ -353,7 +345,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -362,7 +354,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -451,7 +443,6 @@
 		)
 		(property "Footprint" "7Sigma:ANT_1206_3216Metric"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -460,7 +451,6 @@
 		)
 		(property "Datasheet" "https://abracon.com/datasheets/ACS0301U.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -469,7 +459,6 @@
 		)
 		(property "Description" "Antenna"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -478,7 +467,6 @@
 		)
 		(property "ki_keywords" "antenna"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -584,7 +572,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.9917"
+		(property "Price @1 USD" "0.9957"
 			(at 0 0 0)
 			(effects
 				(font
@@ -593,7 +581,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.6012"
+		(property "Price @100 USD" "0.6036"
 			(at 0 0 0)
 			(effects
 				(font
@@ -602,7 +590,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.5299"
+		(property "Price @Bulk USD" "0.5320"
 			(at 0 0 0)
 			(effects
 				(font
@@ -620,7 +608,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -629,7 +617,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -718,7 +706,6 @@
 		)
 		(property "Footprint" "7Sigma:ANT-TH_L9.0-W9.0_BWGNSCNX9-9W2"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -727,7 +714,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C2826452.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -736,7 +722,6 @@
 		)
 		(property "Description" "Antenna"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -745,7 +730,6 @@
 		)
 		(property "ki_keywords" "antenna"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -833,7 +817,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.7311"
+		(property "Price @1 USD" "0.7321"
 			(at 0 0 0)
 			(effects
 				(font
@@ -842,7 +826,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.5199"
+		(property "Price @100 USD" "0.5206"
 			(at 0 0 0)
 			(effects
 				(font
@@ -851,7 +835,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.4095"
+		(property "Price @Bulk USD" "0.4100"
 			(at 0 0 0)
 			(effects
 				(font
@@ -869,7 +853,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -878,7 +862,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -967,7 +951,6 @@
 		)
 		(property "Footprint" "7Sigma:ANT-SMD_L10.0-W3.0"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -976,7 +959,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C239243.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -985,7 +967,6 @@
 		)
 		(property "Description" "Antenna"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -994,7 +975,6 @@
 		)
 		(property "ki_keywords" "antenna"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1082,7 +1062,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "1.0350"
+		(property "Price @1 USD" "1.1161"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1091,7 +1071,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.6910"
+		(property "Price @100 USD" "0.7452"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1100,7 +1080,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.5598"
+		(property "Price @Bulk USD" "0.6036"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1118,7 +1098,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1127,7 +1107,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1216,7 +1196,6 @@
 		)
 		(property "Footprint" "7Sigma:ANT_3PIN_1206_3216Metric"
 			(at 0 2.54 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1225,7 +1204,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C6604735.pdf"
 			(at 0 2.54 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1234,7 +1212,6 @@
 		)
 		(property "Description" "Antenna with extra pin for shielding"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1243,7 +1220,6 @@
 		)
 		(property "ki_keywords" "antenna"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1331,7 +1307,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "1.0155"
+		(property "Price @1 USD" "1.0136"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1340,7 +1316,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.6748"
+		(property "Price @100 USD" "0.6736"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1349,7 +1325,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.5819"
+		(property "Price @Bulk USD" "0.5808"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1367,7 +1343,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1376,7 +1352,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font

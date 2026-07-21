@@ -27,7 +27,6 @@
 		)
 		(property "Footprint" "7Sigma:Relay_SPDT_Omron_G2RL-1"
 			(at 11.43 -1.27 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -37,7 +36,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2211282230_Omron-Electronics-G2RL-1-DC24_C469139.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -46,7 +44,6 @@
 		)
 		(property "Description" "General Purpose Low Profile Relay SPDT Through Hole, Omron G2RL series, 12A 250VAC"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -55,7 +52,6 @@
 		)
 		(property "ki_keywords" "Single Pole Relay SPDT Omron"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -64,7 +60,6 @@
 		)
 		(property "ki_fp_filters" "Relay?SPDT?Omron?G2RL*"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -125,7 +120,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "1.7479"
+		(property "Price @1 USD" "1.7457"
 			(at 0 0 0)
 			(effects
 				(font
@@ -134,7 +129,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "1.0475"
+		(property "Price @100 USD" "1.0478"
 			(at 0 0 0)
 			(effects
 				(font
@@ -143,7 +138,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.9399"
+		(property "Price @Bulk USD" "0.9388"
 			(at 0 0 0)
 			(effects
 				(font
@@ -161,7 +156,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -170,7 +165,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -469,7 +464,6 @@
 		)
 		(property "Footprint" "7Sigma:RELAY-SMD_G6K-2F-X-XX"
 			(at 0 -10.16 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -478,7 +472,6 @@
 		)
 		(property "Datasheet" "https://datasheet.lcsc.com/datasheet/pdf/61fb53c6234ed00aa64248b2c58b602c.pdf?productCode=C47190"
 			(at 0 -12.7 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -487,7 +480,6 @@
 		)
 		(property "Description" ""
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -548,7 +540,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.9245"
+		(property "Price @1 USD" "0.9225"
 			(at 0 0 0)
 			(effects
 				(font
@@ -557,7 +549,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.6218"
+		(property "Price @100 USD" "0.6199"
 			(at 0 0 0)
 			(effects
 				(font
@@ -566,7 +558,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.5713"
+		(property "Price @Bulk USD" "0.5711"
 			(at 0 0 0)
 			(effects
 				(font
@@ -584,7 +576,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -593,7 +585,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font

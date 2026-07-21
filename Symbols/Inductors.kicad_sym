@@ -31,7 +31,6 @@
 		)
 		(property "Footprint" "7Sigma:L_Murata_DFE201610P"
 			(at 0 -7.62 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -40,7 +39,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2409272202_Murata-Electronics-DFE201612E-R47M-P2_C668312.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -49,7 +47,6 @@
 		)
 		(property "Description" "base_inductor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -137,7 +134,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.1608"
+		(property "Price @1 USD" "0.1614"
 			(at 0 0 0)
 			(effects
 				(font
@@ -146,7 +143,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.1375"
+		(property "Price @100 USD" "0.1382"
 			(at 0 0 0)
 			(effects
 				(font
@@ -155,7 +152,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.1172"
+		(property "Price @Bulk USD" "0.1177"
 			(at 0 0 0)
 			(effects
 				(font
@@ -173,7 +170,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -182,7 +179,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -310,7 +307,6 @@
 		)
 		(property "Footprint" "7Sigma:L_Wuerth_HCM-1350"
 			(at 0 -7.62 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -319,7 +315,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/lcsc_datasheet_2404260921_cjiang--Changjiang-Microelectronics-Tech-FXL1350-100-M_C526017.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -328,7 +323,6 @@
 		)
 		(property "Description" "base_inductor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -416,7 +410,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.7818"
+		(property "Price @1 USD" "0.6280"
 			(at 0 0 0)
 			(effects
 				(font
@@ -425,7 +419,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.4780"
+		(property "Price @100 USD" "0.3580"
 			(at 0 0 0)
 			(effects
 				(font
@@ -434,7 +428,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.4051"
+		(property "Price @Bulk USD" "0.2831"
 			(at 0 0 0)
 			(effects
 				(font
@@ -452,7 +446,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -461,7 +455,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -589,7 +583,6 @@
 		)
 		(property "Footprint" "7Sigma:L_0402_1005Metric"
 			(at 0 -7.62 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -598,7 +591,6 @@
 		)
 		(property "Datasheet" "https://lcsc.com/datasheet/lcsc_datasheet_2412231058_TDK-MLG1005S2N0BT000_C76769.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -607,7 +599,6 @@
 		)
 		(property "Description" "base_inductor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -749,7 +740,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -758,7 +749,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -886,7 +877,6 @@
 		)
 		(property "Footprint" "7Sigma:L_Murata_DFE201610P"
 			(at 0 -7.62 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -895,7 +885,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C161082.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -904,7 +893,6 @@
 		)
 		(property "Description" "base_inductor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -992,7 +980,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.2046"
+		(property "Price @1 USD" "0.1398"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1001,7 +989,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.1786"
+		(property "Price @100 USD" "0.1138"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1010,7 +998,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.1558"
+		(property "Price @Bulk USD" "0.0910"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1028,7 +1016,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1037,7 +1025,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1165,7 +1153,6 @@
 		)
 		(property "Footprint" "7Sigma:L_Changjiang_FTC404030S"
 			(at 0 -7.62 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1174,7 +1161,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C39676083.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1183,7 +1169,6 @@
 		)
 		(property "Description" "base_inductor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1271,7 +1256,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.2560"
+		(property "Price @1 USD" "0.2571"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1280,7 +1265,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.2025"
+		(property "Price @100 USD" "0.2034"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1289,7 +1274,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.1510"
+		(property "Price @Bulk USD" "0.1517"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1307,7 +1292,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1316,7 +1301,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1444,7 +1429,6 @@
 		)
 		(property "Footprint" "7Sigma:L_0402_1005Metric"
 			(at 0 -7.62 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1453,7 +1437,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C192855.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1462,7 +1445,6 @@
 		)
 		(property "Description" "base_inductor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1550,7 +1532,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0716"
+		(property "Price @1 USD" "0.0479"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1559,7 +1541,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0635"
+		(property "Price @100 USD" "0.0397"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1568,7 +1550,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0563"
+		(property "Price @Bulk USD" "0.0326"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1586,7 +1568,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1595,7 +1577,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1723,7 +1705,6 @@
 		)
 		(property "Footprint" "7Sigma:L_SMD_L5.8-W5.2"
 			(at 0 -7.62 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1732,7 +1713,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C2929435.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1741,7 +1721,6 @@
 		)
 		(property "Description" "base_inductor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -1829,7 +1808,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0552"
+		(property "Price @1 USD" "0.0554"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1838,7 +1817,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0446"
+		(property "Price @100 USD" "0.0448"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1847,7 +1826,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0393"
+		(property "Price @Bulk USD" "0.0394"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1865,7 +1844,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -1874,7 +1853,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2002,7 +1981,6 @@
 		)
 		(property "Footprint" "7Sigma:L_Murata_DFE201610P"
 			(at 0 -7.62 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2011,7 +1989,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C22471088.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2020,7 +1997,6 @@
 		)
 		(property "Description" "base_inductor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2108,7 +2084,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0413"
+		(property "Price @1 USD" "0.0415"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2117,7 +2093,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0329"
+		(property "Price @100 USD" "0.0331"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2126,7 +2102,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0287"
+		(property "Price @Bulk USD" "0.0288"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2144,7 +2120,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2153,7 +2129,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2281,7 +2257,6 @@
 		)
 		(property "Footprint" "7Sigma:L_0402_1005Metric"
 			(at 0 -7.62 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2290,7 +2265,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C703738.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2299,7 +2273,6 @@
 		)
 		(property "Description" "base_inductor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2387,7 +2360,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.1953"
+		(property "Price @1 USD" "0.1949"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2396,7 +2369,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.1599"
+		(property "Price @100 USD" "0.1596"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2405,7 +2378,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.1258"
+		(property "Price @Bulk USD" "0.1256"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2423,7 +2396,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2432,7 +2405,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2560,7 +2533,6 @@
 		)
 		(property "Footprint" "7Sigma:L_0402_1005Metric"
 			(at 0 -7.62 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2569,7 +2541,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C91240.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2578,7 +2549,6 @@
 		)
 		(property "Description" "base_inductor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2666,7 +2636,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0615"
+		(property "Price @1 USD" "0.0627"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2675,7 +2645,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0508"
+		(property "Price @100 USD" "0.0519"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2684,7 +2654,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.0414"
+		(property "Price @Bulk USD" "0.0427"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2702,7 +2672,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2711,7 +2681,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2839,7 +2809,6 @@
 		)
 		(property "Footprint" "7Sigma:IND-SMD_L4.5-W4.1_SRP4020TA"
 			(at 0 -7.62 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2848,7 +2817,6 @@
 		)
 		(property "Datasheet" "https://www.lcsc.com/datasheet/C913245.pdf"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2857,7 +2825,6 @@
 		)
 		(property "Description" "base_inductor"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2945,7 +2912,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.4154"
+		(property "Price @1 USD" "0.4165"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2954,7 +2921,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.2402"
+		(property "Price @100 USD" "0.2408"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2963,7 +2930,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @Bulk USD" "0.1964"
+		(property "Price @Bulk USD" "0.1969"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2981,7 +2948,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -2990,7 +2957,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3118,7 +3085,6 @@
 		)
 		(property "Footprint" "7Sigma:L_0603_1608Metric"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3127,7 +3093,6 @@
 		)
 		(property "Datasheet" "https://datasheet.lcsc.com/datasheet/pdf/f56d59225adc45bfab675df0e0fbb20e.pdf?productCode=C76893"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3136,7 +3101,6 @@
 		)
 		(property "Description" "Ferrite bead"
 			(at 0 0 0)
-			(hide yes)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3233,7 +3197,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @1 USD" "0.0519"
+		(property "Price @1 USD" "0.0518"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3242,7 +3206,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price @100 USD" "0.0428"
+		(property "Price @100 USD" "0.0427"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3269,7 +3233,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Source" "LCSC"
+		(property "Price Source" "JLCPCB"
 			(at 0 0 0)
 			(effects
 				(font
@@ -3278,7 +3242,7 @@
 				(hide yes)
 			)
 		)
-		(property "Price Updated" "2026-07-16"
+		(property "Price Updated" "2026-07-21"
 			(at 0 0 0)
 			(effects
 				(font
