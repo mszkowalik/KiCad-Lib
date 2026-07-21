@@ -1,155 +1,46 @@
-# KiCad Library Management System
+# 7Sigma KiCad Library Platform
 
-KiCad component library generator — YAML definitions → KiCad symbol libraries with automated 3D model management.
+Web-hosted component library for KiCad: Postgres-backed catalog with versioned
+components/symbols/footprints, draft-proposal workflow, KiCad HTTP library +
+PCM packages, project BOMs and production-run economics, and the Jaravis agent
+(also exposed to Claude Code over MCP).
 
-## Architecture
+**Postgres is the source of truth.** The old YAML pipeline that seeded it
+(`Sources/*.yaml`, `kicad_lib/`, `main.py`, generated `Symbols/` +
+`Footprints/` + `3DModels/`) is retired: it lives, with full history and its
+final generated state, on the **`archive/yaml-library`** branch. To re-run a
+full YAML import, check out that branch in this working tree — `compose.yaml`
+mounts the repo at `/repo` for exactly that.
 
-Template-based generation model:
+## Layout
 
-| Layer | Path | Role |
+| Path | Role | Docs |
 |---|---|---|
-| Base symbols | `Symbols/base_library.kicad_symdir/` | Graphical templates — one `.kicad_sym` per symbol |
-| YAML definitions | `Sources/*.yaml` | Component variants with properties and footprints |
-| Generated libraries | `Symbols/<Type>.kicad_sym` | Final KiCad symbol libraries (output) |
-| Footprints | `Footprints/7Sigma.pretty/` | KiCad footprint files |
-| 3D models | `3DModels/` | STEP/WRL files, auto-resolved from multiple sources |
+| `api/` | FastAPI backend (DB, importer, generator, Jaravis, JLC/LCSC clients) | `api/CLAUDE.md` |
+| `web/` | React + Vite frontend | `web/CLAUDE.md` |
+| `mcp/` | Stdio MCP server proxying the agent tools to Claude Code | `api/CLAUDE.md` (agent section) |
+| `render/` | kicad-cli render container (previews, project exports) | — |
+| `clients/` | Client-side helpers (KiCad sync plugin etc.) | — |
+| `compose.yaml` | Full dev deployment (db, minio, api, render, web) | `README.md` |
 
-## Documentation Map
-
-| File | Scope |
-|---|---|
-| `CLAUDE.md` (this file) | Pipeline, environment, dependencies, cross-cutting gotchas |
-| `Footprints/CLAUDE.md` | Footprint styling, naming, pad grid, thermal vias |
-| `Symbols/CLAUDE.md` | Symbol pin types, grouping, geometry |
-
-## Module Map
-
-| Module | Responsibility |
-|---|---|
-| `main.py` | Entry point — orchestrates full pipeline |
-| `config.py` | Centralized paths and environment configuration |
-| `symbol_generator.py` | Deep-copies base symbols, applies YAML properties, writes `.kicad_sym` |
-| `yaml_parser.py` | Loads YAML, evaluates `{Property}` template expressions |
-| `update_footprints_models.py` | Normalizes 3D model paths, copies missing models |
-| `component_validator.py` | Validates YAML structure, base refs, footprints, property patterns |
-| `easyeda_importer.py` | Auto-imports components from LCSC/EasyEDA API |
-| `pricing.py` | Refreshes LCSC prices in YAML (skips fresh / manual entries) |
-
-## Conventions (Always Apply)
-
-- **Virtual environment**: Always use `.venv` — activate with `source .venv/bin/activate`
-- **Footprint namespace**: Always prefix custom footprints with `7Sigma:`
-- **3D model paths**: Use `${SEVENSIGMA_DIR}/3DModels/` in footprint files
-- **Property visibility**: New custom properties default to hidden (`hide: True`)
-- **Base components**: Must exist in `base_library.kicad_sym` before YAML can reference them
-- **File naming**: YAML `library_name` field must match the filename (e.g., `Resistor.yaml` → `library_name: Resistor`)
-- **Property templating**: Use `{PropertyKey}` in YAML values — evaluated as f-strings at generation time
-- **YAML quoting**: The user's formatter rewrites single quotes (`''`) to double quotes (`""`). The pipeline matches this — all written YAML values pass through `dq()` in `kicad_lib/yaml/rewriter.py`, which emits double quotes for values that need quoting (prices, dates, quantities) and leaves plain strings (e.g. `LCSC`) unquoted. Route any new value-write site through `dq()` too. Don't flag quote-style diffs the formatter introduces.
-- **No blank lines in YAML**: Don't add empty lines between or within component entries in `Sources/*.yaml`.
-- **Linting**: Ruff with line-length 120, target Python 3.10
-
-## Environment Variables
-
-| Variable | Purpose |
-|---|---|
-| `SEVENSIGMA_DIR` | Project root — used in 3D model path references |
-| `KICAD9_3DMODEL_DIR` | KiCad installation 3D models directory |
-| `EASYEDA2KICAD` | easyeda2kicad output directory (optional) |
-
-## Dependencies
-
-Managed via `pyproject.toml` — install with `pip install -e .` inside `.venv`:
-
-- **kiutils** — custom fork: `git+https://github.com/Wittmann-MEE/kiutils.git`
-- **pyyaml** / **ruamel.yaml** — YAML parsing
-- **easyeda2kicad** — LCSC component importing. Pinned `<1.0` in `pyproject.toml`: the 1.x releases drop `easyeda2kicad.helpers` (`add_component_in_symbol_lib_file`), which `kicad_lib/easyeda/importer.py` needs
-
-## Running the Pipeline
+## Running
 
 ```bash
-source .venv/bin/activate
-python main.py
+cp .env.example .env    # once; JLC/Anthropic keys optional
+docker compose up -d --build
 ```
 
-The pipeline runs in order: auto-import → fill metadata → refresh prices → validate → generate symbols → update 3D models.
+Web UI at http://localhost:5173, API at http://localhost:8020 (docs at
+`/docs`). The api and web containers live-mount their sources (`api/app`,
+`web/`) — host edits hot-reload without a rebuild.
 
-### Supplier field normalization (`suppliers.py`)
+## Conventions
 
-Every component gets `Supplier 1` / `Supplier Part Number 1`. When a component has an `LCSC Part`, `Supplier 1` is made authoritative as `LCSC` (with the `Cxxxx` as the part number). If `Supplier 1` already names a **different** supplier (e.g. `Mouser`), that supplier is **not discarded** — it is relocated to the next free `Supplier N` / `Supplier Part Number N` slot (so Mouser becomes `Supplier 2`, etc.). Components without an `LCSC Part` keep whatever `Supplier 1` they have, and missing keys are added empty. Key presence (not value) decides whether a key is added, so empty values never produce duplicate keys.
-
-### Supplier price properties (JLCPCB first, LCSC fallback)
-
-Each component with an `LCSC Part` (Cxxxxx) gets six auto-managed properties refreshed by `pricing.py` during `main.py`. **JLCPCB assembly pricing is the default everywhere** (user decision 2026-07-21): the refresher prices from the JLCPCB assembly ladder (official OpenAPI, batched via `kicad_lib/jlc.py`; credentials `JLC_APP_ID`/`JLC_ACCESS_KEY`/`JLC_SECRET_KEY` from env, falling back to `platform/.env`) and only falls back to the LCSC retail ladder for parts JLC doesn't carry:
-
-| Key | Value |
-|---|---|
-| `Price @1 USD` | Unit price at qty=1 (USD, 4 decimals) |
-| `Price @100 USD` | Unit price at qty=100 |
-| `Price @Bulk USD` | Unit price at the 1000-qty break, or 5000 if no ladder tier ≤1000 |
-| `Price Bulk Qty` | Which ladder tier `Price @Bulk USD` was sourced from (e.g. `1000`, `5000`, `600`) |
-| `Price Source` | `JLCPCB` or `LCSC` for auto-managed entries (records which ladder priced it). Set to anything else (e.g. `Manual`) to lock the prices — they will never be overwritten |
-| `Price Updated` | ISO date of last refresh. Entries older than 30 days are refetched; fresher ones are skipped — except LCSC-sourced entries, which upgrade to JLCPCB as soon as JLC carries the part |
-
-If neither supplier returns a price ladder the price fields are not added (component is silently skipped). Components with no `LCSC Part` are skipped entirely. To manually pin a price, set `Price Source: Manual` (or any other non-auto value) and the refresher will leave that component untouched.
-
-The platform mirrors the same rule (`platform/api/app/services/ladder.py`): both ladders are stored as `component_price_points` (`AUTO_SOURCES = ("JLCPCB", "LCSC")`), and price resolution ignores LCSC tiers whenever JLCPCB tiers exist — BOMs, run economics, and the browse-list price all show JLC pricing by default.
-
-**Always run `main.py` after editing any `Sources/*.yaml` file.** The YAML is the source of truth, but KiCad reads the generated `Symbols/<Type>.kicad_sym` files. If `main.py` is not re-run, the YAML change is invisible in KiCad and the task is effectively undone. This applies to all YAML edits — property changes, footprint renames, new components, anything.
-
-## Available Commands
-
-- `/add-component` — Add a new component to the library
-- `/import-easyeda` — Import a component from LCSC/EasyEDA by part number
-- `/validate-components` — Validate all YAML component definitions
-- `/generate-libraries` — Run the full generation pipeline
-- `/verify-datasheets` — Verify components against manufacturer datasheets
-- `/project-setup` — Set up or troubleshoot the development environment
-
-## Notes & Gotchas
-
-### Footprints must always live under `7Sigma:` — never KiCad stock
-
-Every component entry must reference a footprint from `Footprints/7Sigma.pretty/` with the `7Sigma:` namespace prefix. Never reference KiCad stock footprints (e.g. `Package_BGA:Xilinx_FTG256`, `Package_DFN_QFN:QFN-28_4x4mm_P0.5mm`) in YAML — the validator enforces `^7Sigma:` on every Footprint property.
-
-If a needed footprint exists only in KiCad's standard library:
-1. Copy the `.kicad_mod` file from `/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints/<Lib>.pretty/<Name>.kicad_mod` into `Footprints/7Sigma.pretty/<Name>.kicad_mod`
-2. Reference it as `7Sigma:<Name>` in the YAML
-3. Resolve the 3D model (often missing from KiCad's default libs — fetch from EasyEDA)
-
-Mixing in KiCad stock footprints creates external dependencies and breaks reproducibility. Localize everything, even if the symbol came from KiCad stock.
-
-### kiutils doesn't support KiCad 10 symbol fields (`in_pos_files`)
-
-KiCad 10 adds `(in_pos_files yes)` to each symbol when a `.kicad_sym` file is saved by the KiCad editor. Neither `mvnmgrx/kiutils` (upstream) nor `Wittmann-MEE/kiutils` (our fork, v1.9.6) handles this field — loading raises `ValueError: Unrecognized property key: in_pos_files`, causing every symbol in the library to silently fail to load. The pipeline then thinks all base symbols are missing and re-imports everything from EasyEDA.
-
-**Fix:** patch `.venv/lib/python3.14/site-packages/kiutils/symbol.py`:
-1. Add `in_pos_files: Optional[bool] = None` and `_unknown_fields: list = field(default_factory=list)` to the `Symbol` dataclass
-2. In `from_sexpr`: add `elif item[0] == "in_pos_files": object.in_pos_files = parse_bool(item, "in_pos_files")` after the `on_board` branch, and change the final `else: raise ValueError(...)` to `else: object._unknown_fields.append(item)`
-3. In `to_sexpr`: after the `on_board` block, emit `in_pos_files` and `_unknown_fields`
-
-This patch is lost on `pip install -e .` reinstalls. Re-apply it after any kiutils reinstall.
-
-### EasyEDA API blocks the `easyeda2kicad` User-Agent
-
-The `https://easyeda.com/api/products/{lcsc_id}/components` endpoint returns HTTP 403 when the `User-Agent` header contains "easyeda2kicad" or "python-requests". Both the auto-importer and the `easyeda2kicad` CLI then fail with `JSONDecodeError: Expecting value: line 1 column 1 (char 0)` because the 403 HTML is not JSON.
-
-**Fix:** patch `.venv/lib/python3.14/site-packages/easyeda2kicad/easyeda/easyeda_api.py` to set `"User-Agent": "curl/8.1"` (or any non-blocked value — `curl/*`, `kiutils/*`, and empty UA all work). The patch lives in the venv, so it is lost on `pip install -e .` reinstalls. A proper fix would be a PR to the vendored fork.
-
-### QA checklist for EasyEDA-imported footprints
-
-EasyEDA-imported `.kicad_mod` files have two recurring defects that must be fixed before the import is considered done:
-
-1. **Pad names stored as floats** — e.g. `(pad "1.0" …)` instead of `(pad "1" …)`. The symbol pins are integers, so schematic-to-PCB net mapping silently fails. Fix with `re.sub(r'\(pad "(\d+)\.0"', r'(pad "\1"', content)`.
-2. **Wrong internal library prefix** — header reads `(footprint "easyeda2kicad:NAME"` but the repo convention is `(footprint "NAME"` with no prefix (the `7Sigma:` prefix comes from the `.pretty` folder name, not the file).
-
-Both issues only appear on the EasyEDA fallback path — i.e. when no match exists in the YAML file's `defaults.footprint_map`. Inspect every new `.kicad_mod` for both before declaring the import complete.
-
-## Maintaining These Rules
-
-When a non-obvious convention or fix emerges in conversation — a new rule, a workaround, a renamed convention — record it in the most-specific CLAUDE.md before closing the task:
-
-- Footprint rules → `Footprints/CLAUDE.md`
-- Symbol rules → `Symbols/CLAUDE.md`
-- Anything cross-cutting or environmental → this file
-
-Don't let the rule live only in chat history or `memory/`. Project rules belong in version control where the next contributor (human or agent) will find them.
+- Component/library conventions live in the platform's **skill documents**
+  (editable in the web UI, readable via the `get_skill` agent tool) — not in
+  these files.
+- Backend and frontend conventions: see `api/CLAUDE.md` and `web/CLAUDE.md`.
+  Record new non-obvious rules in the most specific of those files.
+- Writes to library data go through **draft proposals** approved in the
+  Proposals view — never publish directly (see the versioning section of
+  `api/CLAUDE.md`).

@@ -16,7 +16,7 @@
         "run",
         "--quiet",
         "--script",
-        "/Users/mateuszkowalik/Projects/KiCad Lib/platform/mcp/server.py"
+        "/Users/mateuszkowalik/Projects/KiCad Lib/mcp/server.py"
       ],
       "env": {
         "KICAD_API_URL": "${KICAD_API_URL:-http://localhost:8020}",
