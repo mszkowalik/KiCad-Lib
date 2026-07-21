@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     # ../.env covers dev mode (uvicorn run from platform/api reads platform/.env)
     model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
 
-    database_url: str = "postgresql+psycopg://kicadlib:kicadlib@127.0.0.1:5433/kicadlib"
+    database_url: str = "postgresql+psycopg://kicadlib:kicadlib@127.0.0.1:5434/kicadlib"
 
     # The existing library repo (mounted read-only at /repo in Docker).
     # The import station reads Sources/, Symbols/base_library.kicad_symdir/,
@@ -45,6 +45,12 @@ class Settings(BaseSettings):
 
     # Token expected in "Authorization: Token <...>" on /kicad/v1/* endpoints.
     httplib_token: str = "dev-token"
+
+    # Bearer token required on /api/agent/* (the tool surface the external MCP
+    # server / Claude Code drives). Empty = open, which is fine on localhost;
+    # set a value before the platform is reachable remotely so the agent
+    # endpoints (which can create draft proposals) are not left public.
+    mcp_token: str = ""
 
     # ------------------------------------------------------------- projects
     # MinIO object storage: project snapshot archives, cached renders

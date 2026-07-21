@@ -24,7 +24,7 @@ docker compose up --build
 | api mirror | http://localhost:8020/files/ | Published-state file mirror (static) |
 | KiCad HTTP lib | http://localhost:8020/kicad/v1/ | Token-authenticated part catalog |
 | render | http://localhost:8100 | kicad-cli render service (previews + project exports) |
-| db | localhost:5433 | Postgres 16 (user/pass/db: `kicadlib`) |
+| db | localhost:5434 | Postgres 16 (user/pass/db: `kicadlib`) — 5433 is taken by the ze_router_ztp deployment |
 | minio | localhost:9000 (console :9001) | Object storage: project snapshots, cached renders, run attachments |
 
 Then open the web UI → **Import** → type `IMPORT` → run. This **wipes the
@@ -85,7 +85,7 @@ Frontend: `cd web && npm install && npm run dev`.
 
 | Var | Default | Purpose |
 |---|---|---|
-| `DATABASE_URL` | `postgresql+psycopg://kicadlib:kicadlib@127.0.0.1:5433/kicadlib` | Postgres |
+| `DATABASE_URL` | `postgresql+psycopg://kicadlib:kicadlib@127.0.0.1:5434/kicadlib` | Postgres |
 | `REPO_DIR` | `/repo` | Library repo root (import source) |
 | `DATA_DIR` | `./data` | Mirror + render cache |
 | `RENDER_MODE` | `http` | `http` (render container) / `local` (kicad-cli) |

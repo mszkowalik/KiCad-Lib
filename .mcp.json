@@ -8,6 +8,20 @@
         "KICAD_PYTHON": "/Users/mateuszkowalik/.local/share/mcp-servers/kicad/venv/bin/python3",
         "LOG_LEVEL": "info"
       }
+    },
+    "kicad-library": {
+      "type": "stdio",
+      "command": "/Users/mateuszkowalik/.local/bin/uv",
+      "args": [
+        "run",
+        "--quiet",
+        "--script",
+        "/Users/mateuszkowalik/Projects/KiCad Lib/platform/mcp/server.py"
+      ],
+      "env": {
+        "KICAD_API_URL": "${KICAD_API_URL:-http://localhost:8020}",
+        "KICAD_MCP_TOKEN": "${KICAD_MCP_TOKEN:-}"
+      }
     }
   }
 }

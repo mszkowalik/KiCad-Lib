@@ -6,6 +6,7 @@ from sqlalchemy import text
 from .config import settings
 from .db import Base, engine
 from .routers import (
+    agent,
     categories,
     comments,
     components,
@@ -39,6 +40,7 @@ app.include_router(components.router)
 app.include_router(libraries.router)
 app.include_router(datasheets.router)
 app.include_router(jaravis.router)
+app.include_router(agent.router)
 app.include_router(proposals.router)
 app.include_router(comments.router)
 app.include_router(skills.router)
