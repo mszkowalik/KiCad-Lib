@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  API_URL,
   createSkill,
+  deleteSkill,
   errorMessage,
   getSkill,
   getSkills,
   getSkillVersion,
   isAbortError,
   saveSkill,
+  saveSkillDescription,
   type SkillDetail,
   type SkillListItem,
   type SkillVersionDetail,
@@ -31,6 +34,21 @@ interface NewSkillDraft {
   name: string;
 }
 
+/** Shown in the "Use these skills in Claude Code" panel — mirrors the hooks the
+ *  platform repo already ships in `.claude/settings.json`. */
+const HOOK_SNIPPET = `{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command",
+          "command": "python3 \\"$CLAUDE_PROJECT_DIR/.claude/sync-skills.py\\"" }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command",
+          "command": "python3 \\"$CLAUDE_PROJECT_DIR/.claude/sync-skills.py\\" --quick" }] }
+    ]
+  }
+}`;
+
 export default function Skills() {
   const [list, setList] = useState<SkillListItem[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -46,6 +64,8 @@ export default function Skills() {
   const [viewLoading, setViewLoading] = useState(false);
 
   const [editorText, setEditorText] = useState("");
+  /** Unversioned when-to-use line — saved separately from the editor text. */
+  const [descText, setDescText] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedBanner, setSavedBanner] = useState<string | null>(null);
@@ -53,8 +73,13 @@ export default function Skills() {
   const [newDraft, setNewDraft] = useState<NewSkillDraft | null>(null);
   const dialog = useDialog();
 
-  const dirty =
+  // Content and description are saved through different endpoints (the
+  // description is not versioned), so track their dirtiness separately.
+  const contentDirty =
     newDraft !== null ? editorText.trim() !== "" : detail !== null && editorText !== detail.content;
+  const descDirty =
+    newDraft !== null ? descText.trim() !== "" : detail !== null && descText !== detail.description;
+  const dirty = contentDirty || descDirty;
 
   const loadList = (signal?: AbortSignal, selectFirst = false) => {
     getSkills(signal)
@@ -91,6 +116,7 @@ export default function Skills() {
       .then((d) => {
         setDetail(d);
         setEditorText(d.content);
+        setDescText(d.description);
         setDetailLoading(false);
       })
       .catch((err) => {
@@ -142,7 +168,10 @@ export default function Skills() {
     if (no === viewNo) return;
     // Only leaving the editable current view can lose edits.
     if (viewNo === null && !(await confirmDiscard())) return;
-    if (viewNo === null && detail !== null) setEditorText(detail.content);
+    if (viewNo === null && detail !== null) {
+      setEditorText(detail.content);
+      setDescText(detail.description);
+    }
     setViewNo(no);
     setSavedBanner(null);
     setSaveError(null);
@@ -167,6 +196,7 @@ export default function Skills() {
     setViewNo(null);
     setViewVersion(null);
     setEditorText("");
+    setDescText("");
     setSaveError(null);
     setSavedBanner(null);
   };
@@ -178,18 +208,24 @@ export default function Skills() {
     setSavedBanner(null);
     try {
       if (newDraft !== null) {
-        const res = await createSkill(newDraft.name, editorText);
+        const res = await createSkill(newDraft.name, editorText, descText);
         setNewDraft(null);
         setSelectedId(res.id);
         setSavedBanner(`Created ${res.name} as v${res.current_version_no}`);
         loadList();
       } else if (selectedId !== null) {
-        const res = await saveSkill(selectedId, editorText);
+        // Only the changed half is written — editing just the description must
+        // not mint a content version identical to the current one.
+        const versioned = contentDirty ? await saveSkill(selectedId, editorText) : null;
+        if (descDirty) await saveSkillDescription(selectedId, descText);
         const d = await getSkill(selectedId);
         setDetail(d);
         setEditorText(d.content);
+        setDescText(d.description);
         setViewNo(null);
-        setSavedBanner(`Saved as v${res.current_version_no}`);
+        setSavedBanner(
+          versioned ? `Saved as v${versioned.current_version_no}` : "Description saved",
+        );
         loadList();
       }
     } catch (err) {
@@ -214,8 +250,34 @@ export default function Skills() {
       const d = await getSkill(selectedId);
       setDetail(d);
       setEditorText(d.content);
+      setDescText(d.description);
       setViewNo(null);
       setSavedBanner(`Restored v${viewVersion.version_no} as v${res.current_version_no}`);
+      loadList();
+    } catch (err) {
+      setSaveError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeSkill = async () => {
+    if (selectedId === null || detail === null || saving) return;
+    const confirmed = await dialog.confirm(
+      `Delete ${detail.name} and all ${detail.versions.length} of its versions? This cannot be undone.`,
+      { title: "Delete skill", confirmLabel: "Delete", tone: "danger" },
+    );
+    if (!confirmed) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await deleteSkill(selectedId);
+      setDetail(null);
+      setSelectedId(null);
+      setEditorText("");
+      setDescText("");
+      setViewNo(null);
+      setSavedBanner(`Deleted ${detail.name}`);
       loadList();
     } catch (err) {
       setSaveError(errorMessage(err));
@@ -227,6 +289,29 @@ export default function Skills() {
   // ------------------------------------------------------------- rendering
 
   const viewingOld = viewNo !== null && detail !== null;
+
+  const descriptionField = (readOnly: boolean) => (
+    <div className="skill-desc">
+      <label className="card-title" htmlFor="skill-description">
+        When to use — description
+      </label>
+      <input
+        id="skill-description"
+        className="text"
+        value={descText}
+        readOnly={readOnly}
+        maxLength={500}
+        placeholder="One line telling an agent when this document is relevant…"
+        onChange={(e) => setDescText(e.target.value)}
+        spellCheck={false}
+      />
+      <span className="rail-hint">
+        Goes into Jaravis's system prompt and becomes the Claude Code skill's{" "}
+        <span className="mono">description</span> — all an agent sees before deciding to open
+        the document. Not versioned; saved on its own. {descText.length}/500
+      </span>
+    </div>
+  );
   const editorValue = viewingOld ? (viewVersion?.content ?? "") : editorText;
   const versions = detail ? [...detail.versions].sort((a, b) => a.version_no - b.version_no) : [];
   const viewedInfo = viewNo !== null ? versions.find((v) => v.version_no === viewNo) : undefined;
@@ -248,6 +333,7 @@ export default function Skills() {
             className={
               "skill-item" + (s.id === selectedId && newDraft === null ? " selected" : "")
             }
+            title={s.description || undefined}
             onClick={() => selectSkill(s.id)}
           >
             <span className="mono skill-name">{s.name}</span>
@@ -291,6 +377,7 @@ export default function Skills() {
               <h1 className="mono skill-title">{newDraft.name}</h1>
               <span className="rail-hint">new skill — not saved yet</span>
             </div>
+            {descriptionField(false)}
             <textarea
               className="text skill-textarea"
               value={editorText}
@@ -329,6 +416,7 @@ export default function Skills() {
             <div className="skill-head">
               <h1 className="mono skill-title">{detail.name}</h1>
             </div>
+            {descriptionField(viewingOld)}
             <div className="version-rail" role="tablist" aria-label="Skill versions">
               {versions.map((v) => {
                 const isCurrent = v.version_no === detail.current_version_no;
@@ -410,9 +498,20 @@ export default function Skills() {
                   type="button"
                   className="btn"
                   disabled={saving || !dirty}
-                  onClick={() => setEditorText(detail.content)}
+                  onClick={() => {
+                    setEditorText(detail.content);
+                    setDescText(detail.description);
+                  }}
                 >
                   Discard changes
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  disabled={saving}
+                  onClick={() => void removeSkill()}
+                >
+                  Delete skill
                 </button>
                 <span className="muted skill-caption">
                   Jaravis reads the current version of every skill on each chat — edits apply
@@ -424,6 +523,44 @@ export default function Skills() {
         ) : !detailLoading && list !== null && list.length === 0 ? (
           <p className="muted">No skills yet — create one.</p>
         ) : null}
+
+        <details className="card pad skill-claude-help">
+          <summary>Use these skills in Claude Code</summary>
+          <p className="rail-hint">
+            Claude Code only discovers skills as files on disk, so a small script mirrors this
+            database into <span className="mono">.claude/skills/</span>. The platform repo
+            already ships it wired up — here is what it does, and what to copy into another
+            checkout.
+          </p>
+          <ol className="skill-claude-steps">
+            <li>
+              <strong>Sync once —</strong> run{" "}
+              <span className="mono">python3 .claude/sync-skills.py</span> from the repo root.
+              Every skill becomes{" "}
+              <span className="mono">.claude/skills/kicad-&lt;name&gt;/SKILL.md</span>, with the
+              description above as its frontmatter.
+            </li>
+            <li>
+              <strong>Keep it fresh —</strong> two hooks in{" "}
+              <span className="mono">.claude/settings.json</span> re-run it: on session start,
+              and (with <span className="mono">--quick</span>) before every prompt. Only skills
+              whose version or description actually changed are re-fetched, and an unreachable
+              API is ignored rather than blocking the prompt.
+            </li>
+            <li>
+              <strong>Point it at this API —</strong> set{" "}
+              <span className="mono">KICAD_API_URL</span> (this UI is talking to{" "}
+              <span className="mono">{API_URL}</span>), plus{" "}
+              <span className="mono">KICAD_MCP_TOKEN</span> if the API requires a bearer token.
+            </li>
+            <li>
+              <strong>When an edit lands —</strong> a saved document is picked up the next time
+              the skill is invoked; a changed description reaches the model's skill list at the
+              next session start.
+            </li>
+          </ol>
+          <pre className="code-block">{HOOK_SNIPPET}</pre>
+        </details>
       </main>
     </div>
   );

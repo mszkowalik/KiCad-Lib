@@ -508,7 +508,8 @@ def get_skill(name: str) -> str:
             names = [x.name for x in db.query(M.Skill).order_by(M.Skill.name)]
             return json.dumps({"error": f"skill {name!r} not found", "available": names})
         cur = next((v for v in s.versions if v.id == s.current_version_id), None)
-        return json.dumps({"name": s.name, "version_no": cur.version_no if cur else None,
+        return json.dumps({"name": s.name, "description": s.description or "",
+                           "version_no": cur.version_no if cur else None,
                            "content": cur.content if cur else ""})
     finally:
         db.close()
@@ -1258,7 +1259,10 @@ def _build_system(db) -> str:
     for skill in db.query(M.Skill).order_by(M.Skill.name):
         cur = next((v for v in skill.versions if v.id == skill.current_version_id), None)
         if cur is not None:
-            skills.append(f"### Skill: {skill.name}\n{cur.content}")
+            head = f"### Skill: {skill.name}"
+            if skill.description:
+                head += f" — {skill.description}"
+            skills.append(f"{head}\n{cur.content}")
     skills_text = "\n\n".join(skills) if skills else "(no skill documents are currently defined)"
     return f"""You are Jaravis, the librarian agent of the 7Sigma KiCad component library platform.
 

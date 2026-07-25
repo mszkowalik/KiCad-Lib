@@ -1938,6 +1938,41 @@ select.sel:focus {
   text-align: right;
 }
 
+.skill-desc {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 14px;
+  flex-shrink: 0;
+}
+
+.skill-desc .rail-hint {
+  line-height: 1.5;
+}
+
+.skill-claude-help {
+  margin-top: 18px;
+  flex-shrink: 0;
+}
+
+.skill-claude-help summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.skill-claude-steps {
+  margin: 12px 0 0;
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.skill-claude-steps strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .banner-ok {
   border: 1px solid var(--ok);
   background: var(--ok-soft);

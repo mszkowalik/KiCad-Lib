@@ -22,6 +22,13 @@ class SkillEdit(BaseModel):
 
 class SkillCreate(SkillEdit):
     name: str
+    description: str = ""
+
+
+class SkillMeta(BaseModel):
+    """Unversioned skill metadata (see the ``description`` note on M.Skill)."""
+
+    description: str
 
 
 def _current(skill: M.Skill) -> M.SkillVersion | None:
@@ -37,6 +44,7 @@ def list_skills(db: Session = Depends(get_db)):
         out.append({
             "id": s.id,
             "name": s.name,
+            "description": s.description or "",
             "current_version_no": cur.version_no if cur else None,
             "updated_at": cur.created_at.isoformat() if cur else None,
             "size": len(cur.content) if cur else 0,
@@ -53,6 +61,7 @@ def skill_detail(skill_id: int, db: Session = Depends(get_db)):
     return {
         "id": s.id,
         "name": s.name,
+        "description": s.description or "",
         "current_version_no": cur.version_no if cur else None,
         "content": cur.content if cur else "",
         "versions": [
@@ -94,6 +103,44 @@ def edit_skill(skill_id: int, body: SkillEdit, db: Session = Depends(get_db)):
     return {"id": s.id, "name": s.name, "current_version_no": new_no}
 
 
+@router.patch("/{skill_id}")
+def edit_skill_meta(skill_id: int, body: SkillMeta, db: Session = Depends(get_db)):
+    """Update the when-to-use description. Unversioned, so this does NOT mint a
+    new content version — the UI saves it independently of the editor text."""
+    s = db.query(M.Skill).filter_by(id=skill_id).first()
+    if s is None:
+        raise HTTPException(404, "skill not found")
+    s.description = body.description.strip()[:500]
+    audit(db, "skill.describe", "skill", s.id, {"name": s.name, "description": s.description})
+    db.commit()
+    return {"id": s.id, "name": s.name, "description": s.description}
+
+
+@router.delete("/{skill_id}")
+def delete_skill(skill_id: int, db: Session = Depends(get_db)):
+    """Permanently remove a skill and every one of its versions.
+
+    Unlike component/geometry versions, a skill version is a document with no
+    published artefact hanging off it — nothing references it once it stops
+    being current — so retiring an obsolete skill is a hard delete rather than a
+    tombstone. Jaravis rebuilds its prompt without it on the next chat, and the
+    Claude Code mirror drops the directory on its next sync."""
+    s = db.query(M.Skill).options(selectinload(M.Skill.versions)).filter_by(id=skill_id).first()
+    if s is None:
+        raise HTTPException(404, "skill not found")
+    name, n_versions = s.name, len(s.versions)
+    # Clear the pointer first: current_version_id is a plain Integer, so the
+    # rows it points at must not be deleted while it still holds their id.
+    s.current_version_id = None
+    db.flush()
+    for v in list(s.versions):
+        db.delete(v)
+    db.delete(s)
+    audit(db, "skill.delete", "skill", skill_id, {"name": name, "versions_removed": n_versions})
+    db.commit()
+    return {"deleted": skill_id, "name": name, "versions_removed": n_versions}
+
+
 @router.post("")
 def create_skill(body: SkillCreate, db: Session = Depends(get_db)):
     name = body.name.strip()
@@ -103,7 +150,7 @@ def create_skill(body: SkillCreate, db: Session = Depends(get_db)):
         raise HTTPException(409, f"skill {name!r} already exists")
     if not body.content.strip():
         raise HTTPException(422, "skill content must not be empty")
-    s = M.Skill(name=name)
+    s = M.Skill(name=name, description=body.description.strip()[:500])
     db.add(s)
     db.flush()
     v = M.SkillVersion(skill_id=s.id, version_no=1, content=body.content, created_by="user")
@@ -112,4 +159,4 @@ def create_skill(body: SkillCreate, db: Session = Depends(get_db)):
     s.current_version_id = v.id
     audit(db, "skill.create", "skill", s.id, {"name": name})
     db.commit()
-    return {"id": s.id, "name": s.name, "current_version_no": 1}
+    return {"id": s.id, "name": s.name, "description": s.description, "current_version_no": 1}

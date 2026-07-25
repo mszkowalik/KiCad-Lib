@@ -87,6 +87,9 @@ def startup() -> None:
                 "ALTER TABLE component_supply ADD COLUMN IF NOT EXISTS jlc_stock integer"
             ))
             conn.execute(text(
+                "ALTER TABLE skills ADD COLUMN IF NOT EXISTS description varchar(500) NOT NULL DEFAULT ''"
+            ))
+            conn.execute(text(
                 """
                 INSERT INTO project_cost_revisions
                     (project_id, effective_sha, effective_ref, created_at)

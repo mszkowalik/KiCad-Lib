@@ -340,12 +340,19 @@ class Rule(Base):
 
 # -------------------------------------------------------------------- skills
 class Skill(Base):
-    """Jaravis skills — versioned documents, editable in the UI."""
+    """Jaravis skills — versioned documents, editable in the UI.
+
+    ``description`` is when-to-use metadata, NOT part of the document: it is the
+    one-liner that tells an agent whether this skill is relevant before reading
+    it. Deliberately unversioned (a label on the skill, not on its text) — it
+    feeds Jaravis's system prompt and the Claude Code skill mirror's frontmatter.
+    """
 
     __tablename__ = "skills"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200), unique=True)
+    description: Mapped[str] = mapped_column(String(500), default="", server_default="")
     current_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     versions: Mapped[list["SkillVersion"]] = relationship(back_populates="skill", order_by="SkillVersion.version_no")

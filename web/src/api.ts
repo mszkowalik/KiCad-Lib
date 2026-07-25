@@ -767,6 +767,8 @@ export function deleteComment(commentId: number): Promise<{ deleted: number }> {
 export interface SkillListItem {
   id: number;
   name: string;
+  /** When-to-use one-liner. Unversioned — see SkillDetail.description. */
+  description: string;
   current_version_no: number | null;
   updated_at: string | null;
   size: number;
@@ -784,6 +786,12 @@ export interface SkillVersionInfo {
 export interface SkillDetail {
   id: number;
   name: string;
+  /**
+   * When-to-use one-liner: what an agent reads to decide whether the document
+   * is relevant. NOT versioned (it labels the skill, not a revision), so it is
+   * saved through `saveSkillDescription`, independently of the editor text.
+   */
+  description: string;
   current_version_no: number | null;
   /** Content of the CURRENT version. */
   content: string;
@@ -832,12 +840,39 @@ export function saveSkill(id: number, content: string): Promise<SkillSaveRespons
   });
 }
 
+/**
+ * Saves the when-to-use description. Unversioned, so this never mints a new
+ * content version — the Skills page calls it alongside (or instead of)
+ * `saveSkill` depending on what the user actually changed.
+ */
+export function saveSkillDescription(
+  id: number,
+  description: string,
+): Promise<{ id: number; name: string; description: string }> {
+  return request(`/api/skills/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ description }),
+  });
+}
+
+/** Permanently deletes a skill and all its versions. */
+export function deleteSkill(
+  id: number,
+): Promise<{ deleted: number; name: string; versions_removed: number }> {
+  return request(`/api/skills/${id}`, { method: "DELETE" });
+}
+
 /** Creates a new skill (409 on duplicate name). */
-export function createSkill(name: string, content: string): Promise<SkillSaveResponse> {
+export function createSkill(
+  name: string,
+  content: string,
+  description = "",
+): Promise<SkillSaveResponse> {
   return request("/api/skills", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, content }),
+    body: JSON.stringify({ name, content, description }),
   });
 }
 

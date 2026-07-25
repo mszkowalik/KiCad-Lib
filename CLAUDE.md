@@ -38,7 +38,12 @@ Web UI at http://localhost:5173, API at http://localhost:8020 (docs at
 
 - Component/library conventions live in the platform's **skill documents**
   (editable in the web UI, readable via the `get_skill` agent tool) — not in
-  these files.
+  these files. `.claude/sync-skills.py` mirrors them from the database into
+  `.claude/skills/kicad-<name>/SKILL.md` so Claude Code picks them up as real
+  skills; two hooks in `.claude/settings.json` re-run it (session start, and
+  `--quick` before every prompt), and the generated tree is gitignored. Each
+  skill's unversioned `description` becomes the skill's frontmatter — edit it in
+  the Skills view, not in the generated files, which are overwritten on sync.
 - Backend and frontend conventions: see `api/CLAUDE.md` and `web/CLAUDE.md`.
   Record new non-obvious rules in the most specific of those files.
 - Writes to library data go through **draft proposals** approved in the

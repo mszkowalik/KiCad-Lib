@@ -331,6 +331,12 @@ token injected per-invocation via `http.extraheader` — never written to disk),
 - **New seed-skill files** (`app/seed_skills/*.md`) must be listed in
   `[tool.setuptools.package-data]` in `pyproject.toml` so they ship in the
   non-editable Docker install.
+- **`Skill.description` is unversioned** — it is a when-to-use label on the
+  skill, not part of the document, so it lives on `Skill` (not `SkillVersion`)
+  and is written through `PATCH /api/skills/{id}`, which never mints a version.
+  Keep it a single line: it is what an agent reads to decide whether to open the
+  document (Jaravis's system prompt header, and the `description` frontmatter of
+  the mirrored Claude Code skill — see the root `CLAUDE.md`).
 - **Lint**: Ruff, line length 120, target py311 (`[tool.ruff]` in `pyproject.toml`).
 - **kiutils**: always the vendored `api/kiutils/` (KiCad-10 patch). Never depend
   on an upstream build.

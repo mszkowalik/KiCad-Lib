@@ -9,3 +9,5 @@ render-cache/
 .DS_Store
 *.bak
 *.egg-info/
+# Skill documents mirrored from the platform DB by .claude/sync-skills.py
+.claude/skills/
