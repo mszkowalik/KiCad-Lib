@@ -40,6 +40,31 @@ def top_level_of(category: M.Category) -> M.Category:
     return node
 
 
+# --- incremental-rebuild caches -------------------------------------------
+# Both exist because the mirror is refreshed after EVERY approval, while
+# almost nothing in it actually changed. They are in-process only: a restart
+# just costs one full rebuild, and correctness never depends on them (each is
+# guarded by a check against the real filesystem/DB state).
+
+# mirror-relative path -> (mtime_ns, size, sha256). Lets write_manifest skip
+# re-hashing the ~1.4 GB of 3D models on every component approval.
+_MANIFEST_HASHES: dict[str, tuple[int, int, str]] = {}
+
+# Fingerprint of the base-symbol set the last written 7Sigma_Base.kicad_sym
+# was built from, plus how many symbols went into it.
+_BASE_LIB_STATE: tuple[str, int] | None = None
+
+
+def _base_symbol_fingerprint(db: Session) -> str:
+    """Cheap signature of every base symbol's live version. Changes only when a
+    symbol proposal is approved (or a symbol is added/removed) — which is the
+    only time 7Sigma_Base.kicad_sym can differ."""
+    rows = db.execute(
+        select(M.Symbol.id, M.Symbol.current_version_id).order_by(M.Symbol.id)
+    ).all()
+    return hashlib.sha256(repr(rows).encode()).hexdigest()
+
+
 def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | None = None) -> dict:
     """Generate Symbols/<TopCategory>.kicad_sym files. When `only_tops` is
     given, only those libraries are rewritten (incremental update on edit)."""
@@ -119,36 +144,67 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
     # Deduplicated base-symbol library: the ~50 unique graphical templates
     # every component derives from. This is what the PCM library package
     # ships and what HTTP-catalog parts reference (symbolIdStr) — adding a
-    # component never changes it, only a new base drawing does.
-    base_syms = []
-    for sym in db.execute(select(M.Symbol).order_by(M.Symbol.name)).scalars():
-        sv = next((v for v in sym.versions if v.id == sym.current_version_id), None)
-        if sv is None:
-            continue
-        try:
-            lib = load_symbol_lib_from_text(sv.source_text)
-            entry = next((s for s in lib.symbols if s.entryName == sym.name), None)
-            if entry is None and lib.symbols:
-                entry = lib.symbols[0]
-            if entry is not None:
-                base_syms.append(entry)
-        except Exception as e:
-            warnings.append(f"base symbol {sym.name}: mirror generation failed — {e}")
-    (symbols_dir / "7Sigma_Base.kicad_sym").write_text(
-        build_library_text(meta_lib, base_syms), encoding="utf-8"
-    )
+    # component never changes it, only a new base drawing does. So it is
+    # rebuilt only when the base-symbol set actually moved (or the file is
+    # gone, e.g. after rebuild_mirror wiped the tree): re-parsing all ~140
+    # base symbols and re-serializing ~1 MB on every component approval was
+    # pure waste.
+    global _BASE_LIB_STATE
+    base_lib_path = symbols_dir / "7Sigma_Base.kicad_sym"
+    fingerprint = _base_symbol_fingerprint(db)
+    cached = _BASE_LIB_STATE
+    if cached is not None and cached[0] == fingerprint and base_lib_path.exists():
+        base_symbol_count = cached[1]
+    else:
+        base_syms = []
+        for sym in db.execute(select(M.Symbol).order_by(M.Symbol.name)).scalars():
+            sv = next((v for v in sym.versions if v.id == sym.current_version_id), None)
+            if sv is None:
+                continue
+            try:
+                lib = load_symbol_lib_from_text(sv.source_text)
+                entry = next((s for s in lib.symbols if s.entryName == sym.name), None)
+                if entry is None and lib.symbols:
+                    entry = lib.symbols[0]
+                if entry is not None:
+                    base_syms.append(entry)
+            except Exception as e:
+                warnings.append(f"base symbol {sym.name}: mirror generation failed — {e}")
+        base_lib_path.write_text(build_library_text(meta_lib, base_syms), encoding="utf-8")
+        base_symbol_count = len(base_syms)
+        # Only trust the fingerprint once the file is safely on disk.
+        _BASE_LIB_STATE = (fingerprint, base_symbol_count)
 
     return {"symbol_libs": symbol_lib_count, "components_in_libs": component_count,
-            "base_symbols": len(base_syms), "warnings": warnings}
+            "base_symbols": base_symbol_count, "warnings": warnings}
 
 
 def write_manifest(settings: Settings) -> int:
+    """Rewrite manifest.json — the hash index the PCM builder and sync clients
+    key off. Hashing is memoised on (mtime_ns, size): a component approval
+    changes a couple of .kicad_sym files, but the tree also holds ~1.4 GB of
+    3D models that would otherwise be re-hashed every single time. The stat()
+    still happens per file, so any content change is picked up; only the
+    read+SHA-256 is skipped. The manifest's own format is unchanged."""
     mirror = settings.mirror_dir
     files = []
+    seen: set[str] = set()
     for path in sorted(p for p in mirror.rglob("*") if p.is_file() and p.name != "manifest.json"):
         rel = path.relative_to(mirror).as_posix()
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        files.append({"path": rel, "sha256": digest, "size": path.stat().st_size})
+        st = path.stat()
+        stamp = (st.st_mtime_ns, st.st_size)
+        cached = _MANIFEST_HASHES.get(rel)
+        if cached is not None and cached[:2] == stamp:
+            digest = cached[2]
+        else:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            _MANIFEST_HASHES[rel] = (*stamp, digest)
+        seen.add(rel)
+        files.append({"path": rel, "sha256": digest, "size": st.st_size})
+    # Drop cache entries for files that no longer exist, so the dict tracks the
+    # mirror rather than growing forever across rebuilds.
+    for stale in _MANIFEST_HASHES.keys() - seen:
+        del _MANIFEST_HASHES[stale]
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "file_count": len(files),

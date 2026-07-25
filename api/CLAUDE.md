@@ -385,6 +385,21 @@ token injected per-invocation via `http.extraheader` — never written to disk),
 - **Lint**: Ruff, line length 120, target py311 (`[tool.ruff]` in `pyproject.toml`).
 - **kiutils**: always the vendored `api/kiutils/` (KiCad-10 patch). Never depend
   on an upstream build.
+- **The mirror refresh is incrementally cached — keep the guards.**
+  `update_mirror_symbols` runs after *every* approval, so `services/mirror.py`
+  memoises the two parts that almost never change. (1) `write_manifest` keys
+  SHA-256 digests on `(mtime_ns, size)` in `_MANIFEST_HASHES`: the tree carries
+  ~1.4 GB of 3D models that a property edit cannot touch, and re-hashing them
+  cost ~1.3s per approval. (2) `write_symbol_libs` rebuilds
+  `7Sigma_Base.kicad_sym` only when `_base_symbol_fingerprint(db)` (every
+  `Symbol.current_version_id`) moves or the file is missing — it ignored
+  `only_tops` and re-parsed all ~140 base symbols every time, ~0.7s. Both
+  caches are **in-process and advisory**: each is validated against real
+  filesystem/DB state on every call, so a restart or a `rebuild_mirror` wipe
+  costs one full rebuild and never a stale artifact. If you add a mirror
+  artifact with its own rebuild cost, follow the same shape — cache keyed on
+  observable state, never on "we think nothing changed". The manifest's JSON
+  format is public (PCM builder, sync clients); don't add cache fields to it.
 - **`db.expire_all()` before any post-commit mirror refresh.** The session uses
   `expire_on_commit=False`, and services create new versions via `db.add()`
   without appending to already-loaded relationships — so after calling a
