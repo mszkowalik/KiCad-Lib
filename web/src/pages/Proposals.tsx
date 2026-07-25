@@ -23,6 +23,12 @@ import { ErrorBanner, Spinner } from "../components/Ui";
 const isGeometry = (p: Proposal): p is GeometryProposal =>
   p.kind === "symbol" || p.kind === "footprint";
 
+/** proposal_id is only unique per kind — key selections by both. */
+const keyOf = (p: Proposal) => `${p.kind}-${p.proposal_id}`;
+
+const labelOf = (p: Proposal) =>
+  p.kind === "skill" ? `skill ${p.skill_name}` : `${p.kind} ${p.component_name}`;
+
 export default function Proposals() {
   const [rows, setRows] = useState<Proposal[] | null>(null);
   const [history, setHistory] = useState<ProposalHistoryRow[] | null>(null);
@@ -30,6 +36,9 @@ export default function Proposals() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [previewKey, setPreviewKey] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  /** Progress of a bulk approve; non-null means the whole table is busy. */
+  const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
   const { refresh: refreshBadge } = useContext(ProposalsBadge);
   const dialog = useDialog();
 
@@ -38,6 +47,9 @@ export default function Proposals() {
       .then((list) => {
         setRows(list);
         setError(null);
+        // Drop selections for proposals that are no longer pending.
+        const live = new Set(list.map(keyOf));
+        setSelected((prev) => new Set([...prev].filter((k) => live.has(k))));
       })
       .catch((err) => {
         if (!isAbortError(err)) setError(errorMessage(err));
@@ -60,36 +72,45 @@ export default function Proposals() {
     return () => ctrl.abort();
   }, [load, loadHistory]);
 
+  /** Approves one proposal and returns its mirror warnings. Throws on failure. */
+  const approveOne = async (p: Proposal): Promise<string[]> => {
+    if (p.kind === "skill") {
+      await approveSkillProposal(p.proposal_id);
+      return [];
+    }
+    if (isGeometry(p)) {
+      const res = await approveGeometryProposal(p.kind, p.proposal_id);
+      return res.mirror_warnings ?? [];
+    }
+    const res = await approveProposal(p.proposal_id);
+    return res.mirror_warnings ?? [];
+  };
+
+  // Approving is deliberately unconfirmed — the click IS the decision, and a
+  // wrong approval is recoverable (versions are immutable; restore the previous
+  // one). Rejecting still confirms: it is the one action that discards work.
   const act = async (p: Proposal, action: "approve" | "reject") => {
-    const verb = action === "approve" ? "Approve" : "Reject";
-    const what = p.kind === "skill" ? `skill ${p.skill_name}` : `${p.kind} ${p.component_name}`;
-    const confirmed = await dialog.confirm(`${verb} ${what} v${p.version_no}?`, {
-      title: `${verb} proposal`,
-      confirmLabel: verb,
-      tone: action === "approve" ? "ok" : "danger",
-    });
-    if (!confirmed) return;
+    if (action === "reject") {
+      const confirmed = await dialog.confirm(`Reject ${labelOf(p)} v${p.version_no}?`, {
+        title: "Reject proposal",
+        confirmLabel: "Reject",
+        tone: "danger",
+      });
+      if (!confirmed) return;
+    }
     setBusyId(p.proposal_id);
     setError(null);
     setNotice(null);
     try {
-      if (p.kind === "skill") {
-        if (action === "approve") await approveSkillProposal(p.proposal_id);
-        else await rejectSkillProposal(p.proposal_id);
+      if (action === "approve") {
+        const warnings = await approveOne(p);
+        if (warnings.length > 0) {
+          setNotice(`Approved with mirror warnings: ${warnings.join("; ")}`);
+        }
+      } else if (p.kind === "skill") {
+        await rejectSkillProposal(p.proposal_id);
       } else if (isGeometry(p)) {
-        if (action === "approve") {
-          const res = await approveGeometryProposal(p.kind, p.proposal_id);
-          if (res.mirror_warnings && res.mirror_warnings.length > 0) {
-            setNotice(`Approved with mirror warnings: ${res.mirror_warnings.join("; ")}`);
-          }
-        } else {
-          await rejectGeometryProposal(p.kind, p.proposal_id);
-        }
-      } else if (action === "approve") {
-        const res = await approveProposal(p.proposal_id);
-        if (res.mirror_warnings && res.mirror_warnings.length > 0) {
-          setNotice(`Approved with mirror warnings: ${res.mirror_warnings.join("; ")}`);
-        }
+        await rejectGeometryProposal(p.kind, p.proposal_id);
       } else {
         await rejectProposal(p.proposal_id);
       }
@@ -102,6 +123,55 @@ export default function Proposals() {
       setBusyId(null);
     }
   };
+
+  /**
+   * Bulk approve, one at a time on purpose: every approval regenerates the
+   * affected KiCad library + file mirror server-side, so firing them in
+   * parallel would have concurrent writers on the same mirror files. A single
+   * failure doesn't abort the run — it is collected and reported at the end.
+   */
+  const approveSelected = async () => {
+    const picked = (rows ?? []).filter((p) => selected.has(keyOf(p)));
+    if (picked.length === 0 || bulk !== null || busyId !== null) return;
+    setError(null);
+    setNotice(null);
+    setBulk({ done: 0, total: picked.length });
+    const warnings: string[] = [];
+    const failures: string[] = [];
+    for (const [i, p] of picked.entries()) {
+      try {
+        warnings.push(...(await approveOne(p)));
+      } catch (err) {
+        failures.push(`${labelOf(p)}: ${errorMessage(err)}`);
+      }
+      setBulk({ done: i + 1, total: picked.length });
+    }
+    setBulk(null);
+    if (failures.length > 0) {
+      setError(`${failures.length} of ${picked.length} could not be approved — ${failures.join("; ")}`);
+    }
+    if (warnings.length > 0) {
+      setNotice(
+        `Approved ${picked.length - failures.length} with mirror warnings: ${warnings.join("; ")}`,
+      );
+    }
+    load();
+    loadHistory();
+    refreshBadge();
+  };
+
+  const toggleOne = (p: Proposal) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const k = keyOf(p);
+      if (!next.delete(k)) next.add(k);
+      return next;
+    });
+
+  const allSelected = rows !== null && rows.length > 0 && selected.size === rows.length;
+  const toggleAll = () =>
+    setSelected(allSelected ? new Set() : new Set((rows ?? []).map(keyOf)));
+  const rowsBusy = bulk !== null || busyId !== null;
 
   return (
     <div className="main-solo">
@@ -128,10 +198,40 @@ export default function Proposals() {
             <p className="muted no-warnings">No pending proposals.</p>
           </div>
         ) : (
+          <>
+          <div className="proposals-bulk">
+            <button
+              type="button"
+              className="btn btn-sm btn-ok"
+              disabled={selected.size === 0 || rowsBusy}
+              onClick={() => void approveSelected()}
+            >
+              {bulk !== null
+                ? `Approving ${bulk.done}/${bulk.total}…`
+                : `Approve selected (${selected.size})`}
+            </button>
+            {selected.size > 0 && bulk === null ? (
+              <button type="button" className="btn btn-sm" onClick={() => setSelected(new Set())}>
+                Clear selection
+              </button>
+            ) : null}
+            <span className="muted rail-hint">
+              {rows.length} pending — approving regenerates the affected library on each one.
+            </span>
+          </div>
           <div className="card table-wrap">
             <table className="data data-fixed proposals-table">
               <thead>
                 <tr>
+                  <th className="ctr">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      disabled={rowsBusy}
+                      onChange={toggleAll}
+                      aria-label="Select all pending proposals"
+                    />
+                  </th>
                   <th>Name</th>
                   <th>Kind</th>
                   <th>Version</th>
@@ -147,6 +247,15 @@ export default function Proposals() {
                   const key = `${p.kind}-${p.proposal_id}`;
                   const rendered = [
                     <tr key={key}>
+                      <td className="ctr">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(key)}
+                          disabled={rowsBusy}
+                          onChange={() => toggleOne(p)}
+                          aria-label={`Select ${labelOf(p)} v${p.version_no}`}
+                        />
+                      </td>
                       <td>
                         {isGeometry(p) ? (
                           <span className="mono">{p.component_name}</span>
@@ -200,7 +309,7 @@ export default function Proposals() {
                         <button
                           type="button"
                           className="btn btn-sm btn-ok"
-                          disabled={busyId !== null}
+                          disabled={rowsBusy}
                           onClick={() => void act(p, "approve")}
                         >
                           {busyId === p.proposal_id ? "…" : "Approve"}
@@ -208,7 +317,7 @@ export default function Proposals() {
                         <button
                           type="button"
                           className="btn btn-sm btn-danger"
-                          disabled={busyId !== null}
+                          disabled={rowsBusy}
                           onClick={() => void act(p, "reject")}
                         >
                           Reject
@@ -219,7 +328,7 @@ export default function Proposals() {
                   if (isGeometry(p) && previewKey === key) {
                     rendered.push(
                       <tr key={`${key}-preview`}>
-                        <td colSpan={8} className="preview-cell">
+                        <td colSpan={9} className="preview-cell">
                           <div className="proposal-preview">
                             {!p.is_new_component ? (
                               <div>
@@ -251,6 +360,7 @@ export default function Proposals() {
               </tbody>
             </table>
           </div>
+          </>
         )}
 
         {history && history.length > 0 ? (

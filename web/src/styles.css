@@ -514,22 +514,34 @@ table.data {
 /* Proposals queue + history: fixed columns, no horizontal scroll (reuses
    .data-fixed for the single-line ellipsis treatment; compound selectors
    outrank .data td.ctr's width:1%). */
+/* column 1 is the bulk-select checkbox — see Proposals.tsx */
 .data.proposals-table th:nth-child(1),
-.data.proposals-table td:nth-child(1) { width: 14%; }
+.data.proposals-table td:nth-child(1) { width: 3%; }
 .data.proposals-table th:nth-child(2),
-.data.proposals-table td:nth-child(2) { width: 8%; }
+.data.proposals-table td:nth-child(2) { width: 13%; }
 .data.proposals-table th:nth-child(3),
-.data.proposals-table td:nth-child(3) { width: 5%; }
+.data.proposals-table td:nth-child(3) { width: 7%; }
 .data.proposals-table th:nth-child(4),
-.data.proposals-table td:nth-child(4) { width: 14%; }
+.data.proposals-table td:nth-child(4) { width: 5%; }
 .data.proposals-table th:nth-child(5),
-.data.proposals-table td:nth-child(5) { width: 8%; }
+.data.proposals-table td:nth-child(5) { width: 13%; }
 .data.proposals-table th:nth-child(6),
-.data.proposals-table td:nth-child(6) { width: 15%; }
+.data.proposals-table td:nth-child(6) { width: 7%; }
 .data.proposals-table th:nth-child(7),
-.data.proposals-table td:nth-child(7) { width: 12%; }
+.data.proposals-table td:nth-child(7) { width: 16%; }
 .data.proposals-table th:nth-child(8),
-.data.proposals-table td:nth-child(8) { width: 24%; }
+.data.proposals-table td:nth-child(8) { width: 12%; }
+.data.proposals-table th:nth-child(9),
+.data.proposals-table td:nth-child(9) { width: 24%; }
+
+/* bulk-approve bar above the pending table */
+.proposals-bulk {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  min-height: 30px;
+}
 
 /* the expandable before/after preview spans all columns — opt it out of the
    single-line clamp so the images render at full height */
