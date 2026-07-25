@@ -156,6 +156,11 @@ class Component(Base):
     # generated KiCad libraries / HTTP catalog, but priceable and usable in
     # project BOMs. Needs no symbol/footprint. (Added by startup migration.)
     in_library: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # False = virtual part that is never bought (test point, logo, fiducial,
+    # mounting hole): it lives in the library and lands on the board, but
+    # project BOM lines matching it are excluded from totals, order
+    # quantities and stock checks. (Added by startup migration.)
+    purchasable: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
     versions: Mapped[list["ComponentVersion"]] = relationship(
         back_populates="component", order_by="ComponentVersion.version_no"

@@ -127,6 +127,9 @@ def get_component(name: str) -> str:
             "name": comp.name,
             "category": category_path(cv.category),
             "base_component": cv.base_component,
+            # False = virtual part (test point, logo, fiducial, mounting hole):
+            # excluded from project BOM totals, orders and stock checks.
+            "purchasable": comp.purchasable,
             "properties": [
                 {"key": p.key, "value": None if p.is_null else p.value} for p in cv.properties
             ],
@@ -643,7 +646,8 @@ def get_project_bom(project: str, board: str = "", variant: str = "", volume: in
             {"refs": li["refs"], "value": li["value"], "qty_per": li["qty_per"],
              "lcsc": li["lcsc"], "component": li["component_name"],
              "unit_price": li["unit_price"], "line_total": li["line_total"],
-             "dnp": li["dnp"], "excluded": li["excluded"]}
+             "dnp": li["dnp"], "excluded": li["excluded"],
+             "not_purchasable": li["not_purchasable"]}
             for li in bom["lines"]
         ]
         return json.dumps({

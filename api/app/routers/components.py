@@ -123,6 +123,7 @@ def list_components(
                 "id": comp.id,
                 "name": comp.name,
                 "in_library": comp.in_library,
+                "purchasable": comp.purchasable,
                 "mfg_pn": props.get("Manufacturer Part Number 1") or "",
                 "manufacturer": props.get("Manufacturer 1") or "",
                 "version_no": cv.version_no,
@@ -187,6 +188,7 @@ def component_detail(comp_id: int, db: Session = Depends(get_db)):
         "id": comp.id,
         "name": comp.name,
         "in_library": comp.in_library,
+        "purchasable": comp.purchasable,
         "current_version_no": cv.version_no if cv else None,
         "versions": [_version_summary(v) for v in comp.versions],
     }
@@ -448,6 +450,8 @@ class ComponentCreate(VersionCreate):
     name: str
     # False = BOM-only part (no symbol/footprint, never in KiCad libraries)
     in_library: bool = True
+    # False = virtual part (test point, logo, fiducial): ignored in BOM totals
+    purchasable: bool = True
 
 
 @router.post("")
@@ -459,11 +463,11 @@ def create_component(body: ComponentCreate, db: Session = Depends(get_db)):
         raise HTTPException(422, "component name must not be empty")
     if db.query(M.Component).filter_by(name=name).first():
         raise HTTPException(409, f"component {name!r} already exists (names are globally unique)")
-    comp = M.Component(name=name, in_library=body.in_library)
+    comp = M.Component(name=name, in_library=body.in_library, purchasable=body.purchasable)
     db.add(comp)
     db.flush()
     audit(db, "component.create", "component", comp.id,
-          {"name": name, "in_library": body.in_library})
+          {"name": name, "in_library": body.in_library, "purchasable": body.purchasable})
     db.commit()
     return create_version(comp.id, body, db)
 
@@ -489,6 +493,23 @@ def set_in_library(comp_id: int, body: InLibraryPatch, db: Session = Depends(get
     if cv is not None:
         update_mirror_symbols(db, settings, {top_level_of(cv.category).name})
     return {"id": comp.id, "in_library": comp.in_library}
+
+
+class PurchasablePatch(BaseModel):
+    purchasable: bool
+
+
+@router.patch("/{comp_id}/purchasable")
+def set_purchasable(comp_id: int, body: PurchasablePatch, db: Session = Depends(get_db)):
+    """Mark a component as a purchased part or a virtual one (test point,
+    logo, fiducial, mounting hole). Virtual parts stay in the library and on
+    the board but drop out of project BOM totals and stock checks."""
+    comp = _get_component(db, comp_id)
+    if comp.purchasable != body.purchasable:
+        comp.purchasable = body.purchasable
+        audit(db, "component.purchasable", "component", comp.id, {"purchasable": body.purchasable})
+        db.commit()
+    return {"id": comp.id, "purchasable": comp.purchasable}
 
 
 @router.post("/{comp_id}/files")

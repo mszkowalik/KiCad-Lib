@@ -73,6 +73,10 @@ export interface VersionSummary {
 export interface ComponentDetail {
   id: number;
   name: string;
+  in_library: boolean;
+  /** False = virtual part (test point, logo, fiducial, mounting hole):
+   *  excluded from project BOM totals, orders and stock checks. */
+  purchasable: boolean;
   current_version_no: number | null;
   versions: VersionSummary[];
 }
@@ -351,6 +355,19 @@ export function listComponents(
 
 export function getComponent(id: number, signal?: AbortSignal): Promise<ComponentDetail> {
   return request(`/api/components/${id}`, { signal });
+}
+
+/** Flag a component as a purchased part or a virtual one (test point, logo,
+ *  fiducial, mounting hole) that project BOMs ignore. */
+export function setComponentPurchasable(
+  id: number,
+  purchasable: boolean,
+): Promise<{ id: number; purchasable: boolean }> {
+  return request(`/api/components/${id}/purchasable`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ purchasable }),
+  });
 }
 
 export function getVersion(
@@ -1300,6 +1317,8 @@ export interface BomLine {
   dnp: boolean;
   exclude_from_bom: boolean;
   exclude_from_board: boolean;
+  /** Matched component is flagged virtual (test point, logo, fiducial). */
+  not_purchasable: boolean;
   excluded: boolean;
   unit_price: number | null;
   unit_price_src: number | null;

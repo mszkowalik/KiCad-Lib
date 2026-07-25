@@ -21,6 +21,7 @@ import {
   getVersion,
   isAbortError,
   refreshPricePoints,
+  setComponentPurchasable,
   setPricePoints,
   symbolSvgUrl,
   uploadDatasheetFile,
@@ -733,6 +734,8 @@ export default function ComponentDetail() {
   const [dsBusyKind, setDsBusyKind] = useState<"fetch" | "upload" | null>(null);
   const [dsHints, setDsHints] = useState<Record<number, { msg: string; tone: "warn" | "err" }>>({});
 
+  const [purchasableBusy, setPurchasableBusy] = useState(false);
+
   const [editing, setEditing] = useState(false);
   const [edit, setEdit] = useState<EditState | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -813,6 +816,21 @@ export default function ComponentDetail() {
   const hasCurrent = detail !== null && detail.current_version_no !== null;
   const isCurrentSelected =
     hasCurrent && selectedNo !== null && selectedNo === detail.current_version_no;
+
+  // Component-scoped (not versioned), like the library/BOM-only split: virtual
+  // parts stay on the board but drop out of every project BOM total.
+  const togglePurchasable = async (next: boolean) => {
+    if (detail === null) return;
+    setPurchasableBusy(true);
+    try {
+      const res = await setComponentPurchasable(detail.id, next);
+      setDetail({ ...detail, purchasable: res.purchasable });
+    } catch (err) {
+      await dialog.alert(errorMessage(err), { title: "Changing the BOM role failed" });
+    } finally {
+      setPurchasableBusy(false);
+    }
+  };
 
   const enterEdit = () => {
     if (version === null) return;
@@ -1272,6 +1290,23 @@ export default function ComponentDetail() {
                   )}
                 </MetaRow>
               ))}
+              <MetaRow label="BOM role">
+                <label className="proj-inline-field proj-check">
+                  <input
+                    type="checkbox"
+                    checked={detail.purchasable}
+                    disabled={purchasableBusy}
+                    onChange={(e) => void togglePurchasable(e.target.checked)}
+                  />
+                  purchased part
+                </label>
+                {detail.purchasable ? null : (
+                  <span className="muted">
+                    {" "}
+                    — virtual (test point, logo, fiducial, mounting hole): project BOMs ignore it
+                  </span>
+                )}
+              </MetaRow>
               {version.comment ? <MetaRow label="Comment">{version.comment}</MetaRow> : null}
             </dl>
           </section>

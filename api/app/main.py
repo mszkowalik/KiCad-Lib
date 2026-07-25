@@ -67,6 +67,9 @@ def startup() -> None:
                 "ALTER TABLE components ADD COLUMN IF NOT EXISTS in_library boolean NOT NULL DEFAULT true"
             ))
             conn.execute(text(
+                "ALTER TABLE components ADD COLUMN IF NOT EXISTS purchasable boolean NOT NULL DEFAULT true"
+            ))
+            conn.execute(text(
                 "ALTER TABLE datasheet_versions ADD COLUMN IF NOT EXISTS etag varchar(300)"
             ))
             conn.execute(text(

@@ -89,11 +89,25 @@ def _cost_price_at(c: M.ProjectCostItem, volume: int) -> float:
     return price
 
 
+def virtual_component_ids(db: Session, component_ids: set[int]) -> set[int]:
+    """Of `component_ids`, the ones flagged non-purchasable — test points,
+    logos, fiducials, mounting holes. They are on the board but never bought,
+    so their BOM lines are excluded from totals, orders and stock checks."""
+    if not component_ids:
+        return set()
+    return {
+        cid
+        for (cid,) in db.query(M.Component.id)
+        .filter(M.Component.id.in_(component_ids), M.Component.purchasable.is_(False))
+        .all()
+    }
+
+
 def _component_data(db: Session, component_ids: set[int], at: datetime | None = None):
-    """Points / supply / names per component. With `at` set, points come from
-    ComponentPriceHistory resolved at that instant (latest snapshot at-or-
-    before, else earliest after); components with no history yet fall back to
-    live points — the closest data we have."""
+    """Points / supply / names / non-purchasable ids per component. With `at`
+    set, points come from ComponentPriceHistory resolved at that instant
+    (latest snapshot at-or-before, else earliest after); components with no
+    history yet fall back to live points — the closest data we have."""
     points: dict[int, list[M.ComponentPricePoint]] = {}
     live_ids = set(component_ids)
     if component_ids and at is not None:
@@ -122,10 +136,13 @@ def _component_data(db: Session, component_ids: set[int], at: datetime | None = 
         ).all():
             supply[s.component_id] = s
     names: dict[int, str] = {}
+    virtual: set[int] = set()
     if component_ids:
         for c in db.query(M.Component).filter(M.Component.id.in_(component_ids)).all():
             names[c.id] = c.name
-    return points, supply, names
+            if not c.purchasable:
+                virtual.add(c.id)
+    return points, supply, names, virtual
 
 
 def priced_bom(
@@ -154,7 +171,7 @@ def priced_bom(
     # Manual cost data as of this snapshot's commit (forward-only revisions).
     extras, costs, cost_rev = cost_state.items_for(db, project.id, snapshot)
     comp_ids |= {x.component_id for x in extras if x.component_id}
-    points, supply, names = _component_data(db, comp_ids, at=at)
+    points, supply, names, virtual = _component_data(db, comp_ids, at=at)
 
     out_lines = []
     bom_per_device = 0.0
@@ -163,7 +180,10 @@ def priced_bom(
     unknown_rates: set[str] = set()
 
     for li in lines:
-        excluded = li.dnp or li.exclude_from_bom
+        # Virtual parts (test point, logo, fiducial, mounting hole) are on the
+        # board but never bought — same treatment as DNP / no-BOM lines.
+        not_purchasable = li.component_id in virtual
+        excluded = li.dnp or li.exclude_from_bom or not_purchasable
         qty_total = li.qty * volume
         row = {
             "key": f"b{li.id}",
@@ -181,6 +201,7 @@ def priced_bom(
             "dnp": li.dnp,
             "exclude_from_bom": li.exclude_from_bom,
             "exclude_from_board": li.exclude_from_board,
+            "not_purchasable": not_purchasable,
             "excluded": excluded,
         }
         priced = _price_line(
@@ -373,8 +394,9 @@ def stock_check(db: Session, snapshot: M.ProjectSnapshot, board: str, variant: s
     """Compare needed order quantities against the user's PRIVATE JLC stock
     (components held on consignment) first, then the market pools for the
     remainder: LCSC retail stock and JLCPCB assembly stock (separate pools —
-    either one covering the order counts as procurable). refresh=True
-    refetches live LCSC data per distinct part (JLC data in one batch)."""
+    either one covering the order counts as procurable). DNP, no-BOM and
+    non-purchasable (virtual) lines are skipped. refresh=True refetches live
+    LCSC data per distinct part (JLC data in one batch)."""
     from . import jlc
 
     lines = (
@@ -384,7 +406,11 @@ def stock_check(db: Session, snapshot: M.ProjectSnapshot, board: str, variant: s
         .all()
     )
     private = jlc.private_stock_map(db)
-    active = [li for li in lines if not (li.dnp or li.exclude_from_bom)]
+    virtual = virtual_component_ids(db, {li.component_id for li in lines if li.component_id})
+    active = [
+        li for li in lines
+        if not (li.dnp or li.exclude_from_bom or li.component_id in virtual)
+    ]
     jlc_rows = ladder._jlc_rows(sorted({li.lcsc for li in active if li.lcsc})) if refresh else {}
     live: dict[str, dict | None] = {}
     results = []
@@ -466,7 +492,7 @@ def priced_bom_costs_only(db: Session, project: M.Project, volume: int,
     # No commit context → the current (latest-anchored) cost revision.
     extras, costs, cost_rev = cost_state.items_for(db, project.id, None)
     comp_ids |= {x.component_id for x in extras if x.component_id}
-    points, supply, names = _component_data(db, comp_ids, at=at)
+    points, supply, names, _virtual = _component_data(db, comp_ids, at=at)
     out_extra = []
     extra_per_device = 0.0
     for x in extras:

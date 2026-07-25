@@ -299,6 +299,17 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   idempotent `ALTER TABLE` in `main.py` startup — `create_all` never alters
   existing tables). Excluded in `mirror.write_symbol_libs` and both
   `kicad_http` part endpoints; needs no symbol/footprint.
+- **Virtual parts**: `Component.purchasable=False` (same startup-migration
+  pattern; `PATCH /api/components/{id}/purchasable`) — test points, logos,
+  fiducials, mounting holes. They stay in the library and on the board, but
+  their BOM lines fold into the existing `excluded` flag
+  (`dnp or exclude_from_bom or not_purchasable`), so they leave totals, order
+  quantities, the unpriced-line count and `stock_check` untouched. **Never
+  infer this from a missing LCSC code or from the category** — real BOM parts
+  (enclosures, lightpipes, the LE910R1 modem) also lack LCSC codes and share
+  `Mechanical_7S` with the logo and mounting holes. Only the flag decides.
+  Lines that matched no library component (`component_id` NULL) can't carry
+  it — use KiCad's own "Exclude from BOM" on those symbols.
 - **Run economics are computed on READ, never stored**: `run_effective(db,
   run)` prices the run's BOM + costs from **historical pricing** at
   `run_pricing_date(run)` (the user-entered `run_date` as end-of-day UTC,

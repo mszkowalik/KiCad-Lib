@@ -310,6 +310,14 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
                         {r.li.refs}
                         {r.li.dnp ? <span className="pill err">DNP</span> : null}
                         {r.li.exclude_from_bom ? <span className="pill warn">no-BOM</span> : null}
+                        {r.li.not_purchasable ? (
+                          <span
+                            className="pill neutral"
+                            title="Virtual part (test point, logo, fiducial, mounting hole) — never bought, so it is left out of totals, orders and stock checks. Change this on the component page."
+                          >
+                            virtual
+                          </span>
+                        ) : null}
                       </>
                     ) : (
                       <span className="muted">extra</span>
