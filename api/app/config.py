@@ -43,6 +43,14 @@ class Settings(BaseSettings):
     # Fetch missing datasheet PDFs in the background on startup.
     datasheet_autofetch: bool = True
 
+    # Nightly re-check of EVERY datasheet source URL: conditional GETs
+    # (ETag / Last-Modified) ask the supplier whether the document changed and
+    # only download when it did — a new PDF becomes a new DatasheetVersion and
+    # bumps the component version. Hour is server local time (containers run
+    # UTC unless TZ is set).
+    datasheet_recheck_nightly: bool = True
+    datasheet_recheck_hour: int = 3
+
     # Token expected in "Authorization: Token <...>" on /kicad/v1/* endpoints.
     httplib_token: str = "dev-token"
 

@@ -74,6 +74,27 @@ Read this before touching components, symbols, footprints, or skills.
   generated mirror symbols nor the HTTP catalog carry `Price *` fields —
   `injected_props(datasheets)` injects datasheet links only. Pricing lives on
   the platform (BOMs, ladders, run economics).
+- **The injected datasheet link prefers the LOCAL copy.** `injected_props`
+  emits `{public_base_url}/api/datasheets/{id}/file` whenever the current
+  `DatasheetVersion` is a real PDF (content-type or `.pdf` filename), or is an
+  uploaded file with no `source_url` at all; otherwise it falls back to the
+  internet URL. Stored HTML product pages (LCSC etc.) deliberately keep the
+  live link — a saved product page is worse than the real one. Applies to both
+  emission paths (generated mirror symbols and the KiCad HTTP catalog), so
+  `public_base_url` must be the API address as KiCad clients see it, not
+  `localhost`, on any non-local deployment.
+- **Datasheets are re-checked nightly** (`datasheet_store.start_nightly_recheck`,
+  armed from `main.py` startup at `settings.datasheet_recheck_hour`, server
+  local time — containers are UTC unless `TZ` is set). It runs the existing
+  `start_fetch_all("all")` worker, so a changed document flows through the
+  normal path: new `DatasheetVersion` → auto-bumped component version → mirror
+  rebuild. The re-check is cheap because `fetch_datasheet(..., conditional=True)`
+  replays the stored `etag` / `last_modified` (columns added by startup
+  migration, learned on any fetch) as `If-None-Match` / `If-Modified-Since`;
+  an unchanged document costs one 304 with no body. A 304 NEVER falls through
+  to the store path. Manual re-fetch (`POST /api/datasheets/{id}/fetch`)
+  deliberately passes `conditional=False` — a supplier can swap file content
+  without touching its validators, and clicking re-fetch means "actually look".
 - **Project manual cost data is commit-versioned** (`services/cost_state.py`).
   `ProjectCostItem` + `ProjectExtraBomItem` rows belong to an immutable
   `ProjectCostRevision` anchored at the git commit (snapshot) where it was

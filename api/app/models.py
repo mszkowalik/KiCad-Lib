@@ -261,6 +261,12 @@ class DatasheetVersion(Base):
     sha256: Mapped[str] = mapped_column(String(64))
     data: Mapped[bytes] = mapped_column(LargeBinary)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Validators from the response that produced this copy, replayed as
+    # If-None-Match / If-Modified-Since by the nightly re-check so an
+    # unchanged document costs one 304 instead of a full download.
+    # (Added by startup migration; NULL on rows fetched before it landed.)
+    etag: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    last_modified: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     datasheet: Mapped[Datasheet] = relationship(back_populates="versions")
 

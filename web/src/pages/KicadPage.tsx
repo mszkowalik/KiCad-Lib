@@ -172,6 +172,16 @@ export default function KicadPage() {
                   ? ` — fetching… ${status.done}/${status.total} (${status.new_versions} new)`
                   : ""}
               </p>
+              <p className="muted">
+                {status.next_nightly_at
+                  ? `Nightly re-check of every source URL at ${new Date(
+                      status.next_nightly_at,
+                    ).toLocaleString()} — unchanged documents answer 304 and are not downloaded.`
+                  : "Nightly re-check disabled (DATASHEET_RECHECK_NIGHTLY=false)."}
+                {status.last_nightly_at
+                  ? ` Last ran ${new Date(status.last_nightly_at).toLocaleString()}.`
+                  : ""}
+              </p>
               {status.errors > 0 ? (
                 <p className="muted">
                   {status.errors} fetch error{status.errors === 1 ? "" : "s"}

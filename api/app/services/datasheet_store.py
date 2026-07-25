@@ -11,10 +11,11 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from sqlalchemy.orm import Session
@@ -22,12 +23,16 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..db import SessionLocal
 
+log = logging.getLogger(__name__)
+
 _HEADERS = {"User-Agent": "curl/8.1"}  # some suppliers 403 unusual UAs
 
 FETCH_STATE: dict = {"running": False, "mode": None, "done": 0, "total": 0,
-                     "new_versions": 0, "unchanged": 0, "errors": 0,
-                     "started_at": None, "finished_at": None, "last_error": None}
+                     "new_versions": 0, "unchanged": 0, "not_modified": 0, "errors": 0,
+                     "started_at": None, "finished_at": None, "last_error": None,
+                     "trigger": None, "next_nightly_at": None, "last_nightly_at": None}
 _lock = threading.Lock()
+_nightly_started = False
 
 
 def _filename_from(resp: httpx.Response, url: str, fallback: str) -> str:
@@ -109,12 +114,37 @@ def _bump_component_version(
     return new_no
 
 
-def fetch_datasheet(db: Session, ds: M.Datasheet) -> dict:
+def fetch_datasheet(db: Session, ds: M.Datasheet, conditional: bool = True) -> dict:
     """Download ds.source_url; create a new version only on content change.
-    Returns a result dict; raises httpx.HTTPError on network failure."""
+    Returns a result dict; raises httpx.HTTPError on network failure.
+
+    `conditional` replays the stored ETag / Last-Modified so a server that
+    still has the same document answers 304 and we skip the download
+    entirely — that is what makes a nightly re-check of every datasheet
+    cheap. Pass False to force a full download (the manual "re-fetch"
+    button), since a supplier can swap file content without touching the
+    validators."""
     if not ds.source_url:
         return {"id": ds.id, "result": "no_url"}
-    resp = httpx.get(ds.source_url, headers=_HEADERS, follow_redirects=True, timeout=60)
+    cur = current_version(ds)
+    headers = dict(_HEADERS)
+    if conditional and cur is not None:
+        if cur.etag:
+            headers["If-None-Match"] = cur.etag
+        if cur.last_modified:
+            headers["If-Modified-Since"] = cur.last_modified
+    resp = httpx.get(ds.source_url, headers=headers, follow_redirects=True, timeout=60)
+    if resp.status_code == 304:
+        # The supplier confirms the document we hold is still current. A 304
+        # carries no body, so never fall through to the download path — a
+        # server that answers 304 unconditionally would otherwise store an
+        # empty "new version".
+        if cur is None:
+            return {"id": ds.id, "result": "not_modified_no_copy"}
+        cur.fetched_at = datetime.now(timezone.utc)
+        db.commit()
+        return {"id": ds.id, "result": "unchanged", "version_no": cur.version_no,
+                "not_modified": True}
     resp.raise_for_status()
     data = resp.content
     sha = hashlib.sha256(data).hexdigest()
@@ -122,10 +152,14 @@ def fetch_datasheet(db: Session, ds: M.Datasheet) -> dict:
     filename = _filename_from(resp, str(resp.url), f"{ds.label}.pdf")
 
     new_is_pdf = (content_type == "application/pdf") or data[:5] == b"%PDF-"
+    etag = (resp.headers.get("etag") or "").strip() or None
+    last_modified = (resp.headers.get("last-modified") or "").strip() or None
 
-    cur = current_version(ds)
     if cur is not None and cur.sha256 == sha:
         cur.fetched_at = datetime.now(timezone.utc)  # bookkeeping: last verified
+        # Learn validators the stored copy didn't have yet (or that rotated),
+        # so the next nightly pass can settle this datasheet with a 304.
+        cur.etag, cur.last_modified = etag, last_modified
         db.commit()
         return {"id": ds.id, "result": "unchanged", "version_no": cur.version_no}
 
@@ -135,6 +169,7 @@ def fetch_datasheet(db: Session, ds: M.Datasheet) -> dict:
     # content versioning applies to PDFs (or when a page turns into a PDF).
     if cur is not None and not new_is_pdf:
         cur.fetched_at = datetime.now(timezone.utc)
+        cur.etag, cur.last_modified = etag, last_modified
         db.commit()
         return {"id": ds.id, "result": "skipped_unstable_non_pdf", "version_no": cur.version_no,
                 "looks_like_pdf": False}
@@ -143,6 +178,7 @@ def fetch_datasheet(db: Session, ds: M.Datasheet) -> dict:
     dv = M.DatasheetVersion(
         datasheet_id=ds.id, version_no=new_no, filename=filename,
         content_type=content_type, size_bytes=len(data), sha256=sha, data=data,
+        etag=etag, last_modified=last_modified,
     )
     db.add(dv)
     db.flush()
@@ -263,18 +299,58 @@ def add_component_file(
             "component_bumped_to": bumped}
 
 
-def start_fetch_all(mode: str = "missing") -> bool:
+def start_fetch_all(mode: str = "missing", trigger: str = "manual") -> bool:
     """Background fetch of every non-archived datasheet with a source URL.
     mode 'missing': only those without a local copy; 'all': re-check everything
     (content-change detection)."""
     with _lock:
         if FETCH_STATE["running"]:
             return False
-        FETCH_STATE.update(running=True, mode=mode, done=0, total=0, new_versions=0,
-                           unchanged=0, errors=0, last_error=None,
+        FETCH_STATE.update(running=True, mode=mode, trigger=trigger, done=0, total=0,
+                           new_versions=0, unchanged=0, not_modified=0, errors=0, last_error=None,
                            started_at=datetime.now(timezone.utc).isoformat(), finished_at=None)
     threading.Thread(target=_fetch_all_worker, args=(mode,), daemon=True).start()
     return True
+
+
+def _next_nightly(hour: int, now: datetime | None = None) -> datetime:
+    """Next occurrence of `hour`:00 in server local time, always in the future."""
+    now = now or datetime.now().astimezone()
+    run_at = now.replace(hour=hour % 24, minute=0, second=0, microsecond=0)
+    if run_at <= now:
+        run_at += timedelta(days=1)
+    return run_at
+
+
+def start_nightly_recheck(hour: int = 3) -> None:
+    """Re-check EVERY datasheet source URL once a night at `hour` local time.
+
+    Conditional GETs make this cheap: unchanged documents answer 304 and are
+    never downloaded. A document that really changed becomes a new
+    DatasheetVersion and auto-bumps the component version, exactly like a
+    manual re-fetch. Idempotent — only the first call arms the timer."""
+    global _nightly_started
+    if _nightly_started:
+        return
+    _nightly_started = True
+
+    def tick() -> None:
+        FETCH_STATE["last_nightly_at"] = datetime.now(timezone.utc).isoformat()
+        try:
+            if not start_fetch_all("all", trigger="nightly"):
+                log.warning("nightly datasheet re-check skipped: a fetch run is already active")
+        except Exception as e:  # never let a bad night kill the schedule
+            log.warning(f"nightly datasheet re-check failed to start: {e}")
+        arm()
+
+    def arm() -> None:
+        run_at = _next_nightly(hour)
+        FETCH_STATE["next_nightly_at"] = run_at.isoformat()
+        t = threading.Timer(max((run_at - datetime.now().astimezone()).total_seconds(), 60.0), tick)
+        t.daemon = True
+        t.start()
+
+    arm()
 
 
 def _fetch_all_worker(mode: str) -> None:
@@ -296,6 +372,8 @@ def _fetch_all_worker(mode: str) -> None:
                     FETCH_STATE["new_versions"] += 1
                 elif r["result"] == "unchanged":
                     FETCH_STATE["unchanged"] += 1
+                    if r.get("not_modified"):
+                        FETCH_STATE["not_modified"] += 1
             except Exception as e:
                 db.rollback()
                 FETCH_STATE["errors"] += 1

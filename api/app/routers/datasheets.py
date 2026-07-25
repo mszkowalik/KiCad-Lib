@@ -53,7 +53,9 @@ def fetch(ds_id: int, db: Session = Depends(get_db)):
     if not ds.source_url:
         raise HTTPException(422, "datasheet has no source URL to fetch")
     try:
-        result = fetch_datasheet(db, ds)
+        # Explicit user action: download in full rather than trusting the
+        # supplier's ETag — that is the point of clicking "re-fetch".
+        result = fetch_datasheet(db, ds, conditional=False)
     except httpx.HTTPError as e:
         raise HTTPException(502, f"download failed: {e}") from e
 

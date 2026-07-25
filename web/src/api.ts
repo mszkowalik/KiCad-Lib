@@ -461,9 +461,16 @@ export interface DatasheetFetchStatus {
   new_versions: number;
   unchanged: number;
   errors: number;
+  /** Of `unchanged`, how many the supplier settled with a 304 (no download). */
+  not_modified: number;
   started_at: string | null;
   finished_at: string | null;
   last_error: string | null;
+  /** What kicked the current/last run: "startup" | "nightly" | "manual". */
+  trigger: string | null;
+  /** ISO time of the next scheduled nightly re-check (null = disabled). */
+  next_nightly_at: string | null;
+  last_nightly_at: string | null;
   datasheets_total: number;
   datasheets_with_local_copy: number;
 }

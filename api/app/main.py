@@ -67,6 +67,12 @@ def startup() -> None:
                 "ALTER TABLE components ADD COLUMN IF NOT EXISTS in_library boolean NOT NULL DEFAULT true"
             ))
             conn.execute(text(
+                "ALTER TABLE datasheet_versions ADD COLUMN IF NOT EXISTS etag varchar(300)"
+            ))
+            conn.execute(text(
+                "ALTER TABLE datasheet_versions ADD COLUMN IF NOT EXISTS last_modified varchar(100)"
+            ))
+            conn.execute(text(
                 "ALTER TABLE project_notes ADD COLUMN IF NOT EXISTS sha varchar(40) NOT NULL DEFAULT ''"
             ))
             conn.execute(text(
@@ -172,7 +178,13 @@ def startup() -> None:
 
         from .services.datasheet_store import start_fetch_all
 
-        threading.Timer(10.0, lambda: start_fetch_all("missing")).start()
+        threading.Timer(10.0, lambda: start_fetch_all("missing", trigger="startup")).start()
+    if settings.datasheet_recheck_nightly:
+        # Nightly conditional re-check of every source URL: changed documents
+        # become new versions and bump their component version.
+        from .services.datasheet_store import start_nightly_recheck
+
+        start_nightly_recheck(settings.datasheet_recheck_hour)
     if settings.fx_autofetch:
         from .services.fx import start_auto_refresh
 
