@@ -13,6 +13,8 @@ from ..services.generator import (
     PRICE_KEY_TO_COL,
     BaseSymbolProvider,
     build_component_symbol,
+    footprint_display_names,
+    footprint_name_props,
     build_library_text,
     injected_props,
     load_symbol_lib_from_text,
@@ -405,8 +407,11 @@ def symbol_svg(comp_id: int, version_no: int, db: Session = Depends(get_db)):
     sv = cv.symbol_version
     template = provider.get(cv.base_component, sv.source_text, cache_key=f"{cv.base_component}@{sv.id}")
     meta_lib = load_symbol_lib_from_text(sv.source_text)
-    props = [property_row_to_dict(p) for p in cv.properties] + injected_props(
-        _datasheet_rows(db, comp.id)
+    fp_ref = next((p.value for p in cv.properties if p.key == "Footprint"), "")
+    props = (
+        footprint_name_props(fp_ref, footprint_display_names(db))
+        + [property_row_to_dict(p) for p in cv.properties]
+        + injected_props(_datasheet_rows(db, comp.id))
     )
     sym = build_component_symbol(template, comp.name, props, cv.removed_properties)
     lib_text = build_library_text(meta_lib, [sym])

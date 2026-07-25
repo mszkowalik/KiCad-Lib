@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from .. import models as M
+from ..config import settings
 from ..db import get_db
+from ..services.mirror import top_level_of, update_mirror_symbols
 from ..services.render import render_svg
+from .util import audit
 
 router = APIRouter(prefix="/api", tags=["libraries"])
 
@@ -114,6 +118,7 @@ def get_footprint(fp_id: int, db: Session = Depends(get_db)):
     return {
         "id": f.id,
         "name": f.name,
+        "display_name": f.display_name or "",
         "kind": "footprint",
         "version_no": cur.version_no if cur else None,
         "created_at": cur.created_at.isoformat() if cur else None,
@@ -124,6 +129,43 @@ def get_footprint(fp_id: int, db: Session = Depends(get_db)):
         "models": (cur.models or []) if cur else [],
         "used_by": _used_by(db, f, "footprint_version_id"),
     }
+
+
+class FootprintMeta(BaseModel):
+    """Unversioned footprint metadata (see the note on M.Footprint)."""
+
+    display_name: str
+
+
+@router.patch("/footprints/{fp_id}")
+def set_footprint_display_name(fp_id: int, body: FootprintMeta, db: Session = Depends(get_db)):
+    """Set the short package name that `{Footprint_Name}` templates resolve to.
+
+    Unversioned, so this mints no footprint version — but it does change every
+    generated `ki_description` that references it, so the affected symbol
+    libraries are rebuilt straight away."""
+    f = db.get(M.Footprint, fp_id)
+    if f is None:
+        raise HTTPException(404, "footprint not found")
+    f.display_name = body.display_name.strip()[:200]
+    audit(db, "footprint.describe", "footprint", f.id,
+          {"name": f.name, "display_name": f.display_name})
+    db.commit()
+
+    # The name is baked into every generated ki_description that references
+    # {Footprint_Name}, so rebuild the symbol libraries of the categories whose
+    # components use this footprint — the .kicad_mod itself is unaffected.
+    tops: set[str] = set()
+    for comp in db.query(M.Component).options(selectinload(M.Component.versions)).all():
+        cv = _current(comp)
+        if cv is None or cv.category is None:
+            continue
+        if any(p.key == "Footprint" and p.value == f"7Sigma:{f.name}" for p in cv.properties):
+            tops.add(top_level_of(cv.category).name)
+    mirror = update_mirror_symbols(db, settings, tops) if tops else {"warnings": []}
+    return {"id": f.id, "name": f.name, "display_name": f.display_name,
+            "rebuilt_libraries": sorted(tops),
+            "mirror_warnings": mirror.get("warnings", [])}
 
 
 # ---------------------------------------------------------------- preview

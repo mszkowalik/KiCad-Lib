@@ -4,6 +4,7 @@ import {
   errorMessage,
   getTemplate,
   isAbortError,
+  saveFootprintDisplayName,
   templatePreviewUrl,
   type TemplateDetail as TemplateDetailT,
   type TemplateKind,
@@ -32,6 +33,9 @@ export default function TemplateDetail() {
   const [data, setData] = useState<TemplateDetailT | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [previewFailed, setPreviewFailed] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [savingName, setSavingName] = useState(false);
+  const [nameNotice, setNameNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isKind(kind) || !Number.isFinite(id)) {
@@ -42,8 +46,12 @@ export default function TemplateDetail() {
     setData(null);
     setError(null);
     setPreviewFailed(false);
+    setNameNotice(null);
     getTemplate(kind, id, ctrl.signal)
-      .then(setData)
+      .then((d) => {
+        setData(d);
+        setNameDraft(d.display_name ?? "");
+      })
       .catch((err) => {
         if (!isAbortError(err)) setError(errorMessage(err));
       });
@@ -51,6 +59,28 @@ export default function TemplateDetail() {
   }, [kind, id]);
 
   const noun = kind === "footprints" ? "footprint" : "symbol";
+
+  const saveName = async () => {
+    if (data === null || savingName) return;
+    setSavingName(true);
+    setNameNotice(null);
+    try {
+      const res = await saveFootprintDisplayName(data.id, nameDraft);
+      setData({ ...data, display_name: res.display_name });
+      const rebuilt = res.rebuilt_libraries.length
+        ? `rebuilt ${res.rebuilt_libraries.join(", ")}`
+        : "no components use this footprint yet";
+      setNameNotice(
+        res.mirror_warnings.length
+          ? `Saved — ${rebuilt}, with warnings: ${res.mirror_warnings.join("; ")}`
+          : `Saved — ${rebuilt}.`,
+      );
+    } catch (err) {
+      setNameNotice(errorMessage(err));
+    } finally {
+      setSavingName(false);
+    }
+  };
 
   if (error) {
     return (
@@ -93,6 +123,40 @@ export default function TemplateDetail() {
             <span className="toolbar-total">v{data.version_no}</span>
           ) : null}
         </div>
+
+        {noun === "footprint" ? (
+          <div className="card pad">
+            <h2 className="card-title">Package name</h2>
+            <div className="skill-desc">
+              <input
+                className="text"
+                value={nameDraft}
+                maxLength={200}
+                placeholder="Short package name, e.g. 0402 or SOT-23-6"
+                onChange={(e) => setNameDraft(e.target.value)}
+                aria-label="Footprint package name"
+                spellCheck={false}
+              />
+              <span className="rail-hint">
+                What <span className="mono">{"{Footprint_Name}"}</span> resolves to in a
+                component's <span className="mono">ki_description</span>. Stored on the
+                footprint, so every component using it stays in step — saving rebuilds the
+                affected symbol libraries.
+              </span>
+            </div>
+            <div className="btn-row">
+              <button
+                type="button"
+                className="btn btn-accent"
+                disabled={savingName || nameDraft === (data.display_name ?? "")}
+                onClick={() => void saveName()}
+              >
+                {savingName ? "Saving…" : "Save name"}
+              </button>
+              {nameNotice ? <span className="muted rail-hint">{nameNotice}</span> : null}
+            </div>
+          </div>
+        ) : null}
 
         <div className="card pad">
           <h2 className="card-title">Preview</h2>

@@ -96,6 +96,9 @@ def startup() -> None:
                 "ALTER TABLE skills ADD COLUMN IF NOT EXISTS description varchar(500) NOT NULL DEFAULT ''"
             ))
             conn.execute(text(
+                "ALTER TABLE footprints ADD COLUMN IF NOT EXISTS display_name varchar(200) NOT NULL DEFAULT ''"
+            ))
+            conn.execute(text(
                 """
                 INSERT INTO project_cost_revisions
                     (project_id, effective_sha, effective_ref, created_at)

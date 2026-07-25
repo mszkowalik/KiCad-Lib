@@ -25,6 +25,8 @@ from .generator import (
     BaseSymbolProvider,
     build_component_symbol,
     build_library_text,
+    footprint_display_names,
+    footprint_name_props,
     injected_props,
     load_symbol_lib_from_text,
     property_row_to_dict,
@@ -81,6 +83,7 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
     if only_tops is not None:
         by_top = {k: v for k, v in by_top.items() if k in only_tops}
 
+    fp_display = footprint_display_names(db)
     symbols_dir = settings.mirror_dir / "Symbols"
     symbols_dir.mkdir(parents=True, exist_ok=True)
     for top_name in sorted(by_top):
@@ -94,8 +97,13 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
                 template = provider.get(
                     cv.base_component, sv.source_text, cache_key=f"{cv.base_component}@{sv.id}"
                 )
-                props = [property_row_to_dict(p) for p in cv.properties] + injected_props(
-                    sheets.get(comp.id)
+                own = [property_row_to_dict(p) for p in cv.properties]
+                fp_ref = next((p.value for p in cv.properties if p.key == "Footprint"), "")
+                # Footprint_Name first — see footprint_name_props() on why order matters.
+                props = (
+                    footprint_name_props(fp_ref, fp_display)
+                    + own
+                    + injected_props(sheets.get(comp.id))
                 )
                 syms.append(
                     build_component_symbol(template, comp.name, props, cv.removed_properties, warnings)

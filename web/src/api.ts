@@ -399,7 +399,34 @@ export interface TemplateDetail {
   source_text: string | null;
   /** footprints only */
   models?: string[];
+  /**
+   * Footprints only. Short package name ("0402", "SOT-23-6") that
+   * `{Footprint_Name}` in a ki_description resolves to. Lives on the footprint
+   * so components don't each carry a copy; unversioned.
+   */
+  display_name?: string;
   used_by: TemplateUse[];
+}
+
+/**
+ * Sets a footprint's short package name. Rebuilds the symbol libraries of every
+ * category using it, since the name is baked into generated descriptions.
+ */
+export function saveFootprintDisplayName(
+  id: number,
+  displayName: string,
+): Promise<{
+  id: number;
+  name: string;
+  display_name: string;
+  rebuilt_libraries: string[];
+  mirror_warnings: string[];
+}> {
+  return request(`/api/footprints/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ display_name: displayName }),
+  });
 }
 
 export function getTemplate(

@@ -352,6 +352,19 @@ token injected per-invocation via `http.extraheader` — never written to disk),
 - **New seed-skill files** (`app/seed_skills/*.md`) must be listed in
   `[tool.setuptools.package-data]` in `pyproject.toml` so they ship in the
   non-editable Docker install.
+- **`Footprint_Name` belongs to the footprint, not the component.**
+  `Footprint.display_name` (unversioned, `PATCH /api/footprints/{id}`) holds the
+  short package name; `generator.footprint_name_props()` injects it **ahead of**
+  the component's own properties, so a component that still carries its own row
+  overrides it. Never re-add it as a per-component property. Because the name is
+  baked into generated `ki_description` values, changing it rebuilds the symbol
+  libraries of every category using that footprint — not the `.kicad_mod`.
+- **Template resolution is order-independent.** `apply_properties` resolves
+  `{Key}` against the *final* property set. It used to resolve against the
+  properties applied so far, so a `ki_description` positioned before the
+  property it referenced emitted a spurious "unresolved template" warning. Only
+  safe while no property value references another property that is itself a
+  template — check before introducing nesting.
 - **`Skill.description` is unversioned** — it is a when-to-use label on the
   skill, not part of the document, so it lives on `Skill` (not `SkillVersion`)
   and is written through `PATCH /api/skills/{id}`, which never mints a version.

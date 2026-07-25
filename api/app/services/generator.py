@@ -53,14 +53,27 @@ def apply_properties(
     """Port of update_component_properties(). `properties` uses the YAML dict
     shape: {key, value, position?, effects?, showName?} with value None for
     explicit nulls."""
+    # Templates resolve against the FINAL property set, not the properties
+    # applied so far. Resolving incrementally made `{Key}` depend on where its
+    # target happened to sit in the property order — a component whose
+    # ki_description came before the property it referenced emitted an
+    # "unresolved template" warning even though the property was right there.
+    # Later entries win, which preserves injection semantics: an injected
+    # default (see footprint_name_props) is overridden by the component's own
+    # row. Safe against nesting only because no property value in this library
+    # references another property that is itself a template.
+    final = {p.key: p.value for p in symbol.properties}
+    for prop in properties:
+        v = prop.get("value", "")
+        final[prop.get("key")] = "" if v is None else v
+
     for prop in properties:
         key = prop.get("key")
         value = prop.get("value", "")
         if value is None:
             value = ""
         if isinstance(value, str) and has_template(value):
-            current = {p.key: p.value for p in symbol.properties}
-            value = resolve_templates(value, current, warnings, context or str(key))
+            value = resolve_templates(value, final, warnings, context or str(key))
         value = str(value)
 
         found = False
@@ -160,6 +173,43 @@ PRICE_PROP_ORDER = (
     ("Price Updated", "updated"),
 )
 PRICE_KEY_TO_COL = dict(PRICE_PROP_ORDER)
+
+
+def footprint_display_names(db) -> dict[str, str]:
+    """`{"7Sigma:<name>": display_name}` for every footprint that has one.
+
+    Built once per generation pass — the map is small (one row per footprint)
+    and saves a lookup per component.
+    """
+    from .. import models as M
+
+    return {
+        f"7Sigma:{name}": display
+        for name, display in db.query(M.Footprint.name, M.Footprint.display_name).all()
+        if display
+    }
+
+
+def footprint_name_props(footprint_ref: str | None, display_names: dict[str, str]) -> list[dict]:
+    """The `Footprint_Name` property, derived from the referenced footprint.
+
+    `Footprint_Name` describes the *package* ("0402", "VQFN-14-EP 3.5x3.5mm"),
+    so it belongs to the footprint rather than being copy-pasted onto every
+    component that uses it. `ki_description` templates reference it as
+    `{Footprint_Name}`.
+
+    This is deliberately **prepended** to the component's own properties, not
+    appended like `injected_props`: `apply_properties` resolves each template
+    against the properties applied *so far*, so a `{Footprint_Name}` inside
+    `ki_description` only resolves if the name is already there. Injecting it
+    first makes resolution independent of where the component happens to order
+    its properties. A component that still carries its own `Footprint_Name`
+    comes later in the list and therefore still wins.
+    """
+    display = display_names.get((footprint_ref or "").strip())
+    if not display:
+        return []
+    return [{"key": "Footprint_Name", "value": display}]
 
 
 def injected_props(datasheets) -> list[dict]:

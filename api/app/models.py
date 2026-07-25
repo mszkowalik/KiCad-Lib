@@ -89,10 +89,21 @@ class SymbolVersion(Base):
 
 # ---------------------------------------------------------------- footprints
 class Footprint(Base):
+    """A footprint and its version history.
+
+    ``display_name`` is the short human name of the package ("0402",
+    "VQFN-14-EP 3.5x3.5mm") that `ki_description` templates reference as
+    ``{Footprint_Name}``. It belongs to the footprint, not to each component
+    that uses it: the generator injects it, so a component never has to carry
+    (and drift on) its own copy. Unversioned — it labels the footprint, not a
+    revision of its geometry.
+    """
+
     __tablename__ = "footprints"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200), unique=True)
+    display_name: Mapped[str] = mapped_column(String(200), default="", server_default="")
     current_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     versions: Mapped[list["FootprintVersion"]] = relationship(

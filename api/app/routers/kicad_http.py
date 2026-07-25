@@ -87,6 +87,9 @@ def part_detail(part_id: int, db: Session = Depends(get_db)):
 
     # user properties + injected datasheet links (prices stay on the platform)
     entries = [(p.key, resolved_value(None if p.is_null else p.value, props), p.hide) for p in cv.properties]
+    # Emit the footprint-derived name too, unless the component has its own row.
+    if not any(p.key == "Footprint_Name" for p in cv.properties) and props.get("Footprint_Name"):
+        entries.append(("Footprint_Name", props["Footprint_Name"], True))
     entries += [(d["key"], d["value"], True) for d in injected_props(sheets)]
 
     description = ""

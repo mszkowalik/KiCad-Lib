@@ -35,7 +35,22 @@ def current_version(comp: M.Component) -> M.ComponentVersion | None:
 
 
 def props_dict(cv: M.ComponentVersion) -> dict[str, str | None]:
-    return {p.key: (None if p.is_null else p.value) for p in cv.properties}
+    """A version's properties as a dict, **plus the footprint's package name**.
+
+    `Footprint_Name` lives on the footprint, not on each component (see the
+    generator's `footprint_name_props`), so it has to be added back here or every
+    `{Footprint_Name}` in a `ki_description` renders literally. Injecting it in
+    `props_dict` itself means no resolution site can forget it — this is the one
+    helper they all go through. A component that still carries its own row keeps
+    it, matching the generator's override semantics.
+    """
+    out: dict[str, str | None] = {p.key: (None if p.is_null else p.value) for p in cv.properties}
+    if not out.get("Footprint_Name"):
+        fv = cv.footprint_version
+        display = fv.footprint.display_name if fv is not None and fv.footprint else ""
+        if display:
+            out["Footprint_Name"] = display
+    return out
 
 
 def resolved_value(value: str | None, props: dict[str, str | None]) -> str:
