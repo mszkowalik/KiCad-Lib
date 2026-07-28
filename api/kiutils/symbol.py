@@ -365,6 +365,10 @@ class Symbol:
     )
     """The ``isPower`` token's documentation was not done yet .."""
 
+    power_scope: Optional[str] = None
+    """KiCad 10+: the scope argument of the ``power`` token — ``global`` or ``local``.
+    ``None`` means a legacy bare ``(power)`` with no scope."""
+
     properties: List[Property] = field(default_factory=list)
     """The ``properties`` is a list of properties that define the symbol. The following properties are
     mandatory when defining a parent symbol: "Reference", "Value", "Footprint", and "Datasheet".
@@ -418,7 +422,18 @@ class Symbol:
         object.libId = exp[1]
         for item in exp[2:]:
             if is_bool_key(item, "power"):
-                object.isPower = parse_bool(item, "power")
+                # KiCad 10 writes a SCOPE, not a bool: (power global) / (power local).
+                # parse_bool reads anything that isn't "yes" as False, so a scoped
+                # token silently cleared isPower and the emitted symbol lost its
+                # power flag entirely — the drawing still rendered, but KiCad's
+                # "Add Power Symbol" picker filters on that flag and skipped it.
+                # Legacy bare (power) and (power yes|no) still parse as booleans.
+                scope = item[1] if isinstance(item, list) and len(item) == 2 else None
+                if scope is not None and str(scope).lower() not in ("yes", "no"):
+                    object.isPower = True
+                    object.power_scope = str(scope)
+                else:
+                    object.isPower = parse_bool(item, "power")
             elif not isinstance(item, list):
                 raise ValueError(
                     f"Expected list property [key, value], got: {item}. Full expression: {exp}"
@@ -556,7 +571,7 @@ class Symbol:
             expr.append(["extends", escape_and_quote(self.extends)])
 
         if self.isPower:
-            expr.append(["power"])
+            expr.append(["power", self.power_scope] if self.power_scope else ["power"])
 
         if self.hidePinNumbers:
             expr.append(["pin_numbers", ["hide", "yes"]])

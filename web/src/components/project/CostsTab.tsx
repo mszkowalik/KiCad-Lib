@@ -26,12 +26,14 @@ import {
   type ExtraItem,
   type ExtraItemIn,
   type SnapshotInfo,
+  getCostSteps,
+  type CostStepCatalog,
 } from "../../api";
 import DataTable from "../DataTable";
 import { ErrorBanner, Spinner } from "../Ui";
 
 const EMPTY_COST: CostItemIn = {
-  label: "", basis: "per_device", price: 0, steps: [], currency: "USD",
+  label: "", basis: "per_device", price: 0, steps: [], currency: "USD", step_key: "",
   company: "", mpn: "", notes: "", position: 0,
 };
 
@@ -68,6 +70,15 @@ export default function CostsTab({
   snapshot: SnapshotInfo | null;
 }) {
   const [costs, setCosts] = useState<CostItem[] | null>(null);
+
+  const [stepCatalog, setStepCatalog] = useState<CostStepCatalog | null>(null);
+  useEffect(() => {
+    const ac = new AbortController();
+    getCostSteps(ac.signal).then(setStepCatalog).catch(() => setStepCatalog(null));
+    return () => ac.abort();
+  }, []);
+  const stepLabel = (key: string) =>
+    stepCatalog?.steps.find((st) => st.key === key)?.label ?? key;
   const [extras, setExtras] = useState<ExtraItem[] | null>(null);
   const [revision, setRevision] = useState<CostRevisionInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -202,7 +213,20 @@ export default function CostsTab({
             rows={costs}
             rowKey={(c) => c.id}
             columns={[
-              { key: "label", label: "Item", width: 22, get: (c) => c.label },
+              { key: "label", label: "Item", width: 17, get: (c) => c.label },
+              {
+                key: "step_key",
+                label: "Step",
+                width: 13,
+                get: (c) => c.step_key,
+                render: (c) => c.step_key ? (
+                  <span className="pill neutral" title={stepLabel(c.step_key)}>
+                    {c.step_key}
+                  </span>
+                ) : (
+                  <span className="dim" title="free-form item — matched to invoices only by explicit links">—</span>
+                ),
+              },
               {
                 key: "basis",
                 label: "Basis",
@@ -213,7 +237,7 @@ export default function CostsTab({
               {
                 key: "price",
                 label: "Price",
-                width: 22,
+                width: 18,
                 numeric: true,
                 className: "mono",
                 get: (c) => c.price,
@@ -235,7 +259,7 @@ export default function CostsTab({
               {
                 key: "company",
                 label: "Company",
-                width: 13,
+                width: 11,
                 className: "muted",
                 get: (c) => c.company,
                 render: (c) => c.company || "—",
@@ -248,7 +272,7 @@ export default function CostsTab({
                 get: (c) => c.mpn,
                 render: (c) => c.mpn || "—",
               },
-              { key: "notes", label: "Notes", width: 11, className: "muted", get: (c) => c.notes },
+              { key: "notes", label: "Notes", width: 9, className: "muted", get: (c) => c.notes },
               {
                 key: "actions",
                 label: "",
@@ -264,7 +288,8 @@ export default function CostsTab({
                         setCostDraft({
                           label: c.label, basis: c.basis, price: c.price,
                           steps: c.steps.map((s) => ({ ...s })), currency: c.currency,
-                          company: c.company, mpn: c.mpn, notes: c.notes, position: c.position,
+                          company: c.company, mpn: c.mpn, step_key: c.step_key,
+                          notes: c.notes, position: c.position,
                         });
                       }}
                     >
@@ -301,6 +326,27 @@ export default function CostsTab({
               onChange={(e) => setCostDraft({ ...costDraft, basis: e.target.value })}>
               <option value="per_device">per device</option>
               <option value="per_run">per production run</option>
+            </select>
+          </label>
+          <label>
+            Production step
+            <select className="text" value={costDraft.step_key ?? ""}
+              title="Invoice positions billed under the same step are this item's actuals — plan-vs-billed matches on the step, whatever the vendor calls it"
+              onChange={(e) => {
+                const key = e.target.value;
+                const def = stepCatalog?.steps.find((st) => st.key === key)?.default_basis;
+                // the step knows how it scales — overriding after is a conscious act
+                setCostDraft({ ...costDraft, step_key: key,
+                               basis: def ?? costDraft.basis });
+              }}>
+              <option value="">— free-form (no step) —</option>
+              {Object.entries(stepCatalog?.stages ?? {}).map(([stage, stageLabel]) => (
+                <optgroup key={stage} label={stageLabel}>
+                  {(stepCatalog?.steps ?? []).filter((st) => st.stage === stage).map((st) => (
+                    <option key={st.key} value={st.key}>{st.label}</option>
+                  ))}
+                </optgroup>
+              ))}
             </select>
           </label>
           <label>
@@ -404,7 +450,20 @@ export default function CostsTab({
             rows={extras}
             rowKey={(x) => x.id}
             columns={[
-              { key: "label", label: "Item", width: 24, get: (x) => x.label },
+              { key: "label", label: "Item", width: 19, get: (x) => x.label },
+              {
+                key: "step",
+                label: "Step",
+                width: 5,
+                interactive: false,
+                get: () => "parts:pool",
+                render: () => (
+                  <span className="pill neutral"
+                        title="materials: bought into the shared pool, drawn per device by every run">
+                    parts:pool
+                  </span>
+                ),
+              },
               { key: "qty", label: "Qty/dev", width: 8, numeric: true, get: (x) => x.qty },
               {
                 key: "component",

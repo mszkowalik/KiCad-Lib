@@ -361,7 +361,17 @@ def history_points_at(db: Session, component_ids: set[int], at) -> dict[int, lis
     latest snapshot at-or-before `at`, else the earliest one after it (the
     closest available). Components with no history rows are absent from the
     result — callers fall back to live points. Returned points are transient
-    objects, never added to the session."""
+    objects, never added to the session.
+
+    **Only snapshots that carry points are candidates.** An EMPTY snapshot is a
+    record that the part had no ladder yet, which is not price information — and
+    selecting one would be worse than having no history at all, because the
+    caller sees the component present with an empty list and therefore skips its
+    live-points fallback (`project_bom._component_data` keys that decision on
+    presence). That silently unpriced every historical BOM line for the 11
+    components whose first recorded snapshot was empty, the enclosures among
+    them: a Dongle batch showed no enclosure cost while the part was plainly
+    priced in the library."""
     out: dict[int, list[M.ComponentPricePoint]] = {}
     if not component_ids:
         return out
@@ -373,6 +383,8 @@ def history_points_at(db: Session, component_ids: set[int], at) -> dict[int, lis
     )
     by_comp: dict[int, list[M.ComponentPriceHistory]] = {}
     for r in rows:
+        if not r.points:
+            continue
         by_comp.setdefault(r.component_id, []).append(r)
     for cid, hist in by_comp.items():
         chosen = hist[0]

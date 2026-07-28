@@ -11,3 +11,5 @@ render-cache/
 *.egg-info/
 # Skill documents mirrored from the platform DB by .claude/sync-skills.py
 .claude/skills/
+# Supplier invoices: real PDFs with address/VAT/email — keep them out of git
+jlcpcb_invoives/

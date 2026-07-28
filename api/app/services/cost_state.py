@@ -134,7 +134,7 @@ def revision_for_edit(
                 project_id=c.project_id, revision_id=rev.id, position=c.position,
                 label=c.label, basis=c.basis, price=c.price,
                 steps=list(c.steps) if c.steps else None, currency=c.currency,
-                company=c.company, mpn=c.mpn, notes=c.notes,
+                company=c.company, mpn=c.mpn, step_key=c.step_key, notes=c.notes,
             )
             db.add(copy)
             cost_map[c.id] = copy

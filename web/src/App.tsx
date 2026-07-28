@@ -6,8 +6,9 @@ import Browse from "./pages/Browse";
 import ComponentDetail from "./pages/ComponentDetail";
 import FileViewer from "./pages/FileViewer";
 import ImportStation from "./pages/ImportStation";
+import Invoices from "./pages/Invoices";
 import Jaravis from "./pages/Jaravis";
-import JlcStock from "./pages/JlcStock";
+import PartsStock from "./pages/JlcStock";
 import KicadPage from "./pages/KicadPage";
 import NewComponent from "./pages/NewComponent";
 import ProjectDetail from "./pages/ProjectDetail";
@@ -73,8 +74,11 @@ export default function App() {
               <NavLink to="/projects" className={navClass}>
                 Projects
               </NavLink>
-              <NavLink to="/jlc-stock" className={navClass}>
-                JLC Stock
+              <NavLink to="/invoices" className={navClass}>
+                Invoices
+              </NavLink>
+              <NavLink to="/parts-stock" className={navClass}>
+                Parts stock
               </NavLink>
               <NavLink to="/jaravis" className={navClass}>
                 Jaravis
@@ -102,7 +106,10 @@ export default function App() {
             <Route path="/templates/:kind/:id" element={<TemplateDetail />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/projects/:id" element={<ProjectDetail />} />
-            <Route path="/jlc-stock" element={<JlcStock />} />
+            <Route path="/invoices" element={<Invoices />} />
+            <Route path="/parts-stock" element={<PartsStock />} />
+            {/* the view outgrew "JLC stock" — keep the old link working */}
+            <Route path="/jlc-stock" element={<PartsStock />} />
             <Route path="/jaravis" element={<Jaravis />} />
             <Route path="/proposals" element={<Proposals />} />
             <Route path="/skills" element={<Skills />} />

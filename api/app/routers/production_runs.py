@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as M
 from ..db import get_db
-from ..services import production, project_bom, storage
+from ..services import production, project_bom, run_actuals, storage
 from .util import audit
 
 router = APIRouter(prefix="/api", tags=["production-runs"])
@@ -58,6 +58,13 @@ def _run_json(r: M.ProductionRun, db: Session | None = None, with_detail: bool =
         "status": r.status,
         "run_date": r.run_date,
         "notes": r.notes,
+        "qty_good": r.qty_good,
+        "qty_sold": r.qty_sold,
+        "sale_unit_price": r.sale_unit_price,
+        "sale_currency": r.sale_currency,
+        "customer": r.customer,
+        "order_ref": r.order_ref,
+        "order_date": r.order_date,
         "created_at": r.created_at.isoformat(),
         "attachment_count": len(r.attachments),
         "device_count": len(r.devices),
@@ -90,6 +97,15 @@ class RunIn(BaseModel):
     status: str = "planned"
     run_date: str = ""
     notes: str = ""
+    # the sale side — price PER DEVICE, so a quantity correction cannot silently
+    # rewrite the revenue; empty currency inherits the project's display currency
+    sale_unit_price: float | None = None
+    sale_currency: str = ""
+    qty_sold: int | None = None
+    qty_good: int | None = None
+    customer: str = ""
+    order_ref: str = ""
+    order_date: str = ""
 
 
 class RunPatch(BaseModel):
@@ -99,6 +115,17 @@ class RunPatch(BaseModel):
     run_date: str | None = None
     notes: str | None = None
     overrides: dict | None = None
+    # Re-point a run at a newer design commit. Needed when a part moves INTO the
+    # schematic (the Dongle enclosure became ENC1), because the run's planned BOM
+    # comes from its snapshot and would otherwise never see it.
+    snapshot_id: int | None = None
+    sale_unit_price: float | None = None
+    sale_currency: str | None = None
+    qty_sold: int | None = None
+    qty_good: int | None = None
+    customer: str | None = None
+    order_ref: str | None = None
+    order_date: str | None = None
 
 
 @router.get("/projects/{project_id}/runs")
@@ -167,7 +194,38 @@ def update_run(run_id: int, body: RunPatch, db: Session = Depends(get_db)):
         r.notes = body.notes
     if body.overrides is not None:
         r.overrides = body.overrides
-    audit(db, "run.update", "production_run", r.id)
+    if body.snapshot_id is not None:
+        snap = db.get(M.ProjectSnapshot, body.snapshot_id)
+        if snap is None:
+            raise HTTPException(404, "snapshot not found")
+        if snap.project_id != r.project_id:
+            raise HTTPException(422, f"snapshot {snap.id} belongs to project "
+                                     f"{snap.project_id}, not {r.project_id}")
+        # `overrides` keyed `b<snapshot_bom_line id>` point at the OLD snapshot's
+        # line ids; a different snapshot has different ones, so a silent re-point
+        # would quietly stop applying them.
+        stale = [k for k in (r.overrides or {}) if k.startswith("b")]
+        if stale and snap.id != r.snapshot_id:
+            raise HTTPException(409, "this run has BOM-line overrides "
+                                     f"({', '.join(sorted(stale))}) keyed to snapshot "
+                                     f"{r.snapshot_id}; re-key or clear them before "
+                                     "moving it to another snapshot")
+        r.snapshot_id = snap.id
+    # Sale side + yield. Applied only when explicitly present, so a PATCH that
+    # touches the label can never blank out a price.
+    sale = body.model_dump(exclude_unset=True)
+    before = {}
+    for field in ("sale_unit_price", "sale_currency", "qty_sold", "qty_good",
+                  "customer", "order_ref", "order_date"):
+        if field not in sale:
+            continue
+        value = sale[field]
+        if isinstance(value, str):
+            value = value.strip()
+        if getattr(r, field) != value:
+            before[field] = getattr(r, field)
+            setattr(r, field, value)
+    audit(db, "run.update", "production_run", r.id, before or None)
     db.commit()
     return _run_json(r, db, with_detail=True)
 
@@ -179,6 +237,18 @@ def delete_run(run_id: int, db: Session = Depends(get_db)):
     from ..config import settings
 
     r = _run(db, run_id)
+    # Financial records reference the run; deleting it would either violate the
+    # FK or destroy cost history. Refuse and say what is in the way.
+    blockers = {
+        "cost documents": db.query(M.RunCostDocument).filter_by(run_id=run_id).count(),
+        "cost lines": db.query(M.RunCostLine).filter_by(run_id=run_id).count(),
+        "component draws": run_actuals.live_consumption(db, run_id=run_id).count(),
+        "stock adjustments": db.query(M.ComponentStockAdjustment).filter_by(charge_run_id=run_id).count(),
+    }
+    held = {k: v for k, v in blockers.items() if v}
+    if held:
+        detail = ", ".join(f"{v} {k}" for k, v in held.items())
+        raise HTTPException(409, f"run has financial records attached ({detail}) — remove or reassign them first")
     project_id = r.project_id
     for pset in db.query(M.ProductionFileSet).filter_by(run_id=run_id).all():
         shutil.rmtree(settings.data_dir / f"gerber-work/{pset.id}", ignore_errors=True)
@@ -214,17 +284,22 @@ async def upload_attachment(run_id: int, file: UploadFile = File(...), db: Sessi
 
 
 @router.get("/run-attachments/{attachment_id}")
-def download_attachment(attachment_id: int, db: Session = Depends(get_db)):
+def download_attachment(attachment_id: int, inline: bool = False,
+                        db: Session = Depends(get_db)):
+    """`inline=true` serves the bytes for display instead of download, so a
+    scanned invoice opens in the browser's PDF viewer (the same treatment
+    `datasheets.file` gives a datasheet) rather than landing in Downloads."""
     a = db.get(M.RunAttachment, attachment_id)
     if a is None:
         raise HTTPException(404, "attachment not found")
     data = storage.get_bytes(a.minio_key)
     if data is None:
         raise HTTPException(410, "attachment bytes missing from storage")
+    disposition = "inline" if inline else "attachment"
     return Response(
         content=data,
         media_type=a.content_type,
-        headers={"Content-Disposition": f'attachment; filename="{a.filename}"'},
+        headers={"Content-Disposition": f'{disposition}; filename="{a.filename}"'},
     )
 
 

@@ -14,7 +14,8 @@
       "Read(//Users/mateuszkowalik/Downloads/**)",
       "Bash(cp /Users/mateuszkowalik/Downloads/ME310G1-W3/XCVR_ME310G1-W3.kicad_mod '/Users/mateuszkowalik/Projects/KiCad Lib/Footprints/7Sigma.pretty/LGA-94_L15.0-W18.0-P0.6_xE310.kicad_mod')",
       "Bash(cp /Users/mateuszkowalik/Downloads/ME310G1-W3/ME310G1-W3.step '/Users/mateuszkowalik/Projects/KiCad Lib/3DModels/easyeda2kicad.3dshapes/LGA-94_L15.0-W18.0-P0.6_xE310.step')",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s \"http://localhost:8020/api/skills\")"
     ]
   },
   "hooks": {

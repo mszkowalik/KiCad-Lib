@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 from .. import models as M
 from ..config import settings
 from ..db import get_db
-from ..services.mirror import top_level_of, update_mirror_symbols
+from ..services.mirror import top_level_of, update_mirror_symbols, write_manifest
 from ..services.render import render_svg
 from .util import audit
 
@@ -147,9 +147,16 @@ def set_footprint_display_name(fp_id: int, body: FootprintMeta, db: Session = De
     f = db.get(M.Footprint, fp_id)
     if f is None:
         raise HTTPException(404, "footprint not found")
+    # `display_name` is unversioned, so the audit row is the ONLY revert path:
+    # record the previous value as well as the new one. Without `previous`, undoing
+    # a bulk rename pass would mean restoring a whole database dump.
+    previous = f.display_name or ""
     f.display_name = body.display_name.strip()[:200]
+    if f.display_name == previous:
+        return {"id": f.id, "name": f.name, "display_name": f.display_name,
+                "unchanged": True, "rebuilt_libraries": [], "mirror_warnings": []}
     audit(db, "footprint.describe", "footprint", f.id,
-          {"name": f.name, "display_name": f.display_name})
+          {"name": f.name, "display_name": f.display_name, "previous": previous})
     db.commit()
 
     # The name is baked into every generated ki_description that references
@@ -166,6 +173,65 @@ def set_footprint_display_name(fp_id: int, body: FootprintMeta, db: Session = De
     return {"id": f.id, "name": f.name, "display_name": f.display_name,
             "rebuilt_libraries": sorted(tops),
             "mirror_warnings": mirror.get("warnings", [])}
+
+
+@router.delete("/footprints/{fp_id}")
+def delete_footprint(fp_id: int, db: Session = Depends(get_db)):
+    """Retire a footprint and all its versions, plus its file in the mirror.
+
+    **Refuses if ANY component version references it** — including historical
+    versions, not just current ones. A footprint version is pinned by
+    `ComponentVersion.footprint_version_id`, so deleting one that an old version
+    points at would silently orphan that version's geometry and make the
+    component's history unreproducible.
+
+    Unlike a component or geometry edit there is no draft/approve path here and
+    no version to roll back to, so the audit row carries the full source text:
+    that plus the pre-delete export is the only way back.
+    """
+    f = (
+        db.query(M.Footprint)
+        .options(selectinload(M.Footprint.versions))
+        .filter_by(id=fp_id)
+        .first()
+    )
+    if f is None:
+        raise HTTPException(404, "footprint not found")
+
+    version_ids = [v.id for v in f.versions]
+    refs = (
+        db.query(M.ComponentVersion)
+        .filter(M.ComponentVersion.footprint_version_id.in_(version_ids))
+        .count()
+        if version_ids
+        else 0
+    )
+    if refs:
+        raise HTTPException(
+            409,
+            f"footprint {f.name!r} is referenced by {refs} component version(s) — "
+            "repoint them first, then delete",
+        )
+
+    cur = _current(f)
+    name, n_versions = f.name, len(f.versions)
+    source = cur.source_text if cur is not None else ""
+    f.current_version_id = None
+    db.flush()
+    for v in list(f.versions):
+        db.delete(v)
+    db.delete(f)
+    audit(db, "footprint.delete", "footprint", fp_id,
+          {"name": name, "versions_removed": n_versions, "source_text": source})
+    db.commit()
+
+    removed = False
+    path = settings.mirror_dir / "Footprints" / "7Sigma.pretty" / f"{name}.kicad_mod"
+    if path.exists():
+        path.unlink()
+        removed = True
+    return {"deleted": fp_id, "name": name, "versions_removed": n_versions,
+            "mirror_file_removed": removed, "manifest_files": write_manifest(settings)}
 
 
 # ---------------------------------------------------------------- preview

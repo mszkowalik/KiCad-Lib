@@ -598,6 +598,8 @@ class CostItemIn(BaseModel):
     currency: str = "USD"
     company: str = ""
     mpn: str = ""
+    # production-step identity from services/cost_steps.py; "" = free-form item
+    step_key: str = ""
     notes: str = ""
     position: int = 0
 
@@ -621,7 +623,7 @@ def _cost_json(c: M.ProjectCostItem) -> dict:
     return {
         "id": c.id, "project_id": c.project_id, "position": c.position, "label": c.label,
         "basis": c.basis, "price": c.price, "steps": c.steps or [], "currency": c.currency,
-        "company": c.company, "mpn": c.mpn, "notes": c.notes,
+        "company": c.company, "mpn": c.mpn, "step_key": c.step_key, "notes": c.notes,
     }
 
 

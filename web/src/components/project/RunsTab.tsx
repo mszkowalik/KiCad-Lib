@@ -22,6 +22,7 @@ import {
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
 import ProductionPanel from "./ProductionPanel";
+import RunCostsPanel from "./RunCostsPanel";
 
 function money(v: number | null | undefined, currency: string | null): string {
   if (v == null) return "—";
@@ -353,6 +354,14 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
           </div>
 
           <ProductionPanel runId={openRun.id} />
+
+          <RunCostsPanel
+            projectId={project.id}
+            runId={openRun.id}
+            qty={openRun.qty}
+            runDate={openRun.run_date}
+            hasSnapshot={openRun.snapshot_id !== null}
+          />
 
           <div className="card-subtitle">Attachments</div>
           <div className="btn-row">

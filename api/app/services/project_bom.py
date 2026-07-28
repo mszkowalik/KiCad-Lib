@@ -107,12 +107,32 @@ def _component_data(db: Session, component_ids: set[int], at: datetime | None = 
     """Points / supply / names / non-purchasable ids per component. With `at`
     set, points come from ComponentPriceHistory resolved at that instant
     (latest snapshot at-or-before, else earliest after); components with no
-    history yet fall back to live points — the closest data we have."""
+    history yet fall back to live points — the closest data we have.
+
+    POOL FIRST (user decision 2026-07-28): with `at` set — i.e. pricing a run,
+    not browsing a BOM at market prices — a part the company had actually bought
+    by that date prices at the pool's moving average as of then, because
+    invoices are the ground truth and the ladder is an estimate. The ladder only
+    prices parts never (yet) purchased. This also makes plan-vs-actual measure
+    what it should: labour, fab and freight, not two price books disagreeing.
+    """
     points: dict[int, list[M.ComponentPricePoint]] = {}
     live_ids = set(component_ids)
     if component_ids and at is not None:
-        points = ladder.history_points_at(db, component_ids, at)
-        live_ids = {cid for cid in component_ids if cid not in points}
+        from . import run_actuals  # local import — run_actuals imports this module
+
+        pool = run_actuals.pool_state(db, None, as_of=at.strftime("%Y-%m-%d"))
+        for cid in component_ids:
+            entry = pool.get(f"c{cid}")
+            if entry and entry.get("avg_usd", 0.0) > 0:
+                points[cid] = [M.ComponentPricePoint(
+                    component_id=cid, source="Pool average (invoices)",
+                    qty_from=1, unit_price=round(entry["avg_usd"], 6),
+                    currency="USD", updated_at=None,
+                )]
+        remaining = {cid for cid in component_ids if cid not in points}
+        points.update(ladder.history_points_at(db, remaining, at))
+        live_ids = {cid for cid in remaining if cid not in points}
     if live_ids:
         for p in db.query(M.ComponentPricePoint).filter(
             M.ComponentPricePoint.component_id.in_(live_ids)
