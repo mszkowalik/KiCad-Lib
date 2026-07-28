@@ -742,6 +742,17 @@ def apply_draws(db: Session, order_plan: dict, run_id: int, lot_lines: dict[str,
     planned_bindings: list[dict] = []
     made = skipped = unresolved = 0
     parts_touched: set[str] = set()
+    # Identity is matched on the resolved COMPONENT as well as the supplier's
+    # text codes, because neither text field is reliable for this:
+    #   * a BOM-derived forecast resolves to `component_id` and leaves `lcsc`
+    #     AND `mpn` empty, so `(old.lcsc or old.mpn)` is '' and matches nothing;
+    #   * one physical part can carry TWO supplier codes — component 218 is
+    #     XL-1005SURC as both C965790 (older purchases, and the BOM) and
+    #     C25503345 (what JLC reports today).
+    # Either case leaves the forecast un-superseded beside its measurement and
+    # charges the run twice. Verified 2026-07-28: 9 such pairs, 20,950 units,
+    # $167.95 across 8 runs.
+    components_touched: set[int] = set()
 
     # Capacity is checked BEFORE anything is written. Checking afterwards is
     # self-defeating: `lot_state` reads `component_consumption_lots`, so a
@@ -783,6 +794,8 @@ def apply_draws(db: Session, order_plan: dict, run_id: int, lot_lines: dict[str,
         if cid is None:
             unresolved += 1
         parts_touched.add(lcsc or mpn)
+        if cid is not None:
+            components_touched.add(cid)
 
         # bind each JLC row to the purchase line it names
         children = []
@@ -823,12 +836,15 @@ def apply_draws(db: Session, order_plan: dict, run_id: int, lot_lines: dict[str,
     # `void_absent.py` deleted 10 draws during the backfill that could then only
     # be recovered from a database dump. Un-voiding is one UPDATE.
     voided = 0
-    if not dry_run and parts_touched:
+    if not dry_run and (parts_touched or components_touched):
         for old in (run_actuals.live_consumption(db, run_id=run_id)
                     .filter(M.ComponentConsumption.import_ref == "",
                             M.ComponentConsumption.basis.in_(("bom", "manual", "allocated")))
                     .all()):
-            if (old.lcsc or old.mpn) in parts_touched:
+            ident = old.lcsc or old.mpn
+            if (ident and ident in parts_touched) or (
+                    old.component_id is not None
+                    and old.component_id in components_touched):
                 old.voided_at = utcnow()
                 old.void_reason = "superseded_by_measured"
                 voided += 1

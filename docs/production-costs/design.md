@@ -3604,3 +3604,94 @@ confirms the existing data instead of changing it.
 Phase 1 is complete. `jlc_apply.reprice_from_jlc` remains deliberately read-only
 (Phase 6) and `apply_parts_document` is wired but untested end-to-end, since every
 POB purchase in the account is already imported.
+
+---
+
+## The pool held 6,368 units JLC never had, and 9 draws were counted twice (2026-07-28)
+
+Reported by the user: *"pool balanced but the pool states are sometimes higher than
+jlc current state. this should not happen."* Correct on both counts, and
+`pool.balanced` could never have caught it — that identity is
+`purchased +/- adjustments - drawn == on_hand` where **`on_hand` is computed from
+the other three**. It holds by construction and says nothing about reality. Third
+instance of the governing failure class.
+
+### The measurement that settled it
+
+The honest balance is `purchased - drawn - written_off`. Compared against JLC's own
+consigned-stock figures it matched **exactly on 58 of 65 parts** — before any fix.
+So the draws were essentially complete and the purchases right; something was being
+added on top.
+
+### Defect 1 — five invented opening balances (6,368 units)
+
+Five `component_stock_adjustments` rows, reason `opening_balance`, note *"ZERO-COST
+opening balance closing the stock book"*, carrying **no LCSC and no MPN** (keyed on
+`component_id` alone, which is why a code-keyed comparison could not see them):
+
+| qty | key | part | honest balance without it | JLC holds |
+|---|---|---|---|---|
+| +2897 | c248 | C25079 `0402WGF1200TCE` | 0 | **0** |
+| +1400 | c319 | — (no identity at all) | 0 | — |
+| +946 | c7 | C2837531 `KH-6X6X5H-STM` | 2250 | **2250** |
+| +775 | c11 | C110548 `T491D107K016AT` | 24 | **24** |
+| +350 | c272 | C25271 `0805W8F100KT5E` | 0 | **0** |
+
+Every identifiable one lands on JLC's figure exactly once removed. They were added
+to an **already-correct** balance to force the book shut — and being zero-cost they
+never disturbed the value identity, so the register stayed green while the
+quantities became fiction. `c319` is the residue of the old `C2837531` substitution
+mis-resolution: 1400 units of nothing, no code, no MPN.
+
+Removed in write batch 16. Pool quantity 106,076 -> 99,708; pool **value unchanged**
+at $6,055.10, which is the proof they were fictional.
+
+### Defect 2 — `apply_draws` could not recognise its own forecasts ($167.95)
+
+With the phantoms gone, C99416 still read 350 against JLC's 1050. Its four draws by
+LCSC summed to 700 — *exactly* JLC's implied consumption — yet `pool_state` reported
+1400 drawn. The other 700 were sitting under a different key.
+
+Every affected run carried **both** a `bom` forecast and a `measured` draw for the
+same component. `apply_draws` retires forecasts by matching `(old.lcsc or old.mpn)`
+against the parts it just wrote, and that key fails in two independent ways:
+
+1. **A BOM-derived forecast resolves to `component_id` and leaves `lcsc` AND `mpn`
+   empty**, so the key is `''` and matches nothing. (C99416 / component 320.)
+2. **One physical part can carry two supplier codes.** Component 218 is
+   XL-1005SURC as both `C965790` (older purchases and the BOM) and `C25503345`
+   (what JLC reports now), so the text differed even though the component did not.
+
+Nine pairs, 20,950 units, **$167.95 double-charged across 8 runs** — runs 8, 9, 10,
+11, 13, 14, 15, 16.
+
+Fixed in `jlc_apply.apply_draws` by tracking `components_touched` alongside
+`parts_touched` and matching on either. The historical rows were voided (never
+deleted) in write batch 17: pool drawn $55,860.72 -> $55,692.77, on hand
++$167.95, register gap unchanged at 0.0272.
+
+The per-device costs are the acceptance test, and they tightened: runs 13-16 now
+read **$14.694 / $14.830 / $14.906 / $14.863** — four independently-built batches
+agreeing within 1.4%, where each previously carried an unevenly-sized duplicate.
+
+### Where it stands, and what is still open
+
+Pool quantity now matches JLC exactly on **59 of 65** parts. Net remaining
+discrepancy $100.49, all of it in one part:
+
+- **Component 218 (XL-1005SURC), +3,865 units.** Two things to fix, neither done:
+  JLC's `C25503345` stock item has `component_id` NULL, so the platform cannot
+  connect JLC's 18,488 to the component that holds them; and once linked there is
+  still roughly 4,000 units of consumption unrecorded, almost certainly on the runs
+  that have no measured draws at all (6 and 12, both BOM-only). This is the
+  `component_aliases` case — the durable fix belongs upstream on `JlcStockItem`,
+  not on the draws, which is the lesson from `C2837531` being re-broken twice.
+- **Five parts off by 1 to 20 units** (C157472 +20, C778132 +10, C8465 +7, C81010
+  +1, C2929435 +1), together $6.33. Small enough to be JLC reserving stock against
+  an open order; not investigated.
+
+**A quantity check against JLC belongs in `services/book.py` as a first-class
+finding.** Nothing in the platform compares the pool to the supplier's own count —
+`/api/jlc/stock/usage` is BOM usage, not a reconciliation — and that absence is
+precisely why 6,368 phantom units and $167.95 of double-charging sat undetected
+behind two green identities.
