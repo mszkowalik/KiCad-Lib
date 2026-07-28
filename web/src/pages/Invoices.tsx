@@ -43,6 +43,8 @@ import OrderDialog from "../components/invoices/OrderDialog";
 import PlanLinkDialog from "../components/invoices/PlanLinkDialog";
 import JlcImportPanel from "../components/invoices/JlcImportPanel";
 import JlcSessionStrip from "../components/invoices/JlcSessionStrip";
+import JlcStagedPanel from "../components/invoices/JlcStagedPanel";
+import StockReconcile from "../components/invoices/StockReconcile";
 import WriteLog from "../components/invoices/WriteLog";
 import ProductionDashboard from "../components/invoices/ProductionDashboard";
 import SplitLineDialog, { type RunOption } from "../components/invoices/SplitLineDialog";
@@ -350,10 +352,24 @@ export default function Invoices() {
         {/* ------------------------------------------------------- dashboard */}
         <ProductionDashboard reg={reg} />
 
+        {/* Does the stock account close? The register's identities cannot answer
+            this — they derive on-hand from purchases and draws, so they balance by
+            construction whatever the real quantities are. */}
+        <StockReconcile key={`sr-${writeSeq}`} />
+
         {/* --------------------------------------------- JLC import decisions */}
         {/* The session strip comes FIRST: a dead session is the most common reason
             a sync fails, and the fix (paste fresh cookies) is only possible here. */}
         <JlcSessionStrip />
+        {/* Import comes BEFORE deciding: an order's charges cannot be pointed at a
+            run until the document carrying them exists. */}
+        <JlcStagedPanel
+          key={`jsp-${writeSeq}`}
+          onImported={() => {
+            refreshAll();
+            setWriteSeq((n) => n + 1);
+          }}
+        />
         <JlcImportPanel
           onApplied={() => {
             refreshAll();

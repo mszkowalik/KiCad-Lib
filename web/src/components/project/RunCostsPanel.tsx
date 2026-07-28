@@ -606,8 +606,11 @@ export default function RunCostsPanel({ projectId, runId, qty, runDate, hasSnaps
           </div>
           <p className="muted">
             Attrition is charged to this run, so its per-device cost carries the real loss.
-            Pool quantities exist to split invoice cost — they are not expected to match
-            JLCPCB&apos;s stock exactly.
+            Pool quantities are expected to <strong>agree</strong> with JLCPCB&apos;s own
+            count: whatever went in either went out through a run, was written off here, or
+            is still on the shelf. The Invoices page reconciles the two part by part — a
+            standing difference means a purchase was never entered, a draw was never
+            recorded, or one was recorded twice.
           </p>
         </>
       )}

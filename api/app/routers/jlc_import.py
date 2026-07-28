@@ -267,6 +267,52 @@ def apply_document(external_id: str, dry_run: bool = True, actor: str = "user",
     return {**res, "batch_id": h["batch_id"], "reversible": True}
 
 
+@router.get("/parts")
+def list_parts_orders(db: Session = Depends(get_db)):
+    """Every JLC parts order (POB…) with whether the platform already holds it.
+
+    Live, not staged: `sync` stages assembly batches only. Grouping happens here
+    rather than in the browser because `index_parts_orders` keys by
+    `presaleGoodsKeyId` — one entry per LOT, 215 across 16 orders — and a client
+    re-deriving that would be a second place for the key to be got wrong.
+    """
+    if not jlc_web.available(db):
+        raise HTTPException(409, "no JLCPCB browser session stored — paste cookies first")
+    try:
+        index = jlc_import.index_parts_orders(jlc_web.list_parts_orders(db))
+    except jlc_web.JlcSessionExpired as e:
+        raise HTTPException(401, str(e)) from e
+    except jlc_web.JlcWebError as e:
+        raise HTTPException(502, str(e)) from e
+
+    by_pob: dict[str, list[dict]] = {}
+    for lot in index.values():
+        by_pob.setdefault(lot["purchase_batch_no"], []).append(lot)
+
+    out = []
+    for pob, lots in sorted(by_pob.items()):
+        doc = jlc_apply.find_document(db, pob, "")
+        near = jlc_apply.find_near_duplicate(db, pob) if doc is None else None
+        out.append({
+            "pob": pob,
+            "lots": len(lots),
+            "cancelled_lots": sum(1 for lot in lots if lot.get("cancelled")),
+            "paid_usd": round(sum(lot["paid_usd"] for lot in lots), 2),
+            "document_id": doc.id if doc else None,
+            # A fuzzy reference match is REPORTED, never acted on: `POB0202510222305546`
+            # exists in this database as `POB00202510222305546`, and an importer that
+            # trusted exact match alone created a second document for a purchase
+            # already recorded, doubling it in the pool.
+            "near_duplicate_document_id": near.id if near else None,
+            "near_duplicate_ref": (near.external_id or near.doc_number) if near else "",
+        })
+    return {"orders": out,
+            "totals": {"orders": len(out), "lots": len(index),
+                       "imported": sum(1 for o in out if o["document_id"]),
+                       "not_imported_usd": round(
+                           sum(o["paid_usd"] for o in out if not o["document_id"]), 2)}}
+
+
 @router.post("/parts/{pob}/apply")
 def apply_parts(pob: str, dry_run: bool = True, actor: str = "user",
                 db: Session = Depends(get_db)):
@@ -281,10 +327,14 @@ def apply_parts(pob: str, dry_run: bool = True, actor: str = "user",
         raise HTTPException(409, "no JLCPCB browser session stored — paste cookies first")
     try:
         raw = jlc_web.list_parts_orders(db)
+        # `index_parts_orders` keys by `presaleGoodsKeyId` — one entry per LOT, not
+        # per order (215 lots across 16 orders). Group by the order each lot names.
         index = jlc_import.index_parts_orders(raw)
-        lots = index.get(pob)
+        lots = [lot for lot in index.values() if lot.get("purchase_batch_no") == pob]
         if not lots:
-            raise HTTPException(404, f"{pob} is not among your JLC parts orders")
+            known = sorted({lot.get("purchase_batch_no") for lot in index.values()})
+            raise HTTPException(
+                404, f"{pob} is not among your JLC parts orders. Visible: {known}")
         invoice_raw = jlc_web.get_parts_invoice(db, pob)
     except jlc_web.JlcSessionExpired as e:
         raise HTTPException(401, str(e)) from e

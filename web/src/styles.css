@@ -2917,3 +2917,46 @@ select.sel:focus {
 /* The refusal text is the exception the table rule allows: it must be readable
    in full, so this one cell opts out of the single-line clamp. */
 .write-log-table td:nth-child(6) .muted.dim { white-space: normal; overflow: visible; }
+
+/* Stock reconciliation: the pool against JLC's own count, part by part. Fixed
+   layout, widths summing to 100%; .data-fixed supplies the ellipsis treatment. */
+.stock-reconcile-table { table-layout: fixed; }
+.stock-reconcile-table th:nth-child(1), .stock-reconcile-table td:nth-child(1) { width: 10%; }
+.stock-reconcile-table th:nth-child(2), .stock-reconcile-table td:nth-child(2) { width: 22%; }
+.stock-reconcile-table th:nth-child(3), .stock-reconcile-table td:nth-child(3) { width: 10%; }
+.stock-reconcile-table th:nth-child(4), .stock-reconcile-table td:nth-child(4) { width: 10%; }
+.stock-reconcile-table th:nth-child(5), .stock-reconcile-table td:nth-child(5) { width: 10%; }
+.stock-reconcile-table th:nth-child(6), .stock-reconcile-table td:nth-child(6) { width: 9%; }
+.stock-reconcile-table th:nth-child(7), .stock-reconcile-table td:nth-child(7) { width: 9%; }
+.stock-reconcile-table th:nth-child(8), .stock-reconcile-table td:nth-child(8) { width: 11%; }
+.stock-reconcile-table th:nth-child(9), .stock-reconcile-table td:nth-child(9) { width: 9%; }
+
+/* Stock adjustments: stock moving with no invoice behind it. */
+.stock-adj-table { table-layout: fixed; }
+.stock-adj-table th:nth-child(1), .stock-adj-table td:nth-child(1) { width: 6%; }
+.stock-adj-table th:nth-child(2), .stock-adj-table td:nth-child(2) { width: 14%; }
+.stock-adj-table th:nth-child(3), .stock-adj-table td:nth-child(3) { width: 9%; }
+.stock-adj-table th:nth-child(4), .stock-adj-table td:nth-child(4) { width: 8%; }
+.stock-adj-table th:nth-child(5), .stock-adj-table td:nth-child(5) { width: 14%; }
+.stock-adj-table th:nth-child(6), .stock-adj-table td:nth-child(6) { width: 11%; }
+.stock-adj-table th:nth-child(7), .stock-adj-table td:nth-child(7) { width: 28%; }
+.stock-adj-table th:nth-child(8), .stock-adj-table td:nth-child(8) { width: 10%; }
+
+/* Staged JLC batches awaiting import. Fixed layout, widths summing to 100%. */
+.jlc-staged-table { table-layout: fixed; }
+.jlc-staged-table th:nth-child(1), .jlc-staged-table td:nth-child(1) { width: 19%; }
+.jlc-staged-table th:nth-child(2), .jlc-staged-table td:nth-child(2) { width: 20%; }
+.jlc-staged-table th:nth-child(3), .jlc-staged-table td:nth-child(3) { width: 10%; }
+.jlc-staged-table th:nth-child(4), .jlc-staged-table td:nth-child(4) { width: 11%; }
+.jlc-staged-table th:nth-child(5), .jlc-staged-table td:nth-child(5) { width: 10%; }
+.jlc-staged-table th:nth-child(6), .jlc-staged-table td:nth-child(6) { width: 14%; }
+.jlc-staged-table th:nth-child(7), .jlc-staged-table td:nth-child(7) { width: 16%; }
+.jlc-staged-table td:nth-child(7) .muted.dim { white-space: normal; overflow: visible; }
+
+/* JLC parts orders awaiting import — the purchases whose lines ARE the lots. */
+.jlc-parts-table { table-layout: fixed; }
+.jlc-parts-table th:nth-child(1), .jlc-parts-table td:nth-child(1) { width: 30%; }
+.jlc-parts-table th:nth-child(2), .jlc-parts-table td:nth-child(2) { width: 18%; }
+.jlc-parts-table th:nth-child(3), .jlc-parts-table td:nth-child(3) { width: 14%; }
+.jlc-parts-table th:nth-child(4), .jlc-parts-table td:nth-child(4) { width: 26%; }
+.jlc-parts-table th:nth-child(5), .jlc-parts-table td:nth-child(5) { width: 12%; }

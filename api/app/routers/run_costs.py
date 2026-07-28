@@ -170,7 +170,14 @@ KINDS = {"part", "fab", "assembly", "tooling", "freight", "duty", "tax",
 BASES = {"per_device", "per_run"}
 # "excluded" = recorded so the document reconciles, charged to nobody on purpose.
 ALLOCATES = {"none", "by_value", "by_qty", "excluded"}
-REASONS = {"attrition", "scrap", "miscount", "opening_balance", "correction"}
+REASONS = {"attrition", "scrap", "miscount", "opening_balance", "correction",
+           # Stock consumed by a project outside the platform. Written directly by
+           # `jlc_apply.apply_external_movements` since it existed, and REJECTED here
+           # with a 422 — so the one movement the importer books routinely could not
+           # be booked by hand. A bare negative adjustment reads as attrition, and
+           # attrition is a defect signal in this codebase; conflating the two
+           # inflates the apparent loss rate while hiding real losses.
+           "external_project"}
 
 
 def _run(db: Session, run_id: int) -> M.ProductionRun:
@@ -765,6 +772,46 @@ def delete_consumption(cons_id: int, db: Session = Depends(get_db)):
     db.delete(c)
     db.commit()
     return {"deleted": cons_id}
+
+
+def _adjustment_json(a: M.ComponentStockAdjustment) -> dict:
+    return {"id": a.id, "project_id": a.project_id, "component_id": a.component_id,
+            "mpn": a.mpn, "lcsc": a.lcsc, "qty_delta": a.qty_delta,
+            "unit_cost_usd": a.unit_cost_usd, "reason": a.reason,
+            "charge_run_id": a.charge_run_id, "adjusted_at": a.adjusted_at,
+            "import_ref": a.import_ref or "", "actor": a.actor or "", "note": a.note}
+
+
+@router.get("/stock-adjustments")
+def list_all_adjustments(reason: str = "", db: Session = Depends(get_db)):
+    """EVERY adjustment, including the ones belonging to no project.
+
+    The per-project listing cannot show those, and an adjustment with a NULL
+    `project_id` is exactly what a reconciliation pass writes — which is how five
+    zero-cost `opening_balance` rows invented 6,368 units of stock and stayed
+    invisible until the quantities were compared against JLC's own by hand
+    (2026-07-28). An adjustment moves stock without an invoice behind it, so it is
+    the least evidenced write in the system and must be the easiest to audit.
+    """
+    q = db.query(M.ComponentStockAdjustment)
+    if reason:
+        q = q.filter(M.ComponentStockAdjustment.reason == reason)
+    rows = q.order_by(M.ComponentStockAdjustment.id.desc()).all()
+    return {
+        "adjustments": [_adjustment_json(a) for a in rows],
+        "totals": {
+            "count": len(rows),
+            "qty_added": sum(a.qty_delta for a in rows if (a.qty_delta or 0) > 0),
+            "qty_removed": sum(a.qty_delta for a in rows if (a.qty_delta or 0) < 0),
+            "by_reason": {r: sum(1 for a in rows if a.reason == r)
+                          for r in sorted({a.reason for a in rows})},
+            # Stock conjured with no cost attached. Legitimate for a genuine opening
+            # balance; otherwise it is quantity with no money behind it, which no
+            # value identity can ever notice.
+            "zero_cost_positive": sum(1 for a in rows if (a.qty_delta or 0) > 0
+                                      and not a.unit_cost_usd),
+        },
+    }
 
 
 @router.get("/projects/{project_id}/stock-adjustments")

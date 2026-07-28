@@ -3051,3 +3051,96 @@ export function getSchemaHealth(signal?: AbortSignal): Promise<{
 }> {
   return request("/api/health/schema", { signal });
 }
+
+// --------------------------------------------------------- stock adjustments
+// `addRunConsumption` already covers the manual draw (RunCostsPanel's "Draw from
+// pool"). Adjustments were write-only: one could be added and then never seen or
+// removed, which is how five phantom rows survived.
+
+export interface StockAdjustment {
+  id: number;
+  project_id: number | null;
+  component_id: number | null;
+  mpn: string;
+  lcsc: string;
+  qty_delta: number;
+  unit_cost_usd: number | null;
+  reason: string;
+  charge_run_id: number | null;
+  adjusted_at: string;
+  import_ref: string;
+  actor: string;
+  note: string;
+}
+
+/** EVERY adjustment, including those belonging to no project — which the
+ *  per-project listing cannot show, and which is exactly what a reconciliation
+ *  pass writes. Five such rows once invented 6,368 units of stock and stayed
+ *  invisible because nothing listed them. */
+export function getAllStockAdjustments(
+  reason = "",
+  signal?: AbortSignal,
+): Promise<{
+  adjustments: StockAdjustment[];
+  totals: {
+    count: number;
+    qty_added: number;
+    qty_removed: number;
+    by_reason: Record<string, number>;
+    /** Positive quantity with no cost attached: stock conjured from nothing.
+     *  Legitimate for a genuine opening balance, invisible to every value
+     *  identity, and the signature of the defect above. */
+    zero_cost_positive: number;
+  };
+}> {
+  const qs = reason ? `?reason=${encodeURIComponent(reason)}` : "";
+  return request(`/api/stock-adjustments${qs}`, { signal });
+}
+
+export function deleteStockAdjustment(adjId: number): Promise<{ deleted: number }> {
+  return request(`/api/stock-adjustments/${adjId}`, { method: "DELETE" });
+}
+
+export interface JlcStagedRow {
+  id: number;
+  kind: string;
+  external_id: string;
+  invoice_no: string;
+  doc_date: string;
+  total_amount: number | null;
+  presale_amount: number | null;
+  /** `staged` until an apply stamps it. Left un-stamped by the 2026-07 backfill,
+   *  which is why 37 rows read `staged` against 24 documents actually imported. */
+  status: string;
+  document_id: number | null;
+  has_payload: boolean;
+  fetched_at: string | null;
+}
+
+export function getJlcStaged(signal?: AbortSignal): Promise<JlcStagedRow[]> {
+  return request("/api/jlc/import/staged", { signal });
+}
+
+// ------------------------------------------------------- JLC parts orders (lots)
+// Live rather than staged: `sync` stages assembly batches only. These are the
+// purchases whose lines ARE the lots every later draw binds to.
+
+export interface JlcPartsOrder {
+  pob: string;
+  lots: number;
+  cancelled_lots: number;
+  paid_usd: number;
+  document_id: number | null;
+  /** A fuzzy reference match, REPORTED and never acted on: POB0202510222305546
+   *  exists in this database as POB00202510222305546, and trusting exact match
+   *  alone once created a second document for a purchase already recorded. */
+  near_duplicate_document_id: number | null;
+  near_duplicate_ref: string;
+}
+
+export function getJlcPartsOrders(signal?: AbortSignal): Promise<{
+  orders: JlcPartsOrder[];
+  totals: { orders: number; lots: number; imported: number; not_imported_usd: number };
+}> {
+  return request("/api/jlc/import/parts", { signal });
+}

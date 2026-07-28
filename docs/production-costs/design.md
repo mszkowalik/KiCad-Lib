@@ -3695,3 +3695,103 @@ finding.** Nothing in the platform compares the pool to the supplier's own count
 `/api/jlc/stock/usage` is BOM usage, not a reconciliation — and that absence is
 precisely why 6,368 phantom units and $167.95 of double-charging sat undetected
 behind two green identities.
+
+---
+
+## The goal restated, and the four gaps that blocked it (2026-07-28)
+
+User, correcting the project's framing:
+
+> *"importing invoices from jlc or adding them manually to the system then running
+> all runs would be possible fully via ui. then after all runs and manual or jlc
+> imported pool draws i would get a proper stock, meaning that whatever went in,
+> goes out and everything is accounted for. this should be done fully using UI
+> (both jlc and manual)."*
+
+The success condition is **stock**, not a balanced register — and stated as physical
+conservation over quantities, which no identity in this platform was measuring. An
+audit of every cost endpoint against the browser found four gaps.
+
+### Gap 1 — the JLC import had no button
+
+`applyJlcDocument` and `applyJlcParts` existed as endpoints AND as typed client
+functions, and no component called either. Only the *decision* apply was wired, so
+importing a batch still meant running `import_all.py`.
+
+`components/invoices/JlcStagedPanel.tsx` (NEW) covers both, placed above the decision
+queue because an order's charges cannot be pointed at a run until the document
+carrying them exists.
+
+Two defects surfaced building it:
+
+- **`GET /api/jlc/import/parts` had to be added**, and while adding it the endpoint
+  written earlier the same day proved broken: `index_parts_orders` keys by
+  `presaleGoodsKeyId` — one entry per LOT, 215 across 16 orders — so
+  `index.get(pob)` was always `None` and `POST /parts/{pob}/apply` would have
+  404'd every time. Never executed, never noticed. Grouping now happens server-side
+  so a client cannot get the key wrong a second way.
+- **Staging never recorded what it produced.** All 37 rows read `status='staged'`
+  with `document_id` NULL against 24 documents actually imported, so the new panel
+  first reported *"$70,526.90 awaiting import"* — an invitation to re-import money
+  already in the ledger. Backfilled by matching `external_id`/`invoice_no`: 35 of 37
+  now linked, **$0.00 genuinely awaiting**, 2 zero-value shells left.
+
+### Gap 2 — adjustments were write-only
+
+`addStockAdjustment` was wired; `getStockAdjustments` and `deleteStockAdjustment` had
+no client function, and the listing endpoint is **project-scoped** while a
+reconciliation pass writes rows with `project_id` NULL. So an adjustment could be
+created and then never seen or removed. That is the third independent reason the five
+phantom `opening_balance` rows survived.
+
+`GET /api/stock-adjustments` (NEW) lists every adjustment regardless of project, with
+a `zero_cost_positive` counter — positive quantity with no cost attached is stock
+conjured from nothing, invisible to every value check in the system, and the exact
+signature of the defect.
+
+`REASONS` also gained **`external_project`**, which `apply_external_movements` has
+written since it existed while the router rejected it with a 422 — the one movement
+the importer books routinely could not be booked by hand.
+
+### Gap 3 — nothing answered "is the stock right?"
+
+`run_actuals.parts_stock` has computed `delta_qty = held - remaining` all along,
+aggregating multi-code parts correctly through `jlc_codes` (better than the ad-hoc
+comparison used to find the phantoms). It was a column, on a table, that nothing
+required anyone to look at.
+
+`components/invoices/StockReconcile.tsx` (NEW) makes it a verdict, mounted directly
+above the JLC panels. **`STOCK RECONCILES` or `N PARTS DO NOT`.** Two deliberate
+choices: `pool_only` parts are excluded from the count, because a part bought from
+DigiKey or TME was never consigned to JLC and counting those would bury six real
+discrepancies in seventy false ones; and zero-cost positive adjustments get their own
+tile rather than a footnote.
+
+Current verdict: **6 of 65 parts do not reconcile**, all documented above.
+
+### Gap 4 — the UI said the opposite of the goal
+
+`RunCostsPanel` told the operator, in plain text:
+
+> *"Pool quantities exist to split invoice cost — they are not expected to match
+> JLCPCB's stock exactly."*
+
+True to an earlier design decision, and directly contrary to the requirement. Anyone
+following it would have dismissed the 6,368 phantom units as normal. Replaced with a
+statement that the two are expected to agree and where to check.
+
+### The workflow, now
+
+| step | JLC | manual |
+|---|---|---|
+| invoices in | `JlcStagedPanel` (batches + parts orders) | `Invoices` new-invoice card |
+| link order to run | `JlcImportPanel` | — |
+| pool draws | `JlcImportPanel` (measured, lot-bound) | `RunCostsPanel` (by hand, from BOM) |
+| write-offs | — | `RunCostsPanel` |
+| **stock verdict** | `StockReconcile` | `StockReconcile` |
+| audit / undo | `WriteLog`, `PartLedgerPanel`, `StockReconcile` | same |
+
+Nothing in this loop requires a script. What still does: `reprice_from_jlc`
+(deliberately read-only until Phase 6) and the two remaining data questions —
+component 218's unresolved `C25503345` stock item, and its ~3,500 units of
+unrecorded consumption.

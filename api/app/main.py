@@ -165,6 +165,17 @@ _PHASE1_DDL = (
     # JLC's per-(order, part) `componentSource`: who actually supplied the part.
     ("jlc_imports.bom_info",
      "ALTER TABLE jlc_imports ADD COLUMN IF NOT EXISTS bom_info jsonb"),
+    # Reconnect staging to the documents it produced. The 2026-07 backfill wrote
+    # documents with scripts that never stamped `status`/`document_id`, so all 37
+    # rows read `staged` against 24 documents actually imported — and the table
+    # designed to answer "what is left to import?" answered it wrongly, offering
+    # to re-import money that was already in.
+    ("jlc_imports.document_id backfill",
+     "UPDATE jlc_imports i SET document_id = d.id, status = 'imported' "
+     "FROM run_cost_documents d "
+     "WHERE i.document_id IS NULL AND d.supplier = 'JLCPCB' "
+     "  AND ((i.external_id <> '' AND d.external_id = i.external_id) "
+     "       OR (i.invoice_no <> '' AND d.doc_number = i.invoice_no))"),
     # Session liveness, so a dead login is discovered before an import starts —
     # and so the session's real lifetime gets measured instead of assumed.
     ("jlc_web_sessions.died_at",
