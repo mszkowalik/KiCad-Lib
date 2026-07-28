@@ -24,6 +24,15 @@ import { ErrorBanner, Spinner } from "../Ui";
  * figures shown are the figures the import produces. A re-implementation of the
  * mapping could disagree with the mapping; the same code cannot.
  */
+/** Money, always two decimals — see the note in StockReconcile. */
+function money(v: number | null | undefined): string {
+  if (v == null) return "—";
+  return `$${v.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 export default function JlcStagedPanel({ onImported }: { onImported?: () => void } = {}) {
   const dialog = useDialog();
   const [rows, setRows] = useState<JlcStagedRow[] | null>(null);
@@ -138,7 +147,9 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
   const shown = onlyPending ? pending : all;
   // A zero-total batch is not a batch. Worth naming, because a document with no
   // value reconciles trivially and so is invisible to the register's own checks.
-  const empty = pending.filter((r) => !r.total_amount);
+  // Uninvoiced batches are not a problem — JLC simply has not billed them yet.
+  const empty = pending.filter((r) => !r.total_amount && !r.payload_empty);
+  const uninvoiced = pending.filter((r) => r.payload_empty);
 
   return (
     <div className="card">
@@ -155,9 +166,16 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
           {pending.length} not imported
         </span>
         <span className="muted">
-          ${pending.reduce((s, r) => s + (r.total_amount ?? 0), 0).toLocaleString()} awaiting
-          import
+          {money(pending.reduce((s, r) => s + (r.total_amount ?? 0), 0))} awaiting import
         </span>
+        {uninvoiced.length > 0 && (
+          <span
+            className="pill neutral"
+            title="JLC has issued no invoice for these yet. Nothing to do."
+          >
+            {uninvoiced.length} not invoiced yet
+          </span>
+        )}
         {empty.length > 0 && (
           <span
             className="pill warn"
@@ -208,18 +226,25 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
                     ) : r.total_amount === 0 ? (
                       <span className="pill warn">$0</span>
                     ) : (
-                      `$${r.total_amount.toLocaleString()}`
+                      money(r.total_amount)
                     )}
                   </td>
                   <td className="num">
-                    {r.presale_amount ? `$${r.presale_amount.toLocaleString()}` : "—"}
+                    {r.presale_amount ? money(r.presale_amount) : "—"}
                   </td>
                   <td>
                     {r.document_id ? (
                       <span className="pill ok">document {r.document_id}</span>
+                    ) : r.payload_empty ? (
+                      <span
+                        className="pill neutral"
+                        title="JLC returned no invoice for this batch — nothing to import until they issue one. Re-syncing will not change it."
+                      >
+                        no invoice yet
+                      </span>
                     ) : !r.has_payload ? (
-                      <span className="pill err" title="The fetch failed — re-sync.">
-                        no payload
+                      <span className="pill err" title="The fetch failed — re-sync this batch.">
+                        fetch failed
                       </span>
                     ) : (
                       <span className="pill warn">staged</span>
@@ -295,7 +320,7 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
                           </span>
                         )}
                       </td>
-                      <td className="num">${o.paid_usd.toLocaleString()}</td>
+                      <td className="num">{money(o.paid_usd)}</td>
                       <td>
                         {o.near_duplicate_document_id ? (
                           <span

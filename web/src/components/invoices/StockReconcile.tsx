@@ -12,6 +12,16 @@ import {
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner } from "../Ui";
 
+/** Money, always two decimals. `toLocaleString()` alone renders whatever precision
+ *  the number happens to carry — the delta column was showing $102.128 and $0.027. */
+function money(v: number | null | undefined): string {
+  if (v == null) return "—";
+  return `$${v.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 /**
  * Does the stock account close? Whatever went in, went out or is still here.
  *
@@ -139,10 +149,8 @@ export default function StockReconcile() {
 
       <div className="toolbar">
         <span className="muted">
-          paid ${(t.spent_usd ?? 0).toLocaleString()} · drawn $
-          {(t.drawn_usd ?? 0).toLocaleString()} · adjusted $
-          {(t.adjusted_usd ?? 0).toLocaleString()} · still here $
-          {(t.remaining_at_cost_usd ?? 0).toLocaleString()}
+          paid {money(t.spent_usd)} · drawn {money(t.drawn_usd)} · adjusted{" "}
+          {money(t.adjusted_usd)} · still here {money(t.remaining_at_cost_usd)}
         </span>
         {stock.last_sync && (
           <span className="muted dim">
@@ -316,11 +324,7 @@ function Row({ p }: { p: PartsStockRow }) {
         )}
       </td>
       <td className="num">
-        {p.delta_value_usd == null ? (
-          <span className="dim">—</span>
-        ) : (
-          `$${p.delta_value_usd.toLocaleString()}`
-        )}
+        {p.delta_value_usd == null ? <span className="dim">—</span> : money(p.delta_value_usd)}
       </td>
     </tr>
   );

@@ -91,6 +91,11 @@ def staged(db: Session = Depends(get_db)):
          "total_amount": r.total_amount, "presale_amount": r.presale_amount,
          "status": r.status, "document_id": r.document_id,
          "has_payload": bool(r.payload),
+         # A fetch that FAILED leaves `payload` NULL; a fetch that SUCCEEDED and
+         # found nothing leaves `{}` — JLC has issued no invoice for that batch
+         # yet. Both render as "no payload" otherwise, and only one of them is
+         # worth re-syncing, so the two are reported apart.
+         "payload_empty": r.payload is not None and not r.payload,
          "fetched_at": r.fetched_at.isoformat() if r.fetched_at else None}
         for r in rows
     ]

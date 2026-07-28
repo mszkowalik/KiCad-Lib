@@ -10,6 +10,12 @@ export function Spinner({ label }: { label?: string }) {
 }
 
 export function ErrorBanner({ message }: { message: string }) {
+  // Nothing to report renders nothing. This used to draw the bordered box
+  // regardless, so every caller had to guard it with `{error && <ErrorBanner/>}`
+  // and any that forgot got an empty red rectangle on the page. Guarding here
+  // fixes it for every caller at once, and an empty `role="alert"` was announcing
+  // nothing to a screen reader anyway.
+  if (!message || !message.trim()) return null;
   return (
     <div className="banner-error" role="alert">
       {message}

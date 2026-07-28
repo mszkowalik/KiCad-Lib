@@ -3114,6 +3114,10 @@ export interface JlcStagedRow {
   status: string;
   document_id: number | null;
   has_payload: boolean;
+  /** The fetch SUCCEEDED and JLC returned nothing — no invoice issued for this
+   *  batch yet. A failed fetch leaves `payload` NULL instead, and only that one
+   *  is worth re-syncing. */
+  payload_empty: boolean;
   fetched_at: string | null;
 }
 
