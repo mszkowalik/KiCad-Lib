@@ -1,0 +1,4 @@
+node_modules/
+dist/
+.test.bundle.mjs
+public/firmware/*.bin

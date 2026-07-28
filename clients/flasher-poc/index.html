@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Web-only ESP flasher — proof of concept</title>
+    <style>
+      :root { --bg:#101215; --surface:#171a1f; --line:#2a2f37; --text:#e6e6e6; --muted:#8b949e;
+              --ok:#3fb950; --err:#f85149; --warn:#d29922; --accent:#58a6ff; }
+      * { box-sizing: border-box; }
+      body { margin:0; background:var(--bg); color:var(--text);
+             font:13px/1.5 ui-sans-serif, system-ui, sans-serif; }
+      header { padding:12px 16px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+      h1 { font-size:15px; margin:0 12px 0 0; font-weight:600; }
+      button { background:var(--surface); color:var(--text); border:1px solid var(--line);
+               border-radius:6px; padding:5px 12px; font:inherit; cursor:pointer; }
+      button:hover:not(:disabled) { border-color:var(--accent); }
+      input.cmd { background:var(--bg); color:var(--text); border:1px solid var(--line);
+                 border-radius:6px; padding:4px 8px; font:11px ui-monospace, monospace; width:100%; }
+      select { background:var(--surface); color:var(--text); border:1px solid var(--line);
+               border-radius:6px; padding:4px 8px; font:inherit; width:100%; }
+      button:disabled { opacity:.45; cursor:not-allowed; }
+      .primary { background:#1f6feb; border-color:#1f6feb; color:#fff; }
+      #banner { padding:8px 16px; background:#3d1d1d; color:#ffb3ae; display:none; }
+      #stations { display:flex; gap:12px; padding:12px 16px; align-items:stretch; overflow-x:auto; }
+      .station { flex:1 1 320px; min-width:320px; background:var(--surface);
+                 border:1px solid var(--line); border-radius:8px; display:flex; flex-direction:column; }
+      .st-head { padding:8px 10px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; gap:8px; }
+      .st-title { font-weight:600; }
+      .pill { font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); text-transform:uppercase; letter-spacing:.04em; }
+      .pill.ready { color:var(--accent); border-color:var(--accent); }
+      .pill.busy  { color:var(--warn); border-color:var(--warn); }
+      .pill.pass  { color:var(--ok); border-color:var(--ok); }
+      .pill.fail  { color:var(--err); border-color:var(--err); }
+      .st-body { padding:8px 10px; display:flex; flex-direction:column; gap:8px; }
+      .step { color:var(--muted); font-size:12px; min-height:18px; }
+      .bar { height:4px; background:#22262d; border-radius:2px; overflow:hidden; }
+      .bar > i { display:block; height:100%; background:var(--accent); width:0; }
+      .log { flex:1; margin:0; padding:8px 10px; border-top:1px solid var(--line);
+             font:11px/1.45 ui-monospace, SFMono-Regular, monospace; height:44vh;
+             overflow:auto; white-space:pre-wrap; word-break:break-all; }
+      .log .app { color:var(--accent); }
+      .log .tx  { color:#d2a8ff; }
+      .log .rx  { color:#9be9a8; }
+      .log .err { color:var(--err); }
+      .kv { font:11px ui-monospace, monospace; color:var(--muted); }
+      .kv b { color:var(--text); font-weight:600; }
+      a { color:var(--accent); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Web-only ESP flasher — PoC</h1>
+      <span class="kv" id="cap"></span>
+      <span style="flex:1"></span>
+      <button id="add">+ Station</button>
+      <button id="runall" class="primary">Run scenario on all ready stations</button>
+      <button id="dump">Download run JSON</button>
+      <a href="/probe.html" target="_blank">capability probe</a>
+    </header>
+    <div id="banner"></div>
+    <div id="stations"></div>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>

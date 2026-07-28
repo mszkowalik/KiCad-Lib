@@ -1,0 +1,17 @@
+{
+ "BOOT_WIF": "00:00:00.349 WIF: WifiManager active for 3 minutes",
+ "BOOT_HTP": "00:00:00.045 HTP: Web server active on dongle-F8B3B742DAF8-6904 with IP address 192.168.4.1",
+ "RESULT": "00:00:04.248 RSL: RESULT = {\"SetOption153\":\"ON\"}",
+ "STATUS11": "00:00:03.325 RSL: STATUS11 = {\"StatusSTS\":{\"Time\":\"1970-01-01T00:00:03\",\"Uptime\":\"0T00:00:04\",\"UptimeSec\":4,\"Heap\":161,\"SleepMode\":\"Dynamic\",\"Sleep\":50,\"LoadAvg\":97,\"MqttCount\":0,\"Berry\":{\"HeapUsed\":3,\"Objects\":34},\"POWER1\":\"OFF\",\"POWER2\":\"OFF\"}}",
+ "STATUS": "22:05:44.383 RSL: STATUS = {\"Status\":{\"Module\":0,\"DeviceName\":\"Dongle\",\"FriendlyName\":[\"Dongle\",\"Dongle2\"],\"Topic\":\"dongle_F8B3B742DAF8\",\"ButtonTopic\":\"0\",\"Power\":\"00\",\"PowerLock\":\"00\",\"PowerOnState\":3,\"LedState\":1,\"LedMask\":\"FFFF\",\"SaveData\":1,\"SaveState\":1,\"SwitchTopic\":\"0\",\"SwitchMode\":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],\"ButtonRetain\":0,\"SwitchRetain\":0,\"SensorRetain\":0,\"PowerRetain\":0,\"InfoRetain\":0,\"StateRetain\":0,\"StatusRetain\":0}}",
+ "INFO1": "22:05:44.691 RSL: INFO1 = {\"Info1\":{\"Module\":\"CE_Aqua\",\"Version\":\"14.2.0(tasmota)\",\"FallbackTopic\":\"cmnd/DVES_F8B3B742DAF8_fb/\",\"GroupTopic\":\"cmnd/dongles/\"}}",
+ "INFO2": "22:05:44.704 RSL: INFO2 = {\"Info2\":{\"WebServerMode\":\"Admin\",\"Hostname\":\"dongle-F8B3B742DAF8-6904\",\"IPAddress\":\"192.168.1.12\",\"IP6Global\":\"\",\"IP6Local\":\"fe80::fab3:b7ff:fe42:daf8%st1\"}}",
+ "INFO3": "22:05:44.717 RSL: INFO3 = {\"Info3\":{\"RestartReason\":\"Vbat power on reset\",\"BootCount\":2}}",
+ "POWER1": "22:05:44.730 RSL: POWER1 = OFF",
+ "POWER2": "22:05:44.733 RSL: POWER2 = OFF",
+ "STATE": "22:05:48.966 RSL: STATE = {\"Time\":\"2025-12-16T22:05:48\",\"Uptime\":\"0T00:00:11\",\"UptimeSec\":11,\"Heap\":142,\"SleepMode\":\"Dynamic\",\"Sleep\":50,\"LoadAvg\":157,\"MqttCount\":0,\"Berry\":{\"HeapUsed\":3,\"Objects\":39},\"POWER1\":\"OFF\",\"POWER2\":\"OFF\",\"Wifi\":{\"AP\":1,\"SSId\":\"HelloThere\",\"BSSId\":\"58:68:7A:8B:22:14\",\"Channel\":13,\"Mode\":\"HT20\",\"RSSI\":20,\"Signal\":-90,\"LinkCount\":1,\"Downtime\":\"0T00:00:06\"}}",
+ "SENSOR": "22:05:49.005 RSL: SENSOR = {\"Time\":\"2025-12-16T22:05:49\",\"Switch1\":\"ON\",\"Switch2\":\"ON\",\"Switch3\":\"ON\",\"Switch4\":\"ON\",\"Switch5\":\"ON\",\"Switch7\":\"OFF\",\"Switch8\":\"OFF\",\"Switch9\":\"OFF\"}",
+ "STATUS5": "00:00:00.433 RSL: STATUS5 = {\"StatusNET\":{\"Hostname\":\"dongle-F8B3B742DAF8-6904\",\"IPAddress\":\"0.0.0.0\",\"Gateway\":\"192.168.1.1\",\"Subnetmask\":\"255.255.255.0\",\"DNSServer1\":\"0.0.0.0\",\"DNSServer2\":\"0.0.0.0\",\"Mac\":\"F8:B3:B7:42:DA:F8\",\"IP6Global\":\"\",\"IP6Local\":\"\",\"Webserver\":2,\"HTTP_API\":1,\"WifiConfig\":4,\"WifiPower\":16.0}}",
+ "POWER3": "00:00:02.552 RSL: POWER3 = OFF",
+ "STATUS10": "00:00:04.588 RSL: STATUS10 = {\"StatusSNS\":{\"Time\":\"1970-01-01T00:00:04\",\"Switch1\":\"ON\",\"Switch2\":\"ON\",\"Switch3\":\"ON\",\"Switch4\":\"ON\",\"Switch5\":\"ON\",\"Switch7\":\"ON\",\"Switch8\":\"ON\",\"Switch9\":\"ON\",\"DS18B20\":{\"Id\":\"00000D7C91BC\",\"Temperature\":25.2},\"TempUnit\":\"C\"}}"
+}
