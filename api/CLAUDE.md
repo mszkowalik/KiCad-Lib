@@ -108,6 +108,170 @@ Read this before touching components, symbols, footprints, or skills.
   `[{qty_from, price}]`, qty_from >= 2 — `price` is the qty-1 tier); price at
   a run volume resolves via `project_bom._cost_price_at`, mirroring the
   ComponentPricePoint qty_from convention.
+- **Invoice positions form a tree; only LEAVES carry money.** `RunCostLine`
+  rows nest via `parent_line_id` (soft pointer) so one printed position can be
+  split — into shares charged to different runs, and into a supplier's own
+  sub-fees (JLC prints one "SMT Assembly" figure whose stencil / manual-assembly
+  components appear only on their website). **A line with live children is a
+  header worth zero.** That rule lives in exactly one place,
+  `run_actuals.header_ids`, and every money path filters on it: `document_json`,
+  `pool_state`'s purchases, and `run_actuals`'s direct lines. Never re-derive it
+  per call site, and never resolve a double count by editing a header's amount —
+  the parent must keep what the invoice printed. Related invariants: reconciliation
+  compares the printed total against **top-level** lines only (so splitting can
+  never make a document read unreconciled); children inherit the parent's
+  currency; over-allocation is refused (409) while under-allocation is legal and
+  reported as `residual`; document-level `run_id` only claims lines that name no
+  destination of their own (an invoice on run A with a line allocated to run B
+  used to be charged to both); voiding a line voids its subtree. Percentages are
+  a frontend calculator only — the API stores absolute amounts.
+- **`allocate` has four values, and `"excluded"` is load-bearing.** `none` |
+  `by_value` | `by_qty` | `excluded`. The carrier values spread a
+  freight/duty/tax line over the SAME document's part lines (landed cost: value
+  added, quantity not), and `line_destination` only claims the pool bucket for
+  them when poolable part lines actually exist — `pool_state` cannot spread a
+  surcharge over nothing. `excluded` means "entered so the document reconciles
+  against its printed total, charged to NOBODY on purpose": reclaimable import
+  VAT, and the prepaid-component portion of a JLC populated-board price whose
+  components already reached the pool through their own invoice. It is checked
+  FIRST in `line_destination`, filtered out of `pool_state`'s purchases (that is
+  what prevents the prepaid double count) and skipped in `run_actuals`. Do not
+  conflate it with `unassigned`, which means "nobody noticed yet" and is a defect.
+- **Attachments can belong to a document, not just a run.**
+  `run_attachments.run_id` is nullable and `document_id` is a soft pointer, so a
+  supplier's scan is filed with the money it evidences — including on a shared
+  document, which has no run. Document attachments live under `documents/<id>/`
+  in MinIO, NEVER the run prefix: `delete_run` wipes that prefix, and a financial
+  record's evidence must outlive the run (same reasoning as `RunCostDocument`
+  being project-owned).
+- **The sale side lives on the run** (`sale_unit_price`, `sale_currency`, `qty_sold`,
+  `customer`, `order_ref`, `order_date`; startup-migrated). Price is stored PER
+  DEVICE, never as a batch total — the total is derived, so a later quantity
+  correction cannot silently rewrite revenue. Revenue charges on `qty_sold` (units
+  BILLED), falling back to `qty_good` then `plan_qty` then `qty`: a customer is
+  invoiced for what shipped, which is routinely neither the planned count nor the
+  number that passed test. `run_actuals` returns `revenue`/`margin`/`margin_pct`
+  (gross margin over revenue, the figure a price decision is made against) in the
+  project's display currency; the register's `by_run_usd` converts both sides to USD
+  at the **order date** when set, else the run date — a sale is struck on a day and
+  its FX must not drift with today's rate. `RunPatch` applies these only when
+  explicitly present (`exclude_unset`), so patching a label can never blank a price.
+- **`resolve_part_lines` has THREE outcomes, not two.** `resolved` (linked to a
+  library component), `unresolved` (MPN recognised by nothing) and **`unlinked`** —
+  the MPN matched a `JlcStockItem` that itself has no `component_id`. An unlinked
+  purchase is priced in the pool but can NEVER meet a BOM draw, so it silently
+  under-costs every run; it used to be reported as neither, hiding 1750 DIP switches
+  and ~$25k of enclosures/antennas. Two related rules: the MPN index prefers an
+  entry that carries a `component_id` (JLC lists one manufacturer part under several
+  LCSC codes — `XL-1005SURC` exists as both C25503345 unlinked and C965790 linked to
+  component 218; first-write-wins costed 16,800 LEDs at zero while their money sat
+  unconsumed), and a part bought under two MPNs is one part only if the library says
+  so — a substitution (`KH-6X6X5H-STM` -> `TS3625A`) reads as a shortage of the
+  second plus dead stock of the first until both map to one component.
+- **The pool's moving average has its OWN clamped basis** (`_avg_qty` / `_avg_value`
+  in `pool_state`), separate from the reported `qty` / `value_usd`. The reported
+  pair are pure algebraic sums and MUST be able to go negative — the register's
+  identity depends on it — but deriving the average from them directly is unsafe: a
+  run that draws stock the pool never had strips the quantity without any value, and
+  the next purchase then averages against a near-zero denominator. That produced a
+  $44 average for a $3.73 enclosure. The basis never goes below zero (a draw takes
+  `min(qty, on_hand)`), and when nothing is on hand the LAST KNOWN average is
+  retained so a later purchase blends against a sane figure. Never "simplify" this
+  back to `value_usd / qty`.
+- **Draw order is event order, and an unpriced draw is a symptom.** A component
+  drawn before any invoice exists for it prices at zero — correct, but it means the
+  supplying invoice is missing, not that the part was free. Import the invoice, then
+  redraw; snapshotted `unit_cost_usd` is never rewritten retroactively. Repricing is
+  therefore a DELETE + re-POST with `unit_cost_usd=None`, run in event-date order so
+  each draw blends the average the next one sees — `add_consumption` prices as of
+  `consumed_at`, never today.
+- **A zero-priced draw also hides duplicates.** `ComponentConsumption` has no
+  uniqueness constraint, so a part drawn once by `consume_from_bom` and again by an
+  ad-hoc script is simply charged twice — and while both rows price at zero, nothing
+  in any total betrays it. Components 324/325 were double-drawn across all five Aqua
+  runs for exactly that reason, and it surfaced only when their invoices arrived and
+  the pool read 2030 drawn against 1015 devices. Afterwards the only way to tell the
+  rows apart is the `note`: `consume_from_bom` writes `BOM x <volume>` (plus
+  `(override …)`), so any other wording is hand-made. Before repricing a part, compare
+  drawn quantity against units built — a clean multiple of the build volume is the tell.
+- **A run's `overrides` apply to ACTUALS too, not just the plan.** `consume_from_bom`
+  honours the same keys and the same `drop` flag `project_bom.run_effective` uses —
+  `b<snapshot_bom_line id>` and `x<extra_item id>` — plus `component_id` (a
+  substitution) and `qty_total`. `{"x6": {"drop": true, "note": "..."}}` records that
+  a batch genuinely shipped without a part (the early batches had no carton) instead
+  of hand-deleting draw rows, which left no trace of the decision. The response's
+  `skipped` array reports what was deliberately left out, so a missing line is never
+  mistaken for an oversight. Same mechanism covers DNP corrections and replacements.
+- **An invoice's quantity unit is not always a piece.** Pracownia Tektury bills
+  cartons in packs of 100, so a printed `10 szt` is 1000 boxes; storing 10 makes a
+  per-device draw impossible. Restate into pieces and put the arithmetic in the
+  line's notes. A per-device consumable must be `kind="part"` with no project/run so
+  it feeds the pool — `packaging` and the other kinds are DIRECT run costs and are
+  never drawn per device.
+- **`parts_stock` aggregates ALL of a part's stock codes.** JLC lists one
+  manufacturer part under several LCSC codes (`XL-1005SURC` is both C25503345 and
+  C965790), so a key maps to a LIST of stock items and quantities add. First-match
+  wins showed the same LED twice — once holding the pool's money with no stock, once
+  with 18,488 pieces and a bogus "no invoice" flag. `jlc_codes` on each row names
+  every code found.
+- **Stock is event-sourced, and a draw cannot take what was never bought.**
+  `_pool_events(db)` is the ONE source of stock events (leaf part purchases,
+  draws, adjustments, date-sorted with ties adj < buy < use so a same-day invoice
+  covers a same-day run); `pool_state`, `component_ledger` and `check_shortages`
+  all replay it — never re-derive the event list per call site.
+  `check_shortages` is a FULL-TIMELINE check (inserting a historical draw must
+  not push a later balance negative) and matches parts by identity-key overlap,
+  not exact key. Both draw paths (`add_consumption`, `consume_from_bom`) hard-
+  refuse (409, with the shortage list) when a draw would take stock below zero —
+  user decision 2026-07-28. The fix is one of: the missing invoice, a
+  **placeholder document** (supplier `PLACEHOLDER (no invoice found)`, quantity =
+  the replay's worst dip, price = the nearest real invoice, note saying REPLACE
+  when the real one surfaces), a signed stock adjustment, or a run override
+  recording the batch shipped without the part. `consume_from_bom` checks the
+  whole batch first and refuses atomically, so a failed draw never leaves half a
+  run consumed. Pre-existing negatives are grandfathered and surface as
+  `issues.negative_stock` in the register; `GET /api/parts-ledger` returns one
+  part's full timeline (the Parts stock row drill-down renders it).
+- **The moving-average basis loses value at its OWN average, never at a draw's
+  snapshotted price.** The snap belongs to run costing; using it in the basis
+  leaks the difference, and a long sequence of below-average snaps once drained
+  `_avg_qty` to 1 while `_avg_value` kept $125 — repricing every CH340B on the
+  next plan at $125.66. A moving average is invariant under draws; only
+  purchases and positive adjustments may move it.
+- **Run PLANS price pool-first** (user decision 2026-07-28): with `at` set,
+  `project_bom._component_data` prices a part from the pool's moving average
+  as-of that date (`source="Pool average (invoices)"`) and only falls back to
+  the ladder for parts never bought by then — invoices are ground truth, the
+  ladder is an estimate. Browsing a snapshot BOM (`at=None`) keeps market
+  ladders: that view answers "what would ordering cost", not "what did we pay".
+  The import is local (`from . import run_actuals`) because run_actuals imports
+  this module.
+- **`history_points_at` skips EMPTY snapshots** — see the run-economics bullet.
+- **Production steps are vendor-neutral keys, never new kinds** (user design
+  2026-07-28, `services/cost_steps.py`). Three stages mirror the pipeline — `fab`,
+  `pcba` (what JLCPCB does), `final` (what LIFTECH does) — and each step is a key
+  like `pcba:setup` / `final:enclosure_print`. Vendors are wordings on top
+  (`VENDOR_ALIASES`, `VENDOR_TEMPLATES` feed the split dialog via
+  `GET /api/cost-steps`); `RunCostLine.kind` stays the coarse cross-vendor rollup.
+  The step travels in the line's `plan_key` and in `ProjectCostItem.step_key`
+  (startup-migrated; copy-on-write clone in `cost_state` must carry it), and
+  `run_actuals` emits a per-step planned-vs-billed comparison (`steps` in the
+  actuals payload) matched purely on the key. Two distinct coarse keys:
+  `<stage>:general` = a position deliberately entered unsplit;
+  `<stage>:other` = the remainder AFTER itemizing — the unexplained residual of a
+  split must become a `:other` row (a header's residual is visible but worth
+  zero, so money left on the header is not charged). The recurring JLCPCB
+  per-board shortfall lives under `pcba:other`, which makes it a trackable
+  series. Alias ordering matters: 'special components' before 'components',
+  'extended components' before both — a substring match on the wrong alias
+  misfiles money ($10.50 found in `pcba:parts` on day one).
+- **`GET /api/invoices` is the money-conservation check.** `invoice_register`
+  asserts one identity — invoiced == runs + projects + pool + excluded +
+  unassigned + residual (`summary.gap_usd` must be 0) — plus the pool's own
+  `purchased + adjustments - drawn == on_hand`. `pool_state` tracks the `value_*`
+  legs alongside the quantities specifically so that second identity is exact
+  rather than re-estimated. When adding a cost path, make it land in one of those
+  buckets or the gap will expose it.
 
 ### Creating a proposal (the one true pattern)
 
@@ -289,7 +453,17 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   consigned JLC library. They routinely disagree (a part can be sold out on
   LCSC retail while JLCPCB holds 100k+ for assembly — e.g. C5440143). Any UI
   or tool surfacing a stock number must label the pool; availability checks
-  treat a line as procurable when ANY pool covers it. The legacy 3-point `ComponentPrice` stays authoritative
+  treat a line as procurable when ANY pool covers it. A **fourth** quantity now
+  exists and is not a stock pool at all: the cost pool's `remaining_qty`
+  (`run_actuals.pool_state`) is a MONEY balance — what was bought minus what runs
+  drew minus write-offs — and is explicitly not expected to match any physical
+  count. `GET /api/parts-stock` (`run_actuals.parts_stock`, the Parts stock view)
+  is the one place the money balance and `JlcStockItem.qty` are shown together,
+  because the gap between them is the useful signal: a negative `delta_qty` means
+  boards were built without a recorded draw, and a part JLC holds that the pool has
+  never seen (`state: "jlc_only"`) means the purchase invoice is missing. Value
+  comparisons there price the SAME remainder both ways — never "held at market" vs
+  "remainder at cost", which would just restate the quantity gap as money. The legacy 3-point `ComponentPrice` stays authoritative
   for KiCad symbol injection. **Two price stores, one bridge**: the BOM prices
   from the ladder, but when a part has no ladder points it falls back to its
   `ComponentPrice` summary (`project_bom._summary_points`) — that's how a price
@@ -320,8 +494,41 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   `fx.record_rate_history`). Resolution rule everywhere: latest snapshot
   at-or-before the date, else the earliest after (the closest available);
   components with no history fall back to live points. Never mutate or
-  delete history rows. `ProductionRun.frozen` is a LEGACY blob from the old
+  delete history rows. **Only NON-EMPTY snapshots are candidates**
+  (`history_points_at` skips `points == []`): an empty row records that the part
+  had no ladder yet, which is not price information, and choosing one is strictly
+  worse than having no history at all — `project_bom._component_data` decides
+  whether to fall back to live points by testing PRESENCE in the result, so a
+  present-but-empty entry silently unprices the line. `record_price_history`
+  legitimately writes an empty first row for a part created before it was priced,
+  so this shadowed 11 components including every enclosure and antenna: a Dongle
+  batch's planned cost showed no enclosure at all while the part was plainly
+  priced in the library. A corollary of append-only: a PLACEHOLDER price entered
+  today and corrected tomorrow leaves the placeholder as the earliest row, so
+  every historical run keeps pricing from it. That is the intended semantics —
+  fixing it retroactively means deleting a history row, which is a deliberate
+  invariant break and the user's call, not a robot's.
+  `ProductionRun.frozen` is a LEGACY blob from the old
   freeze-at-creation model — kept for archival, never written or read.
+- **A run can be re-pointed at a newer snapshot** (`RunPatch.snapshot_id`) — needed
+  when a part moves INTO the schematic, since the planned BOM comes from the run's
+  snapshot and would otherwise never see it (the Dongle enclosure became `ENC1` in
+  commit a92e8973). The patch refuses (409) while the run carries `b<bom line id>`
+  overrides: those ids belong to the old snapshot's lines, so re-pointing would
+  quietly stop applying them. Runs whose components are charged directly from a
+  turnkey invoice (Dongle Batch 1, `snapshot_id` NULL) must STAY snapshot-less —
+  giving them a BOM invites `consume_from_bom` to draw parts the invoice already paid
+  for.
+- **An extra-BOM item and a schematic symbol for the same part double-count.** Once
+  an enclosure gets a symbol, its `ProjectExtraBomItem` twin must go or both the plan
+  and the draws count it twice (the Aqua plan listed components 324/325 once with
+  refs `ENC1`/`ENC2` and once with no refs). Delete the twin anchored at the snapshot
+  whose BOM *has* the part, so the copy-on-write leaves earlier revisions intact — an
+  older snapshot with no enclosure line keeps its extra item and stays costed
+  correctly. Note the anchoring renumbers rows: after one delete, the remaining items
+  live in a NEW revision with NEW ids, so a second delete by the old id 409s
+  ("does not belong to the cost list in effect at this commit") — re-read the list
+  between deletes.
 - **Production files belong to RUNS, not snapshots** (`services/production.py`):
   versioned `ProductionFileSet`s (repo | upload | generated), auto-imported
   from the repo's `production/` dir (JLCPCB Fabrication Toolkit; skip
@@ -358,6 +565,18 @@ token injected per-invocation via `http.extraheader` — never written to disk),
 
 ## Conventions
 
+- **Never run a script inside the api container as a *file*.** The image does
+  `pip install .`, so a **stale copy of the whole `app` package** sits in
+  `site-packages` (`kicadlib_platform_api-0.1.0.dist-info`), frozen at image
+  build time. Running `docker compose exec api python /tmp/x.py` puts the
+  script's own directory on `sys.path` — `/srv` is not on it — so `import app`
+  resolves to that stale copy, silently executing yesterday's code against
+  today's database. Verified 2026-07-28: the installed `models.py` was 1345
+  lines against the live 1550, missing `JlcOrderDecision` entirely. It fails
+  loudly on a *missing* attribute and silently on a *changed* one.
+  Pipe via stdin instead — `docker compose exec -T api python - <<'PY'` — which
+  sets `sys.path[0] = ''` and picks up the live mount at `/srv/app`. Assert it
+  when the script writes money: `assert M.__file__ == "/srv/app/models.py"`.
 - **Config**: read via `from ..config import settings`; add new knobs to
   `Settings` with an env-overridable default. Don't hardcode paths/URLs.
 - **New seed-skill files** (`app/seed_skills/*.md`) must be listed in

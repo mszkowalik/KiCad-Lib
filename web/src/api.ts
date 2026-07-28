@@ -1666,6 +1666,8 @@ export interface CostItem {
   currency: string;
   company: string;
   mpn: string;
+  /** production-step identity ("pcba:setup"); "" = free-form item */
+  step_key: string;
   notes: string;
 }
 
@@ -1677,6 +1679,7 @@ export interface CostItemIn {
   currency: string;
   company: string;
   mpn: string;
+  step_key?: string;
   notes: string;
   position: number;
 }
@@ -1811,6 +1814,15 @@ export interface RunInfo {
   status: string;
   run_date: string;
   notes: string;
+  qty_good?: number | null;
+  /** the sale side: price PER DEVICE, units billed, and the customer order */
+  qty_sold?: number | null;
+  sale_unit_price?: number | null;
+  /** empty inherits the project's display currency */
+  sale_currency?: string;
+  customer?: string;
+  order_ref?: string;
+  order_date?: string;
   created_at: string;
   attachment_count: number;
   device_count: number;
@@ -1838,6 +1850,15 @@ export interface RunPatchBody {
   run_date?: string;
   notes?: string;
   overrides?: Record<string, unknown>;
+  /** sale side. Only fields actually present are applied, so patching a label
+   *  can never blank a price. `null` clears one deliberately. */
+  sale_unit_price?: number | null;
+  sale_currency?: string;
+  qty_sold?: number | null;
+  qty_good?: number | null;
+  customer?: string;
+  order_ref?: string;
+  order_date?: string;
 }
 
 export function getRuns(projectId: number, signal?: AbortSignal): Promise<RunInfo[]> {
@@ -1898,6 +1919,467 @@ export function addRunDevices(
 
 export function deleteRunDevice(deviceId: number): Promise<{ deleted: number }> {
   return request(`/api/run-devices/${deviceId}`, { method: "DELETE" });
+}
+
+// ------------------------------------------- post-factum production costs
+// Supplier documents entered AFTER a run. `kind:"part"` lines with no run feed
+// the component cost pool; runs draw from it (consumption) at a moving average.
+// Attrition is recorded as a stock adjustment, optionally charged to a run.
+
+export type CostLineKind =
+  | "part" | "fab" | "assembly" | "tooling" | "freight"
+  | "duty" | "tax" | "rework" | "packaging" | "service" | "other";
+
+export interface RunCostLineRow {
+  id: number;
+  document_id: number;
+  run_id: number | null;
+  /** a share destined for a project but not yet for a specific run */
+  project_id?: number | null;
+  /** set on a share of a split position; children live on the parent's document */
+  parent_line_id?: number | null;
+  /** true when the line has live children — it is a header worth zero, they carry the money */
+  is_header?: boolean;
+  children_total?: number | null;
+  /** header only: amount not yet allocated to a child */
+  residual?: number | null;
+  position: number;
+  kind: CostLineKind;
+  basis: "per_device" | "per_run";
+  label: string;
+  qty: number;
+  /** qty x run units for a per_device line — what the money is charged on */
+  qty_effective?: number;
+  unit_price: number;
+  line_total: number | null;
+  currency: string;
+  allocate: string;
+  component_id: number | null;
+  mpn: string;
+  lcsc: string;
+  description: string;
+  plan_key: string;
+  plan_kind: string;
+  plan_ref?: string;
+  notes: string;
+  ocr_confidence: number | null;
+  voided: boolean;
+}
+
+/** Where a document's money went, leaves only. `unassigned` + `residual` is the
+ *  amount no run and no project is paying for. */
+export interface DocumentAssignment {
+  run: number | null;
+  project: number | null;
+  pool: number | null;
+  /** recorded so the document reconciles, charged to nobody on purpose */
+  excluded: number | null;
+  unassigned: number | null;
+  residual: number | null;
+  by_run: Record<string, number | null>;
+  by_project: Record<string, number | null>;
+  fully_assigned: boolean;
+}
+
+export interface RunCostDocumentRow {
+  id: number;
+  project_id: number | null;
+  run_id: number | null;
+  doc_type: string;
+  supplier: string;
+  doc_number: string;
+  external_id: string;
+  doc_date: string;
+  paid_at: string;
+  currency: string;
+  fx_rate_usd: number | null;
+  display_amount: number | null;
+  total_amount: number | null;
+  tax_amount: number | null;
+  notes: string;
+  attachment_id: number | null;
+  /** how many originals are filed with this document */
+  attachment_count?: number;
+  created_at: string | null;
+  line_count: number;
+  lines_total: number | null;
+  /** false when the entered total does not match the sum of its lines */
+  reconciled: boolean;
+  assignment: DocumentAssignment;
+  lines?: RunCostLineRow[];
+  /** register only */
+  total_usd?: number | null;
+  lines_total_usd?: number | null;
+  assignment_usd?: Record<string, number | null>;
+  project_name?: string;
+  run_label?: string;
+}
+
+// ----------------------------------------------------------- invoice register
+
+export interface InvoiceRegister {
+  documents: RunCostDocumentRow[];
+  projects: Record<string, string>;
+  runs: Record<string, {
+    label: string; project_id: number; run_date: string; qty: number;
+    qty_sold: number | null; sale_unit_price: number | null; sale_currency: string;
+    customer: string; order_ref: string; order_date: string;
+  }>;
+  summary: {
+    document_count: number;
+    total_usd: number | null;
+    to_runs_usd: number | null;
+    to_projects_usd: number | null;
+    to_pool_usd: number | null;
+    excluded_usd: number | null;
+    unassigned_usd: number | null;
+    residual_usd: number | null;
+    /** total minus every bucket — non-zero means a bug, not bad data */
+    gap_usd: number | null;
+    unknown_rates: string[];
+    by_supplier_usd: Record<string, number | null>;
+  };
+  by_project_usd: Record<string, number | null>;
+  by_run_usd: Record<string, {
+    direct_usd: number | null;
+    components_usd: number | null;
+    total_usd: number | null;
+    /** price per device x units billed, converted at the ORDER date */
+    revenue_usd: number | null;
+    margin_usd: number | null;
+    margin_pct: number | null;
+  }>;
+  pool: {
+    purchased_usd: number | null;
+    adjustments_usd: number | null;
+    drawn_usd: number | null;
+    on_hand_usd: number | null;
+    balanced: boolean;
+    part_count: number;
+  };
+  issues: {
+    unreconciled: {
+      id: number; supplier: string; doc_number: string; doc_date: string;
+      total_amount: number | null; lines_total: number | null; currency: string;
+    }[];
+    unassigned: {
+      id: number; supplier: string; doc_number: string; doc_date: string;
+      amount_usd: number | null; residual_usd: number | null;
+    }[];
+    /** stock that went below zero at some point in the replay — each one is a
+     *  missing purchase document, an unrecorded loss, or a shipped-without */
+    negative_stock: {
+      key: string; component_id: number | null; component_name: string;
+      mpn: string; lcsc: string; first_short: string | null;
+      min_qty: number | null; remaining_qty: number | null;
+    }[];
+    /** freight/duty on a parts document that is not spread into part prices */
+    unspread_transport: {
+      document_id: number; line_id: number; label: string; supplier: string;
+      doc_number: string; doc_date: string; amount: number | null; currency: string;
+    }[];
+  };
+}
+
+/** The vendor-neutral production-step catalog (fab / pcba / final). A step key
+ *  travels in a line's `plan_key` and a planned cost item's `step_key`; the
+ *  plan-vs-actual match is on the key, never on printed labels. */
+export interface CostStepCatalog {
+  stages: Record<string, string>;
+  steps: { key: string; label: string; default_kind: string;
+           default_basis: string | null; stage: string }[];
+  vendor_aliases: Record<string, [string, string][]>;
+  templates: Record<string, { label: string; step: string }[]>;
+}
+
+export function getCostSteps(signal?: AbortSignal): Promise<CostStepCatalog> {
+  return request("/api/cost-steps", { signal });
+}
+
+/** One share of a split position. Amounts are ABSOLUTE — a percentage entry is
+ *  converted in the browser before it is sent, so nothing has to be re-derived. */
+export interface SplitChild {
+  label?: string;
+  kind?: CostLineKind;
+  basis?: "per_device" | "per_run";
+  amount?: number;
+  qty?: number;
+  unit_price?: number;
+  run_id?: number | null;
+  project_id?: number | null;
+  /** "excluded" records the share without charging it to anyone */
+  allocate?: string;
+  mpn?: string;
+  notes?: string;
+  plan_key?: string;
+  plan_kind?: string;
+  plan_ref?: string;
+}
+
+export function getInvoiceRegister(signal?: AbortSignal): Promise<InvoiceRegister> {
+  return request("/api/invoices", { signal });
+}
+
+export function getSharedDocuments(signal?: AbortSignal): Promise<RunCostDocumentRow[]> {
+  return request("/api/documents", { signal });
+}
+
+/** One document with its full line tree — what an expanded invoice row shows. */
+export function getDocument(docId: number, signal?: AbortSignal): Promise<RunCostDocumentRow> {
+  return request(`/api/run-documents/${docId}`, { signal });
+}
+
+export interface DocumentAttachment {
+  id: number;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  uploaded_at: string | null;
+}
+
+/** The supplier's original, filed with the money it evidences. Stored under a
+ *  `documents/` prefix, so it outlives a deleted run. */
+export function getDocumentAttachments(
+  docId: number, signal?: AbortSignal,
+): Promise<DocumentAttachment[]> {
+  return request(`/api/run-documents/${docId}/attachments`, { signal });
+}
+
+export function uploadDocumentAttachment(
+  docId: number, file: File,
+): Promise<{ id: number; document_id: number; filename: string; size_bytes: number }> {
+  const fd = new FormData();
+  fd.append("file", file);
+  return request(`/api/run-documents/${docId}/attachment`, { method: "POST", body: fd });
+}
+
+/** Same-origin PATH to an attachment (not an absolute URL) so it can be fed to
+ *  `viewkind.fileHref`, which routes PDFs to the browser viewer and CAD/mesh
+ *  files to the /view page. `inline` asks the API to display rather than download. */
+export function attachmentPath(attachmentId: number, inline = true): string {
+  return `/api/run-attachments/${attachmentId}${inline ? "?inline=true" : ""}`;
+}
+
+export function createSharedDocument(body: DocumentCreate): Promise<RunCostDocumentRow> {
+  return request("/api/documents", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function splitCostLine(
+  lineId: number,
+  children: SplitChild[],
+  opts: { allow_parts?: boolean; replace?: boolean } = {},
+): Promise<{ parent_id: number; created: number; residual: number; document: RunCostDocumentRow }> {
+  return request(`/api/run-cost-lines/${lineId}/split`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ children, ...opts }),
+  });
+}
+
+export function updateCostLine(
+  lineId: number,
+  body: Partial<Pick<RunCostLineRow,
+    "run_id" | "project_id" | "label" | "kind" | "basis" | "qty" | "unit_price" |
+    "allocate" | "notes" | "plan_key" | "plan_kind" | "plan_ref">>,
+): Promise<RunCostLineRow> {
+  return request(`/api/run-cost-lines/${lineId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function resolveDocumentParts(
+  docId: number,
+): Promise<{ resolved: number; unresolved: string[]; checked: number }> {
+  return request(`/api/run-documents/${docId}/resolve-parts`, { method: "POST" });
+}
+
+export interface RunActuals {
+  currency: string;
+  /** planned-vs-billed per production step (USD); "~<kind>" keys are
+   *  unclassified actuals from lines without a step */
+  steps?: {
+    key: string; label: string; stage: string | null;
+    planned_usd: number | null; actual_usd: number | null; delta_usd: number | null;
+    /** which documents billed this step on this run */
+    sources: { document_id: number; doc_number: string; supplier: string;
+               doc_date: string; amount_usd: number | null }[];
+  }[];
+  qty_planned: number;
+  qty_good: number | null;
+  qty_sold: number | null;
+  sale_unit_price: number | null;
+  sale_currency: string;
+  customer: string;
+  order_ref: string;
+  order_date: string;
+  /** price per device x units billed, in `currency` */
+  revenue: number | null;
+  margin: number | null;
+  /** margin over REVENUE (gross margin), null when nothing is priced */
+  margin_pct: number | null;
+  margin_per_device: number | null;
+  components: number | null;
+  components_by_basis: Record<string, number | null>;
+  direct: number | null;
+  by_kind: Record<string, number | null>;
+  attrition: number | null;
+  total: number | null;
+  per_device: number | null;
+  planned_total: number | null;
+  delta: number | null;
+  /** null when nothing was planned — a late position has no percentage */
+  delta_pct: number | null;
+  document_count: number;
+  consumption_count: number;
+  unknown_rates: string[];
+}
+
+/** One slice of a draw, bound to the specific purchase lot it came from. */
+export interface ConsumptionLot {
+  id: number;
+  qty: number;
+  /** The LOT's landed unit cost, snapshotted when the draw was bound. */
+  unit_cost_usd: number;
+  total_usd: number;
+  /** reported = the supplier said so; fifo/manual/unallocated = inferred. */
+  source: string;
+  ext_ref: string;
+  lot_line_id: number | null;
+  purchase_order: string;
+}
+
+export interface ConsumptionRow {
+  id: number;
+  component_id: number | null;
+  mpn: string;
+  lcsc: string;
+  qty: number;
+  /** Quantity-weighted average of `lots`, so both views total the same. */
+  unit_cost_usd: number;
+  basis: string;
+  consumed_at: string;
+  note: string;
+  total_usd: number;
+  lots: ConsumptionLot[];
+}
+
+export interface CostPoolRow {
+  key: string;
+  component_id: number | null;
+  mpn: string;
+  lcsc: string;
+  bought: number;
+  used: number;
+  lost: number;
+  on_hand: number;
+  avg_unit_usd: number;
+  value_usd: number;
+  unknown_rate: boolean;
+}
+
+export interface DocumentCreate {
+  run_id?: number | null;
+  doc_type?: string;
+  supplier?: string;
+  doc_number?: string;
+  external_id?: string;
+  doc_date?: string;
+  currency?: string;
+  fx_rate_usd?: number | null;
+  total_amount?: number | null;
+  notes?: string;
+  lines?: Partial<RunCostLineRow>[];
+}
+
+export function getRunDocuments(runId: number, signal?: AbortSignal): Promise<RunCostDocumentRow[]> {
+  return request(`/api/runs/${runId}/documents`, { signal });
+}
+
+export function getProjectDocuments(
+  projectId: number, signal?: AbortSignal,
+): Promise<RunCostDocumentRow[]> {
+  return request(`/api/projects/${projectId}/documents`, { signal });
+}
+
+export function createDocument(projectId: number, body: DocumentCreate): Promise<RunCostDocumentRow> {
+  return request(`/api/projects/${projectId}/documents`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteDocument(docId: number, force = false): Promise<{ deleted: number }> {
+  return request(`/api/run-documents/${docId}${force ? "?force=true" : ""}`, { method: "DELETE" });
+}
+
+export function addDocumentLine(
+  docId: number, body: Partial<RunCostLineRow>,
+): Promise<RunCostLineRow> {
+  return request(`/api/run-documents/${docId}/lines`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function voidCostLine(lineId: number): Promise<{ voided: number }> {
+  return request(`/api/run-cost-lines/${lineId}`, { method: "DELETE" });
+}
+
+export function getRunActuals(runId: number, signal?: AbortSignal): Promise<RunActuals> {
+  return request(`/api/runs/${runId}/actuals`, { signal });
+}
+
+export function getRunConsumption(runId: number, signal?: AbortSignal): Promise<ConsumptionRow[]> {
+  return request(`/api/runs/${runId}/consumption`, { signal });
+}
+
+export function addRunConsumption(
+  runId: number,
+  body: { component_id?: number | null; mpn?: string; lcsc?: string; qty: number;
+          unit_cost_usd?: number | null; basis?: string; consumed_at?: string; note?: string },
+): Promise<{ id: number; unit_cost_usd: number; basis: string }> {
+  return request(`/api/runs/${runId}/consumption`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function consumeFromBom(
+  runId: number,
+): Promise<{ created: number; unpriced: string[]; volume: number }> {
+  return request(`/api/runs/${runId}/consumption/from-bom`, { method: "POST" });
+}
+
+export function deleteConsumption(consId: number): Promise<{ deleted: number }> {
+  return request(`/api/consumption/${consId}`, { method: "DELETE" });
+}
+
+export function addStockAdjustment(
+  projectId: number,
+  body: { component_id?: number | null; mpn?: string; lcsc?: string; qty_delta: number;
+          unit_cost_usd?: number | null; reason?: string; charge_run_id?: number | null;
+          adjusted_at?: string; note?: string },
+): Promise<{ id: number }> {
+  return request(`/api/projects/${projectId}/stock-adjustments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function getCostPool(
+  projectId: number, signal?: AbortSignal,
+): Promise<{ parts: CostPoolRow[]; total_value_usd: number }> {
+  return request(`/api/projects/${projectId}/cost-pool`, { signal });
 }
 
 // -------------------------------------------------------- where-used & FX
@@ -2168,4 +2650,404 @@ export interface JlcUsageRow {
 
 export function getJlcStockUsage(signal?: AbortSignal): Promise<JlcUsageRow[]> {
   return request("/api/jlc/stock/usage", { signal });
+}
+
+// ------------------------------------------------------------- parts stock
+// The same parts measured two ways: what JLC physically HOLDS at market price,
+// and what the cost pool says was PAID for the unconsumed remainder. The gap
+// between them is the point — see `run_actuals.parts_stock`.
+
+export interface PartsStockRow {
+  key: string;
+  component_id: number | null;
+  component_name: string | null;
+  mpn: string;
+  lcsc: string;
+  description: string;
+  /** money side: pool quantities */
+  bought: number;
+  drawn: number;
+  lost: number;
+  remaining_qty: number;
+  paid_unit_usd: number | null;
+  paid_value_usd: number;
+  /** physical side: JLC consignment */
+  held_qty: number;
+  market_unit_usd: number | null;
+  market_value_usd: number | null;
+  /** the pool remainder priced at today's market — like-for-like with paid_value_usd */
+  remaining_at_market_usd: number | null;
+  delta_qty: number | null;
+  delta_value_usd: number | null;
+  /** both = measured twice; pool_only = paid for, JLC doesn't hold it;
+   *  jlc_only = JLC holds it and we have NO purchase — a missing invoice */
+  state: "both" | "pool_only" | "jlc_only";
+  unknown_rate: boolean;
+}
+
+export interface PartsStock {
+  parts: PartsStockRow[];
+  totals: {
+    parts: number;
+    spent_usd: number | null;
+    drawn_usd: number | null;
+    adjusted_usd: number | null;
+    remaining_at_cost_usd: number | null;
+    comparable_cost_usd: number | null;
+    comparable_market_usd: number | null;
+    jlc_held_value_usd: number | null;
+    jlc_held_qty: number;
+    over_pool_parts: number;
+    missing_invoice_parts: number;
+    missing_invoice_value_usd: number | null;
+    pool_only_parts: number;
+    unvalued_parts: number;
+  };
+  last_sync: string | null;
+}
+
+export function getPartsStock(signal?: AbortSignal): Promise<PartsStock> {
+  return request("/api/parts-stock", { signal });
+}
+
+/** One event in a part's stock ledger — a purchase, a run draw, or an adjustment. */
+export interface PartLedgerEvent {
+  date: string;
+  kind: "buy" | "use" | "adj";
+  ref: string;
+  detail: string;
+  qty_delta: number | null;
+  unit_usd: number | null;
+  value_delta_usd: number | null;
+  balance_after: number | null;
+  avg_usd_after: number | null;
+  run_id: number | null;
+  document_id: number | null;
+  short: boolean;
+}
+
+export interface PartLedger {
+  component_id: number | null;
+  mpn: string;
+  lcsc: string;
+  events: PartLedgerEvent[];
+  balance: number | null;
+  value_usd: number | null;
+  avg_usd: number | null;
+  first_short: string | null;
+}
+
+/** Full event timeline for one part — stock over time, verifiable at any date. */
+export function getPartsLedger(
+  q: { component_id?: number | null; mpn?: string; lcsc?: string },
+  signal?: AbortSignal,
+): Promise<PartLedger> {
+  const p = new URLSearchParams();
+  if (q.component_id != null) p.set("component_id", String(q.component_id));
+  if (q.mpn) p.set("mpn", q.mpn);
+  if (q.lcsc) p.set("lcsc", q.lcsc);
+  return request(`/api/parts-ledger?${p.toString()}`, { signal });
+}
+
+// ------------------------------------------------- JLC import decision queue
+// One row per JLC ASSEMBLY ORDER, which is the unit that maps to a production
+// run — never per invoice. A single JLC batch bills several assembly orders for
+// different boards, so a per-document link cannot express the relationship.
+export interface JlcQueueCandidate {
+  run_id: number;
+  run_label: string;
+  run_qty: number | null;
+  panel_factor: number;
+  agree: number;
+  voted: number;
+  share: number;
+  mean_frac: number | null;
+  implied_devices: number;
+  qty_matches: boolean;
+  qty_delta: number | null;
+  date_gap_days: number | null;
+}
+
+export interface JlcQueuePerDevice {
+  lcsc: string;
+  mpn: string;
+  qty: number;
+  money: number;
+  /** null when no device count is known — then `qty` is the raw total. */
+  per_device: number | null;
+}
+
+export interface JlcQueueOrder {
+  smt_order_code: string;
+  batch_num: string;
+  invoice_no: string;
+  invoice_date: string;
+  board_codes: string[];
+  /** JLC's own count — PANELS when the order was panelised, never devices. */
+  jlc_number: number | null;
+  /** Derived from BOM votes, not given by JLC. */
+  panel_factor: number | null;
+  implied_devices: number | null;
+  money_usd: number | null;
+  presale_usd: number | null;
+  consumed_value_usd: number | null;
+  lot_count: number | null;
+  part_count: number;
+  proposed_outcome: "link_run" | "external" | "needs_human";
+  confidence: string;
+  proposed_run_id: number | null;
+  proposed_run_label: string;
+  reason: string;
+  collision_note: string;
+  candidates: JlcQueueCandidate[];
+  per_device: JlcQueuePerDevice[];
+  decision: {
+    outcome: string;
+    run_id: number | null;
+    panel_factor: number | null;
+    decided_by: string;
+    note: string;
+    applied_at: string | null;
+  } | null;
+}
+
+export interface JlcQueue {
+  orders: JlcQueueOrder[];
+  counts: {
+    total: number;
+    pending: number;
+    decided: number;
+    /** Invoiced value awaiting a decision — NOT the register's `unassigned`. */
+    pending_invoiced_usd: number;
+    /** What booking every pending order as external would remove from run costing. */
+    pending_stock_value_usd: number;
+  };
+}
+
+export function getJlcQueue(signal?: AbortSignal): Promise<JlcQueue> {
+  return request("/api/jlc/import/queue", { signal });
+}
+
+export function syncJlcImport(): Promise<{
+  batches_visible: number;
+  fetched: number;
+  already_staged: number;
+  failed: number;
+}> {
+  return request("/api/jlc/import/sync", { method: "POST" });
+}
+
+export function setJlcDecision(
+  smtOrderCode: string,
+  body: { outcome: "link_run" | "external" | "pending"; run_id?: number | null; panel_factor?: number | null; note?: string },
+): Promise<{ smt_order_code: string; outcome: string; run_id: number | null }> {
+  return request(`/api/jlc/import/decision/${encodeURIComponent(smtOrderCode)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function clearJlcDecision(smtOrderCode: string): Promise<{ cleared: string }> {
+  return request(`/api/jlc/import/decision/${encodeURIComponent(smtOrderCode)}`, {
+    method: "DELETE",
+  });
+}
+
+// ---------------------------------------------------------- JLC apply + undo
+// The endpoints that MOVE MONEY. Before these existed, importing a JLC month
+// meant running Python inside the api container: `import_all.py`, `draws_apply.py`,
+// `fix_alloc.py`, `mark_external.py` and seven more, plus raw SQL. Every one of
+// them is replaced by a call below, and — unlike the scripts — every one is
+// previewable with `dry_run` and reversible through the ledger.
+
+/** What a document import or a decision would do. Produced by the REAL write
+ *  path with `dry_run=true`, so the numbers shown are the numbers a real apply
+ *  produces — not a second implementation that could disagree. */
+export interface JlcApplyPreview {
+  dry_run: true;
+  plan?: Record<string, unknown>;
+  lines?: unknown[];
+  result?: Record<string, unknown>;
+}
+
+export interface JlcLineReclass {
+  lines_seen: number;
+  /** Lines whose BUCKET changed (`allocate` or `run_id`) — money actually moved. */
+  rebucketed_count: number;
+  rebucketed_value_usd: number;
+  /** Lines where only `exclude_reason` was filled in. No money moved. Kept
+   *  separate on purpose: one combined figure would claim a move that never
+   *  happened. */
+  reason_only_count: number;
+  changes: {
+    line_id: number;
+    label: string;
+    external_line_id: string;
+    amount_usd: number;
+    from: { allocate: string; exclude_reason: string; run_id: number | null };
+    to: { allocate: string; exclude_reason: string; run_id: number | null };
+  }[];
+}
+
+export interface JlcDecisionApplyResult {
+  smt_order_code: string;
+  outcome: string;
+  run_id: number | null;
+  dry_run: boolean;
+  lines: JlcLineReclass;
+  draws?: Record<string, unknown>;
+  movements?: Record<string, unknown>;
+  batch_id?: number;
+  reversible?: boolean;
+}
+
+/** Import one staged assembly batch as a cost document. */
+export function applyJlcDocument(
+  externalId: string,
+  dryRun = true,
+): Promise<JlcApplyPreview & { batch_id?: number; document_id?: number }> {
+  return request(
+    `/api/jlc/import/documents/${encodeURIComponent(externalId)}/apply?dry_run=${dryRun}`,
+    { method: "POST" },
+  );
+}
+
+/** Import one JLC parts order (POB…) — the purchase whose lines ARE the lots. */
+export function applyJlcParts(
+  pob: string,
+  dryRun = true,
+): Promise<JlcApplyPreview & { batch_id?: number; document_id?: number }> {
+  return request(`/api/jlc/import/parts/${encodeURIComponent(pob)}/apply?dry_run=${dryRun}`, {
+    method: "POST",
+  });
+}
+
+/** Move the money a decision implies: link the lines to the run and write
+ *  lot-bound draws, or exclude them and book the stock out to nobody. */
+export function applyJlcDecision(
+  smtOrderCode: string,
+  dryRun = true,
+): Promise<JlcDecisionApplyResult> {
+  return request(
+    `/api/jlc/import/decision/${encodeURIComponent(smtOrderCode)}/apply?dry_run=${dryRun}`,
+    { method: "POST" },
+  );
+}
+
+// ------------------------------------------------------------- write journal
+
+export interface WriteBatch {
+  id: number;
+  kind: string;
+  source_ref: string;
+  actor: string;
+  summary: Record<string, unknown>;
+  identity_before: Record<string, number | boolean> | null;
+  identity_after: Record<string, number | boolean> | null;
+  created_at: string | null;
+  reversed_at: string | null;
+  reversed_by_batch_id: number | null;
+  row_count: number;
+  by_op: Record<string, number>;
+  reversible?: boolean;
+}
+
+export function getWriteBatches(
+  opts: { kind?: string; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<{ batches: WriteBatch[]; total: number }> {
+  const qs = new URLSearchParams();
+  if (opts.kind) qs.set("kind", opts.kind);
+  if (opts.limit) qs.set("limit", String(opts.limit));
+  const q = qs.toString();
+  return request(`/api/ledger/batches${q ? `?${q}` : ""}`, { signal });
+}
+
+/** Undo one batch. `dryRun` reports what it would do and every reason it might
+ *  refuse. A refusal is a 409 — it names the rows edited since, or the later
+ *  batch that has to be reversed first. */
+export function reverseWriteBatch(
+  batchId: number,
+  dryRun = true,
+): Promise<{
+  status: "would_reverse" | "reversed" | "refused";
+  batch_id: number;
+  kind: string;
+  source_ref: string;
+  would: { delete: number; restore: number; reinsert: number };
+  reverse_batch_id?: number;
+  blockers: string[];
+  blocking_batches: number[];
+}> {
+  return request(`/api/ledger/batches/${batchId}/reverse?dry_run=${dryRun}`, {
+    method: "POST",
+  });
+}
+
+// ------------------------------------------------------- JLC browser session
+// Routed since the first day of the JLC work and never called from the browser,
+// which is why "Sync from JLCPCB" could only fail into a bare error banner: the
+// one thing a human must do — paste the cookies — had no control.
+
+export interface JlcSessionState {
+  /** Cookies are STORED. Says nothing about whether they still work — JLC
+   *  expires a browser session in about 30 minutes of the token's life and
+   *  answers HTTP 460 once it is dead. Use `checkJlcSession` for liveness. */
+  configured: boolean;
+  label?: string;
+  updated_at?: string | null;
+  /** Last time a real JLC call succeeded on these cookies. */
+  last_ok_at: string | null;
+  /** When the session was first seen DEAD, and what JLC said. */
+  died_at?: string | null;
+  last_error?: string;
+  /** Successful keep-alive touches on the current session. Evidence that a
+   *  periodic touch is holding it open, rather than an assumption. */
+  keepalive_count?: number;
+  age_hours?: number | null;
+  /** Worked, and not seen dead since. `checkJlcSession` is the authority. */
+  alive?: boolean;
+}
+
+export function getJlcSession(signal?: AbortSignal): Promise<JlcSessionState> {
+  return request("/api/jlc/web/session", { signal });
+}
+
+/** Paste the whole `Cookie:` request header from a logged-in jlcpcb.com tab.
+ *  It has to be the raw header, not `document.cookie`: `JLCPCB_SESSION_ID` is
+ *  httpOnly and therefore invisible to page script. Stored Fernet-encrypted and
+ *  never returned by any endpoint. */
+export function putJlcSession(
+  cookieHeader: string,
+  label = "",
+): Promise<JlcSessionState & { cookie_names?: string[] }> {
+  return request("/api/jlc/web/session", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cookies: cookieHeader, label }),
+  });
+}
+
+export function clearJlcSession(): Promise<JlcSessionState> {
+  return request("/api/jlc/web/session", { method: "DELETE" });
+}
+
+export function checkJlcSession(): Promise<{
+  ok: boolean;
+  expired?: boolean;
+  detail?: string;
+}> {
+  return request("/api/jlc/web/session/check", { method: "POST" });
+}
+
+/** Which additive startup DDL landed. A half-applied schema is otherwise silent,
+ *  and a feature depending on a missing column fails far from the cause. */
+export function getSchemaHealth(signal?: AbortSignal): Promise<{
+  ok: boolean;
+  statements: Record<string, string>;
+  failed: Record<string, string>;
+  note: string;
+}> {
+  return request("/api/health/schema", { signal });
 }

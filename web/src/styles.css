@@ -407,46 +407,6 @@ table.data {
 /* JLC stock table: fixed column widths (sum to 100%) so long descriptions,
    MPNs, or component names truncate with an ellipsis instead of forcing the
    table wider than the card — no horizontal scrollbar, no row-height change. */
-.jlc-stock-table {
-  table-layout: fixed;
-}
-
-.jlc-stock-table th,
-.jlc-stock-table td {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.jlc-stock-table th:nth-child(1),
-.jlc-stock-table td:nth-child(1) {
-  width: 15%;
-}
-
-.jlc-stock-table th:nth-child(2),
-.jlc-stock-table td:nth-child(2) {
-  width: 18%;
-}
-
-.jlc-stock-table th:nth-child(3),
-.jlc-stock-table td:nth-child(3) {
-  width: 9%;
-}
-
-.jlc-stock-table th:nth-child(4),
-.jlc-stock-table td:nth-child(4) {
-  width: 32%;
-}
-
-.jlc-stock-table th:nth-child(5),
-.jlc-stock-table td:nth-child(5) {
-  width: 10%;
-}
-
-.jlc-stock-table th:nth-child(6),
-.jlc-stock-table td:nth-child(6) {
-  width: 16%;
-}
 
 /* Browse (main components) table: same fixed-width-columns approach as
    .jlc-stock-table above. This table's container has no max-width cap (it
@@ -2723,3 +2683,237 @@ select.sel:focus {
   justify-content: flex-end;
   margin: 18px 0 0;
 }
+
+/* Post-factum run costs (RunCostsPanel). Fixed layouts with widths summing to
+   100% — the .data-fixed helper supplies the single-line ellipsis treatment,
+   these modifiers only carry column widths. */
+.run-actuals-table { table-layout: fixed; }
+.run-actuals-table th:nth-child(1), .run-actuals-table td:nth-child(1) { width: 17%; }
+.run-actuals-table th:nth-child(2), .run-actuals-table td:nth-child(2) { width: 14%; }
+.run-actuals-table th:nth-child(3), .run-actuals-table td:nth-child(3) { width: 12%; }
+.run-actuals-table th:nth-child(4), .run-actuals-table td:nth-child(4) { width: 15%; }
+.run-actuals-table th:nth-child(5), .run-actuals-table td:nth-child(5) { width: 13%; }
+.run-actuals-table th:nth-child(6), .run-actuals-table td:nth-child(6) { width: 13%; }
+.run-actuals-table th:nth-child(7), .run-actuals-table td:nth-child(7) { width: 16%; }
+
+.run-docs-table { table-layout: fixed; }
+.run-docs-table th:nth-child(1), .run-docs-table td:nth-child(1) { width: 20%; }
+.run-docs-table th:nth-child(2), .run-docs-table td:nth-child(2) { width: 22%; }
+.run-docs-table th:nth-child(3), .run-docs-table td:nth-child(3) { width: 12%; }
+.run-docs-table th:nth-child(4), .run-docs-table td:nth-child(4) { width: 7%; }
+.run-docs-table th:nth-child(5), .run-docs-table td:nth-child(5) { width: 14%; }
+.run-docs-table th:nth-child(6), .run-docs-table td:nth-child(6) { width: 14%; }
+.run-docs-table th:nth-child(7), .run-docs-table td:nth-child(7) { width: 11%; }
+
+.run-lines-table { table-layout: fixed; }
+.run-lines-table th:nth-child(1), .run-lines-table td:nth-child(1) { width: 11%; }
+.run-lines-table th:nth-child(2), .run-lines-table td:nth-child(2) { width: 22%; }
+.run-lines-table th:nth-child(3), .run-lines-table td:nth-child(3) { width: 19%; }
+.run-lines-table th:nth-child(4), .run-lines-table td:nth-child(4) { width: 8%; }
+.run-lines-table th:nth-child(5), .run-lines-table td:nth-child(5) { width: 10%; }
+.run-lines-table th:nth-child(6), .run-lines-table td:nth-child(6) { width: 12%; }
+.run-lines-table th:nth-child(7), .run-lines-table td:nth-child(7) { width: 11%; }
+.run-lines-table th:nth-child(8), .run-lines-table td:nth-child(8) { width: 7%; }
+
+.run-cons-table { table-layout: fixed; }
+.run-cons-table th:nth-child(1), .run-cons-table td:nth-child(1) { width: 30%; }
+.run-cons-table th:nth-child(2), .run-cons-table td:nth-child(2) { width: 12%; }
+.run-cons-table th:nth-child(3), .run-cons-table td:nth-child(3) { width: 18%; }
+.run-cons-table th:nth-child(4), .run-cons-table td:nth-child(4) { width: 16%; }
+.run-cons-table th:nth-child(5), .run-cons-table td:nth-child(5) { width: 14%; }
+.run-cons-table th:nth-child(6), .run-cons-table td:nth-child(6) { width: 10%; }
+
+/* Invoices view. Same discipline as the run-cost tables: fixed layout, widths
+   summing to 100%, .data-fixed supplying the single-line ellipsis treatment. */
+.invoice-sum-table { table-layout: fixed; }
+.invoice-sum-table th:nth-child(n), .invoice-sum-table td:nth-child(n) { width: 12.5%; }
+
+.invoice-pool-table { table-layout: fixed; }
+.invoice-pool-table th:nth-child(1), .invoice-pool-table td:nth-child(1) { width: 18%; }
+.invoice-pool-table th:nth-child(2), .invoice-pool-table td:nth-child(2) { width: 18%; }
+.invoice-pool-table th:nth-child(3), .invoice-pool-table td:nth-child(3) { width: 18%; }
+.invoice-pool-table th:nth-child(4), .invoice-pool-table td:nth-child(4) { width: 18%; }
+.invoice-pool-table th:nth-child(5), .invoice-pool-table td:nth-child(5) { width: 10%; }
+.invoice-pool-table th:nth-child(6), .invoice-pool-table td:nth-child(6) { width: 18%; }
+
+.invoice-runs-table { table-layout: fixed; }
+.invoice-runs-table th:nth-child(1), .invoice-runs-table td:nth-child(1) { width: 22%; }
+.invoice-runs-table th:nth-child(2), .invoice-runs-table td:nth-child(2) { width: 20%; }
+.invoice-runs-table th:nth-child(3), .invoice-runs-table td:nth-child(3) { width: 9%; }
+.invoice-runs-table th:nth-child(4), .invoice-runs-table td:nth-child(4) { width: 13%; }
+.invoice-runs-table th:nth-child(5), .invoice-runs-table td:nth-child(5) { width: 13%; }
+.invoice-runs-table th:nth-child(6), .invoice-runs-table td:nth-child(6) { width: 13%; }
+.invoice-runs-table th:nth-child(7), .invoice-runs-table td:nth-child(7) { width: 10%; }
+
+.invoices-table { table-layout: fixed; }
+.invoices-table th:nth-child(1), .invoices-table td:nth-child(1) { width: 10%; }
+.invoices-table th:nth-child(2), .invoices-table td:nth-child(2) { width: 13%; }
+.invoices-table th:nth-child(3), .invoices-table td:nth-child(3) { width: 18%; }
+.invoices-table th:nth-child(4), .invoices-table td:nth-child(4) { width: 13%; }
+.invoices-table th:nth-child(5), .invoices-table td:nth-child(5) { width: 24%; }
+.invoices-table th:nth-child(6), .invoices-table td:nth-child(6) { width: 15%; }
+.data.invoices-table th:nth-child(7), .data.invoices-table td:nth-child(7) { width: 7%; }
+
+/* the positions table spans every column — opt this one cell out of the
+   single-line clamp so the nested table renders at full height */
+.data.invoices-table td.row-expand {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  background: var(--surface-2);
+}
+
+.invoices-table tr.row-open > td { background: var(--accent-soft); }
+
+.invoice-lines-table { table-layout: fixed; }
+.invoice-lines-table th:nth-child(1), .invoice-lines-table td:nth-child(1) { width: 8%; }
+.invoice-lines-table th:nth-child(2), .invoice-lines-table td:nth-child(2) { width: 26%; }
+.invoice-lines-table th:nth-child(3), .invoice-lines-table td:nth-child(3) { width: 7%; }
+.invoice-lines-table th:nth-child(4), .invoice-lines-table td:nth-child(4) { width: 8%; }
+.invoice-lines-table th:nth-child(5), .invoice-lines-table td:nth-child(5) { width: 15%; }
+.invoice-lines-table th:nth-child(6), .invoice-lines-table td:nth-child(6) { width: 17%; }
+.invoice-lines-table th:nth-child(7), .invoice-lines-table td:nth-child(7) { width: 11%; }
+.data.invoice-lines-table th:nth-child(8), .data.invoice-lines-table td:nth-child(8) { width: 8%; }
+
+.invoice-new-lines-table { table-layout: fixed; }
+.invoice-new-lines-table th:nth-child(1), .invoice-new-lines-table td:nth-child(1) { width: 12%; }
+.invoice-new-lines-table th:nth-child(2), .invoice-new-lines-table td:nth-child(2) { width: 32%; }
+.invoice-new-lines-table th:nth-child(3), .invoice-new-lines-table td:nth-child(3) { width: 18%; }
+.invoice-new-lines-table th:nth-child(4), .invoice-new-lines-table td:nth-child(4) { width: 10%; }
+.invoice-new-lines-table th:nth-child(5), .invoice-new-lines-table td:nth-child(5) { width: 12%; }
+.invoice-new-lines-table th:nth-child(6), .invoice-new-lines-table td:nth-child(6) { width: 12%; }
+.data.invoice-new-lines-table th:nth-child(7), .data.invoice-new-lines-table td:nth-child(7) { width: 4%; }
+
+.split-rows-table { table-layout: fixed; }
+.split-rows-table th:nth-child(1), .split-rows-table td:nth-child(1) { width: 20%; }
+.split-rows-table th:nth-child(2), .split-rows-table td:nth-child(2) { width: 11%; }
+.split-rows-table th:nth-child(3), .split-rows-table td:nth-child(3) { width: 7%; }
+.split-rows-table th:nth-child(4), .split-rows-table td:nth-child(4) { width: 14%; }
+.split-rows-table th:nth-child(5), .split-rows-table td:nth-child(5) { width: 11%; }
+.split-rows-table th:nth-child(6), .split-rows-table td:nth-child(6) { width: 19%; }
+.split-rows-table th:nth-child(7), .split-rows-table td:nth-child(7) { width: 14%; }
+.data.split-rows-table th:nth-child(8), .data.split-rows-table td:nth-child(8) { width: 4%; }
+
+/* the split editor needs room for six columns — the default modal is 440px */
+.modal-card-wide { width: min(1000px, 100%); }
+
+/* depth of a position in its document's split tree */
+.tree-indent { display: inline-block; }
+.tree-indent-1 { width: 14px; }
+.tree-indent-2 { width: 28px; }
+.tree-indent-3 { width: 42px; }
+
+/* Parts stock: the cost pool and JLC's physical stock on one row. Fixed layout,
+   widths summing to 100%; .data-fixed supplies the ellipsis treatment. */
+.parts-stock-table { table-layout: fixed; }
+.parts-stock-table th:nth-child(1), .parts-stock-table td:nth-child(1) { width: 16%; }
+.parts-stock-table th:nth-child(2), .parts-stock-table td:nth-child(2) { width: 9%; }
+.parts-stock-table th:nth-child(3), .parts-stock-table td:nth-child(3) { width: 17%; }
+.parts-stock-table th:nth-child(4), .parts-stock-table td:nth-child(4) { width: 9%; }
+.parts-stock-table th:nth-child(5), .parts-stock-table td:nth-child(5) { width: 8%; }
+.parts-stock-table th:nth-child(6), .parts-stock-table td:nth-child(6) { width: 8%; }
+.parts-stock-table th:nth-child(7), .parts-stock-table td:nth-child(7) { width: 8%; }
+.parts-stock-table th:nth-child(8), .parts-stock-table td:nth-child(8) { width: 8%; }
+.parts-stock-table th:nth-child(9), .parts-stock-table td:nth-child(9) { width: 9%; }
+.parts-stock-table th:nth-child(10), .parts-stock-table td:nth-child(10) { width: 8%; }
+
+/* Invoices: the run cost/income table now carries the sale side (9 columns). */
+.invoice-runs-table th:nth-child(1), .invoice-runs-table td:nth-child(1) { width: 17%; }
+.invoice-runs-table th:nth-child(2), .invoice-runs-table td:nth-child(2) { width: 15%; }
+.invoice-runs-table th:nth-child(3), .invoice-runs-table td:nth-child(3) { width: 7%; }
+.invoice-runs-table th:nth-child(4), .invoice-runs-table td:nth-child(4) { width: 11%; }
+.invoice-runs-table th:nth-child(5), .invoice-runs-table td:nth-child(5) { width: 9%; }
+.invoice-runs-table th:nth-child(6), .invoice-runs-table td:nth-child(6) { width: 11%; }
+.invoice-runs-table th:nth-child(7), .invoice-runs-table td:nth-child(7) { width: 11%; }
+.invoice-runs-table th:nth-child(8), .invoice-runs-table td:nth-child(8) { width: 11%; }
+.invoice-runs-table th:nth-child(9), .invoice-runs-table td:nth-child(9) { width: 8%; }
+
+/* the order/price editor needs more room than the 440px default, less than the split editor */
+.modal-card-mid { width: min(720px, 100%); }
+
+.order-preview-table { table-layout: fixed; }
+.order-preview-table th:nth-child(n), .order-preview-table td:nth-child(n) { width: 16.66%; }
+
+/* ---- part stock ledger (stock over time, Parts stock drill-down) ---- */
+.ledger-row { cursor: pointer; }
+.ledger-row:hover td { background: var(--surface-2); }
+.ledger-caret { display: inline-block; width: 1em; color: var(--muted); font-size: 0.8em; }
+/* the expansion opts out of the single-line clamp — it is a full-width panel */
+.parts-stock-table td.ledger-cell {
+  white-space: normal;
+  overflow: visible;
+  width: auto;
+  padding: 10px 14px 14px;
+  background: var(--surface-2);
+}
+.ledger-panel { display: flex; flex-direction: column; gap: 10px; }
+.ledger-chart { width: 100%; height: auto; display: block; }
+.ledger-line { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+.ledger-zero { stroke: var(--line); stroke-width: 1; }
+.ledger-grid { stroke: var(--line); stroke-width: 0.5; stroke-dasharray: 2 4; }
+.ledger-tick { fill: var(--muted); font-size: 10px; font-family: var(--sans); }
+.ledger-dot { fill: var(--accent); }
+.ledger-dot.short { fill: var(--err); }
+.ledger-short-row td { background: var(--err-soft); }
+.ledger-table { table-layout: fixed; }
+.ledger-table th:nth-child(1), .ledger-table td:nth-child(1) { width: 9%; }
+.ledger-table th:nth-child(2), .ledger-table td:nth-child(2) { width: 8%; }
+.ledger-table th:nth-child(3), .ledger-table td:nth-child(3) { width: 35%; }
+.ledger-table th:nth-child(4), .ledger-table td:nth-child(4) { width: 8%; }
+.ledger-table th:nth-child(5), .ledger-table td:nth-child(5) { width: 9%; }
+.ledger-table th:nth-child(6), .ledger-table td:nth-child(6) { width: 11%; }
+.ledger-table th:nth-child(7), .ledger-table td:nth-child(7) { width: 10%; }
+.ledger-table th:nth-child(8), .ledger-table td:nth-child(8) { width: 10%; }
+
+/* ---- production dashboard (Invoices view) ---- */
+.dash-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 10px 0 16px;
+}
+.dash-bars { display: flex; flex-direction: column; gap: 6px; }
+.dash-bar-row {
+  display: grid;
+  grid-template-columns: 180px 1fr 230px;
+  gap: 10px;
+  align-items: center;
+}
+.dash-bar-label {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.85em; color: var(--muted);
+}
+.dash-bar-track { position: relative; height: 16px; background: var(--surface-2); border-radius: var(--radius); overflow: hidden; }
+.dash-bar { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--radius); }
+.dash-bar.rev { background: var(--accent-soft); }
+.dash-bar.cost { background: var(--copper); opacity: 0.75; }
+.dash-bar-nums { font-size: 0.85em; white-space: nowrap; text-align: right; }
+.dash-margin { color: var(--ok); margin-left: 4px; }
+.dash-legend { font-size: 0.8em; margin-top: 6px; }
+.dash-missing { margin-top: 14px; }
+.dash-missing ul { margin: 6px 0 0 18px; }
+.dash-missing li { margin: 3px 0; }
+
+/* run view: plan-vs-billed per production step */
+.run-steps-table { table-layout: fixed; }
+.run-steps-table th:nth-child(1), .run-steps-table td:nth-child(1) { width: 22%; }
+.run-steps-table th:nth-child(2), .run-steps-table td:nth-child(2) { width: 12%; }
+.run-steps-table th:nth-child(3), .run-steps-table td:nth-child(3) { width: 12%; }
+.run-steps-table th:nth-child(4), .run-steps-table td:nth-child(4) { width: 12%; }
+.run-steps-table th:nth-child(5), .run-steps-table td:nth-child(5) { width: 42%; }
+.run-steps-table .pill { margin-right: 4px; }
+
+/* The write journal: what moved money and the undo button. Fixed layout with
+   widths summing to 100%; .data-fixed supplies the ellipsis treatment. The undo
+   column is widest because it carries a refusal message naming the rows that
+   block the reversal — truncating that would hide the only actionable part. */
+.write-log-table { table-layout: fixed; }
+.write-log-table th:nth-child(1), .write-log-table td:nth-child(1) { width: 6%; }
+.write-log-table th:nth-child(2), .write-log-table td:nth-child(2) { width: 18%; }
+.write-log-table th:nth-child(3), .write-log-table td:nth-child(3) { width: 20%; }
+.write-log-table th:nth-child(4), .write-log-table td:nth-child(4) { width: 16%; }
+.write-log-table th:nth-child(5), .write-log-table td:nth-child(5) { width: 14%; }
+.write-log-table th:nth-child(6), .write-log-table td:nth-child(6) { width: 26%; }
+/* The refusal text is the exception the table rule allows: it must be readable
+   in full, so this one cell opts out of the single-line clamp. */
+.write-log-table td:nth-child(6) .muted.dim { white-space: normal; overflow: visible; }

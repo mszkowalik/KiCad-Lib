@@ -83,6 +83,14 @@ class Settings(BaseSettings):
     price_ladder_max_age_days: int = 30
     price_ladder_autofetch: bool = True
 
+    # Touch the stored jlcpcb.com browser session this often (minutes; 0 = off).
+    # The session's short-lived pieces — `secretkey` (25 min) and `XSRF-TOKEN`
+    # (Max-Age 1800) — are already renewed by the client itself, so this exists
+    # for the session handle, whose real lifetime JLC does not publish. If they
+    # expire on inactivity a periodic touch keeps it alive indefinitely; if the cap
+    # is absolute it cannot, but `died_at - updated_at` then measures it exactly.
+    jlc_session_keepalive_min: float = 20.0
+
     # JLCPCB OpenAPI (https://api.jlcpcb.com — apply for access, create an
     # app). Enables the private parts library (consigned stock) integration.
     jlc_app_id: str = ""

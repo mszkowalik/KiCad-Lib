@@ -90,6 +90,17 @@ a component. When you add an endpoint:
   hot-reload without a restart.
 - When a non-obvious frontend convention emerges, record it here.
 
+### Attachments open in a viewer, never as a download
+
+Link file attachments through `viewkind.fileHref(path, filename)` with
+`target="_blank"`: it routes PDFs to the browser's own viewer and CAD/mesh/image
+formats to the `/view` page, and only falls back to a plain link for formats
+nothing can render. For API-served bytes, pass the same-origin PATH (e.g.
+`attachmentPath(id)` → `/api/run-attachments/3?inline=true`), not an absolute URL —
+`fileHref` needs to recognise it as ours. The `inline=true` flag makes the API send
+`Content-Disposition: inline`; without it the browser saves the file to Downloads
+instead of showing it (user preference, 2026-07-27).
+
 ### No native browser popups — use the in-app dialog system
 
 Never call `window.confirm` / `window.prompt` / `window.alert` (or the bare
@@ -166,3 +177,25 @@ calls `reattach()` → `attachJaravisRun`, which replays the run's events for li
 progress and then reloads the stored messages as the source of truth (reload,
 don't append, to avoid duplicating the reply). `activeIdRef` mirrors `activeId`
 so these async callbacks ignore results after the user switches conversations.
+
+### The invoice line "charge to" cell mirrors `line_destination`, never re-derives it
+
+The destination cell in the Invoices line tree must cover every branch the backend's
+`run_actuals.line_destination` can take: header → "shares below", pooled part →
+"pool", **spread carrier (`allocate` by_value/by_qty with no run/project) → "pool
+(spread)"**, excluded → the select's "nobody, on purpose", else the run/project
+select. A missing branch falls through to the select and reads "— nobody —" for
+money that IS charged (a landed-cost transport line spread into part prices looked
+unassigned, user report 2026-07-28). When a new `allocate` value or destination
+appears in the backend, add its branch here in the same change.
+
+### The "Planned as" column is the step EDITOR, not a label
+
+Every non-header invoice line renders a step select (catalog from
+`GET /api/cost-steps`, grouped by stage) writing `plan_key` directly; the
+"link to a specific plan item…" option opens the old PlanLinkDialog for
+free-form `c<id>` links. The split dialog carries the same select per row, and
+picking a step back-fills the row's kind from the catalog default. The run
+panel's "Where the money goes" table shows per-step plan-vs-billed with
+supplier chips whose data comes from `RunActuals.steps[].sources` — computed
+server-side in `run_actuals`, never re-derived in the browser.

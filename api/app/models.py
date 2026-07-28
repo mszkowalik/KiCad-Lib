@@ -23,6 +23,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -447,6 +448,73 @@ class AuditLog(Base):
     details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
+class WriteBatch(Base):
+    """One reversible unit of money movement.
+
+    The audit log records that something happened; this records enough to UNDO
+    it. That distinction is the whole reason eleven one-off scripts and a run of
+    raw `UPDATE`s were the only way to correct the 2026-07 backfill: the
+    appliers were careful, gated and idempotent, and had no way back.
+
+    A batch wraps ONE endpoint call. `identity_before`/`identity_after` hold
+    `jlc_apply.identity_snapshot`, so a reversal can re-assert the register
+    against the state this batch actually started from rather than against zero —
+    `_assert_identities` compares absolutely (`jlc_apply.py:67`), which is right
+    going forwards and wrong for an undo, because a pre-existing gap would
+    otherwise make every batch permanently irreversible.
+
+    A reversal is itself an ordinary batch, so it is itself reversible.
+    """
+
+    __tablename__ = "write_batches"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # jlc.parts.import | jlc.mfg.import | jlc.decision.apply | draws.void |
+    # doc.create | doc.classify | reverse | ...
+    kind: Mapped[str] = mapped_column(String(40))
+    source_ref: Mapped[str] = mapped_column(String(200), default="")  # W… / POB… / SMT… / doc:14
+    actor: Mapped[str] = mapped_column(String(100), default="")
+    summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    identity_before: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    identity_after: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reversed_by_batch_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+
+    rows: Mapped[list["WriteBatchRow"]] = relationship(
+        back_populates="batch", cascade="all, delete-orphan")
+
+    __table_args__ = (Index("ix_write_batch_kind", "kind", "created_at"),)
+
+
+class WriteBatchRow(Base):
+    """One row a batch touched, with enough of its prior state to put it back.
+
+    `after_hash` is the guard that makes an undo honest. Before reversing, every
+    row is re-hashed; a mismatch means someone edited it since, and the reversal
+    REFUSES and names the row. Silently discarding a later hand correction to
+    satisfy an undo is exactly how the `C2837531` substitution link was destroyed
+    twice during the backfill.
+    """
+
+    __tablename__ = "write_batch_rows"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("write_batches.id", ondelete="CASCADE"))
+    table_name: Mapped[str] = mapped_column(String(60))
+    row_id: Mapped[int] = mapped_column(Integer)
+    op: Mapped[str] = mapped_column(String(10))  # insert | update | delete
+    before: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # NULL for insert
+    after_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)  # NULL for delete
+
+    batch: Mapped[WriteBatch] = relationship(back_populates="rows")
+
+    __table_args__ = (
+        Index("ix_wbr_batch", "batch_id"),
+        Index("ix_wbr_row", "table_name", "row_id"),
+    )
+
+
 class ImportRun(Base):
     __tablename__ = "import_runs"
 
@@ -538,6 +606,193 @@ class JlcStockItem(Base):
     component_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
     raw: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ComponentConsumptionLot(Base):
+    """WHICH purchase a draw actually consumed, and at what that lot really cost.
+
+    One `ComponentConsumption` may have several of these — a draw spanning two
+    lots splits, which is exactly what produces the "one averaged row / N flat
+    rows" view the user asked for. The parent's `unit_cost_usd` is the
+    quantity-weighted average of its children, so the two views always total the
+    same figure and switching the display can never change a number.
+
+    **The lot itself is NOT a new table.** A lot is already a row: a leaf
+    `run_cost_lines` entry with `kind='part'` and no `run_id` — precisely the set
+    `run_actuals._pool_events` already treats as a purchase. Mirroring those into
+    a parallel table would create a second source of truth free to drift from the
+    money rows, and would break the documented invariant that `_pool_events` is
+    the ONE source of stock events. So lots are made first-class by being *bound
+    to*, not copied.
+
+    `lot_line_id` and `lot_adjustment_id` are alternatives: at most one is set,
+    and NEITHER being set means the draw could not be attributed to any purchase
+    (an unallocated slice, priced from the pool average as before). The
+    adjustment pointer exists because a positive `opening_balance` adjustment
+    creates real priced stock with no purchase line behind it — without it, that
+    stock could never be drawn from and every such draw would be unallocated.
+
+    `source` records HOW the binding was decided, following the
+    `ComponentConsumption.basis` precedent so an inference can never be mistaken
+    for a fact:
+      `reported`      — the supplier said so (JLC `presaleGoodsKeyId`)
+      `fifo`          — inferred, oldest eligible lot first
+      `manual`        — a human pinned it
+      `unallocated`   — no lot could be found; priced from the average
+      `legacy_average`— a pre-lot draw, carrying its original frozen unit cost
+    """
+
+    __tablename__ = "component_consumption_lots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    consumption_id: Mapped[int] = mapped_column(
+        ForeignKey("component_consumptions.id", ondelete="CASCADE")
+    )
+    lot_line_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    lot_adjustment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    qty: Mapped[float] = mapped_column(Float, default=0.0)
+    # The LOT's landed unit cost, snapshotted at bind time — never JLC's quoted
+    # component price, which excludes the sourcing fee on `buy` sub-orders.
+    unit_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    source: Mapped[str] = mapped_column(String(20), default="fifo")
+    ext_ref: Mapped[str] = mapped_column(String(120), default="")  # presaleGoodsKeyId etc.
+    note: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        Index("ix_cons_lot_consumption", "consumption_id"),
+        Index("ix_cons_lot_line", "lot_line_id"),
+        Index("ix_cons_lot_adjustment", "lot_adjustment_id"),
+    )
+
+
+class JlcImport(Base):
+    """A fetched JLC payload, staged before anything is decided or written.
+
+    Exists so the decision UI is not a live scraper: computing proposals for 35
+    invoices means re-deriving panel factors and run candidates on every page
+    load, and re-fetching them from JLC would take a minute and depend on a
+    session that may be dead. The payload is kept verbatim — JLC's shape is
+    undocumented and unversioned, so the raw response IS the evidence, exactly
+    as `JlcStockItem.raw` is.
+
+    `status` is the decision state of the FETCH, not of the money:
+      `staged`   — fetched, nothing decided
+      `imported` — a cost document was created from it
+      `skipped`  — deliberately not imported
+    Keyed `(kind, external_id)` so re-syncing refreshes a row rather than
+    appending one.
+    """
+
+    __tablename__ = "jlc_imports"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), default="assembly")  # assembly | parts
+    external_id: Mapped[str] = mapped_column(String(100), default="")  # W… / POB…
+    invoice_no: Mapped[str] = mapped_column(String(100), default="")
+    doc_date: Mapped[str] = mapped_column(String(20), default="")
+    total_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    presale_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="staged")
+    document_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Panelisation per smtOrderCode, from `orderCenter/selectPersonOrder`. Cached
+    # here because it lives on a DIFFERENT endpoint from the invoice, and the
+    # decision queue would otherwise make one extra round trip per batch on every
+    # page load. Shape: {smtOrderCode: {panel_factor, panels, devices, pcb_order}}.
+    panel_info: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # JLC's own per-(order, part) BOM result, from `smtOrder/getSmtOrderDetail`.
+    # It carries `componentSource` — `preSale` (drawn from YOUR consigned stock),
+    # `shop` (JLC supplied and charged for it) or `preSaleAndShop`. Without it a
+    # draw silently assumes every part came out of the pool, which is how parts
+    # JLC supplied itself were charged to the pool twice. Shape:
+    # {smtOrderCode: [{lcsc, mpn, qty, componentSource, ...}]}.
+    bom_info: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("kind", "external_id", name="uq_jlc_import_source"),
+    )
+
+
+class JlcOrderDecision(Base):
+    """What the operator decided about ONE JLC assembly order.
+
+    Separate from the money it moves, and keyed on the supplier's own
+    `smtOrderCode`, so the decision survives re-import, re-fetch and document
+    deletion — decide once, and every later invoice or credit note for the same
+    order self-attributes.
+
+    `outcome`:
+      `link_run`  — charge it to `run_id`
+      `external`  — a project outside this platform: stock movement only, no owner
+      `pending`   — seen, not yet decided
+
+    `panel_factor` is stored because it is DERIVED (from BOM votes) rather than
+    given: JLC's own quantity is panels when the order was panelised and there is
+    no field saying so, so the factor is a conclusion worth keeping alongside the
+    evidence that produced it.
+    """
+
+    __tablename__ = "jlc_order_decisions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    smt_order_code: Mapped[str] = mapped_column(String(60), default="")
+    batch_num: Mapped[str] = mapped_column(String(60), default="")
+    outcome: Mapped[str] = mapped_column(String(20), default="pending")
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("production_runs.id"), nullable=True)
+    panel_factor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    confidence: Mapped[str] = mapped_column(String(20), default="")  # what the robot proposed
+    decided_by: Mapped[str] = mapped_column(String(100), default="")
+    note: Mapped[str] = mapped_column(String(500), default="")
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("smt_order_code", name="uq_jlc_decision_order"),
+    )
+
+
+class JlcWebSession(Base):
+    """Browser session for JLCPCB's WEB API — a SINGLETON row (id=1).
+
+    Separate from the JOP credentials in `settings` because it is a different
+    authority with a different lifetime: the official partner API has no PCBA
+    surface at all, so per-assembly-order component consumption is reachable
+    only through the endpoints the user-center SPA calls, which authenticate
+    with real browser cookies (see `services/jlc_web.py`).
+
+    `cookies_enc` holds the whole pasted blob encrypted (crypto.py Fernet,
+    same as `Project.git_token_enc`) rather than parsed columns, because JLC
+    can add cookies at any time and a session is only useful intact. It is
+    decryptable — the client needs the cleartext to send — but never leaves
+    the API: responses expose only whether a session is set and when it last
+    worked.
+
+    `last_ok_at` is the honest liveness signal. Cookies present is NOT the
+    same as cookies working: the session dies server-side (HTTP 460) with no
+    local warning, so the UI must distinguish "configured" from "verified".
+    """
+
+    __tablename__ = "jlc_web_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cookies_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    label: Mapped[str] = mapped_column(String(200), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # When the session was first observed DEAD, and what JLC said. Recorded
+    # because the session's real lifetime is unknown and worth learning: the
+    # 30-minute figure everyone assumes belongs to `secretkey` and `XSRF-TOKEN`,
+    # both of which this client already renews by itself. One session was measured
+    # alive for 3.15 hours. `died_at - updated_at` is the only way to find out
+    # whether JLC expires on IDLE (in which case the keep-alive below makes the
+    # problem disappear) or on an ABSOLUTE cap (in which case nothing local can).
+    died_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str] = mapped_column(String(300), default="")
+    # Successful keep-alive touches on the CURRENT session, so a long-lived one is
+    # visible as evidence rather than anecdote.
+    keepalive_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
 # ----------------------------------------------------------- exchange rates
@@ -733,6 +988,11 @@ class ProjectCostItem(Base):
     currency: Mapped[str] = mapped_column(String(10), default="USD")
     company: Mapped[str] = mapped_column(String(200), default="")
     mpn: Mapped[str] = mapped_column(String(200), default="")
+    # Production-step identity from services/cost_steps.py ("pcba:setup",
+    # "final:device", ...). An invoice line billed under the same step key IS
+    # this item's actual — the plan-vs-actual match keys on it, never on labels.
+    # Empty = a free-form item matched only by explicit `c<id>` links.
+    step_key: Mapped[str] = mapped_column(String(40), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -777,6 +1037,30 @@ class ProductionRun(Base):
     notes: Mapped[str] = mapped_column(Text, default="")
     frozen: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     overrides: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # The firmware+steps bundle this batch is programmed with. Soft pointer
+    # (like snapshot_id): a ProgrammingRun pins its own release_version_id, so
+    # re-assigning the batch never rewrites what was already programmed.
+    release_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # --- baseline pinning: without these, a later cost edit or a qty change
+    # silently rewrites what a historical run "expected". All soft pointers.
+    plan_revision_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    plan_frozen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    plan_qty: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Units that actually passed. Actual per-device cost divides by THIS, not by
+    # the planned qty; can be filled from ProgrammingRun outcomes.
+    qty_good: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # --- the SALE side, so income and margin sit next to cost.
+    # A price per device, not a batch total: the batch total is derived, and a
+    # per-device figure survives a quantity correction. `sale_currency` empty =
+    # the project's display currency. `qty_sold` is what the customer was billed
+    # for, which is not always what passed test (samples, held-back stock), so
+    # revenue divides by it rather than by qty_good.
+    sale_unit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sale_currency: Mapped[str] = mapped_column(String(10), default="")
+    qty_sold: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    customer: Mapped[str] = mapped_column(String(200), default="")
+    order_ref: Mapped[str] = mapped_column(String(200), default="")  # customer's PO / order no
+    order_date: Mapped[str] = mapped_column(String(20), default="")  # ISO date, like run_date
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     attachments: Mapped[list["RunAttachment"]] = relationship(
@@ -828,24 +1112,39 @@ class ProductionFile(Base):
 
 
 class RunAttachment(Base):
-    """File attached to a production run (serial-number lists, invoices,
-    test reports). Bytes live in MinIO under the stored key."""
+    """File attached to a production run OR to a supplier document (serial-number
+    lists, scanned invoices, test reports). Bytes live in MinIO under the stored key.
+
+    Exactly one owner is set. A document attachment must NOT be stored under the
+    run's MinIO prefix even when the document names a run: `delete_run` wipes that
+    prefix, and a financial record's evidence has to outlive the run — the same
+    reason `RunCostDocument` is owned by the project rather than the run.
+    """
 
     __tablename__ = "run_attachments"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    run_id: Mapped[int] = mapped_column(ForeignKey("production_runs.id"))
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("production_runs.id"), nullable=True)
+    # Soft pointer, mirroring `RunCostDocument.attachment_id` in the other direction.
+    document_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     filename: Mapped[str] = mapped_column(String(300))
     content_type: Mapped[str] = mapped_column(String(100), default="application/octet-stream")
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)
     minio_key: Mapped[str] = mapped_column(String(500))
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
-    run: Mapped[ProductionRun] = relationship(back_populates="attachments")
+    run: Mapped[ProductionRun | None] = relationship(back_populates="attachments")
 
 
 class RunDevice(Base):
-    """Structured serial-number registry: one row per produced device."""
+    """Structured serial-number registry: one row per produced device.
+
+    This is the batch's PLANNED list — serials entered by hand for a run. It is
+    deliberately NOT the flashing identity: a device that fails programming has
+    no serial yet, and the same physical unit can be reprogrammed under another
+    run. Reality is recorded by DeviceUnit (keyed by MAC) + ProgrammingRun; the
+    two are reconciled by serial for a per-batch coverage report.
+    """
 
     __tablename__ = "run_devices"
 
@@ -858,3 +1157,509 @@ class RunDevice(Base):
     run: Mapped[ProductionRun] = relationship(back_populates="devices")
 
     __table_args__ = (UniqueConstraint("run_id", "serial", name="uq_run_serial"),)
+
+
+# ------------------------------------------- production cost actuals (post factum)
+class RunCostDocument(Base):
+    """A supplier document whose cost is split across production runs —
+    invoice, proforma, receipt or credit note.
+
+    Owned by the PROJECT, not the run (`run_id` is optional), for three
+    reasons: an invoice can cover several runs or stock for later; costs like
+    certification or tooling belong to no run at all; and a financial record
+    must survive `delete_run`, which hard-deletes and wipes its MinIO prefix.
+
+    FX is pinned at entry (`fx_rate_usd`, plus the converted `display_amount`)
+    because `fx.convert` pivots through USD and `Project.display_currency` is
+    editable — and because historical invoices predate the rate history
+    entirely (it starts 2026-07-19).
+    """
+
+    __tablename__ = "run_cost_documents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # NULL = a SHARED document that belongs to no single project: one JLC parts
+    # invoice routinely covers several products (e.g. Dongle + Aqua), and the
+    # components land in a company-wide pool that every project draws from.
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("production_runs.id"), nullable=True)
+    doc_type: Mapped[str] = mapped_column(String(20), default="invoice")
+    supplier: Mapped[str] = mapped_column(String(200), default="")
+    doc_number: Mapped[str] = mapped_column(String(100), default="")
+    # Supplier's own order id (JLC "Batch No" POB0…) — the idempotency key on import.
+    external_id: Mapped[str] = mapped_column(String(100), default="")
+    doc_date: Mapped[str] = mapped_column(String(20), default="")  # ISO date, like run_date
+    paid_at: Mapped[str] = mapped_column(String(20), default="")
+    currency: Mapped[str] = mapped_column(String(10), default="USD")
+    fx_rate_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fx_rate_display: Mapped[float | None] = mapped_column(Float, nullable=True)
+    display_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tax_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    attachment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr → run_attachments
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    lines: Mapped[list["RunCostLine"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan", order_by="RunCostLine.position"
+    )
+
+    __table_args__ = (
+        Index("ix_run_cost_doc_project", "project_id"),
+        Index("ix_run_cost_doc_run", "run_id"),
+        # Same supplier invoice number twice in a project is a duplicate entry.
+        Index(
+            "uq_run_cost_doc_number", "project_id", "supplier", "doc_number",
+            unique=True, postgresql_where=text("doc_number <> ''"),
+        ),
+    )
+
+
+class RunCostLine(Base):
+    """One actual cost line off a supplier document.
+
+    `kind="part"` with no `run_id` means the line feeds the **component cost
+    pool** — runs draw from it via ComponentConsumption at a moving average.
+    Every other kind (fab, assembly, freight, tooling, …) is a direct cost of
+    its run. There is deliberately no separate purchases table: the pool IS the
+    set of part lines.
+
+    Rows are never deleted — `voided_at` retires one and `superseded_by_id`
+    chains a correction, so a money figure always has a visible history.
+
+    Lines form a TREE via `parent_line_id`, which is how one invoice position is
+    split. Two uses, one mechanism: shares of a position charged to different
+    runs, and a supplier's own sub-breakdown (JLC prints one "SMT Assembly"
+    figure whose stencil / manual-assembly / surcharge components appear only on
+    their website). **A line with live children is a HEADER worth zero** — only
+    leaves carry money, or the same amount would be counted twice. That rule
+    lives in `run_actuals.header_ids` and nowhere else.
+    """
+
+    __tablename__ = "run_cost_lines"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("run_cost_documents.id"))
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("production_runs.id"), nullable=True)
+    # A share destined for a project but not yet for a specific run (an Aqua
+    # portion of a shared freight line, tooling that predates its batch). Without
+    # it such a remainder could only be described in `notes` — i.e. lost.
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    # Soft pointer, deliberately not a FK: `RunCostDocument.lines` cascades
+    # delete-orphan, and a self-FK inside a cascaded collection makes delete
+    # ordering fragile. Same choice as `superseded_by_id` below.
+    parent_line_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    # part|fab|assembly|tooling|freight|duty|tax|rework|packaging|service|other
+    kind: Mapped[str] = mapped_column(String(20), default="part")
+    basis: Mapped[str] = mapped_column(String(20), default="per_run")  # per_device|per_run
+    label: Mapped[str] = mapped_column(String(300), default="")
+    qty: Mapped[float] = mapped_column(Float, default=1.0)
+    unit_price: Mapped[float] = mapped_column(Float, default=0.0)  # NET, in `currency`
+    currency: Mapped[str] = mapped_column(String(10), default="")  # "" inherits the document
+    # none|by_value|by_qty — a freight/duty line spread over the part lines of
+    # the same document (derived on read; the carrier row is never consumed).
+    allocate: Mapped[str] = mapped_column(String(20), default="none")
+    # WHY this line is charged to nobody. `allocate='excluded'` is a legal bucket
+    # in the conservation identity, so an exclusion is invisible to every check
+    # the platform has: all 115 imported manufacturing lines were once excluded —
+    # $14,443 charged to nobody — while the register read `gap_usd 0.0272`,
+    # `pool balanced`, `0 issues`. Naming the reason is what makes the bucket
+    # checkable. Closed list, enforced in the router:
+    #   prepaid_components | reclaimable_vat | external_project |
+    #   cancelled_order_fee | dev_bench | duplicate_superseded |
+    #   legacy_unstated (backfill only) | other
+    exclude_reason: Mapped[str] = mapped_column(String(40), default="")
+    # The supplier's own identity for this line — for JLC, the `smtOrderCode` the
+    # charge belongs to (`jlc_import.plan_manufacturing_document` computes it and
+    # nothing stored it, so the line -> order join survived only inside `label`
+    # text and had to be reverse-engineered by `fix_alloc.py` and
+    # `mark_external.py`). With it, a decision reclassifies its own lines by key.
+    external_line_id: Mapped[str] = mapped_column(String(120), default="")
+    component_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    mpn: Mapped[str] = mapped_column(String(200), default="")  # JLC invoices carry MPN, not LCSC
+    lcsc: Mapped[str] = mapped_column(String(50), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    # Link to the PLANNED line this is the actual for; "" = a genuine late position.
+    plan_key: Mapped[str] = mapped_column(String(40), default="")
+    plan_kind: Mapped[str] = mapped_column(String(10), default="")  # bom|extra|cost|""
+    plan_ref: Mapped[str] = mapped_column(String(300), default="")  # stable natural key
+    # The supplier's own per-lot key (JLC `presaleGoodsKeyId`). A LOT IS THIS
+    # ROW — a leaf part line with no run — so naming it here makes lots
+    # first-class without a parallel table that could drift from the money.
+    # Non-empty means a draw can cite WHICH purchase it consumed as reported
+    # fact; empty means lot assignment can only ever be inferred (FIFO).
+    lot_ref: Mapped[str] = mapped_column(String(120), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    ocr_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)  # importer provenance
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    superseded_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    document: Mapped[RunCostDocument] = relationship(back_populates="lines")
+
+    __table_args__ = (
+        Index("ix_run_cost_line_run", "run_id"),
+        Index("ix_run_cost_line_component", "component_id"),
+        Index("ix_run_cost_line_kind", "kind"),
+        Index("ix_run_cost_line_parent", "parent_line_id"),
+    )
+
+
+class ComponentConsumption(Base):
+    """What a production run drew from the component cost pool.
+
+    The point is SPLITTING INVOICE COST, not tracking inventory (user decision
+    2026-07-27) — quantities exist to apportion money. `basis` records how the
+    quantity was arrived at so an estimate can never be read as a measurement:
+
+    - `measured`   — from JLC stock deltas between syncs
+    - `bom`        — BOM qty x units built
+    - `allocated`  — historical backfill, anchored on purchases minus current stock
+    - `manual`     — typed
+
+    `unit_cost_usd` is the moving average SNAPSHOTTED here, so a purchase
+    entered later (backfill inserts older rows) can never rewrite a closed run.
+    The average itself is replayed in event-date order, never insertion order.
+    """
+
+    __tablename__ = "component_consumptions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("production_runs.id"))
+    component_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    mpn: Mapped[str] = mapped_column(String(200), default="")
+    lcsc: Mapped[str] = mapped_column(String(50), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0.0)
+    unit_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    basis: Mapped[str] = mapped_column(String(20), default="bom")
+    # Provenance of an IMPORTED draw, empty on every hand-made row. Backed by the
+    # partial unique index `uq_consumption_import`, which is the FIRST uniqueness
+    # this table has ever had — re-running an import becomes a no-op instead of a
+    # second draw, which is precisely how components 324/325 were charged twice
+    # across five runs.
+    import_ref: Mapped[str] = mapped_column(String(120), default="")
+    consumed_at: Mapped[str] = mapped_column(String(20), default="")  # ISO date; drives the replay
+    note: Mapped[str] = mapped_column(String(500), default="")
+    # Retiring a draw VOIDS it; it is never deleted. A forecast superseded by a
+    # measurement has to be restorable, because reversing the import that
+    # superseded it must put the run back exactly as it was — and `void_shop.py`
+    # and `void_absent.py` deleted 10 rows that could then only come back from a
+    # database backup. Every read of this table filters `voided_at IS NULL`;
+    # the seven sites are listed in the Phase 1 section of
+    # `docs/production-costs/design.md`.
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    void_reason: Mapped[str] = mapped_column(String(40), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        Index("ix_consumption_run", "run_id"),
+        Index("ix_consumption_component", "component_id"),
+    )
+
+
+class ComponentStockAdjustment(Base):
+    """Attrition and reconciliation — a first-class part of the model, not an
+    error path. Components get lost in production, so the platform's remaining
+    quantity is never expected to match JLCPCB's stock exactly.
+
+    `charge_run_id` decides where the money lands: set it and the loss is part
+    of that run's cost (its per-device figure carries the real attrition);
+    leave it NULL and the write-off sits at project level. Also used for
+    opening balances when backfilling history.
+    """
+
+    __tablename__ = "component_stock_adjustments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    component_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    mpn: Mapped[str] = mapped_column(String(200), default="")
+    lcsc: Mapped[str] = mapped_column(String(50), default="")
+    qty_delta: Mapped[float] = mapped_column(Float, default=0.0)  # negative = lost/written off
+    unit_cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)  # snapshot; NULL = replay
+    # attrition|scrap|miscount|opening_balance|correction|external_project
+    reason: Mapped[str] = mapped_column(String(30), default="attrition")
+    charge_run_id: Mapped[int | None] = mapped_column(ForeignKey("production_runs.id"), nullable=True)
+    adjusted_at: Mapped[str] = mapped_column(String(20), default="")  # ISO date; drives the replay
+    # Provenance of an IMPORTED adjustment, backed by `uq_stock_adj_import`.
+    # `apply_external_movements` deduped by scanning `note LIKE '%code%'` — a text
+    # scan standing in for a constraint. This is the constraint.
+    import_ref: Mapped[str] = mapped_column(String(120), default="")
+    note: Mapped[str] = mapped_column(String(500), default="")
+    actor: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        Index("ix_stock_adj_component", "component_id"),
+        Index("ix_stock_adj_run", "charge_run_id"),
+    )
+
+
+# ------------------------------------------------- firmware releases (flasher)
+class FirmwareAsset(Base):
+    """A firmware binary. CONTENT-ADDRESSED: the same build uploaded twice is
+    one row, because the sha256 is the identity. Bytes live in MinIO."""
+
+    __tablename__ = "firmware_assets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    filename: Mapped[str] = mapped_column(String(300))
+    sha256: Mapped[str] = mapped_column(String(64))
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    chip: Mapped[str] = mapped_column(String(30), default="")  # esp32 | esp32c6 | …
+    # factory | app | filesystem | safeboot — what the image IS, which decides
+    # the default flash offset and whether writing it wipes device settings.
+    kind: Mapped[str] = mapped_column(String(20), default="factory")
+    minio_key: Mapped[str] = mapped_column(String(500))
+    # Free label from the build (e.g. Tasmota's BuildDateTime) for the UI.
+    build_label: Mapped[str] = mapped_column(String(100), default="")
+    notes: Mapped[str] = mapped_column(String(500), default="")
+    uploaded_by: Mapped[str] = mapped_column(String(100), default="")
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (UniqueConstraint("project_id", "sha256", name="uq_firmware_project_sha"),)
+
+
+class Release(Base):
+    """A named programming target for a project ("CE_Dongle_V3 production").
+    Its versions are immutable; `current_version_id` is the live one (plain
+    Integer, same convention as the library artifacts)."""
+
+    __tablename__ = "releases"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    name: Mapped[str] = mapped_column(String(200))
+    chip: Mapped[str] = mapped_column(String(30), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    current_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    versions: Mapped[list["ReleaseVersion"]] = relationship(
+        back_populates="release", cascade="all, delete-orphan", order_by="ReleaseVersion.version_no"
+    )
+
+    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_release_project_name"),)
+
+
+class ReleaseVersion(Base):
+    """IMMUTABLE bundle of "the firmware + the steps used to program it".
+
+    Parameter VALUES are deliberately not stored here (user decision
+    2026-07-27): they come from a ParamSet at run time and the resolved values
+    are snapshotted onto each ProgrammingRun, so rotating a WiFi password does
+    not mint a new release version while every device still records what it got.
+    """
+
+    __tablename__ = "release_versions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    release_id: Mapped[int] = mapped_column(ForeignKey("releases.id"))
+    version_no: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft|published|rejected
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+    approved_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    comment: Mapped[str] = mapped_column(String(500), default="")
+    # uart_bridge | usb_serial_jtag — decides reset strategy and whether the
+    # monitor phase may touch DTR/RTS at all (see docs/flasher/design.md §7).
+    transport_profile: Mapped[str] = mapped_column(String(40), default="uart_bridge")
+    flash_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # mode/freq/size/baud
+    monitor_baud: Mapped[int] = mapped_column(Integer, default=115200)
+    steps: Mapped[list | None] = mapped_column(JSONB, nullable=True)  # ordered op list
+    param_set_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    param_defaults: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # non-secret
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    release: Mapped[Release] = relationship(back_populates="versions")
+    images: Mapped[list["ReleaseImage"]] = relationship(
+        back_populates="version", cascade="all, delete-orphan", order_by="ReleaseImage.position"
+    )
+
+    __table_args__ = (UniqueConstraint("release_id", "version_no", name="uq_release_version"),)
+
+
+class ReleaseImage(Base):
+    """One firmware image at one flash offset inside a release version. A blank
+    ESP32-C6 needs two (factory @0x0 + LittleFS @0x4B0000)."""
+
+    __tablename__ = "release_images"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    release_version_id: Mapped[int] = mapped_column(ForeignKey("release_versions.id"))
+    firmware_asset_id: Mapped[int] = mapped_column(ForeignKey("firmware_assets.id"))
+    address: Mapped[str] = mapped_column(String(12), default="0x0")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+    version: Mapped[ReleaseVersion] = relationship(back_populates="images")
+    asset: Mapped[FirmwareAsset] = relationship()
+
+    __table_args__ = (UniqueConstraint("release_version_id", "address", name="uq_release_image_addr"),)
+
+
+class ParamSet(Base):
+    """Scenario placeholder values for a project ("production", "bench"):
+    WiFi credentials, MQTT host/port, credential salt. Fernet-encrypted at rest
+    via services/crypto.py — these are the SHARED secrets whose leak affects
+    every device (per-device credentials are stored in the clear by decision)."""
+
+    __tablename__ = "param_sets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    name: Mapped[str] = mapped_column(String(100))
+    values_enc: Mapped[str] = mapped_column(Text, default="")
+    updated_by: Mapped[str] = mapped_column(String(100), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_param_set_name"),)
+
+
+# ------------------------------------------------ devices + programming runs
+class DeviceUnit(Base):
+    """A PHYSICAL device, identified by the MAC read out of the chip.
+
+    The MAC is the identity on purpose: esptool reports it seconds into a run,
+    long before the firmware boots, so a device that fails programming is still
+    attributable. Tasmota's topic/device id is read later and kept as a label.
+    """
+
+    __tablename__ = "device_units"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    mac: Mapped[str] = mapped_column(String(20))  # normalised "58:8c:81:2f:74:74"
+    chip: Mapped[str] = mapped_column(String(60), default="")
+    tasmota_id: Mapped[str] = mapped_column(String(120), default="")  # topic, e.g. dongle_588C…
+    serial: Mapped[str] = mapped_column(String(60), default="")  # MAC w/o separators, for marking
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_status: Mapped[str] = mapped_column(String(20), default="")  # pass|fail of the newest run
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+    runs: Mapped[list["ProgrammingRun"]] = relationship(
+        back_populates="device", order_by="ProgrammingRun.started_at.desc()"
+    )
+    configs: Mapped[list["DeviceConfigValue"]] = relationship(
+        back_populates="device", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (UniqueConstraint("mac", name="uq_device_mac"),)
+
+
+class ProgrammingRun(Base):
+    """ONE ATTEMPT at programming one device — pass or fail, always kept.
+
+    Created BEFORE the first step runs, so an attempt that dies before the MAC
+    can be read still exists with its production run, station, operator, time
+    and full log; `device_unit_id` stays NULL and the run shows up as an
+    unidentified attempt that can be linked to a device afterwards.
+    """
+
+    __tablename__ = "programming_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    device_unit_id: Mapped[int | None] = mapped_column(ForeignKey("device_units.id"), nullable=True)
+    production_run_id: Mapped[int] = mapped_column(ForeignKey("production_runs.id"))
+    # Pinned, never a soft pointer: this is exactly what was flashed.
+    release_version_id: Mapped[int] = mapped_column(ForeignKey("release_versions.id"))
+    # Set when the operator programmed with something other than the batch's
+    # assigned release (also written to the audit log).
+    release_override_reason: Mapped[str] = mapped_column(String(300), default="")
+    attempt_no: Mapped[int] = mapped_column(Integer, default=1)
+    operator: Mapped[str] = mapped_column(String(100), default="")
+    station: Mapped[str] = mapped_column(String(40), default="")
+    status: Mapped[str] = mapped_column(String(20), default="running")  # running|pass|fail|aborted
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Raw readings, kept on the run even when no device row could be created.
+    mac_read: Mapped[str] = mapped_column(String(20), default="")
+    chip_read: Mapped[str] = mapped_column(String(60), default="")
+    results: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # captured vars
+    params_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # values applied
+    client_info: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # UA, USB ids
+
+    device: Mapped[DeviceUnit | None] = relationship(back_populates="runs")
+    steps: Mapped[list["ProgrammingStep"]] = relationship(
+        back_populates="run", cascade="all, delete-orphan", order_by="ProgrammingStep.idx"
+    )
+
+    __table_args__ = (
+        Index("ix_programming_runs_prod", "production_run_id"),
+        Index("ix_programming_runs_device", "device_unit_id"),
+        Index("ix_programming_runs_status", "status"),
+    )
+
+
+class ProgrammingStep(Base):
+    """One step of a run's scenario, with its own outcome and duration."""
+
+    __tablename__ = "programming_steps"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("programming_runs.id"))
+    idx: Mapped[int] = mapped_column(Integer)
+    op: Mapped[str] = mapped_column(String(40))
+    label: Mapped[str] = mapped_column(String(200), default="")
+    status: Mapped[str] = mapped_column(String(20), default="running")  # running|pass|fail|skipped
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    response: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    run: Mapped[ProgrammingRun] = relationship(back_populates="steps")
+
+    __table_args__ = (UniqueConstraint("run_id", "idx", name="uq_programming_step_idx"),)
+
+
+class ProgrammingLog(Base):
+    """Append-only communication log for a run: every line, in order.
+
+    Everything is kept including esptool progress (user decision 2026-07-27),
+    so expect a few thousand rows per run. `device_ts` holds the device's own
+    timestamp ("00:00:04.248") when the line carries one — useful because it
+    survives independently of server clock skew. Never UPDATE or DELETE rows.
+    """
+
+    __tablename__ = "programming_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("programming_runs.id"))
+    seq: Mapped[int] = mapped_column(Integer)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    device_ts: Mapped[str] = mapped_column(String(20), default="")
+    dir: Mapped[str] = mapped_column(String(10))  # tx|rx|app|err|esptool
+    text: Mapped[str] = mapped_column(Text, default="")
+
+    __table_args__ = (UniqueConstraint("run_id", "seq", name="uq_programming_log_seq"),)
+
+
+class DeviceConfigValue(Base):
+    """A configuration key applied to a device (mqtt_user, mqtt_password,
+    mqtt_host, …), stamped with the run that set it.
+
+    Values are stored in the CLEAR by user decision 2026-07-27 (the broker and
+    support tooling need them, matching today's reports/*.json and
+    mosquitto_passwords.txt). Consequence: never include them in list
+    endpoints — detail views only, fetched explicitly. History is kept:
+    `current` marks the newest value per key so reprogramming leaves a trail.
+    """
+
+    __tablename__ = "device_config_values"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    device_unit_id: Mapped[int] = mapped_column(ForeignKey("device_units.id"))
+    key: Mapped[str] = mapped_column(String(80))
+    value: Mapped[str] = mapped_column(Text, default="")
+    is_secret: Mapped[bool] = mapped_column(Boolean, default=False)  # mask in the UI by default
+    set_by_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    set_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    current: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    device: Mapped[DeviceUnit] = relationship(back_populates="configs")
+
+    __table_args__ = (Index("ix_device_config_key", "device_unit_id", "key"),)
