@@ -69,6 +69,7 @@ export default function Composer({
   // The draft, once created: everything after this point PATCHes it, so live
   // validation is the server's own answer.
   const [draft, setDraft] = useState<DeploymentVersionRow | null>(null);
+  const [showFiles, setShowFiles] = useState(false);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const dirRef = useRef<HTMLInputElement>(null);
   const fwRef = useRef<HTMLInputElement>(null);
@@ -347,7 +348,14 @@ export default function Composer({
             <span className={`pill ${touched.has("files") ? "warn" : "neutral"}`}>
               {sectionState("files")}
             </span>
-            <span className="muted">{pinnedFileRows.length} files pinned</span>
+            {pinnedFileRows.length ? (
+              <span className="pill ok">
+                {filesLabel || "unnamed set"} · {pinnedFileRows.length} files
+              </span>
+            ) : null}
+            <button type="button" className="btn btn-sm" onClick={() => setShowFiles((x) => !x)}>
+              {showFiles ? "Hide files" : "Show files"}
+            </button>
           </div>
           <div className="btn-row">
             <input
@@ -396,7 +404,7 @@ export default function Composer({
             </button>
           </div>
           {importedNote ? <p className="banner-ok">{importedNote}</p> : null}
-          {pinnedFileRows.length ? (
+          {!showFiles ? null : pinnedFileRows.length ? (
             <div className="table-wrap">
               <table className="data data-fixed composer-files-table">
                 <thead>

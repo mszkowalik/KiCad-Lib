@@ -24,6 +24,9 @@ export default function VersionView({
   const [v, setV] = useState<DeploymentVersionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSteps, setShowSteps] = useState(true);
+  // The BUNDLE is what you see; the file list is detail behind a toggle
+  // (user feedback 2026-07-30: "I still see the files listed instead of the bundle").
+  const [showFiles, setShowFiles] = useState(false);
 
   const load = useCallback(() => {
     const ac = new AbortController();
@@ -130,22 +133,28 @@ export default function VersionView({
       </div>
 
       <div className="card pad">
-        <h3 className="card-title">
-          Berryware{" "}
-          {v.files_label ? (
-            <span className={`pill ${v.berry_bundle_id ? "ok" : "neutral"}`}
-                  title={v.berry_bundle_id ? "a named bundle" : "an ad-hoc file set"}>
-              {v.files_label}
+        <div className="toolbar">
+          <h3 className="card-title">Berryware</h3>
+          {v.files?.length ? (
+            <span className={`pill ${v.berry_bundle_id ? "ok" : "warn"}`}
+                  title={v.berry_bundle_id
+                    ? "a named bundle — the same set everywhere it appears"
+                    : "an ad-hoc file set nobody has named"}>
+              {v.files_label || "unnamed set"} · {v.files.length} files
             </span>
-          ) : null}{" "}
+          ) : null}
           <span className="muted dim mono">
-            {v.files_fingerprint ? shortSha(v.files_fingerprint) : "none"}
+            {v.files_fingerprint ? shortSha(v.files_fingerprint) : ""}
           </span>
-        </h3>
-        <p className="card-subtitle">
-          {v.files?.length ?? 0} files, downloaded by the device in this order (autoexec.be last).
-        </p>
-        {v.files?.length ? (
+          {v.files?.length ? (
+            <button type="button" className="btn btn-sm" onClick={() => setShowFiles((x) => !x)}>
+              {showFiles ? "Hide files" : "Show files"}
+            </button>
+          ) : null}
+        </div>
+        {!v.files?.length ? (
+          <p className="muted">No berryware pinned.</p>
+        ) : !showFiles ? null : (
           <div className="table-wrap">
             <table className="data data-fixed dv-files-table">
               <thead>
@@ -174,8 +183,6 @@ export default function VersionView({
               </tbody>
             </table>
           </div>
-        ) : (
-          <p className="muted">No berryware pinned.</p>
         )}
       </div>
 

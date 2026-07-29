@@ -23,6 +23,9 @@ export default function DeviceFilesPanel({ projectId }: { projectId: number }) {
   const [open, setOpen] = useState<number | null>(null); // expanded file id
   const [editor, setEditor] = useState<{ filename: string; content: string; comment: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  // Collapsed by default: bundles above are the everyday view; this is the
+  // raw per-file pool for surgical edits (user feedback 2026-07-30).
+  const [expanded, setExpanded] = useState(false);
 
   const reload = useCallback(() => {
     const ac = new AbortController();
@@ -108,17 +111,23 @@ export default function DeviceFilesPanel({ projectId }: { projectId: number }) {
   return (
     <div className="card pad">
       <div className="toolbar">
-        <h2 className="card-title">Device files</h2>
-        <button type="button" className="btn btn-sm" onClick={() => openEditor(null)}>
-          New file
+        <h2 className="card-title">Berryware files — the raw pool</h2>
+        <span className="muted">{files ? `${files.length} files` : ""}</span>
+        <button type="button" className="btn btn-sm" onClick={() => setExpanded((x) => !x)}>
+          {expanded ? "Hide" : "Show"}
         </button>
+        {expanded ? (
+          <button type="button" className="btn btn-sm" onClick={() => openEditor(null)}>
+            New file
+          </button>
+        ) : null}
       </div>
       <p className="card-subtitle">
-        Berry scripts and driver JSONs the device downloads over HTTP during deployment. Each file
-        versions independently; a deployment script pins exact versions.
+        Every file, every version. Day-to-day work happens in bundles above; open this for a
+        surgical edit to one file.
       </p>
       {error ? <ErrorBanner message={error} /> : null}
-      {files === null ? (
+      {!expanded ? null : files === null ? (
         <Spinner label="Loading files…" />
       ) : files.length === 0 ? (
         <p className="muted">No device files yet.</p>
@@ -165,7 +174,7 @@ export default function DeviceFilesPanel({ projectId }: { projectId: number }) {
           </table>
         </div>
       )}
-      {open !== null && files ? (
+      {expanded && open !== null && files ? (
         <FileVersions
           file={files.find((f) => f.id === open) ?? null}
           onPublish={publish}
