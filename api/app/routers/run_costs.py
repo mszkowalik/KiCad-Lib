@@ -883,7 +883,10 @@ def nbp_rate(currency: str, date: str, db: Session = Depends(get_db)):
 def get_pool(project_id: int, as_of: str | None = None, db: Session = Depends(get_db)):
     """Per-part cost pool: bought / used / lost, moving average, value on hand.
 
-    Quantities apportion money; they are NOT expected to match JLCPCB stock.
+    Quantities apportion money AND must agree with JLCPCB's consigned count —
+    whatever went in either went out through a run, was written off, or is
+    still on the shelf. /api/parts-stock is the check (goal restated
+    2026-07-28: everything accounted for, not just a balanced register).
     """
     if db.get(M.Project, project_id) is None:
         raise HTTPException(404, "project not found")

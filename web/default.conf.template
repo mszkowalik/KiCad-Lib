@@ -1,0 +1,69 @@
+# The SPA and the API share one origin: nginx serves the built assets and
+# proxies every path the FastAPI app owns to the api container. Two things fall
+# out of that. The image carries no API address, so the same build runs on any
+# hostname. And the browser makes no cross-origin request, so CORS plays no
+# part in production.
+#
+# Regex locations are matched in the order written, before prefix locations, so
+# the API paths below always win over the SPA fallback.
+#
+# This is a TEMPLATE: the nginx image's entrypoint runs envsubst over
+# /etc/nginx/templates/*.template at startup, so ${API_UPSTREAM} becomes an env
+# var while nginx's own $uri / $host / $request_uri (not env vars) survive
+# untouched. That matters because a deployment sharing a docker network with
+# other stacks cannot call its backend plain `api`.
+
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Where the FastAPI app lives, host:port. Overridable per deployment.
+    set $kicadlib_api http://${API_UPSTREAM};
+
+    # Datasheet PDFs, gerber bundles and production-run attachments.
+    client_max_body_size 512m;
+
+    # Docker's embedded resolver, used by the proxy include.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/css application/javascript application/json image/svg+xml text/plain;
+
+    # ------------------------------------------------------------- the API
+    location ~ ^/(api|kicad|files)/ {
+        include /etc/nginx/nginx-api-proxy.inc;
+    }
+
+    location ~ ^/(docs|redoc|openapi\.json)$ {
+        include /etc/nginx/nginx-api-proxy.inc;
+    }
+
+    # ------------------------------------------------------------- the SPA
+    # WebAssembly for the STEP viewer. Defensive: WebAssembly.instantiate-
+    # Streaming rejects a wrong content type, and older mime.types files do not
+    # map .wasm at all.
+    location ~ \.wasm$ {
+        default_type application/wasm;
+        try_files $uri =404;
+    }
+
+    # Vite writes content-hashed filenames here, so they can never go stale.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # index.html must not be cached, or a deployed update keeps handing out the
+    # previous build's asset names.
+    location = /index.html {
+        add_header Cache-Control "no-store";
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

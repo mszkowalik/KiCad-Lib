@@ -22,22 +22,18 @@ import {
   type SplitChild,
 } from "../../api";
 import { ErrorBanner } from "../Ui";
-
-const KINDS: CostLineKind[] = [
-  "part", "fab", "assembly", "tooling", "freight",
-  "duty", "tax", "rework", "packaging", "service", "other",
-];
+import {
+  COST_LINE_KINDS as KINDS,
+  ChargeToSelect,
+  StepSelect,
+  type RunOption,
+} from "../costs";
 
 /** Templates come from the production-step catalog (`/api/cost-steps`): the
  *  vendor's exact wording paired with the vendor-neutral step key, so a split
  *  carries its identity and plan-vs-actual matching needs no manual linking. */
 
-export interface RunOption {
-  id: number;
-  label: string;
-  project_id: number;
-  project_name: string;
-}
+export type { RunOption };
 
 interface Row {
   label: string;
@@ -240,21 +236,14 @@ export default function SplitLineDialog({
                     />
                   </td>
                   <td>
-                    <select className="row-input mono" value={r.step}
+                    <StepSelect
+                      catalog={catalog}
+                      className="row-input mono"
+                      value={r.step}
+                      emptyLabel="—"
                       title="production step — carries into plan_key so plan-vs-billed matches automatically"
-                      onChange={(e) => {
-                        const step = e.target.value;
-                        patch(i, { step, kind: r.kind || defaultKindFor(step) });
-                      }}>
-                      <option value="">—</option>
-                      {Object.entries(catalog?.stages ?? {}).map(([stage, stageLabel]) => (
-                        <optgroup key={stage} label={stageLabel}>
-                          {(catalog?.steps ?? []).filter((st) => st.stage === stage).map((st) => (
-                            <option key={st.key} value={st.key}>{st.key}</option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
+                      onChange={(step) => patch(i, { step, kind: r.kind || defaultKindFor(step) })}
+                    />
                   </td>
                   <td>
                     <select
@@ -269,24 +258,13 @@ export default function SplitLineDialog({
                     </select>
                   </td>
                   <td>
-                    <select
-                      className="row-input"
+                    <ChargeToSelect
+                      runs={runs}
+                      projects={projects}
                       value={r.dest}
-                      onChange={(e) => patch(i, { dest: e.target.value })}
-                    >
-                      <option value="">— nobody yet —</option>
-                      {runs.map((run) => (
-                        <option key={`run:${run.id}`} value={`run:${run.id}`}>
-                          {run.project_name} · {run.label}
-                        </option>
-                      ))}
-                      {projects.map((p) => (
-                        <option key={`project:${p.id}`} value={`project:${p.id}`}>
-                          {p.name} (no run)
-                        </option>
-                      ))}
-                      <option value="excluded">nobody, on purpose (excluded)</option>
-                    </select>
+                      emptyLabel="— nobody yet —"
+                      onChange={(dest) => patch(i, { dest })}
+                    />
                   </td>
                   <td>
                     <input

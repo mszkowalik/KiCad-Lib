@@ -1,7 +1,9 @@
 """kicad-cli operations on a full project checkout (board + schematic).
 
-Shared op table for the render container; the API's local mode carries an
-identical copy at api/app/services/project_ops.py — keep them in sync.
+This file exists TWICE and the two copies must stay byte-identical: the render
+container runs one at render/project_ops.py, and the API imports the other at
+api/app/services/project_ops.py for its RENDER_MODE=local path. The images
+workflow fails the build when they diverge, so edit both in the same change.
 
 Ops (src = .kicad_pcb or .kicad_sch inside a materialized checkout):
     board_layer_svg  pcb  one layer -> SVG (board-area page, aligned stack)

@@ -23,10 +23,7 @@ import { ErrorBanner, Spinner } from "../Ui";
 import { useStickyState } from "../../useStickyState";
 import CostCurve from "./CostCurve";
 
-function money(v: number | null | undefined, currency: string): string {
-  if (v == null) return "—";
-  return `${v.toLocaleString(undefined, { maximumFractionDigits: v < 1 ? 4 : 2 })} ${currency}`;
-}
+import { price as money } from "../../format";
 
 interface Props {
   project: ProjectInfo;
@@ -343,7 +340,7 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
                     const name = r.kind === "line" ? r.li.component_name : r.x.component_name;
                     if (id) {
                       return (
-                        <Link className="comp-link" to={`/components/${id}`}>
+                        <Link className="comp-link" to={`/library/components/${id}`}>
                           {name}
                         </Link>
                       );

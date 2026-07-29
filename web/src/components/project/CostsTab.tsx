@@ -31,6 +31,7 @@ import {
 } from "../../api";
 import DataTable from "../DataTable";
 import { ErrorBanner, Spinner } from "../Ui";
+import { StepSelect } from "../costs";
 
 const EMPTY_COST: CostItemIn = {
   label: "", basis: "per_device", price: 0, steps: [], currency: "USD", step_key: "",
@@ -87,6 +88,8 @@ export default function CostsTab({
   const [editCostId, setEditCostId] = useState<number | null>(null);
   const [extraDraft, setExtraDraft] = useState<ExtraItemIn>(EMPTY_EXTRA);
   const [editExtraId, setEditExtraId] = useState<number | null>(null);
+  const [showCostForm, setShowCostForm] = useState(false);
+  const [showExtraForm, setShowExtraForm] = useState(false);
   const [componentQuery, setComponentQuery] = useState("");
   const [componentHits, setComponentHits] = useState<{ id: number; name: string }[]>([]);
 
@@ -142,6 +145,7 @@ export default function CostsTab({
     op.then(() => {
       setCostDraft(EMPTY_COST);
       setEditCostId(null);
+      setShowCostForm(false);
       load();
     }).catch((err) => {
       setError(errorMessage(err));
@@ -157,6 +161,7 @@ export default function CostsTab({
       setExtraDraft(EMPTY_EXTRA);
       setEditExtraId(null);
       setComponentQuery("");
+      setShowExtraForm(false);
       load();
     }).catch((err) => {
       setError(errorMessage(err));
@@ -285,6 +290,7 @@ export default function CostsTab({
                       className="btn btn-sm"
                       onClick={() => {
                         setEditCostId(c.id);
+                        setShowCostForm(true);
                         setCostDraft({
                           label: c.label, basis: c.basis, price: c.price,
                           steps: c.steps.map((s) => ({ ...s })), currency: c.currency,
@@ -314,6 +320,23 @@ export default function CostsTab({
             ]}
           />
         ) : null}
+        <div className="btn-row">
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={() => {
+              if (showCostForm) {
+                setEditCostId(null);
+                setCostDraft(EMPTY_COST);
+              }
+              setShowCostForm(!showCostForm);
+            }}
+          >
+            {showCostForm ? "Close" : "＋ Add cost item"}
+          </button>
+        </div>
+        {showCostForm && (
+        <div className="card pad edit-card">
+        <div className="card-title">{editCostId ? "Edit cost item" : "New cost item"}</div>
         <div className="edit-grid">
           <label>
             Label
@@ -330,24 +353,19 @@ export default function CostsTab({
           </label>
           <label>
             Production step
-            <select className="text" value={costDraft.step_key ?? ""}
+            <StepSelect
+              catalog={stepCatalog}
+              className="text"
+              useLabels
+              value={costDraft.step_key ?? ""}
+              emptyLabel="— free-form (no step) —"
               title="Invoice positions billed under the same step are this item's actuals — plan-vs-billed matches on the step, whatever the vendor calls it"
-              onChange={(e) => {
-                const key = e.target.value;
+              onChange={(key) => {
                 const def = stepCatalog?.steps.find((st) => st.key === key)?.default_basis;
                 // the step knows how it scales — overriding after is a conscious act
-                setCostDraft({ ...costDraft, step_key: key,
-                               basis: def ?? costDraft.basis });
-              }}>
-              <option value="">— free-form (no step) —</option>
-              {Object.entries(stepCatalog?.stages ?? {}).map(([stage, stageLabel]) => (
-                <optgroup key={stage} label={stageLabel}>
-                  {(stepCatalog?.steps ?? []).filter((st) => st.stage === stage).map((st) => (
-                    <option key={st.key} value={st.key}>{st.label}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+                setCostDraft({ ...costDraft, step_key: key, basis: def ?? costDraft.basis });
+              }}
+            />
           </label>
           <label>
             Price
@@ -430,11 +448,13 @@ export default function CostsTab({
             {editCostId ? "Save changes" : "Add cost item"}
           </button>
           {editCostId ? (
-            <button className="btn btn-sm" onClick={() => { setEditCostId(null); setCostDraft(EMPTY_COST); }}>
+            <button className="btn btn-sm" onClick={() => { setEditCostId(null); setCostDraft(EMPTY_COST); setShowCostForm(false); }}>
               Cancel edit
             </button>
           ) : null}
         </div>
+        </div>
+        )}
       </div>
 
       <div className="card pad">
@@ -511,6 +531,7 @@ export default function CostsTab({
                       className="btn btn-sm"
                       onClick={() => {
                         setEditExtraId(x.id);
+                        setShowExtraForm(true);
                         setExtraDraft({
                           label: x.label, qty: x.qty, component_id: x.component_id,
                           manufacturer: x.manufacturer, mpn: x.mpn, unit_price: x.unit_price,
@@ -539,6 +560,24 @@ export default function CostsTab({
             ]}
           />
         ) : null}
+        <div className="btn-row">
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={() => {
+              if (showExtraForm) {
+                setEditExtraId(null);
+                setExtraDraft(EMPTY_EXTRA);
+                setComponentQuery("");
+              }
+              setShowExtraForm(!showExtraForm);
+            }}
+          >
+            {showExtraForm ? "Close" : "＋ Add extra item"}
+          </button>
+        </div>
+        {showExtraForm && (
+        <div className="card pad edit-card">
+        <div className="card-title">{editExtraId ? "Edit extra item" : "New extra item"}</div>
         <div className="edit-grid">
           <label>
             Label
@@ -617,11 +656,13 @@ export default function CostsTab({
           </button>
           {editExtraId ? (
             <button className="btn btn-sm"
-              onClick={() => { setEditExtraId(null); setExtraDraft(EMPTY_EXTRA); setComponentQuery(""); }}>
+              onClick={() => { setEditExtraId(null); setExtraDraft(EMPTY_EXTRA); setComponentQuery(""); setShowExtraForm(false); }}>
               Cancel edit
             </button>
           ) : null}
         </div>
+        </div>
+        )}
       </div>
     </div>
   );

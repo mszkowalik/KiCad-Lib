@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import {
   errorMessage,
@@ -10,17 +11,26 @@ import {
   type TemplateKind,
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
+import TemplateThumb from "../components/TemplateThumb";
 import { ErrorBanner, Spinner } from "../components/Ui";
 
 const symbolColumns: Column<SymbolListItem>[] = [
   {
+    key: "thumb",
+    label: "",
+    width: 10,
+    interactive: false,
+    get: () => "",
+    render: (r) => <TemplateThumb kind="symbols" id={r.id} name={r.name} />,
+  },
+  {
     key: "name",
     label: "Name",
-    width: 52,
+    width: 42,
     get: (r) => r.name,
     className: "mono",
     render: (r) => (
-      <Link to={`/templates/symbols/${r.id}`} className="comp-link">
+      <Link to={`/library/templates/symbols/${r.id}`} className="comp-link">
         {r.name}
       </Link>
     ),
@@ -32,13 +42,21 @@ const symbolColumns: Column<SymbolListItem>[] = [
 
 const footprintColumns: Column<FootprintListItem>[] = [
   {
+    key: "thumb",
+    label: "",
+    width: 10,
+    interactive: false,
+    get: () => "",
+    render: (r) => <TemplateThumb kind="footprints" id={r.id} name={r.name} />,
+  },
+  {
     key: "name",
     label: "Name",
-    width: 52,
+    width: 42,
     get: (r) => r.name,
     className: "mono",
     render: (r) => (
-      <Link to={`/templates/footprints/${r.id}`} className="comp-link">
+      <Link to={`/library/templates/footprints/${r.id}`} className="comp-link">
         {r.name}
       </Link>
     ),
@@ -49,7 +67,12 @@ const footprintColumns: Column<FootprintListItem>[] = [
 ];
 
 export default function Templates() {
-  const [tab, setTab] = useState<TemplateKind>("symbols");
+  // The active tab lives in the URL (?tab=footprints) — linkable, and it no
+  // longer resets on every visit.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab: TemplateKind = searchParams.get("tab") === "footprints" ? "footprints" : "symbols";
+  const setTab = (t: TemplateKind) =>
+    setSearchParams(t === "symbols" ? {} : { tab: t }, { replace: true });
   const [symbols, setSymbols] = useState<SymbolListItem[] | null>(null);
   const [footprints, setFootprints] = useState<FootprintListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);

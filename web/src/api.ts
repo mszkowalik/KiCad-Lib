@@ -3,8 +3,25 @@
  * Shapes mirror the FastAPI routers in platform/api/app/routers/
  * (categories.py, components.py, import_station.py).
  */
+import { APP_BASE } from "./appbase";
 
-export const API_URL: string = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+/** Where the API lives, as a prefix for every request path.
+ *
+ * Defaults to APP_BASE — same origin, same mount point. That is what the
+ * deployed images do: nginx serves the SPA and proxies /api, /kicad and /files
+ * to the api container (see web/default.conf.template), and the Vite dev
+ * server proxies the same paths (see vite.config.ts). Under a prefix the API
+ * rides along with the app, so APP_BASE="/lib" gives "/lib/api/…".
+ *
+ * Set VITE_API_URL only to point a build at an API on another origin — it is
+ * inlined at build time, so a value baked into an image would tie that image
+ * to one hostname, which is why it is not the default.
+ */
+export const API_URL: string = import.meta.env.VITE_API_URL ?? APP_BASE;
+
+/** API address for messages the user reads — "" is same-origin. */
+export const apiOrigin = (): string =>
+  API_URL || (typeof window === "undefined" ? "the same origin" : window.location.origin);
 
 // ---------------------------------------------------------------- categories
 
@@ -280,7 +297,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     res = await fetch(`${API_URL}${path}`, init);
   } catch (err) {
     if (isAbortError(err)) throw err;
-    throw new ApiError(0, `Cannot reach API at ${API_URL} (${errorMessage(err)})`);
+    throw new ApiError(0, `Cannot reach API at ${apiOrigin()} (${errorMessage(err)})`);
   }
   if (!res.ok) {
     let detail = "";
@@ -370,6 +387,19 @@ export function setComponentPurchasable(
   });
 }
 
+/** Flip a component between library part and BOM-only part. Turning a part
+ *  back INTO the library requires a pinned symbol (422 otherwise). */
+export function setComponentInLibrary(
+  id: number,
+  inLibrary: boolean,
+): Promise<{ id: number; in_library: boolean }> {
+  return request(`/api/components/${id}/in-library`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ in_library: inLibrary }),
+  });
+}
+
 export function getVersion(
   id: number,
   versionNo: number,
@@ -444,6 +474,13 @@ export function saveFootprintDisplayName(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ display_name: displayName }),
   });
+}
+
+/** Retire a footprint, all its versions and its mirror file. The server
+ *  refuses (409) if ANY component version — including historical ones —
+ *  pins it, so history stays reproducible. */
+export function deleteFootprint(id: number): Promise<{ deleted: number; name: string }> {
+  return request(`/api/footprints/${id}`, { method: "DELETE" });
 }
 
 export function getTemplate(
@@ -643,7 +680,7 @@ async function openStream(path: string, body: unknown, signal?: AbortSignal): Pr
     });
   } catch (err) {
     if (isAbortError(err)) throw err;
-    throw new ApiError(0, `Cannot reach API at ${API_URL} (${errorMessage(err)})`);
+    throw new ApiError(0, `Cannot reach API at ${apiOrigin()} (${errorMessage(err)})`);
   }
   if (!res.ok || !res.body) {
     let detail = "";
@@ -962,6 +999,8 @@ export interface SkillProposal {
 export interface GeometryProposal {
   kind: "symbol" | "footprint";
   proposal_id: number;
+  /** The parent symbol/footprint id — links the row to the template page. */
+  template_id: number;
   /** The symbol/footprint name — field named like the others to keep the table simple. */
   component_name: string;
   version_no: number;
@@ -1761,6 +1800,10 @@ export interface RunEffectiveLine {
   value?: string;
   qty_total: number;
   unit_price: number | null;
+  /** unit_price converted to USD at the run date — the Materials table compares
+   *  these planned lines against pool draws, which are USD-denominated.
+   *  null when the FX rate is unknown (never a silent 1:1). */
+  unit_usd?: number | null;
   line_total: number | null;
   excluded?: boolean;
   dnp?: boolean;
@@ -2197,6 +2240,37 @@ export function resolveDocumentParts(
   docId: number,
 ): Promise<{ resolved: number; unresolved: string[]; checked: number }> {
   return request(`/api/run-documents/${docId}/resolve-parts`, { method: "POST" });
+}
+
+/** Same matching pass across EVERY unresolved part line — after a library
+ *  import, or when unmatched lines have piled up across documents. */
+export function resolveAllParts(): Promise<{
+  resolved: number;
+  unresolved: string[];
+  checked: number;
+}> {
+  return request("/api/cost-lines/resolve-parts", { method: "POST" });
+}
+
+/** NBP table-A rate for a currency at a document date (invoice-date
+ *  convention). `effective_date` is the publication date actually used —
+ *  NBP publishes nothing on weekends or holidays. */
+export interface NbpRate {
+  currency: string;
+  requested_date: string;
+  effective_date: string;
+  rate_usd: number;
+  detail: string;
+  requested_date_used: boolean;
+}
+
+export function getNbpRate(
+  currency: string,
+  date: string,
+  signal?: AbortSignal,
+): Promise<NbpRate> {
+  const qs = new URLSearchParams({ currency, date });
+  return request(`/api/fx/nbp?${qs}`, { signal });
 }
 
 export interface RunActuals {
@@ -2935,6 +3009,44 @@ export function applyJlcDecision(
   );
 }
 
+/** Cache JLC's OWN BOM for one assembly order — the only source of
+ *  `componentSource`, i.e. who actually supplied each part. Evidence, not
+ *  money: without it, parts JLC supplied itself (`shop`) get charged to the
+ *  pool a second time. */
+export function fetchJlcOrderBom(smtOrderCode: string): Promise<{
+  smt_order_code: string;
+  batch: string;
+  rows: number;
+  by_component_source: Record<string, number>;
+  shop_parts: { lcsc: string; mpn: string; qty: number; source: string }[];
+}> {
+  return request(
+    `/api/jlc/import/orders/${encodeURIComponent(smtOrderCode)}/fetch-bom`,
+    { method: "POST" },
+  );
+}
+
+/** Void draws for parts JLC supplied ITSELF (`componentSource='shop'`), so
+ *  they are not paid for twice. Needs the order's BOM fetched first. */
+export function voidJlcShopDraws(
+  smtOrderCode: string,
+  dryRun = true,
+): Promise<{
+  smt_order_code: string;
+  status: string;
+  run_id?: number;
+  shop_parts?: string[];
+  would_void?: { consumption_id: number; lcsc: string; mpn: string; qty: number; value_usd: number }[];
+  value_usd?: number;
+  batch_id?: number;
+  note?: string;
+}> {
+  return request(
+    `/api/jlc/import/decision/${encodeURIComponent(smtOrderCode)}/void-shop-draws?dry_run=${dryRun}`,
+    { method: "POST" },
+  );
+}
+
 // ------------------------------------------------------------- write journal
 
 export interface WriteBatch {
@@ -2962,6 +3074,23 @@ export function getWriteBatches(
   if (opts.limit) qs.set("limit", String(opts.limit));
   const q = qs.toString();
   return request(`/api/ledger/batches${q ? `?${q}` : ""}`, { signal });
+}
+
+export interface WriteBatchRow {
+  id: number;
+  table: string;
+  row_id: number;
+  op: string;
+  before: Record<string, unknown> | null;
+  after_hash: string | null;
+}
+
+/** One batch with its journalled rows and the current reversibility check. */
+export function getWriteBatch(
+  batchId: number,
+  signal?: AbortSignal,
+): Promise<WriteBatch & { rows: WriteBatchRow[]; check: { blockers: string[] } }> {
+  return request(`/api/ledger/batches/${batchId}`, { signal });
 }
 
 /** Undo one batch. `dryRun` reports what it would do and every reason it might

@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  API_URL,
   createSkill,
   deleteSkill,
   errorMessage,
@@ -34,25 +33,27 @@ interface NewSkillDraft {
   name: string;
 }
 
-/** Shown in the "Use these skills in Claude Code" panel — mirrors the hooks the
- *  platform repo already ships in `.claude/settings.json`. */
-const HOOK_SNIPPET = `{
-  "hooks": {
-    "SessionStart": [
-      { "hooks": [{ "type": "command",
-          "command": "python3 \\"$CLAUDE_PROJECT_DIR/.claude/sync-skills.py\\"" }] }
-    ],
-    "UserPromptSubmit": [
-      { "hooks": [{ "type": "command",
-          "command": "python3 \\"$CLAUDE_PROJECT_DIR/.claude/sync-skills.py\\" --quick" }] }
-    ]
-  }
-}`;
-
 export default function Skills() {
   const [list, setList] = useState<SkillListItem[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useStickyState<number | null>("skills:selectedId", null);
+  // Selection lives in the URL so a skill is linkable and the Proposals deep
+  // link lands on the right document; the sticky copy only restores the last
+  // skill on a bare /library/skills visit.
+  const params = useParams();
+  const navigate = useNavigate();
+  const urlId = params.id != null ? Number(params.id) : null;
+  const [stickyId, setStickyId] = useStickyState<number | null>("skills:selectedId", null);
+  const selectedId = urlId ?? stickyId;
+  const setSelectedId = useCallback(
+    (next: number | null | ((prev: number | null) => number | null)) => {
+      const value = typeof next === "function" ? next(selectedId) : next;
+      setStickyId(value);
+      navigate(value == null ? "/library/skills" : `/library/skills/${value}`, {
+        replace: true,
+      });
+    },
+    [navigate, selectedId, setStickyId],
+  );
 
   const [detail, setDetail] = useState<SkillDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -524,43 +525,10 @@ export default function Skills() {
           <p className="muted">No skills yet — create one.</p>
         ) : null}
 
-        <details className="card pad skill-claude-help">
-          <summary>Use these skills in Claude Code</summary>
-          <p className="rail-hint">
-            Claude Code only discovers skills as files on disk, so a small script mirrors this
-            database into <span className="mono">.claude/skills/</span>. The platform repo
-            already ships it wired up — here is what it does, and what to copy into another
-            checkout.
-          </p>
-          <ol className="skill-claude-steps">
-            <li>
-              <strong>Sync once —</strong> run{" "}
-              <span className="mono">python3 .claude/sync-skills.py</span> from the repo root.
-              Every skill becomes{" "}
-              <span className="mono">.claude/skills/kicad-&lt;name&gt;/SKILL.md</span>, with the
-              description above as its frontmatter.
-            </li>
-            <li>
-              <strong>Keep it fresh —</strong> two hooks in{" "}
-              <span className="mono">.claude/settings.json</span> re-run it: on session start,
-              and (with <span className="mono">--quick</span>) before every prompt. Only skills
-              whose version or description actually changed are re-fetched, and an unreachable
-              API is ignored rather than blocking the prompt.
-            </li>
-            <li>
-              <strong>Point it at this API —</strong> set{" "}
-              <span className="mono">KICAD_API_URL</span> (this UI is talking to{" "}
-              <span className="mono">{API_URL}</span>), plus{" "}
-              <span className="mono">KICAD_MCP_TOKEN</span> if the API requires a bearer token.
-            </li>
-            <li>
-              <strong>When an edit lands —</strong> a saved document is picked up the next time
-              the skill is invoked; a changed description reaches the model's skill list at the
-              next session start.
-            </li>
-          </ol>
-          <pre className="code-block">{HOOK_SNIPPET}</pre>
-        </details>
+        <p className="muted dim">
+          Using these skills in Claude Code is set up once — see{" "}
+          <Link to="/setup">Setup</Link>.
+        </p>
       </main>
     </div>
   );

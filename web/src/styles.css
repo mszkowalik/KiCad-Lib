@@ -2805,17 +2805,22 @@ select.sel:focus {
 
 /* Parts stock: the cost pool and JLC's physical stock on one row. Fixed layout,
    widths summing to 100%; .data-fixed supplies the ellipsis treatment. */
-.parts-stock-table { table-layout: fixed; }
-.parts-stock-table th:nth-child(1), .parts-stock-table td:nth-child(1) { width: 16%; }
-.parts-stock-table th:nth-child(2), .parts-stock-table td:nth-child(2) { width: 9%; }
-.parts-stock-table th:nth-child(3), .parts-stock-table td:nth-child(3) { width: 17%; }
-.parts-stock-table th:nth-child(4), .parts-stock-table td:nth-child(4) { width: 9%; }
-.parts-stock-table th:nth-child(5), .parts-stock-table td:nth-child(5) { width: 8%; }
-.parts-stock-table th:nth-child(6), .parts-stock-table td:nth-child(6) { width: 8%; }
-.parts-stock-table th:nth-child(7), .parts-stock-table td:nth-child(7) { width: 8%; }
-.parts-stock-table th:nth-child(8), .parts-stock-table td:nth-child(8) { width: 8%; }
-.parts-stock-table th:nth-child(9), .parts-stock-table td:nth-child(9) { width: 9%; }
-.parts-stock-table th:nth-child(10), .parts-stock-table td:nth-child(10) { width: 8%; }
+/* The merged Stock table: pool quantities, JLC's count and the two gaps on
+   one row. Twelve columns, widths summing to 100%; .data-fixed supplies the
+   ellipsis treatment. */
+.stock-table { table-layout: fixed; }
+.stock-table th:nth-child(1), .stock-table td:nth-child(1) { width: 15%; }
+.stock-table th:nth-child(2), .stock-table td:nth-child(2) { width: 8%; }
+.stock-table th:nth-child(3), .stock-table td:nth-child(3) { width: 7%; }
+.stock-table th:nth-child(4), .stock-table td:nth-child(4) { width: 7%; }
+.stock-table th:nth-child(5), .stock-table td:nth-child(5) { width: 7%; }
+.stock-table th:nth-child(6), .stock-table td:nth-child(6) { width: 7%; }
+.stock-table th:nth-child(7), .stock-table td:nth-child(7) { width: 7%; }
+.stock-table th:nth-child(8), .stock-table td:nth-child(8) { width: 9%; }
+.stock-table th:nth-child(9), .stock-table td:nth-child(9) { width: 8%; }
+.stock-table th:nth-child(10), .stock-table td:nth-child(10) { width: 8%; }
+.stock-table th:nth-child(11), .stock-table td:nth-child(11) { width: 8%; }
+.stock-table th:nth-child(12), .stock-table td:nth-child(12) { width: 9%; }
 
 /* Invoices: the run cost/income table now carries the sale side (9 columns). */
 .invoice-runs-table th:nth-child(1), .invoice-runs-table td:nth-child(1) { width: 17%; }
@@ -2839,7 +2844,7 @@ select.sel:focus {
 .ledger-row:hover td { background: var(--surface-2); }
 .ledger-caret { display: inline-block; width: 1em; color: var(--muted); font-size: 0.8em; }
 /* the expansion opts out of the single-line clamp — it is a full-width panel */
-.parts-stock-table td.ledger-cell {
+.stock-table td.ledger-cell {
   white-space: normal;
   overflow: visible;
   width: auto;
@@ -2918,19 +2923,6 @@ select.sel:focus {
    in full, so this one cell opts out of the single-line clamp. */
 .write-log-table td:nth-child(6) .muted.dim { white-space: normal; overflow: visible; }
 
-/* Stock reconciliation: the pool against JLC's own count, part by part. Fixed
-   layout, widths summing to 100%; .data-fixed supplies the ellipsis treatment. */
-.stock-reconcile-table { table-layout: fixed; }
-.stock-reconcile-table th:nth-child(1), .stock-reconcile-table td:nth-child(1) { width: 10%; }
-.stock-reconcile-table th:nth-child(2), .stock-reconcile-table td:nth-child(2) { width: 22%; }
-.stock-reconcile-table th:nth-child(3), .stock-reconcile-table td:nth-child(3) { width: 10%; }
-.stock-reconcile-table th:nth-child(4), .stock-reconcile-table td:nth-child(4) { width: 10%; }
-.stock-reconcile-table th:nth-child(5), .stock-reconcile-table td:nth-child(5) { width: 10%; }
-.stock-reconcile-table th:nth-child(6), .stock-reconcile-table td:nth-child(6) { width: 9%; }
-.stock-reconcile-table th:nth-child(7), .stock-reconcile-table td:nth-child(7) { width: 9%; }
-.stock-reconcile-table th:nth-child(8), .stock-reconcile-table td:nth-child(8) { width: 11%; }
-.stock-reconcile-table th:nth-child(9), .stock-reconcile-table td:nth-child(9) { width: 9%; }
-
 /* Stock adjustments: stock moving with no invoice behind it. */
 .stock-adj-table { table-layout: fixed; }
 .stock-adj-table th:nth-child(1), .stock-adj-table td:nth-child(1) { width: 6%; }
@@ -2960,3 +2952,114 @@ select.sel:focus {
 .jlc-parts-table th:nth-child(3), .jlc-parts-table td:nth-child(3) { width: 14%; }
 .jlc-parts-table th:nth-child(4), .jlc-parts-table td:nth-child(4) { width: 26%; }
 .jlc-parts-table th:nth-child(5), .jlc-parts-table td:nth-child(5) { width: 12%; }
+
+/* Second-level navigation for the Library and Production sections. Reuses the
+   .topbar-link pills; this bar only supplies the strip below the top bar. */
+.subnav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 4px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+/* Exchange rates on the Setup page. */
+.fx-table { table-layout: fixed; }
+.fx-table th:nth-child(1), .fx-table td:nth-child(1) { width: 16%; }
+.fx-table th:nth-child(2), .fx-table td:nth-child(2) { width: 22%; }
+.fx-table th:nth-child(3), .fx-table td:nth-child(3) { width: 20%; }
+.fx-table th:nth-child(4), .fx-table td:nth-child(4) { width: 24%; }
+.fx-table th:nth-child(5), .fx-table td:nth-child(5) { width: 18%; }
+
+/* Failed schema statements on the Setup page. The result column carries an
+   error message that must be readable in full, so it opts out of the clamp. */
+.schema-table { table-layout: fixed; }
+.schema-table th:nth-child(1), .schema-table td:nth-child(1) { width: 34%; }
+.schema-table th:nth-child(2), .schema-table td:nth-child(2) { width: 66%; }
+.schema-table td:nth-child(2) { white-space: normal; overflow: visible; }
+
+/* The run page's Materials table: planned BOM usage vs real draws, one row per
+   component. Ten columns, widths summing to 100%. The expansion row (draws,
+   lots, override editor) reuses the .ledger-cell opt-out. */
+.run-materials-table { table-layout: fixed; }
+.run-materials-table th:nth-child(1), .run-materials-table td:nth-child(1) { width: 20%; }
+.run-materials-table th:nth-child(2), .run-materials-table td:nth-child(2) { width: 7%; }
+.run-materials-table th:nth-child(3), .run-materials-table td:nth-child(3) { width: 7%; }
+.run-materials-table th:nth-child(4), .run-materials-table td:nth-child(4) { width: 7%; }
+.run-materials-table th:nth-child(5), .run-materials-table td:nth-child(5) { width: 9%; }
+.run-materials-table th:nth-child(6), .run-materials-table td:nth-child(6) { width: 9%; }
+.run-materials-table th:nth-child(7), .run-materials-table td:nth-child(7) { width: 9%; }
+.run-materials-table th:nth-child(8), .run-materials-table td:nth-child(8) { width: 9%; }
+.run-materials-table th:nth-child(9), .run-materials-table td:nth-child(9) { width: 10%; }
+.run-materials-table th:nth-child(10), .run-materials-table td:nth-child(10) { width: 13%; }
+.run-materials-table td.ledger-cell {
+  white-space: normal;
+  overflow: visible;
+  width: auto;
+  padding: 10px 14px 14px;
+  background: var(--surface-2);
+}
+.run-materials-table tfoot td { border-top: 1px solid var(--line); }
+
+/* The write log's row-detail expansion reuses the full-width panel opt-out. */
+.write-log-table td.ledger-cell {
+  white-space: normal;
+  overflow: visible;
+  width: auto;
+  padding: 10px 14px 14px;
+  background: var(--surface-2);
+}
+
+/* Production overview's per-run table: the 9 money columns plus the inline
+   cost-vs-revenue bar. Widths sum to 100%. */
+.prod-runs-table { table-layout: fixed; }
+.prod-runs-table th:nth-child(1), .prod-runs-table td:nth-child(1) { width: 12%; }
+.prod-runs-table th:nth-child(2), .prod-runs-table td:nth-child(2) { width: 9%; }
+.prod-runs-table th:nth-child(3), .prod-runs-table td:nth-child(3) { width: 6%; }
+.prod-runs-table th:nth-child(4), .prod-runs-table td:nth-child(4) { width: 9%; }
+.prod-runs-table th:nth-child(5), .prod-runs-table td:nth-child(5) { width: 8%; }
+.prod-runs-table th:nth-child(6), .prod-runs-table td:nth-child(6) { width: 9%; }
+.prod-runs-table th:nth-child(7), .prod-runs-table td:nth-child(7) { width: 9%; }
+.prod-runs-table th:nth-child(8), .prod-runs-table td:nth-child(8) { width: 8%; }
+.prod-runs-table th:nth-child(9), .prod-runs-table td:nth-child(9) { width: 8%; }
+.prod-runs-table th:nth-child(10), .prod-runs-table td:nth-child(10) { width: 7%; }
+.prod-runs-table th:nth-child(11), .prod-runs-table td:nth-child(11) { width: 15%; }
+.prod-runs-table .dash-bar-track { display: inline-block; width: 100%; }
+
+/* Three-line clamp for long free text (version comments) with a toggle. */
+.clamp3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+
+/* Symbol / footprint miniatures (Templates list). The cell shows a small
+   render; hovering pops a large one. The popup is position:fixed because the
+   table cells clip overflow for the single-line-row rule. */
+.tpl-thumb-wrap { display: inline-block; }
+.tpl-thumb {
+  display: block;
+  width: 64px;
+  height: 26px;
+  object-fit: contain;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.tpl-thumb-pop {
+  position: fixed;
+  z-index: 40;
+  width: 340px;
+  height: 260px;
+  object-fit: contain;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--modal-shadow);
+  padding: 8px;
+  pointer-events: none;
+}

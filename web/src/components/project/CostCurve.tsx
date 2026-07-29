@@ -18,11 +18,7 @@ function niceTicks(max: number, count = 4): number[] {
   return ticks;
 }
 
-function fmtMoney(v: number | null, currency: string): string {
-  if (v == null) return "—";
-  const digits = v >= 100 ? 2 : v >= 1 ? 2 : 4;
-  return `${v.toLocaleString(undefined, { maximumFractionDigits: digits })} ${currency}`;
-}
+import { price as fmtMoney } from "../../format";
 
 export default function CostCurve({ points, currency }: { points: CurvePoint[]; currency: string }) {
   const [hover, setHover] = useState<number | null>(null);

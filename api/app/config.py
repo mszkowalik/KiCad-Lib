@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     # locally stored datasheets injected into generated symbols.
     public_base_url: str = "http://localhost:8020"
 
+    # Browser origins allowed to call this API, comma-separated. The deployed
+    # web image serves the SPA from the same origin as the API (nginx proxies
+    # both), so CORS only matters for a dev server aimed at a remote API.
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
     # Jaravis: key read from env or .env; model per user preference
     # (Sonnet by default, set JARAVIS_MODEL=claude-opus-4-8 for harder tasks).
     anthropic_api_key: str = ""
@@ -105,6 +110,10 @@ class Settings(BaseSettings):
     # footprint refs are remapped to the PCM footprint nickname.
     httplib_symbol_lib: str = "PCM_7Sigma_Base"
     footprint_lib_nickname: str = "PCM_7Sigma"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
     def mirror_dir(self) -> Path:

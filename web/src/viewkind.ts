@@ -5,6 +5,7 @@
  *  through the viewer page instead of triggering a bare download.
  */
 import { API_URL } from "./api";
+import { appHref } from "./appbase";
 
 export type ViewKind = "pdf" | "step" | "iges" | "3mf" | "wrl" | "dxf" | "dwg" | "glb" | "image";
 
@@ -58,9 +59,15 @@ export function absoluteFileUrl(src: string): string {
  *  by the viewer, so they stay plain links. */
 export function fileHref(src: string, name: string): string {
   const kind = viewKindOf(name);
-  if (kind !== null && VIEWER_KINDS.has(kind) && (src.startsWith("/") || src.startsWith(API_URL))) {
-    const path = src.startsWith(API_URL) ? src.slice(API_URL.length) : src;
-    return `/view?src=${encodeURIComponent(path)}&name=${encodeURIComponent(name)}`;
+  // API_URL is "" for a same-origin build, and every string starts with "" —
+  // so the prefix test has to be guarded or external URLs count as ours.
+  const prefixed = API_URL !== "" && src.startsWith(API_URL);
+  if (kind !== null && VIEWER_KINDS.has(kind) && (src.startsWith("/") || prefixed)) {
+    const path = prefixed ? src.slice(API_URL.length) : src;
+    // appHref, because this lands in a plain <a href> — the router basename
+    // does not apply and <base href> only governs relative urls, so a bare
+    // "/view" would escape the mount point.
+    return appHref(`/view?src=${encodeURIComponent(path)}&name=${encodeURIComponent(name)}`);
   }
   return absoluteFileUrl(src);
 }

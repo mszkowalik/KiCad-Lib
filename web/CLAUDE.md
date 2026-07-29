@@ -76,6 +76,26 @@ a component. When you add an endpoint:
    `isAbortError(err)` to ignore aborts, `<Spinner/>` while loading, and
    `<ErrorBanner/>` on failure.
 
+### The API is same-origin — `API_URL` defaults to `""`
+
+`API_URL` in `src/api.ts` is a **path prefix**, and its default is the empty
+string. In the deployed image nginx serves the SPA and proxies `/api`, `/kicad`
+and `/files` to the api container (`web/default.conf.template`, whose
+`${API_UPSTREAM}` is substituted at container start so a stack sharing a docker
+network can point at a prefixed service name); `npm run dev` proxies the
+same paths (`vite.config.ts`, target `VITE_API_PROXY`). Vite inlines
+`VITE_API_URL` at **build time**, so an absolute default would tie one image to
+one hostname — set `VITE_API_URL` only to aim a build at another origin.
+
+Two consequences when you touch this:
+
+- **Never test a string against `API_URL` with `startsWith`** without checking
+  it is non-empty first: every string starts with `""`. That is why
+  `viewkind.fileHref` guards the prefix test — without it, external datasheet
+  URLs were treated as ours and routed into the local viewer.
+- Show `apiOrigin()`, not `API_URL`, in anything the user reads. `API_URL` is
+  `""` for a same-origin build, which reads as a blank in an error message.
+
 ## Conventions
 
 - **Pages** are route targets (`src/pages/`, wired in `App.tsx`). **Reusable
@@ -89,6 +109,30 @@ a component. When you add an endpoint:
 - The dev server is Vite with HMR (`npm run dev`, port 5173) — component edits
   hot-reload without a restart.
 - When a non-obvious frontend convention emerges, record it here.
+
+### Site structure (UI overhaul, 2026-07-29)
+
+- **Five nav sections**: Library (`/library/...`), Projects (+ `/runs/:id`),
+  Production (`/production/...`), Proposals, Setup. Second-level navigation is
+  `SectionNav` in `App.tsx`; every pre-overhaul route redirects, so never link
+  to `/components/...`, `/invoices`, `/parts-stock`, `/kicad` in new code —
+  use the new paths.
+- **A run is edited only on `/runs/:id`** (`pages/RunDetail.tsx`): status,
+  sale (price/device, qty_good…), notes, overrides, materials, costs, files,
+  serials. The project Runs tab is a plain list. Do not add run-editing UI
+  anywhere else.
+- **Money formatters live in `src/format.ts`** (`usd`, `amount`, `price`,
+  `plain`). Never declare a local `money()` — there were eleven copies once,
+  and they drifted.
+- **Cost-domain primitives live in `components/costs.tsx`**:
+  `COST_LINE_KINDS`, `<StepSelect>` (step catalog grouped by stage),
+  `<ChargeToSelect>` (run/project/excluded destination). Reuse, never copy.
+- **Tab state goes in the URL** (`?tab=`, see RunDetail/Templates), selection
+  state that should deep-link goes in the path (`/library/skills/:id`).
+  `useStickyState` is only a fallback for bare visits.
+- **Each number has one home.** Run economics render on the run page and the
+  Production overview; stock figures on Production → Stock. Link there
+  instead of re-rendering a figure on a new surface.
 
 ### Attachments open in a viewer, never as a download
 
@@ -155,28 +199,6 @@ overflow):
 Compound selectors (`.data.proposals-table td:nth-child(n)`) are needed to
 outrank existing width rules such as `.data td.ctr { width: 1% }`.
 
-### Jaravis chat is server-persisted (multiple sessions)
-
-The Jaravis page (`pages/Jaravis.tsx`) no longer keeps the conversation in local
-state only. Conversations are `JaravisSession`s stored by the API; the page
-lists them in a left sidebar (`.chat-sessions` / `.session-item`, reusing the
-`--accent-soft` active style) and streams turns via `jaravisSessionChatStream`.
-Conventions to keep: the last-open session id is remembered in `localStorage`
-under `jaravis.activeSession` (reopened on mount, else the newest); a session is
-created **lazily on the first message** (and by the explicit "New chat" button)
-so idle empty sessions don't pile up; session switching is disabled while a turn
-is in flight (`busy || attaching`). The stored assistant message carries its
-`trace` + `proposals`, so a reloaded thread renders the same tool list and
-proposal notes as the live run.
-
-Turns run server-side and survive a refresh (see the api CLAUDE.md background-run
-note). Because of that: **Stop calls `cancelJaravisRun`**, not just an abort — a
-client abort no longer stops the run. On opening a session whose last stored
-message is a `user` message (the signature of an unfinished turn), the page
-calls `reattach()` → `attachJaravisRun`, which replays the run's events for live
-progress and then reloads the stored messages as the source of truth (reload,
-don't append, to avoid duplicating the reply). `activeIdRef` mirrors `activeId`
-so these async callbacks ignore results after the user switches conversations.
 
 ### The invoice line "charge to" cell mirrors `line_destination`, never re-derives it
 

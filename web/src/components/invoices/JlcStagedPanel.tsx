@@ -24,14 +24,7 @@ import { ErrorBanner, Spinner } from "../Ui";
  * figures shown are the figures the import produces. A re-implementation of the
  * mapping could disagree with the mapping; the same code cannot.
  */
-/** Money, always two decimals — see the note in StockReconcile. */
-function money(v: number | null | undefined): string {
-  if (v == null) return "—";
-  return `$${v.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
+import { usd as money } from "../../format";
 
 export default function JlcStagedPanel({ onImported }: { onImported?: () => void } = {}) {
   const dialog = useDialog();

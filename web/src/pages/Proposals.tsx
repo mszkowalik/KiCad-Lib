@@ -33,7 +33,7 @@ export default function Proposals() {
   const [rows, setRows] = useState<Proposal[] | null>(null);
   const [history, setHistory] = useState<ProposalHistoryRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<number | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [previewKey, setPreviewKey] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -98,7 +98,7 @@ export default function Proposals() {
       });
       if (!confirmed) return;
     }
-    setBusyId(p.proposal_id);
+    setBusyId(keyOf(p));
     setError(null);
     setNotice(null);
     try {
@@ -257,17 +257,19 @@ export default function Proposals() {
                         />
                       </td>
                       <td>
-                        {isGeometry(p) ? (
-                          <span className="mono">{p.component_name}</span>
-                        ) : (
-                          <Link
-                            to={p.kind === "skill" ? "/skills" : `/components/${p.component_id}`}
-                            state={{ backTo: "/proposals", showVersion: p.version_no }}
-                            className="mono comp-link"
-                          >
-                            {p.component_name}
-                          </Link>
-                        )}
+                        <Link
+                          to={
+                            isGeometry(p)
+                              ? `/library/templates/${p.kind}s/${p.template_id}`
+                              : p.kind === "skill"
+                                ? `/library/skills/${p.skill_id}`
+                                : `/library/components/${p.component_id}`
+                          }
+                          state={{ backTo: "/proposals", showVersion: p.version_no }}
+                          className="mono comp-link"
+                        >
+                          {p.component_name}
+                        </Link>
                       </td>
                       <td>
                         {p.kind === "skill" ? (
@@ -312,7 +314,7 @@ export default function Proposals() {
                           disabled={rowsBusy}
                           onClick={() => void act(p, "approve")}
                         >
-                          {busyId === p.proposal_id ? "…" : "Approve"}
+                          {busyId === keyOf(p) ? "…" : "Approve"}
                         </button>{" "}
                         <button
                           type="button"
@@ -391,14 +393,14 @@ export default function Proposals() {
                       <td title={h.component_name}>
                         {h.kind === "component" && h.component_id !== null ? (
                           <Link
-                            to={`/components/${h.component_id}`}
+                            to={`/library/components/${h.component_id}`}
                             state={{ backTo: "/proposals", showVersion: h.version_no }}
                             className="mono comp-link"
                           >
                             {h.component_name}
                           </Link>
                         ) : h.kind === "skill" ? (
-                          <Link to="/skills" className="mono comp-link">
+                          <Link to="/library/skills" className="mono comp-link">
                             {h.component_name}
                           </Link>
                         ) : (

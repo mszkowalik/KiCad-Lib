@@ -21,10 +21,7 @@ function qty(v: number | null | undefined): string {
   return Math.round(v).toLocaleString();
 }
 
-function usd(v: number | null | undefined, digits = 2): string {
-  if (v == null) return "—";
-  return v.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
-}
+import { plain as usd } from "../format";
 
 const KIND_LABEL: Record<string, string> = { buy: "purchase", use: "draw", adj: "adjust" };
 

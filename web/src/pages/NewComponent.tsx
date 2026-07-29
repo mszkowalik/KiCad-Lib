@@ -64,7 +64,7 @@ export default function NewComponent() {
             : null,
         comment: comment.trim() || null,
       });
-      navigate(`/components/${res.component_id}`);
+      navigate(`/library/components/${res.component_id}`);
     } catch (err) {
       setError(errorMessage(err));
       setSubmitting(false);

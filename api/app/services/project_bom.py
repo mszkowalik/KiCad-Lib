@@ -631,6 +631,17 @@ def run_effective(db: Session, run: M.ProductionRun) -> dict:
         totals_parts += total or 0.0
         added.append({"key": f"a{i}", "label": ov.get("label", ""), "qty_total": line_qty,
                       "unit_price": unit, "line_total": total, "note": ov.get("note", "")})
+    # USD mirror of every line's unit price, converted at the run date. The
+    # run page's Materials table puts these planned lines NEXT TO the pool
+    # draws, and draws are USD-denominated — without a same-date USD figure
+    # the comparison would silently mix currencies. None when the rate is
+    # unknown, never a 1:1 pretence.
+    rates = fx.rates_at(db, at)
+    display_cur = display_currency(project)
+    for eff in lines + added:
+        if eff.get("unit_price") is not None and not eff.get("dropped"):
+            usd_v, known = fx.convert(eff["unit_price"], display_cur, "USD", rates)
+            eff["unit_usd"] = round(usd_v, 6) if known else None
     run_total = totals_parts + cost_total
     return {
         "priced_at": at.isoformat(),

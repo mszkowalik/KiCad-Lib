@@ -1,0 +1,107 @@
+# Server deployment. Runs the images built by .github/workflows/images.yml
+# instead of building from source, so the server never needs the repo checked
+# out beyond this file and a .env.
+#
+#   docker compose -f compose.prod.yaml pull
+#   docker compose -f compose.prod.yaml up -d
+#
+# One published port: the web container serves the UI and proxies /api, /kicad
+# and /files to the api container, so the browser, KiCad and the MCP server all
+# use the same address. Pin a build with IMAGE_TAG=sha-abc1234 (every push
+# produces that tag) instead of riding `latest`.
+name: kicadlib
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kicadlib}
+      # Required: the dev default must not reach a server.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-kicadlib}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kicadlib}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-kicadlib}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    image: ${IMAGE_PREFIX:-ghcr.io/mszkowalik/kicad-lib}/api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kicadlib}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-kicadlib}
+      DATA_DIR: /data
+      RENDER_MODE: http
+      RENDER_URL: http://render:8100
+      # Required: generated symbols embed this address in datasheet links, and
+      # a wrong value produces links that resolve nowhere from a KiCad client.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL to this server's address}
+      HTTPLIB_TOKEN: ${HTTPLIB_TOKEN:?set HTTPLIB_TOKEN in .env}
+      # /api/agent/* can create draft proposals — never leave it open off-host.
+      MCP_TOKEN: ${MCP_TOKEN:?set MCP_TOKEN in .env}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-kicadlib}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-kicadlib}
+      MINIO_SECURE: "false"
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      JLC_APP_ID: ${JLC_APP_ID:-}
+      JLC_ACCESS_KEY: ${JLC_ACCESS_KEY:-}
+      JLC_SECRET_KEY: ${JLC_SECRET_KEY:-}
+      HTTPLIB_SYMBOL_LIB: ${HTTPLIB_SYMBOL_LIB:-PCM_7Sigma_Base}
+      FOOTPRINT_LIB_NICKNAME: ${FOOTPRINT_LIB_NICKNAME:-PCM_7Sigma}
+      # Nightly jobs log in server local time; containers are UTC otherwise.
+      TZ: ${TZ:-Europe/Warsaw}
+    volumes:
+      # No /repo mount: settings.repo_dir is read only by the retired YAML
+      # importer (services/importer.py). Mount the repo read-only at /repo if
+      # you ever need to re-run that.
+      - apidata:/data
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  render:
+    image: ${IMAGE_PREFIX:-ghcr.io/mszkowalik/kicad-lib}/render:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    # kicad/kicad is published amd64-only; on an arm64 host this needs
+    # emulation and previews get slow.
+    platform: linux/amd64
+    environment:
+      SEVENSIGMA_DIR: /data/mirror
+    volumes:
+      - apidata:/data:ro
+
+  web:
+    image: ${IMAGE_PREFIX:-ghcr.io/mszkowalik/kicad-lib}/web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - api
+
+volumes:
+  dbdata:
+  apidata:
+  miniodata:

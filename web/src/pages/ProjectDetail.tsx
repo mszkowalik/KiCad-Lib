@@ -24,6 +24,9 @@ import SchematicTab from "../components/project/SchematicTab";
 const TABS = ["BOM", "Board", "Schematic", "History", "Costs", "Runs", "Notes", "Settings"] as const;
 type Tab = (typeof TABS)[number];
 
+/** Visible labels; the keys stay stable so sticky tab state survives. */
+const TAB_LABEL: Partial<Record<Tab, string>> = { Costs: "Cost plan", Runs: "Batches" };
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const projectId = Number(id);
@@ -222,7 +225,7 @@ export default function ProjectDetail() {
               className={tab === t ? "on" : ""}
               onClick={() => setTab(t)}
             >
-              {t}
+              {TAB_LABEL[t] ?? t}
             </button>
           ))}
         </div>

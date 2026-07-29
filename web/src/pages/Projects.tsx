@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   createProject,
   errorMessage,
@@ -16,6 +16,7 @@ function fmtDate(iso: string | null): string {
 }
 
 export default function Projects() {
+  const navigate = useNavigate();
   const [list, setList] = useState<ProjectInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
@@ -130,7 +131,7 @@ export default function Projects() {
           <div className="card pad">
             <p className="muted">
               No projects yet. Track your KiCad designs from their git repositories:
-              BOMs priced at any volume, board/schematic previews, production runs.
+              BOMs priced at any volume, board/schematic previews, production batches.
             </p>
           </div>
         ) : null}
@@ -144,14 +145,19 @@ export default function Projects() {
                   <th>Repository</th>
                   <th>Latest snapshot</th>
                   <th>Boards</th>
-                  <th className="num">Runs</th>
+                  <th className="num">Batches</th>
                   <th>Currency</th>
                   <th>Created</th>
                 </tr>
               </thead>
               <tbody>
                 {list.map((p) => (
-                  <tr key={p.id}>
+                  <tr
+                    key={p.id}
+                    className="ledger-row"
+                    title={`Open ${p.name}`}
+                    onClick={() => navigate(`/projects/${p.id}`)}
+                  >
                     <td>
                       <Link className="comp-link" to={`/projects/${p.id}`}>
                         {p.name}

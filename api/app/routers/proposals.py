@@ -75,6 +75,9 @@ def list_proposals(db: Session = Depends(get_db)):
             out.append({
                 "kind": kind,
                 "proposal_id": v.id,
+                # the parent symbol/footprint id, so the row can link to
+                # /library/templates/<kind>s/<id> instead of being plain text
+                "template_id": parent.id,
                 "component_name": parent.name,  # display name, keeps table simple
                 "version_no": v.version_no,
                 "is_new_component": parent.current_version_id is None,

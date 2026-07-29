@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import {
   errorMessage,
+  getWriteBatch,
   getWriteBatches,
   isAbortError,
   reverseWriteBatch,
   type WriteBatch,
+  type WriteBatchRow,
 } from "../../api";
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner } from "../Ui";
@@ -29,6 +31,22 @@ export default function WriteLog({ onReversed }: { onReversed?: () => void } = {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<number | null>(null);
   const [plan, setPlan] = useState<Record<number, string>>({});
+  // Row-level detail, loaded on demand: which rows a batch touched and how.
+  const [open, setOpen] = useState<number | null>(null);
+  const [detail, setDetail] = useState<Record<number, WriteBatchRow[] | string>>({});
+
+  const toggleDetail = (id: number) => {
+    if (open === id) {
+      setOpen(null);
+      return;
+    }
+    setOpen(id);
+    if (!detail[id]) {
+      getWriteBatch(id)
+        .then((d) => setDetail((p) => ({ ...p, [id]: d.rows })))
+        .catch((err) => setDetail((p) => ({ ...p, [id]: errorMessage(err) })));
+    }
+  };
 
   const load = useCallback((signal?: AbortSignal) => {
     setLoading(true);
@@ -124,8 +142,13 @@ export default function WriteLog({ onReversed }: { onReversed?: () => void } = {
                   .map(([k, v]) => `${v} ${k}`)
                   .join(", ");
                 return (
-                  <tr key={b.id}>
-                    <td className="mono">{b.id}</td>
+                  <Fragment key={b.id}>
+                  <tr className="ledger-row" onClick={() => toggleDetail(b.id)}
+                      title="Click for the rows this batch touched">
+                    <td className="mono">
+                      <span className="ledger-caret">{open === b.id ? "▾" : "▸"}</span>
+                      {b.id}
+                    </td>
                     <td>
                       {b.kind}
                       {b.kind === "reverse" && <span className="pill neutral">undo</span>}
@@ -147,14 +170,20 @@ export default function WriteLog({ onReversed }: { onReversed?: () => void } = {
                           <button
                             className="btn btn-sm"
                             disabled={busy === b.id}
-                            onClick={() => preview(b)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void preview(b);
+                            }}
                           >
                             Check
                           </button>
                           <button
                             className="btn btn-sm btn-danger"
                             disabled={busy === b.id}
-                            onClick={() => undo(b)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void undo(b);
+                            }}
                           >
                             Undo
                           </button>
@@ -163,6 +192,64 @@ export default function WriteLog({ onReversed }: { onReversed?: () => void } = {
                       {plan[b.id] && <div className="muted dim">{plan[b.id]}</div>}
                     </td>
                   </tr>
+                  {open === b.id && (
+                    <tr>
+                      <td colSpan={6} className="ledger-cell">
+                        {detail[b.id] == null ? (
+                          <Spinner label="loading batch rows" />
+                        ) : typeof detail[b.id] === "string" ? (
+                          <ErrorBanner message={detail[b.id] as string} />
+                        ) : (
+                          <div className="table-wrap">
+                            <table className="data">
+                              <thead>
+                                <tr>
+                                  <th>table</th>
+                                  <th>row</th>
+                                  <th>op</th>
+                                  <th>before</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(detail[b.id] as WriteBatchRow[]).map((r) => (
+                                  <tr key={r.id}>
+                                    <td className="mono">{r.table}</td>
+                                    <td className="mono">{r.row_id}</td>
+                                    <td>
+                                      <span
+                                        className={`pill ${
+                                          r.op === "insert"
+                                            ? "ok"
+                                            : r.op === "delete"
+                                              ? "err"
+                                              : "warn"
+                                        }`}
+                                      >
+                                        {r.op}
+                                      </span>
+                                    </td>
+                                    <td
+                                      className="mono cell-desc"
+                                      title={r.before ? JSON.stringify(r.before) : ""}
+                                    >
+                                      {r.before ? (
+                                        JSON.stringify(r.before)
+                                      ) : (
+                                        <span className="dim">
+                                          — (insert: reversal deletes the row)
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
+  deleteFootprint,
   errorMessage,
   getTemplate,
   isAbortError,
@@ -10,6 +11,7 @@ import {
   type TemplateKind,
 } from "../api";
 import CommentsPanel from "../components/CommentsPanel";
+import { useDialog } from "../components/Dialog";
 import { ErrorBanner, Spinner } from "../components/Ui";
 
 function isKind(k: string | undefined): k is TemplateKind {
@@ -36,6 +38,30 @@ export default function TemplateDetail() {
   const [nameDraft, setNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [nameNotice, setNameNotice] = useState<string | null>(null);
+  const [retiring, setRetiring] = useState(false);
+  const navigate = useNavigate();
+  const dialog = useDialog();
+
+  /** Footprints only: retire it entirely. The server refuses (409) while any
+   *  component version — current or historical — still pins a version of it,
+   *  so history stays reproducible; that refusal is shown verbatim. */
+  const retire = async () => {
+    if (!data) return;
+    const ok = await dialog.confirm(
+      `Retire footprint ${data.name} — every version and its mirror file? ` +
+        `There is no draft/approve path here and no version to roll back to.`,
+      { title: "Retire footprint", confirmLabel: "Retire", tone: "danger" },
+    );
+    if (!ok) return;
+    setRetiring(true);
+    try {
+      await deleteFootprint(id);
+      navigate("/library/templates?tab=footprints");
+    } catch (err) {
+      setError(errorMessage(err));
+      setRetiring(false);
+    }
+  };
 
   useEffect(() => {
     if (!isKind(kind) || !Number.isFinite(id)) {
@@ -86,7 +112,7 @@ export default function TemplateDetail() {
     return (
       <div className="main-solo">
         <div className="page">
-          <Link to="/templates" className="backlink">
+          <Link to="/library/templates" className="backlink">
             ← All templates
           </Link>
           <ErrorBanner message={error} />
@@ -99,7 +125,7 @@ export default function TemplateDetail() {
     return (
       <div className="main-solo">
         <div className="page">
-          <Link to="/templates" className="backlink">
+          <Link to="/library/templates" className="backlink">
             ← All templates
           </Link>
           <Spinner label="Loading template" />
@@ -113,7 +139,7 @@ export default function TemplateDetail() {
   return (
     <div className="main-solo">
       <div className="page">
-        <Link to="/templates" className="backlink">
+        <Link to="/library/templates" className="backlink">
           ← All templates
         </Link>
         <div className="toolbar">
@@ -224,7 +250,7 @@ export default function TemplateDetail() {
               {data.used_by.map((u, i) => (
                 <span key={u.id}>
                   {i > 0 ? ", " : ""}
-                  <Link to={`/components/${u.id}`} className="comp-link">
+                  <Link to={`/library/components/${u.id}`} className="comp-link">
                     {u.name}
                   </Link>
                 </span>
@@ -238,6 +264,20 @@ export default function TemplateDetail() {
             <summary>Source ({noun === "footprint" ? ".kicad_mod" : ".kicad_sym"})</summary>
             <pre className="code-block">{data.source_text}</pre>
           </details>
+        ) : null}
+
+        {kind === "footprints" ? (
+          <div className="card pad danger-card">
+            <h2>Retire this footprint</h2>
+            <p className="muted">
+              Deletes the footprint, all its versions and its file in the mirror. The server
+              refuses while any component version — including historical ones — still pins it,
+              and names the count.
+            </p>
+            <button className="btn btn-danger" disabled={retiring} onClick={() => void retire()}>
+              {retiring ? "Retiring…" : "Retire footprint"}
+            </button>
+          </div>
         ) : null}
 
         <CommentsPanel kind={kind} id={id} noun={noun} />

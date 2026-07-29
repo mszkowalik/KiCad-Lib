@@ -3,10 +3,12 @@ import {
   applyJlcDecision,
   clearJlcDecision,
   errorMessage,
+  fetchJlcOrderBom,
   getJlcQueue,
   isAbortError,
   setJlcDecision,
   syncJlcImport,
+  voidJlcShopDraws,
   type JlcDecisionApplyResult,
   type JlcQueue,
   type JlcQueueOrder,
@@ -99,6 +101,64 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
     }
   }
 
+  /** Cache JLC's own BOM for one order — the only source of who supplied
+   *  each part. Evidence, not money; nothing is journalled. */
+  async function fetchBom(o: JlcQueueOrder) {
+    setBusy(o.smt_order_code);
+    try {
+      const r = await fetchJlcOrderBom(o.smt_order_code);
+      const by = Object.entries(r.by_component_source)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(" · ");
+      await dialog.alert(
+        `Cached JLC's BOM for ${o.smt_order_code}: ${r.rows} row(s) (${by || "no source info"}). ` +
+          (r.shop_parts.length
+            ? `${r.shop_parts.length} part(s) were supplied by JLC itself — if draws exist for ` +
+              `them, "Void shop draws" repairs the double charge.`
+            : "Every part came from your consigned stock."),
+        { title: "JLC BOM fetched" },
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Void draws for parts JLC supplied itself, so they are not paid twice.
+   *  Dry run first; the real write is one reversible batch. */
+  async function voidShop(o: JlcQueueOrder) {
+    setBusy(o.smt_order_code);
+    try {
+      const dry = await voidJlcShopDraws(o.smt_order_code, true);
+      if (!dry.would_void?.length) {
+        await dialog.alert(
+          dry.note || "No live draws match JLC-supplied parts on this order.",
+          { title: "Nothing to void" },
+        );
+        return;
+      }
+      const ok = await dialog.confirm(
+        `Void ${dry.would_void.length} draw(s) worth $${dry.value_usd} on run ${dry.run_id} — ` +
+          `parts JLC supplied itself (${(dry.shop_parts ?? []).join(", ")})? ` +
+          `One reversible batch.`,
+        { title: "Void shop draws", confirmLabel: "Void", tone: "danger" },
+      );
+      if (!ok) return;
+      const res = await voidJlcShopDraws(o.smt_order_code, false);
+      await dialog.alert(
+        `Voided — write batch ${res.batch_id}, undoable in the Write log.`,
+        { title: "Shop draws voided" },
+      );
+      load();
+      onApplied?.();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function undo(o: JlcQueueOrder) {
     setBusy(o.smt_order_code);
     try {
@@ -130,7 +190,7 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
     const p = plan[o.smt_order_code];
     const detail = typeof p === "object" ? describe(p) : "";
     const ok = await dialog.confirm(
-      `Apply the ${o.decision?.outcome === "external" ? "external" : "run link"} decision for ` +
+      `Apply the ${o.decision?.outcome === "external" ? "external" : "batch link"} decision for ` +
         `${o.smt_order_code}?` +
         (detail ? ` This will ${detail}.` : "") +
         " It runs as one reversible batch and rolls back if the register stops balancing.",
@@ -282,13 +342,13 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
                   onClick={() => decide(o, "external")}
                   title={
                     o.consumed_value_usd
-                      ? `Removes $${o.consumed_value_usd} of stock value from run costing`
+                      ? `Removes $${o.consumed_value_usd} of stock value from batch costing`
                       : "No stock was drawn by this order"
                   }
                 >
                   External project
                   {o.consumed_value_usd
-                    ? ` (−$${(o.consumed_value_usd ?? 0).toLocaleString()} from run costs)`
+                    ? ` (−$${(o.consumed_value_usd ?? 0).toLocaleString()} from batch costs)`
                     : ""}
                 </button>
                 {o.candidates.length > 1 && (
@@ -338,12 +398,30 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
                     </>
                   )}
                   <button
+                    className="btn btn-sm"
+                    disabled={busy === o.smt_order_code}
+                    onClick={() => fetchBom(o)}
+                    title="Cache JLC's own BOM for this order — the only source of who supplied each part (consigned stock vs JLC's shop)."
+                  >
+                    Fetch JLC BOM
+                  </button>
+                  {o.decision?.outcome === "link_run" && (
+                    <button
+                      className="btn btn-sm"
+                      disabled={busy === o.smt_order_code}
+                      onClick={() => voidShop(o)}
+                      title="Void draws for parts JLC supplied itself, so they are not charged to the pool a second time. Needs the JLC BOM fetched first."
+                    >
+                      Void shop draws
+                    </button>
+                  )}
+                  <button
                     className="btn btn-sm btn-danger"
                     disabled={busy === o.smt_order_code || !!o.decision?.applied_at}
                     onClick={() => undo(o)}
                     title={
                       o.decision?.applied_at
-                        ? "Already applied — undo its write batch in Recent writes first"
+                        ? "Already applied — undo its write batch in the Write log first"
                         : "Clear this decision"
                     }
                   >
@@ -444,8 +522,8 @@ function Evidence({ order }: { order: JlcQueueOrder }) {
         <table className="data">
           <thead>
             <tr>
-              <th>candidate run</th>
-              <th className="num">run qty</th>
+              <th>candidate batch</th>
+              <th className="num">batch qty</th>
               <th className="num">k</th>
               <th className="num">agree</th>
               <th className="num">implied devices</th>

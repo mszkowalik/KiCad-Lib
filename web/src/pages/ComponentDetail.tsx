@@ -21,6 +21,7 @@ import {
   getVersion,
   isAbortError,
   refreshPricePoints,
+  setComponentInLibrary,
   setComponentPurchasable,
   setPricePoints,
   symbolSvgUrl,
@@ -48,6 +49,7 @@ import {
 } from "../components/editing";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import CommentsPanel from "../components/CommentsPanel";
+import WhereUsedCard from "../components/WhereUsedCard";
 import { useStickyState } from "../useStickyState";
 
 const FP_DATALIST_ID = "fp-options";
@@ -127,15 +129,20 @@ function DiffPropertyRow({ row }: { row: DiffPropRow }) {
   const prop = row.draft ?? row.base;
   if (prop === null) return null;
   const hidden = prop.hide;
-  const trClass =
-    (row.status !== "same" ? `diff-${row.status}` : "") + (hidden ? " dim" : "");
+  // `hide` is a KiCad symbol-field visibility flag — the platform view shows
+  // the row at full strength and only badges it.
+  const trClass = row.status !== "same" ? `diff-${row.status}` : "";
   return (
     <tr className={trClass.trim() || undefined}>
       <td className="mono prop-key">
         {row.status === "removed" ? <span className="strike">{row.key}</span> : row.key}
         {row.status === "added" ? <span className="diff-tag">added</span> : null}
         {row.status === "removed" ? <span className="diff-tag">removed</span> : null}
-        {hidden ? <span className="tag-hidden">hidden</span> : null}
+        {hidden ? (
+          <span className="tag-hidden" title="Not shown as a field on the KiCad symbol — display flag only.">
+            hidden
+          </span>
+        ) : null}
       </td>
       <td className="mono">
         {row.status === "changed" && row.base && row.draft ? (
@@ -708,6 +715,22 @@ interface EditState {
 
 // -------------------------------------------------------------------- page
 
+/** Free text folded to three lines with an expand toggle — a long version
+ *  comment must not push the whole identity card down the page. */
+function FoldedText({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = text.split("\n").length > 3 || text.length > 240;
+  if (!long) return <>{text}</>;
+  return (
+    <>
+      <span className={open ? "" : "clamp3"}>{text}</span>
+      <button type="button" className="btn btn-sm" onClick={() => setOpen((v) => !v)}>
+        {open ? "show less" : "show more"}
+      </button>
+    </>
+  );
+}
+
 export default function ComponentDetail() {
   const { id } = useParams();
   const compId = Number(id);
@@ -827,6 +850,22 @@ export default function ComponentDetail() {
       setDetail({ ...detail, purchasable: res.purchasable });
     } catch (err) {
       await dialog.alert(errorMessage(err), { title: "Changing the BOM role failed" });
+    } finally {
+      setPurchasableBusy(false);
+    }
+  };
+
+  /** Library part vs BOM-only part — the endpoint existed for a year with no
+   *  caller anywhere. Turning a part back INTO the library needs a pinned
+   *  symbol; the server's 422 explains that, so it is shown verbatim. */
+  const toggleInLibrary = async (next: boolean) => {
+    if (detail === null) return;
+    setPurchasableBusy(true);
+    try {
+      const res = await setComponentInLibrary(detail.id, next);
+      setDetail({ ...detail, in_library: res.in_library });
+    } catch (err) {
+      await dialog.alert(errorMessage(err), { title: "Changing the library flag failed" });
     } finally {
       setPurchasableBusy(false);
     }
@@ -1224,6 +1263,51 @@ export default function ComponentDetail() {
           </div>
         ) : null}
 
+        {version ? (
+          <section className="card props-panel">
+            <h3 className="card-title pad-title">Properties</h3>
+            <div className="props-scroll">
+              {!editing ? (
+                <table className="data props">
+                  <thead>
+                    <tr>
+                      <th>Key</th>
+                      <th>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {propRows.map((d) => (
+                      <DiffPropertyRow key={d.key} row={d} />
+                    ))}
+                    {propRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={2} className="empty">
+                          No properties.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              ) : edit ? (
+                <PropertiesEditor
+                  rows={edit.rows}
+                  newKey={edit.newKey}
+                  newValue={edit.newValue}
+                  fpDatalistId={FP_DATALIST_ID}
+                  onRows={(rows) => patchEdit({ rows })}
+                  onNew={(patch) => patchEdit(patch)}
+                  onError={setSaveError}
+                />
+              ) : null}
+            </div>
+            {version.removed_properties.length > 0 ? (
+              <p className="muted removed-note">
+                Removed properties: {version.removed_properties.join(", ")}
+              </p>
+            ) : null}
+          </section>
+        ) : null}
+
         {version && !editing ? (
           <section className="card pad meta-card">
             <dl className="kv">
@@ -1307,7 +1391,28 @@ export default function ComponentDetail() {
                   </span>
                 )}
               </MetaRow>
-              {version.comment ? <MetaRow label="Comment">{version.comment}</MetaRow> : null}
+              <MetaRow label="Library">
+                <label className="proj-inline-field proj-check">
+                  <input
+                    type="checkbox"
+                    checked={detail.in_library}
+                    disabled={purchasableBusy}
+                    onChange={(e) => void toggleInLibrary(e.target.checked)}
+                  />
+                  visible in KiCad
+                </label>
+                {detail.in_library ? null : (
+                  <span className="muted">
+                    {" "}
+                    — BOM-only: priced and stocked, but hidden from the KiCad catalog
+                  </span>
+                )}
+              </MetaRow>
+              {version.comment ? (
+                <MetaRow label="Comment">
+                  <FoldedText text={version.comment} />
+                </MetaRow>
+              ) : null}
             </dl>
           </section>
         ) : null}
@@ -1363,8 +1468,6 @@ export default function ComponentDetail() {
             <FootprintDatalist id={FP_DATALIST_ID} pickers={pickers} />
           </section>
         ) : null}
-
-        <PriceLadderCard compId={compId} />
 
         {version ? (
           <section className="card ds-card">
@@ -1492,50 +1595,8 @@ export default function ComponentDetail() {
           </section>
         ) : null}
 
-        {version ? (
-          <section className="card props-panel">
-            <h3 className="card-title pad-title">Properties</h3>
-            <div className="props-scroll">
-              {!editing ? (
-                <table className="data props">
-                  <thead>
-                    <tr>
-                      <th>Key</th>
-                      <th>Value</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {propRows.map((d) => (
-                      <DiffPropertyRow key={d.key} row={d} />
-                    ))}
-                    {propRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={2} className="empty">
-                          No properties.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              ) : edit ? (
-                <PropertiesEditor
-                  rows={edit.rows}
-                  newKey={edit.newKey}
-                  newValue={edit.newValue}
-                  fpDatalistId={FP_DATALIST_ID}
-                  onRows={(rows) => patchEdit({ rows })}
-                  onNew={(patch) => patchEdit(patch)}
-                  onError={setSaveError}
-                />
-              ) : null}
-            </div>
-            {version.removed_properties.length > 0 ? (
-              <p className="muted removed-note">
-                Removed properties: {version.removed_properties.join(", ")}
-              </p>
-            ) : null}
-          </section>
-        ) : null}
+        <PriceLadderCard compId={compId} />
+        {detail ? <WhereUsedCard compId={compId} name={detail.name} /> : null}
 
         <CommentsPanel kind="components" id={compId} noun="component" />
       </div>

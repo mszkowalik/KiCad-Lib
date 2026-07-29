@@ -1,33 +1,20 @@
-/** Production runs: priced on demand from historical prices at the run date,
- *  override final prices per line, attach files, register serial numbers. */
+/** Production batches of this project — a plain table. Everything about one batch
+ *  (economics, materials, costs, files, serials, the sale) lives on the run's
+ *  own page at /runs/:id; this tab only lists, creates and deletes. */
 import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
-  addRunDevices,
   createRun,
   deleteRun,
-  deleteRunAttachment,
-  deleteRunDevice,
   errorMessage,
-  getRun,
   getRuns,
   isAbortError,
-  runAttachmentUrl,
-  updateRun,
-  uploadRunAttachment,
   type ProjectInfo,
-  type RunEffectiveLine,
   type RunInfo,
   type SnapshotInfo,
 } from "../../api";
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
-import ProductionPanel from "./ProductionPanel";
-import RunCostsPanel from "./RunCostsPanel";
-
-function money(v: number | null | undefined, currency: string | null): string {
-  if (v == null) return "—";
-  return `${v.toLocaleString(undefined, { maximumFractionDigits: v < 1 ? 4 : 2 })} ${currency ?? ""}`;
-}
 
 interface Props {
   project: ProjectInfo;
@@ -40,15 +27,13 @@ interface Props {
 export default function RunsTab({ project, snapshots, snapshot, board, variant }: Props) {
   const [runs, setRuns] = useState<RunInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [openRun, setOpenRun] = useState<RunInfo | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [label, setLabel] = useState("");
   const [qty, setQty] = useState(10);
   const [runDate, setRunDate] = useState("");
   const [creating, setCreating] = useState(false);
-  const [serialsDraft, setSerialsDraft] = useState("");
-  const [overrideDrafts, setOverrideDrafts] = useState<Record<string, string>>({});
   const dialog = useDialog();
+  const navigate = useNavigate();
 
   const load = (signal?: AbortSignal) => {
     getRuns(project.id, signal)
@@ -68,13 +53,6 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
 
-  const openDetail = (id: number) => {
-    setOverrideDrafts({});
-    getRun(id)
-      .then(setOpenRun)
-      .catch((err) => setError(errorMessage(err)));
-  };
-
   const create = () => {
     setCreating(true);
     createRun(project.id, {
@@ -89,8 +67,7 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
         setCreating(false);
         setShowNew(false);
         setLabel("");
-        load();
-        setOpenRun(r);
+        navigate(`/runs/${r.id}`);
       })
       .catch((err) => {
         setError(errorMessage(err));
@@ -98,40 +75,13 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
       });
   };
 
-  const patchRun = (body: Parameters<typeof updateRun>[1]) => {
-    if (!openRun) return;
-    updateRun(openRun.id, body)
-      .then((r) => {
-        setOpenRun(r);
-        load();
-      })
-      .catch((err) => setError(errorMessage(err)));
-  };
-
-  const applyOverride = (line: RunEffectiveLine) => {
-    if (!openRun) return;
-    const raw = overrideDrafts[line.key];
-    const overrides = { ...(openRun.overrides ?? {}) } as Record<string, unknown>;
-    if (raw === "" || raw == null) {
-      delete overrides[line.key];
-    } else {
-      const isCost = line.key.startsWith("c");
-      overrides[line.key] = isCost
-        ? { price: Number(raw) }
-        : { unit_price: Number(raw) };
-    }
-    patchRun({ overrides });
-  };
-
-  const eff = openRun?.effective;
-
   return (
     <div>
       {error ? <ErrorBanner message={error} /> : null}
       <div className="toolbar">
-        <span className="toolbar-total">{runs ? `${runs.length} run(s)` : ""}</span>
+        <span className="toolbar-total">{runs ? `${runs.length} batch(es)` : ""}</span>
         <button className="btn btn-primary btn-sm" onClick={() => setShowNew((v) => !v)}>
-          {showNew ? "Cancel" : "New production run"}
+          {showNew ? "Cancel" : "New production batch"}
         </button>
       </div>
 
@@ -157,10 +107,10 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
           <p className="muted">
             {snapshot
               ? `Prices the BOM of ${snapshot.ref_name} / ${board}${variant ? ` (variant ${variant})` : ""} from price history at the run date (today if empty).`
-              : "No snapshot selected — the run will price only extra items and cost items."}
+              : "No snapshot selected — the batch will price only extra items and cost items."}
           </p>
           <button className="btn btn-primary" disabled={creating || !label.trim()} onClick={create}>
-            {creating ? "Creating…" : "Create run"}
+            {creating ? "Creating…" : "Create batch"}
           </button>
         </div>
       ) : null}
@@ -171,7 +121,7 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
           <table className="data">
             <thead>
               <tr>
-                <th>Run</th>
+                <th>Batch</th>
                 <th className="num">Qty</th>
                 <th>Status</th>
                 <th>Date</th>
@@ -183,8 +133,17 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
             </thead>
             <tbody>
               {runs.map((r) => (
-                <tr key={r.id} className={openRun?.id === r.id ? "row-selected" : ""}>
-                  <td>{r.label}</td>
+                <tr
+                  key={r.id}
+                  className="ledger-row"
+                  title={`Open ${r.label}`}
+                  onClick={() => navigate(`/runs/${r.id}`)}
+                >
+                  <td>
+                    <Link className="comp-link" to={`/runs/${r.id}`}>
+                      {r.label}
+                    </Link>
+                  </td>
                   <td className="num">{r.qty}</td>
                   <td><StatusPill status={r.status} /></td>
                   <td className="muted">{r.run_date || "—"}</td>
@@ -195,18 +154,16 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
                   <td className="num">{r.attachment_count}</td>
                   <td className="num">{r.device_count}</td>
                   <td className="nowrap">
-                    <button className="btn btn-sm" onClick={() => openDetail(r.id)}>Open</button>{" "}
+                    <Link className="btn btn-sm" to={`/runs/${r.id}`}>Open</Link>{" "}
                     <button className="btn btn-sm btn-danger"
-                      onClick={async () => {
+                      onClick={async (e) => {
+                        e.stopPropagation();
                         const confirmed = await dialog.confirm(
-                          `Delete run "${r.label}" and its attachments?`,
-                          { title: "Delete production run", confirmLabel: "Delete", tone: "danger" },
+                          `Delete batch "${r.label}" and its attachments?`,
+                          { title: "Delete production batch", confirmLabel: "Delete", tone: "danger" },
                         );
                         if (!confirmed) return;
-                        deleteRun(r.id).then(() => {
-                          if (openRun?.id === r.id) setOpenRun(null);
-                          load();
-                        });
+                        deleteRun(r.id).then(() => load());
                       }}>
                       Delete
                     </button>
@@ -218,216 +175,7 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
         </div>
       ) : null}
       {runs && runs.length === 0 && !showNew ? (
-        <p className="muted">No production runs yet.</p>
-      ) : null}
-
-      {openRun ? (
-        <div className="card pad">
-          <div className="panel-head">
-            <h3 className="card-title">
-              {openRun.label} — {openRun.qty} device(s)
-            </h3>
-            <div className="btn-row">
-              <select className="text" value={openRun.status}
-                onChange={(e) => patchRun({ status: e.target.value })}>
-                {["planned", "ordered", "in production", "completed", "cancelled"].map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-              <button className="btn btn-sm" onClick={() => setOpenRun(null)}>Close</button>
-            </div>
-          </div>
-
-          {eff ? (
-            <>
-              <div className="counts counts-sm">
-                <div className="count-tile">
-                  <div className="v">{money(eff.totals.run_total, eff.currency)}</div>
-                  <div className="muted">run total (with overrides)</div>
-                </div>
-                <div className="count-tile">
-                  <div className="v">{money(eff.totals.per_device, eff.currency)}</div>
-                  <div className="muted">per device</div>
-                </div>
-                <div className="count-tile">
-                  <div className="v">{money(eff.totals.parts_total, eff.currency)}</div>
-                  <div className="muted">parts</div>
-                </div>
-                <div className="count-tile">
-                  <div className="v">{money(eff.totals.costs_total, eff.currency)}</div>
-                  <div className="muted">manufacturing costs</div>
-                </div>
-              </div>
-              <p className="muted">
-                Prices resolved from history as of{" "}
-                {eff.priced_at ? new Date(eff.priced_at).toLocaleString() : "—"} (the run
-                date — change it to reprice). Type a final price and press Apply to
-                override a line; blank + Apply clears it.
-              </p>
-              <div className="table-wrap">
-                <table className="data">
-                  <thead>
-                    <tr>
-                      <th>Line</th>
-                      <th className="num">Qty</th>
-                      <th className="num">Unit (at run date)</th>
-                      <th className="num">Line total</th>
-                      <th className="num">Final price override</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {eff.lines.filter((l) => !l.excluded).map((l) => (
-                      <tr key={l.key} className={l.dropped ? "row-dim" : ""}>
-                        <td className="cell-desc">
-                          {l.refs || l.label || l.value}
-                          {l.overridden ? <span className="pill warn">override</span> : null}
-                        </td>
-                        <td className="num">{l.qty_total.toLocaleString()}</td>
-                        <td className="num">{money(l.unit_price, eff.currency)}</td>
-                        <td className="num">{money(l.line_total, eff.currency)}</td>
-                        <td className="num nowrap">
-                          <input className="text num-input" placeholder="unit price"
-                            value={overrideDrafts[l.key] ?? ""}
-                            onChange={(e) =>
-                              setOverrideDrafts({ ...overrideDrafts, [l.key]: e.target.value })
-                            } />{" "}
-                          <button className="btn btn-sm" onClick={() => applyOverride(l)}>
-                            Apply
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {eff.costs.map((c) => (
-                      <tr key={c.key}>
-                        <td className="cell-desc">
-                          {c.label} <span className="muted">({c.basis === "per_run" ? "per run" : "per device"})</span>
-                          {c.overridden ? <span className="pill warn">override</span> : null}
-                        </td>
-                        <td className="num">—</td>
-                        <td className="num">{money(c.price, eff.currency)}</td>
-                        <td className="num">{money(c.run_cost ?? null, eff.currency)}</td>
-                        <td className="num nowrap">
-                          <input className="text num-input" placeholder="price"
-                            value={overrideDrafts[c.key] ?? ""}
-                            onChange={(e) =>
-                              setOverrideDrafts({ ...overrideDrafts, [c.key]: e.target.value })
-                            } />{" "}
-                          <button className="btn btn-sm"
-                            onClick={() => applyOverride(c as unknown as RunEffectiveLine)}>
-                            Apply
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          ) : (
-            <p className="muted">No priced economics for this run.</p>
-          )}
-
-          <div className="edit-grid">
-            <label>
-              Notes
-              <textarea className="note-textarea" value={openRun.notes}
-                onChange={(e) => setOpenRun({ ...openRun, notes: e.target.value })}
-                onBlur={(e) => patchRun({ notes: e.target.value })} />
-            </label>
-            <label>
-              Serial numbers <span className="muted">(one per line, saved on Add)</span>
-              <textarea className="note-textarea" value={serialsDraft}
-                placeholder={"SN-0001\nSN-0002"}
-                onChange={(e) => setSerialsDraft(e.target.value)} />
-              <span>
-                <button className="btn btn-sm" disabled={!serialsDraft.trim()}
-                  onClick={() =>
-                    addRunDevices(openRun.id, serialsDraft).then(() => {
-                      setSerialsDraft("");
-                      openDetail(openRun.id);
-                    })
-                  }>
-                  Add serials
-                </button>
-              </span>
-            </label>
-          </div>
-
-          <ProductionPanel runId={openRun.id} />
-
-          <RunCostsPanel
-            projectId={project.id}
-            runId={openRun.id}
-            qty={openRun.qty}
-            runDate={openRun.run_date}
-            hasSnapshot={openRun.snapshot_id !== null}
-          />
-
-          <div className="card-subtitle">Attachments</div>
-          <div className="btn-row">
-            <input type="file"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) {
-                  uploadRunAttachment(openRun.id, f)
-                    .then(() => openDetail(openRun.id))
-                    .catch((err) => setError(errorMessage(err)));
-                  e.target.value = "";
-                }
-              }} />
-          </div>
-          {openRun.attachments && openRun.attachments.length > 0 ? (
-            <ul className="model-files">
-              {openRun.attachments.map((a) => (
-                <li key={a.id}>
-                  <a href={runAttachmentUrl(a.id)}>{a.filename}</a>{" "}
-                  <span className="muted">
-                    {(a.size_bytes / 1024).toFixed(1)} kB · {new Date(a.uploaded_at).toLocaleDateString()}
-                  </span>{" "}
-                  <button className="btn btn-sm btn-danger"
-                    onClick={() => deleteRunAttachment(a.id).then(() => openDetail(openRun.id))}>
-                    Delete
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted">No files attached.</p>
-          )}
-
-          {openRun.devices && openRun.devices.length > 0 ? (
-            <>
-              <div className="card-subtitle">Devices ({openRun.devices.length})</div>
-              <div className="table-wrap">
-                <table className="data">
-                  <thead>
-                    <tr>
-                      <th>Serial</th>
-                      <th>Note</th>
-                      <th>Added</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {openRun.devices.map((d) => (
-                      <tr key={d.id}>
-                        <td className="mono">{d.serial}</td>
-                        <td className="muted">{d.note || ""}</td>
-                        <td className="muted">{new Date(d.created_at).toLocaleDateString()}</td>
-                        <td>
-                          <button className="btn btn-sm btn-danger"
-                            onClick={() => deleteRunDevice(d.id).then(() => openDetail(openRun.id))}>
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          ) : null}
-        </div>
+        <p className="muted">No production batches yet.</p>
       ) : null}
     </div>
   );

@@ -19,7 +19,7 @@ export default function PartInfo({ part, onClose }: { part: MapSymbol; onClose: 
         <dt>Component</dt>
         <dd>
           {bom?.component_id ? (
-            <Link className="comp-link" to={`/components/${bom.component_id}`}>
+            <Link className="comp-link" to={`/library/components/${bom.component_id}`}>
               {bom.component_name}
             </Link>
           ) : (

@@ -1,25 +1,36 @@
 import { createContext, useCallback, useEffect, useState } from "react";
-import { Link, NavLink, Route, Routes } from "react-router-dom";
+import {
+  Link,
+  Navigate,
+  NavLink,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+} from "react-router-dom";
 import { getProposals } from "./api";
 import { DialogProvider } from "./components/Dialog";
 import Browse from "./pages/Browse";
 import ComponentDetail from "./pages/ComponentDetail";
 import FileViewer from "./pages/FileViewer";
-import ImportStation from "./pages/ImportStation";
 import Invoices from "./pages/Invoices";
-import Jaravis from "./pages/Jaravis";
-import PartsStock from "./pages/JlcStock";
-import KicadPage from "./pages/KicadPage";
+import Stock from "./pages/Stock";
 import NewComponent from "./pages/NewComponent";
+import ProductionJlc from "./pages/ProductionJlc";
+import ProductionOverview from "./pages/ProductionOverview";
+import ProductionWrites from "./pages/ProductionWrites";
 import ProjectDetail from "./pages/ProjectDetail";
 import Projects from "./pages/Projects";
 import Proposals from "./pages/Proposals";
+import RunDetail from "./pages/RunDetail";
+import Setup from "./pages/Setup";
 import Skills from "./pages/Skills";
 import Templates from "./pages/Templates";
 import TemplateDetail from "./pages/TemplateDetail";
 
 /** Live pending-proposals count for the nav badge. `refresh()` after any
- *  approve/reject or when Jaravis reports new proposals. */
+ *  approve/reject or when the agent reports new proposals. */
 export const ProposalsBadge = createContext<{ count: number; refresh: () => void }>({
   count: 0,
   refresh: () => {},
@@ -42,6 +53,52 @@ function NotFound() {
 
 function navClass({ isActive }: { isActive: boolean }): string {
   return "topbar-link" + (isActive ? " active" : "");
+}
+
+/** Second-level nav for a section. Rendered above the section's pages.
+ *  `end` keeps an index link (e.g. Production overview at /production) from
+ *  claiming the active state on every sibling route. */
+function SectionNav({ links }: { links: { to: string; label: string; end?: boolean }[] }) {
+  return (
+    <>
+      <nav className="subnav">
+        {links.map((l) => (
+          <NavLink key={l.to} to={l.to} end={l.end} className={navClass}>
+            {l.label}
+          </NavLink>
+        ))}
+      </nav>
+      <Outlet />
+    </>
+  );
+}
+
+const LIBRARY_LINKS = [
+  { to: "/library/components", label: "Components" },
+  { to: "/library/templates", label: "Symbols & footprints" },
+  { to: "/library/skills", label: "Skills" },
+];
+
+const PRODUCTION_LINKS = [
+  { to: "/production", label: "Overview", end: true },
+  { to: "/production/invoices", label: "Invoices" },
+  { to: "/production/stock", label: "Stock" },
+  { to: "/production/jlc", label: "JLC" },
+  { to: "/production/writes", label: "Write log" },
+];
+
+/* Old addresses keep working — each redirect carries its params along. */
+function RedirectBrowse() {
+  const loc = useLocation();
+  return <Navigate to={`/library/components${loc.search}`} replace />;
+}
+function RedirectComponent() {
+  const { id } = useParams();
+  return <Navigate to={`/library/components/${id}`} replace />;
+}
+function RedirectTemplate() {
+  const { kind, id } = useParams();
+  return <Navigate to={`/library/templates/${kind}/${id}`} replace />;
 }
 
 export default function App() {
@@ -68,54 +125,69 @@ export default function App() {
               Project Management Platform
             </Link>
             <nav className="topbar-nav">
-              <NavLink to="/templates" className={navClass}>
-                Templates
+              <NavLink to="/library" className={navClass}>
+                Library
               </NavLink>
               <NavLink to="/projects" className={navClass}>
                 Projects
               </NavLink>
-              <NavLink to="/invoices" className={navClass}>
-                Invoices
-              </NavLink>
-              <NavLink to="/parts-stock" className={navClass}>
-                Parts stock
-              </NavLink>
-              <NavLink to="/jaravis" className={navClass}>
-                Jaravis
+              <NavLink to="/production" className={navClass}>
+                Production
               </NavLink>
               <NavLink to="/proposals" className={navClass}>
                 Proposals
                 {proposalCount > 0 ? <span className="badge">{proposalCount}</span> : null}
               </NavLink>
-              <NavLink to="/skills" className={navClass}>
-                Skills
-              </NavLink>
-              <NavLink to="/import" className={navClass}>
-                Import
-              </NavLink>
-              <NavLink to="/kicad" className={navClass}>
-                KiCad
+              <NavLink to="/setup" className={navClass}>
+                Setup
               </NavLink>
             </nav>
           </header>
           <Routes>
-            <Route path="/" element={<Browse />} />
-            <Route path="/components/new" element={<NewComponent />} />
-            <Route path="/components/:id" element={<ComponentDetail />} />
-            <Route path="/templates" element={<Templates />} />
-            <Route path="/templates/:kind/:id" element={<TemplateDetail />} />
+            <Route path="/" element={<RedirectBrowse />} />
+
+            {/* Library */}
+            <Route element={<SectionNav links={LIBRARY_LINKS} />}>
+              <Route path="/library" element={<Navigate to="/library/components" replace />} />
+              <Route path="/library/components" element={<Browse />} />
+              <Route path="/library/components/new" element={<NewComponent />} />
+              <Route path="/library/components/:id" element={<ComponentDetail />} />
+              <Route path="/library/templates" element={<Templates />} />
+              <Route path="/library/templates/:kind/:id" element={<TemplateDetail />} />
+              <Route path="/library/skills/:id?" element={<Skills />} />
+            </Route>
+
+            {/* Projects */}
             <Route path="/projects" element={<Projects />} />
             <Route path="/projects/:id" element={<ProjectDetail />} />
-            <Route path="/invoices" element={<Invoices />} />
-            <Route path="/parts-stock" element={<PartsStock />} />
-            {/* the view outgrew "JLC stock" — keep the old link working */}
-            <Route path="/jlc-stock" element={<PartsStock />} />
-            <Route path="/jaravis" element={<Jaravis />} />
+            <Route path="/runs/:id" element={<RunDetail />} />
+
+            {/* Production */}
+            <Route element={<SectionNav links={PRODUCTION_LINKS} />}>
+              <Route path="/production" element={<ProductionOverview />} />
+              <Route path="/production/invoices" element={<Invoices />} />
+              <Route path="/production/stock" element={<Stock />} />
+              <Route path="/production/jlc" element={<ProductionJlc />} />
+              <Route path="/production/writes" element={<ProductionWrites />} />
+            </Route>
+
             <Route path="/proposals" element={<Proposals />} />
-            <Route path="/skills" element={<Skills />} />
-            <Route path="/import" element={<ImportStation />} />
-            <Route path="/kicad" element={<KicadPage />} />
+            <Route path="/setup" element={<Setup />} />
             <Route path="/view" element={<FileViewer />} />
+
+            {/* Old addresses keep working */}
+            <Route
+              path="/components/new"
+              element={<Navigate to="/library/components/new" replace />}
+            />
+            <Route path="/components/:id" element={<RedirectComponent />} />
+            <Route path="/templates" element={<Navigate to="/library/templates" replace />} />
+            <Route path="/templates/:kind/:id" element={<RedirectTemplate />} />
+            <Route path="/skills" element={<Navigate to="/library/skills" replace />} />
+            <Route path="/invoices" element={<Navigate to="/production/invoices" replace />} />
+            <Route path="/parts-stock" element={<Navigate to="/production/stock" replace />} />
+            <Route path="/jlc-stock" element={<Navigate to="/production/stock" replace />} />
+            <Route path="/kicad" element={<Navigate to="/setup" replace />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </div>

@@ -97,8 +97,16 @@ services:
       - "127.0.0.1:8100:8100"
 
   web:
-    build: ./web
+    build:
+      context: ./web
+      # The Dockerfile also has a `prod` target (built SPA behind nginx) that
+      # the images workflow publishes — dev must ask for the Vite server.
+      target: dev
     environment:
+      # Absolute API address, so the browser calls the api container directly
+      # (allowed by the CORS list in api/app/main.py). Drop this line to use
+      # relative paths through the dev server's proxy instead, which is what
+      # the deployed image does — then set VITE_API_PROXY=http://api:8000.
       VITE_API_URL: http://localhost:8020
       # Bind-mounted host edits don't emit fsevents into the container on
       # macOS/Windows, so Vite's file watcher must poll to see changes.

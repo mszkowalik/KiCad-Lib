@@ -45,7 +45,44 @@ REPO_DIR=.. DATA_DIR=./data RENDER_MODE=local \
 `RENDER_MODE=local` uses the desktop KiCad's `kicad-cli` directly
 (`KICAD_CLI`, default `/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli`).
 
-Frontend: `cd web && npm install && npm run dev`.
+Frontend: `cd web && npm install && npm run dev`. The dev server proxies `/api`,
+`/kicad` and `/files` to `http://localhost:8020` (override with
+`VITE_API_PROXY`), so the browser needs no API address of its own.
+
+## Deploying to a server
+
+`.github/workflows/images.yml` builds three `linux/amd64` images on every push
+to `main` and publishes them to GHCR:
+
+| Image | What |
+|---|---|
+| `ghcr.io/mszkowalik/kicad-lib/api` | FastAPI backend |
+| `ghcr.io/mszkowalik/kicad-lib/web` | Built SPA behind nginx, which also proxies the API |
+| `ghcr.io/mszkowalik/kicad-lib/render` | kicad-cli render service |
+
+Pull requests build the same images without pushing. Tags are `latest` (main),
+`sha-<short>` (every build) and semver for a `v*` git tag.
+
+On the server, copy `compose.prod.yaml` and a `.env`, then:
+
+```bash
+docker compose -f compose.prod.yaml pull
+docker compose -f compose.prod.yaml up -d
+```
+
+Everything answers on **one** published port (`WEB_PORT`, default 8080): nginx
+serves the UI and proxies `/api`, `/kicad` and `/files` to the api container.
+So the UI, KiCad's HTTP library and the MCP server all use the same address,
+and no image carries a baked-in API URL.
+
+Required in `.env` (compose refuses to start without them):
+`POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`, `SECRET_KEY`, `HTTPLIB_TOKEN`,
+`MCP_TOKEN`, and `PUBLIC_BASE_URL` — the address KiCad clients use, because
+generated symbols embed it in datasheet links.
+
+Pin a build with `IMAGE_TAG=sha-abc1234` rather than riding `latest`. The
+server needs no repo checkout: `REPO_DIR` is read only by the retired YAML
+importer.
 
 ## Hooking up KiCad
 

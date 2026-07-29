@@ -288,7 +288,7 @@ export default function Browse() {
                   (data.items.length < total ? ` (showing first ${data.items.length})` : "")
               : ""}
           </span>
-          <Link to="/components/new" className="btn btn-sm new-comp-btn">
+          <Link to="/library/components/new" className="btn btn-sm new-comp-btn">
             New component
           </Link>
         </div>
@@ -345,7 +345,7 @@ export default function Browse() {
                   <tr key={c.id}>
                     <td title={c.mfg_pn}>
                       <Link
-                        to={`/components/${c.id}`}
+                        to={`/library/components/${c.id}`}
                         state={{ backTo: `/${params.toString() ? `?${params.toString()}` : ""}` }}
                         className="mono comp-link"
                       >

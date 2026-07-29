@@ -1,5 +1,5 @@
 /** Invoices — where supplier documents are entered and their positions handed
- *  out to runs and projects.
+ *  out to batches and projects.
  *
  *  The point of a dedicated view (user decision 2026-07-27): one invoice often
  *  pays for several batches, so the unit of assignment is the POSITION, not the
@@ -13,13 +13,12 @@
  *  been drawn from it.
  */
 import { Fragment, useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { Link } from "react-router-dom";
 import {
   attachmentPath,
   createSharedDocument,
   getCostSteps,
-  getRunActuals,
-  getRuns,
+  getNbpRate,
+  resolveAllParts,
   errorMessage,
   getDocument,
   getDocumentAttachments,
@@ -33,39 +32,23 @@ import {
   type CostStepCatalog,
   type DocumentAttachment,
   type InvoiceRegister,
-  type RunActuals,
-  type RunInfo,
   type RunCostDocumentRow,
   type RunCostLineRow,
 } from "../api";
 import { useDialog } from "../components/Dialog";
-import OrderDialog from "../components/invoices/OrderDialog";
 import PlanLinkDialog from "../components/invoices/PlanLinkDialog";
-import JlcImportPanel from "../components/invoices/JlcImportPanel";
-import JlcSessionStrip from "../components/invoices/JlcSessionStrip";
-import JlcStagedPanel from "../components/invoices/JlcStagedPanel";
-import StockReconcile from "../components/invoices/StockReconcile";
-import WriteLog from "../components/invoices/WriteLog";
-import ProductionDashboard from "../components/invoices/ProductionDashboard";
-import SplitLineDialog, { type RunOption } from "../components/invoices/SplitLineDialog";
+import SplitLineDialog from "../components/invoices/SplitLineDialog";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { useStickyState } from "../useStickyState";
 import { fileHref } from "../viewkind";
 
-const KINDS: CostLineKind[] = [
-  "part", "fab", "assembly", "tooling", "freight",
-  "duty", "tax", "rework", "packaging", "service", "other",
-];
-
-function money(v: number | null | undefined, currency = "USD"): string {
-  if (v == null) return "—";
-  return `${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
-}
-
-function plain(v: number | null | undefined): string {
-  if (v == null) return "—";
-  return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+import { amount as money, plain } from "../format";
+import {
+  COST_LINE_KINDS as KINDS,
+  ChargeToSelect,
+  StepSelect,
+  type RunOption,
+} from "../components/costs";
 
 /** Depth of a line in its document's tree, for indenting the label. */
 function depthOf(line: RunCostLineRow, byId: Map<number, RunCostLineRow>): number {
@@ -128,12 +111,8 @@ export default function Invoices() {
   const [splitting, setSplitting] = useState<RunCostLineRow | null>(null);
   const [linking, setLinking] = useState<RunCostLineRow | null>(null);
   const [adding, setAdding] = useState(false);
-  const [pricing, setPricing] = useState<{ run: RunInfo; actuals: RunActuals | null } | null>(null);
   const [onlyProblems, setOnlyProblems] = useStickyState("invoices:problems", false);
   const [stepCatalog, setStepCatalog] = useState<CostStepCatalog | null>(null);
-  // Bumped after any write that moved money, so the register figures and the
-  // write log are never showing state from either side of an apply.
-  const [writeSeq, setWriteSeq] = useState(0);
   useEffect(() => {
     const ac = new AbortController();
     getCostSteps(ac.signal).then(setStepCatalog).catch(() => setStepCatalog(null));
@@ -252,19 +231,21 @@ export default function Invoices() {
     }
   };
 
-  /** Open the order/price editor. Needs the run itself (the register only carries a
-   *  summary) and its actuals, so the margin preview is against real cost. */
-  const openPricing = async (runId: number, projectId: number) => {
+  /** The global pass — every unresolved part line in every document. */
+  const resolveEverywhere = async () => {
     setBusy(true);
     try {
-      const [runs, actuals] = await Promise.all([
-        getRuns(projectId),
-        getRunActuals(runId).catch(() => null),
-      ]);
-      const run = runs.find((r) => r.id === runId);
-      if (run) setPricing({ run, actuals });
+      const r = await resolveAllParts();
+      await dialog.alert(
+        `Matched ${r.resolved} of ${r.checked} unresolved part line(s).` +
+          (r.unresolved.length
+            ? ` Still unmatched: ${r.unresolved.slice(0, 10).join(", ")}`
+            : ""),
+        { title: "Resolve parts everywhere" },
+      );
+      refreshAll();
     } catch (err) {
-      await dialog.alert(errorMessage(err), { title: "Could not open the order" });
+      await dialog.alert(errorMessage(err), { title: "Resolve failed" });
     } finally {
       setBusy(false);
     }
@@ -344,157 +325,18 @@ export default function Invoices() {
           <button type="button" className="btn btn-sm" onClick={refreshAll} disabled={busy}>
             Refresh
           </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={busy}
+            title="Match every unresolved part line across ALL documents to library components — run it after a library import."
+            onClick={resolveEverywhere}
+          >
+            Resolve parts everywhere
+          </button>
           <button type="button" className="btn btn-sm btn-primary" onClick={() => setAdding((v) => !v)}>
             {adding ? "Close" : "New invoice"}
           </button>
-        </div>
-
-        {/* ------------------------------------------------------- dashboard */}
-        <ProductionDashboard reg={reg} />
-
-        {/* Does the stock account close? The register's identities cannot answer
-            this — they derive on-hand from purchases and draws, so they balance by
-            construction whatever the real quantities are. */}
-        <StockReconcile key={`sr-${writeSeq}`} />
-
-        {/* --------------------------------------------- JLC import decisions */}
-        {/* The session strip comes FIRST: a dead session is the most common reason
-            a sync fails, and the fix (paste fresh cookies) is only possible here. */}
-        <JlcSessionStrip />
-        {/* Import comes BEFORE deciding: an order's charges cannot be pointed at a
-            run until the document carrying them exists. */}
-        <JlcStagedPanel
-          key={`jsp-${writeSeq}`}
-          onImported={() => {
-            refreshAll();
-            setWriteSeq((n) => n + 1);
-          }}
-        />
-        <JlcImportPanel
-          onApplied={() => {
-            refreshAll();
-            setWriteSeq((n) => n + 1);
-          }}
-        />
-
-        {/* Every write that moved money, each one undoable. */}
-        <WriteLog key={`wl-${writeSeq}`} onReversed={refreshAll} />
-
-        {/* ---------------------------------------------------- reconciliation */}
-        <div className="card pad">
-          <h2 className="card-title">Where the money went</h2>
-          <p className="card-subtitle">
-            Every document's total lands in exactly one bucket. Converted to USD at each
-            document's pinned rate, or the rate history at its date.
-          </p>
-          <div className="table-wrap">
-            <table className="data data-fixed invoice-sum-table">
-              <thead>
-                <tr>
-                  <th className="num">Invoiced</th>
-                  <th className="num">To runs</th>
-                  <th className="num">To projects</th>
-                  <th className="num">To the pool</th>
-                  <th className="num">Excluded</th>
-                  <th className="num">Unassigned</th>
-                  <th className="num">Residual</th>
-                  <th className="num">Gap</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="num">{plain(s.total_usd)}</td>
-                  <td className="num">{plain(s.to_runs_usd)}</td>
-                  <td className="num">{plain(s.to_projects_usd)}</td>
-                  <td className="num">{plain(s.to_pool_usd)}</td>
-                  <td className="num muted" title="reclaimable VAT and prepaid components already in the pool">
-                    {plain(s.excluded_usd)}
-                  </td>
-                  <td className={s.unassigned_usd ? "num" : "num muted"}>
-                    {s.unassigned_usd ? (
-                      <span className="pill warn">{plain(s.unassigned_usd)}</span>
-                    ) : (
-                      plain(s.unassigned_usd)
-                    )}
-                  </td>
-                  <td className={s.residual_usd ? "num" : "num muted"}>
-                    {s.residual_usd ? (
-                      <span className="pill warn">{plain(s.residual_usd)}</span>
-                    ) : (
-                      plain(s.residual_usd)
-                    )}
-                  </td>
-                  <td className="num">
-                    {Math.abs(s.gap_usd ?? 0) < 0.05 ? (
-                      <span className="pill ok">0</span>
-                    ) : (
-                      <span className="pill err">{plain(s.gap_usd)}</span>
-                    )}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <h2 className="card-title">Component pool</h2>
-          <p className="card-subtitle">
-            Parts are stockpile, so runs pay for what they drew rather than for a purchase.
-            Bought ± adjustments − drawn must equal what is still on hand.
-          </p>
-          <div className="table-wrap">
-            <table className="data data-fixed invoice-pool-table">
-              <thead>
-                <tr>
-                  <th className="num">Purchased</th>
-                  <th className="num">Adjustments</th>
-                  <th className="num">Drawn by runs</th>
-                  <th className="num">On hand</th>
-                  <th className="num">Parts</th>
-                  <th>Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="num">{plain(reg.pool.purchased_usd)}</td>
-                  <td className="num">{plain(reg.pool.adjustments_usd)}</td>
-                  <td className="num">{plain(reg.pool.drawn_usd)}</td>
-                  <td className="num">{plain(reg.pool.on_hand_usd)}</td>
-                  <td className="num">{reg.pool.part_count}</td>
-                  <td>
-                    <span className={reg.pool.balanced ? "pill ok" : "pill err"}>
-                      {reg.pool.balanced ? "balanced" : "does not balance"}
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          {s.unknown_rates.length ? (
-            <div className="banner-warn">
-              No exchange rate for {s.unknown_rates.join(", ")} — those documents are counted at face
-              value, so the totals above are understated.
-            </div>
-          ) : null}
-          {reg.issues.unreconciled.length ? (
-            <div className="banner-error">
-              {reg.issues.unreconciled.length} document
-              {reg.issues.unreconciled.length === 1 ? "" : "s"} whose lines do not add up to the
-              printed total:{" "}
-              {reg.issues.unreconciled
-                .map((u) => `${u.supplier} ${u.doc_number} (${plain(u.lines_total)} vs ${plain(u.total_amount)} ${u.currency})`)
-                .join("; ")}
-            </div>
-          ) : null}
-          {reg.issues.unassigned.length ? (
-            <div className="banner-warn">
-              {reg.issues.unassigned.length} document
-              {reg.issues.unassigned.length === 1 ? "" : "s"} still carry money nobody is paying for.
-              Expand them below and split or assign the positions.
-            </div>
-          ) : (
-            <div className="banner-ok">Every position is assigned to a run, a project or the pool.</div>
-          )}
         </div>
 
         {/* ---------------------------------------------------------- new invoice */}
@@ -509,90 +351,6 @@ export default function Invoices() {
             }}
           />
         ) : null}
-
-        {/* ---------------------------------------------------- run reconciliation */}
-        <div className="card pad">
-          <h2 className="card-title">What each run cost, and what it earned</h2>
-          <p className="card-subtitle">
-            Cost is direct invoice positions plus what the run drew from the component pool — the
-            same arithmetic the run's own costs tab shows. Income is the price per device times the
-            units billed, converted at the order date. Click a price to set it.
-          </p>
-          <div className="table-wrap">
-            <table className="data data-fixed invoice-runs-table">
-              <thead>
-                <tr>
-                  <th>Run</th>
-                  <th>Project</th>
-                  <th className="num">Units</th>
-                  <th className="num">Cost USD</th>
-                  <th className="num">Cost/dev</th>
-                  <th className="num">Price/dev</th>
-                  <th className="num">Revenue USD</th>
-                  <th className="num">Margin USD</th>
-                  <th className="num">Margin %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(reg.by_run_usd).length === 0 ? (
-                  <tr>
-                    <td className="empty" colSpan={9}>
-                      No run has been charged yet.
-                    </td>
-                  </tr>
-                ) : null}
-                {Object.entries(reg.by_run_usd)
-                  .sort((a, b) => (reg.runs[a[0]]?.run_date || "").localeCompare(reg.runs[b[0]]?.run_date || ""))
-                  .map(([rid, v]) => {
-                    const run = reg.runs[rid];
-                    const pid = run?.project_id;
-                    return (
-                      <tr key={rid}>
-                        <td title={run?.label}>
-                          {pid ? (
-                            <Link className="comp-link" to={`/projects/${pid}`}>
-                              {run?.label || `run ${rid}`}
-                            </Link>
-                          ) : (
-                            run?.label || `run ${rid}`
-                          )}
-                        </td>
-                        <td className="muted" title={reg.projects[String(pid)]}>
-                          {reg.projects[String(pid)] || "—"}
-                        </td>
-                        <td className="num">{run?.qty ?? "—"}</td>
-                        <td className="num" title={`direct ${plain(v.direct_usd)} + components ${plain(v.components_usd)}`}>
-                          {plain(v.total_usd)}
-                        </td>
-                        <td className="num">
-                          {run?.qty ? plain((v.total_usd ?? 0) / run.qty) : "—"}
-                        </td>
-                        <td className="num">
-                          <button type="button" className="btn btn-sm" disabled={busy}
-                                  title="Set the price per device and the customer order"
-                                  onClick={() => pid && openPricing(Number(rid), pid)}>
-                            {run?.sale_unit_price != null
-                              ? `${run.sale_unit_price} ${run.sale_currency || ""}`.trim()
-                              : "set price"}
-                          </button>
-                        </td>
-                        <td className="num">{plain(v.revenue_usd)}</td>
-                        <td className={"num" + ((v.margin_usd ?? 0) < 0 ? " err-text" : "")}>
-                          {plain(v.margin_usd)}
-                        </td>
-                        <td className={"num" + ((v.margin_pct ?? 0) < 0 ? " err-text" : "")}
-                            title={run?.customer || run?.order_ref
-                              ? `${run.customer}${run.order_ref ? ` · ${run.order_ref}` : ""}`
-                              : "no customer recorded"}>
-                          {v.margin_pct == null ? "—" : `${v.margin_pct.toFixed(1)}%`}
-                        </td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
-          </div>
-        </div>
 
         {/* ------------------------------------------------------------ documents */}
         <div className="card pad">
@@ -749,53 +507,32 @@ export default function Invoices() {
                                                   pool (spread)
                                                 </span>
                                               ) : (
-                                                <select
-                                                  className="row-input"
+                                                <ChargeToSelect
+                                                  runs={runOptions}
+                                                  projects={projectOptions}
                                                   value={runForLine(li)}
                                                   disabled={busy}
-                                                  onChange={(e) => assignLine(li, e.target.value)}
-                                                >
-                                                  <option value="">— nobody —</option>
-                                                  {runOptions.map((r) => (
-                                                    <option key={`run:${r.id}`} value={`run:${r.id}`}>
-                                                      {r.project_name} · {r.label}
-                                                    </option>
-                                                  ))}
-                                                  {projectOptions.map((p) => (
-                                                    <option key={`project:${p.id}`} value={`project:${p.id}`}>
-                                                      {p.name} (no run)
-                                                    </option>
-                                                  ))}
-                                                  <option value="excluded">
-                                                    nobody, on purpose (excluded)
-                                                  </option>
-                                                </select>
+                                                  onChange={(v) => assignLine(li, v)}
+                                                />
                                               )}
                                             </td>
                                             <td title={li.plan_ref || ""}>
                                               {li.is_header ? (
                                                 <span className="dim">—</span>
                                               ) : (
-                                                <select
+                                                <StepSelect
+                                                  catalog={stepCatalog}
                                                   className="row-input mono"
                                                   disabled={busy}
                                                   value={li.plan_key && li.plan_key.includes(":") ? li.plan_key : ""}
                                                   title={"production step — invoice money billed under a step is matched to the planned cost item carrying the same step automatically"}
-                                                  onChange={(e) => {
-                                                    if (e.target.value === "__link") { setLinking(li); return; }
-                                                    void setLineStep(li, e.target.value);
+                                                  onChange={(v) => {
+                                                    if (v === "__link") { setLinking(li); return; }
+                                                    void setLineStep(li, v);
                                                   }}
                                                 >
-                                                  <option value="">— no step —</option>
-                                                  {Object.entries(stepCatalog?.stages ?? {}).map(([stage, stageLabel]) => (
-                                                    <optgroup key={stage} label={stageLabel}>
-                                                      {(stepCatalog?.steps ?? []).filter((st) => st.stage === stage).map((st) => (
-                                                        <option key={st.key} value={st.key}>{st.key}</option>
-                                                      ))}
-                                                    </optgroup>
-                                                  ))}
                                                   <option value="__link">link to a specific plan item…</option>
-                                                </select>
+                                                </StepSelect>
                                               )}
                                             </td>
                                             <td className="ctr">
@@ -851,16 +588,6 @@ export default function Invoices() {
               setDoc(updated);
               load();
             }
-          }}
-        />
-      ) : null}
-      {pricing ? (
-        <OrderDialog
-          run={pricing.run}
-          actuals={pricing.actuals}
-          onClose={(changed) => {
-            setPricing(null);
-            if (changed) refreshAll();
           }}
         />
       ) : null}
@@ -972,6 +699,23 @@ function NewInvoiceCard({
   const [lines, setLines] = useState<NewLine[]>([blankLine()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nbp, setNbp] = useState("");
+
+  /** Invoice-date FX convention: the NBP table-A rate at the document date.
+   *  Display-only — the register does its own conversion; this answers
+   *  "what rate should this be" while typing amounts from a PLN invoice. */
+  const lookupNbp = async () => {
+    setNbp("…");
+    try {
+      const r = await getNbpRate(currency.trim(), docDate.trim());
+      setNbp(
+        `1 ${r.currency} = ${r.rate_usd} USD (NBP table A, ${r.effective_date}` +
+          `${r.requested_date_used ? "" : " — previous working day"})`,
+      );
+    } catch (err) {
+      setNbp(errorMessage(err));
+    }
+  };
 
   const sum = lines.reduce((s, l) => s + Number(l.qty || 0) * Number(l.unit_price || 0), 0);
   const totalNum = total.trim() === "" ? null : Number(total);
@@ -1025,7 +769,7 @@ function NewInvoiceCard({
     <div className="card pad edit-card">
       <h2 className="card-title">New invoice</h2>
       <p className="card-subtitle">
-        Enter it as the supplier printed it. Positions are handed out to runs afterwards — one
+        Enter it as the supplier printed it. Positions are handed out to batches afterwards — one
         invoice can pay for several batches, and a position can be split.
       </p>
       {error ? <ErrorBanner message={error} /> : null}
@@ -1059,6 +803,14 @@ function NewInvoiceCard({
         <label>
           Currency
           <input className="text" value={currency} onChange={(e) => setCurrency(e.target.value)} />
+          {currency.trim() && currency.trim().toUpperCase() !== "USD" && docDate.trim() ? (
+            <span>
+              <button type="button" className="btn btn-sm" onClick={lookupNbp}>
+                NBP rate at this date
+              </button>{" "}
+              {nbp ? <span className="muted">{nbp}</span> : null}
+            </span>
+          ) : null}
         </label>
         <label>
           Printed total
@@ -1075,19 +827,15 @@ function NewInvoiceCard({
         </label>
         <label>
           Charge every position to
-          <select className="text" value={dest} onChange={(e) => setDest(e.target.value)}>
-            <option value="">— decide per position —</option>
-            {runs.map((r) => (
-              <option key={`run:${r.id}`} value={`run:${r.id}`}>
-                {r.project_name} · {r.label}
-              </option>
-            ))}
-            {projects.map((p) => (
-              <option key={`project:${p.id}`} value={`project:${p.id}`}>
-                {p.name} (no run)
-              </option>
-            ))}
-          </select>
+          <ChargeToSelect
+            className="text"
+            runs={runs}
+            projects={projects}
+            value={dest}
+            onChange={setDest}
+            emptyLabel="— decide per position —"
+            withExcluded={false}
+          />
         </label>
       </div>
       <label>

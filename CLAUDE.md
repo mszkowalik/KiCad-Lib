@@ -22,6 +22,8 @@ mounts the repo at `/repo` for exactly that.
 | `render/` | kicad-cli render container (previews, project exports) | — |
 | `clients/` | Client-side helpers (KiCad sync plugin etc.) | — |
 | `compose.yaml` | Full dev deployment (db, minio, api, render, web) | `README.md` |
+| `compose.prod.yaml` | Server deployment from the published GHCR images | `README.md` |
+| `.github/workflows/images.yml` | Builds + pushes the api/web/render images | `README.md` |
 
 ## Running
 
@@ -33,6 +35,28 @@ docker compose up -d --build
 Web UI at http://localhost:5173, API at http://localhost:8020 (docs at
 `/docs`). The api and web containers live-mount their sources (`api/app`,
 `web/`) — host edits hot-reload without a rebuild.
+
+## Images and deployment
+
+`.github/workflows/images.yml` publishes `api`, `web` and `render` to GHCR on
+every push to `main` (pull requests build without pushing);
+`compose.prod.yaml` runs them on the server. Three rules follow from that:
+
+- **The deployed UI is same-origin.** The `web` image is a `prod` Dockerfile
+  target: the built SPA served by nginx, which reverse-proxies `/api`,
+  `/kicad`, `/files`, `/docs` and `/openapi.json` to the api container. Vite
+  inlines env vars at build time, so a baked-in API URL would tie an image to
+  one hostname — `src/api.ts` therefore defaults `API_URL` to `""`. Never
+  reintroduce an absolute default (see `web/CLAUDE.md`).
+- **`compose.yaml` must ask for `target: dev`** on the web service, or dev
+  gets the nginx image instead of the Vite server.
+- **`render/` carries copies of two files from `api/app/services/`**
+  (`project_ops.py`, `board_template.kicad_pcb`). The workflow's `guard` job
+  fails the build when they are not byte-identical, so edit both together.
+
+`linux/amd64` only, on purpose: the render image's `kicad/kicad` base is
+published amd64-only, and the api image compiles LibreDWG from source, which
+is very slow under emulation.
 
 ## Conventions
 

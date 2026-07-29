@@ -1,0 +1,13 @@
+# Keep the build context to what the Dockerfile copies: pyproject.toml, app/,
+# cli/, kiutils/. Everything below is either host-only or regenerated.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+data/
+easyeda_tmp/
+.env
