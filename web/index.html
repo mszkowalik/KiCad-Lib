@@ -3,15 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Path prefix this app is mounted under. __APP_BASE__ is substituted at
-         container start (web/40-app-base.sh) and by the dev server
-         (vite.config.ts), so one build serves at "/" or under "/lib".
-         The <base> tag is what makes the RELATIVE asset urls Vite emits resolve
-         correctly on a deep route such as /lib/library/components/12. -->
+    <!-- The mount-point placeholder below is stamped at container start by
+         web/40-app-base.sh, and by the dev server via vite.config.ts. It is the
+         only place the prefix appears; src/appbase.ts reads it back from here.
+         Keep the rest of this file free of the placeholder text: substitution
+         is a plain string replace and will happily rewrite it anywhere,
+         including inside identifiers and comments. -->
     <base href="__APP_BASE__/" />
-    <script>
-      window.__APP_BASE__ = "__APP_BASE__";
-    </script>
     <title>Project Management Platform</title>
   </head>
   <body>
