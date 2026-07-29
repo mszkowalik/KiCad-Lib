@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import struct
 from datetime import datetime, timezone
 
 from fastapi import (
@@ -23,6 +24,7 @@ from fastapi import (
 )
 from fastapi.responses import Response
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -37,6 +39,22 @@ router = APIRouter(prefix="/api/flasher", tags=["flasher"])
 
 TRANSPORT_PROFILES = ["uart_bridge", "usb_serial_jtag"]
 FIRMWARE_KINDS = ["factory", "app", "filesystem", "safeboot"]
+# The only two parts in production (user decision 2026-07-30).
+CHIPS = ["esp32", "esp32c6"]
+# Recommended flash offset per (chip, kind) — from the projects' own partition
+# maps, so the composer pre-fills a correct address instead of "0x0" always:
+#   esp32c6: esp32c6_partition_8MB_app3904k_fs3392k.csv (CE_Dongle_v3)
+#   esp32:   Tasmota's standard ESP32 layout (bootloader 0x1000, app0 0x10000)
+# A blank means "no safe default" — the layout decides, so the field stays free.
+DEFAULT_OFFSETS = {
+    "esp32": {"factory": "0x0", "app": "0x10000", "safeboot": "0x0", "filesystem": ""},
+    "esp32c6": {"factory": "0x0", "app": "0xE0000", "safeboot": "0x0",
+                "filesystem": "0x4B0000"},
+}
+# esp_chip_id_t from esp-idf. The bytes are the authority on what an image is
+# built for — a dropdown is a guess.
+ESP_CHIP_IDS = {0: "esp32", 2: "esp32s2", 5: "esp32c3", 9: "esp32s3",
+                12: "esp32c2", 13: "esp32c6", 16: "esp32h2"}
 STEP_OPS = [
     "esp_connect", "erase", "flash", "esp_reset", "await_reenumerate",
     "serial_open", "serial_close", "reset", "sleep", "wait_boot", "command",
@@ -60,13 +78,37 @@ def list_firmware(project_id: int, db: Session = Depends(get_db)):
         .order_by(M.FirmwareAsset.uploaded_at.desc())
         .all()
     )
-    return [_firmware_json(a) for a in rows]
+    # One grouped count instead of a query per row — the panel shows "used by"
+    # on every asset, and that is also what the delete guard reports.
+    counts = dict(
+        db.query(M.DeploymentImage.firmware_asset_id, func.count(M.DeploymentImage.id))
+        .group_by(M.DeploymentImage.firmware_asset_id)
+        .all()
+    )
+    return [_firmware_json(a, used_by=counts.get(a.id, 0)) for a in rows]
 
 
 ESP_MAGIC = 0xE9
 # An ESP image starts with 0xE9. A padded whole-flash image starts with 0xFF
 # and carries the bootloader at 0x1000 (ESP32) — both are legitimate.
 ESP_MAGIC_OFFSETS = (0x0, 0x1000)
+
+
+def _detect_chip(data: bytes) -> str:
+    """Read the chip out of the ESP image header (offset 12, LE uint16).
+
+    Handles both layouts: a bare app image starts with 0xE9, a padded
+    whole-flash image starts at 0x1000 (ESP32 keeps its bootloader there).
+    Returns "" when the bytes carry no header — e.g. a LittleFS image.
+    """
+    for off in ESP_MAGIC_OFFSETS:
+        if len(data) > off + 14 and data[off] == ESP_MAGIC:
+            return ESP_CHIP_IDS.get(struct.unpack_from("<H", data, off + 12)[0], "")
+    return ""
+
+
+def default_offset(chip: str, kind: str) -> str:
+    return DEFAULT_OFFSETS.get(chip, {}).get(kind, "")
 
 
 def _looks_flashable(data: bytes, kind: str) -> bool:
@@ -77,11 +119,13 @@ def _looks_flashable(data: bytes, kind: str) -> bool:
     return any(len(data) > off and data[off] == ESP_MAGIC for off in ESP_MAGIC_OFFSETS)
 
 
-def _firmware_json(a: M.FirmwareAsset) -> dict:
+def _firmware_json(a: M.FirmwareAsset, used_by: int | None = None) -> dict:
     return {
         "id": a.id, "filename": a.filename, "sha256": a.sha256,
         "size_bytes": a.size_bytes, "chip": a.chip, "kind": a.kind,
         "flashable": a.flashable,
+        "default_address": default_offset(a.chip, a.kind),
+        "used_by": used_by,
         "build_label": a.build_label, "notes": a.notes,
         "uploaded_by": a.uploaded_by, "uploaded_at": _iso(a.uploaded_at),
     }
@@ -103,6 +147,13 @@ async def upload_firmware(
     data = await file.read()
     if not data:
         raise HTTPException(400, "empty file")
+    # The image header outranks the form: a mislabelled chip is how a build
+    # ends up flashed onto the wrong part.
+    detected = _detect_chip(data)
+    if detected:
+        chip = detected
+    elif chip and chip not in CHIPS:
+        raise HTTPException(400, f"chip must be one of {CHIPS}")
     sha = hashlib.sha256(data).hexdigest()
     existing = (
         db.query(M.FirmwareAsset)
@@ -110,7 +161,7 @@ async def upload_firmware(
         .one_or_none()
     )
     if existing:
-        return {"existing": True, **_firmware_json(existing)}
+        return {"existing": True, "chip_detected": detected, **_firmware_json(existing)}
     key = f"firmware/{project_id}/{sha}/{file.filename}"
     storage.put_bytes(key, data)
     asset = M.FirmwareAsset(
@@ -122,8 +173,9 @@ async def upload_firmware(
     db.add(asset)
     db.commit()
     audit(db, "flasher.firmware_upload", "firmware_asset", asset.id,
-          details=f"{asset.filename} ({len(data)} B, {kind})", actor=uploaded_by)
-    return {"existing": False, **_firmware_json(asset)}
+          details=f"{asset.filename} ({len(data)} B, {kind}, chip {asset.chip or '?'})",
+          actor=uploaded_by)
+    return {"existing": False, "chip_detected": detected, **_firmware_json(asset)}
 
 
 class FirmwarePatch(BaseModel):
@@ -156,6 +208,8 @@ def patch_firmware(asset_id: int, body: FirmwarePatch, db: Session = Depends(get
     data = body.model_dump(exclude_unset=True)
     if "kind" in data and data["kind"] not in FIRMWARE_KINDS:
         raise HTTPException(400, f"kind must be one of {FIRMWARE_KINDS}")
+    if data.get("chip") and data["chip"] not in CHIPS:
+        raise HTTPException(400, f"chip must be one of {CHIPS}")
     for field in ("chip", "kind", "build_label", "notes"):
         if field in data and data[field] is not None:
             setattr(a, field, data[field])
@@ -1070,7 +1124,8 @@ def delete_param_set(param_set_id: int, db: Session = Depends(get_db)):
 @router.get("/meta")
 def flasher_meta():
     return {"ops": STEP_OPS, "transport_profiles": TRANSPORT_PROFILES,
-            "firmware_kinds": FIRMWARE_KINDS}
+            "firmware_kinds": FIRMWARE_KINDS, "chips": CHIPS,
+            "default_offsets": DEFAULT_OFFSETS}
 
 
 # -------------------------------------------------------------------- devices

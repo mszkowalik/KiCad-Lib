@@ -3320,3 +3320,85 @@ select.sel:focus {
 .bundle-files-table th:nth-child(3), .bundle-files-table td:nth-child(3) { width: 13%; }
 .bundle-files-table th:nth-child(4), .bundle-files-table td:nth-child(4) { width: 15%; }
 .bundle-files-table th:nth-child(5), .bundle-files-table td:nth-child(5) { width: 25%; }
+
+/* Firmware admin: upload beside the pool, and a labelled form grid so the
+   fields stop reading as a row of anonymous boxes. */
+.fw-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 34%) 1fr;
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 1000px) {
+  .fw-layout { grid-template-columns: 1fr; }
+}
+.fw-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0;
+}
+.fw-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fw-field input, .fw-field select { width: 100%; }
+.fw-wide { grid-column: 1 / -1; }
+.fw-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+}
+
+.fw-table { table-layout: fixed; }
+.fw-table th:nth-child(1), .fw-table td:nth-child(1) { width: 30%; }
+.fw-table th:nth-child(2), .fw-table td:nth-child(2) { width: 11%; }
+.fw-table th:nth-child(3), .fw-table td:nth-child(3) { width: 11%; }
+.fw-table th:nth-child(4), .fw-table td:nth-child(4) { width: 11%; }
+.fw-table th:nth-child(5), .fw-table td:nth-child(5) { width: 10%; }
+.fw-table th:nth-child(6), .fw-table td:nth-child(6) { width: 14%; }
+.fw-table th:nth-child(7), .fw-table td:nth-child(7) { width: 13%; }
+
+/* Berryware bundles: identity on one line, files on demand. */
+.bundle-drop { display: inline-block; margin: 6px 0; }
+.bundle-or { margin-top: 14px; }
+.bundle-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  margin: 6px 0;
+}
+.bundle-pick { display: flex; align-items: baseline; gap: 6px; }
+.bundle-pick-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bundle-cards { display: flex; flex-direction: column; gap: 8px; }
+.bundle-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+.bundle-card.open { border-left-color: var(--accent); background: var(--accent-soft); }
+.bundle-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.bundle-label {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+.bundle-actions { margin-left: auto; }
+.bundle-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}

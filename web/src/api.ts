@@ -3328,6 +3328,10 @@ export function getJlcPartsOrders(signal?: AbortSignal): Promise<{
 export interface FirmwareAssetRow {
   id: number;
   flashable?: boolean;
+  /** recommended offset for this chip+kind ("" when the layout decides) */
+  default_address?: string;
+  /** deployment versions pinning it — the delete guard's answer */
+  used_by?: number;
   filename: string;
   sha256: string;
   size_bytes: number;
@@ -3517,6 +3521,10 @@ export interface FlasherMeta {
   ops: string[];
   transport_profiles: string[];
   firmware_kinds: string[];
+  /** the only parts in production */
+  chips: string[];
+  /** recommended flash offset per chip -> kind, from the partition maps */
+  default_offsets: Record<string, Record<string, string>>;
 }
 
 export interface DeviceListRow {
@@ -3628,7 +3636,7 @@ export function uploadFirmware(
   projectId: number,
   file: File,
   meta: { kind: string; chip?: string; build_label?: string; notes?: string; uploaded_by?: string },
-): Promise<FirmwareAssetRow & { existing: boolean }> {
+): Promise<FirmwareAssetRow & { existing: boolean; chip_detected: string }> {
   const form = new FormData();
   form.append("file", file);
   form.append("kind", meta.kind);

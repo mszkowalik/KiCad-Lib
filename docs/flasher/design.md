@@ -920,6 +920,45 @@ three production deployments — each proven end-to-end in simulation
 (`simulate_bench.py`): Dongle_V2 28/28, Aqua_V2 39/39, Dongle_V3 32/32
 including the LTE failover proof.
 
+### Firmware admin, chip detection, and the 1.3.11 question (2026-07-30)
+
+**`/production/files` administers the pool**, one kind per tab. Firmware and
+bundles are two-column: how a thing gets in on the left, what exists on the
+right. Only **esp32 and esp32c6** are offered (user decision).
+
+**The chip comes from the image header, not a dropdown.** `_detect_chip` reads
+`chip_id` at offset 12 of the ESP image header, at offset 0 for a bare app
+image or 0x1000 for a padded whole-flash image — verified against all three
+real builds (V2 factory → 0 = esp32, V3 factory → 13 = esp32c6). The upload
+overrides whatever was selected, because a mislabelled chip is how a build
+reaches the wrong part. Headerless images (LittleFS) keep the selection.
+
+**Offsets are derived, shown, and pre-filled.** `DEFAULT_OFFSETS[chip][kind]`
+comes from the projects' own partition maps (esp32c6: factory 0x0, app
+0xE0000, filesystem 0x4B0000 from
+`esp32c6_partition_8MB_app3904k_fs3392k.csv`; esp32: factory 0x0, app
+0x10000). The firmware pool shows the offset per row and the composer
+pre-fills it — a version may still override, since the layout has the final
+say. A blank means "no safe default".
+
+**The `release` bundle was 1.3.11.** The un-suffixed `/berry/release`
+directory carried no number, so it was identified by content: 17 of 18 files
+byte-identical to `release-1.3.11`, and the 18th (`DEYE_LP3.json`) differs
+only in formatting — the parsed JSON is identical, server mtime 2025-12-11,
+minutes after the 1.3.11 files. Per the user's call, the pristine 1.3.11 set
+was imported, the four versions using the served copy were re-pointed to it
+(`scripts/swap_bundle.py`, each carrying a note about the substitution), and
+the ambiguous bundle was deleted. Watch out for the stale headers in that
+repo: every `.be` file says `#NEW RELEASE 1.3.0` and
+`self.version = "1.3.x"` even in 1.3.11 — the directory name is the only
+reliable version marker.
+
+**Consequence of the flashability gate:** the three generation-B versions that
+pin the never-archived pre-2024-08 placeholder now report as unrunnable
+("not a writable ESP image"). That is correct and permanent — they are
+records of 643 real runs whose firmware bytes are lost, so they can be read
+but never programmed.
+
 ### Could a V2 actually be programmed today? (2026-07-29)
 
 Answered by simulation rather than assertion:
