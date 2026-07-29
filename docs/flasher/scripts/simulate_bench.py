@@ -21,6 +21,9 @@ VERSION = int(sys.argv[1])
 
 MAC = "f8:b3:b7:42:da:f8"
 TOPIC = "dongle_F8B3B742DAF8"
+# Filled from the deployment's own chip once the run spec arrives, so the
+# engine's chip guard is tested rather than tripped by the harness itself.
+CHIP_REPORTED = "ESP32-D0WDQ6 (revision 3)"
 
 
 class FakeDevice:
@@ -65,6 +68,9 @@ class FakeDevice:
                 "FriendlyName": ["Dongle"], "Power": 0}})]
 
         if cmd == "LteState":
+            self.lte_queries = getattr(self, "lte_queries", 0) + 1
+            if not self.wifi_on and self.lte_queries >= 2:
+                self.lte_up = 1
             return [self._rsl("RESULT", {"Lte": {
                 "Up": self.lte_up, "WantUp": 1, "IP": "10.64.1.23",
                 "GW": "10.64.1.1", "Ifname": "pp1", "LastErr": 0}})]
@@ -94,7 +100,11 @@ class FakeDevice:
             return [self._rsl("RESULT", {"NAME": name, "GPIO": [1] * 36, "FLAG": 0, "BASE": 1})]
 
         if cmd == "Module":
-            return [self._rsl("RESULT", {"Module": payload or "0"})]
+            # Real Tasmota answers with the ACTIVE template name keyed by the
+            # module number: {"Module":{"0":"CE_Aqua_v2"}} — evidence in the
+            # imported logs ("Module successfully set to '{'0': 'CE_Aqua'}'").
+            name = str(self.settings.get("Template_NAME", "Dongle"))
+            return [self._rsl("RESULT", {"Module": {payload or "0": name}})]
 
         if cmd in ("Power1", "Power2", "Power3"):
             self.settings[cmd] = payload or "OFF"
@@ -110,20 +120,27 @@ class FakeDevice:
             out = [self._rsl("RESULT", {key: self.settings[cmd]})]
             return out + (["banner"] if cmd.startswith("SetOption") else [])
 
-        if cmd == "SSId1" and payload in ("0", ""):
+        if cmd == "SSId1" and payload == "0":
             # Clearing the AP: the device restarts and goes quiet. This is the
-            # behaviour config.py wrapped in try/except.
+            # behaviour config.py wrapped in try/except. On a V3 the WAN
+            # failover then carries the link over to LTE (WanBootArm), which is
+            # what the LteState poll is waiting for.
             self.settings["SSId1"] = ""
             self.wifi_on = False
+            self.lte_up = 1
             return []  # deliberate silence
 
         if cmd in ("Password1", "SSId1"):
+            if payload == "":  # query
+                return [self._rsl("RESULT", {cmd: self.settings.get(cmd, "")})]
             self.settings[cmd] = payload
             if cmd == "Password1":
                 self.wifi_on = True
             return [self._rsl("RESULT", {cmd: payload}), "banner"]
 
         if cmd.startswith("Mqtt"):
+            if payload == "":  # query
+                return [self._rsl("RESULT", {cmd: self.settings.get(cmd, "")})]
             self.settings[cmd] = payload
             if cmd in ("MqttHost", "MqttPort", "MqttUser", "MqttPassword"):
                 self.mqtt_count = 1
@@ -133,10 +150,15 @@ class FakeDevice:
             return [self._rsl("RESULT", {"LteSimPin": "****"})]
 
         if cmd == "Backlog":
-            out = []
+            out, restart = [], False
             for part in payload.split(";"):
-                out += [x for x in self.respond(part.strip()) if x != "banner"]
-            return out + [self._rsl("RESULT", {"Backlog": "Done"})]
+                for line in self.respond(part.strip()):
+                    if line == "banner":
+                        restart = True   # one restart for the whole batch
+                    else:
+                        out.append(line)
+            out.append(self._rsl("RESULT", {"Backlog": "Done"}))
+            return out + (["banner"] if restart else [])
 
         # Anything else: echo, the way Tasmota echoes an accepted command.
         self.settings[key] = payload
@@ -174,10 +196,14 @@ async def main():
                 print("  socket ended")
                 break
             t = msg.get("t")
+            if t == "run":
+                chip = (msg["spec"].get("chip") or "").lower()
+                if "c6" in chip:
+                    globals()["CHIP_REPORTED"] = "ESP32-C6 (QFN40) (revision v0.2)"
             if t == "action":
                 info = {}
                 if msg["op"] == "esp_connect":
-                    info = {"chip": "ESP32-D0WDQ6 (revision 3)", "mac": MAC}
+                    info = {"chip": CHIP_REPORTED, "mac": MAC}
                 await ws.send(json.dumps({"t": "result", "id": msg["id"], "ok": True, "info": info}))
             elif t == "tx":
                 data = str(msg["data"])

@@ -1543,8 +1543,13 @@ class DeploymentVersion(Base):
     files_fingerprint: Mapped[str] = mapped_column(String(64), default="")
     # Human label for the berryware set ("release-1.3.11", "fs @ 2026-07-22").
     # The user thinks in file BUNDLES even though files version individually
-    # (user decision 2026-07-29), so the set gets a name of its own.
+    # (user decision 2026-07-29), so the set gets a name of its own. When the
+    # pinned set matches a BerryBundle, `berry_bundle_id` links it and the
+    # label mirrors the bundle's.
     files_label: Mapped[str] = mapped_column(String(120), default="")
+    berry_bundle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("berry_bundles.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     deployment: Mapped[Deployment] = relationship(back_populates="versions")
@@ -1603,6 +1608,54 @@ class DeploymentFile(Base):
         UniqueConstraint(
             "deployment_version_id", "device_file_version_id", name="uq_deployment_file"
         ),
+    )
+
+
+class BerryBundle(Base):
+    """A named berryware SET — the unit the user actually receives ("the fs of
+    release 1.3.11"), while files keep versioning individually underneath.
+
+    One row per distinct file set per project: identity is the set fingerprint
+    (same rule as DeploymentVersion.files_fingerprint), so re-importing the
+    same folder under any name reuses the bundle instead of minting a twin.
+    Immutable once created — a changed file set is a NEW bundle.
+    """
+
+    __tablename__ = "berry_bundles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    label: Mapped[str] = mapped_column(String(120))  # "release-1.3.11", "fs @ 2026-07-22"
+    files_fingerprint: Mapped[str] = mapped_column(String(64))
+    comment: Mapped[str] = mapped_column(String(300), default="")
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    files: Mapped[list["BerryBundleFile"]] = relationship(
+        back_populates="bundle", cascade="all, delete-orphan", order_by="BerryBundleFile.position"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("project_id", "files_fingerprint", name="uq_berry_bundle_set"),
+    )
+
+
+class BerryBundleFile(Base):
+    """One pinned device file version inside a bundle (autoexec.be last, same
+    ordering rule as DeploymentFile)."""
+
+    __tablename__ = "berry_bundle_files"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    berry_bundle_id: Mapped[int] = mapped_column(ForeignKey("berry_bundles.id"))
+    device_file_version_id: Mapped[int] = mapped_column(ForeignKey("device_file_versions.id"))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+    bundle: Mapped[BerryBundle] = relationship(back_populates="files")
+    file_version: Mapped[DeviceFileVersion] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("berry_bundle_id", "device_file_version_id", name="uq_bundle_file"),
     )
 
 

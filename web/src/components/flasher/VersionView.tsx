@@ -132,7 +132,12 @@ export default function VersionView({
       <div className="card pad">
         <h3 className="card-title">
           Berryware{" "}
-          {v.files_label ? <span className="pill neutral">{v.files_label}</span> : null}{" "}
+          {v.files_label ? (
+            <span className={`pill ${v.berry_bundle_id ? "ok" : "neutral"}`}
+                  title={v.berry_bundle_id ? "a named bundle" : "an ad-hoc file set"}>
+              {v.files_label}
+            </span>
+          ) : null}{" "}
           <span className="muted dim mono">
             {v.files_fingerprint ? shortSha(v.files_fingerprint) : "none"}
           </span>

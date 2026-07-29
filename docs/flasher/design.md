@@ -890,6 +890,36 @@ in memory. Audit from a fresh session, never from the one that mutated.
 
 ---
 
+### Berryware BUNDLES are first-class (2026-07-29)
+
+The user receives berryware as a bundle with the berry project's own release
+number, so the platform now models exactly that: `berry_bundles` — one row per
+distinct file SET per project, identity = the set fingerprint, label = the
+release name (`release-1.3.11`, `fs @ 2026-07-22`). Files still version
+individually underneath; the bundle is the unit you SEE and PIN.
+
+- The folder import mints/reuses the bundle automatically (same fingerprint →
+  same bundle, whatever the folder was called; a real name upgrades a generic
+  "N files" label but never overwrites another real name).
+- The composer pins a whole bundle in one pick; a deployment version whose set
+  matches a bundle links it and mirrors its label (`link_bundle` after every
+  `stamp`). Ad-hoc file picks stay unlabeled until named — a bundle is a
+  deliberate act, never an accident.
+- Artifacts shows the bundle list (label, files, used-by) above the raw
+  per-file pool.
+
+### WiFi and MQTT go down in ONE Backlog each (2026-07-29)
+
+Set separately, the device can restart between `SSId1` and `Password1` and
+come up with the new SSID but the old password. Both now travel in a single
+`Backlog` (one restart with a complete config), and because Backlog does not
+reliably echo, the procedure verifies by READBACK + assert after the boot.
+Same pattern for the whole MQTT block. Encoded in
+`docs/flasher/scripts/v2_steps.py` and live in the current versions of all
+three production deployments — each proven end-to-end in simulation
+(`simulate_bench.py`): Dongle_V2 28/28, Aqua_V2 39/39, Dongle_V3 32/32
+including the LTE failover proof.
+
 ### Could a V2 actually be programmed today? (2026-07-29)
 
 Answered by simulation rather than assertion:

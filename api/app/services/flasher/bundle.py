@@ -76,6 +76,7 @@ def version_json(db, v: M.DeploymentVersion, deep: bool = True) -> dict:
         "firmware_fingerprint": v.firmware_fingerprint,
         "files_fingerprint": v.files_fingerprint,
         "files_label": v.files_label,
+        "berry_bundle_id": v.berry_bundle_id,
         "created_at": v.created_at.isoformat() if v.created_at else None,
         "image_count": len(v.images), "file_count": len(v.files),
         "step_count": len(v.steps or []),
@@ -172,3 +173,77 @@ def diff(prev: M.DeploymentVersion, cur: M.DeploymentVersion) -> dict:
         "transport_after": {"profile": cur.transport_profile, "baud": cur.monitor_baud},
         "changes": changes_since(prev, cur),
     }
+
+
+def bundle_json(db, b: M.BerryBundle) -> dict:
+    used_by = (
+        db.query(M.DeploymentVersion)
+        .filter(M.DeploymentVersion.berry_bundle_id == b.id)
+        .count()
+    )
+    return {
+        "id": b.id, "label": b.label, "files_fingerprint": b.files_fingerprint,
+        "comment": b.comment, "created_by": b.created_by,
+        "created_at": b.created_at.isoformat() if b.created_at else None,
+        "file_count": len(b.files), "used_by": used_by,
+        "files": [
+            {
+                "device_file_version_id": link.file_version.id,
+                "filename": link.file_version.file.filename,
+                "version_no": link.file_version.version_no,
+                "size_bytes": link.file_version.size_bytes,
+                "sha256": link.file_version.sha256,
+            }
+            for link in b.files
+        ],
+    }
+
+
+def ensure_bundle(db, project_id: int, file_version_ids: list[int],
+                  label: str = "", created_by: str = "", comment: str = "") -> M.BerryBundle:
+    """Get-or-create the bundle for this exact file set.
+
+    Identity is the set fingerprint, so the same folder imported twice — under
+    any label — is ONE bundle. A fresh label on an existing set is kept as the
+    bundle's name only if the bundle had a generic one ("N files"), because
+    the first real name (release-1.3.11) is the one the fleet knows.
+    """
+    versions = [db.get(M.DeviceFileVersion, fid) for fid in file_version_ids]
+    fp = files_fingerprint((v.file.filename, v.sha256) for v in versions)
+    existing = (
+        db.query(M.BerryBundle)
+        .filter(M.BerryBundle.project_id == project_id,
+                M.BerryBundle.files_fingerprint == fp)
+        .one_or_none()
+    )
+    if existing is not None:
+        if label and (not existing.label or existing.label.endswith("files")):
+            existing.label = label
+        return existing
+    ordered = sorted(versions, key=lambda v: (v.file.filename == "autoexec.be", v.file.filename))
+    b = M.BerryBundle(project_id=project_id, label=label or f"{len(versions)} files",
+                      files_fingerprint=fp, created_by=created_by, comment=comment)
+    db.add(b)
+    db.flush()
+    for pos, v in enumerate(ordered):
+        db.add(M.BerryBundleFile(berry_bundle_id=b.id, device_file_version_id=v.id, position=pos))
+    return b
+
+
+def link_bundle(db, version: M.DeploymentVersion) -> None:
+    """After stamping: if the pinned set matches a bundle, adopt it (id +
+    label). Never invents a bundle — that is a deliberate act via import or
+    ensure_bundle, so ad-hoc file picks stay label-free until named."""
+    if not version.files_fingerprint:
+        version.berry_bundle_id = None
+        return
+    dep = db.get(M.Deployment, version.deployment_id)
+    b = (
+        db.query(M.BerryBundle)
+        .filter(M.BerryBundle.project_id == dep.project_id,
+                M.BerryBundle.files_fingerprint == version.files_fingerprint)
+        .one_or_none()
+    )
+    version.berry_bundle_id = b.id if b else None
+    if b is not None:
+        version.files_label = b.label

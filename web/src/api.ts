@@ -3417,6 +3417,7 @@ export interface DeploymentVersionRow {
   firmware_fingerprint: string;
   files_fingerprint: string;
   files_label: string;
+  berry_bundle_id: number | null;
   created_at: string | null;
   image_count: number;
   file_count: number;
@@ -3499,6 +3500,7 @@ export interface ComposeBody {
   transport_profile?: string;
   monitor_baud?: number;
   flash_config?: Record<string, string> | null;
+  berry_bundle_id?: number | null;
   latest_files?: boolean;
 }
 
@@ -3788,6 +3790,28 @@ export function rejectDeviceFileVersion(versionId: number): Promise<{ ok: boolea
   });
 }
 
+export interface BerryBundleRow {
+  id: number;
+  label: string;
+  files_fingerprint: string;
+  comment: string;
+  created_by: string;
+  created_at: string | null;
+  file_count: number;
+  used_by: number;
+  files: {
+    device_file_version_id: number;
+    filename: string;
+    version_no: number;
+    size_bytes: number;
+    sha256: string;
+  }[];
+}
+
+export function listBerryBundles(projectId: number, signal?: AbortSignal): Promise<BerryBundleRow[]> {
+  return request(`/api/flasher/projects/${projectId}/berry-bundles`, { signal });
+}
+
 export interface ImportedFile {
   filename: string;
   device_file_version_id: number;
@@ -3802,7 +3826,7 @@ export function importDeviceFiles(
   projectId: number,
   files: File[],
   meta: { label?: string; created_by?: string; publish?: boolean } = {},
-): Promise<{ label: string; files: ImportedFile[]; changed: number }> {
+): Promise<{ label: string; bundle: BerryBundleRow | null; files: ImportedFile[]; changed: number }> {
   const form = new FormData();
   for (const f of files) form.append("files", f);
   if (meta.label) form.append("label", meta.label);

@@ -11,6 +11,7 @@ import {
   type ProjectInfo,
 } from "../api";
 import { ErrorBanner, Spinner } from "../components/Ui";
+import BundlesPanel from "../components/flasher/BundlesPanel";
 import DeviceFilesPanel from "../components/flasher/DeviceFilesPanel";
 import FirmwarePanel from "../components/flasher/FirmwarePanel";
 import ParamSetsPanel from "../components/flasher/ParamSetsPanel";
@@ -64,6 +65,7 @@ export default function FlasherAdmin() {
           <p className="muted">No projects.</p>
         ) : (
           <>
+            <BundlesPanel projectId={valid} />
             <DeviceFilesPanel projectId={valid} />
             <FirmwarePanel projectId={valid} meta={meta} />
             <ParamSetsPanel projectId={valid} />

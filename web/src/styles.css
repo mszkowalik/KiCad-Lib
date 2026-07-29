@@ -3307,3 +3307,16 @@ select.sel:focus {
 .composer-files-table th:nth-child(3), .composer-files-table td:nth-child(3) { width: 22%; }
 .composer-files-table th:nth-child(4), .composer-files-table td:nth-child(4) { width: 14%; }
 .composer-files-table th:nth-child(5), .composer-files-table td:nth-child(5) { width: 12%; }
+
+.bundles-table { table-layout: fixed; }
+.bundles-table th:nth-child(1), .bundles-table td:nth-child(1) { width: 32%; }
+.bundles-table th:nth-child(2), .bundles-table td:nth-child(2) { width: 10%; }
+.bundles-table th:nth-child(3), .bundles-table td:nth-child(3) { width: 18%; }
+.bundles-table th:nth-child(4), .bundles-table td:nth-child(4) { width: 20%; }
+.bundles-table th:nth-child(5), .bundles-table td:nth-child(5) { width: 20%; }
+.bundle-files-table { table-layout: fixed; }
+.bundle-files-table th:nth-child(1), .bundle-files-table td:nth-child(1) { width: 7%; }
+.bundle-files-table th:nth-child(2), .bundle-files-table td:nth-child(2) { width: 40%; }
+.bundle-files-table th:nth-child(3), .bundle-files-table td:nth-child(3) { width: 13%; }
+.bundle-files-table th:nth-child(4), .bundle-files-table td:nth-child(4) { width: 15%; }
+.bundle-files-table th:nth-child(5), .bundle-files-table td:nth-child(5) { width: 25%; }

@@ -324,11 +324,32 @@ async def import_device_files(
                          "version_no": v.version_no,
                          "state": "new" if v.version_no == 1 else "changed",
                          "size_bytes": v.size_bytes})
+    db.flush()
+    b = None
+    published_ids = [r["device_file_version_id"] for r in resolved]
+    if publish and published_ids:
+        b = bundle.ensure_bundle(db, project_id, published_ids, label=label,
+                                 created_by=created_by,
+                                 comment=f"folder import ({len(resolved)} files)")
+        db.flush()
     db.commit()
     audit(db, "flasher.files_import", "project", project_id,
           details=f"{len(resolved)} files ({label or 'folder import'})", actor=created_by)
-    return {"label": label, "files": sorted(resolved, key=lambda r: r["filename"]),
+    return {"label": (b.label if b else label),
+            "bundle": bundle.bundle_json(db, b) if b else None,
+            "files": sorted(resolved, key=lambda r: r["filename"]),
             "changed": sum(1 for r in resolved if r["state"] != "unchanged")}
+
+
+@router.get("/projects/{project_id}/berry-bundles")
+def list_berry_bundles(project_id: int, db: Session = Depends(get_db)):
+    """The berryware SETS — what the user receives from the firmware repo,
+    one row per distinct file set, newest first."""
+    rows = (
+        db.query(M.BerryBundle).filter(M.BerryBundle.project_id == project_id)
+        .order_by(M.BerryBundle.id.desc()).all()
+    )
+    return [bundle.bundle_json(db, b) for b in rows]
 
 
 @router.get("/files/{version_id}/{filename}")
@@ -379,6 +400,8 @@ class ComposeIn(BaseModel):
     transport_profile: str | None = None
     monitor_baud: int | None = None
     flash_config: dict | None = None
+    # pin a whole berryware bundle instead of listing file versions
+    berry_bundle_id: int | None = None
     # convenience: pin the newest published version of every file already in
     # the starting version (the composer's "latest berryware" button)
     latest_files: bool = False
@@ -517,6 +540,11 @@ def compose_version(deployment_id: int, body: ComposeIn, db: Session = Depends(g
 
     # --- berryware files
     file_ids = body.file_version_ids
+    if body.berry_bundle_id is not None:
+        b = db.get(M.BerryBundle, body.berry_bundle_id)
+        if b is None or b.project_id != d.project_id:
+            raise HTTPException(400, "berry bundle not in this project")
+        file_ids = [link.device_file_version_id for link in b.files]
     if file_ids is None and base is not None:
         if body.latest_files:
             # newest published version of each file the base pinned
@@ -540,6 +568,9 @@ def compose_version(deployment_id: int, body: ComposeIn, db: Session = Depends(g
     db.flush()
     db.refresh(version)
     bundle.stamp(db, version)
+    bundle.link_bundle(db, version)
+    if body.files_label:
+        version.files_label = body.files_label
     db.commit()
     audit(db, "flasher.version_compose", "deployment_version", version.id,
           details=f"{d.name} v{version.version_no} (draft)", actor=body.created_by)
@@ -636,6 +667,7 @@ def validate_deployment_version(version_id: int, db: Session = Depends(get_db)):
 class VersionPatch(BaseModel):
     """Edits allowed only while a version is still a DRAFT."""
     comment: str | None = None
+    berry_bundle_id: int | None = None
     steps: list[dict] | None = None
     images: list[ImageIn] | None = None
     file_version_ids: list[int] | None = None
@@ -683,16 +715,27 @@ def patch_deployment_version(version_id: int, body: VersionPatch, db: Session = 
             seen.add(img.address)
             db.add(M.DeploymentImage(deployment_version_id=v.id, firmware_asset_id=asset.id,
                                      address=img.address, position=pos))
-    if "file_version_ids" in data and data["file_version_ids"] is not None:
+    picked_file_ids = None
+    if "berry_bundle_id" in data and data["berry_bundle_id"] is not None:
+        b = db.get(M.BerryBundle, data["berry_bundle_id"])
+        if b is None or b.project_id != d.project_id:
+            raise HTTPException(400, "berry bundle not in this project")
+        picked_file_ids = [link.device_file_version_id for link in b.files]
+    elif "file_version_ids" in data and data["file_version_ids"] is not None:
+        picked_file_ids = body.file_version_ids or []
+    if picked_file_ids is not None:
         for old in list(v.files):
             db.delete(old)
         db.flush()
-        for pos, fv_id in enumerate(_order_files(db, body.file_version_ids or [], d.project_id)):
+        for pos, fv_id in enumerate(_order_files(db, picked_file_ids, d.project_id)):
             db.add(M.DeploymentFile(deployment_version_id=v.id,
                                     device_file_version_id=fv_id, position=pos))
     db.flush()
     db.refresh(v)
     bundle.stamp(db, v)
+    bundle.link_bundle(db, v)
+    if "files_label" in data and data["files_label"]:
+        v.files_label = data["files_label"]
     db.commit()
     return {**bundle.version_json(db, v), "validation": validate.check(db, v)}
 

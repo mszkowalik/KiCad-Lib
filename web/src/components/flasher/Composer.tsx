@@ -10,12 +10,14 @@ import {
   composeVersion,
   errorMessage,
   importDeviceFiles,
+  listBerryBundles,
   listDeviceFiles,
   listFirmware,
   listParamSets,
   patchDeploymentVersion,
   publishDeploymentVersion,
   uploadFirmware,
+  type BerryBundleRow,
   type DeploymentRow,
   type DeploymentVersionRow,
   type DeviceFileRow,
@@ -49,6 +51,7 @@ export default function Composer({
   const [touched, setTouched] = useState<Set<Section>>(new Set());
   const [assets, setAssets] = useState<FirmwareAssetRow[]>([]);
   const [files, setFiles] = useState<DeviceFileRow[]>([]);
+  const [bundles, setBundles] = useState<BerryBundleRow[]>([]);
   const [paramSets, setParamSets] = useState<ParamSetRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -76,11 +79,13 @@ export default function Composer({
       listFirmware(deployment.project_id, ac.signal),
       listDeviceFiles(deployment.project_id, ac.signal),
       listParamSets(deployment.project_id, ac.signal),
+      listBerryBundles(deployment.project_id, ac.signal),
     ])
-      .then(([a, f, p]) => {
+      .then(([a, f, p, b]) => {
         setAssets(a);
         setFiles(f);
         setParamSets(p);
+        setBundles(b);
       })
       .catch((err) => setError(errorMessage(err)));
     return () => ac.abort();
@@ -193,13 +198,14 @@ export default function Composer({
     try {
       const res = await importDeviceFiles(deployment.project_id, list, { label });
       setFileIds(res.files.map((f: ImportedFile) => f.device_file_version_id));
-      if (label) setFilesLabel(label);
+      setFilesLabel(res.bundle?.label ?? label);
       setImportedNote(
-        `${res.files.length} files imported from ${label || "the folder"} — ` +
-          `${res.changed} changed, ${res.files.length - res.changed} unchanged`,
+        `Bundle "${res.bundle?.label ?? label}" — ${res.changed} changed, ` +
+          `${res.files.length - res.changed} unchanged`,
       );
       mark("files");
       setFiles(await listDeviceFiles(deployment.project_id));
+      setBundles(await listBerryBundles(deployment.project_id));
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -353,6 +359,26 @@ export default function Composer({
                 mark("files");
               }}
             />
+            <select
+              className="row-input"
+              value=""
+              title="pin an existing bundle — the whole set at once"
+              onChange={(e) => {
+                const b = bundles.find((x) => x.id === Number(e.target.value));
+                if (!b) return;
+                setFileIds(b.files.map((f) => f.device_file_version_id));
+                setFilesLabel(b.label);
+                setImportedNote(`Pinned bundle "${b.label}" (${b.file_count} files).`);
+                mark("files");
+              }}
+            >
+              <option value="">— pin a bundle —</option>
+              {bundles.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.label} ({b.file_count} files{b.used_by ? `, used by ${b.used_by}` : ""})
+                </option>
+              ))}
+            </select>
             <label className="btn btn-sm">
               Import folder…
               <input

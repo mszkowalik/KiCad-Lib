@@ -295,6 +295,7 @@ def _flasher_bundle_migration(conn) -> None:
         ("programming_runs", "files_fingerprint", "varchar(64) NOT NULL DEFAULT ''"),
         ("programming_runs", "draft_run", "boolean NOT NULL DEFAULT false"),
         ("production_runs", "deployment_channel", "varchar(40) NOT NULL DEFAULT ''"),
+        ("deployment_versions", "berry_bundle_id", "integer"),
     ):
         conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {typ}"))
 

@@ -46,13 +46,21 @@ MODBUS = [
      "cmd": "ModbusBaudrate", "value": 9600, "timeout": 10},
 ]
 
+# SSId1 and Password1 go in ONE Backlog (user decision 2026-07-29). Sent as
+# two commands, Tasmota restarts between them, so the device briefly tries to
+# associate with the NEW ssid using the OLD password; the old tool hid that
+# behind a fixed sleep after each write. One Backlog = one restart.
 WIFI = [
-    {"op": "set_and_check", "label": "Set WiFi SSID", "cmd": "SSId1",
-     "value": "{SSId1}", "timeout": 10},
-    {"op": "set_and_check", "label": "Set WiFi password (device restarts)",
-     "cmd": "Password1", "value": "{Password1}", "timeout": 10},
+    {"op": "backlog", "label": "Set the WiFi SSID and password together (one restart)",
+     "commands": ["SSId1 {SSId1}", "Password1 {Password1}"], "timeout": 10,
+     "note": "Backlog applies both before restarting, so the device never "
+             "attempts the new SSID with the old password"},
     {"op": "reset", "label": "Reset the device (RTS pulse, as SerialDevice.reset_device)"},
     {"op": "wait_boot", "label": "Wait for the boot after the WiFi change", "timeout": 30},
+    {"op": "command", "label": "Read back the stored SSID", "cmd": "SSId1",
+     "expect_key": "SSId1", "timeout": 10, "capture": {"ssid_readback": "SSId1"}},
+    {"op": "assert_equals", "label": "The stored SSID is the one we sent",
+     "var": "ssid_readback", "equals": "{SSId1}"},
     {"op": "poll_until", "label": "Wait for the WiFi connection", "cmd": "Status",
      "payload": "11", "expect_key": "StatusSTS", "path": "StatusSTS.Wifi.SSId",
      "equals": "{SSId1}", "every": 1, "timeout": 30,
@@ -73,20 +81,25 @@ DOWNLOAD = [
      "timeout": 30, "retries": 3},
 ]
 
+# Same argument as WiFi: the broker settings go in ONE Backlog, so the device
+# restarts once with a complete configuration instead of six times through
+# half-configured states (each of MqttHost/Port/User/Password restarts it).
+MQTT_ZERO_FP = "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
 MQTT = [
-    {"op": "set_and_check", "label": "Clear MQTT fingerprint 1", "cmd": "MqttFingerprint1",
-     "value": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", "timeout": 10},
-    {"op": "set_and_check", "label": "Clear MQTT fingerprint 2", "cmd": "MqttFingerprint2",
-     "value": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00", "timeout": 10},
-    {"op": "set_and_check", "label": "Set MQTT password", "cmd": "MqttPassword",
-     "value": "{mqtt_password}", "timeout": 10},
-    {"op": "set_and_check", "label": "Set MQTT user", "cmd": "MqttUser",
-     "value": "{mqtt_user}", "timeout": 10},
-    {"op": "set_and_check", "label": "Set MQTT host", "cmd": "MqttHost",
-     "value": "{MqttHost}", "timeout": 10},
-    {"op": "set_and_check", "label": "Set MQTT port (device restarts)", "cmd": "MqttPort",
-     "value": "{MqttPort}", "timeout": 10},
+    {"op": "backlog", "label": "Set the whole MQTT config in one Backlog (one restart)",
+     "commands": [f"MqttFingerprint1 {MQTT_ZERO_FP}", f"MqttFingerprint2 {MQTT_ZERO_FP}",
+                  "MqttPassword {mqtt_password}", "MqttUser {mqtt_user}",
+                  "MqttHost {MqttHost}", "MqttPort {MqttPort}"],
+     "timeout": 15},
     {"op": "wait_boot", "label": "Wait for the boot after the MQTT change", "timeout": 30},
+    {"op": "command", "label": "Read back the broker host", "cmd": "MqttHost",
+     "expect_key": "MqttHost", "timeout": 10, "capture": {"mqtt_host_readback": "MqttHost"}},
+    {"op": "assert_equals", "label": "The broker host is the one we sent",
+     "var": "mqtt_host_readback", "equals": "{MqttHost}"},
+    {"op": "command", "label": "Read back the MQTT user", "cmd": "MqttUser",
+     "expect_key": "MqttUser", "timeout": 10, "capture": {"mqtt_user_readback": "MqttUser"}},
+    {"op": "assert_equals", "label": "The MQTT user is the derived one",
+     "var": "mqtt_user_readback", "equals": "{mqtt_user}"},
 ]
 
 # SetOption153 = disable autoexec.be. The whole config runs with the berry app
@@ -122,8 +135,10 @@ BAKED_LATER = [
      "value": 1, "confirm": "ON", "timeout": 10},
     {"op": "set_and_check", "label": "SetOption114 (detach switches from relays)",
      "cmd": "SetOption114", "value": 1, "confirm": "ON", "timeout": 10},
-    {"op": "set_and_check", "label": "SwitchMode0 = 1", "cmd": "SwitchMode0",
-     "value": 1, "confirm": "ON", "response_key": "SwitchMode", "timeout": 10},
+    # SwitchMode0 answers with the whole 28-entry array, so only the key can
+    # be confirmed (evidence: "SwitchMode0 successfully set to '[1, 1, ...]'").
+    {"op": "command", "label": "SwitchMode0 = 1", "cmd": "SwitchMode0", "payload": 1,
+     "expect_key": "SwitchMode", "timeout": 10},
     {"op": "set_and_check", "label": "SetOption103 (MQTT TLS)", "cmd": "SetOption103",
      "value": 1, "confirm": "ON", "timeout": 10},
     {"op": "set_and_check", "label": "SetOption132 (TLS fingerprint TOFU)",
@@ -151,8 +166,14 @@ def model_block(template_json: str, label: str) -> list:
     return [
         {"op": "set_and_check", "label": f"Apply the {label} GPIO template", "cmd": "Template",
          "value": template_json, "response_key": "NAME", "confirm": label, "timeout": 10},
-        {"op": "set_and_check", "label": "Activate the template (Module 0)", "cmd": "Module",
-         "value": 0, "response_key": "Module", "timeout": 10},
+        # Module answers {"Module":{"0":"CE_Dongle_v2"}} — a dict, so there is
+        # no scalar to confirm (the old tool compared against that dict).
+        # Read it and assert the ACTIVE template name instead.
+        {"op": "command", "label": "Activate the template (Module 0)", "cmd": "Module",
+         "payload": 0, "expect_key": "Module", "timeout": 10,
+         "capture": {"active_module": "Module.0"}},
+        {"op": "assert_equals", "label": f"The active module is {label}",
+         "var": "active_module", "equals": label},
         {"op": "set_and_check", "label": "Set the group topic", "cmd": "GroupTopic1",
          "value": "{MqttGroupTopic}", "timeout": 10},
         {"op": "set_and_check", "label": "Set the friendly name", "cmd": "FriendlyName1",
