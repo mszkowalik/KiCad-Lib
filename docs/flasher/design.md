@@ -860,6 +860,34 @@ tables dropped. The rename half runs BEFORE `create_all` — otherwise it would
 build empty bundle tables beside the populated script ones and strand the
 history.
 
+### Cleanup: every version now validates
+
+Turning the validator on its own history found three classes of unusable
+version, all artifacts of the first import pass. Fixed rather than hidden
+(`scratchpad/cleanup.py`, run on both stacks; **6,321/6,321 runs kept their
+pin**):
+
+1. **Empty-step placeholders** — the era versions created before the
+   procedures were reverse-engineered. Superseded, zero runs → deleted (10).
+2. **"unmatched" berryware eras** — 4 reports whose downloaded file sizes
+   matched no release. They are *partial downloads* (e.g. `mateodongle_aqua.be`
+   at 11,159 B against a real 32,872 B), which is why nothing matched. The
+   intended deployment is the era whose date range contains the run, so those
+   4 runs moved there with a `results.retro_note` recording why, and the empty
+   placeholder versions went (3).
+3. **Aqua pinned no berryware at all** — device files are project-scoped and
+   the Aqua units live in their own project, so the import had nothing to pin.
+   Their 2024-07 era is `release-0.0.1`; those 6 files are now imported into
+   that project and pinned, and the version validates.
+
+Remaining state: 12 versions across 5 deployments, **all valid**, and the retro
+deployments deliberately carry no channel — V2 is history, not a live target.
+
+One trap worth recording: the cleanup script's own final report first claimed
+13 versions were still bad after deleting them. Sessions here use
+`expire_on_commit=False`, so `deployment.versions` still held the deleted rows
+in memory. Audit from a fresh session, never from the one that mutated.
+
 ---
 
 ### Retroactive V2 import (2026-07-29)
