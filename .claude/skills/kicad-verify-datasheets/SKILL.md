@@ -66,6 +66,3 @@ it silently in either direction.
 
 See [[add-component]] for where verification fits in adding a part.
 
----
-
-*Generated from the 7Sigma platform database — skill `verify-datasheets` v4. Edit it in the web UI (Skills view) or propose a change with the `propose_skill_update` tool; edits to this file are overwritten on the next sync.*

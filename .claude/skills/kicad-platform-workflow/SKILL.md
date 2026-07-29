@@ -79,6 +79,3 @@ Read the repo's `CLAUDE.md` files before changing platform code.
 [[add-component]] — the procedure that produces these drafts.
 [[conventions-symbols]] / [[conventions-footprints]] — what a good draft looks like.
 
----
-
-*Generated from the 7Sigma platform database — skill `platform-workflow` v1. Edit it in the web UI (Skills view) or propose a change with the `propose_skill_update` tool; edits to this file are overwritten on the next sync.*

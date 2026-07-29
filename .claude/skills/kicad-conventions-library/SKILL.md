@@ -472,6 +472,3 @@ proposals drafted (all left as drafts pending user approval, nothing changed
 live). If you're about to start a "first pass" over a category, check the
 tables above first — it's very likely already been done.
 
----
-
-*Generated from the 7Sigma platform database — skill `conventions-library` v12. Edit it in the web UI (Skills view) or propose a change with the `propose_skill_update` tool; edits to this file are overwritten on the next sync.*

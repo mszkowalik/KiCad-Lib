@@ -171,6 +171,3 @@ Rules for a stacked pin:
 See [[add-component]] for where symbol choice fits in the full part-creation
 procedure, and [[platform-workflow]] for what happens after approval.
 
----
-
-*Generated from the 7Sigma platform database — skill `conventions-symbols` v3. Edit it in the web UI (Skills view) or propose a change with the `propose_skill_update` tool; edits to this file are overwritten on the next sync.*

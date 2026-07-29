@@ -383,22 +383,3 @@ Run all of it before calling a batch done:
 - **Deleting a run with financial rows** — it is refused (409) by design; remove
   or reassign the documents, draws and adjustments first.
 
----
-
-*Generated from the 7Sigma platform database — skill `production-run-from-invoices` v1. Edit it in the web UI (Skills view) or propose a change with the `propose_skill_update` tool; edits to this file are overwritten on the next sync.*
-
----
-
-*Generated from the 7Sigma platform database — skill `production-run-from-invoices` v2. Edit it in the web UI (Skills view) or propose a change with the `propose_skill_update` tool; edits to this file are overwritten on the next sync.*
-
----
-
-*Generated from the 7Sigma platform database — skill `production-run-from-invoices` v3. Edit it in the web UI (Skills view) or propose a change with the `propose_skill_update` tool; edits to this file are overwritten on the next sync.*
-
----
-
-*Generated from the 7Sigma platform database — skill `production-run-from-invoices` v4. Edit it in the web UI (Skills view) or propose a change with the `propose_skill_update` tool; edits to this file are overwritten on the next sync.*
-
----
-
-*Generated from the 7Sigma platform database — skill `production-run-from-invoices` v5. Edit it in the web UI (Skills view) or propose a change with the `propose_skill_update` tool; edits to this file are overwritten on the next sync.*

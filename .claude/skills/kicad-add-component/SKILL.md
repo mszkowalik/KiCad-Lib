@@ -115,6 +115,3 @@ it — never invent a property key.
 [[verify-datasheets]] — checking the part against its datasheet.
 [[platform-workflow]] — what approval does.
 
----
-
-*Generated from the 7Sigma platform database — skill `add-component` v7. Edit it in the web UI (Skills view) or propose a change with the `propose_skill_update` tool; edits to this file are overwritten on the next sync.*
