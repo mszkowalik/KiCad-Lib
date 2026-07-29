@@ -992,6 +992,85 @@ Two more things the reconstruction settled:
   empty by design — the dongle has no functional test, and its retro test
   script says so in 7 steps.
 
+## 14. One revision binds everything — the bundle refactor (2026-07-29)
+
+The three artifact families were versioned separately and the UI showed them
+as five unrelated lists, so "what does a device get" had no single answer.
+Fixed by promoting the binder and folding the rest into it.
+
+- **`Deployment` + `DeploymentVersion` are THE unit.** One version pins
+  firmware images at offsets, the exact berryware file versions, the procedure
+  and the parameter wiring. `programming_runs.deployment_version_id` is the
+  only pin a run needs.
+- **The `Release` entity is gone.** Its images became `deployment_images`;
+  its identity became a derived `firmware_fingerprint` (sha256 over the
+  ordered address+sha pairs). `files_fingerprint` does the same for the
+  berryware SET, plus `files_label` ("release-1.3.11") — the user thinks in
+  file bundles even though files version individually (their words). Two
+  versions pinning the same bytes share a fingerprint, which is what lets the
+  timeline say "firmware unchanged, berryware 3 changed" for free.
+- **Channels** (`production`, `bench`) are named pointers at a version.
+  Going live and rolling back are channel moves; history is never edited.
+- **Composing inherits.** `POST /deployments/{id}/versions` takes
+  `from_version_id` and only the sections that CHANGE; everything else is
+  carried over. A folder import
+  (`POST /projects/{id}/device-files/import`) resolves a whole berryware
+  directory in one call, reusing every file whose content is unchanged.
+- **Drafts are runnable on the bench only** (`draft_run` on the run), never
+  for a batch.
+- **Newlines are normalised to LF on every device-file write.** A CRLF file
+  read as bytes hashes differently from the same file read as text, which made
+  5 of the V3 files report "changed" on every import when nothing had.
+
+### The publish gates (`services/flasher/validate.py`)
+
+One function, called live by the composer and again by the publish button, so
+the editor can never disagree with the gate: pinned artifacts must be
+published; chip agreement across deployment/images/transport; **images must be
+writable ESP images** (magic 0xE9 at 0x0, or at 0x1000 for a padded
+whole-flash image — this is what catches a PLACEHOLDER asset before it bricks
+a unit); flash offsets unique and non-overlapping against real image sizes;
+every `{placeholder}` resolves from a parameter or an EARLIER step's capture;
+`autoexec.be` downloads last; a serial op cannot precede `serial_open`;
+`lte_sim_pin` without a PIN source warns.
+
+### Proven by simulation, not assumption
+
+`clients/flasher-poc/simulate_bench.py` acts as the bench and as a Tasmota
+device, so a procedure can be run end to end with no hardware. It found four
+real defects that would each have failed on a live unit:
+
+1. the final clear-AP step failed the run — the device goes silent by design
+   (the old `config.py` wrapped it in `try/except`), so `command` gained an
+   `optional` flag where silence is the pass case;
+2. `Module 0` answers `{"Module":{"0":"CE_Aqua_v2"}}` and `SwitchMode0`
+   answers a 28-entry array — neither can be confirmed by value, so both read
+   the key and assert the captured template name instead;
+3. localhost as `public_base_url` (the device cannot reach it) — already
+   guarded, and the guard is what fired;
+4. the Aqua target had inherited the June-2024 `release-0.0.1` berryware from
+   its retro base, which must never ship today.
+
+**WiFi and MQTT settings each go in ONE `Backlog`** (user decision
+2026-07-29). Sent as separate commands, Tasmota restarts between them, so the
+device briefly attempts the new SSID with the old password; the old tool hid
+that behind a fixed sleep after every write. Backlog applies the whole group,
+then restarts once. Because `Backlog` only answers `{"Backlog":"Done"}`, each
+batch is followed by an explicit readback + `assert_equals`, so the values are
+still proven — after the restart rather than between the writes.
+
+Simulation status, all steps passing: `Dongle_V2 production` 28/28,
+`Aqua_V2 production` 39/39, `Dongle_V3 blank device` 32/32. Each sits on its
+deployment's `bench` channel; `production` waits for a real unit.
+
+### The two nginx hops both proxy the run WebSocket
+
+The engine runs over `/api/flasher/ws/<run>`. The web image's
+`nginx-api-proxy.inc` and the server's outer `nginx.conf` (`location /lib/`)
+both pass `Upgrade`/`Connection` via a `map $http_upgrade $connection_upgrade`
+— conditional, so ordinary keep-alive requests are untouched. Without both,
+the bench gets a 404 on the upgrade and no run can start.
+
 ### Implementation record (2026-07-29)
 
 Built in this pass — schema (5 new tables + column moves, startup-migrated),
