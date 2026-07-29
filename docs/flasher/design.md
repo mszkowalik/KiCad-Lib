@@ -962,6 +962,14 @@ only — `validate.check()` on the server stays the authority, so the editor can
 never disagree with the publish gate. Round-trip verified: a version composed
 the way the editor writes it validates and passes 28/28 in simulation.
 
+**The same rows render a PUBLISHED procedure** (`readOnly`), so the deployment
+view shows what the composer authored instead of a flat list: each step opens
+to its fields as text, `{parameters}` are highlighted as resolved-at-run-time,
+the flash step names its images and offsets, and the download step names its
+bundle. Read-only for now by request — one component, so allowing edits later
+is a flag rather than a second implementation. Its context comes from the
+version payload itself, so the view costs no extra requests.
+
 ### Firmware admin, chip detection, and the 1.3.11 question (2026-07-30)
 
 **`/production/files` administers the pool**, one kind per tab. Firmware and

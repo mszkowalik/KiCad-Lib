@@ -3262,10 +3262,8 @@ select.sel:focus {
 .val-list { margin: 4px 0 0 1.1em; padding: 0; }
 .val-list li { margin: 2px 0; }
 
-/* The procedure, read as a timeline rather than JSON */
-.step-list { margin: 0; padding-left: 1.6em; }
-.step-list li { margin: 3px 0; }
-.step-op { display: inline-block; min-width: 9em; }
+/* The procedure renders through StepEditor (read-only on a published version),
+   so the old plain-list styles are gone; the step-* rules live further down. */
 .step-diff {
   background: var(--surface-2);
   border: 1px solid var(--line);
@@ -3459,3 +3457,18 @@ select.sel:focus {
 .cmd-row .cmd-name { flex: 0 0 11em; }
 .cmd-row .value-picker { flex: 1 1 auto; }
 .cmd-row select:first-child { flex: 1 1 auto; min-width: 0; }
+
+/* Read-only step fields (a published procedure) */
+.ro-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 0; }
+.ro-field { min-width: 0; }
+.ro-field dd { margin: 0; overflow-wrap: anywhere; }
+.ro-list { display: flex; flex-direction: column; gap: 1px; }
+.ro-param {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+@media (max-width: 900px) {
+  .ro-fields { grid-template-columns: 1fr; }
+}

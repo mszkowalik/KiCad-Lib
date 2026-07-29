@@ -10,6 +10,11 @@
  *
  *  A value is either typed in or taken from a parameter/earlier capture
  *  (`ValuePicker` writes `{Name}`), so nobody has to remember the brace syntax.
+ *
+ *  `readOnly` renders the SAME rows for an already-published version (the
+ *  deployment view), with the fields as text instead of controls. One
+ *  component, so making a published procedure editable later is a flag, not a
+ *  second implementation.
  */
 import { useState } from "react";
 import type { BerryBundleRow, FirmwareAssetRow } from "../../api";
@@ -35,10 +40,12 @@ export interface StepEditorProps {
   bundles: BerryBundleRow[];
   onBundleChange: (bundleId: number) => void;
   defaultOffsets?: Record<string, Record<string, string>>;
+  /** show the procedure without controls (a published version) */
+  readOnly?: boolean;
 }
 
 export default function StepEditor(props: StepEditorProps) {
-  const { steps, onChange } = props;
+  const { steps, onChange, readOnly = false } = props;
   const [open, setOpen] = useState<number | null>(null);
   const [adding, setAdding] = useState<number | null>(null);
 
@@ -68,7 +75,9 @@ export default function StepEditor(props: StepEditorProps) {
   return (
     <div className="step-editor">
       {steps.length === 0 ? (
-        <p className="muted">No steps yet — add the first one below.</p>
+        <p className="muted">
+          {readOnly ? "This version has no steps." : "No steps yet — add the first one below."}
+        </p>
       ) : null}
 
       {steps.map((step, i) => {
@@ -80,44 +89,52 @@ export default function StepEditor(props: StepEditorProps) {
               <span className="pill neutral step-op-pill">{String(step.op)}</span>
               <span className="step-title">{String(step.label ?? spec?.title ?? step.op)}</span>
               <span className="muted dim step-sum">{summarise(step, spec, props)}</span>
-              <span className="step-btns btn-row">
-                <button type="button" className="btn btn-sm" title="move up"
-                        onClick={(e) => { e.stopPropagation(); move(i, -1); }}>↑</button>
-                <button type="button" className="btn btn-sm" title="move down"
-                        onClick={(e) => { e.stopPropagation(); move(i, 1); }}>↓</button>
-                <button type="button" className="btn btn-sm" title="insert a step below"
-                        onClick={(e) => { e.stopPropagation(); setAdding(i + 1); }}>+</button>
-                <button type="button" className="btn btn-sm row-del" title="remove"
-                        onClick={(e) => { e.stopPropagation(); remove(i); }}>×</button>
-              </span>
+              {readOnly ? (
+                <span className="step-btns muted dim">{open === i ? "▾" : "▸"}</span>
+              ) : (
+                <span className="step-btns btn-row">
+                  <button type="button" className="btn btn-sm" title="move up"
+                          onClick={(e) => { e.stopPropagation(); move(i, -1); }}>↑</button>
+                  <button type="button" className="btn btn-sm" title="move down"
+                          onClick={(e) => { e.stopPropagation(); move(i, 1); }}>↓</button>
+                  <button type="button" className="btn btn-sm" title="insert a step below"
+                          onClick={(e) => { e.stopPropagation(); setAdding(i + 1); }}>+</button>
+                  <button type="button" className="btn btn-sm row-del" title="remove"
+                          onClick={(e) => { e.stopPropagation(); remove(i); }}>×</button>
+                </span>
+              )}
             </div>
 
             {open === i && spec ? (
               <div className="step-body">
                 <p className="muted dim">{spec.blurb}</p>
-                <div className="fw-form">
-                  {spec.fields.map((f) => (
-                    <FieldEditor
-                      key={f.key}
-                      field={f}
-                      step={step}
-                      index={i}
-                      onPatch={(next) => patch(i, next)}
-                      {...props}
-                    />
-                  ))}
-                </div>
+                {readOnly ? (
+                  <StepFields step={step} spec={spec} props={props} />
+                ) : (
+                  <div className="fw-form">
+                    {spec.fields.map((f) => (
+                      <FieldEditor
+                        key={f.key}
+                        field={f}
+                        step={step}
+                        index={i}
+                        onPatch={(next) => patch(i, next)}
+                        {...props}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             ) : null}
 
-            {adding === i + 1 ? (
+            {!readOnly && adding === i + 1 ? (
               <AddStep onPick={(op) => insert(i + 1, op)} onCancel={() => setAdding(null)} />
             ) : null}
           </div>
         );
       })}
 
-      {adding === 0 || steps.length === 0 ? (
+      {readOnly ? null : adding === 0 || steps.length === 0 ? (
         <AddStep onPick={(op) => insert(steps.length, op)} onCancel={() => setAdding(null)} />
       ) : (
         <div className="btn-row">
@@ -126,7 +143,6 @@ export default function StepEditor(props: StepEditorProps) {
           </button>
         </div>
       )}
-      {adding === 0 && steps.length > 0 ? null : null}
     </div>
   );
 }
@@ -539,5 +555,126 @@ function BundlePicker({ bundles, bundleId, onBundleChange }: FieldEditorProps) {
         </span>
       ) : null}
     </span>
+  );
+}
+
+
+/** A published step's fields as text: parameters marked, artifacts named. */
+function StepFields({
+  step, spec, props,
+}: {
+  step: Step;
+  spec: OpSpec;
+  props: StepEditorProps;
+}) {
+  const rows: { label: string; node: React.ReactNode }[] = [];
+
+  for (const f of spec.fields) {
+    if (f.key === "label") continue;
+
+    if (f.kind === "images") {
+      const kinds = (step.kinds as string[] | undefined) ?? null;
+      const chosen = props.images.filter(
+        (img) => !kinds || kinds.includes(kindOf(img.firmware_asset_id, props.assets)),
+      );
+      rows.push({
+        label: f.label,
+        node: chosen.length ? (
+          <span>
+            {chosen.map((img) => (
+              <span key={img.address} className="mono">
+                {nameOf(img.firmware_asset_id, props.assets)} @ {img.address}{" "}
+              </span>
+            ))}
+            {kinds ? <span className="muted dim">(kinds: {kinds.join(", ")})</span> : null}
+          </span>
+        ) : (
+          <span className="muted">nothing pinned</span>
+        ),
+      });
+      continue;
+    }
+
+    if (f.kind === "bundle") {
+      const b = props.bundles.find((x) => x.id === props.bundleId) ?? props.bundles[0];
+      rows.push({
+        label: f.label,
+        node: b ? (
+          <span>
+            <span className="pill ok">{b.label}</span>{" "}
+            <span className="muted dim">{b.file_count} files</span>
+          </span>
+        ) : (
+          <span className="muted">nothing pinned</span>
+        ),
+      });
+      continue;
+    }
+
+    if (f.kind === "commands") {
+      const cmds = (step.commands as string[] | undefined) ?? [];
+      if (!cmds.length) continue;
+      rows.push({
+        label: f.label,
+        node: (
+          <span className="ro-list">
+            {cmds.map((c, i) => (
+              <span key={i} className="mono">{renderValue(c)}</span>
+            ))}
+          </span>
+        ),
+      });
+      continue;
+    }
+
+    if (f.kind === "capture") {
+      const cap = (step.capture as Record<string, string> | undefined) ?? {};
+      const entries = Object.entries(cap);
+      if (!entries.length) continue;
+      rows.push({
+        label: f.label,
+        node: (
+          <span className="ro-list">
+            {entries.map(([name, path]) => (
+              <span key={name} className="mono">
+                {name} ← {path}
+              </span>
+            ))}
+          </span>
+        ),
+      });
+      continue;
+    }
+
+    const v = getField(step, f.key);
+    if (v === undefined || v === "" || v === false) continue;
+    rows.push({
+      label: f.label,
+      node: v === true ? <span className="pill ok">yes</span>
+        : <span className="mono">{renderValue(String(v))}</span>,
+    });
+  }
+
+  if (!rows.length) return <p className="muted">No parameters — the op needs none.</p>;
+  return (
+    <dl className="ro-fields">
+      {rows.map((r, i) => (
+        <div key={i} className="ro-field">
+          <dt className="fw-label">{r.label}</dt>
+          <dd>{r.node}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Highlight {parameters} inside a stored value so a reader can tell a literal
+ *  from something resolved at run time. */
+function renderValue(text: string): React.ReactNode {
+  const parts = text.split(/(\{\w+\})/g);
+  return parts.map((part, i) =>
+    /^\{\w+\}$/.test(part)
+      ? <span key={i} className="ro-param" title="resolved at run time from a parameter or an earlier capture">{part}</span>
+      : <span key={i}>{part}</span>,
   );
 }

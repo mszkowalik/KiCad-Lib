@@ -7,9 +7,12 @@ import {
   firmwareBinPath,
   getDeploymentVersion,
   isAbortError,
+  type BerryBundleRow,
   type DeploymentVersionDetail,
+  type FirmwareAssetRow,
 } from "../../api";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
+import StepEditor from "./StepEditor";
 import { fmtBytes, fmtWhen, shortSha } from "./common";
 
 export default function VersionView({
@@ -197,18 +200,23 @@ export default function VersionView({
           </button>
         </div>
         {showSteps ? (
-          <ol className="step-list">
-            {(v.steps ?? []).map((s, i) => {
-              const step = s as Record<string, unknown>;
-              return (
-                <li key={i}>
-                  <span className="mono dim step-op">{String(step.op)}</span>
-                  <span>{String(step.label ?? step.op)}</span>
-                  {step.note ? <span className="muted dim"> — {String(step.note)}</span> : null}
-                </li>
-              );
-            })}
-          </ol>
+          /* The same rows the composer uses, without the controls — so a
+             published procedure reads exactly as it was authored, and making
+             it editable later is a flag rather than a second view. */
+          <StepEditor
+            readOnly
+            steps={(v.steps ?? []) as Record<string, unknown>[]}
+            onChange={() => {}}
+            paramKeys={[]}
+            images={(v.images ?? []).map((i) => ({
+              firmware_asset_id: i.firmware_asset_id, address: i.address,
+            }))}
+            assets={assetsOf(v)}
+            onImagesChange={() => {}}
+            bundleId={v.berry_bundle_id ?? -1}
+            bundles={bundlesOf(v)}
+            onBundleChange={() => {}}
+          />
         ) : null}
       </div>
 
@@ -251,4 +259,33 @@ export default function VersionView({
       </div>
     </>
   );
+}
+
+
+/** The version's own payload is enough context for the read-only rows — no
+ *  extra fetches: its images already carry filename/kind, and its pinned files
+ *  describe the bundle. */
+function assetsOf(v: DeploymentVersionDetail): FirmwareAssetRow[] {
+  return (v.images ?? []).map((i) => ({
+    id: i.firmware_asset_id, filename: i.filename, sha256: i.sha256,
+    size_bytes: i.size_bytes, chip: i.chip, kind: i.kind,
+    default_address: i.address, build_label: i.build_label, notes: "",
+    uploaded_by: "", uploaded_at: null, flashable: true,
+  }));
+}
+
+function bundlesOf(v: DeploymentVersionDetail): BerryBundleRow[] {
+  if (!v.files?.length) return [];
+  return [{
+    id: v.berry_bundle_id ?? -1,
+    label: v.files_label || "unnamed set",
+    files_fingerprint: v.files_fingerprint,
+    comment: "", created_by: "", created_at: null,
+    file_count: v.files.length, used_by: 0,
+    files: v.files.map((f) => ({
+      device_file_version_id: f.device_file_version_id,
+      filename: f.filename, version_no: f.version_no,
+      size_bytes: f.size_bytes, sha256: f.sha256,
+    })),
+  }];
 }

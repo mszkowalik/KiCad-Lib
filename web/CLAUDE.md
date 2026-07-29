@@ -238,6 +238,16 @@ appears in the backend, add its branch here in the same change.
 - **Validation comes from the server, always.** The composer PATCHes the draft
   and renders the returned `validation`; never re-implement a rule in the
   browser, or the editor will eventually disagree with the publish gate.
+- **`StepEditor` renders the procedure in BOTH places** — editable in the
+  composer, `readOnly` on a published version — from one schema
+  (`stepSchema.ts`, keyed by op). Add an op there and both views get it. The
+  read-only path takes its context from the version payload itself
+  (`assetsOf` / `bundlesOf` in `VersionView`), so it needs no extra fetches;
+  making a published procedure editable later is a flag, not a second view.
+- **A flash step selects its firmware and a download step its bundle**, and
+  both write the VERSION's pins. Keep it that way: the version stays the single
+  definition of a payload (fingerprints, diffs and bundle identity all derive
+  from it) — the step editor only puts the controls where the work happens.
 - **Berryware reads as a BUNDLE, not a file list** (user feedback 2026-07-30).
   The version view and the composer lead with one pill — bundle name + file
   count, green for a named bundle and amber for an unnamed ad-hoc set — and put
