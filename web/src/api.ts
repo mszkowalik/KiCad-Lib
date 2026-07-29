@@ -3319,3 +3319,515 @@ export function getJlcPartsOrders(signal?: AbortSignal): Promise<{
 }> {
   return request("/api/jlc/import/parts", { signal });
 }
+
+// ----------------------------------------------------------------- flasher
+// Vocabulary (docs/flasher/design.md §13): a RELEASE is only the flash
+// (firmware images at offsets); a DEPLOYMENT SCRIPT is the versioned
+// config/test scenario that pins one release version + device file versions.
+
+export interface FirmwareAssetRow {
+  id: number;
+  filename: string;
+  sha256: string;
+  size_bytes: number;
+  chip: string;
+  kind: string;
+  build_label: string;
+  notes: string;
+  uploaded_by: string;
+  uploaded_at: string | null;
+}
+
+export interface ReleaseImageRow {
+  firmware_asset_id: number;
+  address: string;
+  filename: string;
+  kind: string;
+  size_bytes: number;
+  sha256: string;
+}
+
+export interface ReleaseVersionRow {
+  id: number;
+  version_no: number;
+  status: string;
+  comment: string;
+  created_by: string;
+  approved_by: string | null;
+  flash_config: Record<string, string> | null;
+  created_at: string | null;
+  images: ReleaseImageRow[];
+}
+
+export interface ReleaseRow {
+  id: number;
+  name: string;
+  chip: string;
+  description: string;
+  current_version_id: number | null;
+  versions: ReleaseVersionRow[];
+}
+
+export interface DeviceFileVersionRow {
+  id: number;
+  version_no: number;
+  status: string;
+  sha256: string;
+  size_bytes: number;
+  comment: string;
+  created_by: string;
+  created_at: string | null;
+  content?: string;
+}
+
+export interface DeviceFileRow {
+  id: number;
+  filename: string;
+  description: string;
+  current_version_id: number | null;
+  versions: DeviceFileVersionRow[];
+}
+
+export interface ScriptFileLink {
+  device_file_version_id: number;
+  filename: string;
+  version_no: number;
+  status: string;
+  size_bytes: number;
+}
+
+export interface ScriptVersionRow {
+  id: number;
+  version_no: number;
+  status: string;
+  comment: string;
+  created_by: string;
+  approved_by: string | null;
+  transport_profile: string;
+  monitor_baud: number;
+  steps: Record<string, unknown>[];
+  param_set_id: number | null;
+  param_defaults: Record<string, unknown> | null;
+  created_at: string | null;
+  release: {
+    release_version_id: number;
+    release_id: number;
+    name: string;
+    version_no: number;
+    status: string;
+    chip: string;
+  } | null;
+  files: ScriptFileLink[];
+}
+
+export interface DeploymentScriptRow {
+  id: number;
+  name: string;
+  description: string;
+  current_version_id: number | null;
+  versions: ScriptVersionRow[];
+}
+
+export interface ParamSetRow {
+  id: number;
+  name: string;
+  keys: string[];
+  updated_by: string;
+  updated_at: string | null;
+}
+
+export interface FlasherMeta {
+  ops: string[];
+  transport_profiles: string[];
+  firmware_kinds: string[];
+}
+
+export interface DeviceListRow {
+  id: number;
+  mac: string;
+  serial: string;
+  chip: string;
+  tasmota_id: string;
+  imei: string;
+  iccid: string;
+  imsi: string;
+  modem_model: string;
+  project: { id: number; name: string };
+  batch: { id: number; label: string } | null;
+  last_status: string;
+  runs: number;
+  first_seen: string | null;
+  last_seen: string | null;
+  notes: string;
+}
+
+export interface ProgrammingRunSummary {
+  id: number;
+  status: string;
+  operator: string;
+  station: string;
+  attempt_no: number;
+  error: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number | null;
+  production_run: { id: number; label: string } | null;
+  script: { version_id: number; name: string; version_no: number } | null;
+}
+
+export interface DeviceConfigRow {
+  key: string;
+  value: string;
+  is_secret: boolean;
+  current: boolean;
+  set_by_run_id: number | null;
+  set_at: string | null;
+}
+
+export interface DeviceDetailPayload extends Omit<DeviceListRow, "batch" | "runs"> {
+  modem_fw: string;
+  configs: DeviceConfigRow[];
+  runs: ProgrammingRunSummary[];
+}
+
+export interface ProgrammingStepRow {
+  idx: number;
+  op: string;
+  label: string;
+  status: string;
+  started_at: string | null;
+  duration_ms: number | null;
+  error: string | null;
+  response: unknown;
+}
+
+export interface ProgrammingRunDetail extends ProgrammingRunSummary {
+  device: { id: number; mac: string; serial: string; tasmota_id: string } | null;
+  mac_read: string;
+  chip_read: string;
+  release_version_id: number | null;
+  release_override_reason: string;
+  results: Record<string, unknown> | null;
+  params_snapshot: Record<string, unknown> | null;
+  client_info: Record<string, unknown> | null;
+  steps: ProgrammingStepRow[];
+}
+
+export interface ProgrammingLogRow {
+  seq: number;
+  ts: string | null;
+  device_ts: string;
+  dir: string;
+  text: string;
+}
+
+export interface BatchProgramming {
+  planned: number;
+  programmed_ok: number;
+  failed_only: string[];
+  extra: string[];
+  missing: string[];
+  unidentified_attempts: number;
+  runs: ProgrammingRunSummary[];
+  assigned_script_version_id: number | null;
+}
+
+const JSON_HEADERS = { "Content-Type": "application/json" };
+
+export function listFirmware(projectId: number, signal?: AbortSignal): Promise<FirmwareAssetRow[]> {
+  return request(`/api/flasher/projects/${projectId}/firmware`, { signal });
+}
+
+export function uploadFirmware(
+  projectId: number,
+  file: File,
+  meta: { kind: string; chip?: string; build_label?: string; notes?: string; uploaded_by?: string },
+): Promise<FirmwareAssetRow & { existing: boolean }> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("kind", meta.kind);
+  if (meta.chip) form.append("chip", meta.chip);
+  if (meta.build_label) form.append("build_label", meta.build_label);
+  if (meta.notes) form.append("notes", meta.notes);
+  if (meta.uploaded_by) form.append("uploaded_by", meta.uploaded_by);
+  return request(`/api/flasher/projects/${projectId}/firmware`, { method: "POST", body: form });
+}
+
+export function firmwareBinPath(assetId: number): string {
+  return `${API_URL}/api/flasher/firmware/${assetId}/bin`;
+}
+
+export function listReleases(projectId: number, signal?: AbortSignal): Promise<ReleaseRow[]> {
+  return request(`/api/flasher/projects/${projectId}/releases`, { signal });
+}
+
+export function createRelease(
+  projectId: number,
+  body: { name: string; chip?: string; description?: string },
+): Promise<{ id: number }> {
+  return request(`/api/flasher/projects/${projectId}/releases`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function createReleaseVersion(
+  releaseId: number,
+  body: {
+    comment?: string;
+    created_by?: string;
+    flash_config?: Record<string, string> | null;
+    images: { firmware_asset_id: number; address: string }[];
+  },
+): Promise<ReleaseVersionRow> {
+  return request(`/api/flasher/releases/${releaseId}/versions`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function publishReleaseVersion(versionId: number, approvedBy = ""): Promise<ReleaseVersionRow> {
+  return request(`/api/flasher/release-versions/${versionId}/publish`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ approved_by: approvedBy }),
+  });
+}
+
+export function rejectReleaseVersion(versionId: number): Promise<{ ok: boolean }> {
+  return request(`/api/flasher/release-versions/${versionId}/reject`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({}),
+  });
+}
+
+export function listDeviceFiles(projectId: number, signal?: AbortSignal): Promise<DeviceFileRow[]> {
+  return request(`/api/flasher/projects/${projectId}/device-files`, { signal });
+}
+
+export function createDeviceFileVersion(
+  projectId: number,
+  body: { filename: string; description?: string; content: string; comment?: string; created_by?: string },
+): Promise<DeviceFileVersionRow & { file_id: number }> {
+  return request(`/api/flasher/projects/${projectId}/device-files`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function getDeviceFileVersion(
+  versionId: number,
+  signal?: AbortSignal,
+): Promise<DeviceFileVersionRow & { file_id: number; filename: string; content: string }> {
+  return request(`/api/flasher/device-file-versions/${versionId}`, { signal });
+}
+
+export function publishDeviceFileVersion(versionId: number, approvedBy = ""): Promise<DeviceFileVersionRow> {
+  return request(`/api/flasher/device-file-versions/${versionId}/publish`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ approved_by: approvedBy }),
+  });
+}
+
+export function rejectDeviceFileVersion(versionId: number): Promise<{ ok: boolean }> {
+  return request(`/api/flasher/device-file-versions/${versionId}/reject`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({}),
+  });
+}
+
+export function listDeploymentScripts(
+  projectId: number,
+  signal?: AbortSignal,
+): Promise<DeploymentScriptRow[]> {
+  return request(`/api/flasher/projects/${projectId}/scripts`, { signal });
+}
+
+export function createDeploymentScript(
+  projectId: number,
+  body: { name: string; description?: string },
+): Promise<{ id: number }> {
+  return request(`/api/flasher/projects/${projectId}/scripts`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function createScriptVersion(
+  scriptId: number,
+  body: {
+    comment?: string;
+    created_by?: string;
+    release_version_id?: number | null;
+    transport_profile: string;
+    monitor_baud?: number;
+    steps: Record<string, unknown>[];
+    param_set_id?: number | null;
+    param_defaults?: Record<string, unknown> | null;
+    file_version_ids: number[];
+  },
+): Promise<ScriptVersionRow> {
+  return request(`/api/flasher/scripts/${scriptId}/versions`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function getScriptVersion(
+  versionId: number,
+  signal?: AbortSignal,
+): Promise<ScriptVersionRow & { script_id: number; script_name: string }> {
+  return request(`/api/flasher/script-versions/${versionId}`, { signal });
+}
+
+export function publishScriptVersion(versionId: number, approvedBy = ""): Promise<ScriptVersionRow> {
+  return request(`/api/flasher/script-versions/${versionId}/publish`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ approved_by: approvedBy }),
+  });
+}
+
+export function rejectScriptVersion(versionId: number): Promise<{ ok: boolean }> {
+  return request(`/api/flasher/script-versions/${versionId}/reject`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({}),
+  });
+}
+
+export function listParamSets(projectId: number, signal?: AbortSignal): Promise<ParamSetRow[]> {
+  return request(`/api/flasher/projects/${projectId}/param-sets`, { signal });
+}
+
+export function putParamSet(
+  projectId: number,
+  name: string,
+  values: Record<string, string | number>,
+  updatedBy = "",
+): Promise<{ id: number }> {
+  return request(`/api/flasher/projects/${projectId}/param-sets/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ values, updated_by: updatedBy }),
+  });
+}
+
+export function getParamSetValues(
+  paramSetId: number,
+  signal?: AbortSignal,
+): Promise<{ id: number; name: string; values: Record<string, string | number> }> {
+  return request(`/api/flasher/param-sets/${paramSetId}/values`, { signal });
+}
+
+export function deleteParamSet(paramSetId: number): Promise<{ ok: boolean }> {
+  return request(`/api/flasher/param-sets/${paramSetId}`, { method: "DELETE" });
+}
+
+export function getFlasherMeta(signal?: AbortSignal): Promise<FlasherMeta> {
+  return request("/api/flasher/meta", { signal });
+}
+
+export function listDevices(
+  filters: { project_id?: number; production_run_id?: number; status?: string; q?: string },
+  signal?: AbortSignal,
+): Promise<DeviceListRow[]> {
+  const params = new URLSearchParams();
+  if (filters.project_id) params.set("project_id", String(filters.project_id));
+  if (filters.production_run_id) params.set("production_run_id", String(filters.production_run_id));
+  if (filters.status) params.set("status", filters.status);
+  if (filters.q) params.set("q", filters.q);
+  const qs = params.toString();
+  return request(`/api/flasher/devices${qs ? `?${qs}` : ""}`, { signal });
+}
+
+export function getDevice(
+  deviceId: number,
+  reveal = false,
+  signal?: AbortSignal,
+): Promise<DeviceDetailPayload> {
+  return request(`/api/flasher/devices/${deviceId}${reveal ? "?reveal=true" : ""}`, { signal });
+}
+
+export function patchDevice(deviceId: number, notes: string): Promise<{ ok: boolean }> {
+  return request(`/api/flasher/devices/${deviceId}`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ notes }),
+  });
+}
+
+export function createProgrammingRun(body: {
+  production_run_id: number;
+  deployment_script_version_id?: number | null;
+  operator?: string;
+  station?: string;
+  override_reason?: string;
+}): Promise<{ run_id: number }> {
+  return request("/api/flasher/runs", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function markRunAborted(runId: number): Promise<{ ok: boolean }> {
+  return request(`/api/flasher/runs/${runId}/mark-aborted`, { method: "POST" });
+}
+
+export function getProgrammingRun(runId: number, signal?: AbortSignal): Promise<ProgrammingRunDetail> {
+  return request(`/api/flasher/runs/${runId}`, { signal });
+}
+
+export function getProgrammingLogs(
+  runId: number,
+  after = 0,
+  limit = 2000,
+  dir?: string,
+  signal?: AbortSignal,
+): Promise<ProgrammingLogRow[]> {
+  const params = new URLSearchParams({ after: String(after), limit: String(limit) });
+  if (dir) params.set("dir", dir);
+  return request(`/api/flasher/runs/${runId}/logs?${params}`, { signal });
+}
+
+export function getBatchProgramming(
+  productionRunId: number,
+  signal?: AbortSignal,
+): Promise<BatchProgramming> {
+  return request(`/api/flasher/production-runs/${productionRunId}/programming`, { signal });
+}
+
+export function assignBatchScript(
+  productionRunId: number,
+  scriptVersionId: number | null,
+): Promise<{ ok: boolean }> {
+  return request(`/api/flasher/production-runs/${productionRunId}/script`, {
+    method: "PUT",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ deployment_script_version_id: scriptVersionId }),
+  });
+}
+
+export function mosquittoExportPath(projectId: number): string {
+  return `${API_URL}/api/flasher/projects/${projectId}/mosquitto`;
+}
+
+/** ws:// (or wss://) address of a programming run's engine socket.
+ *  Handles both API_URL shapes: an absolute origin (docker dev sets
+ *  VITE_API_URL=http://localhost:8020) swaps http(s) for ws(s); a path
+ *  prefix (deployed same-origin build) rides the page's own host. */
+export function flasherWsUrl(runId: number): string {
+  const path = `/api/flasher/ws/${runId}`;
+  if (/^https?:\/\//.test(API_URL)) return API_URL.replace(/^http/, "ws") + path;
+  const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+  return `${scheme}://${window.location.host}${API_URL}${path}`;
+}

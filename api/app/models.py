@@ -1041,6 +1041,10 @@ class ProductionRun(Base):
     # (like snapshot_id): a ProgrammingRun pins its own release_version_id, so
     # re-assigning the batch never rewrites what was already programmed.
     release_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The deployment script the batch is programmed with (soft pointer, same
+    # rule). The script brings the release, so this supersedes the column
+    # above; both stay because programming runs denormalise each pin.
+    deployment_script_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # --- baseline pinning: without these, a later cost edit or a qty change
     # silently rewrites what a historical run "expected". All soft pointers.
     plan_revision_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -1446,12 +1450,11 @@ class Release(Base):
 
 
 class ReleaseVersion(Base):
-    """IMMUTABLE bundle of "the firmware + the steps used to program it".
+    """IMMUTABLE flash bundle: WHICH firmware images go to WHICH offsets.
 
-    Parameter VALUES are deliberately not stored here (user decision
-    2026-07-27): they come from a ParamSet at run time and the resolved values
-    are snapshotted onto each ProgrammingRun, so rotating a WiFi password does
-    not mint a new release version while every device still records what it got.
+    Releases are only the flash (user decision 2026-07-29, verified against the
+    old tool's `process = ["erase","flash","config","test"]`). The programming
+    and test steps live in DeploymentScriptVersion, which PINS one of these.
     """
 
     __tablename__ = "release_versions"
@@ -1463,14 +1466,7 @@ class ReleaseVersion(Base):
     created_by: Mapped[str] = mapped_column(String(100), default="")
     approved_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
     comment: Mapped[str] = mapped_column(String(500), default="")
-    # uart_bridge | usb_serial_jtag — decides reset strategy and whether the
-    # monitor phase may touch DTR/RTS at all (see docs/flasher/design.md §7).
-    transport_profile: Mapped[str] = mapped_column(String(40), default="uart_bridge")
     flash_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # mode/freq/size/baud
-    monitor_baud: Mapped[int] = mapped_column(Integer, default=115200)
-    steps: Mapped[list | None] = mapped_column(JSONB, nullable=True)  # ordered op list
-    param_set_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
-    param_defaults: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # non-secret
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     release: Mapped[Release] = relationship(back_populates="versions")
@@ -1497,6 +1493,146 @@ class ReleaseImage(Base):
     asset: Mapped[FirmwareAsset] = relationship()
 
     __table_args__ = (UniqueConstraint("release_version_id", "address", name="uq_release_image_addr"),)
+
+
+class DeviceFile(Base):
+    """A payload file the device downloads during deployment (`autoexec.be`,
+    driver JSONs). Versioned SEPARATELY from firmware (user decision
+    2026-07-29): a script change never requires a firmware rebuild. Delivery
+    is over HTTP from the platform — the deployment script has the device
+    fetch each pinned version with UrlFetch and verifies the size."""
+
+    __tablename__ = "device_files"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    filename: Mapped[str] = mapped_column(String(200))  # name ON THE DEVICE, e.g. autoexec.be
+    description: Mapped[str] = mapped_column(String(500), default="")
+    current_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    versions: Mapped[list["DeviceFileVersion"]] = relationship(
+        back_populates="file", cascade="all, delete-orphan", order_by="DeviceFileVersion.version_no"
+    )
+
+    __table_args__ = (UniqueConstraint("project_id", "filename", name="uq_device_file_name"),)
+
+
+class DeviceFileVersion(Base):
+    """IMMUTABLE content of one device file. Text lives in Postgres (these are
+    small .be/.json sources); `size_bytes` is what the device's file_size
+    check must report after the download."""
+
+    __tablename__ = "device_file_versions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    device_file_id: Mapped[int] = mapped_column(ForeignKey("device_files.id"))
+    version_no: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft|published|rejected
+    content: Mapped[str] = mapped_column(Text, default="")
+    sha256: Mapped[str] = mapped_column(String(64), default="")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+    comment: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    file: Mapped[DeviceFile] = relationship(back_populates="versions")
+
+    __table_args__ = (UniqueConstraint("device_file_id", "version_no", name="uq_device_file_version"),)
+
+
+class DeploymentScript(Base):
+    """The programming/testing scenario for a project — what the programmer
+    DOES and CHECKS after the flash (config + test in the old tool's
+    vocabulary). Separate from Release on purpose: a release is only the
+    flash."""
+
+    __tablename__ = "deployment_scripts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text, default="")
+    current_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    versions: Mapped[list["DeploymentScriptVersion"]] = relationship(
+        back_populates="script",
+        cascade="all, delete-orphan",
+        order_by="DeploymentScriptVersion.version_no",
+    )
+
+    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_deployment_script_name"),)
+
+
+class DeploymentScriptVersion(Base):
+    """IMMUTABLE scenario version: the ordered steps, PINNING one release
+    version (the flash) and a set of device file versions (the downloads).
+
+    Parameter VALUES stay out (user decision 2026-07-27): they come from a
+    ParamSet at run time and are snapshotted per ProgrammingRun, so rotating a
+    WiFi password never mints a version. The SIM PIN resolves at run time too:
+    operator field on the bench, else the param set default, else a mid-run
+    prompt — a script for PIN-less SIMs simply has no lte_sim_pin step.
+    """
+
+    __tablename__ = "deployment_script_versions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    deployment_script_id: Mapped[int] = mapped_column(ForeignKey("deployment_scripts.id"))
+    version_no: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft|published|rejected
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+    approved_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    comment: Mapped[str] = mapped_column(String(500), default="")
+    # The pinned flash. NULLABLE: a monitor/test-only script flashes nothing.
+    release_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("release_versions.id"), nullable=True
+    )
+    # uart_bridge | usb_serial_jtag — decides reset strategy and whether the
+    # monitor phase may touch DTR/RTS at all (see docs/flasher/design.md §7).
+    transport_profile: Mapped[str] = mapped_column(String(40), default="uart_bridge")
+    monitor_baud: Mapped[int] = mapped_column(Integer, default=115200)
+    steps: Mapped[list | None] = mapped_column(JSONB, nullable=True)  # ordered op list
+    param_set_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    param_defaults: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # non-secret
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    script: Mapped[DeploymentScript] = relationship(back_populates="versions")
+    release_version: Mapped[ReleaseVersion | None] = relationship()
+    files: Mapped[list["DeploymentScriptFile"]] = relationship(
+        back_populates="version",
+        cascade="all, delete-orphan",
+        order_by="DeploymentScriptFile.position",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("deployment_script_id", "version_no", name="uq_deployment_script_version"),
+    )
+
+
+class DeploymentScriptFile(Base):
+    """One pinned device file version inside a deployment script version.
+    Download order follows `position` (autoexec.be usually last, so a partial
+    download never leaves a bootable-but-incomplete device)."""
+
+    __tablename__ = "deployment_script_files"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    deployment_script_version_id: Mapped[int] = mapped_column(
+        ForeignKey("deployment_script_versions.id")
+    )
+    device_file_version_id: Mapped[int] = mapped_column(ForeignKey("device_file_versions.id"))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+    version: Mapped[DeploymentScriptVersion] = relationship(back_populates="files")
+    file_version: Mapped[DeviceFileVersion] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint(
+            "deployment_script_version_id", "device_file_version_id", name="uq_deployment_file"
+        ),
+    )
 
 
 class ParamSet(Base):
@@ -1530,10 +1666,21 @@ class DeviceUnit(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
-    mac: Mapped[str] = mapped_column(String(20))  # normalised "58:8c:81:2f:74:74"
+    # NULLABLE for retroactively imported devices: the V2-era reports carry
+    # only the topic's 6-hex suffix (the MAC's last 3 bytes), never the full
+    # MAC. Live programming always fills it. NULLs don't collide on UNIQUE.
+    mac: Mapped[str | None] = mapped_column(String(20), nullable=True)  # "58:8c:81:2f:74:74"
     chip: Mapped[str] = mapped_column(String(60), default="")
     tasmota_id: Mapped[str] = mapped_column(String(120), default="")  # topic, e.g. dongle_588C…
     serial: Mapped[str] = mapped_column(String(60), default="")  # MAC w/o separators, for marking
+    # LTE module + SIM identity, captured during programming (user requirement
+    # 2026-07-29). Written by the engine when a step captures the matching
+    # reserved variable name (imei, iccid, imsi, modem_model, modem_fw).
+    imei: Mapped[str] = mapped_column(String(20), default="")
+    iccid: Mapped[str] = mapped_column(String(24), default="")
+    imsi: Mapped[str] = mapped_column(String(18), default="")
+    modem_model: Mapped[str] = mapped_column(String(60), default="")
+    modem_fw: Mapped[str] = mapped_column(String(60), default="")
     first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_status: Mapped[str] = mapped_column(String(20), default="")  # pass|fail of the newest run
@@ -1562,11 +1709,22 @@ class ProgrammingRun(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     device_unit_id: Mapped[int | None] = mapped_column(ForeignKey("device_units.id"), nullable=True)
-    production_run_id: Mapped[int] = mapped_column(ForeignKey("production_runs.id"))
-    # Pinned, never a soft pointer: this is exactly what was flashed.
-    release_version_id: Mapped[int] = mapped_column(ForeignKey("release_versions.id"))
+    # NULLABLE only for retro imports whose batch is unknown (user decision
+    # 2026-07-29: never guess the batch). Live run creation still requires it.
+    production_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("production_runs.id"), nullable=True
+    )
+    # Pinned, never a soft pointer: this is exactly what was executed.
+    deployment_script_version_id: Mapped[int] = mapped_column(
+        ForeignKey("deployment_script_versions.id")
+    )
+    # Denormalised from the script version at run start: exactly what was
+    # flashed (NULL for a monitor/test-only script that flashes nothing).
+    release_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("release_versions.id"), nullable=True
+    )
     # Set when the operator programmed with something other than the batch's
-    # assigned release (also written to the audit log).
+    # assigned deployment script (also written to the audit log).
     release_override_reason: Mapped[str] = mapped_column(String(300), default="")
     attempt_no: Mapped[int] = mapped_column(Integer, default=1)
     operator: Mapped[str] = mapped_column(String(100), default="")

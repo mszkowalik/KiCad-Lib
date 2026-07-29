@@ -677,3 +677,147 @@ registry count · programmed OK · failed · **programmed but not in the registr
 5. Device view, run view (step timeline + raw log + JSON export matching `reports/*.json`), unidentified list + retro-link
 6. `derive_credentials` → `device_config_values`, mosquitto export
 
+---
+
+## 13. Production build — the decided artifact model (2026-07-29)
+
+Decisions taken with the user on 2026-07-29, each verified against the two
+source repos (`~/Projects/CE_Production_flasher`,
+`~/Projects/CE_Dongle_v3_board`).
+
+### Releases and deployment scripts are two different things
+
+Verified in the old tool's `settings.json`: `process = ["erase", "flash",
+"config", "test"]`. The flash comes from `binaries/` and is one stage; the
+`config` + `test` stages are the operator's scenario. The platform keeps that
+separation:
+
+| Entity | Meaning | Tables |
+|---|---|---|
+| **Release** | what gets FLASHED: firmware images at offsets | `releases` / `release_versions` / `release_images` — unchanged, but `steps` on `release_versions` is retired (steps move out) |
+| **Device files** | the `.be` / `.json` payload the device downloads (autoexec.be, driver JSONs, …) | NEW `device_files` (project, filename) + `device_file_versions` (version_no, content, sha256, status, comment) — versioned separately from firmware |
+| **Deployment script** | the ordered config/test steps the programmer runs after the flash | NEW `deployment_scripts` + `deployment_script_versions` (steps JSONB, status draft→published) |
+| **Links** | a deployment script version PINS one release version and a set of device file versions | `deployment_script_version.release_version_id` + NEW `deployment_script_files` link table |
+
+`programming_runs` gains `deployment_script_version_id`; it keeps the pinned
+`release_version_id` (denormalised — exactly what was flashed).
+`production_runs` gains `deployment_script_version_id`; the batch assigns the
+script, the script brings the firmware. All flasher tables are empty, so these
+are plain `ALTER TABLE` startup migrations.
+
+### Device files travel over HTTP, not inside a LittleFS image
+
+User decision: flash **factory only** (it ships an empty LittleFS,
+`custom_files_upload = no_files`), never the populated `ce_littlefs.bin`. The
+deployment script then:
+
+1. configures WiFi and waits for the connection (V2 `config.py` flow),
+2. has the DEVICE download each pinned file version over HTTP
+   (`UrlFetch` + `file_size` verification — the proven V2 loop, previously
+   served from `disfunction.cc/berry/release/`),
+3. verifies each size against the platform's stored byte count.
+
+The platform serves them itself: `GET {public_base_url}/api/flasher/files/…`
+(same reachability rule as the KiCad HTTP library — `public_base_url` must be
+the LAN address the device can reach, never `localhost`). Published versions
+only; `UrlFetch` sends no auth headers, so the endpoint is unauthenticated by
+design, like the KiCad catalog.
+
+### New V3 steps: SIM PIN and the LTE proof
+
+Verified in the firmware (`autoexec.be` header, `xdrv_128_lte_modem.ino`):
+
+- **`LteSimPin` is provisioned once over serial, early in the script**
+  (persists to `/.drvset128`, survives app-only flashes — the firmware's own
+  `tools/provision_secrets.py` flow). HARD GUARD, documented at
+  xdrv_128 ~483–495: the driver never re-sends a rejected PIN (3 wrong tries
+  PUK-lock the SIM), and only a *different* `LteSimPin` value clears the
+  latch. The step must therefore send the PIN once and treat a rejection as a
+  terminal run failure, never retry.
+- **The LTE test ends the script**: clear `SSId1`/`Password1` → the WAN
+  failover (WiFi primary, LTE hot standby, `WanBootArm`) switches to LTE →
+  poll `LteState` until connected, then verify connectivity (checks ported
+  from `firmware/tools/failover_test.py` + `MANUAL_TEST_PLAN.md`). The final
+  state doubles as the shipping state: no WiFi credentials on the device.
+- The PIN value is a run parameter (param set or operator input), never in a
+  script version.
+
+### Web Serial and TLS — clarified
+
+`localhost` **is** a secure context: the bench needs no TLS when the page is
+served from the same machine (that is why every PoC test worked over plain
+HTTP on 127.0.0.1). HTTPS becomes necessary only when the bench page is opened
+from a different machine than the server. Dongle_V3 tests run on the dev Mac
+at `localhost:5173`; the device-download `base_url` must still be the Mac's
+LAN IP so the WiFi-connected device can reach it.
+
+### SIM PIN — three sources, engine-prompted (user decision 2026-07-29)
+
+Resolution order in the `lte_sim_pin` step: the operator's bench field →
+`sim_pin` in the param set → a **mid-run prompt** (`{t:"prompt"}` over the run
+WebSocket; the bench shows a modal). A script for PIN-less SIMs omits the step
+or marks it `optional` (an empty value then skips it). The PIN is sent ONCE
+and a rejection is a terminal failure — the driver PUK-guards re-sends
+(xdrv_128 ~483) and the engine must never retry. The PIN is masked in the
+stored tx log and in `params_snapshot`.
+
+### Device identity — what the firmware can actually report (verified)
+
+`device_units` stores mac, chip, tasmota_id, serial, **imei, iccid, imsi,
+modem_model, modem_fw** (user requirement 2026-07-29); the engine writes any
+captured variable with one of those reserved names to the device row.
+Verified against xdrv_128 + the fs sources:
+
+- `LteState` → `{"Lte":{"Up":0|1,"WantUp":..,"IP":..,"GW":..,"Ifname":..,"LastErr":..}}`
+  — the LTE-proof poll target (`Lte.Up == 1`).
+- The teleperiod JSON (`Status 10` → `StatusSNS.LTE`) carries `Iccid`,
+  `SimNumber`, `Oper`, `PLMN`, `RSSI` … — ICCID and MSISDN are capturable today.
+- **IMEI and IMSI are NOT exposed on the console yet**: the driver reads the
+  IMSI internally (AT+CIMI) but publishes neither. Filling those columns needs
+  a small firmware addition (extend `LteState` or add an `LteInfo` command).
+  The schema and capture path are ready for it.
+
+### Retroactive V2 import (2026-07-29)
+
+All 6,321 `CE_Dongle_production` reports (2024-06-10..2026-07-08) are in the
+platform: **5,502 devices**, 6,321 programming runs (6,126 pass / 195 fail),
+**2,444,307 log lines**, 16,269 config values, 5 return notes. Provenance per
+run: `results.retro_source` = the report path; re-running the importer skips
+those. Scripts: `scratchpad/retro/{scan_reports,setup_artifacts,import_runs}.py`.
+
+Deduction, all evidence-based (nothing guessed):
+
+- **Firmware** from the boot banner (`Project dongle - Dongle Version
+  <core>(tasmota)-<tag>(<built>)`). Three builds observed; bytes recovered
+  for all three — `13.4.0-2_0_14@2024-07-22` (server ota/release-13.4.0, bin
+  contains the tag), `14.2.0-3_0_4@2024-10-25` (server ota/release-14.2.0,
+  mtime = the build date), `14.2.0-3_0_4@2025-11-05` (the bench PC's own
+  binaries/, file dated 2025-11-05). The pre-2024-08 build (642 runs, no
+  serialLog era) is a PLACEHOLDER asset — bytes never archived.
+- **Berryware** by size-fingerprinting each report's `Downloaded files`
+  against the mirrored `disfunction.cc` berry release dirs (ssh
+  `ubuntu:~/aws-deployment/www/html/`). Every era matched exactly one dir
+  (0.0.1 → 1.1.41 → 1.2.6 → 1.3.0 → current `release`); 4 straggler reports
+  matched none and carry their own script version marked `unmatched`.
+- **Eras** = one `Dongle_V2 config (retroactive)` script version per observed
+  firmware+berry combo (8), pinning the release version and the exact file
+  versions; tests import under `Dongle_V2 test (retroactive)`.
+- **Batches deliberately NOT assigned** (`production_run_id` NULL) — user
+  decision: never guess. `device_units.mac` is NULL for the 4,045 6-hex-era
+  devices (the reports only ever knew the topic suffix); the 2,276 12-hex
+  devices carry their real MAC. Both columns went nullable for exactly this.
+
+### Implementation record (2026-07-29)
+
+Built in this pass — schema (5 new tables + column moves, startup-migrated),
+`services/flasher/` (engine, protocol, credentials — credential derivation
+verified 3/3 against real `mosquitto_passwords.txt` pairs, line parser
+verified against the recorded real serial output), `routers/flasher.py`
+(CRUD + publish gates + unauthenticated device-file serving + devices/runs/
+logs + coverage + WS), web: Flasher admin, Flash bench (ported PoC station,
+WS run client), Devices list, device detail, flash-run detail with live log
+tail. Publish gate: a script version publishes only when its pinned release
+version and every pinned file version are published — a run can never flash
+a draft. Seed script: `scratchpad/seed_flasher_v3.py` (blank-device Dongle_V3
+scenario, 33 steps, publishes everything).
+

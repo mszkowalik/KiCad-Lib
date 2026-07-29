@@ -37,7 +37,15 @@ services:
       retries: 20
 
   api:
-    build: ./api
+    # cache_from lets a machine whose Docker storage was pruned rebuild from
+    # the CI-published layer cache instead of recompiling LibreDWG (~10 min).
+    # Missing/unreachable cache refs are skipped with a warning — the build
+    # still works offline, just slower.
+    build:
+      context: ./api
+      cache_from:
+        - ghcr.io/mszkowalik/kicad-lib/api:buildcache
+        - ghcr.io/mszkowalik/kicad-lib/api:latest
     # Dev: auto-reload on host edits to api/app (paired with the app bind-mount below).
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     environment:
@@ -84,7 +92,11 @@ services:
         condition: service_healthy
 
   render:
-    build: ./render
+    build:
+      context: ./render
+      cache_from:
+        - ghcr.io/mszkowalik/kicad-lib/render:buildcache
+        - ghcr.io/mszkowalik/kicad-lib/render:latest
     # kicad/kicad images are published amd64-only (no arm64 as of 10.0.x) —
     # on Apple Silicon this runs under Rosetta/QEMU emulation.
     platform: linux/amd64
@@ -102,6 +114,9 @@ services:
       # The Dockerfile also has a `prod` target (built SPA behind nginx) that
       # the images workflow publishes — dev must ask for the Vite server.
       target: dev
+      cache_from:
+        - ghcr.io/mszkowalik/kicad-lib/web:buildcache
+        - ghcr.io/mszkowalik/kicad-lib/web:latest
     environment:
       # Absolute API address, so the browser calls the api container directly
       # (allowed by the CORS list in api/app/main.py). Drop this line to use

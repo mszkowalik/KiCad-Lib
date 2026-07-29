@@ -211,6 +211,25 @@ money that IS charged (a landed-cost transport line spread into part prices look
 unassigned, user report 2026-07-28). When a new `allocate` value or destination
 appears in the backend, add its branch here in the same change.
 
+### Flasher UI — where things live
+
+- `src/flasher/station.ts` is the PORTED, HARDWARE-VERIFIED PoC (one USB
+  adapter = one Station: esptool phase + monitor byte pipe). The transport
+  rules in it are measured requirements (ESP32-C6 native USB: never call
+  `setSignals()` in monitor mode; explicit reset pulse because esptool-js's
+  `after("hard_reset")` is a no-op) — do not "clean them up".
+- `src/flasher/runClient.ts` talks to the engine WebSocket: it executes
+  `action` ops, pipes `tx`/`rx`, answers `prompt`s (SIM PIN modal) and
+  forwards every station log line as `{t:"log"}` so the stored record is
+  complete. The scenario itself NEVER runs in the browser.
+- Pages: `/production/flasher` (admin: scripts/releases/files/params),
+  `/production/bench` (stations), `/production/devices` (+ `/:id`), and
+  `/production/flash-runs/:id` (step timeline + full log, live-tails a
+  running run by polling `after=<last seq>`). The bench log box keeps a
+  bounded tail — the full log is in Postgres, linked via the run page.
+- The vite dev proxy has `ws: true` for `/api` — required by the run
+  WebSocket; keep it when touching `vite.config.ts`.
+
 ### The "Planned as" column is the step EDITOR, not a label
 
 Every non-header invoice line renders a step select (catalog from

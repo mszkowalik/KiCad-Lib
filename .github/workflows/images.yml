@@ -110,8 +110,18 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           # Keeps the GHCR package list free of unknown/unknown entries.
           provenance: false
-          cache-from: ${{ matrix.cache == 'gha' && format('type=gha,scope={0}', matrix.name) || format('type=registry,ref={0}:latest', steps.img.outputs.ref) }}
-          cache-to: ${{ matrix.cache == 'gha' && format('type=gha,scope={0},mode=max', matrix.name) || '' }}
+          # The :buildcache ref is a full (mode=max) registry cache that a
+          # LOCAL machine can pull too — compose.yaml lists it in cache_from,
+          # so a `docker system prune` never costs the LibreDWG compile again:
+          # `docker compose up -d` resolves the layers from GHCR instead.
+          # Empty lines in these lists are ignored by build-push-action.
+          cache-from: |
+            ${{ matrix.cache == 'gha' && format('type=gha,scope={0}', matrix.name) || '' }}
+            type=registry,ref=${{ steps.img.outputs.ref }}:buildcache
+            type=registry,ref=${{ steps.img.outputs.ref }}:latest
+          cache-to: |
+            ${{ matrix.cache == 'gha' && format('type=gha,scope={0},mode=max', matrix.name) || '' }}
+            ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}:buildcache,mode=max', steps.img.outputs.ref) || '' }}
 
       - name: Summary
         run: |

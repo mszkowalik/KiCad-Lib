@@ -13,6 +13,7 @@ from .routers import (
     comments,
     components,
     datasheets,
+    flasher,
     import_station,
     jaravis,
     jlc_import,
@@ -65,6 +66,7 @@ app.include_router(jlc_web.router)
 app.include_router(jlc_import.router)
 app.include_router(ledger.router)
 app.include_router(run_costs.router)
+app.include_router(flasher.router)
 
 # Published-state file mirror, served read-only (sync + downloads).
 app.mount("/files", StaticFiles(directory=settings.mirror_dir), name="files")
@@ -280,6 +282,35 @@ def startup() -> None:
             # The firmware+steps bundle a production batch is programmed with.
             conn.execute(text(
                 "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS release_version_id integer"
+            ))
+            # Flasher restructure (2026-07-29): releases are only the FLASH;
+            # the programming/testing steps move to deployment_script_versions,
+            # which pin a release version + device file versions. All flasher
+            # tables were empty when this shipped, so drops are safe.
+            conn.execute(text(
+                "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS deployment_script_version_id integer"
+            ))
+            for col in ("steps", "transport_profile", "monitor_baud", "param_set_id", "param_defaults"):
+                conn.execute(text(f"ALTER TABLE release_versions DROP COLUMN IF EXISTS {col}"))
+            conn.execute(text(
+                "ALTER TABLE programming_runs ADD COLUMN IF NOT EXISTS deployment_script_version_id integer"
+            ))
+            conn.execute(text(
+                "ALTER TABLE programming_runs ALTER COLUMN release_version_id DROP NOT NULL"
+            ))
+            # LTE module + SIM identity captured during programming.
+            for col, typ in (("imei", "varchar(20)"), ("iccid", "varchar(24)"),
+                             ("imsi", "varchar(18)"), ("modem_model", "varchar(60)"),
+                             ("modem_fw", "varchar(60)")):
+                conn.execute(text(
+                    f"ALTER TABLE device_units ADD COLUMN IF NOT EXISTS {col} {typ} NOT NULL DEFAULT ''"
+                ))
+            # Retro imports (V2 production reports): the old reports know only
+            # the topic suffix, not the full MAC, and the batch is deliberately
+            # NOT guessed — so both become nullable.
+            conn.execute(text("ALTER TABLE device_units ALTER COLUMN mac DROP NOT NULL"))
+            conn.execute(text(
+                "ALTER TABLE programming_runs ALTER COLUMN production_run_id DROP NOT NULL"
             ))
             # Cost baseline pinning + real yield, so a historical run's expected
             # figure cannot drift and its per-device actual divides by good units.

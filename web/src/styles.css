@@ -3063,3 +3063,143 @@ select.sel:focus {
   padding: 8px;
   pointer-events: none;
 }
+
+/* ------------------------------------------------------------------ flasher */
+/* Terminal-style run log. The full log lives in Postgres; this box renders a
+   bounded tail. Direction colors come from the palette only. */
+.flash-log {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  height: 300px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.flash-log-tall { height: 68vh; }
+.flash-log .fl-tx { color: var(--accent); }
+.flash-log .fl-rx { color: var(--text); }
+.flash-log .fl-err { color: var(--err); }
+.flash-log .fl-app { color: var(--muted); }
+.flash-log .fl-esptool { color: var(--copper); }
+
+.bench-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+.bench-station .bench-port {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+.bench-station .bench-step { margin: 4px 0; }
+.override-reason { width: 100%; margin-top: 8px; }
+
+.file-editor { min-height: 320px; }
+.params-editor { min-height: 110px; }
+.steps-json {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 12px;
+  max-height: 300px;
+  overflow: auto;
+  padding: 8px 10px;
+}
+.pin-file-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+
+/* Fixed layouts (hard rule: no horizontal scroll, single-line rows). */
+.firmware-table { table-layout: fixed; }
+.firmware-table th:nth-child(1), .firmware-table td:nth-child(1) { width: 28%; }
+.firmware-table th:nth-child(2), .firmware-table td:nth-child(2) { width: 10%; }
+.firmware-table th:nth-child(3), .firmware-table td:nth-child(3) { width: 9%; }
+.firmware-table th:nth-child(4), .firmware-table td:nth-child(4) { width: 9%; }
+.firmware-table th:nth-child(5), .firmware-table td:nth-child(5) { width: 13%; }
+.firmware-table th:nth-child(6), .firmware-table td:nth-child(6) { width: 17%; }
+.firmware-table th:nth-child(7), .firmware-table td:nth-child(7) { width: 14%; }
+
+.release-versions-table { table-layout: fixed; }
+.release-versions-table th:nth-child(1), .release-versions-table td:nth-child(1) { width: 8%; }
+.release-versions-table th:nth-child(2), .release-versions-table td:nth-child(2) { width: 11%; }
+.release-versions-table th:nth-child(3), .release-versions-table td:nth-child(3) { width: 26%; }
+.release-versions-table th:nth-child(4), .release-versions-table td:nth-child(4) { width: 21%; }
+.release-versions-table th:nth-child(5), .release-versions-table td:nth-child(5) { width: 14%; }
+.release-versions-table th:nth-child(6), .release-versions-table td:nth-child(6) { width: 20%; }
+
+.device-files-table { table-layout: fixed; }
+.device-files-table th:nth-child(1), .device-files-table td:nth-child(1) { width: 30%; }
+.device-files-table th:nth-child(2), .device-files-table td:nth-child(2) { width: 18%; }
+.device-files-table th:nth-child(3), .device-files-table td:nth-child(3) { width: 10%; }
+.device-files-table th:nth-child(4), .device-files-table td:nth-child(4) { width: 27%; }
+.device-files-table th:nth-child(5), .device-files-table td:nth-child(5) { width: 15%; }
+
+.file-versions-table { table-layout: fixed; }
+.file-versions-table th:nth-child(1), .file-versions-table td:nth-child(1) { width: 8%; }
+.file-versions-table th:nth-child(2), .file-versions-table td:nth-child(2) { width: 11%; }
+.file-versions-table th:nth-child(3), .file-versions-table td:nth-child(3) { width: 9%; }
+.file-versions-table th:nth-child(4), .file-versions-table td:nth-child(4) { width: 13%; }
+.file-versions-table th:nth-child(5), .file-versions-table td:nth-child(5) { width: 25%; }
+.file-versions-table th:nth-child(6), .file-versions-table td:nth-child(6) { width: 14%; }
+.file-versions-table th:nth-child(7), .file-versions-table td:nth-child(7) { width: 20%; }
+
+.script-versions-table { table-layout: fixed; }
+.script-versions-table th:nth-child(1), .script-versions-table td:nth-child(1) { width: 7%; }
+.script-versions-table th:nth-child(2), .script-versions-table td:nth-child(2) { width: 10%; }
+.script-versions-table th:nth-child(3), .script-versions-table td:nth-child(3) { width: 24%; }
+.script-versions-table th:nth-child(4), .script-versions-table td:nth-child(4) { width: 12%; }
+.script-versions-table th:nth-child(5), .script-versions-table td:nth-child(5) { width: 6%; }
+.script-versions-table th:nth-child(6), .script-versions-table td:nth-child(6) { width: 10%; }
+.script-versions-table th:nth-child(7), .script-versions-table td:nth-child(7) { width: 13%; }
+.script-versions-table th:nth-child(8), .script-versions-table td:nth-child(8) { width: 18%; }
+
+.param-sets-table { table-layout: fixed; }
+.param-sets-table th:nth-child(1), .param-sets-table td:nth-child(1) { width: 18%; }
+.param-sets-table th:nth-child(2), .param-sets-table td:nth-child(2) { width: 46%; }
+.param-sets-table th:nth-child(3), .param-sets-table td:nth-child(3) { width: 16%; }
+.param-sets-table th:nth-child(4), .param-sets-table td:nth-child(4) { width: 20%; }
+
+.devices-table { table-layout: fixed; }
+.devices-table th:nth-child(1), .devices-table td:nth-child(1) { width: 12%; }
+.devices-table th:nth-child(2), .devices-table td:nth-child(2) { width: 14%; }
+.devices-table th:nth-child(3), .devices-table td:nth-child(3) { width: 12%; }
+.devices-table th:nth-child(4), .devices-table td:nth-child(4) { width: 9%; }
+.devices-table th:nth-child(5), .devices-table td:nth-child(5) { width: 10%; }
+.devices-table th:nth-child(6), .devices-table td:nth-child(6) { width: 12%; }
+.devices-table th:nth-child(7), .devices-table td:nth-child(7) { width: 11%; }
+.devices-table th:nth-child(8), .devices-table td:nth-child(8) { width: 5%; }
+.devices-table th:nth-child(9), .devices-table td:nth-child(9) { width: 7%; }
+.devices-table th:nth-child(10), .devices-table td:nth-child(10) { width: 8%; }
+
+.identity-table { table-layout: fixed; }
+.identity-table td:nth-child(1) { width: 34%; }
+.identity-table td:nth-child(2) { width: 66%; }
+
+.device-config-table { table-layout: fixed; }
+.device-config-table th:nth-child(1), .device-config-table td:nth-child(1) { width: 26%; }
+.device-config-table th:nth-child(2), .device-config-table td:nth-child(2) { width: 38%; }
+.device-config-table th:nth-child(3), .device-config-table td:nth-child(3) { width: 16%; }
+.device-config-table th:nth-child(4), .device-config-table td:nth-child(4) { width: 20%; }
+
+.device-runs-table { table-layout: fixed; }
+.device-runs-table th:nth-child(1), .device-runs-table td:nth-child(1) { width: 15%; }
+.device-runs-table th:nth-child(2), .device-runs-table td:nth-child(2) { width: 10%; }
+.device-runs-table th:nth-child(3), .device-runs-table td:nth-child(3) { width: 18%; }
+.device-runs-table th:nth-child(4), .device-runs-table td:nth-child(4) { width: 22%; }
+.device-runs-table th:nth-child(5), .device-runs-table td:nth-child(5) { width: 12%; }
+.device-runs-table th:nth-child(6), .device-runs-table td:nth-child(6) { width: 8%; }
+.device-runs-table th:nth-child(7), .device-runs-table td:nth-child(7) { width: 15%; }
+
+.progsteps-table { table-layout: fixed; }
+.progsteps-table th:nth-child(1), .progsteps-table td:nth-child(1) { width: 6%; }
+.progsteps-table th:nth-child(2), .progsteps-table td:nth-child(2) { width: 42%; }
+.progsteps-table th:nth-child(3), .progsteps-table td:nth-child(3) { width: 22%; }
+.progsteps-table th:nth-child(4), .progsteps-table td:nth-child(4) { width: 16%; }
+.progsteps-table th:nth-child(5), .progsteps-table td:nth-child(5) { width: 14%; }

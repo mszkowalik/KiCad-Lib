@@ -273,6 +273,47 @@ Read this before touching components, symbols, footprints, or skills.
   rather than re-estimated. When adding a cost path, make it land in one of those
   buckets or the gap will expose it.
 
+### Flasher (production programming) — the load-bearing rules
+
+Full design: `docs/flasher/design.md` (§13 = the decided artifact model).
+
+- **A RELEASE is only the flash; a DEPLOYMENT SCRIPT is the scenario.**
+  `releases`/`release_versions`/`release_images` map firmware assets to
+  offsets, nothing else. The steps live in `deployment_script_versions`, which
+  PIN one release version + exact `device_file_versions`. Never put steps back
+  on a release, and never let a script version reference draft artifacts —
+  the publish gate in `routers/flasher.py` enforces it; keep it.
+- **`GET /api/flasher/files/{version_id}/{filename}` is deliberately
+  unauthenticated** — the DEVICE fetches it with Tasmota's `UrlFetch`, which
+  sends no auth headers. Published versions only; the URL ends with the
+  filename because Tasmota saves by the last path segment. The reachable base
+  is `settings.public_base_url` (LAN address, never localhost).
+- **The engine (`services/flasher/engine.py`) owns the scenario; the browser
+  only executes `action` ops and pipes bytes.** Ops in `BROWSER_OPS` run on
+  the bench (esptool phase — latency-sensitive); every other op is Python.
+  All DB writes go through `RunEngine._db` (own short-lived session per call,
+  in a thread); logs are buffered and bulk-flushed every 0.5 s. A run row is
+  created BEFORE step 1 and finalized in a `finally:` — a socket death, an
+  engine bug or a failed `_load` must still close the row.
+- **Transport rules are measured requirements, not style** (design.md §7): on
+  `usb_serial_jtag` (ESP32-C6) the monitor phase never touches DTR/RTS, a
+  reset re-enumerates USB, and esptool-js's `after("hard_reset")` alone never
+  restarts the chip — the pulse in `web/src/flasher/station.ts` does.
+- **`lte_sim_pin` is sent once and NEVER retried** — the firmware driver
+  PUK-guards a re-sent rejected PIN (xdrv_128 ~483). Resolution: bench field →
+  param-set `sim_pin` → WS prompt. The PIN is masked in the stored log and in
+  `params_snapshot` (`SECRET_RE` masks any param whose key matches
+  password|pin|salt|secret|token).
+- **Captured variables with reserved names update the device row**
+  (`IDENTITY_VARS`: topic→tasmota_id, imei, iccid, imsi, modem_model,
+  modem_fw). Device identity is the MAC (`device_units.mac` UNIQUE),
+  upserted at `esp_connect` ~2 s into a run, so even early failures are
+  attributed. `mosquitto` export regenerates the broker file from
+  `device_config_values` (`mqtt_creds_line`, `current=True`).
+- **Credential derivation (`services/flasher/credentials.py`) is frozen** —
+  verified byte-for-byte against real `mosquitto_passwords.txt` pairs. Any
+  change strands the deployed fleet.
+
 ### Creating a proposal (the one true pattern)
 
 Mirror `services/jaravis.py`. New component: `Component(name=…)` with

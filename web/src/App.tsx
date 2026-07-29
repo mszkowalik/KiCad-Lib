@@ -13,7 +13,12 @@ import { getProposals } from "./api";
 import { DialogProvider } from "./components/Dialog";
 import Browse from "./pages/Browse";
 import ComponentDetail from "./pages/ComponentDetail";
+import DeviceDetail from "./pages/DeviceDetail";
+import Devices from "./pages/Devices";
 import FileViewer from "./pages/FileViewer";
+import FlashBench from "./pages/FlashBench";
+import FlasherAdmin from "./pages/FlasherAdmin";
+import FlashRunDetail from "./pages/FlashRunDetail";
 import Invoices from "./pages/Invoices";
 import Stock from "./pages/Stock";
 import NewComponent from "./pages/NewComponent";
@@ -84,6 +89,9 @@ const PRODUCTION_LINKS = [
   { to: "/production/invoices", label: "Invoices" },
   { to: "/production/stock", label: "Stock" },
   { to: "/production/jlc", label: "JLC" },
+  { to: "/production/flasher", label: "Flasher" },
+  { to: "/production/bench", label: "Bench" },
+  { to: "/production/devices", label: "Devices" },
   { to: "/production/writes", label: "Write log" },
 ];
 
@@ -168,6 +176,11 @@ export default function App() {
               <Route path="/production/invoices" element={<Invoices />} />
               <Route path="/production/stock" element={<Stock />} />
               <Route path="/production/jlc" element={<ProductionJlc />} />
+              <Route path="/production/flasher" element={<FlasherAdmin />} />
+              <Route path="/production/bench" element={<FlashBench />} />
+              <Route path="/production/devices" element={<Devices />} />
+              <Route path="/production/devices/:id" element={<DeviceDetail />} />
+              <Route path="/production/flash-runs/:id" element={<FlashRunDetail />} />
               <Route path="/production/writes" element={<ProductionWrites />} />
             </Route>
 

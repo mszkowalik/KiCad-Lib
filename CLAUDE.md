@@ -92,6 +92,15 @@ every push to `main` (pull requests build without pushing);
 published amd64-only, and the api image compiles LibreDWG from source, which
 is very slow under emulation.
 
+- **A pruned machine self-recovers.** The workflow also pushes a full
+  (`mode=max`) registry build cache to `ghcr.io/.../<name>:buildcache`, and the
+  `build.cache_from` lists in `compose.yaml` point at it — after a
+  `docker system prune`, `docker compose up -d` pulls the layers (LibreDWG
+  included) instead of recompiling. Unreachable cache refs only warn, so
+  offline builds still work. Keep both halves in sync: dropping either the
+  `cache-to` line in `images.yml` or a `cache_from` list silently brings the
+  ~10-minute cold rebuild back.
+
 ## Conventions
 
 - Component/library conventions live in the platform's **skill documents** — not

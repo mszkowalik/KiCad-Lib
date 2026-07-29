@@ -27,8 +27,10 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 5173,
     host: true,
+    // ws: true so the flasher's run WebSocket (/api/flasher/ws/…) rides the
+    // same proxy as plain requests.
     proxy: Object.fromEntries(
-      apiPaths.map((p) => [p, { target: apiTarget, changeOrigin: true }]),
+      apiPaths.map((p) => [p, { target: apiTarget, changeOrigin: true, ws: true }]),
     ),
     // In Docker on macOS/Windows, bind-mount edits don't fire fsevents, so the
     // watcher must poll. Enabled via CHOKIDAR_USEPOLLING (set for the web
