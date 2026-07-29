@@ -1,0 +1,321 @@
+---
+name: kicad-conventions-footprints
+description: "Choosing AND authoring footprints, and the naming standard: the KLC tier rule (Tier 0 stock names are frozen), the twelve-slot field order, decided spellings (_HandSoldering, vendor tokens, no rotation in names), the 7Sigma: namespace, validator-enforced pad/silk/fab/courtyard style, the 0.1mm grid, NPTH mechanical holes, thermal vias, non-electrical parts, and why connector pad numbering always follows the datasheet. Use when naming, picking or authoring any footprint."
+---
+<!-- platform-skill: conventions-footprints v7 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+
+# Footprint conventions
+
+Footprints live in the `7Sigma:` namespace and are always referenced as
+`7Sigma:<name>`. You can both *choose* an existing footprint and *author* a new
+or revised one: `propose_footprint_edit(name, source_text, comment)` takes a
+complete `.kicad_mod` text and files it as a draft (existing name = edit, new
+name = creation), reviewed with a visual before/after in the Proposals view.
+
+Never hand-write a footprint from scratch when something close exists: call
+`get_footprint` first, take its `source`, and edit that.
+
+## 1. Choosing a footprint
+
+- Find candidates with `list_footprints` (it shows each one's pad count).
+- Match the part's **physical package** — use the package string from
+  `lcsc_lookup` (`0402`, `SOT-23-5`, `QFN-28`) to pick the footprint whose name
+  and pad count correspond.
+- Pad count should match the base symbol's pin count ([[conventions-symbols]]).
+  A mismatch means the wrong footprint or the wrong symbol.
+- Reference it as `7Sigma:<name>` with no other prefix. A reference to a
+  footprint that does not exist is rejected by the proposal tools.
+
+### Reading footprint names
+
+Two naming styles coexist; both are fine, match whichever the family already uses.
+
+- **Generator style** — `FAMILY-PINS_L<len>-W<wid>-P<pitch>-…-EP`
+  (e.g. `VQFN-14_L3.5-W3.5-P0.50-BL-EP`)
+- **EasyEDA / KiCad-stock style** —
+  `FAMILY-PINS-1EP_<L>x<W>mm_P<pitch>mm_EP<a>x<b>mm`
+  (e.g. `QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm`)
+
+Don't rename an existing footprint just to harmonise style — only when the name
+no longer describes the geometry (e.g. after adding thermal vias).
+
+A `_ThermalVias` / `-ThermalVias` suffix means the footprint stitches thermal
+vias under the exposed pad: more board area, different paste pattern. Pick the
+variant the design calls for.
+
+## 2. Naming — the tier rule
+
+**Adopted standard: the KiCad Library Convention (KLC), in the dialect the shipped KiCad 10
+library actually uses.** Where the KLC pages and the shipped library disagree, the shipped
+library wins. IPC-7351 is metadata only, never the name. EasyEDA/LCSC generator strings
+(`..._L3.0-W1.7-P0.95-LS2.8-BL`) are stripped on import, never kept — they name the
+component body, not the land pattern.
+
+Full standard, per-footprint migration table and the catalogue of canonical names for
+packages not yet in the library: `docs/footprint-naming/` in the platform repo.
+
+### Run this test in order, stop at the first Yes
+
+| # | Question | Result |
+|---|---|---|
+| 1 | Does KiCad stock ship a footprint whose land pattern **and pad numbering** match ours? | **Tier 0** — adopt its filename byte-for-byte. Stop. |
+| 2 | Does it have **zero electrical lands**? | **Tier 4** — mechanical form, `Mechanical` token mandatory. |
+| 3 | Is there a published package designation (JEDEC / EIAJ / EIA case / IEC) whose parameters fully determine the land? | **Tier 1** if our copper is the generic pattern; **Tier 2** (vendor-prefixed, KLC F2.3) if it deviates or the outline is proprietary. |
+| 4 | Otherwise | **Tier 3** — vendor + MPN, family word first. |
+
+```
+Tier 0  SOIC-8_3.9x4.9mm_P1.27mm            (verbatim stock — never edit)
+Tier 1  QFN-28_4x4mm_P0.5mm  ·  R_0603_1608Metric
+Tier 2  Winbond_USON-8-1EP_2x3mm_P0.5mm_EP0.3x1.7mm
+Tier 3  TerminalBlock_Dorabo_DB301V-3.5-2P_1x02_P3.50mm_Vertical
+Tier 4  Enclosure_Hammond_1551RFLGY
+```
+
+**Tier 0 names are frozen.** 91 of the library's 173 footprints are Tier 0 today. Never
+rename one, never "tidy" its spelling — byte-identity with the 15,447 stock names is what
+makes autocomplete, review and drop-in replacement work.
+
+### Before claiming Tier 0, verify the copper
+
+A Tier 0 adoption is a claim about copper, not a resemblance of names. **Diff pad numbers,
+positions, sizes and drills against the stock file before proposing the name.** Three
+candidate adoptions failed exactly this check — one of them (`TDSON-8`) had different pad
+*numbering*, which would have silently broken the symbol's pin mapping.
+
+Never mint a name equal to a stock filename unless the copper matches. If it differs, change
+a real field — add the vendor prefix, or record the true measured value. Never disambiguate
+with a counter (`_2`, `ThermalVias2`).
+
+### Field order — twelve slots, never reordered
+
+```
+[<Family>[_<Function>]_] [<Vendor>_] [<Series>_] <Package|MPN>
+   [-<pins>[-<n>EP|-<n>MP|-<n>SH]] | [_<rows>x<pos>] | [-<n>Pin]
+   [_<X>x<Y>[x<Z>]mm] [_Layout<c>x<r>] [_P<pitch>mm]
+   [_<Modifier>…] [_LayoutBorder<a>x<b>y] [_<Orientation>] [_<Option>…]
+```
+
+- `_` separates independent fields; `-` joins sub-attributes **inside** the package/pin field.
+- Pin count glued to a package designation is never zero-padded (`QFN-16`, `SOT-23-5`).
+  Connector positions-per-row **are** zero-padded to 2 (`1x02`, `2x50`) and count electrical
+  positions per row, not total pads.
+- Pitch is always `_P<value>mm`. Body size is `<X>x<Y>mm`, lowercase `x`, unit once.
+- Options are last: `_ThermalVias`, `_HandSoldering`.
+
+### Global spellings — decided, do not re-litigate
+
+| Rule | Decision |
+|---|---|
+| Hand-solder variants | **`_HandSoldering`** (matches KLC F2.1 #10). Never `_HandSolder`/`_Handsoldering` for house-minted names. Tier 0 stock names keep their own spelling, so `_HandSolder` will legitimately appear on adopted stock footprints — that is correct, not drift. |
+| Vendor token | Canonical manufacturer name from the library conventions table, **spaces and dots removed, casing kept, never abbreviated or truncated**: `MEAN WELL`→`MEANWELL`, `Texas Instruments`→`TexasInstruments`, `Diodes Incorporated`→`DiodesIncorporated`, `OSRAM`→`OSRAM`. Tier 0 exempt. |
+| Rotation / origin | **Never encoded in a name.** A rotated or mis-origined import is a *geometry* defect to fix, not a fact to record in the string. |
+| Character set | `A-Z a-z 0-9 _ . , + -` only. No spaces ever. Commas only to reproduce a vendor's own comma-decimal MPN (`MC_1,5`). |
+
+### Connector pad numbering is never a house choice
+
+A pad number claims *this copper is the contact the manufacturer calls N*. Follow the
+datasheet always — the mating plug's contact 7 touches receptacle contact 7. A footprint
+whose numbering disagrees with its datasheet is a **bug**, not a convention.
+
+Standardise **symbols** instead: generic and keyed on `(rows, positions, scheme)` —
+`Conn_02x50_Odd_Even`, `Conn_01x24` — reused across every vendor. A per-MPN symbol needs a
+justification (fixed pin semantics like USB-C or 8P8C), not convenience. Symbol *layout* is
+house-standard and scheme-independent.
+
+Fast check for a part with differential pairs: in the real numbering, P and N of a pair sit
+on **same-parity pins exactly 2 apart**. If your footprint puts a foreign signal between
+them, the numbering is wrong.
+
+## 3. The package name (`{Footprint_Name}`)
+
+Every footprint carries a short human package name — `0402`, `SOT-23-6`,
+`VQFN-14-EP 3.5x3.5mm` — edited on the footprint's page in the Templates
+browser. Component `ki_description` templates reference it as
+`{Footprint_Name}`, and the generator injects it at build time.
+
+It belongs to the **footprint**, not to the components that use it: never add a
+`Footprint_Name` property to a component ([[add-component]]). Set it once and
+every component using that footprint follows; changing it rebuilds the symbol
+libraries of every affected category automatically.
+
+A footprint with no package name contributes nothing, so a component whose
+description references `{Footprint_Name}` reports an unresolved template. The
+fix is to name the footprint, not to patch the component.
+
+## 4. Style rules (the validator enforces these)
+
+These are the machine-checked rules in the platform's `footprint_style` rule
+block — a footprint that breaks them raises validator warnings.
+
+| Property | Rule |
+|---|---|
+| SMD pad type | `roundrect` |
+| `roundrect_rratio` | `0.25` |
+| SMD pad layers | `"F.Cu" "F.Paste" "F.Mask"` (all three) |
+| Through-hole pad type | `thru_hole circle` or `thru_hole oval` |
+| `F.Fab` outline | required, line width `0.1 mm` |
+| `F.SilkS` line width | `0.1 mm` |
+| `F.CrtYd` courtyard | required, closed, line width `0.05 mm` |
+| Header prefix | no `easyeda2kicad:` prefix — the internal `(footprint "NAME")` must equal the filename, unprefixed |
+
+Plus the conventions the validator can't check:
+
+- **Pad names map exactly to the symbol's pin numbers.** Net assignment fails
+  *silently* when they don't.
+- Integer pad names stored as integers: `"1"`, never `"1.0"`.
+- `F.Fab` carries the **component body** outline as a closed polygon, with a
+  0.1 mm radius pin-1 circle inside it.
+- `F.SilkS` carries a partial outline that never overlaps pad copper, plus a
+  pin-1 indicator. Silkscreen may be omitted on very fine pitch (≤ 0.4 mm) where
+  it cannot be drawn clear of the pads; `F.Fab` is still required.
+- Courtyard clears the outermost pad/body feature by **0.5 mm**, snapped to the
+  0.05 mm grid.
+- Global dimension floors: pad ≥ 0.6 mm, drill ≥ 0.3 mm, via ≥ 0.3 mm.
+
+**Fix every validator warning by default** — including ones that were already
+there before you touched the footprint. Only stop to ask if the fix is
+non-obvious (would need the symbol's pin layout changed, or a body outline
+redrawn by hand) or could break correctness.
+
+### 3D model path
+
+```
+(model "${SEVENSIGMA_DIR}/3DModels/<category>.3dshapes/<NAME>.step"
+  (offset (xyz 0 0 0))
+  (scale (xyz 1 1 1))
+  (rotate (xyz 0 0 0))
+)
+```
+
+Always the `${SEVENSIGMA_DIR}` variable — never a hardcoded path.
+
+## 5. Pad placement grid
+
+Pad centres and sizes belong on the **0.1 mm grid**. Two exceptions:
+
+- **The pitch axis of a fine-pitch package**, where lead positions don't divide
+  by 0.1 mm. A 0.5 mm-pitch package with two leads per side has them at
+  y = ±0.75 mm; snapping to ±0.7/±0.8 misaligns pad and lead. Leave the pitch
+  axis on whatever grid the datasheet dictates.
+- **When snapping would move a pad more than 0.1 mm** from its datasheet
+  position. Never trade land-pattern correctness for grid tidiness.
+
+When snapping, round pad sizes to `0.1 x n` too. If the across-edge dimension
+shifts, move the pad **outward** (away from the body) so the lead toe stays
+covered.
+
+## 6. Mechanical holes must be NPTH
+
+Mounting holes, locating pegs and body-clearance holes are mechanical, not
+electrical: use `np_thru_hole`, never `thru_hole`.
+
+The common defect from EasyEDA/LCSC-sourced footprints is an unnamed plated pad
+whose copper size equals its drill:
+
+```
+(pad "" thru_hole circle (at ...) (size 1 1) (drill 1) (layers "*.Cu" "*.Mask") ...)
+```
+
+That is a 0 mm annular ring → KiCad DRC raises a minimum-annular-width violation
+on every such hole. Fix by changing the type to `np_thru_hole` and leaving the
+rest alone (NPTH pads are exempt from annular-ring DRC, and unnamed pads carry
+no net, so nothing electrical is lost).
+
+Rule of thumb: any pad where `(size - drill) / 2 <= 0` must be `np_thru_hole`.
+If a hole genuinely should be plated and netted, give it a real ring
+(size ≥ drill + 0.3 mm) and a pad number instead.
+
+## 7. Thermal vias under exposed pads
+
+KiCad has no via primitive inside a footprint — thermal vias are **thru-hole
+pads sharing the exposed pad's number**, so they inherit its net.
+
+```
+(pad "<EP_NUMBER>" thru_hole circle
+    (at <x> <y>)
+    (size 0.6 0.6)
+    (drill 0.3)
+    (property pad_prop_heatsink)
+    (layers "*.Cu")
+    (remove_unused_layers no)
+)
+```
+
+| Attribute | Value | Why |
+|---|---|---|
+| Pad number | same as the EP land | net inheritance |
+| `size 0.6` / `drill 0.3` | 0.15 mm annular ring | standard stitching geometry |
+| `property pad_prop_heatsink` | required | flags the pad as heat-spreader for DRC/BOM |
+| `layers "*.Cu"` | all copper | top-to-bottom heat path |
+| `remove_unused_layers no` | required | keeps the ring on inner layers |
+
+Companion changes that must go with them:
+
+1. **Strip `F.Paste` from the EP land** — paste over an open via barrel wicks
+   down the hole and starves the joint. EP uses `(layers "F.Cu" "F.Mask")` only.
+2. **Add windowed paste apertures** — unnamed
+   `(pad "" smd roundrect ... (layers "F.Paste"))` blocks covering ~50–70 % of
+   the EP, positioned to miss the barrels. 4–9 apertures depending on EP size.
+3. **Add a back-side land** — duplicate the EP on `B.Cu` with `(zone_connect 2)`
+   so the vias stitch into a back-side pour.
+4. **Set `(zone_connect 2)` on the EP `F.Cu` pad** — the default thermal relief
+   defeats the purpose.
+5. **Rename with the `_ThermalVias` suffix** (§1).
+
+**The EP land is `smd rect`, never `roundrect`.** On a large EP the §4 corner
+radius becomes big (0.25 x 3.3 mm = 0.825 mm) and rounds the corners back far
+enough to clip the corner vias, leaving them outside the EP copper → DRC
+annular-ring / isolated-copper errors. The validator exempts pads carrying
+`pad_prop_heatsink` from the roundrect rule, so a `rect` EP raises no warning.
+Normal signal pads still follow §4.
+
+Via grid: aim for ~1 mm pitch inside the EP with ≥ 0.2 mm clearance from the EP
+edge to the via copper. 2x2 suits EPs up to ~2.5 mm; 4x4 suits ~3 mm and larger.
+
+## 8. Non-electrical parts (lightpipes, standoffs, enclosures)
+
+Some `Mechanical_7S` parts are not soldered at all, and forcing the standard
+rules onto them produces a wrong footprint.
+
+**Lightpipes (FIX-LEMB family)** need at least **1 mm of clearance** between the
+bottom of the pipe body and anything on the PCB below it — the illuminating LED
+sits under the pipe, and without that gap the pipe crushes the LED or loses its
+entry-face air gap. That clearance is a **layout constraint, documented on the
+footprint**, not something baked into the part:
+
+- **3D model** — build the STEP with the post bottom at z = 1.0 mm so the 3D
+  viewer shows the required gap.
+- **Footprint** — omit `F.CrtYd` entirely, and omit the mounting through-hole
+  pad. The PCB designer drills the hole separately from the documented OD.
+  The base component must be in the rule block's
+  `footprint_style.exempt_base_components` list so the validator skips the
+  `F.CrtYd` presence and width checks.
+- **Document the constraint** — a `Cmts.User` text note ("Min 1mm clearance
+  below") plus a dashed `Dwgs.User` circle at the head OD, so PCB designers see
+  it without it being enforced as a courtyard.
+
+The pad-shape, silkscreen-width and no-`easyeda2kicad:`-prefix rules still apply
+to exempted parts.
+
+## 9. Imported footprints
+
+Origin doesn't change the rules — everything lives in the `7Sigma:` namespace
+and follows §4. When bringing in a footprint from EasyEDA/LCSC or any other
+source, work through this before proposing it:
+
+- [ ] Header prefix stripped (`"easyeda2kicad:NAME"` → `"NAME"`)
+- [ ] Pads `oval`/`rect` → `roundrect` with `(roundrect_rratio 0.25)`
+- [ ] Pad names have no `.0` suffix
+- [ ] `F.Fab` body outline present at 0.1 mm
+- [ ] `F.CrtYd` closed courtyard present at 0.05 mm
+- [ ] Mechanical holes converted to `np_thru_hole` (§6)
+- [ ] 3D model offset/rotation verified, not taken on trust — imported offsets
+      are frequently wrong. Check that the mesh's pin/lead centres land on the
+      pad coordinates rather than keeping whatever offset the exporter emitted.
+
+See [[add-component]] for where footprint choice fits in the full part-creation
+procedure, and [[platform-workflow]] for what happens after approval.
+
+---
+
+*Generated from the 7Sigma platform database — skill `conventions-footprints` v7. Edit it in the web UI (Skills view) or propose a change with the `propose_skill_update` tool; edits to this file are overwritten on the next sync.*

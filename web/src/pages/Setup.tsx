@@ -17,24 +17,11 @@ import {
   type FxRate,
   type KicadConfig,
 } from "../api";
+import SettingsCard from "../components/SettingsCard";
 import { useDialog } from "../components/Dialog";
 import { ErrorBanner, Spinner } from "../components/Ui";
 
 const POLL_MS = 2000;
-
-/** Mirrors the hooks the platform repo already ships in `.claude/settings.json`. */
-const HOOK_SNIPPET = `{
-  "hooks": {
-    "SessionStart": [
-      { "hooks": [{ "type": "command",
-          "command": "python3 \\"$CLAUDE_PROJECT_DIR/.claude/sync-skills.py\\"" }] }
-    ],
-    "UserPromptSubmit": [
-      { "hooks": [{ "type": "command",
-          "command": "python3 \\"$CLAUDE_PROJECT_DIR/.claude/sync-skills.py\\" --quick" }] }
-    ]
-  }
-}`;
 
 /**
  * One page for everything that is configured once and then only checked:
@@ -63,6 +50,41 @@ export default function Setup() {
       <div className="page kicad-page">
         <h1>Setup</h1>
         <ErrorBanner message={error ?? ""} />
+
+        {/* Configuration first: it is what a visit to this page is usually for. */}
+        <SettingsCard />
+
+        <div className="card pad">
+          <h2>Effective URLs</h2>
+          <p className="muted">
+            Derived from <code>Public base URL</code> above — these are what KiCad clients use.
+            Change the setting and re-download the .kicad_httplib, which embeds them.
+          </p>
+          <table className="kv">
+            <tbody>
+              <tr>
+                <td>Public base URL</td>
+                <td className="mono">{config?.public_base_url ?? "…"}</td>
+              </tr>
+              <tr>
+                <td>HTTP library root</td>
+                <td className="mono">{config?.httplib_root_url ?? "…"}</td>
+              </tr>
+              <tr>
+                <td>File mirror</td>
+                <td className="mono">{config?.mirror_url ?? "…"}</td>
+              </tr>
+              <tr>
+                <td>PCM repository</td>
+                <td className="mono">{config?.pcm_repo_url ?? "…"}</td>
+              </tr>
+              <tr>
+                <td>Token</td>
+                <td className="mono">{config?.token_hint ?? "…"}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
         <div className="card pad">
           <h2>KiCad — install as a plugin (recommended)</h2>
@@ -148,75 +170,46 @@ export default function Setup() {
         <div className="card pad">
           <h2>Claude Code / MCP</h2>
           <p className="muted">
-            The platform's agent tools are exposed to Claude Code over MCP (the{" "}
-            <span className="mono">mcp/</span> server in the repo), and the skill documents
-            sync to <span className="mono">.claude/skills/</span> as files, because Claude
-            Code only discovers skills on disk. The platform repo ships this wired up — here
-            is what to copy into another checkout.
+            The platform's agent tools reach Claude Code over MCP (the{" "}
+            <span className="mono">mcp/</span> server in the repo). The skill documents live
+            here in the database, and copies are committed to{" "}
+            <span className="mono">.claude/skills/</span> — Claude Code only discovers a skill
+            as a file on disk, and that is what makes it trigger on the right task by itself.
+            There is no sync script and no hook: keeping the copies current is the agent's job,
+            and it costs one tool call.
           </p>
           <ol className="skill-claude-steps">
             <li>
-              <strong>Sync once —</strong> run{" "}
-              <span className="mono">python3 .claude/sync-skills.py</span> from the repo root.
-              Every skill becomes{" "}
-              <span className="mono">.claude/skills/kicad-&lt;name&gt;/SKILL.md</span>, with its
-              description as the frontmatter.
-            </li>
-            <li>
-              <strong>Keep it fresh —</strong> two hooks in{" "}
-              <span className="mono">.claude/settings.json</span> re-run it: on session start,
-              and (with <span className="mono">--quick</span>) before every prompt. Only skills
-              whose version or description actually changed are re-fetched, and an unreachable
-              API is ignored rather than blocking the prompt.
-            </li>
-            <li>
               <strong>Point it at this API —</strong> set{" "}
               <span className="mono">KICAD_API_URL</span> (this UI is talking to{" "}
-              <span className="mono">{API_URL}</span>), plus{" "}
+              <span className="mono">{API_URL || window.location.origin}</span>), plus{" "}
               <span className="mono">KICAD_MCP_TOKEN</span> if the API requires a bearer token.
             </li>
             <li>
-              <strong>When an edit lands —</strong> a saved document is picked up the next time
-              the skill is invoked; a changed description reaches the model's skill list at the
-              next session start.
+              <strong>Check currency —</strong> <span className="mono">list_skills</span> returns
+              every skill with its version number and no bodies. Each{" "}
+              <span className="mono">SKILL.md</span> carries the version it was written from in a
+              stamp under its frontmatter, so comparing them is one call.
+            </li>
+            <li>
+              <strong>Refresh a stale copy —</strong>{" "}
+              <span className="mono">get_skill(name)</span>, then rewrite the file and update its
+              stamp. Agents are expected to edit these files.
+            </li>
+            <li>
+              <strong>Change a convention —</strong>{" "}
+              <span className="mono">propose_skill_update</span> files a draft you approve in
+              Proposals. Approval is what moves the version number that{" "}
+              <span className="mono">list_skills</span> reports; never record a rule only in the
+              local file, or the next refresh drops it.
             </li>
           </ol>
-          <pre className="code-block">{HOOK_SNIPPET}</pre>
         </div>
 
         <DatasheetCard />
         <FxCard />
         <HealthCard />
 
-        <div className="card pad">
-          <h2>Configuration</h2>
-          <table className="kv">
-            <tbody>
-              <tr>
-                <td>Public base URL</td>
-                <td className="mono">{config?.public_base_url ?? "…"}</td>
-              </tr>
-              <tr>
-                <td>HTTP library root</td>
-                <td className="mono">{config?.httplib_root_url ?? "…"}</td>
-              </tr>
-              <tr>
-                <td>File mirror</td>
-                <td className="mono">{config?.mirror_url ?? "…"}</td>
-              </tr>
-              <tr>
-                <td>Token</td>
-                <td className="mono">{config?.token_hint ?? "…"}</td>
-              </tr>
-            </tbody>
-          </table>
-          <p className="muted">
-            Moving online: set <code>PUBLIC_BASE_URL</code> (e.g.{" "}
-            <code>https://disfunction.cc/lib</code>) and <code>HTTPLIB_TOKEN</code> in{" "}
-            <code>platform/.env</code>, then re-download the .kicad_httplib — it embeds these
-            values.
-          </p>
-        </div>
       </div>
     </div>
   );

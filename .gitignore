@@ -9,7 +9,10 @@ render-cache/
 .DS_Store
 *.bak
 *.egg-info/
-# Skill documents mirrored from the platform DB by .claude/sync-skills.py
-.claude/skills/
+# .claude/skills/ is TRACKED now. The documents used to be generated into it by
+# a sync script driven by two hooks; they are ordinary files again, each stamped
+# with the platform version it came from. Keeping them in git is what preserves
+# Claude Code's skill discovery and auto-triggering — see the skills section of
+# CLAUDE.md for how they are kept current.
 # Supplier invoices: real PDFs with address/VAT/email — keep them out of git
 jlcpcb_invoives/

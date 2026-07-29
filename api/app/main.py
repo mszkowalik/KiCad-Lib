@@ -26,6 +26,7 @@ from .routers import (
     projects,
     proposals,
     run_costs,
+    settings as settings_router,
     skills,
     view,
 )
@@ -52,6 +53,7 @@ app.include_router(agent.router)
 app.include_router(proposals.router)
 app.include_router(comments.router)
 app.include_router(skills.router)
+app.include_router(settings_router.router)
 app.include_router(kicad_sync.router)
 app.include_router(import_station.router)
 app.include_router(kicad_http.router)
@@ -435,6 +437,20 @@ def startup() -> None:
         pass
     _ensure_phase1_schema()
     _ensure_dedup_indexes()
+    try:
+        from .db import SessionLocal
+        from .services import appconfig
+
+        db = SessionLocal()
+        try:
+            n = appconfig.apply_overrides(db)
+            if n:
+                print(f"appconfig: applied {n} stored setting override(s)")
+        finally:
+            db.close()
+    except Exception:
+        # A settings table that is not there yet must never stop startup.
+        pass
     if settings.datasheet_autofetch:
         # Fetch missing datasheet PDFs in the background (idempotent —
         # only datasheets without a local copy are downloaded).

@@ -36,6 +36,40 @@ Web UI at http://localhost:5173, API at http://localhost:8020 (docs at
 `/docs`). The api and web containers live-mount their sources (`api/app`,
 `web/`) — host edits hot-reload without a rebuild.
 
+## Skills — the platform is the source of truth, the files are a working copy
+
+The component and library conventions are **skill documents in Postgres**,
+edited in the Skills view and versioned like everything else here. Copies live
+in `.claude/skills/kicad-<name>/SKILL.md`, tracked in git, because that is the
+only way Claude Code discovers a skill and auto-triggers it on the right task.
+Each file carries a stamp under its frontmatter:
+
+```
+<!-- platform-skill: conventions-symbols v3 — ... -->
+```
+
+There is **no sync script and no hook** — an earlier version mirrored the
+database into these files on every prompt. Keeping them current is now the
+agent's job, and it costs one tool call:
+
+1. **Before library work, call `list_skills`** (MCP: `kicad-library`). It
+   returns every skill with its `version_no` and no bodies.
+2. **If a local stamp is behind, refresh that file**: `get_skill(name)` and
+   rewrite `SKILL.md` — keep the frontmatter, update the stamp to the new
+   version. Editing these files is expected, not a workaround.
+3. **Never treat the local copy as authoritative** when it disagrees with the
+   platform, and never record a new convention only in the file — it would be
+   lost on the next refresh.
+
+To *change* a convention, propose it: `propose_skill_update(name, content,
+comment)` files a **draft** the user approves in the Proposals view. Writes to
+skills are draft-gated exactly like components; approval is what makes the new
+version the one `list_skills` reports. Then refresh the local file.
+
+A skill's `description` is unversioned and lives on `Skill` — edit it in the
+Skills view; it becomes the frontmatter `description`, which is what an agent
+reads to decide whether to open the document.
+
 ## Images and deployment
 
 `.github/workflows/images.yml` publishes `api`, `web` and `render` to GHCR on
@@ -60,14 +94,9 @@ is very slow under emulation.
 
 ## Conventions
 
-- Component/library conventions live in the platform's **skill documents**
-  (editable in the web UI, readable via the `get_skill` agent tool) — not in
-  these files. `.claude/sync-skills.py` mirrors them from the database into
-  `.claude/skills/kicad-<name>/SKILL.md` so Claude Code picks them up as real
-  skills; two hooks in `.claude/settings.json` re-run it (session start, and
-  `--quick` before every prompt), and the generated tree is gitignored. Each
-  skill's unversioned `description` becomes the skill's frontmatter — edit it in
-  the Skills view, not in the generated files, which are overwritten on sync.
+- Component/library conventions live in the platform's **skill documents** — not
+  in these files. See "Skills" below for how the copies in `.claude/skills/`
+  relate to the database.
 - Backend and frontend conventions: see `api/CLAUDE.md` and `web/CLAUDE.md`.
   Record new non-obvious rules in the most specific of those files.
 - Writes to library data go through **draft proposals** approved in the

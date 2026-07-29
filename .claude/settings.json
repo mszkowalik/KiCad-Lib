@@ -17,30 +17,5 @@
       "Bash(python3 -c ' *)",
       "Bash(curl -s \"http://localhost:8020/api/skills\")"
     ]
-  },
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/sync-skills.py\"",
-            "timeout": 30,
-            "statusMessage": "Syncing library skills"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/sync-skills.py\" --quick",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
   }
 }

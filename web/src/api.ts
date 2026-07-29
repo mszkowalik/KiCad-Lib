@@ -534,6 +534,48 @@ export interface KicadConfig {
   token_hint: string;
 }
 
+// ------------------------------------------------------------------ settings
+
+/** One editable runtime setting. `value` is always null for a secret — the API
+ *  has no read-back path for those, only `is_set`. */
+export interface SettingItem {
+  key: string;
+  group: string;
+  label: string;
+  help: string;
+  kind: "str" | "int" | "bool";
+  secret: boolean;
+  /** Only read when the app starts, so a change needs a restart to take hold. */
+  restart: boolean;
+  choices: string[];
+  source: "database" | "environment";
+  updated_at: string | null;
+  value: string | number | boolean | null;
+  is_set: boolean;
+}
+
+export interface SettingGroup {
+  group: string;
+  items: SettingItem[];
+}
+
+export function getSettings(signal?: AbortSignal): Promise<{ groups: SettingGroup[] }> {
+  return request("/api/settings", { signal });
+}
+
+export function setSetting(key: string, value: string): Promise<{ ok: boolean; restart_required: boolean }> {
+  return request(`/api/settings/${encodeURIComponent(key)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value }),
+  });
+}
+
+/** Drop the override; the environment or code default applies again. */
+export function revertSetting(key: string): Promise<{ ok: boolean; restart_required: boolean }> {
+  return request(`/api/settings/${encodeURIComponent(key)}`, { method: "DELETE" });
+}
+
 export interface DatasheetFetchStatus {
   running: boolean;
   mode: string | null;

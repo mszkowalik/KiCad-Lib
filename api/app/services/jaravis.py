@@ -496,6 +496,32 @@ def list_models3d(query: str = "", limit: int = 100) -> str:
 
 
 @beta_tool
+def list_skills() -> str:
+    """List every skill document with its CURRENT version number.
+
+    Use this to check whether a local copy of a skill is still current: compare
+    the version_no here with the stamp at the top of the local file
+    (`.claude/skills/kicad-<name>/SKILL.md`). Cheap — one call covers all of
+    them, and it returns no document bodies. Fetch a stale one with get_skill.
+    """
+    db = SessionLocal()
+    try:
+        out = []
+        for s in db.query(M.Skill).order_by(M.Skill.name):
+            cur = next((v for v in s.versions if v.id == s.current_version_id), None)
+            out.append({
+                "name": s.name,
+                "description": s.description or "",
+                "version_no": cur.version_no if cur else None,
+                "updated_at": cur.created_at.isoformat() if cur and cur.created_at else None,
+                "drafts": sum(1 for v in s.versions if v.status == "draft"),
+            })
+        return json.dumps({"skills": out})
+    finally:
+        db.close()
+
+
+@beta_tool
 def get_skill(name: str) -> str:
     """Read the CURRENT content of one of your skill documents by name
     (e.g. "conventions-library", "conventions-footprints"). Use before proposing
@@ -1238,7 +1264,7 @@ TOOLS = [
     # library reads
     search_components, get_component, list_categories, list_base_symbols,
     list_footprints, get_symbol, get_footprint, read_datasheet,
-    get_price_history, get_audit_log, list_models3d, get_skill,
+    get_price_history, get_audit_log, list_models3d, list_skills, get_skill,
     # external lookup
     lcsc_lookup, search_jlc_parts, get_jlc_details, refresh_supply,
     # projects

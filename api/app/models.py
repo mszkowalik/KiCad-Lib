@@ -1663,3 +1663,25 @@ class DeviceConfigValue(Base):
     device: Mapped[DeviceUnit] = relationship(back_populates="configs")
 
     __table_args__ = (Index("ix_device_config_key", "device_unit_id", "key"),)
+
+
+# ------------------------------------------------------------------- settings
+class AppSetting(Base):
+    """A runtime override for one `Settings` field, editable in the UI.
+
+    Precedence is DB > environment > code default: a row here wins, and
+    deleting it reverts to whatever the environment or the default gave.
+    Only keys in `services/appconfig.py::KNOBS` may be written — infrastructure
+    (database_url, minio_*, data_dir) and SECRET_KEY are deliberately absent,
+    because changing them under a running platform either breaks it or makes
+    stored git tokens undecryptable.
+
+    Values are stored as text and coerced back by the knob's declared kind.
+    """
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(100), default="user")
