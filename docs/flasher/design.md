@@ -807,6 +807,35 @@ Deduction, all evidence-based (nothing guessed):
   devices (the reports only ever knew the topic suffix); the 2,276 12-hex
   devices carry their real MAC. Both columns went nullable for exactly this.
 
+### Reverse-engineered V2 scripts (2026-07-29)
+
+The retro script versions carry real steps now, reconstructed from
+`~/Projects/CE_Production_flasher` git history and **cross-checked against the
+commands counted in the imported logs** (`scratchpad/retro/v2_steps.py`,
+`apply_v2_scripts.py`). Three config generations, each a published version per
+era, with the runs repointed:
+
+| Gen | When | What the bench sent | Evidence |
+|---|---|---|---|
+| A | 2024-06-06..06-23 (`22fcfdf`) | every option over serial; **no** autoexec gate | config.py at those commits |
+| B | 2024-06-24..07-21 (`b96a15e` "models and its templates") | adds `SetOption153` gating, model `Template`/`Module`, `GroupTopic1`/`FriendlyName1`/`Topic` | logs for that era show Template 431× and Module 195× |
+| C | 2024-07-22..now (`25eb466` "new binaries with most important settings built in") | options move INTO the firmware; script shrinks to gate → Modbus → WiFi → creds → downloads → MQTT → ungate → clear AP | the current era's logs show exactly `SetOption153`×2, `SSId1`×2, `Password1`, `ModbusSerialConfig`, `ModbusBaudrate`, `MqttFingerprint1/2`, `MqttPassword`, `MqttUser`, `MqttHost`, `MqttPort` per run |
+
+Two more things the reconstruction settled:
+
+- **`Topic` was `dongle_%12X`** (Tasmota expands `%12X` to the last three MAC
+  bytes) — that is *why* the V2 fleet is identified by a 6-hex suffix and the
+  full MAC was never recorded (commit `b808d25`).
+- **122 of the 5,502 "dongles" are CE_Aqua units.** Their own logs contain
+  `Template successfully set to 'CE_Aqua'` (`device_data.json.template_name`,
+  derived by the production repo's own `find_template_name`). They were moved
+  to the CE_Aqua_V2 project with their runs, onto `Aqua_V2 config
+  (retroactive)` + its own release; the Aqua functional test (relay matrix
+  Power1-3 vs Switch7-9 + DS18B20 range check, template backed up and
+  restored) is ported from `test.py::CE_Aqua`. `test.py::CE_Dongle_V2` is
+  empty by design — the dongle has no functional test, and its retro test
+  script says so in 7 steps.
+
 ### Implementation record (2026-07-29)
 
 Built in this pass — schema (5 new tables + column moves, startup-migrated),
