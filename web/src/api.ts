@@ -3327,6 +3327,7 @@ export function getJlcPartsOrders(signal?: AbortSignal): Promise<{
 
 export interface FirmwareAssetRow {
   id: number;
+  flashable?: boolean;
   filename: string;
   sha256: string;
   size_bytes: number;
@@ -3810,6 +3811,70 @@ export interface BerryBundleRow {
 
 export function listBerryBundles(projectId: number, signal?: AbortSignal): Promise<BerryBundleRow[]> {
   return request(`/api/flasher/projects/${projectId}/berry-bundles`, { signal });
+}
+
+export function createBerryBundle(
+  projectId: number,
+  body: { label: string; file_version_ids: number[]; comment?: string; created_by?: string },
+): Promise<BerryBundleRow> {
+  return request(`/api/flasher/projects/${projectId}/berry-bundles`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+/** Rename or annotate. The file SET is the identity — a different set is a
+ *  different bundle, so it is never editable here. */
+export function patchBerryBundle(
+  bundleId: number,
+  body: { label?: string; comment?: string },
+): Promise<BerryBundleRow> {
+  return request(`/api/flasher/berry-bundles/${bundleId}`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteBerryBundle(bundleId: number): Promise<{ ok: boolean }> {
+  return request(`/api/flasher/berry-bundles/${bundleId}`, { method: "DELETE" });
+}
+
+export function patchFirmware(
+  assetId: number,
+  body: { chip?: string; kind?: string; build_label?: string; notes?: string },
+): Promise<FirmwareAssetRow> {
+  return request(`/api/flasher/firmware/${assetId}`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteFirmware(assetId: number): Promise<{ ok: boolean }> {
+  return request(`/api/flasher/firmware/${assetId}`, { method: "DELETE" });
+}
+
+export function getFirmwareUsage(
+  assetId: number,
+  signal?: AbortSignal,
+): Promise<{ versions: { deployment: string; version_no: number; version_id: number }[] }> {
+  return request(`/api/flasher/firmware/${assetId}/usage`, { signal });
+}
+
+export function deleteDeviceFileVersion(versionId: number): Promise<{ ok: boolean }> {
+  return request(`/api/flasher/device-file-versions/${versionId}`, { method: "DELETE" });
+}
+
+export function getDeviceFileVersionUsage(
+  versionId: number,
+  signal?: AbortSignal,
+): Promise<{
+  versions: { deployment: string; version_no: number }[];
+  bundles: { id: number; label: string }[];
+}> {
+  return request(`/api/flasher/device-file-versions/${versionId}/usage`, { signal });
 }
 
 export interface ImportedFile {

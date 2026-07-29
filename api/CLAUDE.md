@@ -301,6 +301,18 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
   read as bytes hashes differently from the same file read as text, which made
   five V3 files report "changed" on every import when nothing had. Content
   addressing only pays off if the same source always yields the same hash.
+- **Deleting an artifact is usage-guarded, and the guard lives in the API.**
+  A firmware asset pinned by any deployment version, a bundle used by any
+  version, a device file version pinned by a version or a bundle: all refuse
+  with 409 and name the users. Programming runs record what they flashed, so
+  the pinned artifacts must outlive any tidy-up. `_firmware_usage` /
+  `_file_version_usage` are the single source for those answers — reuse them
+  rather than re-deriving a join per call site.
+- **A bundle's file SET is its identity; only the label is editable.** A
+  different set is a different bundle (`ensure_bundle` resolves by fingerprint,
+  so the same folder never forks a twin). Renaming one updates
+  `files_label` on every version using it, because the version DISPLAYS the
+  bundle's name rather than storing its own.
 - **Channels are pointers, history is immutable.** `deployment_channels` name a
   version (`production`, `bench`); rolling back moves a channel. A batch pins a
   version or follows a channel; run creation resolves it and records the

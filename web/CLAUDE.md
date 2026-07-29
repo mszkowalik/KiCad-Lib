@@ -225,8 +225,9 @@ appears in the backend, add its branch here in the same change.
 - Pages: **`/production/deployments`** is the home of the flasher — three
   columns (deployments → version timeline → composed view of the selected
   version), with `Composer` for new versions and `DiffView` for comparisons.
-  `/production/artifacts` manages the raw pool (firmware, berryware files,
-  param sets) that a version pins. Then `/production/bench` (stations),
+  **`/production/files`** administers everything a version pins, one kind per
+  tab (`?tab=bundles|firmware|files|parameters`) — bundles first, because that
+  is the unit berryware ships in. `/production/artifacts` redirects there. Then `/production/bench` (stations),
   `/production/devices` (+ `/:id`), `/production/flash-runs/:id` (step
   timeline + full log, live-tails by polling `after=<last seq>`). The bench log
   box keeps a bounded tail — the full log is in Postgres.
@@ -237,6 +238,12 @@ appears in the backend, add its branch here in the same change.
 - **Validation comes from the server, always.** The composer PATCHes the draft
   and renders the returned `validation`; never re-implement a rule in the
   browser, or the editor will eventually disagree with the publish gate.
+- **Berryware reads as a BUNDLE, not a file list** (user feedback 2026-07-30).
+  The version view and the composer lead with one pill — bundle name + file
+  count, green for a named bundle and amber for an unnamed ad-hoc set — and put
+  the file table behind a Show-files toggle. Deleting an artifact goes through
+  the API's usage guard; surface the 409 text, never pre-filter in the browser
+  (the backend knows every reference).
 - The vite dev proxy has `ws: true` for `/api` — required by the run
   WebSocket; keep it when touching `vite.config.ts`.
 

@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   createDeviceFileVersion,
+  deleteDeviceFileVersion,
   errorMessage,
   getDeviceFileVersion,
   isAbortError,
@@ -23,9 +24,9 @@ export default function DeviceFilesPanel({ projectId }: { projectId: number }) {
   const [open, setOpen] = useState<number | null>(null); // expanded file id
   const [editor, setEditor] = useState<{ filename: string; content: string; comment: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  // Collapsed by default: bundles above are the everyday view; this is the
-  // raw per-file pool for surgical edits (user feedback 2026-07-30).
-  const [expanded, setExpanded] = useState(false);
+  // This panel has its own tab now, so it opens expanded; the toggle stays
+  // for a quick collapse when a project has many files.
+  const [expanded, setExpanded] = useState(true);
 
   const reload = useCallback(() => {
     const ac = new AbortController();
@@ -90,6 +91,19 @@ export default function DeviceFilesPanel({ projectId }: { projectId: number }) {
     }))) return;
     try {
       await publishDeviceFileVersion(versionId);
+      reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
+  const remove = async (versionId: number, label: string) => {
+    if (!(await dialog.confirm(
+      `Delete ${label}? Refused while a bundle or deployment version pins it.`,
+      { title: "Delete file version", tone: "danger", confirmLabel: "Delete" },
+    ))) return;
+    try {
+      await deleteDeviceFileVersion(versionId);
       reload();
     } catch (err) {
       setError(errorMessage(err));
@@ -179,6 +193,7 @@ export default function DeviceFilesPanel({ projectId }: { projectId: number }) {
           file={files.find((f) => f.id === open) ?? null}
           onPublish={publish}
           onReject={reject}
+          onDelete={remove}
         />
       ) : null}
 
@@ -216,11 +231,12 @@ export default function DeviceFilesPanel({ projectId }: { projectId: number }) {
 }
 
 function FileVersions({
-  file, onPublish, onReject,
+  file, onPublish, onReject, onDelete,
 }: {
   file: DeviceFileRow | null;
   onPublish: (id: number, label: string) => void;
   onReject: (id: number, label: string) => void;
+  onDelete: (id: number, label: string) => void;
 }) {
   if (!file) return null;
   return (
@@ -252,24 +268,34 @@ function FileVersions({
                 <td title={v.comment}>{v.comment || "—"}</td>
                 <td className="muted">{fmtWhen(v.created_at)}</td>
                 <td className="ctr">
-                  {v.status === "draft" ? (
-                    <span className="btn-row">
-                      <button
-                        type="button"
-                        className="btn btn-ok btn-sm"
-                        onClick={() => onPublish(v.id, `${file.filename} v${v.version_no}`)}
-                      >
-                        Publish
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={() => onReject(v.id, `${file.filename} v${v.version_no}`)}
-                      >
-                        Reject
-                      </button>
-                    </span>
-                  ) : null}
+                  <span className="btn-row">
+                    {v.status === "draft" ? (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn-ok btn-sm"
+                          onClick={() => onPublish(v.id, `${file.filename} v${v.version_no}`)}
+                        >
+                          Publish
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          onClick={() => onReject(v.id, `${file.filename} v${v.version_no}`)}
+                        >
+                          Reject
+                        </button>
+                      </>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="btn btn-sm row-del"
+                      title="delete — refused while pinned"
+                      onClick={() => onDelete(v.id, `${file.filename} v${v.version_no}`)}
+                    >
+                      ×
+                    </button>
+                  </span>
                 </td>
               </tr>
             ))}

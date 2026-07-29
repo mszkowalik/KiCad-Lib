@@ -126,6 +126,70 @@ async def upload_firmware(
     return {"existing": False, **_firmware_json(asset)}
 
 
+class FirmwarePatch(BaseModel):
+    chip: str | None = None
+    kind: str | None = None
+    build_label: str | None = None
+    notes: str | None = None
+
+
+def _firmware_usage(db: Session, asset_id: int) -> list[dict]:
+    """Which deployment versions pin this image. Deleting one would rewrite
+    what a run says it flashed, so usage is a hard stop."""
+    rows = (
+        db.query(M.DeploymentImage, M.DeploymentVersion, M.Deployment)
+        .join(M.DeploymentVersion, M.DeploymentVersion.id == M.DeploymentImage.deployment_version_id)
+        .join(M.Deployment, M.Deployment.id == M.DeploymentVersion.deployment_id)
+        .filter(M.DeploymentImage.firmware_asset_id == asset_id)
+        .all()
+    )
+    return [{"deployment": d.name, "version_no": v.version_no, "version_id": v.id}
+            for _, v, d in rows]
+
+
+@router.patch("/firmware/{asset_id}")
+def patch_firmware(asset_id: int, body: FirmwarePatch, db: Session = Depends(get_db)):
+    """Metadata only — the bytes are the identity and never change."""
+    a = db.get(M.FirmwareAsset, asset_id)
+    if a is None:
+        raise HTTPException(404, "no such firmware asset")
+    data = body.model_dump(exclude_unset=True)
+    if "kind" in data and data["kind"] not in FIRMWARE_KINDS:
+        raise HTTPException(400, f"kind must be one of {FIRMWARE_KINDS}")
+    for field in ("chip", "kind", "build_label", "notes"):
+        if field in data and data[field] is not None:
+            setattr(a, field, data[field])
+    db.commit()
+    return _firmware_json(a)
+
+
+@router.delete("/firmware/{asset_id}")
+def delete_firmware(asset_id: int, db: Session = Depends(get_db)):
+    a = db.get(M.FirmwareAsset, asset_id)
+    if a is None:
+        raise HTTPException(404, "no such firmware asset")
+    used = _firmware_usage(db, asset_id)
+    if used:
+        where = ", ".join(f"{u['deployment']} v{u['version_no']}" for u in used[:4])
+        raise HTTPException(
+            409, f"{a.filename} is pinned by {len(used)} deployment version(s) ({where}) — "
+                 "programming runs record what they flashed, so it stays")
+    key, name = a.minio_key, a.filename
+    db.delete(a)
+    db.commit()
+    try:
+        storage.delete_prefix(key)
+    except Exception:  # noqa: BLE001 — the row is gone; a stray object is harmless
+        pass
+    audit(db, "flasher.firmware_delete", "firmware_asset", asset_id, details=name)
+    return {"ok": True}
+
+
+@router.get("/firmware/{asset_id}/usage")
+def firmware_usage(asset_id: int, db: Session = Depends(get_db)):
+    return {"versions": _firmware_usage(db, asset_id)}
+
+
 @router.get("/firmware/{asset_id}/bin")
 def firmware_bin(asset_id: int, db: Session = Depends(get_db)):
     asset = db.get(M.FirmwareAsset, asset_id)
@@ -251,6 +315,58 @@ def publish_device_file_version(version_id: int, body: PublishIn, db: Session = 
     return _file_version_json(v)
 
 
+def _file_version_usage(db: Session, version_id: int) -> dict:
+    """Deployment versions and bundles pinning this file version."""
+    deps = (
+        db.query(M.DeploymentVersion, M.Deployment)
+        .join(M.DeploymentFile, M.DeploymentFile.deployment_version_id == M.DeploymentVersion.id)
+        .join(M.Deployment, M.Deployment.id == M.DeploymentVersion.deployment_id)
+        .filter(M.DeploymentFile.device_file_version_id == version_id).all()
+    )
+    bundles = (
+        db.query(M.BerryBundle)
+        .join(M.BerryBundleFile, M.BerryBundleFile.berry_bundle_id == M.BerryBundle.id)
+        .filter(M.BerryBundleFile.device_file_version_id == version_id).all()
+    )
+    return {
+        "versions": [{"deployment": d.name, "version_no": v.version_no} for v, d in deps],
+        "bundles": [{"id": b.id, "label": b.label} for b in bundles],
+    }
+
+
+@router.delete("/device-file-versions/{version_id}")
+def delete_device_file_version(version_id: int, db: Session = Depends(get_db)):
+    v = db.get(M.DeviceFileVersion, version_id)
+    if v is None:
+        raise HTTPException(404, "no such file version")
+    use = _file_version_usage(db, version_id)
+    if use["versions"] or use["bundles"]:
+        raise HTTPException(
+            409, f"{v.file.filename} v{v.version_no} is pinned by "
+                 f"{len(use['versions'])} deployment version(s) and "
+                 f"{len(use['bundles'])} bundle(s) — it stays")
+    file = v.file
+    name = f"{file.filename} v{v.version_no}"
+    if file.current_version_id == v.id:
+        others = [x for x in file.versions if x.id != v.id and x.status == "published"]
+        file.current_version_id = others[-1].id if others else None
+    db.delete(v)
+    db.flush()
+    # A file with no versions left is an empty shell — remove it too.
+    if not [x for x in file.versions if x.id != v.id]:
+        db.delete(file)
+    db.commit()
+    audit(db, "flasher.file_version_delete", "device_file_version", version_id, details=name)
+    return {"ok": True}
+
+
+@router.get("/device-file-versions/{version_id}/usage")
+def device_file_version_usage(version_id: int, db: Session = Depends(get_db)):
+    if db.get(M.DeviceFileVersion, version_id) is None:
+        raise HTTPException(404, "no such file version")
+    return _file_version_usage(db, version_id)
+
+
 @router.post("/device-file-versions/{version_id}/reject")
 def reject_device_file_version(version_id: int, body: PublishIn, db: Session = Depends(get_db)):
     v = db.get(M.DeviceFileVersion, version_id)
@@ -350,6 +466,80 @@ def list_berry_bundles(project_id: int, db: Session = Depends(get_db)):
         .order_by(M.BerryBundle.id.desc()).all()
     )
     return [bundle.bundle_json(db, b) for b in rows]
+
+
+class BundleIn(BaseModel):
+    label: str
+    file_version_ids: list[int]
+    comment: str = ""
+    created_by: str = ""
+
+
+class BundlePatch(BaseModel):
+    label: str | None = None
+    comment: str | None = None
+
+
+@router.post("/projects/{project_id}/berry-bundles")
+def create_berry_bundle(project_id: int, body: BundleIn, db: Session = Depends(get_db)):
+    """Name a file set by hand (the folder import is the usual route)."""
+    if db.get(M.Project, project_id) is None:
+        raise HTTPException(404, "no such project")
+    if not body.file_version_ids:
+        raise HTTPException(400, "a bundle needs at least one file")
+    for fv_id in body.file_version_ids:
+        fv = db.get(M.DeviceFileVersion, fv_id)
+        if fv is None or fv.file.project_id != project_id:
+            raise HTTPException(400, f"device file version {fv_id} not in this project")
+        if fv.status != "published":
+            raise HTTPException(409, f"{fv.file.filename} v{fv.version_no} is {fv.status} — "
+                                     "publish it before bundling")
+    b = bundle.ensure_bundle(db, project_id, body.file_version_ids, label=body.label.strip(),
+                             created_by=body.created_by, comment=body.comment)
+    db.commit()
+    return bundle.bundle_json(db, b)
+
+
+@router.patch("/berry-bundles/{bundle_id}")
+def patch_berry_bundle(bundle_id: int, body: BundlePatch, db: Session = Depends(get_db)):
+    """Rename or annotate. The file SET is the identity and never changes — a
+    different set is a different bundle."""
+    b = db.get(M.BerryBundle, bundle_id)
+    if b is None:
+        raise HTTPException(404, "no such bundle")
+    data = body.model_dump(exclude_unset=True)
+    if data.get("label"):
+        b.label = data["label"].strip()
+        # Versions display the bundle's name, so keep them in step.
+        for v in db.query(M.DeploymentVersion).filter(M.DeploymentVersion.berry_bundle_id == b.id):
+            v.files_label = b.label
+    if "comment" in data and data["comment"] is not None:
+        b.comment = data["comment"]
+    db.commit()
+    return bundle.bundle_json(db, b)
+
+
+@router.delete("/berry-bundles/{bundle_id}")
+def delete_berry_bundle(bundle_id: int, db: Session = Depends(get_db)):
+    """Refused while a deployment version uses it — that version's berryware
+    identity is the bundle."""
+    b = db.get(M.BerryBundle, bundle_id)
+    if b is None:
+        raise HTTPException(404, "no such bundle")
+    used = (
+        db.query(M.DeploymentVersion, M.Deployment)
+        .join(M.Deployment, M.Deployment.id == M.DeploymentVersion.deployment_id)
+        .filter(M.DeploymentVersion.berry_bundle_id == b.id).all()
+    )
+    if used:
+        where = ", ".join(f"{d.name} v{v.version_no}" for v, d in used[:4])
+        raise HTTPException(409, f'bundle "{b.label}" is used by {len(used)} version(s) '
+                                 f"({where}) — it stays as their berryware identity")
+    label = b.label
+    db.delete(b)
+    db.commit()
+    audit(db, "flasher.bundle_delete", "berry_bundle", bundle_id, details=label)
+    return {"ok": True}
 
 
 @router.get("/files/{version_id}/{filename}")

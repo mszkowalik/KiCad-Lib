@@ -93,7 +93,7 @@ const PRODUCTION_LINKS = [
   { to: "/production/deployments", label: "Deployments" },
   { to: "/production/bench", label: "Bench" },
   { to: "/production/devices", label: "Devices" },
-  { to: "/production/artifacts", label: "Artifacts" },
+  { to: "/production/files", label: "Files" },
   { to: "/production/writes", label: "Write log" },
 ];
 
@@ -179,7 +179,8 @@ export default function App() {
               <Route path="/production/stock" element={<Stock />} />
               <Route path="/production/jlc" element={<ProductionJlc />} />
               <Route path="/production/deployments" element={<Deployments />} />
-              <Route path="/production/artifacts" element={<FlasherAdmin />} />
+              <Route path="/production/files" element={<FlasherAdmin />} />
+              <Route path="/production/artifacts" element={<Navigate to="/production/files" replace />} />
               <Route path="/production/flasher" element={<Navigate to="/production/deployments" replace />} />
               <Route path="/production/bench" element={<FlashBench />} />
               <Route path="/production/devices" element={<Devices />} />

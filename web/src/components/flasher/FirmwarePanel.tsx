@@ -2,17 +2,21 @@
  *  A release version picks these and gives each a flash offset. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  deleteFirmware,
   errorMessage,
   isAbortError,
   listFirmware,
+  patchFirmware,
   uploadFirmware,
   type FirmwareAssetRow,
   type FlasherMeta,
 } from "../../api";
+import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner } from "../Ui";
 import { fmtBytes, fmtWhen, shortSha } from "./common";
 
 export default function FirmwarePanel({ projectId, meta }: { projectId: number; meta: FlasherMeta | null }) {
+  const dialog = useDialog();
   const [rows, setRows] = useState<FirmwareAssetRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -54,6 +58,32 @@ export default function FirmwarePanel({ projectId, meta }: { projectId: number; 
       setError(errorMessage(err));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const editMeta = async (a: FirmwareAssetRow) => {
+    const label = await dialog.prompt("Build label:", { title: a.filename, initial: a.build_label });
+    if (label === null) return;
+    const chipVal = await dialog.prompt("Chip:", { title: a.filename, initial: a.chip });
+    if (chipVal === null) return;
+    try {
+      await patchFirmware(a.id, { build_label: label, chip: chipVal });
+      reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
+  const remove = async (a: FirmwareAssetRow) => {
+    if (!(await dialog.confirm(
+      `Delete ${a.filename}? The bytes go too. A version that pins it will block this.`,
+      { title: "Delete firmware", tone: "danger", confirmLabel: "Delete" },
+    ))) return;
+    try {
+      await deleteFirmware(a.id);
+      reload();
+    } catch (err) {
+      setError(errorMessage(err));
     }
   };
 
@@ -104,18 +134,34 @@ export default function FirmwarePanel({ projectId, meta }: { projectId: number; 
                 <th>sha256</th>
                 <th>Build</th>
                 <th>Uploaded</th>
+                <th />
               </tr>
             </thead>
             <tbody>
               {rows.map((a) => (
                 <tr key={a.id}>
-                  <td className="mono" title={a.filename}>{a.filename}</td>
+                  <td className="mono" title={a.flashable === false
+                        ? `${a.filename} — NOT a writable ESP image (placeholder or truncated)`
+                        : a.filename}>
+                    {a.flashable === false ? <span className="pill err">✗</span> : null}{" "}
+                    {a.filename}
+                  </td>
                   <td>{a.kind}</td>
                   <td className="mono">{a.chip || "—"}</td>
                   <td className="num">{fmtBytes(a.size_bytes)}</td>
                   <td className="mono dim" title={a.sha256}>{shortSha(a.sha256)}</td>
                   <td title={a.build_label}>{a.build_label || "—"}</td>
                   <td className="muted">{fmtWhen(a.uploaded_at)}</td>
+                  <td className="ctr">
+                    <span className="btn-row">
+                      <button type="button" className="btn btn-sm" onClick={() => editMeta(a)}>
+                        Edit
+                      </button>
+                      <button type="button" className="btn btn-sm row-del" onClick={() => remove(a)}>
+                        ×
+                      </button>
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>
