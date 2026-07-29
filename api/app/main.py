@@ -234,9 +234,121 @@ def _ensure_dedup_indexes() -> None:
             )
 
 
+def _has_table(conn, name: str) -> bool:
+    return bool(conn.execute(text(
+        "SELECT to_regclass(:n) IS NOT NULL"), {"n": f"public.{name}"}).scalar())
+
+
+def _flasher_bundle_rename(conn) -> None:
+    """Renames only — MUST run BEFORE `create_all`.
+
+    `create_all` would otherwise build empty `deployments` tables beside the
+    populated `deployment_scripts` ones and strand the imported history. This
+    keeps every id, so the 6,321 V2 runs stay pointed at their own version.
+    """
+    if not _has_table(conn, "deployment_scripts") or _has_table(conn, "deployments"):
+        return
+    conn.execute(text("ALTER TABLE deployment_scripts RENAME TO deployments"))
+    conn.execute(text("ALTER TABLE deployment_script_versions RENAME TO deployment_versions"))
+    conn.execute(text("ALTER TABLE deployment_script_files RENAME TO deployment_files"))
+    conn.execute(text(
+        "ALTER TABLE deployment_versions RENAME COLUMN deployment_script_id TO deployment_id"))
+    conn.execute(text(
+        "ALTER TABLE deployment_files "
+        "RENAME COLUMN deployment_script_version_id TO deployment_version_id"))
+    for table in ("programming_runs", "production_runs"):
+        if conn.execute(text(
+            "SELECT 1 FROM information_schema.columns WHERE table_name = :t "
+            "AND column_name = 'deployment_script_version_id'"), {"t": table}).first():
+            conn.execute(text(
+                f"ALTER TABLE {table} RENAME COLUMN deployment_script_version_id "
+                "TO deployment_version_id"))
+    log.info("flasher: renamed deployment_script* -> deployment* (ids preserved)")
+
+
+def _flasher_bundle_migration(conn) -> None:
+    """Fold releases into the deployment versions that pinned them.
+
+    Runs AFTER `create_all` (it writes into `deployment_images`). Idempotent:
+    every step checks the shape it is about to change, so a fresh database
+    skips it and a half-applied run resumes.
+    """
+    def has_table(name: str) -> bool:
+        return _has_table(conn, name)
+
+    def has_col(table: str, col: str) -> bool:
+        return bool(conn.execute(text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = :t AND column_name = :c"), {"t": table, "c": col}).first())
+
+    if not has_table("deployments"):
+        return
+
+    # 2. New columns on the version + the deployment.
+    for table, col, typ in (
+        ("deployments", "chip", "varchar(30) NOT NULL DEFAULT ''"),
+        ("deployment_versions", "flash_config", "jsonb"),
+        ("deployment_versions", "firmware_fingerprint", "varchar(64) NOT NULL DEFAULT ''"),
+        ("deployment_versions", "files_fingerprint", "varchar(64) NOT NULL DEFAULT ''"),
+        ("deployment_versions", "files_label", "varchar(120) NOT NULL DEFAULT ''"),
+        ("programming_runs", "firmware_fingerprint", "varchar(64) NOT NULL DEFAULT ''"),
+        ("programming_runs", "files_fingerprint", "varchar(64) NOT NULL DEFAULT ''"),
+        ("programming_runs", "draft_run", "boolean NOT NULL DEFAULT false"),
+        ("production_runs", "deployment_channel", "varchar(40) NOT NULL DEFAULT ''"),
+    ):
+        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {typ}"))
+
+    # 3. Fold release images into the versions that pinned them, and carry the
+    #    release's flash_config along — it belongs to the images.
+    if has_table("release_images") and has_col("deployment_versions", "release_version_id"):
+        conn.execute(text("""
+            INSERT INTO deployment_images
+                (deployment_version_id, firmware_asset_id, address, position)
+            SELECT v.id, i.firmware_asset_id, i.address, i.position
+            FROM deployment_versions v
+            JOIN release_images i ON i.release_version_id = v.release_version_id
+            WHERE v.release_version_id IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM deployment_images d
+                              WHERE d.deployment_version_id = v.id)
+        """))
+        conn.execute(text("""
+            UPDATE deployment_versions v SET flash_config = r.flash_config
+            FROM release_versions r
+            WHERE r.id = v.release_version_id AND v.flash_config IS NULL
+        """))
+        # The chip lived on the release; it belongs to the deployment now.
+        conn.execute(text("""
+            UPDATE deployments d SET chip = sub.chip
+            FROM (SELECT DISTINCT ON (v.deployment_id) v.deployment_id, r.chip
+                  FROM deployment_versions v
+                  JOIN release_versions rv ON rv.id = v.release_version_id
+                  JOIN releases r ON r.id = rv.release_id
+                  WHERE r.chip <> '' ORDER BY v.deployment_id, v.version_no DESC) sub
+            WHERE d.id = sub.deployment_id AND d.chip = ''
+        """))
+        log.info("flasher: folded release images into deployment versions")
+
+    # 4. Drop what the fold replaced. Runs keep their evidence: the version
+    #    they point at now owns the images directly.
+    for table, col in (("programming_runs", "release_version_id"),
+                       ("deployment_versions", "release_version_id")):
+        if has_col(table, col):
+            conn.execute(text(f"ALTER TABLE {table} DROP COLUMN {col}"))
+    if has_col("production_runs", "release_version_id"):
+        conn.execute(text("ALTER TABLE production_runs DROP COLUMN release_version_id"))
+    for table in ("release_images", "release_versions", "releases"):
+        if has_table(table):
+            conn.execute(text(f"DROP TABLE {table} CASCADE"))
+    log.info("flasher: release tables retired")
+
+
 @app.on_event("startup")
 def startup() -> None:
     try:
+        # Renames first: create_all must not build empty bundle tables beside
+        # the populated script ones (see _flasher_bundle_rename).
+        with engine.begin() as conn:
+            _flasher_bundle_rename(conn)
         Base.metadata.create_all(engine)
         # Idempotent column adds on pre-existing tables (create_all only
         # creates missing tables, it never alters existing ones).
@@ -298,6 +410,13 @@ def startup() -> None:
             conn.execute(text(
                 "ALTER TABLE programming_runs ALTER COLUMN release_version_id DROP NOT NULL"
             ))
+            # ---- Deployment bundles (2026-07-29, second pass) --------------
+            # ONE revision binds firmware + berryware + procedure + params, so
+            # "what does a device get" has a single answer. The Release entity
+            # is folded in: its images become deployment_images and its
+            # identity becomes a derived fingerprint. Renames keep the 6,321
+            # imported runs and their evidence intact.
+            _flasher_bundle_migration(conn)
             # LTE module + SIM identity captured during programming.
             for col, typ in (("imei", "varchar(20)"), ("iccid", "varchar(24)"),
                              ("imsi", "varchar(18)"), ("modem_model", "varchar(60)"),

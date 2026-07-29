@@ -109,7 +109,7 @@ export default function FlashRunDetail() {
             </button>
           ) : null}
           <span className="toolbar-total">
-            {run.script ? `${run.script.name} v${run.script.version_no}` : "?"} ·{" "}
+            {run.deployment ? `${run.deployment.name} v${run.deployment.version_no}` : "?"} ·{" "}
             {run.production_run ? run.production_run.label : "?"} · {run.operator || "no operator"} ·{" "}
             {run.station || "?"} · {fmtWhen(run.started_at)} · {fmtDuration(run.duration_ms)}
           </span>

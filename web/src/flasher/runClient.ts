@@ -10,8 +10,9 @@ import { flasherWsUrl } from "../api";
 import { Station, type FlashImage, type LogDir } from "./station";
 
 export interface RunSpec {
-  script_name: string;
-  script_version_no: number;
+  deployment_name: string;
+  deployment_version_no: number;
+  draft: boolean;
   chip: string;
   transport_profile: string;
   monitor_baud: number;

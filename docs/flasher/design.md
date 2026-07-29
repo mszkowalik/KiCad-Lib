@@ -777,6 +777,91 @@ Verified against xdrv_128 + the fs sources:
   a small firmware addition (extend `LteState` or add an `LteInfo` command).
   The schema and capture path are ready for it.
 
+## 14. Deployment bundles — ONE revision binds everything (2026-07-29)
+
+The first pass gave firmware, berryware and the procedure their own versioned
+lives and bound them through a "deployment script" version. The binding was
+real but invisible: five sibling lists in the UI, no composed view, no diff,
+and authoring meant six publishes across four panels. User verdict: *"they
+don't seem combined… I'd like a single revision that binds together other
+revisions of firmware and berryware"*, plus *"the files come in bundles, so
+even if files are independently revisioned, I'm mostly interested in the
+bundle version and which files it has"*.
+
+### The model
+
+**Deployment** (named target per project) → **Deployment version** (THE
+revision). One version pins:
+
+| Slot | Stored as | Independently versioned? |
+|---|---|---|
+| Firmware | `deployment_images` (asset + offset) | assets are content-addressed and shared |
+| Berryware | `deployment_files` (exact `device_file_versions`, ordered) | yes — plus a **set label** (`release-1.3.11`) and a set fingerprint, because the user thinks in bundles |
+| Procedure | `steps` JSONB | in the version |
+| Parameters | `param_set_id` + `param_defaults` | values resolve at run time, snapshotted per run |
+| Transport | profile + monitor baud | in the version |
+
+**The `Release` entity is gone.** Its images moved onto the version and its
+identity became a derived **fingerprint** (`sha256` over the ordered
+address+sha list; the file set gets its own, order-independent). That is what
+lets the UI say "firmware unchanged since v5" or "3 files changed" with no
+second object to manage — and it works: the V2 eras that share a berryware set
+share a fingerprint, which is how every historical set recovered its real name
+(`release-0.0.1` … `release-1.3.11`) by propagation.
+
+**Channels** (`production`, `bench`) are named pointers at a version. Going
+live and rolling back are channel moves; history is never edited. A batch
+either pins a version or follows a channel, and a run always records what
+actually resolved.
+
+### Guardrails (`services/flasher/validate.py`)
+
+One function serves both the live composer and the publish button, so the
+editor can never disagree with the gate. Errors refuse publication:
+
+1. every pinned artifact is published;
+2. chip agreement across deployment, images and transport (`usb_serial_jtag`
+   only for native-USB parts);
+3. flash-map offsets parse, are unique, and **do not overlap** (checked
+   against real image sizes);
+4. **dataflow**: every `{placeholder}` resolves from parameters or an EARLIER
+   step's capture, and every asserted variable exists — this catches the
+   `{SSId1}` vs `{SSID1}` class of typo before a device sees it;
+5. downloads need pinned files and **`autoexec.be` must be last**;
+6. flashing needs images and `esp_connect` first;
+7. no serial op before `serial_open`.
+
+Warnings cover the rest (SIM PIN with no source, pinned-but-unused artifacts,
+`esp_connect` not first). Publishing also **requires a comment** and shows the
+diff — you approve a diff, never a form.
+
+### Elasticity
+
+`POST /deployments/{id}/versions` takes a `from_version_id` and **inherits
+every section you do not name**, so "bump the berryware" is one field. The
+composer adds a **folder import**: drop `firmware/fs/` or a
+`berry/release-x.y.z` directory and only files whose content actually changed
+mint a version — verified idempotent (19 files → 0 changed on a re-import).
+Draft versions are runnable as **bench trials** (no batch, recorded
+`draft_run`); a batch runs published versions only.
+
+That import exposed a real bug worth keeping written down: text files must be
+stored with **LF endings normalised**. The old path read text (Python
+translates CRLF), the new one read bytes, so five CRLF files reported
+"changed" on every import forever. Content addressing is only useful if the
+same source yields the same hash whoever uploads it.
+
+### Migration
+
+Renames, not rebuilds: `deployment_script*` → `deployment*` with ids intact,
+so all **6,321 imported V2 runs** kept their version. Release images folded
+into the versions that pinned them, chip lifted onto the deployment, release
+tables dropped. The rename half runs BEFORE `create_all` — otherwise it would
+build empty bundle tables beside the populated script ones and strand the
+history.
+
+---
+
 ### Retroactive V2 import (2026-07-29)
 
 All 6,321 `CE_Dongle_production` reports (2024-06-10..2026-07-08) are in the

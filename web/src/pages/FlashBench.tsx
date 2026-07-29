@@ -1,14 +1,18 @@
 /** The operator bench: up to 5 station slots, each one USB adapter = one
  *  device. Chromium-only (Web Serial needs a secure context — localhost or
- *  HTTPS). The engine runs server-side; every line is stored as it arrives. */
+ *  HTTPS). The engine runs server-side; every line is stored as it arrives.
+ *
+ *  Two modes: a BATCH run (the batch's deployment version, published only) or
+ *  a BENCH TRIAL (no batch, any version including a draft — recorded as such).
+ */
 import { useEffect, useMemo, useState } from "react";
 import {
   errorMessage,
-  getProjects,
   getRuns,
+  getProjects,
   isAbortError,
-  listDeploymentScripts,
-  type DeploymentScriptRow,
+  listDeployments,
+  type DeploymentRow,
   type ProjectInfo,
   type RunInfo,
 } from "../api";
@@ -19,11 +23,12 @@ import { useStickyState } from "../useStickyState";
 export default function FlashBench() {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [runs, setRuns] = useState<RunInfo[]>([]);
-  const [scripts, setScripts] = useState<DeploymentScriptRow[]>([]);
+  const [deployments, setDeployments] = useState<DeploymentRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [projectId, setProjectId] = useStickyState<number | null>("bench.project", null);
+  const [mode, setMode] = useStickyState<"batch" | "trial">("bench.mode", "batch");
   const [runId, setRunId] = useStickyState<number | null>("bench.run", null);
-  const [scriptVersionId, setScriptVersionId] = useStickyState<number | null>("bench.scriptv", null);
+  const [versionId, setVersionId] = useStickyState<number | null>("bench.versionv2", null);
   const [operator, setOperator] = useStickyState<string>("bench.operator", "");
   const [simPin, setSimPin] = useState("");
   const [overrideReason, setOverrideReason] = useState("");
@@ -46,10 +51,10 @@ export default function FlashBench() {
   useEffect(() => {
     if (!validProject) return;
     const ac = new AbortController();
-    Promise.all([getRuns(validProject, ac.signal), listDeploymentScripts(validProject, ac.signal)])
-      .then(([r, s]) => {
+    Promise.all([getRuns(validProject, ac.signal), listDeployments(validProject, ac.signal)])
+      .then(([r, d]) => {
         setRuns(r);
-        setScripts(s);
+        setDeployments(d);
       })
       .catch((err) => {
         if (!isAbortError(err)) setError(errorMessage(err));
@@ -57,17 +62,25 @@ export default function FlashBench() {
     return () => ac.abort();
   }, [validProject]);
 
-  const publishedVersions = useMemo(
+  /** Every version, grouped by deployment, with channel and status labels. */
+  const versionOptions = useMemo(
     () =>
-      scripts.flatMap((s) =>
-        s.versions
-          .filter((v) => v.status === "published")
-          .map((v) => ({ id: v.id, label: `${s.name} v${v.version_no}` })),
-      ),
-    [scripts],
+      deployments.map((d) => ({
+        name: d.name,
+        versions: d.versions.map((v) => {
+          const chans = d.channels.filter((c) => c.deployment_version_id === v.id).map((c) => c.name);
+          const tags = [v.status, ...chans].join(", ");
+          return { id: v.id, label: `v${v.version_no} (${tags})`, status: v.status };
+        }),
+      })),
+    [deployments],
   );
 
   const validRun = runs.some((r) => r.id === runId) ? runId : null;
+  const chosenVersion = deployments
+    .flatMap((d) => d.versions.map((v) => ({ d, v })))
+    .find((x) => x.v.id === versionId);
+  const trialIsDraft = mode === "trial" && chosenVersion?.v.status === "draft";
 
   return (
     <div className="main-solo">
@@ -93,7 +106,7 @@ export default function FlashBench() {
               onChange={(e) => {
                 setProjectId(Number(e.target.value));
                 setRunId(null);
-                setScriptVersionId(null);
+                setVersionId(null);
               }}
             >
               {projects.map((p) => (
@@ -102,24 +115,45 @@ export default function FlashBench() {
             </select>
             <select
               className="row-input"
-              value={validRun ?? ""}
-              title="production batch — every programming run belongs to one"
-              onChange={(e) => setRunId(e.target.value === "" ? null : Number(e.target.value))}
+              value={mode}
+              title="a batch run uses the batch's published version; a bench trial can run a draft"
+              onChange={(e) => setMode(e.target.value as "batch" | "trial")}
             >
-              <option value="">— pick the production batch —</option>
-              {runs.map((r) => (
-                <option key={r.id} value={r.id}>{r.label}</option>
-              ))}
+              <option value="batch">batch run</option>
+              <option value="trial">bench trial (no batch)</option>
             </select>
+            {mode === "batch" ? (
+              <select
+                className="row-input"
+                value={validRun ?? ""}
+                title="production batch — the run belongs to it"
+                onChange={(e) => setRunId(e.target.value === "" ? null : Number(e.target.value))}
+              >
+                <option value="">— pick the production batch —</option>
+                {runs.map((r) => (
+                  <option key={r.id} value={r.id}>{r.label}</option>
+                ))}
+              </select>
+            ) : null}
             <select
               className="row-input"
-              value={scriptVersionId ?? ""}
-              title="deployment script version — leave on the batch default unless you know why"
-              onChange={(e) => setScriptVersionId(e.target.value === "" ? null : Number(e.target.value))}
+              value={versionId ?? ""}
+              title={
+                mode === "batch"
+                  ? "leave empty to use the batch's assigned deployment version"
+                  : "the version to try out — drafts are allowed here"
+              }
+              onChange={(e) => setVersionId(e.target.value === "" ? null : Number(e.target.value))}
             >
-              <option value="">batch's assigned script</option>
-              {publishedVersions.map((v) => (
-                <option key={v.id} value={v.id}>{v.label}</option>
+              <option value="">
+                {mode === "batch" ? "batch's assigned version" : "— pick a version to try —"}
+              </option>
+              {versionOptions.map((group) => (
+                <optgroup key={group.name} label={group.name}>
+                  {group.versions.map((v) => (
+                    <option key={v.id} value={v.id}>{v.label}</option>
+                  ))}
+                </optgroup>
               ))}
             </select>
             <input
@@ -137,13 +171,27 @@ export default function FlashBench() {
               onChange={(e) => setSimPin(e.target.value)}
             />
           </div>
-          {scriptVersionId !== null ? (
+          {mode === "batch" && versionId !== null ? (
             <input
               className="row-input override-reason"
-              placeholder="override reason — why not the batch's assigned script?"
+              placeholder="override reason — why not the batch's assigned version?"
               value={overrideReason}
               onChange={(e) => setOverrideReason(e.target.value)}
             />
+          ) : null}
+          {trialIsDraft ? (
+            <p className="banner-warn">
+              Trying a DRAFT version. Each run is marked as a draft run and cannot be counted as
+              batch production.
+            </p>
+          ) : null}
+          {chosenVersion ? (
+            <p className="muted">
+              {chosenVersion.d.name} v{chosenVersion.v.version_no} · {chosenVersion.v.image_count}{" "}
+              image(s) · {chosenVersion.v.file_count} berryware files
+              {chosenVersion.v.files_label ? ` (${chosenVersion.v.files_label})` : ""} ·{" "}
+              {chosenVersion.v.step_count} steps
+            </p>
           ) : null}
         </div>
 
@@ -152,8 +200,8 @@ export default function FlashBench() {
             <BenchStation
               key={i}
               index={i}
-              productionRunId={validRun}
-              scriptVersionId={scriptVersionId}
+              productionRunId={mode === "batch" ? validRun : null}
+              deploymentVersionId={versionId}
               overrideReason={overrideReason}
               operator={operator}
               simPin={simPin}

@@ -1,10 +1,11 @@
-"""Production flasher: firmware releases, device files, deployment scripts,
-programming runs, produced devices.
+"""Production flasher: deployments, firmware, berryware, runs and devices.
 
-Vocabulary (user decision 2026-07-29, docs/flasher/design.md §13):
-a RELEASE is only the flash (firmware images at offsets); a DEPLOYMENT SCRIPT
-is the versioned config/test scenario that PINS one release version and a set
-of device file versions. A programming run pins the script version it ran.
+ONE revision binds everything (user decision 2026-07-29, design.md §14): a
+DEPLOYMENT VERSION pins firmware images at their offsets, the exact berryware
+file versions, the procedure and the parameter wiring. A programming run pins
+one deployment version, so "what did this device get" has a single answer.
+Channels ("production", "bench") are named pointers at a version — going live
+and rolling back are channel moves, never edits to history.
 
 `GET /files/{version_id}/{filename}` is deliberately unauthenticated: the
 DEVICE fetches it over plain HTTP with UrlFetch (no auth headers), same
@@ -28,6 +29,7 @@ from ..db import get_db
 from .. import models as M
 from ..services import storage
 from ..services import crypto
+from ..services.flasher import bundle, validate
 from ..services.flasher.engine import RunEngine
 from .util import audit
 
@@ -122,130 +124,8 @@ def firmware_bin(asset_id: int, db: Session = Depends(get_db)):
     )
 
 
-# ------------------------------------------------------------------ releases
-
-class ReleaseIn(BaseModel):
-    name: str
-    chip: str = ""
-    description: str = ""
-
-
-class ReleaseImageIn(BaseModel):
-    firmware_asset_id: int
-    address: str = "0x0"
-
-
-class ReleaseVersionIn(BaseModel):
-    comment: str = ""
-    created_by: str = ""
-    flash_config: dict | None = None
-    images: list[ReleaseImageIn] = []
-
-
-def _release_version_json(v: M.ReleaseVersion) -> dict:
-    return {
-        "id": v.id, "version_no": v.version_no, "status": v.status,
-        "comment": v.comment, "created_by": v.created_by,
-        "approved_by": v.approved_by, "flash_config": v.flash_config,
-        "created_at": _iso(v.created_at),
-        "images": [
-            {
-                "firmware_asset_id": i.firmware_asset_id, "address": i.address,
-                "filename": i.asset.filename, "kind": i.asset.kind,
-                "size_bytes": i.asset.size_bytes, "sha256": i.asset.sha256,
-            }
-            for i in v.images
-        ],
-    }
-
-
-@router.get("/projects/{project_id}/releases")
-def list_releases(project_id: int, db: Session = Depends(get_db)):
-    rows = (
-        db.query(M.Release).filter(M.Release.project_id == project_id)
-        .order_by(M.Release.name).all()
-    )
-    return [
-        {
-            "id": r.id, "name": r.name, "chip": r.chip, "description": r.description,
-            "current_version_id": r.current_version_id,
-            "versions": [_release_version_json(v) for v in r.versions],
-        }
-        for r in rows
-    ]
-
-
-@router.post("/projects/{project_id}/releases")
-def create_release(project_id: int, body: ReleaseIn, db: Session = Depends(get_db)):
-    if db.get(M.Project, project_id) is None:
-        raise HTTPException(404, "no such project")
-    release = M.Release(project_id=project_id, name=body.name.strip(),
-                        chip=body.chip.strip(), description=body.description)
-    db.add(release)
-    db.commit()
-    return {"id": release.id}
-
-
-@router.post("/releases/{release_id}/versions")
-def create_release_version(release_id: int, body: ReleaseVersionIn, db: Session = Depends(get_db)):
-    release = db.get(M.Release, release_id)
-    if release is None:
-        raise HTTPException(404, "no such release")
-    if not body.images:
-        raise HTTPException(400, "a release version needs at least one image")
-    seen_addr = set()
-    for img in body.images:
-        asset = db.get(M.FirmwareAsset, img.firmware_asset_id)
-        if asset is None or asset.project_id != release.project_id:
-            raise HTTPException(400, f"firmware asset {img.firmware_asset_id} not in this project")
-        if img.address in seen_addr:
-            raise HTTPException(400, f"two images at address {img.address}")
-        seen_addr.add(img.address)
-    version_no = max((v.version_no for v in release.versions), default=0) + 1
-    version = M.ReleaseVersion(
-        release_id=release.id, version_no=version_no, status="draft",
-        created_by=body.created_by, comment=body.comment, flash_config=body.flash_config,
-    )
-    db.add(version)
-    db.flush()
-    for pos, img in enumerate(body.images):
-        db.add(M.ReleaseImage(release_version_id=version.id,
-                              firmware_asset_id=img.firmware_asset_id,
-                              address=img.address, position=pos))
-    db.commit()
-    return _release_version_json(version)
-
-
 class PublishIn(BaseModel):
     approved_by: str = ""
-
-
-@router.post("/release-versions/{version_id}/publish")
-def publish_release_version(version_id: int, body: PublishIn, db: Session = Depends(get_db)):
-    version = db.get(M.ReleaseVersion, version_id)
-    if version is None:
-        raise HTTPException(404, "no such release version")
-    if version.status == "rejected":
-        raise HTTPException(409, "version was rejected")
-    version.status = "published"
-    version.approved_by = body.approved_by or None
-    version.release.current_version_id = version.id
-    db.commit()
-    audit(db, "flasher.release_publish", "release_version", version.id,
-          details=f"{version.release.name} v{version.version_no}", actor=body.approved_by)
-    return _release_version_json(version)
-
-
-@router.post("/release-versions/{version_id}/reject")
-def reject_release_version(version_id: int, body: PublishIn, db: Session = Depends(get_db)):
-    version = db.get(M.ReleaseVersion, version_id)
-    if version is None:
-        raise HTTPException(404, "no such release version")
-    if version.status == "published":
-        raise HTTPException(409, "already published")
-    version.status = "rejected"
-    db.commit()
-    return {"ok": True}
 
 
 # -------------------------------------------------------------- device files
@@ -267,6 +147,18 @@ def _file_version_json(v: M.DeviceFileVersion, with_content: bool = False) -> di
     if with_content:
         out["content"] = v.content
     return out
+
+
+def _normalise_text(raw: str) -> str:
+    """Store device files with LF endings, always.
+
+    Content addressing is only useful if the same source yields the same
+    hash whoever uploads it. A CRLF file read as bytes hashes differently
+    from the same file read as text (Python translates newlines), which made
+    5 of the V3 files report "changed" on every import when nothing had.
+    The device does not care: Berry and JSON both accept LF.
+    """
+    return raw.replace("\r\n", "\n").replace("\r", "\n")
 
 
 @router.get("/projects/{project_id}/device-files")
@@ -304,11 +196,12 @@ def create_device_file_version(project_id: int, body: DeviceFileIn, db: Session 
         db.flush()
     elif body.description:
         file.description = body.description
-    content_bytes = body.content.encode("utf-8")
+    content = _normalise_text(body.content)
+    content_bytes = content.encode("utf-8")
     version = M.DeviceFileVersion(
         device_file_id=file.id,
         version_no=max((v.version_no for v in file.versions), default=0) + 1,
-        status="draft", content=body.content,
+        status="draft", content=content,
         sha256=hashlib.sha256(content_bytes).hexdigest(),
         size_bytes=len(content_bytes),
         created_by=body.created_by, comment=body.comment,
@@ -354,6 +247,74 @@ def reject_device_file_version(version_id: int, body: PublishIn, db: Session = D
     return {"ok": True}
 
 
+@router.post("/projects/{project_id}/device-files/import")
+async def import_device_files(
+    project_id: int,
+    files: list[UploadFile] = File(...),
+    label: str = Form(""),
+    created_by: str = Form(""),
+    publish: bool = Form(True),
+    db: Session = Depends(get_db),
+):
+    """Import a whole berryware FOLDER at once — the composer's file drop.
+
+    Content-addressed per file: a file whose bytes match its newest published
+    version is REUSED (no version churn), anything else becomes a new version.
+    Returns the resolved set, so the composer can pin it directly. This is the
+    step that turns "19 files, 19 manual publishes" into one action.
+    """
+    if db.get(M.Project, project_id) is None:
+        raise HTTPException(404, "no such project")
+    resolved: list[dict] = []
+    for upload in files:
+        name = (upload.filename or "").split("/")[-1]
+        if not name:
+            continue
+        raw = await upload.read()
+        try:
+            content = _normalise_text(raw.decode("utf-8"))
+        except UnicodeDecodeError:
+            raise HTTPException(
+                400, f"{name} is not UTF-8 text — berryware files are sources, not binaries")
+        sha = hashlib.sha256(content.encode()).hexdigest()
+        df = (
+            db.query(M.DeviceFile)
+            .filter(M.DeviceFile.project_id == project_id, M.DeviceFile.filename == name)
+            .one_or_none()
+        )
+        if df is None:
+            df = M.DeviceFile(project_id=project_id, filename=name)
+            db.add(df)
+            db.flush()
+        same = next((v for v in df.versions if v.sha256 == sha and v.status == "published"), None)
+        if same is not None:
+            resolved.append({"filename": name, "device_file_version_id": same.id,
+                             "version_no": same.version_no, "state": "unchanged",
+                             "size_bytes": same.size_bytes})
+            continue
+        v = M.DeviceFileVersion(
+            device_file_id=df.id,
+            version_no=max((x.version_no for x in df.versions), default=0) + 1,
+            status="published" if publish else "draft",
+            content=content, sha256=sha, size_bytes=len(content.encode()),
+            created_by=created_by,
+            comment=f"imported from {label}" if label else "folder import",
+        )
+        db.add(v)
+        db.flush()
+        if publish:
+            df.current_version_id = v.id
+        resolved.append({"filename": name, "device_file_version_id": v.id,
+                         "version_no": v.version_no,
+                         "state": "new" if v.version_no == 1 else "changed",
+                         "size_bytes": v.size_bytes})
+    db.commit()
+    audit(db, "flasher.files_import", "project", project_id,
+          details=f"{len(resolved)} files ({label or 'folder import'})", actor=created_by)
+    return {"label": label, "files": sorted(resolved, key=lambda r: r["filename"]),
+            "changed": sum(1 for r in resolved if r["state"] != "unchanged")}
+
+
 @router.get("/files/{version_id}/{filename}")
 def serve_device_file(version_id: int, filename: str, db: Session = Depends(get_db)):
     """What the DEVICE downloads with UrlFetch. Published versions only; the
@@ -366,165 +327,429 @@ def serve_device_file(version_id: int, filename: str, db: Session = Depends(get_
     return Response(content=v.content.encode("utf-8"), media_type="application/octet-stream")
 
 
-# ------------------------------------------------------- deployment scripts
+# --------------------------------------------------------------- deployments
+# ONE revision binds firmware + berryware + procedure + parameters (user
+# decision 2026-07-29). Composing a new version is a single call: say what
+# CHANGES, everything else is inherited from the version you start at.
 
-class ScriptIn(BaseModel):
+class DeploymentIn(BaseModel):
     name: str
     description: str = ""
+    chip: str = ""
 
 
-class ScriptVersionIn(BaseModel):
+class ImageIn(BaseModel):
+    firmware_asset_id: int
+    address: str = "0x0"
+
+
+class ComposeIn(BaseModel):
+    """Compose a new draft version.
+
+    `from_version_id` is the starting point; any section left as None is
+    INHERITED from it, so "bump the firmware" is a two-field request. Starting
+    from nothing (a first version) requires the sections you care about.
+    """
+    from_version_id: int | None = None
     comment: str = ""
     created_by: str = ""
-    release_version_id: int | None = None
-    transport_profile: str = "uart_bridge"
-    monitor_baud: int = 115200
-    steps: list[dict] = []
+    # sections — None means "inherit"
+    images: list[ImageIn] | None = None
+    file_version_ids: list[int] | None = None
+    files_label: str | None = None
+    steps: list[dict] | None = None
     param_set_id: int | None = None
     param_defaults: dict | None = None
-    file_version_ids: list[int] = []
+    transport_profile: str | None = None
+    monitor_baud: int | None = None
+    flash_config: dict | None = None
+    # convenience: pin the newest published version of every file already in
+    # the starting version (the composer's "latest berryware" button)
+    latest_files: bool = False
 
 
-def _script_version_json(v: M.DeploymentScriptVersion, db: Session) -> dict:
-    release = None
-    if v.release_version_id:
-        rv = db.get(M.ReleaseVersion, v.release_version_id)
-        if rv:
-            release = {"release_version_id": rv.id, "release_id": rv.release_id,
-                       "name": rv.release.name, "version_no": rv.version_no,
-                       "status": rv.status, "chip": rv.release.chip}
-    return {
-        "id": v.id, "version_no": v.version_no, "status": v.status,
-        "comment": v.comment, "created_by": v.created_by, "approved_by": v.approved_by,
-        "transport_profile": v.transport_profile, "monitor_baud": v.monitor_baud,
-        "steps": v.steps or [], "param_set_id": v.param_set_id,
-        "param_defaults": v.param_defaults, "created_at": _iso(v.created_at),
-        "release": release,
-        "files": [
-            {
-                "device_file_version_id": link.device_file_version_id,
-                "filename": link.file_version.file.filename,
-                "version_no": link.file_version.version_no,
-                "status": link.file_version.status,
-                "size_bytes": link.file_version.size_bytes,
-            }
-            for link in v.files
+def _deployment_json(d: M.Deployment, db: Session, deep: bool = False) -> dict:
+    channels = (
+        db.query(M.DeploymentChannel).filter(M.DeploymentChannel.deployment_id == d.id).all()
+    )
+    versions = sorted(d.versions, key=lambda v: v.version_no)
+    prev_by_id = {}
+    for i, v in enumerate(versions):
+        prev_by_id[v.id] = versions[i - 1] if i else None
+    out = {
+        "id": d.id, "name": d.name, "description": d.description, "chip": d.chip,
+        "project_id": d.project_id, "current_version_id": d.current_version_id,
+        "created_at": _iso(d.created_at),
+        "channels": [
+            {"name": c.name, "deployment_version_id": c.deployment_version_id,
+             "version_no": (c.version.version_no if c.version else None),
+             "status": (c.version.status if c.version else None),
+             "updated_by": c.updated_by, "updated_at": _iso(c.updated_at)}
+            for c in sorted(channels, key=lambda c: c.name)
+        ],
+        "versions": [
+            {**bundle.version_json(db, v, deep=False),
+             "changes": bundle.changes_since(prev_by_id[v.id], v)}
+            for v in reversed(versions)
         ],
     }
+    if deep and d.current_version_id:
+        cur = db.get(M.DeploymentVersion, d.current_version_id)
+        if cur:
+            out["current"] = bundle.version_json(db, cur)
+    return out
 
 
-@router.get("/projects/{project_id}/scripts")
-def list_scripts(project_id: int, db: Session = Depends(get_db)):
+@router.get("/projects/{project_id}/deployments")
+def list_deployments(project_id: int, db: Session = Depends(get_db)):
     rows = (
-        db.query(M.DeploymentScript).filter(M.DeploymentScript.project_id == project_id)
-        .order_by(M.DeploymentScript.name).all()
+        db.query(M.Deployment).filter(M.Deployment.project_id == project_id)
+        .order_by(M.Deployment.name).all()
     )
-    return [
-        {
-            "id": s.id, "name": s.name, "description": s.description,
-            "current_version_id": s.current_version_id,
-            "versions": [_script_version_json(v, db) for v in s.versions],
-        }
-        for s in rows
-    ]
+    return [_deployment_json(d, db) for d in rows]
 
 
-@router.post("/projects/{project_id}/scripts")
-def create_script(project_id: int, body: ScriptIn, db: Session = Depends(get_db)):
+@router.post("/projects/{project_id}/deployments")
+def create_deployment(project_id: int, body: DeploymentIn, db: Session = Depends(get_db)):
     if db.get(M.Project, project_id) is None:
         raise HTTPException(404, "no such project")
-    script = M.DeploymentScript(project_id=project_id, name=body.name.strip(),
-                                description=body.description)
-    db.add(script)
+    d = M.Deployment(project_id=project_id, name=body.name.strip(),
+                     description=body.description, chip=body.chip.strip())
+    db.add(d)
     db.commit()
-    return {"id": script.id}
+    return {"id": d.id}
 
 
-@router.post("/scripts/{script_id}/versions")
-def create_script_version(script_id: int, body: ScriptVersionIn, db: Session = Depends(get_db)):
-    script = db.get(M.DeploymentScript, script_id)
-    if script is None:
-        raise HTTPException(404, "no such deployment script")
-    if body.transport_profile not in TRANSPORT_PROFILES:
+@router.patch("/deployments/{deployment_id}")
+def patch_deployment(deployment_id: int, body: DeploymentIn, db: Session = Depends(get_db)):
+    d = db.get(M.Deployment, deployment_id)
+    if d is None:
+        raise HTTPException(404, "no such deployment")
+    d.name = body.name.strip() or d.name
+    d.description = body.description
+    d.chip = body.chip.strip()
+    db.commit()
+    return _deployment_json(d, db)
+
+
+@router.get("/deployments/{deployment_id}")
+def get_deployment(deployment_id: int, db: Session = Depends(get_db)):
+    d = db.get(M.Deployment, deployment_id)
+    if d is None:
+        raise HTTPException(404, "no such deployment")
+    return _deployment_json(d, db, deep=True)
+
+
+@router.post("/deployments/{deployment_id}/versions")
+def compose_version(deployment_id: int, body: ComposeIn, db: Session = Depends(get_db)):
+    """Create a DRAFT version. Sections left None inherit from `from_version_id`."""
+    d = db.get(M.Deployment, deployment_id)
+    if d is None:
+        raise HTTPException(404, "no such deployment")
+    base = None
+    if body.from_version_id:
+        base = db.get(M.DeploymentVersion, body.from_version_id)
+        if base is None or base.deployment_id != d.id:
+            raise HTTPException(400, "from_version_id is not a version of this deployment")
+
+    def inherit(field, base_value, given):
+        return base_value if given is None else given
+
+    transport = inherit("transport_profile", base.transport_profile if base else "uart_bridge",
+                        body.transport_profile)
+    if transport not in TRANSPORT_PROFILES:
         raise HTTPException(400, f"transport_profile must be one of {TRANSPORT_PROFILES}")
-    if body.release_version_id is not None:
-        rv = db.get(M.ReleaseVersion, body.release_version_id)
-        if rv is None or rv.release.project_id != script.project_id:
-            raise HTTPException(400, "release version not in this project")
-    for step in body.steps:
+    steps = inherit("steps", (base.steps if base else []) or [], body.steps)
+    for step in steps:
         if step.get("op") not in STEP_OPS:
             raise HTTPException(400, f"unknown op {step.get('op')!r}")
-    file_versions = []
-    for fvid in body.file_version_ids:
-        fv = db.get(M.DeviceFileVersion, fvid)
-        if fv is None or fv.file.project_id != script.project_id:
-            raise HTTPException(400, f"device file version {fvid} not in this project")
-        file_versions.append(fv)
-    version = M.DeploymentScriptVersion(
-        deployment_script_id=script.id,
-        version_no=max((v.version_no for v in script.versions), default=0) + 1,
+
+    version = M.DeploymentVersion(
+        deployment_id=d.id,
+        version_no=max((v.version_no for v in d.versions), default=0) + 1,
         status="draft", created_by=body.created_by, comment=body.comment,
-        release_version_id=body.release_version_id,
-        transport_profile=body.transport_profile, monitor_baud=body.monitor_baud,
-        steps=body.steps, param_set_id=body.param_set_id,
-        param_defaults=body.param_defaults,
+        transport_profile=transport,
+        monitor_baud=inherit("monitor_baud", base.monitor_baud if base else 115200,
+                             body.monitor_baud),
+        flash_config=inherit("flash_config", base.flash_config if base else None,
+                             body.flash_config),
+        steps=steps,
+        param_set_id=inherit("param_set_id", base.param_set_id if base else None,
+                             body.param_set_id),
+        param_defaults=inherit("param_defaults", base.param_defaults if base else None,
+                               body.param_defaults),
+        files_label=inherit("files_label", base.files_label if base else "", body.files_label),
     )
     db.add(version)
     db.flush()
-    for pos, fv in enumerate(file_versions):
-        db.add(M.DeploymentScriptFile(deployment_script_version_id=version.id,
-                                      device_file_version_id=fv.id, position=pos))
+
+    # --- firmware images
+    images = body.images
+    if images is None and base is not None:
+        images = [ImageIn(firmware_asset_id=i.firmware_asset_id, address=i.address)
+                  for i in base.images]
+    seen = set()
+    for pos, img in enumerate(images or []):
+        asset = db.get(M.FirmwareAsset, img.firmware_asset_id)
+        if asset is None or asset.project_id != d.project_id:
+            raise HTTPException(400, f"firmware asset {img.firmware_asset_id} not in this project")
+        if img.address in seen:
+            raise HTTPException(400, f"two images at address {img.address}")
+        seen.add(img.address)
+        db.add(M.DeploymentImage(deployment_version_id=version.id,
+                                 firmware_asset_id=asset.id, address=img.address, position=pos))
+
+    # --- berryware files
+    file_ids = body.file_version_ids
+    if file_ids is None and base is not None:
+        if body.latest_files:
+            # newest published version of each file the base pinned
+            file_ids = []
+            for link in sorted(base.files, key=lambda f: f.position):
+                newest = (
+                    db.query(M.DeviceFileVersion)
+                    .filter(M.DeviceFileVersion.device_file_id == link.file_version.device_file_id,
+                            M.DeviceFileVersion.status == "published")
+                    .order_by(M.DeviceFileVersion.version_no.desc())
+                    .first()
+                )
+                file_ids.append(newest.id if newest else link.device_file_version_id)
+        else:
+            file_ids = [f.device_file_version_id for f in sorted(base.files, key=lambda f: f.position)]
+    ordered = _order_files(db, file_ids or [], d.project_id)
+    for pos, fv_id in enumerate(ordered):
+        db.add(M.DeploymentFile(deployment_version_id=version.id,
+                                device_file_version_id=fv_id, position=pos))
+
+    db.flush()
+    db.refresh(version)
+    bundle.stamp(db, version)
     db.commit()
-    return _script_version_json(version, db)
+    audit(db, "flasher.version_compose", "deployment_version", version.id,
+          details=f"{d.name} v{version.version_no} (draft)", actor=body.created_by)
+    return {**bundle.version_json(db, version),
+            "validation": validate.check(db, version)}
 
 
-@router.get("/script-versions/{version_id}")
-def get_script_version(version_id: int, db: Session = Depends(get_db)):
-    v = db.get(M.DeploymentScriptVersion, version_id)
+def _order_files(db: Session, file_version_ids: list[int], project_id: int) -> list[int]:
+    """Validate ownership, drop duplicates of the same file, and put
+    autoexec.be last — a partial download must never leave a bootable device."""
+    seen_files: set[int] = set()
+    rows = []
+    for fv_id in file_version_ids:
+        fv = db.get(M.DeviceFileVersion, fv_id)
+        if fv is None or fv.file.project_id != project_id:
+            raise HTTPException(400, f"device file version {fv_id} not in this project")
+        if fv.device_file_id in seen_files:
+            raise HTTPException(400, f"two versions of {fv.file.filename} in one deployment")
+        seen_files.add(fv.device_file_id)
+        rows.append((fv.file.filename, fv.id))
+    rows.sort(key=lambda r: (r[0] == "autoexec.be", r[0]))
+    return [fv_id for _, fv_id in rows]
+
+
+@router.get("/deployment-versions/{version_id}")
+def get_deployment_version(version_id: int, db: Session = Depends(get_db)):
+    v = db.get(M.DeploymentVersion, version_id)
     if v is None:
-        raise HTTPException(404, "no such script version")
-    return {"script_id": v.deployment_script_id, "script_name": v.script.name,
-            **_script_version_json(v, db)}
+        raise HTTPException(404, "no such deployment version")
+    d = db.get(M.Deployment, v.deployment_id)
+    versions = sorted(d.versions, key=lambda x: x.version_no)
+    idx = [x.id for x in versions].index(v.id)
+    prev = versions[idx - 1] if idx else None
+    runs = (
+        db.query(M.ProgrammingRun)
+        .filter(M.ProgrammingRun.deployment_version_id == v.id).count()
+    )
+    devices = (
+        db.query(M.ProgrammingRun.device_unit_id)
+        .filter(M.ProgrammingRun.deployment_version_id == v.id,
+                M.ProgrammingRun.device_unit_id.isnot(None))
+        .distinct().count()
+    )
+    batches = (
+        db.query(M.ProductionRun)
+        .filter(M.ProductionRun.deployment_version_id == v.id).all()
+    )
+    return {
+        **bundle.version_json(db, v),
+        "deployment": {"id": d.id, "name": d.name, "chip": d.chip, "project_id": d.project_id},
+        "changes": bundle.changes_since(prev, v),
+        "validation": validate.check(db, v),
+        "where_used": {
+            "runs": runs, "devices": devices,
+            "batches": [{"id": b.id, "label": b.label} for b in batches],
+            "channels": [
+                c.name for c in db.query(M.DeploymentChannel)
+                .filter(M.DeploymentChannel.deployment_version_id == v.id)
+            ],
+        },
+    }
 
 
-@router.post("/script-versions/{version_id}/publish")
-def publish_script_version(version_id: int, body: PublishIn, db: Session = Depends(get_db)):
-    v = db.get(M.DeploymentScriptVersion, version_id)
+@router.get("/deployment-versions/{version_id}/diff")
+def diff_deployment_version(version_id: int, against: int | None = None,
+                            db: Session = Depends(get_db)):
+    cur = db.get(M.DeploymentVersion, version_id)
+    if cur is None:
+        raise HTTPException(404, "no such deployment version")
+    if against:
+        prev = db.get(M.DeploymentVersion, against)
+        if prev is None or prev.deployment_id != cur.deployment_id:
+            raise HTTPException(400, "the other version belongs to a different deployment")
+    else:
+        d = db.get(M.Deployment, cur.deployment_id)
+        earlier = [v for v in sorted(d.versions, key=lambda x: x.version_no)
+                   if v.version_no < cur.version_no]
+        prev = earlier[-1] if earlier else None
+    if prev is None:
+        return {"from": None, "to": {"id": cur.id, "version_no": cur.version_no},
+                "images": [], "files": [], "steps_changed": True,
+                "changes": bundle.changes_since(None, cur)}
+    return bundle.diff(prev, cur)
+
+
+@router.get("/deployment-versions/{version_id}/validate")
+def validate_deployment_version(version_id: int, db: Session = Depends(get_db)):
+    v = db.get(M.DeploymentVersion, version_id)
     if v is None:
-        raise HTTPException(404, "no such script version")
+        raise HTTPException(404, "no such deployment version")
+    return validate.check(db, v)
+
+
+class VersionPatch(BaseModel):
+    """Edits allowed only while a version is still a DRAFT."""
+    comment: str | None = None
+    steps: list[dict] | None = None
+    images: list[ImageIn] | None = None
+    file_version_ids: list[int] | None = None
+    files_label: str | None = None
+    param_set_id: int | None = None
+    param_defaults: dict | None = None
+    transport_profile: str | None = None
+    monitor_baud: int | None = None
+    flash_config: dict | None = None
+
+
+@router.patch("/deployment-versions/{version_id}")
+def patch_deployment_version(version_id: int, body: VersionPatch, db: Session = Depends(get_db)):
+    v = db.get(M.DeploymentVersion, version_id)
+    if v is None:
+        raise HTTPException(404, "no such deployment version")
+    if v.status != "draft":
+        raise HTTPException(409, f"version is {v.status} — published versions are immutable")
+    d = db.get(M.Deployment, v.deployment_id)
+    data = body.model_dump(exclude_unset=True)
+    for field in ("comment", "files_label", "param_set_id", "param_defaults",
+                  "monitor_baud", "flash_config"):
+        if field in data:
+            setattr(v, field, data[field])
+    if "transport_profile" in data and data["transport_profile"]:
+        if data["transport_profile"] not in TRANSPORT_PROFILES:
+            raise HTTPException(400, f"transport_profile must be one of {TRANSPORT_PROFILES}")
+        v.transport_profile = data["transport_profile"]
+    if "steps" in data and data["steps"] is not None:
+        for step in data["steps"]:
+            if step.get("op") not in STEP_OPS:
+                raise HTTPException(400, f"unknown op {step.get('op')!r}")
+        v.steps = data["steps"]
+    if "images" in data and data["images"] is not None:
+        for old in list(v.images):
+            db.delete(old)
+        db.flush()
+        seen = set()
+        for pos, img in enumerate(body.images or []):
+            asset = db.get(M.FirmwareAsset, img.firmware_asset_id)
+            if asset is None or asset.project_id != d.project_id:
+                raise HTTPException(400, f"firmware asset {img.firmware_asset_id} not in this project")
+            if img.address in seen:
+                raise HTTPException(400, f"two images at address {img.address}")
+            seen.add(img.address)
+            db.add(M.DeploymentImage(deployment_version_id=v.id, firmware_asset_id=asset.id,
+                                     address=img.address, position=pos))
+    if "file_version_ids" in data and data["file_version_ids"] is not None:
+        for old in list(v.files):
+            db.delete(old)
+        db.flush()
+        for pos, fv_id in enumerate(_order_files(db, body.file_version_ids or [], d.project_id)):
+            db.add(M.DeploymentFile(deployment_version_id=v.id,
+                                    device_file_version_id=fv_id, position=pos))
+    db.flush()
+    db.refresh(v)
+    bundle.stamp(db, v)
+    db.commit()
+    return {**bundle.version_json(db, v), "validation": validate.check(db, v)}
+
+
+@router.post("/deployment-versions/{version_id}/publish")
+def publish_deployment_version(version_id: int, body: PublishIn, db: Session = Depends(get_db)):
+    v = db.get(M.DeploymentVersion, version_id)
+    if v is None:
+        raise HTTPException(404, "no such deployment version")
     if v.status == "rejected":
         raise HTTPException(409, "version was rejected")
-    # A published scenario must only reference published artifacts — a run
-    # cannot flash a draft.
-    if v.release_version_id:
-        rv = db.get(M.ReleaseVersion, v.release_version_id)
-        if rv.status != "published":
-            raise HTTPException(409, f"pinned release version is {rv.status}, publish it first")
-    for link in v.files:
-        if link.file_version.status != "published":
-            raise HTTPException(
-                409,
-                f"pinned file {link.file_version.file.filename} "
-                f"v{link.file_version.version_no} is {link.file_version.status}, publish it first",
-            )
+    if v.status == "published":
+        return bundle.version_json(db, v)
+    if not v.comment.strip():
+        raise HTTPException(409, "publishing needs a comment saying what changed and why")
+    result = validate.check(db, v)
+    if not result["ok"]:
+        raise HTTPException(409, "validation failed: " + " | ".join(result["errors"]))
     v.status = "published"
     v.approved_by = body.approved_by or None
-    v.script.current_version_id = v.id
+    d = db.get(M.Deployment, v.deployment_id)
+    d.current_version_id = v.id
     db.commit()
-    audit(db, "flasher.script_publish", "deployment_script_version", v.id,
-          details=f"{v.script.name} v{v.version_no}", actor=body.approved_by)
-    return _script_version_json(v, db)
+    audit(db, "flasher.version_publish", "deployment_version", v.id,
+          details=f"{d.name} v{v.version_no}: {v.comment}", actor=body.approved_by)
+    return bundle.version_json(db, v)
 
 
-@router.post("/script-versions/{version_id}/reject")
-def reject_script_version(version_id: int, body: PublishIn, db: Session = Depends(get_db)):
-    v = db.get(M.DeploymentScriptVersion, version_id)
+@router.post("/deployment-versions/{version_id}/reject")
+def reject_deployment_version(version_id: int, body: PublishIn, db: Session = Depends(get_db)):
+    v = db.get(M.DeploymentVersion, version_id)
     if v is None:
-        raise HTTPException(404, "no such script version")
+        raise HTTPException(404, "no such deployment version")
     if v.status == "published":
-        raise HTTPException(409, "already published")
+        raise HTTPException(409, "already published — publish a newer version instead")
     v.status = "rejected"
     db.commit()
+    return {"ok": True}
+
+
+class ChannelIn(BaseModel):
+    deployment_version_id: int | None
+    updated_by: str = ""
+
+
+@router.put("/deployments/{deployment_id}/channels/{name}")
+def set_channel(deployment_id: int, name: str, body: ChannelIn, db: Session = Depends(get_db)):
+    """Point a channel at a version. This is how a release goes live and how a
+    rollback happens — history is never edited."""
+    d = db.get(M.Deployment, deployment_id)
+    if d is None:
+        raise HTTPException(404, "no such deployment")
+    if body.deployment_version_id is not None:
+        v = db.get(M.DeploymentVersion, body.deployment_version_id)
+        if v is None or v.deployment_id != d.id:
+            raise HTTPException(400, "that version belongs to another deployment")
+        if v.status != "published":
+            raise HTTPException(409, f"version is {v.status} — only published versions go on a channel")
+    ch = (
+        db.query(M.DeploymentChannel)
+        .filter(M.DeploymentChannel.deployment_id == d.id, M.DeploymentChannel.name == name)
+        .one_or_none()
+    )
+    if ch is None:
+        ch = M.DeploymentChannel(deployment_id=d.id, name=name)
+        db.add(ch)
+    ch.deployment_version_id = body.deployment_version_id
+    ch.updated_by = body.updated_by
+    ch.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    audit(db, "flasher.channel_set", "deployment", d.id,
+          details=f"{d.name}: channel {name} -> version id {body.deployment_version_id}",
+          actor=body.updated_by)
     return {"ok": True}
 
 
@@ -603,16 +828,19 @@ def flasher_meta():
 
 def _run_summary_json(r: M.ProgrammingRun, db: Session) -> dict:
     prod = db.get(M.ProductionRun, r.production_run_id) if r.production_run_id else None
-    sv = db.get(M.DeploymentScriptVersion, r.deployment_script_version_id)
+    v = db.get(M.DeploymentVersion, r.deployment_version_id)
+    dep = db.get(M.Deployment, v.deployment_id) if v else None
     return {
         "id": r.id, "status": r.status, "operator": r.operator, "station": r.station,
-        "attempt_no": r.attempt_no, "error": r.error,
+        "attempt_no": r.attempt_no, "error": r.error, "draft_run": r.draft_run,
         "started_at": _iso(r.started_at), "finished_at": _iso(r.finished_at),
         "duration_ms": r.duration_ms,
         "production_run": {"id": prod.id, "label": prod.label} if prod else None,
-        "script": {
-            "version_id": sv.id, "name": sv.script.name, "version_no": sv.version_no,
-        } if sv else None,
+        "deployment": {
+            "version_id": v.id, "name": dep.name if dep else "?",
+            "deployment_id": v.deployment_id, "version_no": v.version_no,
+            "status": v.status,
+        } if v else None,
     }
 
 
@@ -721,8 +949,14 @@ def patch_device(device_id: int, body: DevicePatch, db: Session = Depends(get_db
 # ---------------------------------------------------------- programming runs
 
 class RunCreate(BaseModel):
-    production_run_id: int
-    deployment_script_version_id: int | None = None
+    """A run either belongs to a batch or is a bench trial (batch omitted).
+
+    Version resolution, in order: an explicit `deployment_version_id`, else the
+    batch's pinned version, else the batch's channel. A DRAFT version is
+    allowed only for a bench trial and is recorded as such.
+    """
+    production_run_id: int | None = None
+    deployment_version_id: int | None = None
     operator: str = ""
     station: str = ""
     override_reason: str = ""
@@ -730,26 +964,53 @@ class RunCreate(BaseModel):
 
 @router.post("/runs")
 def create_run(body: RunCreate, db: Session = Depends(get_db)):
-    prod = db.get(M.ProductionRun, body.production_run_id)
-    if prod is None:
-        raise HTTPException(404, "no such production run")
-    assigned = prod.deployment_script_version_id
-    version_id = body.deployment_script_version_id or assigned
+    prod = None
+    if body.production_run_id:
+        prod = db.get(M.ProductionRun, body.production_run_id)
+        if prod is None:
+            raise HTTPException(404, "no such production run")
+
+    assigned = prod.deployment_version_id if prod else None
+    if assigned is None and prod is not None and prod.deployment_channel:
+        # Follow the batch's channel: resolve it now and record what it gave.
+        ch = (
+            db.query(M.DeploymentChannel)
+            .join(M.Deployment, M.Deployment.id == M.DeploymentChannel.deployment_id)
+            .filter(M.Deployment.project_id == prod.project_id,
+                    M.DeploymentChannel.name == prod.deployment_channel)
+            .one_or_none()
+        )
+        assigned = ch.deployment_version_id if ch else None
+    version_id = body.deployment_version_id or assigned
     if not version_id:
-        raise HTTPException(409, "the batch has no assigned deployment script and none was given")
-    sv = db.get(M.DeploymentScriptVersion, version_id)
-    if sv is None:
-        raise HTTPException(404, "no such deployment script version")
-    if sv.status != "published":
-        raise HTTPException(409, f"script version is {sv.status} — publish it before programming")
-    if sv.script.project_id != prod.project_id:
-        raise HTTPException(409, "script belongs to a different project than the batch")
+        raise HTTPException(
+            409, "no deployment version: the batch pins none and follows no channel, "
+                 "and the request named none")
+    v = db.get(M.DeploymentVersion, version_id)
+    if v is None:
+        raise HTTPException(404, "no such deployment version")
+    dep = db.get(M.Deployment, v.deployment_id)
+    if prod is not None and dep.project_id != prod.project_id:
+        raise HTTPException(409, "that deployment belongs to a different project than the batch")
+    if v.status == "rejected":
+        raise HTTPException(409, "that version was rejected")
+    draft_run = v.status == "draft"
+    if draft_run and prod is not None:
+        raise HTTPException(
+            409, f"version {dep.name} v{v.version_no} is a draft — publish it, or run it as a "
+                 "bench trial (no batch) to try it out")
+    if not draft_run:
+        result = validate.check(db, v)
+        if not result["ok"]:
+            raise HTTPException(409, "this version no longer validates: "
+                                     + " | ".join(result["errors"]))
     override = bool(assigned and version_id != assigned)
     if override and not body.override_reason.strip():
-        raise HTTPException(409, "programming with a non-assigned script needs an override_reason")
+        raise HTTPException(409, "programming with a non-assigned version needs an override_reason")
     run = M.ProgrammingRun(
-        production_run_id=prod.id, deployment_script_version_id=sv.id,
-        release_version_id=sv.release_version_id,
+        production_run_id=prod.id if prod else None, deployment_version_id=v.id,
+        firmware_fingerprint=v.firmware_fingerprint, files_fingerprint=v.files_fingerprint,
+        draft_run=draft_run,
         release_override_reason=body.override_reason.strip() if override else "",
         operator=body.operator, station=body.station, status="running",
     )
@@ -757,9 +1018,9 @@ def create_run(body: RunCreate, db: Session = Depends(get_db)):
     db.commit()
     if override:
         audit(db, "flasher.run_override", "programming_run", run.id,
-              details=f"batch {prod.id} assigned v{assigned}, ran v{version_id}: "
-                      f"{body.override_reason}", actor=body.operator)
-    return {"run_id": run.id}
+              details=f"batch {prod.id if prod else '-'} assigned version {assigned}, "
+                      f"ran {version_id}: {body.override_reason}", actor=body.operator)
+    return {"run_id": run.id, "deployment_version_id": v.id, "draft_run": draft_run}
 
 
 @router.post("/runs/{run_id}/mark-aborted")
@@ -789,7 +1050,8 @@ def run_detail(run_id: int, db: Session = Depends(get_db)):
             "tasmota_id": device.tasmota_id,
         } if device else None,
         "mac_read": r.mac_read, "chip_read": r.chip_read,
-        "release_version_id": r.release_version_id,
+        "firmware_fingerprint": r.firmware_fingerprint,
+        "files_fingerprint": r.files_fingerprint,
         "release_override_reason": r.release_override_reason,
         "results": r.results, "params_snapshot": r.params_snapshot,
         "client_info": r.client_info,
@@ -856,26 +1118,35 @@ def batch_programming(production_run_id: int, db: Session = Depends(get_db)):
         "missing": sorted(set(planned) - programmed_ok),
         "unidentified_attempts": sum(1 for r in runs if not r.device_unit_id),
         "runs": [_run_summary_json(r, db) for r in runs[:200]],
-        "assigned_script_version_id": prod.deployment_script_version_id,
+        "assigned_deployment_version_id": prod.deployment_version_id,
+        "deployment_channel": prod.deployment_channel,
     }
 
 
-class BatchScriptIn(BaseModel):
-    deployment_script_version_id: int | None
+class BatchDeploymentIn(BaseModel):
+    """Pin a version outright, or follow a channel by name (mutually exclusive
+    in practice: an explicit pin wins at run creation)."""
+    deployment_version_id: int | None = None
+    deployment_channel: str = ""
 
 
-@router.put("/production-runs/{production_run_id}/script")
-def assign_batch_script(production_run_id: int, body: BatchScriptIn, db: Session = Depends(get_db)):
+@router.put("/production-runs/{production_run_id}/deployment")
+def assign_batch_deployment(production_run_id: int, body: BatchDeploymentIn,
+                            db: Session = Depends(get_db)):
     prod = db.get(M.ProductionRun, production_run_id)
     if prod is None:
         raise HTTPException(404, "no such production run")
-    if body.deployment_script_version_id is not None:
-        sv = db.get(M.DeploymentScriptVersion, body.deployment_script_version_id)
-        if sv is None:
-            raise HTTPException(404, "no such script version")
-        if sv.script.project_id != prod.project_id:
-            raise HTTPException(409, "script belongs to a different project")
-    prod.deployment_script_version_id = body.deployment_script_version_id
+    if body.deployment_version_id is not None:
+        v = db.get(M.DeploymentVersion, body.deployment_version_id)
+        if v is None:
+            raise HTTPException(404, "no such deployment version")
+        dep = db.get(M.Deployment, v.deployment_id)
+        if dep.project_id != prod.project_id:
+            raise HTTPException(409, "that deployment belongs to a different project")
+        if v.status != "published":
+            raise HTTPException(409, f"version is {v.status} — a batch runs published versions only")
+    prod.deployment_version_id = body.deployment_version_id
+    prod.deployment_channel = body.deployment_channel.strip()
     db.commit()
     return {"ok": True}
 

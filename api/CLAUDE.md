@@ -275,14 +275,36 @@ Read this before touching components, symbols, footprints, or skills.
 
 ### Flasher (production programming) — the load-bearing rules
 
-Full design: `docs/flasher/design.md` (§13 = the decided artifact model).
+Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its history).
 
-- **A RELEASE is only the flash; a DEPLOYMENT SCRIPT is the scenario.**
-  `releases`/`release_versions`/`release_images` map firmware assets to
-  offsets, nothing else. The steps live in `deployment_script_versions`, which
-  PIN one release version + exact `device_file_versions`. Never put steps back
-  on a release, and never let a script version reference draft artifacts —
-  the publish gate in `routers/flasher.py` enforces it; keep it.
+- **ONE revision binds everything: the DEPLOYMENT VERSION.** It pins firmware
+  images (`deployment_images`), berryware (`deployment_files` → exact
+  `device_file_versions`), the procedure (`steps`), and the parameter wiring.
+  The `Release` entity was folded in and DROPPED (2026-07-29) — its identity
+  is now a derived **fingerprint**, so "firmware unchanged since v5" needs no
+  second versioned object. Never reintroduce a parallel versioned wrapper
+  around firmware; add a fingerprint if you need to compare.
+- **Fingerprints are cache, never authority.** `bundle.stamp()` recomputes
+  both from the child rows; call it after ANY change to images or files.
+  `firmware_fingerprint` is order-sensitive (address+sha), `files_fingerprint`
+  is a set (reordering downloads is a procedure change, not a payload change).
+  Equal file fingerprints mean the same berryware bundle — that is how every
+  historical V2 set recovered its real name by propagation.
+- **`validate.check()` is the single gate.** The live composer and the publish
+  button call the same function, so the editor can never disagree with the
+  refusal. Errors block publishing (unpublished pins, chip/transport mismatch,
+  overlapping flash offsets, unresolved `{placeholder}` or assert variable,
+  autoexec.be not last, serial op before `serial_open`); warnings inform.
+  Publishing also requires a comment. When you add a step op, add its rules
+  here in the same change.
+- **Device file text is stored LF-normalised** (`_normalise_text`). A CRLF file
+  read as bytes hashes differently from the same file read as text, which made
+  five V3 files report "changed" on every import when nothing had. Content
+  addressing only pays off if the same source always yields the same hash.
+- **Channels are pointers, history is immutable.** `deployment_channels` name a
+  version (`production`, `bench`); rolling back moves a channel. A batch pins a
+  version or follows a channel; run creation resolves it and records the
+  result. Draft versions run ONLY as bench trials (`draft_run=True`, no batch).
 - **`GET /api/flasher/files/{version_id}/{filename}` is deliberately
   unauthenticated** — the DEVICE fetches it with Tasmota's `UrlFetch`, which
   sends no auth headers. Published versions only; the URL ends with the

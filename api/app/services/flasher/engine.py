@@ -1,4 +1,7 @@
-"""The run engine: executes one deployment script version against one device.
+"""The run engine: executes ONE deployment version against one device.
+
+A deployment version binds firmware + berryware + procedure + parameters, so
+the engine loads a single id and has everything (design.md §14).
 
 Execution split (docs/flasher/design.md §3): the BROWSER performs the esptool
 phase (erase/flash/verify — thousands of latency-sensitive SLIP round trips)
@@ -109,46 +112,49 @@ class RunEngine:
                 raise StepFailed(f"programming run {self.run_id} not found")
             if run.status != "running":
                 raise StepFailed(f"run {self.run_id} is {run.status}, not running")
-            sv = db.get(M.DeploymentScriptVersion, run.deployment_script_version_id)
-            prod = db.get(M.ProductionRun, run.production_run_id)
-            script = db.get(M.DeploymentScript, sv.deployment_script_id)
-            rv = db.get(M.ReleaseVersion, sv.release_version_id) if sv.release_version_id else None
-            release = db.get(M.Release, rv.release_id) if rv else None
-            images = []
-            if rv:
-                for img in rv.images:
-                    a = img.asset
-                    images.append({
-                        "firmware_asset_id": a.id, "filename": a.filename,
-                        "address": img.address, "sha256": a.sha256,
-                        "size": a.size_bytes, "kind": a.kind,
-                        "url": f"/api/flasher/firmware/{a.id}/bin",
-                    })
-            files = []
-            for link in sv.files:
-                fv = link.file_version
-                files.append({
-                    "version_id": fv.id, "filename": fv.file.filename,
-                    "size_bytes": fv.size_bytes, "sha256": fv.sha256,
-                })
+            # ONE id carries the whole truth: images, files, procedure, params.
+            v = db.get(M.DeploymentVersion, run.deployment_version_id)
+            if v is None:
+                raise StepFailed("this run points at no deployment version")
+            dep = db.get(M.Deployment, v.deployment_id)
+            prod = db.get(M.ProductionRun, run.production_run_id) if run.production_run_id else None
+            images = [
+                {
+                    "firmware_asset_id": img.asset.id, "filename": img.asset.filename,
+                    "address": img.address, "sha256": img.asset.sha256,
+                    "size": img.asset.size_bytes, "kind": img.asset.kind,
+                    "url": f"/api/flasher/firmware/{img.asset.id}/bin",
+                }
+                for img in v.images
+            ]
+            files = [
+                {
+                    "version_id": link.file_version.id,
+                    "filename": link.file_version.file.filename,
+                    "size_bytes": link.file_version.size_bytes,
+                    "sha256": link.file_version.sha256,
+                }
+                for link in sorted(v.files, key=lambda f: f.position)
+            ]
             params: dict[str, Any] = {}
-            if sv.param_defaults:
-                params.update(sv.param_defaults)
-            if sv.param_set_id:
-                ps = db.get(M.ParamSet, sv.param_set_id)
+            if v.param_defaults:
+                params.update(v.param_defaults)
+            if v.param_set_id:
+                ps = db.get(M.ParamSet, v.param_set_id)
                 if ps and ps.values_enc:
                     import json as _json
                     params.update(_json.loads(crypto.decrypt_token(ps.values_enc)))
             return {
-                "project_id": prod.project_id,
-                "production_run_id": prod.id,
-                "script_name": script.name,
-                "script_version_no": sv.version_no,
-                "chip": release.chip if release else "",
-                "transport_profile": sv.transport_profile,
-                "monitor_baud": sv.monitor_baud,
-                "flash_config": rv.flash_config if rv else None,
-                "steps": sv.steps or [],
+                "project_id": dep.project_id,
+                "production_run_id": prod.id if prod else None,
+                "deployment_name": dep.name,
+                "deployment_version_no": v.version_no,
+                "draft": v.status == "draft",
+                "chip": dep.chip,
+                "transport_profile": v.transport_profile,
+                "monitor_baud": v.monitor_baud,
+                "flash_config": v.flash_config,
+                "steps": v.steps or [],
                 "images": images,
                 "files": files,
                 "params": params,
@@ -329,8 +335,8 @@ class RunEngine:
             self._flush_task = asyncio.create_task(self._flush_loop())
             await self._send({"t": "run", "spec": {
                 k: self.spec[k] for k in (
-                    "script_name", "script_version_no", "chip", "transport_profile",
-                    "monitor_baud", "flash_config", "images",
+                    "deployment_name", "deployment_version_no", "draft", "chip",
+                    "transport_profile", "monitor_baud", "flash_config", "images",
                 )
             } | {"steps": [{"op": s.get("op"), "label": s.get("label", s.get("op"))}
                            for s in self.spec["steps"]]}})

@@ -1,5 +1,6 @@
-/** Flasher admin: firmware binaries, releases (the flash), device files (the
- *  downloads) and deployment scripts (the scenario), per project. */
+/** Artifacts — the raw inputs a deployment version pins: firmware binaries,
+ *  berryware files and parameter sets. Composing them into a version happens
+ *  on the Deployments page; this is for managing the pool itself. */
 import { useEffect, useState } from "react";
 import {
   errorMessage,
@@ -13,8 +14,6 @@ import { ErrorBanner, Spinner } from "../components/Ui";
 import DeviceFilesPanel from "../components/flasher/DeviceFilesPanel";
 import FirmwarePanel from "../components/flasher/FirmwarePanel";
 import ParamSetsPanel from "../components/flasher/ParamSetsPanel";
-import ReleasesPanel from "../components/flasher/ReleasesPanel";
-import ScriptsPanel from "../components/flasher/ScriptsPanel";
 import { useStickyState } from "../useStickyState";
 
 export default function FlasherAdmin() {
@@ -42,7 +41,7 @@ export default function FlasherAdmin() {
     <div className="main-solo">
       <div className="page">
         <div className="toolbar">
-          <h1>Flasher</h1>
+          <h1>Artifacts</h1>
           {projects ? (
             <select
               className="row-input"
@@ -55,7 +54,7 @@ export default function FlasherAdmin() {
             </select>
           ) : null}
           <span className="toolbar-total">
-            releases carry the flash · deployment scripts carry the steps · runs record both
+            the pool a deployment version pins — compose versions on Deployments
           </span>
         </div>
         {error ? <ErrorBanner message={error} /> : null}
@@ -65,8 +64,6 @@ export default function FlasherAdmin() {
           <p className="muted">No projects.</p>
         ) : (
           <>
-            <ScriptsPanel projectId={valid} meta={meta} />
-            <ReleasesPanel projectId={valid} />
             <DeviceFilesPanel projectId={valid} />
             <FirmwarePanel projectId={valid} meta={meta} />
             <ParamSetsPanel projectId={valid} />

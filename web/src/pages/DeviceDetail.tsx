@@ -176,7 +176,7 @@ export default function DeviceDetail() {
                         <th>Run</th>
                         <th>Result</th>
                         <th>Batch</th>
-                        <th>Script</th>
+                        <th>Deployment</th>
                         <th>Operator</th>
                         <th className="num">Took</th>
                         <th>Started</th>
@@ -198,8 +198,8 @@ export default function DeviceDetail() {
                               </Link>
                             ) : "—"}
                           </td>
-                          <td title={r.script ? `${r.script.name} v${r.script.version_no}` : ""}>
-                            {r.script ? `${r.script.name} v${r.script.version_no}` : "—"}
+                          <td title={r.deployment ? `${r.deployment.name} v${r.deployment.version_no}` : ""}>
+                            {r.deployment ? `${r.deployment.name} v${r.deployment.version_no}` : "—"}
                           </td>
                           <td>{r.operator || "—"}</td>
                           <td className="num">{fmtDuration(r.duration_ms)}</td>

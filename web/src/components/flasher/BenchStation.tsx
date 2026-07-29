@@ -9,8 +9,9 @@ import { StatusPill } from "../Ui";
 
 export interface StationSlotProps {
   index: number;
+  /** null = bench trial: no batch, and a DRAFT version is allowed */
   productionRunId: number | null;
-  scriptVersionId: number | null;
+  deploymentVersionId: number | null;
   overrideReason: string;
   operator: string;
   simPin: string;
@@ -73,19 +74,19 @@ export default function BenchStation(props: StationSlotProps) {
   };
 
   const run = async () => {
-    if (!props.productionRunId) {
-      setError("Pick a production batch first.");
+    if (!props.productionRunId && !props.deploymentVersionId) {
+      setError("Pick a batch, or a deployment version for a bench trial.");
       return;
     }
     setError(null);
     setLog([]);
     setStatus("busy");
     setStepLabel("creating run…");
-    let created: { run_id: number };
+    let created: { run_id: number; draft_run: boolean };
     try {
       created = await createProgrammingRun({
         production_run_id: props.productionRunId,
-        deployment_script_version_id: props.scriptVersionId,
+        deployment_version_id: props.deploymentVersionId,
         operator: props.operator,
         station: `slot ${props.index + 1}`,
         override_reason: props.overrideReason,
@@ -97,6 +98,7 @@ export default function BenchStation(props: StationSlotProps) {
     }
     setRunId(created.run_id);
     props.onRunCreated?.(created.run_id);
+    if (created.draft_run) pushLog("app", "=== BENCH TRIAL of a DRAFT version ===");
 
     const params: Record<string, string> = {};
     if (props.simPin.trim()) params.sim_pin = props.simPin.trim();
@@ -104,7 +106,11 @@ export default function BenchStation(props: StationSlotProps) {
 
     const client = new RunClient(station, created.run_id, params, {
       onSpec: (spec: RunSpec) => {
-        pushLog("app", `=== ${spec.script_name} v${spec.script_version_no} — ${spec.steps.length} steps ===`);
+        pushLog(
+          "app",
+          `=== ${spec.deployment_name} v${spec.deployment_version_no}` +
+            `${spec.draft ? " (draft)" : ""} — ${spec.steps.length} steps ===`,
+        );
       },
       onState: (s) => setStepLabel(`${s.index + 1}/${s.total} ${s.label}`),
       onLog: pushLog,
@@ -150,7 +156,10 @@ export default function BenchStation(props: StationSlotProps) {
           type="button"
           className="btn btn-primary btn-sm"
           onClick={run}
-          disabled={!station.port || status === "busy" || !props.productionRunId}
+          disabled={
+            !station.port || status === "busy"
+            || (!props.productionRunId && !props.deploymentVersionId)
+          }
         >
           Program device
         </button>

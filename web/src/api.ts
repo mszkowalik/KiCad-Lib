@@ -3338,34 +3338,15 @@ export interface FirmwareAssetRow {
   uploaded_at: string | null;
 }
 
-export interface ReleaseImageRow {
+export interface DeploymentImageRow {
   firmware_asset_id: number;
   address: string;
   filename: string;
   kind: string;
+  chip: string;
   size_bytes: number;
   sha256: string;
-}
-
-export interface ReleaseVersionRow {
-  id: number;
-  version_no: number;
-  status: string;
-  comment: string;
-  created_by: string;
-  approved_by: string | null;
-  flash_config: Record<string, string> | null;
-  created_at: string | null;
-  images: ReleaseImageRow[];
-}
-
-export interface ReleaseRow {
-  id: number;
-  name: string;
-  chip: string;
-  description: string;
-  current_version_id: number | null;
-  versions: ReleaseVersionRow[];
+  build_label: string;
 }
 
 export interface DeviceFileVersionRow {
@@ -3388,16 +3369,41 @@ export interface DeviceFileRow {
   versions: DeviceFileVersionRow[];
 }
 
-export interface ScriptFileLink {
+/** One berryware file pinned inside a deployment version. */
+export interface DeploymentFileRow {
   device_file_version_id: number;
+  device_file_id: number;
   filename: string;
   version_no: number;
   status: string;
   size_bytes: number;
+  sha256: string;
+  position: number;
+  comment: string;
 }
 
-export interface ScriptVersionRow {
+/** What moved between two versions — drives the timeline and the publish diff. */
+export interface VersionChanges {
+  firmware: string;
+  files: string;
+  procedure: string;
+  params: string;
+  summary: string;
+  changed_files?: string[];
+  added_files?: string[];
+  removed_files?: string[];
+}
+
+export interface ValidationResult {
+  ok: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+/** THE revision: firmware + berryware + procedure + parameters in one row. */
+export interface DeploymentVersionRow {
   id: number;
+  deployment_id: number;
   version_no: number;
   status: string;
   comment: string;
@@ -3405,27 +3411,95 @@ export interface ScriptVersionRow {
   approved_by: string | null;
   transport_profile: string;
   monitor_baud: number;
-  steps: Record<string, unknown>[];
+  flash_config: Record<string, string> | null;
   param_set_id: number | null;
   param_defaults: Record<string, unknown> | null;
+  firmware_fingerprint: string;
+  files_fingerprint: string;
+  files_label: string;
   created_at: string | null;
-  release: {
-    release_version_id: number;
-    release_id: number;
-    name: string;
-    version_no: number;
-    status: string;
-    chip: string;
-  } | null;
-  files: ScriptFileLink[];
+  image_count: number;
+  file_count: number;
+  step_count: number;
+  /** present on the deep payloads */
+  images?: DeploymentImageRow[];
+  files?: DeploymentFileRow[];
+  steps?: Record<string, unknown>[];
+  param_set_name?: string | null;
+  changes?: VersionChanges;
 }
 
-export interface DeploymentScriptRow {
+export interface DeploymentChannelRow {
+  name: string;
+  deployment_version_id: number | null;
+  version_no: number | null;
+  status: string | null;
+  updated_by: string;
+  updated_at: string | null;
+}
+
+export interface DeploymentRow {
   id: number;
   name: string;
   description: string;
+  chip: string;
+  project_id: number;
   current_version_id: number | null;
-  versions: ScriptVersionRow[];
+  created_at: string | null;
+  channels: DeploymentChannelRow[];
+  versions: DeploymentVersionRow[];
+  current?: DeploymentVersionRow;
+}
+
+export interface DeploymentVersionDetail extends DeploymentVersionRow {
+  deployment: { id: number; name: string; chip: string; project_id: number };
+  changes: VersionChanges;
+  validation: ValidationResult;
+  where_used: {
+    runs: number;
+    devices: number;
+    batches: { id: number; label: string }[];
+    channels: string[];
+  };
+}
+
+export interface DiffSide<T> {
+  before: T | null;
+  after: T | null;
+  state: "unchanged" | "changed" | "added" | "removed";
+}
+
+export interface DeploymentDiff {
+  from: { id: number; version_no: number } | null;
+  to: { id: number; version_no: number };
+  images: (DiffSide<DeploymentImageRow> & { address: string })[];
+  files: (DiffSide<DeploymentFileRow> & { filename: string })[];
+  steps_changed: boolean;
+  steps_before?: Record<string, unknown>[];
+  steps_after?: Record<string, unknown>[];
+  params_before?: { param_set_id: number | null; defaults: Record<string, unknown> | null };
+  params_after?: { param_set_id: number | null; defaults: Record<string, unknown> | null };
+  transport_before?: { profile: string; baud: number };
+  transport_after?: { profile: string; baud: number };
+  changes: VersionChanges;
+}
+
+/** Compose a draft. Every section left undefined is INHERITED from
+ *  `from_version_id` — "bump the firmware" is a two-field request. */
+export interface ComposeBody {
+  from_version_id?: number | null;
+  comment?: string;
+  created_by?: string;
+  images?: { firmware_asset_id: number; address: string }[];
+  file_version_ids?: number[];
+  files_label?: string;
+  steps?: Record<string, unknown>[];
+  param_set_id?: number | null;
+  param_defaults?: Record<string, unknown> | null;
+  transport_profile?: string;
+  monitor_baud?: number;
+  flash_config?: Record<string, string> | null;
+  latest_files?: boolean;
 }
 
 export interface ParamSetRow {
@@ -3471,8 +3545,15 @@ export interface ProgrammingRunSummary {
   started_at: string | null;
   finished_at: string | null;
   duration_ms: number | null;
+  draft_run?: boolean;
   production_run: { id: number; label: string } | null;
-  script: { version_id: number; name: string; version_no: number } | null;
+  deployment: {
+    version_id: number;
+    name: string;
+    deployment_id: number;
+    version_no: number;
+    status: string;
+  } | null;
 }
 
 export interface DeviceConfigRow {
@@ -3505,7 +3586,8 @@ export interface ProgrammingRunDetail extends ProgrammingRunSummary {
   device: { id: number; mac: string; serial: string; tasmota_id: string } | null;
   mac_read: string;
   chip_read: string;
-  release_version_id: number | null;
+  firmware_fingerprint: string;
+  files_fingerprint: string;
   release_override_reason: string;
   results: Record<string, unknown> | null;
   params_snapshot: Record<string, unknown> | null;
@@ -3529,7 +3611,8 @@ export interface BatchProgramming {
   missing: string[];
   unidentified_attempts: number;
   runs: ProgrammingRunSummary[];
-  assigned_script_version_id: number | null;
+  assigned_deployment_version_id: number | null;
+  deployment_channel: string;
 }
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -3557,50 +3640,110 @@ export function firmwareBinPath(assetId: number): string {
   return `${API_URL}/api/flasher/firmware/${assetId}/bin`;
 }
 
-export function listReleases(projectId: number, signal?: AbortSignal): Promise<ReleaseRow[]> {
-  return request(`/api/flasher/projects/${projectId}/releases`, { signal });
+export function listDeployments(projectId: number, signal?: AbortSignal): Promise<DeploymentRow[]> {
+  return request(`/api/flasher/projects/${projectId}/deployments`, { signal });
 }
 
-export function createRelease(
+export function getDeployment(id: number, signal?: AbortSignal): Promise<DeploymentRow> {
+  return request(`/api/flasher/deployments/${id}`, { signal });
+}
+
+export function createDeployment(
   projectId: number,
-  body: { name: string; chip?: string; description?: string },
+  body: { name: string; description?: string; chip?: string },
 ): Promise<{ id: number }> {
-  return request(`/api/flasher/projects/${projectId}/releases`, {
+  return request(`/api/flasher/projects/${projectId}/deployments`, {
     method: "POST",
     headers: JSON_HEADERS,
     body: JSON.stringify(body),
   });
 }
 
-export function createReleaseVersion(
-  releaseId: number,
-  body: {
-    comment?: string;
-    created_by?: string;
-    flash_config?: Record<string, string> | null;
-    images: { firmware_asset_id: number; address: string }[];
-  },
-): Promise<ReleaseVersionRow> {
-  return request(`/api/flasher/releases/${releaseId}/versions`, {
+export function updateDeployment(
+  id: number,
+  body: { name: string; description?: string; chip?: string },
+): Promise<DeploymentRow> {
+  return request(`/api/flasher/deployments/${id}`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function composeVersion(
+  deploymentId: number,
+  body: ComposeBody,
+): Promise<DeploymentVersionRow & { validation: ValidationResult }> {
+  return request(`/api/flasher/deployments/${deploymentId}/versions`, {
     method: "POST",
     headers: JSON_HEADERS,
     body: JSON.stringify(body),
   });
 }
 
-export function publishReleaseVersion(versionId: number, approvedBy = ""): Promise<ReleaseVersionRow> {
-  return request(`/api/flasher/release-versions/${versionId}/publish`, {
+export function getDeploymentVersion(
+  versionId: number,
+  signal?: AbortSignal,
+): Promise<DeploymentVersionDetail> {
+  return request(`/api/flasher/deployment-versions/${versionId}`, { signal });
+}
+
+export function patchDeploymentVersion(
+  versionId: number,
+  body: Omit<ComposeBody, "from_version_id" | "latest_files" | "created_by">,
+): Promise<DeploymentVersionRow & { validation: ValidationResult }> {
+  return request(`/api/flasher/deployment-versions/${versionId}`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function getDeploymentDiff(
+  versionId: number,
+  against?: number,
+  signal?: AbortSignal,
+): Promise<DeploymentDiff> {
+  const qs = against ? `?against=${against}` : "";
+  return request(`/api/flasher/deployment-versions/${versionId}/diff${qs}`, { signal });
+}
+
+export function validateDeploymentVersion(
+  versionId: number,
+  signal?: AbortSignal,
+): Promise<ValidationResult> {
+  return request(`/api/flasher/deployment-versions/${versionId}/validate`, { signal });
+}
+
+export function publishDeploymentVersion(
+  versionId: number,
+  approvedBy = "",
+): Promise<DeploymentVersionRow> {
+  return request(`/api/flasher/deployment-versions/${versionId}/publish`, {
     method: "POST",
     headers: JSON_HEADERS,
     body: JSON.stringify({ approved_by: approvedBy }),
   });
 }
 
-export function rejectReleaseVersion(versionId: number): Promise<{ ok: boolean }> {
-  return request(`/api/flasher/release-versions/${versionId}/reject`, {
+export function rejectDeploymentVersion(versionId: number): Promise<{ ok: boolean }> {
+  return request(`/api/flasher/deployment-versions/${versionId}/reject`, {
     method: "POST",
     headers: JSON_HEADERS,
     body: JSON.stringify({}),
+  });
+}
+
+export function setDeploymentChannel(
+  deploymentId: number,
+  name: string,
+  versionId: number | null,
+  updatedBy = "",
+): Promise<{ ok: boolean }> {
+  return request(`/api/flasher/deployments/${deploymentId}/channels/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ deployment_version_id: versionId, updated_by: updatedBy }),
   });
 }
 
@@ -3626,7 +3769,10 @@ export function getDeviceFileVersion(
   return request(`/api/flasher/device-file-versions/${versionId}`, { signal });
 }
 
-export function publishDeviceFileVersion(versionId: number, approvedBy = ""): Promise<DeviceFileVersionRow> {
+export function publishDeviceFileVersion(
+  versionId: number,
+  approvedBy = "",
+): Promise<DeviceFileVersionRow> {
   return request(`/api/flasher/device-file-versions/${versionId}/publish`, {
     method: "POST",
     headers: JSON_HEADERS,
@@ -3642,65 +3788,29 @@ export function rejectDeviceFileVersion(versionId: number): Promise<{ ok: boolea
   });
 }
 
-export function listDeploymentScripts(
+export interface ImportedFile {
+  filename: string;
+  device_file_version_id: number;
+  version_no: number;
+  state: "unchanged" | "changed" | "new";
+  size_bytes: number;
+}
+
+/** Import a whole berryware folder: unchanged files are reused, only real
+ *  content changes mint a version. Returns the resolved set to pin. */
+export function importDeviceFiles(
   projectId: number,
-  signal?: AbortSignal,
-): Promise<DeploymentScriptRow[]> {
-  return request(`/api/flasher/projects/${projectId}/scripts`, { signal });
-}
-
-export function createDeploymentScript(
-  projectId: number,
-  body: { name: string; description?: string },
-): Promise<{ id: number }> {
-  return request(`/api/flasher/projects/${projectId}/scripts`, {
+  files: File[],
+  meta: { label?: string; created_by?: string; publish?: boolean } = {},
+): Promise<{ label: string; files: ImportedFile[]; changed: number }> {
+  const form = new FormData();
+  for (const f of files) form.append("files", f);
+  if (meta.label) form.append("label", meta.label);
+  if (meta.created_by) form.append("created_by", meta.created_by);
+  form.append("publish", String(meta.publish ?? true));
+  return request(`/api/flasher/projects/${projectId}/device-files/import`, {
     method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify(body),
-  });
-}
-
-export function createScriptVersion(
-  scriptId: number,
-  body: {
-    comment?: string;
-    created_by?: string;
-    release_version_id?: number | null;
-    transport_profile: string;
-    monitor_baud?: number;
-    steps: Record<string, unknown>[];
-    param_set_id?: number | null;
-    param_defaults?: Record<string, unknown> | null;
-    file_version_ids: number[];
-  },
-): Promise<ScriptVersionRow> {
-  return request(`/api/flasher/scripts/${scriptId}/versions`, {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify(body),
-  });
-}
-
-export function getScriptVersion(
-  versionId: number,
-  signal?: AbortSignal,
-): Promise<ScriptVersionRow & { script_id: number; script_name: string }> {
-  return request(`/api/flasher/script-versions/${versionId}`, { signal });
-}
-
-export function publishScriptVersion(versionId: number, approvedBy = ""): Promise<ScriptVersionRow> {
-  return request(`/api/flasher/script-versions/${versionId}/publish`, {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ approved_by: approvedBy }),
-  });
-}
-
-export function rejectScriptVersion(versionId: number): Promise<{ ok: boolean }> {
-  return request(`/api/flasher/script-versions/${versionId}/reject`, {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify({}),
+    body: form,
   });
 }
 
@@ -3766,12 +3876,13 @@ export function patchDevice(deviceId: number, notes: string): Promise<{ ok: bool
 }
 
 export function createProgrammingRun(body: {
-  production_run_id: number;
-  deployment_script_version_id?: number | null;
+  /** omit for a bench trial (allowed to run a draft version) */
+  production_run_id?: number | null;
+  deployment_version_id?: number | null;
   operator?: string;
   station?: string;
   override_reason?: string;
-}): Promise<{ run_id: number }> {
+}): Promise<{ run_id: number; deployment_version_id: number; draft_run: boolean }> {
   return request("/api/flasher/runs", {
     method: "POST",
     headers: JSON_HEADERS,
@@ -3806,14 +3917,14 @@ export function getBatchProgramming(
   return request(`/api/flasher/production-runs/${productionRunId}/programming`, { signal });
 }
 
-export function assignBatchScript(
+export function assignBatchDeployment(
   productionRunId: number,
-  scriptVersionId: number | null,
+  body: { deployment_version_id?: number | null; deployment_channel?: string },
 ): Promise<{ ok: boolean }> {
-  return request(`/api/flasher/production-runs/${productionRunId}/script`, {
+  return request(`/api/flasher/production-runs/${productionRunId}/deployment`, {
     method: "PUT",
     headers: JSON_HEADERS,
-    body: JSON.stringify({ deployment_script_version_id: scriptVersionId }),
+    body: JSON.stringify(body),
   });
 }
 

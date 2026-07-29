@@ -16,6 +16,7 @@ import ComponentDetail from "./pages/ComponentDetail";
 import DeviceDetail from "./pages/DeviceDetail";
 import Devices from "./pages/Devices";
 import FileViewer from "./pages/FileViewer";
+import Deployments from "./pages/Deployments";
 import FlashBench from "./pages/FlashBench";
 import FlasherAdmin from "./pages/FlasherAdmin";
 import FlashRunDetail from "./pages/FlashRunDetail";
@@ -89,9 +90,10 @@ const PRODUCTION_LINKS = [
   { to: "/production/invoices", label: "Invoices" },
   { to: "/production/stock", label: "Stock" },
   { to: "/production/jlc", label: "JLC" },
-  { to: "/production/flasher", label: "Flasher" },
+  { to: "/production/deployments", label: "Deployments" },
   { to: "/production/bench", label: "Bench" },
   { to: "/production/devices", label: "Devices" },
+  { to: "/production/artifacts", label: "Artifacts" },
   { to: "/production/writes", label: "Write log" },
 ];
 
@@ -176,7 +178,9 @@ export default function App() {
               <Route path="/production/invoices" element={<Invoices />} />
               <Route path="/production/stock" element={<Stock />} />
               <Route path="/production/jlc" element={<ProductionJlc />} />
-              <Route path="/production/flasher" element={<FlasherAdmin />} />
+              <Route path="/production/deployments" element={<Deployments />} />
+              <Route path="/production/artifacts" element={<FlasherAdmin />} />
+              <Route path="/production/flasher" element={<Navigate to="/production/deployments" replace />} />
               <Route path="/production/bench" element={<FlashBench />} />
               <Route path="/production/devices" element={<Devices />} />
               <Route path="/production/devices/:id" element={<DeviceDetail />} />
