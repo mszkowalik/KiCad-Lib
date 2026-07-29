@@ -3402,3 +3402,60 @@ select.sel:focus {
   white-space: nowrap;
   margin-top: 2px;
 }
+
+/* Graphical procedure editor: each step a readable row, open to edit. */
+.step-editor { display: flex; flex-direction: column; gap: 4px; }
+.step-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: var(--radius);
+}
+.step-card.open { border-left-color: var(--accent); }
+.step-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+.step-row:hover { background: var(--surface-2); }
+.step-num {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  min-width: 1.8em;
+  text-align: right;
+}
+.step-op-pill { font-family: var(--mono); font-size: 10px; }
+.step-title { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step-sum {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9em;
+}
+.step-btns { margin-left: auto; flex-shrink: 0; }
+.step-body { border-top: 1px solid var(--line); padding: 6px 10px 10px; }
+.step-hint { font-size: 0.85em; }
+.step-add {
+  border-top: 1px solid var(--line);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.step-add-group { display: flex; flex-direction: column; gap: 2px; }
+.step-add-ops { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* value = literal or {parameter} */
+.value-picker { display: flex; gap: 4px; min-width: 0; }
+.value-picker .value-mode { flex: 0 0 7.5em; }
+.value-picker input, .value-picker select:not(.value-mode) { flex: 1 1 auto; min-width: 0; }
+
+.cmd-list, .img-picker { display: flex; flex-direction: column; gap: 4px; }
+.cmd-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.cmd-row .cmd-name { flex: 0 0 11em; }
+.cmd-row .value-picker { flex: 1 1 auto; }
+.cmd-row select:first-child { flex: 1 1 auto; min-width: 0; }

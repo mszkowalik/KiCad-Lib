@@ -920,6 +920,48 @@ three production deployments — each proven end-to-end in simulation
 (`simulate_bench.py`): Dongle_V2 28/28, Aqua_V2 39/39, Dongle_V3 32/32
 including the LTE failover proof.
 
+### Fidelity audit + the graphical procedure editor (2026-07-30)
+
+**Audit against `CE_Production_flasher` at HEAD.** The config procedure is
+faithful: `SetOption153 1` → Modbus ×2 → WiFi → reset → WiFi poll → `Status ?`
+→ derive credentials → downloads → MQTT block → `SetOption153 0` → clear the
+AP, in that exact order. Three deliberate differences, all recorded:
+
+1. WiFi and the MQTT block travel in ONE `Backlog` each (user requirement) —
+   the original set them one at a time, so the device could restart between
+   `SSId1` and `Password1`.
+2. `wait_boot` POLLS instead of the original's `sleep(4)`.
+3. Readback + assert steps were ADDED after each Backlog, because Backlog does
+   not reliably echo what a `set_and_check` would have verified.
+
+**One real gap found and fixed.** `test.py::_check_relay` checks BOTH states —
+the switch must read ON while the relay is OFF (the wiring inverts it) and OFF
+while it is ON. The reconstruction asserted only the second half, so a relay
+stuck ON would have passed. The Aqua test procedure now asserts both, and reads
+the DS18B20 temperature from the relays-OFF sample as the original does.
+Published as `Aqua_V2 test (retroactive)` v2 on both stacks.
+
+**The procedure editor is graphical** (`StepEditor.tsx` + `stepSchema.ts`).
+Each step is a row you can read at a glance and open to edit; the fields come
+from a schema keyed by op, so the form always matches the step. Two
+consequences the user asked for:
+
+- **A `flash` step picks its firmware images** (with offsets pre-filled from
+  the partition map) and a **`download_files` step picks its berryware
+  bundle** — so the composer no longer needs separate firmware and berryware
+  sections. Both still write the VERSION's pins: the version remains the one
+  place a payload is defined, the controls simply live where the work happens.
+- **Every value is a literal OR a parameter**, chosen from a dropdown that
+  offers the param set's keys, the runtime variables and anything an EARLIER
+  step captured — `ValuePicker` writes the `{Name}` form so nobody types
+  braces. `capture` is a name ← path table, and `Backlog` is a list of
+  setting + value rows using the same picker.
+
+"Edit as JSON" is still there for a bulk paste. The dropdowns are convenience
+only — `validate.check()` on the server stays the authority, so the editor can
+never disagree with the publish gate. Round-trip verified: a version composed
+the way the editor writes it validates and passes 28/28 in simulation.
+
 ### Firmware admin, chip detection, and the 1.3.11 question (2026-07-30)
 
 **`/production/files` administers the pool**, one kind per tab. Firmware and

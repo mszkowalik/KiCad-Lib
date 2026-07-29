@@ -229,7 +229,18 @@ def test_aqua() -> list:
         {"op": "command", "label": "Read the sensors with the relays OFF", "cmd": "Status",
          "payload": "10", "expect_key": "StatusSNS", "timeout": 10,
          "capture": {"sw7_off": "StatusSNS.Switch7", "sw8_off": "StatusSNS.Switch8",
-                     "sw9_off": "StatusSNS.Switch9"}},
+                     "sw9_off": "StatusSNS.Switch9",
+                     "temp1": "StatusSNS.DS18B20-1.Temperature",
+                     "temp1_id": "StatusSNS.DS18B20-1.Id"}},
+        # test.py::_check_relay checks BOTH states: the switch must read ON
+        # while the relay is OFF (the wiring inverts it) and OFF while the
+        # relay is ON. Asserting only one half would pass a relay stuck ON.
+        {"op": "assert_equals", "label": "Switch7 reads ON while relay 1 is OFF",
+         "var": "sw7_off", "equals": "ON"},
+        {"op": "assert_equals", "label": "Switch8 reads ON while relay 2 is OFF",
+         "var": "sw8_off", "equals": "ON"},
+        {"op": "assert_equals", "label": "Switch9 reads ON while relay 3 is OFF",
+         "var": "sw9_off", "equals": "ON"},
         {"op": "set_and_check", "label": "Relay 1 ON", "cmd": "Power1", "value": "ON", "timeout": 10},
         {"op": "set_and_check", "label": "Relay 2 ON", "cmd": "Power2", "value": "ON", "timeout": 10},
         {"op": "set_and_check", "label": "Relay 3 ON", "cmd": "Power3", "value": "ON", "timeout": 10},
@@ -237,8 +248,7 @@ def test_aqua() -> list:
         {"op": "command", "label": "Read the sensors with the relays ON", "cmd": "Status",
          "payload": "10", "expect_key": "StatusSNS", "timeout": 10,
          "capture": {"sw7_on": "StatusSNS.Switch7", "sw8_on": "StatusSNS.Switch8",
-                     "sw9_on": "StatusSNS.Switch9",
-                     "temp1": "StatusSNS.DS18B20-1.Temperature"}},
+                     "sw9_on": "StatusSNS.Switch9"}},
         # _check_relay: each switch must CHANGE state between the two reads.
         {"op": "assert_equals", "label": "Relay 1 changed state (Switch7)",
          "var": "sw7_on", "equals": "OFF",
@@ -248,7 +258,9 @@ def test_aqua() -> list:
          "var": "sw8_on", "equals": "OFF"},
         {"op": "assert_equals", "label": "Relay 3 changed state (Switch9)",
          "var": "sw9_on", "equals": "OFF"},
-        {"op": "assert_range", "label": "DS18B20 temperature is plausible",
+        # test.py asserts Id present, Temperature present, and -10 < T < 70,
+        # read from the relays-OFF sample.
+        {"op": "assert_range", "label": "DS18B20 temperature is plausible (-10..70 C)",
          "var": "temp1", "min": -10, "max": 70},
         {"op": "set_and_check", "label": "Relays back OFF", "cmd": "Power1",
          "value": "OFF", "timeout": 10},
