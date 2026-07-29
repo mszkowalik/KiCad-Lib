@@ -10,6 +10,12 @@
 proxy_pass $kicadlib_api$request_uri;
 
 proxy_http_version 1.1;
+# The flasher's run engine talks over a WebSocket (/api/flasher/ws/<run>), so
+# the upgrade handshake has to survive this hop. $connection_upgrade maps to
+# "upgrade" only for a real upgrade request (see default.conf.template), which
+# keeps ordinary keep-alive requests untouched.
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection $connection_upgrade;
 proxy_set_header Host $host;
 proxy_set_header X-Real-IP $remote_addr;
 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

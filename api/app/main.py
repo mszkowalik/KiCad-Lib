@@ -339,6 +339,12 @@ def _flasher_bundle_migration(conn) -> None:
     for table in ("release_images", "release_versions", "releases"):
         if has_table(table):
             conn.execute(text(f"DROP TABLE {table} CASCADE"))
+    # An earlier revision of this block re-added `deployment_script_version_id`
+    # on every startup, so a stale empty column can exist beside the renamed
+    # one. The pins live in `deployment_version_id`; drop the impostor.
+    for table in ("programming_runs", "production_runs"):
+        if has_col(table, "deployment_script_version_id") and has_col(table, "deployment_version_id"):
+            conn.execute(text(f"ALTER TABLE {table} DROP COLUMN deployment_script_version_id"))
     log.info("flasher: release tables retired")
 
 
@@ -395,28 +401,24 @@ def startup() -> None:
             conn.execute(text(
                 "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS release_version_id integer"
             ))
-            # Flasher restructure (2026-07-29): releases are only the FLASH;
-            # the programming/testing steps move to deployment_script_versions,
-            # which pin a release version + device file versions. All flasher
-            # tables were empty when this shipped, so drops are safe.
-            conn.execute(text(
-                "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS deployment_script_version_id integer"
-            ))
-            for col in ("steps", "transport_profile", "monitor_baud", "param_set_id", "param_defaults"):
-                conn.execute(text(f"ALTER TABLE release_versions DROP COLUMN IF EXISTS {col}"))
-            conn.execute(text(
-                "ALTER TABLE programming_runs ADD COLUMN IF NOT EXISTS deployment_script_version_id integer"
-            ))
-            conn.execute(text(
-                "ALTER TABLE programming_runs ALTER COLUMN release_version_id DROP NOT NULL"
-            ))
-            # ---- Deployment bundles (2026-07-29, second pass) --------------
+            # ---- Deployment bundles (2026-07-29) ---------------------------
+            # The first pass of this migration lived here and touched
+            # `release_versions`; the bundle pass DROPS that table, so those
+            # statements then failed with UndefinedTable and — because this
+            # whole block is one transaction — silently rolled back every
+            # column add after them. Superseded and removed; the two functions
+            # below own the flasher schema end to end.
             # ONE revision binds firmware + berryware + procedure + params, so
             # "what does a device get" has a single answer. The Release entity
             # is folded in: its images become deployment_images and its
             # identity becomes a derived fingerprint. Renames keep the 6,321
             # imported runs and their evidence intact.
             _flasher_bundle_migration(conn)
+            # Can this image be written to a device at all? (placeholders cannot)
+            conn.execute(text(
+                "ALTER TABLE firmware_assets ADD COLUMN IF NOT EXISTS "
+                "flashable boolean NOT NULL DEFAULT true"
+            ))
             # LTE module + SIM identity captured during programming.
             for col, typ in (("imei", "varchar(20)"), ("iccid", "varchar(24)"),
                              ("imsi", "varchar(18)"), ("modem_model", "varchar(60)"),
@@ -582,9 +584,11 @@ def startup() -> None:
                 """
             ))
             conn.execute(text("DELETE FROM component_comments"))
-    except Exception:
-        # DB may still be starting; the import endpoint will create tables anyway.
-        pass
+    except Exception as e:  # noqa: BLE001 — startup must not die on migrations
+        # This block is ONE transaction, so a single failing statement rolls
+        # back every statement after it. Silently passing made a column add
+        # vanish with no trace (2026-07-29) — always say which statement failed.
+        log.warning(f"startup schema block did not complete: {type(e).__name__}: {e}")
     _ensure_phase1_schema()
     _ensure_dedup_indexes()
     try:

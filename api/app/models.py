@@ -1418,6 +1418,12 @@ class FirmwareAsset(Base):
     minio_key: Mapped[str] = mapped_column(String(500))
     # Free label from the build (e.g. Tasmota's BuildDateTime) for the UI.
     build_label: Mapped[str] = mapped_column(String(100), default="")
+    # Is this actually writable to a device? Decided at upload from the bytes:
+    # an ESP image carries magic 0xE9 at offset 0, or at 0x1000 for a padded
+    # whole-flash image (ESP32 keeps its bootloader there). False for the
+    # retro PLACEHOLDER assets, whose real firmware was never archived —
+    # flashing one would brick a unit, so the validator refuses it.
+    flashable: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str] = mapped_column(String(500), default="")
     uploaded_by: Mapped[str] = mapped_column(String(100), default="")
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

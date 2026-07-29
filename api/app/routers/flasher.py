@@ -63,10 +63,25 @@ def list_firmware(project_id: int, db: Session = Depends(get_db)):
     return [_firmware_json(a) for a in rows]
 
 
+ESP_MAGIC = 0xE9
+# An ESP image starts with 0xE9. A padded whole-flash image starts with 0xFF
+# and carries the bootloader at 0x1000 (ESP32) — both are legitimate.
+ESP_MAGIC_OFFSETS = (0x0, 0x1000)
+
+
+def _looks_flashable(data: bytes, kind: str) -> bool:
+    if len(data) < 64 * 1024:
+        return False  # no real app or filesystem image is this small
+    if kind == "filesystem":
+        return True  # LittleFS has its own layout, no ESP header
+    return any(len(data) > off and data[off] == ESP_MAGIC for off in ESP_MAGIC_OFFSETS)
+
+
 def _firmware_json(a: M.FirmwareAsset) -> dict:
     return {
         "id": a.id, "filename": a.filename, "sha256": a.sha256,
         "size_bytes": a.size_bytes, "chip": a.chip, "kind": a.kind,
+        "flashable": a.flashable,
         "build_label": a.build_label, "notes": a.notes,
         "uploaded_by": a.uploaded_by, "uploaded_at": _iso(a.uploaded_at),
     }
@@ -102,6 +117,7 @@ async def upload_firmware(
         project_id=project_id, filename=file.filename or "firmware.bin", sha256=sha,
         size_bytes=len(data), chip=chip, kind=kind, minio_key=key,
         build_label=build_label, notes=notes, uploaded_by=uploaded_by,
+        flashable=_looks_flashable(data, kind),
     )
     db.add(asset)
     db.commit()

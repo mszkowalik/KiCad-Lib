@@ -890,6 +890,49 @@ in memory. Audit from a fresh session, never from the one that mutated.
 
 ---
 
+### Could a V2 actually be programmed today? (2026-07-29)
+
+Answered by simulation rather than assertion:
+`docs/flasher/scripts/simulate_bench.py <version_id>` connects to the run
+WebSocket as the bench, answers the esptool actions, and replies to every
+console command the way a Tasmota V2 dongle would. It found four real defects
+that a hardware session would otherwise have found the hard way.
+
+1. **The final step always failed.** The V2 flow ends by clearing the bench
+   WiFi (`SSId1 0`), after which the device restarts and stops answering —
+   `config.py` wrapped exactly that call in `try/except`. The engine treated
+   silence as failure, so a *correct* run ended `fail` on step 28 of 28. The
+   `command` op now takes `optional: true`, where silence is the pass.
+2. **Three versions pinned a 158-byte placeholder as firmware.** The validator
+   checked chip and offsets but never whether an image is writable. Flashing
+   one would have bricked a unit. `firmware_assets.flashable` is now decided
+   from the bytes at upload (ESP magic `0xE9` at offset 0, or at `0x1000` for a
+   padded whole-flash image — the V2 factory images are of the second kind) and
+   the validator refuses a version that pins a non-flashable image.
+3. **Prod could not run the bench at all.** Neither nginx hop passed the
+   WebSocket upgrade, so `/api/flasher/ws/<run>` answered 404. Both now map
+   `$http_upgrade` conditionally (`web/nginx-api-proxy.inc` and the server's
+   own `nginx.conf`).
+4. **A startup migration had been silently rolling back for days.** The
+   first-pass statements still altered `release_versions`, which the bundle
+   pass drops; because that whole block is ONE transaction under a bare
+   `except: pass`, every later column add vanished with no trace, and an
+   obsolete `ADD COLUMN IF NOT EXISTS deployment_script_version_id` had
+   re-created two stale columns. The block now logs its failure, the obsolete
+   statements are gone, and the stale columns are dropped.
+
+Two runnable targets came out of it, each **28/28 steps green in simulation**
+and on their deployment's `bench` channel (proven in simulation, not yet on
+hardware — `production` waits for a real unit):
+
+- **Dongle_V2 production** — generation-C flow, firmware 14.2.0, the current
+  berryware set.
+- **Aqua_V2 production** — the same flow with the CE_AQUA_V2 build. Note it
+  does *not* push `Template`/`Module`: from 2024-07-22 the GPIO template is
+  compiled into the firmware, so the modern flow must not re-push it.
+
+The retro deployments stay as history and carry no channel.
+
 ### Retroactive V2 import (2026-07-29)
 
 All 6,321 `CE_Dongle_production` reports (2024-06-10..2026-07-08) are in the

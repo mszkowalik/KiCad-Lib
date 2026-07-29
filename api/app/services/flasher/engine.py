@@ -550,6 +550,14 @@ class RunEngine:
             resp = await self.send_command(V(step["cmd"]), V(step.get("payload")),
                                            step.get("expect_key"), timeout)
             if resp is None:
+                # `optional` means silence is the EXPECTED outcome. The V2 flow
+                # ends by clearing the bench WiFi, after which the device
+                # restarts and stops answering — config.py wrapped exactly this
+                # call in try/except. Without the flag a correct run fails on
+                # its last step.
+                if step.get("optional"):
+                    self.log("app", f"{step['cmd']}: no answer, which this step expects")
+                    return "pass"
                 raise StepFailed(f'no response to "{step["cmd"]}" within {timeout:.0f}s')
             got = self._capture(step, resp)
             await self._store_identity(got)

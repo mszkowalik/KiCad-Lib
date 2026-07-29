@@ -13,6 +13,13 @@
 # untouched. That matters because a deployment sharing a docker network with
 # other stacks cannot call its backend plain `api`.
 
+# "upgrade" only when the client actually asked for one — a blanket
+# Connection: upgrade breaks plain keep-alive requests.
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''    close;
+}
+
 server {
     listen 80;
     server_name _;

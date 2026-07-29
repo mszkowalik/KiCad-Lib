@@ -87,6 +87,11 @@ def check(db, version: M.DeploymentVersion) -> dict:
                 f"deployment targets {deployment.chip}")
         elif not img_chip:
             warnings.append(f"image {img.asset.filename} has no chip recorded")
+        if not img.asset.flashable:
+            errors.append(
+                f"{img.asset.filename} is not a writable ESP image — it is a placeholder or "
+                "truncated upload, and flashing it would brick the device"
+                + (f" ({img.asset.notes.split(';')[0]})" if img.asset.notes else ""))
     native = dep_chip in [_norm_chip(c) for c in NATIVE_USB_CHIPS]
     if version.transport_profile == "usb_serial_jtag" and dep_chip and not native:
         errors.append(
