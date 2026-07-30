@@ -127,6 +127,11 @@ def list_history(limit: int = 200, db: Session = Depends(get_db)):
             "decided_by": a.actor,
             "proposal_id": vid,
             "component_id": None,
+            # parent symbol/footprint id, so a geometry row links to its
+            # template page like a component row links to its detail page.
+            # Stays None when the template is gone (a rejected creation takes
+            # its stillborn row with it) — there is nothing to link to then.
+            "template_id": None,
             "component_name": details.get(kind, ""),
             "version_no": None,
             "created_by": None,
@@ -165,6 +170,7 @@ def list_history(limit: int = 200, db: Session = Depends(get_db)):
                 if v is not None:
                     parent = v.symbol if kind == "symbol" else v.footprint
                     row.update(
+                        template_id=parent.id if parent else None,
                         component_name=parent.name if parent else row["component_name"],
                         version_no=v.version_no,
                         created_by=v.created_by,

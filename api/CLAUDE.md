@@ -476,6 +476,24 @@ up in the UI automatically. Audit actions in use: `proposal.create`,
   footprint/symbol node at all is refused by name ("this is not a whole
   footprint"), because a canvas-only selection otherwise parses fine and then
   fails the header check with a confusing message.
+- **A clipboard copy has NO name, and the name is rewritten, not enforced.**
+  KiCad names a copied item after the pseudo-library it invents for the
+  clipboard — `(footprint "clipboard:11d1f418-7567-4c54-…")`. Refusing on a
+  header mismatch therefore rejected the primary way text arrives, and deriving
+  a name from it would have created a footprint literally called
+  `clipboard:<uuid>`. So: `set_footprint_header` / `set_symbol_entry_name`
+  rewrite the pasted name to the authoritative one (the row being edited, or
+  what the user typed), and `is_placeholder_name` makes `derive_*_name` return
+  None for a placeholder so the create form asks instead. A mismatch that is a
+  REAL name still lands, with a warning naming both — silence there would let a
+  wrong paste overwrite the wrong template unnoticed. Renaming a symbol must
+  rewrite its unit entries (`<entry>_<unit>_<style>`) too, or the symbol renders
+  empty.
+- **Rendering needs the name INSIDE the text to match the name passed to
+  kicad-cli.** `_render_source` therefore rewrites both to a safe label when the
+  payload is a clipboard copy: the colon in `clipboard:<uuid>` reads as a
+  library separator and the symbol lookup fails (502). Pass
+  `allow_placeholder=True` to `derive_*_name` when you only need a label.
 - **Creation reads the name OUT of the pasted text** (`derive_footprint_name` /
   `derive_symbol_name`), so `POST /api/{symbols,footprints}/propose` has no name
   field: a footprint header must equal the row name anyway, so a second field

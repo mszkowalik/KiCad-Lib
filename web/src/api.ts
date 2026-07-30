@@ -541,11 +541,12 @@ export function proposeNewTemplate(
   kind: TemplateKind,
   source_text: string,
   comment: string,
+  name = "",
 ): Promise<GeometryProposalResult & { footprint?: string; symbol?: string }> {
   return request(`/api/${kind}/propose`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source_text, comment }),
+    body: JSON.stringify({ source_text, comment, name }),
   });
 }
 
@@ -1145,6 +1146,10 @@ export interface ProposalHistoryRow {
   proposal_id: number | null;
   /** Present for component kind — lets the row link to the component detail. */
   component_id: number | null;
+  /** Symbol/footprint kinds — the parent template's id, so the row links to
+   *  its template page. Null when the template no longer exists (a rejected
+   *  creation takes its stillborn row with it). */
+  template_id: number | null;
   /** Display name (component / skill / symbol / footprint). */
   component_name: string;
   version_no: number | null;

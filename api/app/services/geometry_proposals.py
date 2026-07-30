@@ -20,9 +20,63 @@ user can paste straight from the editor without hand-editing the text.
 """
 from __future__ import annotations
 
+import re
+
 from sqlalchemy.orm import Session
 
 from .. import models as M
+
+# KiCad names a copied item after the pseudo-library it invents for the
+# clipboard: `(footprint "clipboard:11d1f418-7567-4c54-…")`. That is an
+# artifact of the copy, not a name anybody chose, so it is never stored and
+# never offered as the name of a new template.
+PLACEHOLDER_NAME_RE = re.compile(
+    r"^(?:clipboard:|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$)", re.I
+)
+_QUOTED = r'"(?:[^"\\]|\\.)*"'
+_FP_HEADER_RE = re.compile(r"^\(\s*footprint\s+(" + _QUOTED + r"|[^\s()]+)")
+_SYM_ENTRY_RE = re.compile(r'\(\s*symbol\s+"((?:[^"\\]|\\.)*)"')
+
+
+def is_placeholder_name(name: str | None) -> bool:
+    """True for a name KiCad invented for the clipboard, not one a person chose."""
+    return bool(name) and bool(PLACEHOLDER_NAME_RE.match(name or ""))
+
+
+def set_footprint_header(text: str, name: str) -> str:
+    """Rewrite a footprint's header name.
+
+    The header is a label; the authoritative name is the row being edited (or
+    the one the user typed when creating). Rewriting rather than refusing is
+    what lets a straight clipboard paste work at all.
+    """
+    m = _FP_HEADER_RE.match(text.lstrip())
+    if not m:
+        return text
+    lead = len(text) - len(text.lstrip())
+    esc = name.replace("\\", "\\\\").replace('"', '\\"')
+    return text[:lead + m.start(1)] + f'"{esc}"' + text[lead + m.end(1):]
+
+
+def set_symbol_entry_name(text: str, name: str) -> str:
+    """Rename a `.kicad_sym` library's first symbol AND its unit entries.
+
+    Units are named `<entry>_<unit>_<style>`, so renaming only the parent would
+    orphan every unit and the symbol would render empty.
+    """
+    m = _SYM_ENTRY_RE.search(text)
+    if not m:
+        return text
+    old = m.group(1)
+    if old == name:
+        return text
+    esc = name.replace("\\", "\\\\").replace('"', '\\"')
+    pattern = re.compile(r'(\(\s*symbol\s+")' + re.escape(old) + r'(_[^"]*)?(")')
+    return pattern.sub(lambda mm: mm.group(1) + esc + (mm.group(2) or "") + mm.group(3), text)
+
+
+# --------------------------------------------------------------------------
+# footprints
 
 SYMBOL_LIB_HEADER = (
     '(kicad_symbol_lib\n\t(version 20251024)\n\t(generator "kicad_symbol_editor")\n'
@@ -104,11 +158,14 @@ def normalize_symbol_text(text: str) -> str:
 # name derivation — a paste already carries its own name
 
 
-def derive_footprint_name(source_text: str) -> str | None:
+def derive_footprint_name(source_text: str, allow_placeholder: bool = False) -> str | None:
     """The name in a pasted footprint's header, or None if there is no header.
 
     Creation reads the name out of the payload instead of asking for it: the
-    header has to match anyway, so a second field could only ever disagree.
+    header has to match anyway, so a second field could only ever disagree. A
+    clipboard placeholder is NOT a usable name, so it reads as None and the
+    form asks — except for rendering, which only needs a label and passes
+    `allow_placeholder`.
     """
     from ..util.sexpr import _norm, parse_sexpr
 
@@ -123,18 +180,23 @@ def derive_footprint_name(source_text: str) -> str | None:
         node = node[0]  # the footprint node IS the root
     if not (isinstance(node, list) and len(node) > 1 and _norm(node[0]) == "footprint"):
         return None
-    return _norm(node[1]) or None
+    header = _norm(node[1]) or None
+    return header if allow_placeholder else (None if is_placeholder_name(header) else header)
 
 
-def derive_symbol_name(source_text: str) -> str | None:
-    """The entry name of the first symbol in a pasted `.kicad_sym` payload."""
+def derive_symbol_name(source_text: str, allow_placeholder: bool = False) -> str | None:
+    """The entry name of the first symbol in a pasted `.kicad_sym` payload.
+
+    Placeholder handling matches `derive_footprint_name`."""
     from .generator import load_symbol_lib_from_text
 
     try:
         lib = load_symbol_lib_from_text(normalize_symbol_text(source_text))
     except Exception:
         return None
-    return next((s.entryName for s in lib.symbols if s.entryName), None)
+    tops = [s.entryName for s in lib.symbols if s.entryName and "_" not in s.entryName]
+    entry = next(iter(tops or [s.entryName for s in lib.symbols if s.entryName]), None)
+    return entry if allow_placeholder else (None if is_placeholder_name(entry) else entry)
 
 
 # --------------------------------------------------------------------------
@@ -167,10 +229,17 @@ def propose_footprint_version(
     fp_node = find_node(tree, "footprint") or (tree[0] if tree and isinstance(tree[0], list) else tree)
     valid = isinstance(fp_node, list) and len(fp_node) > 1 and _norm(fp_node[0]) == "footprint"
     header = _norm(fp_node[1]) if valid else ""
+    header_note = None
     if header != name:
-        return {"error": f"footprint header is {header!r} but must be exactly {name!r} "
-                         "(no easyeda2kicad:/7Sigma: prefix inside the file)",
-                "header": header}
+        # The header is a label; `name` is authoritative (the row being edited,
+        # or what the user typed). Rewrite rather than refuse — a straight
+        # clipboard paste always carries KiCad's invented "clipboard:<uuid>",
+        # so refusing on mismatch would reject the primary way text arrives.
+        source_text = set_footprint_header(source_text, name)
+        if not is_placeholder_name(header):
+            # a real, different name is worth saying out loud
+            header_note = f"header said {header!r}; filed as {name!r}"
+        parsed = footprint_parsed(source_text)
     bad_models = [m for m in parsed.get("models") or [] if not m.startswith(MODEL_PREFIX)]
     if bad_models:
         # the `error` string carries its own context: it is what a browser shows
@@ -178,7 +247,7 @@ def propose_footprint_version(
                          + ", ".join(bad_models),
                 "offending": bad_models}
 
-    warnings: list[str] = []
+    warnings: list[str] = [header_note] if header_note else []
     for m in parsed.get("models") or []:
         rel = m[len(MODEL_PREFIX):]
         if db.query(M.Model3D).filter_by(rel_path=rel).first() is None:
@@ -245,16 +314,33 @@ def propose_symbol_version(
     except Exception as e:
         return {"error": f"source_text does not parse as a .kicad_sym library: {e}"}
     entry_names = [s.entryName for s in lib.symbols]
+    name_note = None
     if name not in entry_names:
-        return {"error": f"source_text contains no symbol named {name!r} — it holds: "
-                         + (", ".join(entry_names) or "nothing"),
-                "symbols_found": entry_names}
+        # Same reasoning as the footprint header: rename rather than refuse, so
+        # a clipboard payload (named after KiCad's clipboard pseudo-library)
+        # lands on the row the user opened. Only safe for a SINGLE-entry
+        # library — with several, we cannot know which one they meant.
+        tops = [n for n in entry_names if "_" not in n] or entry_names
+        if len(tops) != 1:
+            return {"error": f"source_text contains no symbol named {name!r} — it holds: "
+                             + (", ".join(entry_names) or "nothing")
+                             + ". Paste one symbol at a time.",
+                    "symbols_found": entry_names}
+        source_text = set_symbol_entry_name(source_text, name)
+        if not is_placeholder_name(tops[0]):
+            name_note = f"pasted symbol was {tops[0]!r}; filed as {name!r}"
+        try:
+            lib = load_symbol_lib_from_text(source_text)
+        except Exception as e:
+            return {"error": f"renaming the pasted symbol to {name!r} broke it: {e}"}
+        if name not in [s.entryName for s in lib.symbols]:
+            return {"error": f"could not rename the pasted symbol to {name!r}"}
     try:
         parsed = symbol_parsed(source_text)
     except Exception as e:
         return {"error": f"symbol metadata extraction failed: {e}"}
 
-    warnings: list[str] = []
+    warnings: list[str] = [name_note] if name_note else []
     sym = db.query(M.Symbol).filter_by(name=name).first()
     is_new = sym is None
     old_pins = None

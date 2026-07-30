@@ -14,10 +14,13 @@ from ..db import get_db
 from ..services.geometry_proposals import (
     derive_footprint_name,
     derive_symbol_name,
+    is_placeholder_name,
     normalize_footprint_text,
     normalize_symbol_text,
     propose_footprint_version,
     propose_symbol_version,
+    set_footprint_header,
+    set_symbol_entry_name,
 )
 from ..services.mirror import top_level_of, update_mirror_symbols, write_manifest
 from ..services.render import render_svg
@@ -145,6 +148,9 @@ class GeometryProposal(BaseModel):
 
     source_text: str
     comment: str = ""
+    #: creation only — required when the payload carries no usable name of its
+    #: own, which is every straight clipboard paste
+    name: str = ""
 
 
 @router.post("/footprints/{fp_id}/propose")
@@ -189,12 +195,16 @@ def _propose_new(kind: str, body: GeometryProposal, db: Session):
     is_fp = kind == "footprint"
     derive = derive_footprint_name if is_fp else derive_symbol_name
     propose = propose_footprint_version if is_fp else propose_symbol_version
-    ext = ".kicad_mod" if is_fp else ".kicad_sym"
 
-    name = derive(body.source_text or "")
+    # A typed name wins: a clipboard payload is named after KiCad's clipboard
+    # pseudo-library, so `derive` deliberately returns None for it and the form
+    # asks instead. Otherwise the name comes from the pasted text.
+    name = body.name.strip() or derive(body.source_text or "")
     if not name:
         raise HTTPException(400, detail={
-            "error": f"cannot read a {kind} name from this text — paste a whole {ext} body"})
+            "error": f"this text carries no usable {kind} name — KiCad names a clipboard copy "
+                     f"after its own clipboard library. Type the {kind} name to file it.",
+            "needs_name": True})
     model = M.Footprint if is_fp else M.Symbol
     if db.query(model).filter_by(name=name).first() is not None:
         raise HTTPException(400, detail={
@@ -236,10 +246,20 @@ def _render_source(kind: str, body: GeometrySource):
     text = (normalize_footprint_text if is_fp else normalize_symbol_text)(body.source_text or "")
     if not text.strip():
         raise HTTPException(400, detail={"error": "nothing to preview"})
-    name = body.name.strip() or (derive_footprint_name(text) if is_fp else derive_symbol_name(text))
+    # Rendering only needs a LABEL, and kicad-cli looks the item up BY that
+    # label — so the name handed to it and the name inside the text must agree.
+    # A clipboard payload is called `clipboard:<uuid>`, whose colon reads as a
+    # library separator and makes the symbol lookup fail, so rewrite both to a
+    # safe placeholder rather than refuse to draw the thing.
+    name = body.name.strip() or (
+        derive_footprint_name(text, allow_placeholder=True) if is_fp
+        else derive_symbol_name(text, allow_placeholder=True))
     if not name:
         raise HTTPException(400, detail={
             "error": f"cannot read a {kind} name from this text — so it cannot be rendered"})
+    if is_placeholder_name(name) or ":" in name:
+        name = "preview"
+    text = set_footprint_header(text, name) if is_fp else set_symbol_entry_name(text, name)
     try:
         svg = render_svg(kind, name, text)
     except Exception as e:  # noqa: BLE001 — surface render failures to the UI

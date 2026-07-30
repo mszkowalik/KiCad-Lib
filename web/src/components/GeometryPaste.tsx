@@ -39,6 +39,7 @@ export default function GeometryPaste({
   const creating = id === undefined;
 
   const [src, setSrc] = useState(publishedSource ?? "");
+  const [newName, setNewName] = useState("");
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<GeometryProposalResult | null>(null);
@@ -89,12 +90,13 @@ export default function GeometryPaste({
     clearOutcome();
     try {
       const res = creating
-        ? await proposeNewTemplate(kind, src, comment)
+        ? await proposeNewTemplate(kind, src, comment, newName)
         : await proposeTemplateEdit(kind, id, src, comment);
       setResult(res);
       if (creating) {
         setSrc("");
         setComment("");
+        setNewName("");
       }
       onFiled?.(res);
     } catch (err) {
@@ -120,7 +122,7 @@ export default function GeometryPaste({
     <>
       <p className="muted">
         {creating
-          ? `Paste a whole ${ext} body, or drop the file on the box. The name is read from the pasted text — there is no name field to disagree with it.`
+          ? `Paste a whole ${ext} body, or drop the file on the box. The name is read from the pasted text; type one below when it has none of its own.`
           : `Paste the ${noun} from the KiCad editor, or drop a ${ext} file on the box. The text is prefilled with the published source, so select all and paste over it.`}{" "}
         Filing creates a <strong>draft</strong>. Nothing changes until you approve it in
         Proposals, where you get the visual before/after.
@@ -144,6 +146,26 @@ export default function GeometryPaste({
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => void drop(e)}
       />
+      {creating ? (
+        <div className="skill-desc">
+          <input
+            className="text"
+            value={newName}
+            maxLength={200}
+            spellCheck={false}
+            placeholder={`${noun} name — leave blank to use the name in the pasted text`}
+            aria-label={`New ${noun} name`}
+            onChange={(e) => {
+              setNewName(e.target.value);
+              clearOutcome();
+            }}
+          />
+          <span className="rail-hint">
+            Required for a straight clipboard copy: KiCad names it after its own clipboard
+            library (<span className="mono">clipboard:&lt;uuid&gt;</span>), which is not a name.
+          </span>
+        </div>
+      ) : null}
       <div className="skill-desc">
         <input
           className="text"

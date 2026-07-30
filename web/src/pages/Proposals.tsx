@@ -403,7 +403,15 @@ export default function Proposals() {
                           <Link to="/library/skills" className="mono comp-link">
                             {h.component_name}
                           </Link>
+                        ) : h.template_id !== null ? (
+                          <Link
+                            to={`/library/templates/${h.kind}s/${h.template_id}`}
+                            className="mono comp-link"
+                          >
+                            {h.component_name}
+                          </Link>
                         ) : (
+                          // a rejected creation deleted its row — nothing to open
                           <span className="mono">{h.component_name}</span>
                         )}
                       </td>
