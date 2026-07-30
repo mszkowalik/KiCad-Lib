@@ -216,7 +216,8 @@ def preview(external_id: str, db: Session = Depends(get_db)):
     row = _staged(db, external_id)
     from ..services.jlc_invoice import parse
     inv = parse(row.payload)
-    plan = jlc_import.plan_manufacturing_document(inv, _decisions_map(db))
+    plan = jlc_import.plan_manufacturing_document(inv, _decisions_map(db),
+                                                  fee_info=row.fee_info)
     try:
         res = jlc_apply.apply_manufacturing_document(db, plan, dry_run=True)
     except jlc_apply.ApplyRefused as e:
@@ -239,7 +240,8 @@ def apply_document(external_id: str, dry_run: bool = True, actor: str = "user",
     row = _staged(db, external_id)
     from ..services.jlc_invoice import parse
     inv = parse(row.payload)
-    plan = jlc_import.plan_manufacturing_document(inv, _decisions_map(db))
+    plan = jlc_import.plan_manufacturing_document(inv, _decisions_map(db),
+                                                  fee_info=row.fee_info)
 
     if dry_run:
         try:
@@ -557,3 +559,93 @@ def apply_decision(smt_order_code: str, dry_run: bool = True, actor: str = "user
     out["batch_id"] = h["batch_id"]
     out["reversible"] = True
     return out
+
+
+@router.post("/fees/refresh")
+def refresh_fees(force: bool = False, db: Session = Depends(get_db)):
+    """Fetch the per-order fee breakdown for staged batches that miss it.
+
+    The fee cache (`fee_info`) was added after the invoice cache, so batches
+    staged earlier hold payloads but no breakdown. Evidence only — no money
+    moves; the breakdown is what /fees/backfill and fresh imports split from.
+    `force=true` re-fetches every batch (a re-settled order changes its tolls).
+    """
+    if not jlc_web.available(db):
+        raise HTTPException(409, "no JLCPCB browser session stored — paste cookies first")
+    rows = db.query(M.JlcImport).filter_by(kind="assembly").all()
+    fetched = skipped = failed = 0
+    for row in rows:
+        if not row.payload:
+            skipped += 1
+            continue
+        if row.fee_info is not None and not force:
+            skipped += 1
+            continue
+        try:
+            ok = jlc_import._fetch_fee_info(db, row)
+        except jlc_web.JlcSessionExpired as e:
+            raise HTTPException(401, str(e)) from e
+        fetched += 1 if ok else 0
+        failed += 0 if ok else 1
+    audit(db, "jlc.import.fees.refresh", "jlc_import", None,
+          details={"fetched": fetched, "skipped": skipped, "failed": failed})
+    db.commit()
+    return {"fetched": fetched, "skipped": skipped, "failed": failed}
+
+
+@router.post("/fees/backfill")
+def backfill_fees(external_id: str = "", dry_run: bool = True, actor: str = "user",
+                  db: Session = Depends(get_db)):
+    """Split ALREADY-imported batch documents into JLC's own fee itemization.
+
+    Each document is one reversible journal batch. Children inherit their
+    line's destination, so no money changes owner — only its step grain. Lines
+    with hand-made children are skipped and reported, never merged.
+    """
+    q = db.query(M.JlcImport).filter_by(kind="assembly")
+    if external_id:
+        q = q.filter_by(external_id=external_id)
+    rows = [r for r in q.all() if r.payload]
+    if external_id and not rows:
+        raise HTTPException(404, f"{external_id} is not staged")
+
+    reports = []
+    applied = 0
+    for row in sorted(rows, key=lambda r: r.external_id):
+        try:
+            if dry_run:
+                reports.append(jlc_apply.backfill_fee_split(db, row, actor=actor,
+                                                            dry_run=True))
+                continue
+            # `journal.batch` writes NO header when the body touched no
+            # journalled row, so a no-op batch leaves no trace by itself.
+            with journal.batch(db, kind="jlc.fees.backfill", source_ref=row.external_id,
+                               actor=actor,
+                               summary={"external_id": row.external_id}) as h:
+                res = jlc_apply.backfill_fee_split(db, row, actor=actor, dry_run=False)
+            db.commit()
+            if res.get("status") == "applied":
+                res["batch_id"] = h["batch_id"]
+                res["reversible"] = h["batch_id"] is not None
+                applied += 1
+            reports.append(res)
+        except jlc_apply.ApplyRefused as e:
+            db.rollback()
+            reports.append({"external_id": row.external_id, "status": "refused",
+                            "error": str(e)})
+    summary = {
+        "documents_seen": len(rows),
+        "applied": applied,
+        "children_created": sum(r.get("children") or r.get("would_create_children") or 0
+                                for r in reports),
+        "value_split_usd": round(sum(r.get("value_split_usd") or 0 for r in reports), 2),
+        "by_status": {},
+    }
+    for r in reports:
+        s = r.get("status") or "?"
+        summary["by_status"][s] = summary["by_status"].get(s, 0) + 1
+    if not dry_run:
+        audit(db, "jlc.import.fees.backfill", "jlc_import", None,
+              details=summary, actor=actor)
+        db.commit()
+    return {"dry_run": dry_run, "summary": summary, "documents": reports}

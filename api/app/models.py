@@ -708,6 +708,13 @@ class JlcImport(Base):
     # JLC supplied itself were charged to the pool twice. Shape:
     # {smtOrderCode: [{lcsc, mpn, qty, componentSource, ...}]}.
     bom_info: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Per-order fee breakdown from `orderCenter/selectPersonOrderDetail` — the
+    # ONLY place JLC itemizes an order's price (`orderCountTolls` for PCB
+    # orders, `smtPriceInfo` for assembly orders; the invoice endpoint prints
+    # one figure per line). Raw tolls are kept verbatim, same policy as
+    # `payload`. Shape: {"orders": {<orderCode>: {kind, board, dummy, paicl,
+    # carriage, tariff, tolls|spi}}}.
+    fee_info: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (

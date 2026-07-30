@@ -37,7 +37,9 @@ STEPS: dict[str, tuple[str, str]] = {
     "parts:attrition":    ("Component attrition charged to the run", "part"),
 
     "fab:pcb":            ("Bare PCB fabrication", "fab"),
+    "fab:setup":          ("PCB engineering / setup (NRE)", "tooling"),
     "fab:panel":          ("Panelization", "fab"),
+    "fab:test":           ("PCB electrical test", "fab"),
     "fab:other":          ("PCB production — other / unexplained remainder", "fab"),
     "fab:general":        ("PCB production (unsplit)", "fab"),
 
@@ -82,7 +84,8 @@ STEPS: dict[str, tuple[str, str]] = {
 # to $25 x 550.
 DEFAULT_BASIS: dict[str, str] = {
     "parts:pool": "per_device", "parts:prepaid": "per_device", "parts:attrition": "per_device",
-    "fab:pcb": "per_device", "fab:panel": "per_run",
+    "fab:pcb": "per_device", "fab:setup": "per_run", "fab:panel": "per_run",
+    "fab:test": "per_device",
     "pcba:setup": "per_run", "pcba:stencil": "per_run", "pcba:fixture": "per_run",
     "pcba:parts": "per_device", "pcba:extended": "per_run", "pcba:smt": "per_device",
     "pcba:hand_solder": "per_device", "pcba:manual": "per_device",

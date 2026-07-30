@@ -169,6 +169,10 @@ _PHASE1_DDL = (
     # JLC's per-(order, part) `componentSource`: who actually supplied the part.
     ("jlc_imports.bom_info",
      "ALTER TABLE jlc_imports ADD COLUMN IF NOT EXISTS bom_info jsonb"),
+    # Per-order fee breakdown (orderCountTolls / smtPriceInfo) — what lets an
+    # invoice line be split into vendor-neutral production steps.
+    ("jlc_imports.fee_info",
+     "ALTER TABLE jlc_imports ADD COLUMN IF NOT EXISTS fee_info jsonb"),
     # Reconnect staging to the documents it produced. The 2026-07 backfill wrote
     # documents with scripts that never stamped `status`/`document_id`, so all 37
     # rows read `staged` against 24 documents actually imported — and the table

@@ -49,7 +49,7 @@ from datetime import date, datetime
 from sqlalchemy.orm import Session
 
 from .. import models as M
-from . import jlc_invoice
+from . import cost_steps, jlc_invoice
 
 log = logging.getLogger(__name__)
 
@@ -195,7 +195,226 @@ def plan_parts_document(pob: str, lots: list[dict], invoice_raw: dict | None) ->
     }
 
 
-def plan_manufacturing_document(inv: dict, decisions: dict[str, dict] | None = None) -> dict:
+# ------------------------------------------------------- fee itemization
+# JLC's `smtPriceInfo` keys -> (label, step). The identity that makes this
+# bookable: sum of these keys == the order's `dummyMoney`, verified exactly on
+# 44 of 46 assembly orders in the account (2026-07-30; the two off-by-cents
+# cases become a visible `:other` remainder). `padPatchMoney`,
+# `padFurnaceWeldMoney` and `padShowMoney` are deliberately ABSENT — they are
+# components of `padMoney`, and emitting them beside it double counts (found on
+# SMT025101662116, where padMoney 109.28 = padPatchMoney 67.50 + reflow 41.78).
+JLC_SMT_FEE_STEPS: dict[str, tuple[str, str]] = {
+    "smtProjectMoney":          ("Setup fee", "pcba:setup"),
+    "smtSteelMoney":            ("Stencil", "pcba:stencil"),
+    "stencilMoney":             ("Stencil", "pcba:stencil"),
+    "steelStoreFee":            ("Stencil storage", "pcba:stencil"),
+    "materialMoney":            ("Components sourced by JLC", "pcba:parts"),
+    "speciesMoney":             ("Extended components fee", "pcba:extended"),
+    "padMoney":                 ("SMT placement", "pcba:smt"),
+    "manualWeldMoney":          ("Hand-soldering labor", "pcba:hand_solder"),
+    "manualWeldProjectMoney":   ("Hand-soldering setup", "pcba:hand_solder"),
+    "fixtureMoney":             ("Assembly fixture / jig", "pcba:fixture"),
+    "fixtureStoreFee":          ("Fixture storage", "pcba:fixture"),
+    "packageMoney":             ("Packaging", "pcba:packaging"),
+    "noAuditPersonalFeeTotal":  ("Personalization services", "pcba:special"),
+    "nonPersonalFeeTotal":      ("Additional services", "pcba:special"),
+    "specialComponentFeeTotal": ("Special components fee", "pcba:special"),
+    "xrayInspectionMoney":      ("X-ray inspection", "pcba:special"),
+    "singleProcessMoney":       ("Single-piece process surcharge", "pcba:surcharge"),
+    "smtBigBoardMoney":         ("Large-board surcharge", "pcba:surcharge"),
+    "smtAchieveMoney":          ("Expedited lead time", "pcba:other"),
+    "spreadFee":                ("Spread fee", "pcba:other"),
+    "smtConfirmProductionFee":  ("Production confirmation", "pcba:other"),
+    "pcbConfirmProductionFee":  ("Production confirmation (PCB)", "pcba:other"),
+}
+
+# `orderCountTolls` keys itemized OUT of a PCB order's price. Everything not
+# listed (copper weight, gold thickness, castellated holes, stackup, via
+# covering, ...) is a board-spec surcharge and stays inside the bare-board
+# remainder — it IS the board's price. `adornPutMoney` and `fillMoney` carry
+# JLC's internal names because no public wording for them was found; they go
+# to `fab:other` so the money stays visible rather than guessed at.
+JLC_PCB_FEE_STEPS: dict[str, tuple[str, str]] = {
+    "projectMoney":         ("Engineering fee", "fab:setup"),
+    "spellMoney":           ("Panelization", "fab:panel"),
+    "stencilMoney":         ("Stencil (ordered with the PCB)", "pcba:stencil"),
+    "testsMoney":           ("Electrical test", "fab:test"),
+    "achieveMoney":         ("Expedited lead time", "fab:other"),
+    "multipleAchieveMoney": ("Expedited lead time", "fab:other"),
+    "spellAchieveMoney":    ("Expedited lead time (panel)", "fab:other"),
+    "adornPutMoney":        ("JLC charge 'adornPut' (no public wording)", "fab:other"),
+    "fillMoney":            ("JLC charge 'fill' (no public wording)", "fab:other"),
+    "specialMoney":         ("Special process", "fab:other"),
+    "charFontColor":        ("Silkscreen / character option", "fab:other"),
+    "noCodeMoney":          ("Remove order number", "fab:other"),
+}
+
+
+def _child_kind(step: str) -> str:
+    """A fee child's coarse rollup kind, from the step catalog — EXCEPT `part`.
+
+    A `part` leaf with no run claims the POOL (`line_destination`), and JLC's
+    `materialMoney` components never enter the consigned stock — they were
+    JLC's own supply, soldered to the boards. Booking them as pool stock would
+    invent inventory, so the child stays `assembly` and the step key
+    (`pcba:parts`) alone says what the money bought.
+    """
+    kind = cost_steps.STEPS.get(step, ("", "other"))[1]
+    return "assembly" if kind == "part" else kind
+
+
+def order_fee_components(entry: dict) -> list[dict]:
+    """One fee entry (from `jlc_web.order_fee_info`) -> [{slug, label, step,
+    amount}]. Sums EXACTLY to the order's billed product money (`dummy` +
+    `extra`) by construction: whatever the mapped keys do not explain becomes a
+    visible remainder component, never silent absorption."""
+    out: list[dict] = []
+    if entry.get("kind") == "smt":
+        spi = entry.get("spi") or {}
+        for key, (label, step) in JLC_SMT_FEE_STEPS.items():
+            amt = round(jlc_invoice._f(spi.get(key)), 4)
+            if abs(amt) >= 0.005:
+                out.append({"slug": key, "label": label, "step": step, "amount": amt})
+        resid = round(jlc_invoice._f(entry.get("dummy")) - sum(c["amount"] for c in out), 4)
+        if abs(resid) >= 0.01:
+            out.append({"slug": "remainder", "step": "pcba:other", "amount": resid,
+                        "label": "Assembly charges JLC does not itemize"})
+        extra = round(jlc_invoice._f(entry.get("extra")), 4)
+        if abs(extra) >= 0.01:
+            # Real invoiced money: `paiclMoney` exceeds dummy+carriage+tariff on
+            # some orders (up to $382.74 observed) and the invoice's product
+            # total only closes when it is counted.
+            out.append({"slug": "unitemized", "step": "pcba:other", "amount": extra,
+                        "label": "Unitemized order charge (billed beyond the fee list)"})
+    else:
+        tolls = entry.get("tolls") or {}
+        for key, (label, step) in JLC_PCB_FEE_STEPS.items():
+            amt = round(jlc_invoice._f(tolls.get(key)), 4)
+            if abs(amt) >= 0.005:
+                out.append({"slug": key, "label": label, "step": step, "amount": amt})
+        base = round(jlc_invoice._f(entry.get("dummy")) - sum(c["amount"] for c in out), 4)
+        if abs(base) >= 0.005:
+            out.insert(0, {"slug": "board", "step": "fab:pcb", "amount": base,
+                           "label": "Bare board price (incl. spec surcharges)"})
+        extra = round(jlc_invoice._f(entry.get("extra")), 4)
+        if abs(extra) >= 0.01:
+            out.append({"slug": "unitemized", "step": "fab:other", "amount": extra,
+                        "label": "Unitemized order charge (billed beyond the fee list)"})
+    return out
+
+
+def _fill_to(components: list[dict], budget: float) -> tuple[list[dict], list[dict]]:
+    """Split fee components at a money boundary: the first list sums to at most
+    `budget`, the second is the overflow. One component may split across the
+    boundary — JLC's invoice prints a bare-PCB line that covers only PART of
+    the PCB order's cost and folds the rest into the assembly line, so the
+    boundary is theirs, not ours."""
+    own: list[dict] = []
+    fold: list[dict] = []
+    left = round(budget, 4)
+    for c in components:
+        if left >= c["amount"] - 0.005:
+            own.append(c)
+            left = round(left - c["amount"], 4)
+        elif left > 0.005:
+            own.append({**c, "amount": left,
+                        "label": f"{c['label']} (part — remainder on the assembly line)"})
+            fold.append({**c, "amount": round(c["amount"] - left, 4)})
+            left = 0.0
+        else:
+            fold.append(c)
+    return own, fold
+
+
+def fee_children_plan(inv: dict, fee_orders: dict[str, dict]) -> dict[str, list[dict]]:
+    """Per invoice line (keyed by its `external_line_id`), the fee children the
+    order tolls imply. Pure derivation, shared by the import planner and the
+    retroactive backfill so the two can never disagree.
+
+    The allocation problem this solves: fee truth is per ORDER, but the invoice
+    prints per LINE and reallocates money between the PCB and assembly lines of
+    one project (verified: a PCB order costing $86.44 printed as $34.58, the
+    difference folded into the assembly line). So board-side components fill
+    the printed board-side line first; the overflow lands on the group's
+    assembly line, labeled as PCB cost. A signed `delta` child absorbs JLC's
+    remaining line-allocation noise (±$16.10 observed once) so every parent
+    closes exactly.
+
+    Children carry NO run/allocate here — the caller assigns destination
+    (decision for a fresh import, the target line's own destination for the
+    backfill)."""
+    out: dict[str, list[dict]] = {}
+
+    # printed board-side money per order code (bare PCB and stencil lines)
+    printed_pcb: dict[str, float] = {}
+    for li in inv["lines"]:
+        if li["stage"] != "pcba" and li["total"]:
+            printed_pcb[li["order_code"]] = printed_pcb.get(li["order_code"], 0.0) + li["total"]
+
+    # the assembly order that carries a board's folded remainder
+    smt_for_board: dict[str, str] = {}
+    for li in inv["lines"]:
+        if li["stage"] == "pcba":
+            code = li["smt_order_code"] or li["order_code"]
+            fe = fee_orders.get(code)
+            if fe and fe.get("board"):
+                smt_for_board.setdefault(str(fe["board"]), code)
+
+    pcb_fold: dict[str, list[dict]] = {}
+    for code, fe in fee_orders.items():
+        if fe.get("kind") != "pcb":
+            continue
+        comps = order_fee_components(fe)
+        printed = printed_pcb.get(code)
+        target_smt = smt_for_board.get(code)
+        if printed is None and target_smt is None:
+            continue  # order absent from this invoice (re-order fabricated earlier)
+        own, fold = _fill_to(comps, printed or 0.0)
+        if fold and not target_smt:
+            # No assembly line to carry the overflow — keep everything on the
+            # printed line and let the visible residual say it does not fit.
+            own, fold = comps, []
+        if printed is not None and own:
+            out[code] = [
+                {**c, "external_line_id": f"{code}:fee:{c['slug']}"} for c in own]
+        if fold and target_smt:
+            pcb_fold.setdefault(target_smt, []).extend(
+                {**c, "label": f"{c['label']} — PCB order {code}",
+                 "external_line_id": f"{target_smt}:pcbfold:{code}:{c['slug']}"}
+                for c in fold)
+
+    seen: set[str] = set()
+    for li in inv["lines"]:
+        if li["stage"] != "pcba" or not li["total"]:
+            continue
+        code = li["smt_order_code"] or li["order_code"]
+        fe = fee_orders.get(code)
+        if fe is None or code in seen:
+            # An SMT order printed across SEVERAL lines cannot have its one fee
+            # list attached twice — the first line carries it, later lines stay
+            # honest unsplit leaves.
+            continue
+        seen.add(code)
+        kids = [{**c, "external_line_id": f"{code}:fee:{c['slug']}"}
+                for c in order_fee_components(fe)]
+        kids.extend(pcb_fold.pop(code, []))
+        # Exact closure against what the line prints (minus its prepaid slice,
+        # which is the existing `excluded` child): JLC's per-line allocation is
+        # arbitrary, so the noise gets its own signed, visible child.
+        target = round(li["total"] - li["presale"], 4)
+        delta = round(target - sum(c["amount"] for c in kids), 4)
+        if abs(delta) >= 0.01:
+            kids.append({"slug": "delta", "step": "pcba:other", "amount": delta,
+                         "label": "Invoice line allocation difference vs JLC order totals",
+                         "external_line_id": f"{code}:fee:delta"})
+        # Keyed by the LINE's identity (order_code carries the board suffix), so
+        # the planner and the backfill attach to exactly one parent.
+        out[li["order_code"]] = kids
+    return out
+
+
+def plan_manufacturing_document(inv: dict, decisions: dict[str, dict] | None = None,
+                                fee_info: dict | None = None) -> dict:
     """One W batch -> one cost document.
 
     The invoice arithmetic, DERIVED from the real payloads rather than assumed
@@ -225,6 +444,8 @@ def plan_manufacturing_document(inv: dict, decisions: dict[str, dict] | None = N
     decisions = decisions or {}
     lines: list[dict] = []
     t = inv["totals"]
+    fee_orders = (fee_info or {}).get("orders") or {}
+    kids_by_line = fee_children_plan(inv, fee_orders) if fee_orders else {}
 
     for li in inv["lines"]:
         if not li["total"]:
@@ -244,9 +465,10 @@ def plan_manufacturing_document(inv: dict, decisions: dict[str, dict] | None = N
             f"when the order was panelised, never a device count."
             + (f" File: {li['file_name']}." if li["file_name"] else "")
         )
+        fee_kids = kids_by_line.get(li["order_code"]) or []
         parent = {
             "kind": kind, "plan_key": step, "allocate": "none",
-            "run_id": None if li["presale"] else run_id,
+            "run_id": None if (li["presale"] or fee_kids) else run_id,
             "label": f"{li['order_type_raw'][:60]} - {li['order_code']}",
             "qty": 1, "unit_price": li["total"],
             "external_line_id": li["order_code"],
@@ -257,30 +479,45 @@ def plan_manufacturing_document(inv: dict, decisions: dict[str, dict] | None = N
             # A line with live children is a header worth zero, so the money must
             # live entirely in the children — the excluded prepaid slice plus the
             # assembly work that is actually chargeable to the run.
-            parent["children"] = [
-                {
-                    "kind": "part", "plan_key": "parts:prepaid", "allocate": "excluded",
-                    # An exclusion without a stated reason is invisible: `excluded`
-                    # is a legal bucket in the conservation identity, which is how
-                    # $14,443 sat charged to nobody with every check green.
-                    "exclude_reason": "prepaid_components",
-                    "run_id": None,
-                    "label": f"Prepaid components - {li['order_code']}",
-                    "qty": 1, "unit_price": li["presale"],
-                    "external_line_id": f"{li['order_code']}:prepaid",
-                    "notes": ("Already paid via the POB parts order and already in the "
-                              "pool. Recorded so the document reconciles; charged to "
-                              "nobody on purpose."),
-                },
-                {
-                    "kind": kind, "plan_key": step, "allocate": "none", "run_id": run_id,
-                    "label": f"Assembly work - {li['order_code']}",
-                    "qty": 1, "unit_price": round(li["total"] - li["presale"], 4),
-                    "external_line_id": f"{li['order_code']}:work",
-                    "notes": (f"line total ${li['total']} minus ${li['presale']} of prepaid "
-                              "components already in the pool"),
-                },
-            ]
+            parent["children"].append({
+                "kind": "part", "plan_key": "parts:prepaid", "allocate": "excluded",
+                # An exclusion without a stated reason is invisible: `excluded`
+                # is a legal bucket in the conservation identity, which is how
+                # $14,443 sat charged to nobody with every check green.
+                "exclude_reason": "prepaid_components",
+                "run_id": None,
+                "label": f"Prepaid components - {li['order_code']}",
+                "qty": 1, "unit_price": li["presale"],
+                "external_line_id": f"{li['order_code']}:prepaid",
+                "notes": ("Already paid via the POB parts order and already in the "
+                          "pool. Recorded so the document reconciles; charged to "
+                          "nobody on purpose."),
+            })
+        if fee_kids:
+            # The vendor's own itemization, mapped to production steps. It
+            # replaces the coarse ':work' child: the fee children sum exactly to
+            # the chargeable slice, each carrying its step key.
+            for c in fee_kids:
+                parent["children"].append({
+                    "kind": _child_kind(c["step"]), "plan_key": c["step"],
+                    "allocate": "none",
+                    "run_id": run_id if stage == "pcba" else None,
+                    "label": f"{c['label']} - {li['order_code']}",
+                    "qty": 1, "unit_price": c["amount"],
+                    "external_line_id": c["external_line_id"],
+                    "notes": (f"From JLC's order fee breakdown "
+                              f"({'smtPriceInfo' if stage == 'pcba' else 'orderCountTolls'}"
+                              f" key '{c['slug']}')."),
+                })
+        elif li["presale"]:
+            parent["children"].append({
+                "kind": kind, "plan_key": step, "allocate": "none", "run_id": run_id,
+                "label": f"Assembly work - {li['order_code']}",
+                "qty": 1, "unit_price": round(li["total"] - li["presale"], 4),
+                "external_line_id": f"{li['order_code']}:work",
+                "notes": (f"line total ${li['total']} minus ${li['presale']} of prepaid "
+                          "components already in the pool"),
+            })
         lines.append(parent)
 
     # Header-level charges. Any run attribution is left to the operator: freight
@@ -838,10 +1075,14 @@ def sync_stage(db: Session, limit_pages: int = 4) -> dict:
                           "Check the session."),
                 "batches_visible": len(seen), "previously_staged": prior}
 
-    fetched = refreshed = failed = 0
+    fetched = refreshed = failed = fees_fetched = 0
     for bn in sorted(seen):
         row = db.query(M.JlcImport).filter_by(kind="assembly", external_id=bn).first()
         if row is not None and row.payload:
+            # Already staged — but the fee breakdown was added later than the
+            # invoice cache, so older rows may still miss it.
+            if row.fee_info is None and _fetch_fee_info(db, row):
+                fees_fetched += 1
             refreshed += 1
             continue
         try:
@@ -866,11 +1107,32 @@ def sync_stage(db: Session, limit_pages: int = 4) -> dict:
             row.panel_info = jlc_web.panel_factors(jlc_web.get_person_order(db, bn))
         except jlc_web.JlcWebError as e:
             log.warning(f"no panelisation for {bn}: {e}")
+        # Same reason for the fee breakdown: the invoice prints one figure per
+        # line; only the order detail itemizes it into steps.
+        if _fetch_fee_info(db, row):
+            fees_fetched += 1
         row.fetched_at = M.utcnow()
         fetched += 1
     db.commit()
     return {"batches_visible": len(seen), "fetched": fetched,
-            "already_staged": refreshed, "failed": failed}
+            "already_staged": refreshed, "failed": failed,
+            "fee_info_fetched": fees_fetched}
+
+
+def _fetch_fee_info(db: Session, row: M.JlcImport) -> bool:
+    """Fetch and cache one batch's per-order fee breakdown. Returns whether it
+    was stored. A failure is logged and left as None so the next sync retries."""
+    from . import jlc_web  # local, same reason as in sync_stage
+
+    try:
+        info = jlc_web.order_fee_info(jlc_web.get_order_detail(db, row.external_id))
+    except jlc_web.JlcWebError as e:
+        log.warning(f"no fee breakdown for {row.external_id}: {e}")
+        return False
+    if not info.get("orders"):
+        return False
+    row.fee_info = info
+    return True
 
 
 def decision_queue(db: Session) -> list[dict]:

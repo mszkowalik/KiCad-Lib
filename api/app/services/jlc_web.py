@@ -578,6 +578,80 @@ def panel_factors(person_order: dict) -> dict[str, dict]:
     return out
 
 
+def order_fee_info(order_detail: dict) -> dict:
+    """Per-order fee breakdown from a `selectPersonOrderDetail` payload.
+
+    This endpoint is the ONLY place JLC itemizes what an order's price is made
+    of: `recordsDetail.orderCountTolls` on a PCB order (engineering fee,
+    panelization, stencil, test, board-spec surcharges), `recordsDetail
+    .smtPriceInfo` on an assembly order (setup, stencil, components, extended
+    fee, placement, hand soldering, fixture, packaging, services). The invoice
+    endpoint prints ONE figure per line and even reallocates money between the
+    PCB and assembly lines of one project, so per-fee truth must come from
+    here (verified to the cent across all 37 staged batches, 2026-07-30).
+
+    Facts the extractor relies on, all verified on real payloads:
+      * `dummyMoney` is the order's own product money; `paiclMoney` =
+        dummyMoney + carriageMoney + tariffChargesMoney + an UNITEMIZED extra
+        that is real invoiced money on some assembly orders (up to $382.74).
+      * An assembly entry names its board via `pcbOrderId`, which equals the
+        PCB entry's `produceOrderId`.
+      * The raw tolls dicts are kept verbatim — undocumented API, keep the
+        evidence (same policy as `JlcImport.payload`).
+
+    Returns {"orders": {<orderCode or SMT code>: {kind: pcb|smt, board,
+    dummy, paicl, carriage, tariff, extra, tolls|spi}}}.
+    """
+    orders: dict[str, dict] = {}
+    board_by_produce_id: dict[int, str] = {}
+    entries = order_detail.get("unionOrderDetailVOList") or []
+
+    def _money(rd: dict) -> dict:
+        dummy = rd.get("dummyMoney") or 0.0
+        paicl = rd.get("paiclMoney") or 0.0
+        carriage = rd.get("carriageMoney") or 0.0
+        tariff = rd.get("tariffChargesMoney") or 0.0
+        return {
+            "dummy": dummy, "paicl": paicl, "carriage": carriage, "tariff": tariff,
+            # The slice of the billed order total no toll key explains. Real
+            # money — the invoice's product total only closes with it included.
+            "extra": round(paicl - dummy - carriage - tariff, 4),
+        }
+
+    for o in entries:
+        rd = o.get("recordsDetail") or {}
+        dd = rd.get("detail") or {}
+        tolls = rd.get("orderCountTolls") or dd.get("orderCountTolls") or {}
+        code = str(o.get("orderCode") or rd.get("orderCode") or "").strip()
+        if not tolls:
+            continue
+        pid = rd.get("produceOrderId") or tolls.get("produceOrderId")
+        if not code:
+            code = f"produce:{pid}"
+        if pid:
+            board_by_produce_id[int(pid)] = code
+        orders[code] = {"kind": "pcb", "board": code, "produce_order_id": pid,
+                        **_money(rd), "tolls": tolls}
+
+    for o in entries:
+        rd = o.get("recordsDetail") or {}
+        dd = rd.get("detail") or {}
+        spi = rd.get("smtPriceInfo") or {}
+        smt = dd.get("smtDetail") or {}
+        if not spi:
+            continue
+        code = str(smt.get("smtOrderCode") or "").strip()
+        if not code:
+            continue
+        pcb_id = rd.get("pcbOrderId")
+        board = (board_by_produce_id.get(int(pcb_id)) if pcb_id else None) or str(
+            smt.get("produceOrderCode") or "")
+        orders[code] = {"kind": "smt", "board": board,
+                        "produce_order_id": rd.get("produceOrderId"),
+                        **_money(rd), "spi": spi}
+    return {"orders": orders}
+
+
 def smt_order_nums(person_order: dict) -> dict[str, str]:
     """`smtOrderCode` -> the order's UUID (`myOrdersRecord.orderNum`).
 

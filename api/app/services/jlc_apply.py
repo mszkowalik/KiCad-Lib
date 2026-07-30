@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..models import utcnow
 from ..routers.util import audit
-from . import lots, run_actuals
+from . import jlc_import, jlc_invoice, lots, run_actuals
 
 log = logging.getLogger(__name__)
 
@@ -682,6 +682,217 @@ def reclassify_order_lines(db: Session, code: str, outcome: str,
             "rebucketed_count": len(rebucketed),
             "rebucketed_value_usd": round(sum(c["amount_usd"] for c in rebucketed), 2),
             "reason_only_count": len(changes) - len(rebucketed)}
+
+
+def backfill_fee_split(db: Session, row: M.JlcImport, actor: str = "jlc-import",
+                       dry_run: bool = True) -> dict:
+    """Attach JLC's per-order fee itemization to an ALREADY-imported batch
+    document, as split children under the existing lines.
+
+    Derivation is shared with the import planner (`jlc_import.fee_children_plan`)
+    so a retro-split document and a freshly imported one can never disagree.
+    The rules that keep this safe:
+
+    * **The parent keeps its printed figure** — children are added, nothing is
+      rewritten. Closure against the TARGET line's own amount (not the invoice's)
+      via a signed delta child, so a hand-corrected line still closes exactly.
+    * **Hand work is never touched.** A line that already has children the
+      backfill did not make is skipped and reported — the operator's
+      decomposition wins. Presale lines split at import time are handled by
+      targeting their ':work' child, which carries the chargeable slice.
+    * **Destination is inherited.** Children copy the target's run/project, so
+      no money changes owner — the run's total moves by zero (the target
+      becomes a header worth zero and the children sum to its amount).
+    * **Excluded lines stay unsplit** — money charged to nobody on purpose
+      gains nothing from a step breakdown, and prepaid children stay excluded.
+    * Idempotent: a target that already carries `:fee:` children is reported as
+      `already_split`, never doubled.
+    """
+    before = identity_snapshot(db)
+    if not row.payload or "invoiceNo" not in row.payload:
+        return {"status": "no_payload", "external_id": row.external_id}
+    fee_orders = (row.fee_info or {}).get("orders") or {}
+    if not fee_orders:
+        return {"status": "no_fee_info", "external_id": row.external_id}
+    doc = db.get(M.RunCostDocument, row.document_id) if row.document_id else None
+    if doc is None:
+        doc = find_document(db, row.external_id, row.invoice_no or "")
+    if doc is None:
+        return {"status": "not_imported", "external_id": row.external_id}
+
+    inv = jlc_invoice.parse(row.payload)
+    plans = jlc_import.fee_children_plan(inv, fee_orders)
+    if not plans:
+        return {"status": "nothing_to_split", "external_id": row.external_id,
+                "document_id": doc.id}
+    stage_by_line = {li["order_code"]: li["stage"] for li in inv["lines"]}
+
+    lines = (db.query(M.RunCostLine)
+             .filter(M.RunCostLine.document_id == doc.id,
+                     M.RunCostLine.voided_at.is_(None)).all())
+    by_ext: dict[str, list[M.RunCostLine]] = {}
+    kids_of: dict[int, list[M.RunCostLine]] = {}
+    for li in lines:
+        if li.external_line_id:
+            by_ext.setdefault(li.external_line_id, []).append(li)
+        if li.parent_line_id:
+            kids_of.setdefault(li.parent_line_id, []).append(li)
+
+    results: list[dict] = []
+    made = 0
+    value = 0.0
+    used_targets: set[int] = set()
+    pos = max([li.position for li in lines], default=-1)
+
+    def _amount_match(key: str) -> tuple[M.RunCostLine | None, str]:
+        """Fallback for hand-entered documents, whose lines carry NO external
+        ids: find the one live LEAF whose amount equals what this order was
+        billed. Exact-cent matching (±0.02) plus uniqueness — a document where
+        two lines share the amount is left alone and reported, never guessed.
+
+        Returns (line, reason-if-none). Amounts tried, in order: the order's own
+        billed product money (dummy+extra — doc 19's hand lines hold exactly
+        this), the bare dummy, and for assembly lines the printed invoice slice
+        minus prepaid components.
+        """
+        bare = jlc_invoice.split_assembly_order_code(key)[0]
+        fe = fee_orders.get(bare) or fee_orders.get(key)
+        if fe is None:
+            return None, "no_fee_entry"
+        dummy = jlc_invoice._f(fe.get("dummy"))
+        extra = jlc_invoice._f(fe.get("extra"))
+        expected = [round(dummy + extra, 2), round(dummy, 2)]
+        inv_line = next((li for li in inv["lines"] if li["order_code"] == key), None)
+        if inv_line is not None:
+            expected.append(round(inv_line["total"] - inv_line["presale"], 2))
+        cands = []
+        header_ids_local = set(kids_of.keys())
+        for li in lines:
+            if li.parent_line_id or li.id in header_ids_local or li.id in used_targets:
+                continue
+            if li.allocate == "excluded" or li.kind not in ("assembly", "fab", "tooling", "other"):
+                continue
+            amt = round((li.qty or 0) * (li.unit_price or 0), 2)
+            if any(abs(amt - e) <= 0.02 for e in expected):
+                cands.append(li)
+        if len(cands) == 1:
+            return cands[0], ""
+        return None, ("ambiguous_amount" if len(cands) > 1 else "no_amount_match")
+
+    # A PCB order whose cost the invoice folded ENTIRELY into the assembly line
+    # produces no plan key of its own — but a hand-entered document often
+    # carries it as a separate line at the order's true cost (doc 19 held P12's
+    # $106.43 that the invoice printed nowhere). Offer every such order to the
+    # amount matcher with its full fee list.
+    all_plans = dict(plans)
+    for code, fe in fee_orders.items():
+        if fe.get("kind") == "pcb" and code not in all_plans:
+            comps = jlc_import.order_fee_components(fe)
+            if comps:
+                all_plans[code] = [
+                    {**c, "external_line_id": f"{code}:fee:{c['slug']}"} for c in comps]
+
+    for key, kids in sorted(all_plans.items()):
+        # Presale lines were split at import time into prepaid + work; the work
+        # child carries the chargeable slice, so it is the split target.
+        work = by_ext.get(f"{key}:work") or []
+        parents = by_ext.get(key) or []
+        target = work[0] if len(work) == 1 else (parents[0] if len(parents) == 1 else None)
+        matched_by = "external_line_id"
+        if target is None:
+            target, why = _amount_match(key)
+            matched_by = "amount"
+            if target is not None:
+                # A hand line holds the ORDER's money, not the invoice's printed
+                # allocation — so it gets the order's full fee list, and the
+                # delta below closes against the line's own amount.
+                bare = jlc_invoice.split_assembly_order_code(key)[0]
+                fe = fee_orders.get(bare) or fee_orders.get(key)
+                kids = [{**c, "external_line_id": f"{key}:fee:{c['slug']}"}
+                        for c in jlc_import.order_fee_components(fe)]
+        if target is None:
+            results.append({"key": key, "status": why or "no_matching_line",
+                            "candidates": len(parents) + len(work)})
+            continue
+        used_targets.add(target.id)
+        if target.allocate == "excluded":
+            results.append({"key": key, "line_id": target.id, "status": "excluded_skipped"})
+            continue
+        existing = kids_of.get(target.id) or []
+        if any(":fee:" in (c.external_line_id or "") or ":pcbfold:" in (c.external_line_id or "")
+               for c in existing):
+            results.append({"key": key, "line_id": target.id, "status": "already_split"})
+            continue
+        if existing:
+            results.append({"key": key, "line_id": target.id, "status": "has_hand_children",
+                            "children": len(existing)})
+            continue
+
+        base_kids = [c for c in kids if c["slug"] != "delta"]
+        target_amount = round((target.qty or 0) * (target.unit_price or 0), 4)
+        delta = round(target_amount - sum(c["amount"] for c in base_kids), 4)
+        if abs(delta) >= 0.01:
+            other = "pcba:other" if stage_by_line.get(key) == "pcba" else "fab:other"
+            base_kids = base_kids + [{
+                "slug": "delta", "step": other, "amount": delta,
+                "label": "Invoice line allocation difference vs JLC order totals",
+                "external_line_id": f"{key}:fee:delta"}]
+
+        planned = []
+        for c in base_kids:
+            pos += 1
+            planned.append({"label": f"{c['label']} - {key}"[:300], "step": c["step"],
+                            "amount": c["amount"], "external_line_id": c["external_line_id"]})
+            # Written on a dry run too — the conservation check below then tests
+            # the REAL rows, and the rollback discards them (same contract as
+            # `apply_parts_document`: the preview runs the real code path).
+            db.add(M.RunCostLine(
+                document_id=doc.id,
+                parent_line_id=target.id,
+                run_id=target.run_id,
+                project_id=target.project_id,
+                position=pos,
+                kind=jlc_import._child_kind(c["step"]),
+                basis="per_run",
+                label=f"{c['label']} - {key}"[:300],
+                qty=1, unit_price=c["amount"],
+                currency=target.currency or doc.currency or "USD",
+                allocate="none",
+                external_line_id=(c["external_line_id"] or "")[:120],
+                plan_key=c["step"],
+                notes=("Backfilled from JLC's order fee breakdown "
+                       f"(key '{c['slug']}'); destination inherited from the "
+                       "line it splits."),
+            ))
+        made += len(planned)
+        value = round(value + sum(c["amount"] for c in base_kids), 2)
+        results.append({"key": key, "line_id": target.id, "status": "split",
+                        "matched_by": matched_by,
+                        "target_amount": target_amount, "delta": delta,
+                        "children": planned})
+
+    if made == 0:
+        return {"status": "nothing_new", "external_id": row.external_id,
+                "document_id": doc.id, "targets": results}
+    db.flush()
+    try:
+        after = _assert_identities(db, before, f"fee backfill for {row.external_id}")
+    except ApplyRefused:
+        db.rollback()
+        raise
+    if dry_run:
+        db.rollback()
+        return {"status": "dry_run", "external_id": row.external_id, "document_id": doc.id,
+                "would_create_children": made, "value_split_usd": value,
+                "targets": results}
+    _write_audit(db, "jlc.import.fee_backfill", doc.id,
+                 {"external_id": row.external_id, "children": made,
+                  "value_split_usd": value}, actor)
+    # NOT committed here — the caller wraps this in `journal.batch(...)`, same
+    # contract as every other applier in this module.
+    return {"status": "applied", "external_id": row.external_id, "document_id": doc.id,
+            "children": made, "value_split_usd": value, "targets": results,
+            "identities": after}
 
 
 def lot_line_index(db: Session) -> dict[str, int]:

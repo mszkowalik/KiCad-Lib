@@ -1190,6 +1190,36 @@ both pass `Upgrade`/`Connection` via a `map $http_upgrade $connection_upgrade`
 — conditional, so ordinary keep-alive requests are untouched. Without both,
 the bench gets a 404 on the upgrade and no run can start.
 
+### The Aqua history was misattributed to the Dongle (found 2026-07-30)
+
+The import filed every report under CE_Dongle_V2. Both product lines write
+`dongle_*` report filenames and use the same `dongle_%12X` Tasmota topic, and
+**both firmware binaries contain the string `dongle` while neither contains
+`aqua`** — so the boot banner reads "Project dongle" on an Aqua too. Banner
+matching was worthless; two signals do identify an Aqua:
+
+1. **which test method ran.** `test.py::CE_Dongle_V2` logs and returns — there
+   has never been a dongle test (the user said so, and the source agrees).
+   `CE_Aqua` drives 3 relays and asserts Switch7/8/9 change state, plus a
+   DS18B20 range. 816 of the 819 test reports are `CE_Aqua`, 813 carry the
+   8-switch matrix and 614 report a temperature. Only 3 reports ran the no-op.
+2. **the gen-B config pushed a GPIO template** naming `CE_Aqua` (122 reports;
+   it appears in the app log as a Python dict, which is why a JSON-shaped
+   regex misses it). Additionally the 2024-09-15 session configured 190 units
+   and Aqua-tested 186 of them, so that whole session is Aqua.
+
+Union: **718 Aqua units**. `docs/flasher/fix_aqua_attribution.py` moved their
+devices, 718 config runs and 816 test runs into CE_Aqua_V2, mirroring each
+Dongle config version with an Aqua one that pins the CE_AQUA firmware and the
+same berryware set. Final split — Aqua 718 devices / 1,534 runs, Dongle 4,784
+devices / 4,787 runs, 6,321 runs pinned, **zero cross-project runs** (every
+run belongs to a deployment in its device's own project, which is now an
+invariant worth checking after any import).
+
+Remaining honest limit: an Aqua unit configured in a mixed session and never
+tested is indistinguishable from a dongle in the records, so the Aqua count is
+a floor (the batches plan ~1,015 units).
+
 ### Implementation record (2026-07-29)
 
 Built in this pass — schema (5 new tables + column moves, startup-migrated),
