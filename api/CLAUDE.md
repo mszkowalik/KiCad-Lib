@@ -265,6 +265,24 @@ Read this before touching components, symbols, footprints, or skills.
   series. Alias ordering matters: 'special components' before 'components',
   'extended components' before both — a substring match on the wrong alias
   misfiles money ($10.50 found in `pcba:parts` on day one).
+- **JLC invoices auto-split into fee steps from the ORDER endpoints, never the
+  invoice** (2026-07-30). The invoice prints one figure per line and even
+  reallocates money between one project's PCB and assembly lines; the itemized
+  truth is `selectPersonOrderDetail` — `orderCountTolls` per PCB order,
+  `smtPriceInfo` per assembly order — cached verbatim in `JlcImport.fee_info`
+  (fetched by sync; `POST /api/jlc/import/fees/refresh` backfills old rows).
+  `jlc_import.JLC_SMT_FEE_STEPS` / `JLC_PCB_FEE_STEPS` map raw keys to steps;
+  `fee_children_plan` is the ONE derivation both the import planner and the
+  retroactive `jlc_apply.backfill_fee_split` (`POST /api/jlc/import/fees/
+  backfill`, journalled, idempotent, skips hand-split lines) build children
+  from. Traps encoded there: `padPatchMoney` is INSIDE `padMoney` (emitting
+  both double counts); assembly-order `paiclMoney` exceeds
+  dummy+carriage+tariff by a real unitemized charge (up to $382.74) that must
+  become a `pcba:other` child; a `pcba:parts` fee child is written kind
+  `assembly`, never `part` — a run-less `part` leaf claims the POOL, and JLC's
+  sourced components never enter consigned stock. Fee children's
+  `external_line_id` is `<order>:fee:<key>`, which is both the idempotency key
+  and what lets a decision reclassify them.
 - **`GET /api/invoices` is the money-conservation check.** `invoice_register`
   asserts one identity — invoiced == runs + projects + pool + excluded +
   unassigned + residual (`summary.gap_usd` must be 0) — plus the pool's own
