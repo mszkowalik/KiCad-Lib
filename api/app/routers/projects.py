@@ -811,6 +811,16 @@ def list_rates(db: Session = Depends(get_db)):
     ]
 
 
+@router.get("/fx/at")
+def rates_at_date(date: str = "", db: Session = Depends(get_db)):
+    """Historical rates (currency -> rate_usd) as of an ISO date, resolved
+    exactly like the server's own money views (`fx.rates_at` via `_as_dt`),
+    so a client-side preview matches the stored figures. Empty date = now."""
+    from ..services.run_actuals import _as_dt
+    d = date.strip()
+    return {"date": d, "rates": fx.rates_at(db, _as_dt(d))}
+
+
 @router.post("/fx/refresh")
 def refresh_rates(db: Session = Depends(get_db)):
     try:

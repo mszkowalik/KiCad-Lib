@@ -723,6 +723,48 @@ def get_deployment(deployment_id: int, db: Session = Depends(get_db)):
     return _deployment_json(d, db, deep=True)
 
 
+@router.delete("/deployments/{deployment_id}")
+def delete_deployment(deployment_id: int, db: Session = Depends(get_db)):
+    """Delete a deployment that was never used.
+
+    HARD REFUSAL when any programming run references one of its versions: a run
+    is the record of what a physical device received, and deleting the version
+    it points at would leave that history unreadable. Only genuinely unused
+    deployments can go. Firmware assets and berryware files are NOT touched —
+    they live in the project's pool and other deployments may pin them.
+    """
+    d = db.get(M.Deployment, deployment_id)
+    if d is None:
+        raise HTTPException(404, "no such deployment")
+    version_ids = [v.id for v in d.versions]
+    runs = (
+        db.query(M.ProgrammingRun)
+        .filter(M.ProgrammingRun.deployment_version_id.in_(version_ids or [-1]))
+        .count()
+    )
+    if runs:
+        raise HTTPException(
+            409,
+            f'"{d.name}" is the recorded deployment of {runs} programming run(s) — deleting it '
+            "would orphan that history. Rename it or leave it as an archive instead.")
+    batches = (
+        db.query(M.ProductionRun)
+        .filter(M.ProductionRun.deployment_version_id.in_(version_ids or [-1]))
+        .all()
+    )
+    for b in batches:  # soft pointer: clear it rather than dangle
+        b.deployment_version_id = None
+    db.query(M.DeploymentChannel).filter(
+        M.DeploymentChannel.deployment_id == d.id).delete(synchronize_session=False)
+    name, count = d.name, len(version_ids)
+    db.delete(d)  # cascades versions -> images + pinned-file links
+    db.commit()
+    audit(db, "flasher.deployment_delete", "deployment", deployment_id,
+          details=f"{name} ({count} version(s), never used"
+                  + (f", {len(batches)} batch pin(s) cleared" if batches else "") + ")")
+    return {"ok": True, "deleted_versions": count, "batches_cleared": len(batches)}
+
+
 @router.post("/deployments/{deployment_id}/versions")
 def compose_version(deployment_id: int, body: ComposeIn, db: Session = Depends(get_db)):
     """Create a DRAFT version. Sections left None inherit from `from_version_id`."""

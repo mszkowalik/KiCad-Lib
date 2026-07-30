@@ -1935,6 +1935,10 @@ export interface RunPatchBody {
   run_date?: string;
   notes?: string;
   overrides?: Record<string, unknown>;
+  /** re-point the run at another snapshot of the same project; the server
+   *  refuses (409) while `b<id>` overrides are keyed to the old snapshot's
+   *  BOM lines. A snapshot cannot be cleared — omit to leave it alone. */
+  snapshot_id?: number;
   /** sale side. Only fields actually present are applied, so patching a label
    *  can never blank a price. `null` clears one deliberately. */
   sale_unit_price?: number | null;
@@ -2313,6 +2317,17 @@ export function getNbpRate(
 ): Promise<NbpRate> {
   const qs = new URLSearchParams({ currency, date });
   return request(`/api/fx/nbp?${qs}`, { signal });
+}
+
+/** Historical rates (currency -> USD per unit) as of an ISO date — the same
+ *  `fx.rates_at` resolution the server's money views use, so a client-side
+ *  preview can match the stored figures. Empty date = live rates. */
+export function getFxAt(
+  date: string,
+  signal?: AbortSignal,
+): Promise<{ date: string; rates: Record<string, number> }> {
+  const qs = new URLSearchParams({ date });
+  return request(`/api/fx/at?${qs}`, { signal });
 }
 
 export interface RunActuals {
@@ -3679,6 +3694,14 @@ export function updateDeployment(
     headers: JSON_HEADERS,
     body: JSON.stringify(body),
   });
+}
+
+/** Delete a deployment. The API refuses while any programming run records it,
+ *  so history can never be orphaned by a cleanup. */
+export function deleteDeployment(
+  id: number,
+): Promise<{ ok: boolean; deleted_versions: number; batches_cleared: number }> {
+  return request(`/api/flasher/deployments/${id}`, { method: "DELETE" });
 }
 
 export function composeVersion(

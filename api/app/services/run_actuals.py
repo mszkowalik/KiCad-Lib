@@ -1033,7 +1033,9 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
     # --- the sale side. Revenue is price-per-device x units BILLED (`qty_sold`),
     # falling back to good units then planned: a customer is invoiced for what
     # shipped, which is not always what passed test. Converted into the same
-    # display currency as the cost, at the run's date, so margin is comparable.
+    # display currency as the cost — at the ORDER date when set (a sale is
+    # struck on a day and its FX must not drift; same rule as the register's
+    # by_run_usd), else at the run's pricing date.
     revenue = None
     if run.sale_unit_price:
         sold = run.qty_sold or run.qty_good or run.plan_qty or run.qty or 0
@@ -1042,7 +1044,8 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
         if sale_cur == cur.upper():
             revenue = gross
         else:
-            revenue, known = fx.convert(gross, sale_cur, cur, rates)
+            sale_rates = fx.rates_at(db, _as_dt(run.order_date)) if run.order_date else rates
+            revenue, known = fx.convert(gross, sale_cur, cur, sale_rates)
             if not known:
                 unknown.add(sale_cur)
     margin = None if revenue is None else revenue - (actual_total or 0)

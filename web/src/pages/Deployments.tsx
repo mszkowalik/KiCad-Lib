@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createDeployment,
+  deleteDeployment,
   errorMessage,
   getFlasherMeta,
   getProjects,
@@ -120,6 +121,26 @@ export default function Deployments() {
     }
   };
 
+  /** The API is the authority: it refuses while any programming run records
+   *  this deployment, so a cleanup can never orphan device history. */
+  const removeDeployment = async () => {
+    if (!selected) return;
+    if (!(await dialog.confirm(
+      `Delete "${selected.name}" and its ${selected.versions.length} version(s)? `
+      + "Firmware and berryware stay in the project pool. Refused if any programming run "
+      + "records this deployment.",
+      { title: "Delete deployment", tone: "danger", confirmLabel: "Delete" },
+    ))) return;
+    try {
+      await deleteDeployment(selected.id);
+      setSelectedId(null);
+      setVersionId(null);
+      reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
   const promote = async (channel: string, version: DeploymentVersionRow) => {
     if (!selected) return;
     const live = selected.channels.find((c) => c.name === channel);
@@ -215,6 +236,10 @@ export default function Deployments() {
                     <h2 className="card-title">{selected.name}</h2>
                     <button type="button" className="btn btn-sm" onClick={editChip}>
                       {selected.chip || "set chip"}
+                    </button>
+                    <button type="button" className="btn btn-sm row-del" onClick={removeDeployment}
+                            title="Delete this deployment — refused while any programming run records it">
+                      Delete
                     </button>
                     <button
                       type="button"

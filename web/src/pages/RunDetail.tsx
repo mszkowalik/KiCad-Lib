@@ -20,9 +20,11 @@ import {
   deleteRunAttachment,
   deleteRunDevice,
   errorMessage,
+  getFxAt,
   getProject,
   getRun,
   getRunActuals,
+  getSnapshots,
   isAbortError,
   runAttachmentUrl,
   updateRun,
@@ -30,6 +32,7 @@ import {
   type ProjectInfo,
   type RunActuals,
   type RunInfo,
+  type SnapshotInfo,
 } from "../api";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import ProductionPanel from "../components/project/ProductionPanel";
@@ -51,6 +54,7 @@ export default function RunDetail() {
 
   const [run, setRun] = useState<RunInfo | null>(null);
   const [project, setProject] = useState<ProjectInfo | null>(null);
+  const [snapshots, setSnapshots] = useState<SnapshotInfo[] | null>(null);
   const [actuals, setActuals] = useState<RunActuals | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [serialsDraft, setSerialsDraft] = useState("");
@@ -62,6 +66,11 @@ export default function RunDetail() {
         setRun(r);
         setError(null);
         getProject(r.project_id, signal).then(setProject).catch(() => {});
+        // a snapshot-less run stays snapshot-less on purpose (turnkey batches),
+        // so the re-point selector — and this fetch — only exist for the rest
+        if (r.snapshot_id !== null) {
+          getSnapshots(r.project_id, signal).then(setSnapshots).catch(() => {});
+        }
       })
       .catch((err) => {
         if (!isAbortError(err)) setError(errorMessage(err));
@@ -120,6 +129,41 @@ export default function RunDetail() {
             </span>
           </div>
           <div className="btn-row">
+            {/* Re-point the planned BOM at another design commit. The server
+                409s while `b<id>` overrides are keyed to the old snapshot's
+                lines — the error banner carries that instruction, and the
+                select snaps back because only a successful patch sets state. */}
+            {run.snapshot_id !== null && snapshots && (
+              <select
+                className="text"
+                title="Design commit — the snapshot this batch's planned BOM comes from"
+                value={String(run.snapshot_id)}
+                onChange={(e) => {
+                  const id = Number(e.target.value);
+                  if (id === run.snapshot_id) return;
+                  updateRun(runId, { snapshot_id: id })
+                    .then(() => load())
+                    .catch((err) => setError(errorMessage(err)));
+                }}
+              >
+                {snapshots
+                  .filter((s) => s.status === "ready" || s.id === run.snapshot_id)
+                  .map((s) => {
+                    const noBoard =
+                      run.board !== "" && !(s.boards ?? []).some((b) => b.name === run.board);
+                    return (
+                      <option
+                        key={s.id}
+                        value={String(s.id)}
+                        disabled={noBoard && s.id !== run.snapshot_id}
+                      >
+                        {s.ref_name} · {s.sha.slice(0, 8)}
+                        {noBoard ? ` — no board ${run.board}` : ""}
+                      </option>
+                    );
+                  })}
+              </select>
+            )}
             <select
               className="text"
               value={run.status}
@@ -200,11 +244,12 @@ export default function RunDetail() {
                     per device{actuals?.qty_good == null ? ` (over planned ${run.qty})` : ""}
                   </div>
                 </div>
+                {/* the server converts revenue into the display currency
+                    (order-date FX), so these tiles label it as such — the
+                    sale currency would misstate a converted figure */}
                 <div className="count-tile">
                   <div className="v">
-                    {actuals?.revenue != null
-                      ? money(actuals.revenue, actuals.sale_currency || actuals.currency)
-                      : "—"}
+                    {actuals?.revenue != null ? money(actuals.revenue, actuals.currency) : "—"}
                   </div>
                   <div className="muted">revenue</div>
                 </div>
@@ -214,7 +259,7 @@ export default function RunDetail() {
                       ? money(
                           actuals.revenue /
                             Math.max(actuals.qty_sold ?? actuals.qty_good ?? actuals.qty_planned, 1),
-                          actuals.sale_currency || actuals.currency,
+                          actuals.currency,
                         )
                       : "—"}
                   </div>
@@ -415,6 +460,7 @@ function SaleCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [fxRates, setFxRates] = useState<Record<string, number> | null>(null);
 
   const num = (s: string): number | null => {
     const t = s.trim();
@@ -425,13 +471,37 @@ function SaleCard({
 
   const costCur = actuals?.currency || "USD";
   const saleCur = (currency || costCur).toUpperCase();
+  const comparable = saleCur === costCur.toUpperCase();
+  // FX for the preview at the ORDER date (else run date, else creation) —
+  // the same instants run_actuals resolves at, so the preview matches the
+  // saved figures instead of leaving the margin blank on a currency mismatch.
+  // The run-date fallback is END-of-day (run_pricing_date), the order date is
+  // start-of-day (_as_dt) — pass the exact instant, not just the date.
+  const fxDate =
+    orderDate.trim() ||
+    (run.run_date ? `${run.run_date}T23:59:59` : run.created_at);
+  useEffect(() => {
+    if (comparable) return;
+    const ac = new AbortController();
+    getFxAt(fxDate, ac.signal)
+      .then((r) => setFxRates(r.rates))
+      .catch(() => setFxRates(null));
+    return () => ac.abort();
+  }, [comparable, fxDate]);
+
   const unit = num(price);
   // mirrors the server: billed units, else good, else planned
   const units = num(qtySold) ?? num(qtyGood) ?? run.qty;
   const revenue = unit != null ? unit * units : null;
   const cost = actuals?.total ?? null;
-  const comparable = saleCur === costCur.toUpperCase();
-  const margin = revenue != null && cost != null && comparable ? revenue - cost : null;
+  const srcRate = fxRates?.[saleCur];
+  const tgtRate = fxRates?.[costCur.toUpperCase()];
+  const fxFactor = !comparable && srcRate && tgtRate ? srcRate / tgtRate : null;
+  // revenue in the cost currency: as entered when the currencies match,
+  // else converted at the order-date rate; null when no rate is stored
+  const revenueCost =
+    revenue == null ? null : comparable ? revenue : fxFactor != null ? revenue * fxFactor : null;
+  const margin = revenueCost != null && cost != null ? revenueCost - cost : null;
 
   const save = async () => {
     setBusy(true);
@@ -549,13 +619,24 @@ function SaleCard({
           <tbody>
             <tr>
               <td className="num">{units.toLocaleString()}</td>
-              <td className="num">{money(revenue, saleCur)}</td>
+              <td
+                className="num"
+                title={
+                  !comparable && revenueCost != null && revenue != null
+                    ? `${money(revenue, saleCur)} as entered`
+                    : undefined
+                }
+              >
+                {revenueCost != null ? money(revenueCost, costCur) : money(revenue, saleCur)}
+              </td>
               <td className="num">{money(cost, costCur)}</td>
               <td className={"num" + (margin != null && margin < 0 ? " err-text" : "")}>
                 {money(margin, costCur)}
               </td>
               <td className={"num" + (margin != null && margin < 0 ? " err-text" : "")}>
-                {margin != null && revenue ? `${((margin / revenue) * 100).toFixed(1)}%` : "—"}
+                {margin != null && revenueCost
+                  ? `${((margin / revenueCost) * 100).toFixed(1)}%`
+                  : "—"}
               </td>
               <td className={"num" + (margin != null && margin < 0 ? " err-text" : "")}>
                 {margin != null ? money(margin / Math.max(units, 1), costCur) : "—"}
@@ -564,10 +645,18 @@ function SaleCard({
           </tbody>
         </table>
       </div>
-      {!comparable && unit != null ? (
+      {!comparable && unit != null && fxFactor != null ? (
+        <p className="muted">
+          The sale is in {saleCur}. Revenue and margin above are converted to {costCur} at 1{" "}
+          {saleCur} = {fxFactor.toFixed(4)} {costCur}, the stored rate at{" "}
+          {orderDate.trim() ? `the order date (${orderDate.trim()})` : "the run date"}.
+        </p>
+      ) : null}
+      {!comparable && unit != null && fxFactor == null ? (
         <div className="banner-warn">
-          The sale is in {saleCur} and the cost in {costCur}. The margin above is left blank
-          rather than mixing units; the register converts both to USD at the order date.
+          The sale is in {saleCur} and the cost in {costCur}, and no rate for {saleCur} is
+          stored — the margin is left blank rather than converted 1:1. Add the rate under{" "}
+          <Link to="/setup">Setup → Exchange rates</Link>.
         </div>
       ) : null}
       {cost == null && unit != null ? (
