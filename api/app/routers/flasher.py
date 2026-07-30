@@ -1244,10 +1244,11 @@ def list_devices(
     for d in devices:
         last = latest.get(d.id)
         prod = db.get(M.ProductionRun, last.production_run_id) if last else None
-        counts = tally.get(d.id, {})
+        # NOT `counts` — that name holds the run count per device.
+        checked = tally.get(d.id, {})
         out.append({
-            "checks": {"pass": counts.get("pass", 0), "fail": counts.get("fail", 0),
-                       "unknown": counts.get("unknown", 0)},
+            "checks": {"pass": checked.get("pass", 0), "fail": checked.get("fail", 0),
+                       "unknown": checked.get("unknown", 0)},
             "id": d.id, "mac": d.mac or "", "serial": d.serial, "chip": d.chip,
             "tasmota_id": d.tasmota_id, "imei": d.imei, "iccid": d.iccid,
             "imsi": d.imsi, "modem_model": d.modem_model,

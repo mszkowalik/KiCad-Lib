@@ -5,10 +5,12 @@ Naming is what turns a run's timeline into the device view's green/red grid.
 Nothing else changes — same firmware, same bundle, same order.
 """
 import json
+import os
 import urllib.request
 
-API = "http://localhost:8020/api/flasher"
-FROM = 33  # Dongle_V3 v3
+API = os.environ.get("FLASHER_API", "http://localhost:8020/api/flasher")
+# The version to start from — ids differ per stack, so pass it in.
+FROM = int(os.environ.get("FROM_VERSION", "33"))
 
 # step index -> check name
 NAMES = {
@@ -44,7 +46,7 @@ def main():
         print(f"{idx:2} {step['op']:18} {name}")
     body = {"from_version_id": FROM, "steps": steps, "created_by": "claude",
             "comment": "Name what each step proves, so a run fills the device's check grid"}
-    made = call("POST", "/deployments/1/versions", body)
+    made = call("POST", f"/deployments/{os.environ.get('DEPLOYMENT', '1')}/versions", body)
     print("draft", made["id"], "v", made["version_no"], "valid:", made["validation"]["ok"],
           made["validation"]["errors"], made["validation"]["warnings"])
     if made["validation"]["ok"]:
