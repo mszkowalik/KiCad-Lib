@@ -34,6 +34,7 @@ PRETTY = "7Sigma.pretty"
 HERE = Path(__file__).resolve().parent
 THIRD_PARTY = HERE.parents[1]  # .../3rdparty/plugins/<id>/ -> .../3rdparty
 LOCAL_DIR = THIRD_PARTY / "footprints" / LIB_DIR_NAME / PRETTY
+SYM_LIB = THIRD_PARTY / "symbols" / LIB_DIR_NAME / "7Sigma_Base.kicad_sym"
 LOCAL_STATE_FILE = HERE / "local_state.json"  # written by sync.py: abspath -> sha256
 
 
@@ -82,7 +83,7 @@ def _confirm(names: list[str]) -> list[str] | None:
         _notify("Cannot confirm: this dialog needs macOS. Nothing was sent.")
         return None
     lst = _as_list(names)
-    plural = "footprint" if len(names) == 1 else "footprints"
+    plural = "item" if len(names) == 1 else "items"
     out = _osascript(
         f'set L to {lst}\n'
         f'set picked to choose from list L with title "Push to 7Sigma" '
@@ -133,6 +134,65 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def split_symbols(text: str) -> list[tuple[str, str]]:
+    """Top-level ``(symbol "NAME" ...)`` entries of a .kicad_sym library.
+
+    A balanced scan, so a ")" inside a property value cannot end an entry
+    early, and so unit sub-symbols (``NAME_1_1``) stay nested inside their
+    parent instead of being mistaken for entries of their own.
+
+    MIRRORED in sync.py — keep the two identical.
+    """
+    out, i, n = [], 0, len(text)
+    needle = '(symbol "'
+    while True:
+        i = text.find(needle, i)
+        if i < 0:
+            return out
+        # a top-level entry sits one tab in; anything deeper is a unit
+        line_start = text.rfind("\n", 0, i) + 1
+        if text[line_start:i] != "\t":
+            i += len(needle)
+            continue
+        name_end = text.find('"', i + len(needle))
+        name = text[i + len(needle):name_end]
+        depth, k, in_str = 0, i, False
+        while k < n:
+            c = text[k]
+            if in_str:
+                if c == "\\":
+                    k += 2
+                    continue
+                if c == '"':
+                    in_str = False
+            elif c == '"':
+                in_str = True
+            elif c == "(":
+                depth += 1
+            elif c == ")":
+                depth -= 1
+                if depth == 0:
+                    out.append((name, text[i:k + 1]))
+                    break
+            k += 1
+        i = k + 1
+
+
+def to_platform_symbol(entry: str) -> str:
+    """Wrap one symbol entry as a .kicad_sym library the platform accepts.
+
+    Also undoes the packager's nickname rewrite: it turns `"7Sigma:` into
+    `"PCM_7Sigma:` so footprint refs resolve against the installed library.
+    The platform stores the `7Sigma:` form, so a push must put it back or the
+    proposal would flip every footprint reference in the symbol.
+    """
+    entry = entry.replace('"PCM_7Sigma:', '"7Sigma:')
+    return (
+        '(kicad_symbol_lib\n\t(version 20251024)\n\t(generator "kicad_symbol_editor")\n'
+        '\t(generator_version "10.0")\n' + entry + "\n)\n"
+    )
+
+
 def to_platform_text(text: str) -> str:
     """Undo the packager's 3D-model path rewrite.
 
@@ -173,11 +233,22 @@ def _changed() -> tuple[list[tuple[str, Path, bool]], list[str]]:
         rec = baseline.get(str(f))
         if rec is None:
             if f.name not in upstream_names:
-                out.append((f.stem, f, True))  # not in the library at all — a creation
+                out.append(("footprint", f.stem, f, True))  # not in the library — a creation
             else:
                 unknown.append(f.name)  # no baseline yet; a sync will record one
         elif _sha(f) != rec:
-            out.append((f.stem, f, False))
+            out.append(("footprint", f.stem, f, False))
+
+    # symbols all live in ONE generated library file, so the unit of change is
+    # an entry inside it, not the file — diff per entry against the baseline
+    if SYM_LIB.is_file():
+        for name, entry in split_symbols(SYM_LIB.read_text(encoding="utf-8")):
+            rec = baseline.get(f"{SYM_LIB}::{name}")
+            cur = hashlib.sha256(entry.encode("utf-8")).hexdigest()
+            if rec is None:
+                unknown.append(f"{name} (symbol)")
+            elif cur != rec:
+                out.append(("symbol", name, SYM_LIB, False))
     return out, unknown
 
 
@@ -198,7 +269,8 @@ def main() -> int:
         _notify(msg)
         return 0
 
-    labels = [f"{name}{'  (new)' if is_new else ''}" for name, _, is_new in changed]
+    labels = [f"{name}  [{kind}]{'  (new)' if is_new else ''}"
+              for kind, name, _, is_new in changed]
     picked = _confirm(labels)
     if not picked:
         _notify("Nothing sent.")
@@ -211,8 +283,10 @@ def main() -> int:
     by_label = {lbl: entry for lbl, entry in zip(labels, changed)}
     try:
         ids = {f["name"]: f["id"] for f in _get_json(f"{BASE_URL}/api/footprints")}
+        sym_ids = {s["name"]: s["id"] for s in _get_json(f"{BASE_URL}/api/symbols")}
+        entries = dict(split_symbols(SYM_LIB.read_text(encoding="utf-8"))) if SYM_LIB.is_file() else {}
     except Exception as e:
-        _notify(f"Push failed: cannot list footprints — {e}")
+        _notify(f"Push failed: cannot list the library — {e}")
         return 1
 
     filed, failed = [], []
@@ -220,15 +294,24 @@ def main() -> int:
         entry = by_label.get(lbl)
         if entry is None:
             continue
-        name, path, _ = entry
-        text = to_platform_text(path.read_text(encoding="utf-8"))
-        fid = ids.get(name)
-        if fid is None:  # not in the library yet — a creation proposal
-            status, res = _post_json(f"{BASE_URL}/api/footprints/propose",
-                                     {"source_text": text, "comment": comment, "name": name})
+        kind, name, path, _ = entry
+        if kind == "symbol":
+            sid = sym_ids.get(name)
+            if sid is None:
+                failed.append(f"{name}: no such symbol on the platform")
+                continue
+            status, res = _post_json(f"{BASE_URL}/api/symbols/{sid}/propose",
+                                     {"source_text": to_platform_symbol(entries[name]),
+                                      "comment": comment})
         else:
-            status, res = _post_json(f"{BASE_URL}/api/footprints/{fid}/propose",
-                                     {"source_text": text, "comment": comment})
+            text = to_platform_text(path.read_text(encoding="utf-8"))
+            fid = ids.get(name)
+            if fid is None:  # not in the library yet — a creation proposal
+                status, res = _post_json(f"{BASE_URL}/api/footprints/propose",
+                                         {"source_text": text, "comment": comment, "name": name})
+            else:
+                status, res = _post_json(f"{BASE_URL}/api/footprints/{fid}/propose",
+                                         {"source_text": text, "comment": comment})
         if status == 200 and res.get("ok"):
             filed.append(f"{name} v{res['version_no']}")
         else:

@@ -11,7 +11,7 @@
             "name": "Sync 7Sigma Library",
             "description": "Download library updates from the 7Sigma platform (__BASE_URL__) and apply them in place",
             "show-button": true,
-            "scopes": ["pcb", "schematic"],
+            "scopes": ["pcb", "schematic", "footprint", "symbol"],
             "entrypoint": "sync.py",
             "icons-light": ["icon-light-24.png", "icon-light-48.png"],
             "icons-dark": ["icon-dark-24.png", "icon-dark-48.png"]
@@ -19,9 +19,9 @@
         {
             "identifier": "push-library",
             "name": "Push 7Sigma changes",
-            "description": "Send footprints you edited in the installed 7Sigma library to __BASE_URL__ as draft proposals",
+            "description": "Send footprints and symbols you edited in the installed 7Sigma library to __BASE_URL__ as draft proposals",
             "show-button": true,
-            "scopes": ["pcb"],
+            "scopes": ["footprint", "symbol", "pcb", "schematic"],
             "entrypoint": "push.py",
             "icons-light": ["icon-light-24.png", "icon-light-48.png"],
             "icons-dark": ["icon-dark-24.png", "icon-dark-48.png"]

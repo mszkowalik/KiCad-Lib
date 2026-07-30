@@ -113,9 +113,63 @@ def _save_local_state() -> None:
     LOCAL_STATE_FILE.write_text(json.dumps(_LOCAL, indent=0))
 
 
+def split_symbols(text: str) -> list[tuple[str, str]]:
+    """Top-level ``(symbol "NAME" ...)`` entries of a .kicad_sym library.
+
+    A balanced scan, so a ")" inside a property value cannot end an entry
+    early, and so unit sub-symbols (``NAME_1_1``) stay nested inside their
+    parent instead of being mistaken for entries of their own.
+
+    MIRRORED in sync.py — keep the two identical.
+    """
+    out, i, n = [], 0, len(text)
+    needle = '(symbol "'
+    while True:
+        i = text.find(needle, i)
+        if i < 0:
+            return out
+        # a top-level entry sits one tab in; anything deeper is a unit
+        line_start = text.rfind("\n", 0, i) + 1
+        if text[line_start:i] != "\t":
+            i += len(needle)
+            continue
+        name_end = text.find('"', i + len(needle))
+        name = text[i + len(needle):name_end]
+        depth, k, in_str = 0, i, False
+        while k < n:
+            c = text[k]
+            if in_str:
+                if c == "\\":
+                    k += 2
+                    continue
+                if c == '"':
+                    in_str = False
+            elif c == '"':
+                in_str = True
+            elif c == "(":
+                depth += 1
+            elif c == ")":
+                depth -= 1
+                if depth == 0:
+                    out.append((name, text[i:k + 1]))
+                    break
+            k += 1
+        i = k + 1
+
+
 def _record_written(target: Path, payload: bytes) -> None:
+    """Baseline for the clobber check, and for what Push diffs against.
+
+    Footprints are one file each, so the file hash is the unit. Symbols all
+    live in ONE generated library, so the unit of change is an entry inside
+    it — record those too or Push cannot tell which symbol you edited.
+    """
     if target.suffix == ".kicad_mod":
         _LOCAL[str(target)] = hashlib.sha256(payload).hexdigest()
+    elif target.suffix == ".kicad_sym":
+        _LOCAL[str(target)] = hashlib.sha256(payload).hexdigest()
+        for name, entry in split_symbols(payload.decode("utf-8", "replace")):
+            _LOCAL[f"{target}::{name}"] = hashlib.sha256(entry.encode("utf-8")).hexdigest()
 
 
 def _local_edits() -> dict:
