@@ -40,6 +40,8 @@ export interface StepEditorProps {
   bundles: BerryBundleRow[];
   onBundleChange: (bundleId: number) => void;
   defaultOffsets?: Record<string, Record<string, string>>;
+  /** the check vocabulary from /meta — suggestions, never a restriction */
+  checkNames?: { name: string; label: string; category: string }[];
   /** show the procedure without controls (a published version) */
   readOnly?: boolean;
 }
@@ -268,6 +270,23 @@ function FieldEditor(p: FieldEditorProps) {
         <ImagePicker {...p} />
       ) : field.kind === "bundle" ? (
         <BundlePicker {...p} />
+      ) : field.kind === "check" ? (
+        /* A datalist, not a select: the catalog covers what exists today and a
+           new product may prove something nobody has named yet. */
+        <>
+          <input
+            className="row-input mono"
+            list="check-catalog"
+            placeholder="nothing — this step proves no functionality"
+            value={value === undefined ? "" : String(value)}
+            onChange={(e) => set(e.target.value.trim())}
+          />
+          <datalist id="check-catalog">
+            {(p.checkNames ?? []).map((c) => (
+              <option key={c.name} value={c.name}>{`${c.label} · ${c.category}`}</option>
+            ))}
+          </datalist>
+        </>
       ) : (
         <input
           className={`row-input${field.kind === "path" ? " mono" : ""}`}

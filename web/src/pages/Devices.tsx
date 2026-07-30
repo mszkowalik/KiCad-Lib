@@ -11,6 +11,7 @@ import {
   type ProjectInfo,
 } from "../api";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import { CheckBar } from "../components/flasher/CheckGrid";
 import { fmtWhen } from "../components/flasher/common";
 import { useStickyState } from "../useStickyState";
 
@@ -102,6 +103,7 @@ export default function Devices() {
                     <th>Batch</th>
                     <th>IMEI</th>
                     <th className="num">Runs</th>
+                    <th>Checks</th>
                     <th>Last result</th>
                     <th>Last seen</th>
                   </tr>
@@ -121,6 +123,7 @@ export default function Devices() {
                       <td title={d.batch?.label ?? ""}>{d.batch?.label ?? "—"}</td>
                       <td className="mono dim" title={d.imei}>{d.imei || "—"}</td>
                       <td className="num">{d.runs}</td>
+                      <td><CheckBar checks={d.checks} /></td>
                       <td>{d.last_status ? <StatusPill status={d.last_status} /> : "—"}</td>
                       <td className="muted">{fmtWhen(d.last_seen)}</td>
                     </tr>

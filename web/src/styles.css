@@ -3167,16 +3167,17 @@ select.sel:focus {
 .param-sets-table th:nth-child(4), .param-sets-table td:nth-child(4) { width: 20%; }
 
 .devices-table { table-layout: fixed; }
-.devices-table th:nth-child(1), .devices-table td:nth-child(1) { width: 12%; }
-.devices-table th:nth-child(2), .devices-table td:nth-child(2) { width: 14%; }
-.devices-table th:nth-child(3), .devices-table td:nth-child(3) { width: 12%; }
-.devices-table th:nth-child(4), .devices-table td:nth-child(4) { width: 9%; }
+.devices-table th:nth-child(1), .devices-table td:nth-child(1) { width: 11%; }
+.devices-table th:nth-child(2), .devices-table td:nth-child(2) { width: 13%; }
+.devices-table th:nth-child(3), .devices-table td:nth-child(3) { width: 11%; }
+.devices-table th:nth-child(4), .devices-table td:nth-child(4) { width: 8%; }
 .devices-table th:nth-child(5), .devices-table td:nth-child(5) { width: 10%; }
-.devices-table th:nth-child(6), .devices-table td:nth-child(6) { width: 12%; }
-.devices-table th:nth-child(7), .devices-table td:nth-child(7) { width: 11%; }
+.devices-table th:nth-child(6), .devices-table td:nth-child(6) { width: 11%; }
+.devices-table th:nth-child(7), .devices-table td:nth-child(7) { width: 10%; }
 .devices-table th:nth-child(8), .devices-table td:nth-child(8) { width: 5%; }
-.devices-table th:nth-child(9), .devices-table td:nth-child(9) { width: 7%; }
-.devices-table th:nth-child(10), .devices-table td:nth-child(10) { width: 8%; }
+.devices-table th:nth-child(9), .devices-table td:nth-child(9) { width: 9%; }
+.devices-table th:nth-child(10), .devices-table td:nth-child(10) { width: 6%; }
+.devices-table th:nth-child(11), .devices-table td:nth-child(11) { width: 6%; }
 
 .identity-table { table-layout: fixed; }
 .identity-table td:nth-child(1) { width: 34%; }
@@ -3471,4 +3472,72 @@ select.sel:focus {
 }
 @media (max-width: 900px) {
   .ro-fields { grid-template-columns: 1fr; }
+}
+
+/* Functional checks: what a device is PROVEN to do. Green passed, red failed,
+   outline = never measured (the honest state for imported history). */
+.check-group {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0;
+}
+.check-cells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.check-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  text-decoration: none;
+  color: var(--text);
+  cursor: help;
+}
+a.check-cell {
+  cursor: pointer;
+}
+a.check-cell:hover {
+  border-color: var(--accent);
+}
+.check-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--muted);
+}
+.check-ok {
+  background: var(--ok-soft);
+}
+.check-ok .check-dot {
+  background: var(--ok);
+}
+.check-err {
+  background: var(--err-soft);
+}
+.check-err .check-dot {
+  background: var(--err);
+}
+.check-unknown {
+  border-color: var(--border);
+  color: var(--muted);
+}
+.check-unknown .check-dot {
+  background: transparent;
+  border: 1px solid var(--border);
+}
+.check-bar {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+@media (max-width: 900px) {
+  .check-group { grid-template-columns: 1fr; }
 }

@@ -14,6 +14,7 @@ import {
 } from "../api";
 import { useDialog } from "../components/Dialog";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import CheckGrid from "../components/flasher/CheckGrid";
 import { fmtDuration, fmtWhen } from "../components/flasher/common";
 
 const DIRS = ["", "tx", "rx", "app", "err", "esptool"];
@@ -122,6 +123,13 @@ export default function FlashRunDetail() {
 
         <div className="detail-page">
           <div className="detail-left">
+            {run.checks?.length ? (
+              <div className="card pad">
+                <h2 className="card-title">What this run proved</h2>
+                <CheckGrid checks={run.checks} />
+              </div>
+            ) : null}
+
             <div className="card pad">
               <h2 className="card-title">Steps</h2>
               <div className="table-wrap">
@@ -139,7 +147,10 @@ export default function FlashRunDetail() {
                     {run.steps.map((s) => (
                       <tr key={s.idx} title={s.error ?? undefined}>
                         <td className="num">{s.idx + 1}</td>
-                        <td title={s.label}>{s.label || s.op}</td>
+                        <td title={s.label}>
+                          {s.label || s.op}
+                          {s.check ? <span className="muted dim mono"> {s.check}</span> : null}
+                        </td>
                         <td className="mono dim">{s.op}</td>
                         <td><StatusPill status={s.status} /></td>
                         <td className="num">{fmtDuration(s.duration_ms)}</td>

@@ -1824,10 +1824,56 @@ class ProgrammingStep(Base):
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     response: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # A step becomes a FUNCTIONAL CHECK by carrying `check: "relay.2"` in the
+    # procedure. The name is the vocabulary key the device view groups by, so
+    # the same functionality keeps one name across versions and products.
+    check_name: Mapped[str] = mapped_column(String(60), default="")
 
     run: Mapped[ProgrammingRun] = relationship(back_populates="steps")
 
     __table_args__ = (UniqueConstraint("run_id", "idx", name="uq_programming_step_idx"),)
+
+
+class RunCheck(Base):
+    """ONE named functionality, proven or disproven by ONE run.
+
+    DERIVED, never authored: `services.flasher.checks.recompute()` rebuilds
+    every row of a run from that run's own steps and results. Drop the table and
+    it comes back identical — which is what makes it safe to improve an
+    extractor later. Two sources feed it:
+
+      * a step that carries a `check` name — the live path, where the step's
+        own pass/fail IS the check;
+      * the `results` of an imported run, which has no steps at all: the V2-era
+        reports kept the relay snapshots, the WiFi status and the download
+        sizes, so the same checks are recoverable from evidence.
+
+    `device_unit_id` is denormalised so one query paints a device's grid, and a
+    roll-up over a batch is a plain GROUP BY.
+    """
+
+    __tablename__ = "run_checks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("programming_runs.id"))
+    device_unit_id: Mapped[int | None] = mapped_column(
+        ForeignKey("device_units.id"), nullable=True
+    )
+    name: Mapped[str] = mapped_column(String(60))  # "relay.2", "wifi.join"
+    label: Mapped[str] = mapped_column(String(120), default="")  # "Relay 2 (Switch8)"
+    # identity | firmware | connectivity | berryware | hardware
+    category: Mapped[str] = mapped_column(String(40), default="")
+    status: Mapped[str] = mapped_column(String(20), default="unknown")  # pass|fail|unknown
+    detail: Mapped[str] = mapped_column(Text, default="")  # the sentence a human reads
+    value: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # the measurement
+    position: Mapped[int] = mapped_column(Integer, default=0)  # order inside the category
+    at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("run_id", "name", name="uq_run_check_name"),
+        Index("ix_run_checks_device", "device_unit_id"),
+        Index("ix_run_checks_name", "name"),
+    )
 
 
 class ProgrammingLog(Base):

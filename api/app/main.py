@@ -424,6 +424,12 @@ def startup() -> None:
                 "ALTER TABLE firmware_assets ADD COLUMN IF NOT EXISTS "
                 "flashable boolean NOT NULL DEFAULT true"
             ))
+            # A step names the functionality it proves (2026-07-30), which is
+            # what turns a run's timeline into the device view's green/red grid.
+            conn.execute(text(
+                "ALTER TABLE programming_steps ADD COLUMN IF NOT EXISTS "
+                "check_name varchar(60) NOT NULL DEFAULT ''"
+            ))
             # LTE module + SIM identity captured during programming.
             for col, typ in (("imei", "varchar(20)"), ("iccid", "varchar(24)"),
                              ("imsi", "varchar(18)"), ("modem_model", "varchar(60)"),

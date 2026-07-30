@@ -31,7 +31,7 @@ from ..db import get_db
 from .. import models as M
 from ..services import storage
 from ..services import crypto
-from ..services.flasher import bundle, validate
+from ..services.flasher import bundle, checks as checks_svc, validate
 from ..services.flasher.engine import RunEngine
 from .util import audit
 
@@ -1167,7 +1167,12 @@ def delete_param_set(param_set_id: int, db: Session = Depends(get_db)):
 def flasher_meta():
     return {"ops": STEP_OPS, "transport_profiles": TRANSPORT_PROFILES,
             "firmware_kinds": FIRMWARE_KINDS, "chips": CHIPS,
-            "default_offsets": DEFAULT_OFFSETS}
+            "default_offsets": DEFAULT_OFFSETS,
+            # The check vocabulary, so a step can pick a name from a list and
+            # the UI labels and orders without knowing any of it by heart.
+            "checks": [{"name": n, "label": lbl, "category": cat, "position": pos}
+                       for n, (lbl, cat, pos) in checks_svc.CATALOG.items()],
+            "check_categories": checks_svc.CATEGORY_ORDER}
 
 
 # -------------------------------------------------------------------- devices
@@ -1234,11 +1239,15 @@ def list_devices(
             counts[r.device_unit_id] = counts.get(r.device_unit_id, 0) + 1
             latest.setdefault(r.device_unit_id, r)
     projects = {p.id: p.name for p in db.query(M.Project)}
+    tally = checks_svc.counts_for_devices(db, ids)
     out = []
     for d in devices:
         last = latest.get(d.id)
         prod = db.get(M.ProductionRun, last.production_run_id) if last else None
+        counts = tally.get(d.id, {})
         out.append({
+            "checks": {"pass": counts.get("pass", 0), "fail": counts.get("fail", 0),
+                       "unknown": counts.get("unknown", 0)},
             "id": d.id, "mac": d.mac or "", "serial": d.serial, "chip": d.chip,
             "tasmota_id": d.tasmota_id, "imei": d.imei, "iccid": d.iccid,
             "imsi": d.imsi, "modem_model": d.modem_model,
@@ -1274,6 +1283,8 @@ def device_detail(device_id: int, reveal: bool = False, db: Session = Depends(ge
         "first_seen": _iso(d.first_seen), "last_seen": _iso(d.last_seen),
         "last_status": d.last_status, "notes": d.notes,
         "configs": configs,
+        # What this device is PROVEN to do: newest run wins per check.
+        "checks": checks_svc.for_device(db, d.id),
         "runs": [_run_summary_json(r, db) for r in d.runs],
     }
 
@@ -1383,6 +1394,37 @@ def mark_aborted(run_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+@router.post("/checks/recompute")
+def recompute_checks(project_id: int | None = None, run_id: int | None = None,
+                     db: Session = Depends(get_db)):
+    """Rebuild the derived checks from the runs' own steps and results.
+
+    Checks are a cached opinion about stored evidence, so improving an extractor
+    has to be able to upgrade all history — that is this endpoint. It is safe to
+    run at any time: each run's rows are deleted and rebuilt.
+    """
+    query = db.query(M.ProgrammingRun).filter(M.ProgrammingRun.status != "running")
+    if run_id:
+        query = query.filter(M.ProgrammingRun.id == run_id)
+    if project_id:
+        version_ids = [
+            v.id for v in db.query(M.DeploymentVersion)
+            .join(M.Deployment, M.Deployment.id == M.DeploymentVersion.deployment_id)
+            .filter(M.Deployment.project_id == project_id)
+        ]
+        query = query.filter(M.ProgrammingRun.deployment_version_id.in_(version_ids or [-1]))
+    # Ids first, then chunks: committing while a server-side cursor is open
+    # invalidates the cursor.
+    ids = [r.id for r in query.with_entities(M.ProgrammingRun.id).order_by(M.ProgrammingRun.id)]
+    written = 0
+    for start in range(0, len(ids), 200):
+        for run_id_ in ids[start:start + 200]:
+            run = db.get(M.ProgrammingRun, run_id_)
+            written += len(checks_svc.recompute(db, run))
+        db.commit()
+    return {"runs": len(ids), "checks": written}
+
+
 @router.get("/runs/{run_id}")
 def run_detail(run_id: int, db: Session = Depends(get_db)):
     r = db.get(M.ProgrammingRun, run_id)
@@ -1401,11 +1443,12 @@ def run_detail(run_id: int, db: Session = Depends(get_db)):
         "release_override_reason": r.release_override_reason,
         "results": r.results, "params_snapshot": r.params_snapshot,
         "client_info": r.client_info,
+        "checks": checks_svc.for_run(db, r.id),
         "steps": [
             {
                 "idx": s.idx, "op": s.op, "label": s.label, "status": s.status,
                 "started_at": _iso(s.started_at), "duration_ms": s.duration_ms,
-                "error": s.error, "response": s.response,
+                "error": s.error, "response": s.response, "check": s.check_name,
             }
             for s in r.steps
         ],

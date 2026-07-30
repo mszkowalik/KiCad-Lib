@@ -11,6 +11,7 @@
  *    capture   map of variable name -> response path
  *    images    which pinned firmware images this flash step writes
  *    bundle    which berryware bundle this download step sends
+ *    check     the functionality this step proves (a name from the catalog)
  *
  *  The ops and their meaning come from the engine (`services/flasher/engine.py`);
  *  keep this table in step with it, and keep VALIDATION on the server — this
@@ -19,7 +20,7 @@
 
 export type FieldKind =
   | "text" | "value" | "varname" | "number" | "bool" | "path"
-  | "commands" | "capture" | "images" | "bundle";
+  | "commands" | "capture" | "images" | "bundle" | "check";
 
 export interface Field {
   key: string;
@@ -49,7 +50,15 @@ const CAPTURE: Field = {
   hint: "variable name ← dotted path in the response, e.g. topic ← Status.Topic",
 };
 
-export const OPS: OpSpec[] = [
+/** Any step may claim a functionality. Naming one turns this step's own pass or
+ *  fail into a green/red cell on the device — nothing else is needed, because
+ *  the step already succeeds or fails for a reason. */
+const CHECK: Field = {
+  key: "check", label: "Proves", kind: "check", summary: true,
+  hint: "the functionality this step proves — it becomes a cell in the device's check grid",
+};
+
+const RAW_OPS: OpSpec[] = [
   // ---------------------------------------------------------------- flash
   {
     op: "esp_connect", title: "Connect + read MAC", phase: "flash",
@@ -223,6 +232,8 @@ export const OPS: OpSpec[] = [
     ],
   },
 ];
+
+export const OPS: OpSpec[] = RAW_OPS.map((o) => ({ ...o, fields: [...o.fields, CHECK] }));
 
 export const OP_BY_NAME: Record<string, OpSpec> = Object.fromEntries(OPS.map((o) => [o.op, o]));
 

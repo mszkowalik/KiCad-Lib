@@ -335,6 +335,15 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
   version (`production`, `bench`); rolling back moves a channel. A batch pins a
   version or follows a channel; run creation resolves it and records the
   result. Draft versions run ONLY as bench trials (`draft_run=True`, no batch).
+- **Functional checks are DERIVED, never authored** (`services/flasher/checks.py`).
+  A step names what it proves (`check: "relay.2"`) and its own pass/fail becomes
+  the check; imported runs, which have no steps, get the same names from their
+  stored evidence. `recompute(db, run)` rebuilds a run's rows from scratch, so
+  `POST /api/flasher/checks/recompute` can upgrade all history after you improve
+  an extractor — never hand-write a `run_checks` row, and never let a check
+  disagree with the run's own log. Add a new name to `CATALOG` (an unknown name
+  still records, in "other"). An extractor that re-judges historical
+  measurements must reproduce the original rule, inversions included.
 - **`GET /api/flasher/files/{version_id}/{filename}` is deliberately
   unauthenticated** — the DEVICE fetches it with Tasmota's `UrlFetch`, which
   sends no auth headers. Published versions only; the URL ends with the

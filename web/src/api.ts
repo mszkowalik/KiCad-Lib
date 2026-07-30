@@ -3540,6 +3540,25 @@ export interface FlasherMeta {
   chips: string[];
   /** recommended flash offset per chip -> kind, from the partition maps */
   default_offsets: Record<string, Record<string, string>>;
+  /** the functional-check vocabulary a step may claim with `check` */
+  checks: { name: string; label: string; category: string; position: number }[];
+  check_categories: string[];
+}
+
+/** One named functionality, proven or disproven by one run. Derived from the
+ *  run's own steps and results — see `services/flasher/checks.py`. */
+export interface RunCheckRow {
+  name: string;
+  label: string;
+  category: string;
+  status: string; // pass | fail | unknown
+  detail: string;
+  value: Record<string, unknown> | null;
+  position: number;
+  /** device grid only: which run decided this, and how the attempts went */
+  run_id?: number;
+  at?: string | null;
+  attempts?: Record<string, number>;
 }
 
 export interface DeviceListRow {
@@ -3556,6 +3575,8 @@ export interface DeviceListRow {
   batch: { id: number; label: string } | null;
   last_status: string;
   runs: number;
+  /** newest outcome per check name, tallied */
+  checks: { pass: number; fail: number; unknown: number };
   first_seen: string | null;
   last_seen: string | null;
   notes: string;
@@ -3591,9 +3612,10 @@ export interface DeviceConfigRow {
   set_at: string | null;
 }
 
-export interface DeviceDetailPayload extends Omit<DeviceListRow, "batch" | "runs"> {
+export interface DeviceDetailPayload extends Omit<DeviceListRow, "batch" | "runs" | "checks"> {
   modem_fw: string;
   configs: DeviceConfigRow[];
+  checks: RunCheckRow[];
   runs: ProgrammingRunSummary[];
 }
 
@@ -3606,6 +3628,8 @@ export interface ProgrammingStepRow {
   duration_ms: number | null;
   error: string | null;
   response: unknown;
+  /** the functionality this step claims, if any */
+  check?: string;
 }
 
 export interface ProgrammingRunDetail extends ProgrammingRunSummary {
@@ -3618,6 +3642,7 @@ export interface ProgrammingRunDetail extends ProgrammingRunSummary {
   results: Record<string, unknown> | null;
   params_snapshot: Record<string, unknown> | null;
   client_info: Record<string, unknown> | null;
+  checks: RunCheckRow[];
   steps: ProgrammingStepRow[];
 }
 

@@ -285,6 +285,7 @@ export default function Composer({
                 mark("files");
               }}
               defaultOffsets={meta?.default_offsets}
+              checkNames={meta?.checks}
             />
           )}
         </div>

@@ -1220,6 +1220,57 @@ Remaining honest limit: an Aqua unit configured in a mixed session and never
 tested is indistinguishable from a dongle in the records, so the Aqua count is
 a floor (the batches plan ~1,015 units).
 
+The four deployments then dropped their "(retroactive)" suffix (2026-07-30):
+they are the real production procedures, and each carries its origin in its
+description instead. `Dongle_V2 test` says outright that it measures nothing.
+
+### Functional checks — green/red per functionality (2026-07-30)
+
+The device view answered "did the run pass". The question a production line
+actually asks is **which functionality works on this unit** — and the run status
+cannot answer it, because one boolean hides which of nine things broke.
+
+A **check** is one named functionality, proven or disproven by one run
+(`run_checks`, service `services/flasher/checks.py`). Three rules:
+
+1. **A step names what it proves.** Put `check: "relay.2"` on the step and its
+   own pass/fail *is* the check. No second engine, no assertion language — a
+   step already succeeds or fails for a stated reason. Any op can carry it, so
+   `poll_until` proving WiFi and `download_files` proving the bundle are named
+   the same way.
+2. **Checks are derived, never authored.** `checks.recompute(db, run)` rebuilds
+   every row of a run from that run's own steps and results, so the table is a
+   cache of an opinion about evidence. `POST /api/flasher/checks/recompute`
+   re-derives all history, which is what makes improving an extractor safe.
+3. **One name means one thing.** `CATALOG` is the vocabulary (`identity.*`,
+   `firmware.*`, `wifi.join`, `sim.pin`, `lte.failover`, `mqtt.*`,
+   `berryware.files`, `relay.1-3`, `temp.ds18b20`), grouped into categories for
+   the grid and offered to the composer from `/meta`. An unknown name still
+   records — it lands in "other" rather than being dropped, so a new product can
+   prove something nobody has named yet.
+
+**The imported history has no steps at all**, so a second extractor reads the
+V2 reports' own evidence: `fw_banner` → `firmware.boot`, `wifi_ssid`/`wifi_rssi`
+→ `wifi.join`, the `downloaded` map against the version's *pinned* bundle →
+`berryware.files`, and `switches_off`/`switches_on` → `relay.1-3` using
+`test.py::_check_relay` byte for byte — **including the inversion** (energising
+a relay OPENS its sense switch, so relays-off reads ON). Re-judging 813
+historical measurements with a "nicer" rule would be fabrication.
+
+Backfill: 6,321 runs → **26,255 checks**, and the cross-checks all land — 813
+relay measurements, 614 temperature readings (199 tests never got one), 5,502
+WiFi joins, 4 berryware failures. Every `pass` run has zero failing checks, and
+184 of 190 failed runs name what broke; the 6 that do not are the 3 dongle
+no-op runs and 3 Aqua runs that died before the relay snapshot — nothing was
+measured, which is the honest answer. Grey means *never measured*, not "soft
+fail".
+
+Where it shows: the device detail page leads with the grid (newest run wins per
+name, hover for the evidence sentence, click through to the deciding run), the
+run page shows what that run proved, and the devices list carries a `pass/total`
+column. `Dongle_V3 blank device` **v4** names 12 checks across its 32 steps —
+proven by simulation, 12/12 green.
+
 ### Implementation record (2026-07-29)
 
 Built in this pass — schema (5 new tables + column moves, startup-migrated),

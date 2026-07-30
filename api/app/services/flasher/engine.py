@@ -38,7 +38,7 @@ from ...config import settings
 from ...db import SessionLocal
 from ... import models as M
 from .. import crypto
-from . import credentials, protocol
+from . import checks, credentials, protocol
 
 BROWSER_OPS = {
     "esp_connect", "erase", "flash", "esp_reset", "await_reenumerate",
@@ -376,6 +376,7 @@ class RunEngine:
         row = M.ProgrammingStep(
             run_id=self.run_id, idx=idx, op=str(step.get("op", ""))[:40],
             label=str(step.get("label", ""))[:200], status="running",
+            check_name=str(step.get("check", ""))[:60],
         )
         db.add(row)
         db.flush()
@@ -416,6 +417,11 @@ class RunEngine:
                 dev = db.get(M.DeviceUnit, run.device_unit_id)
                 dev.last_seen = utcnow()
                 dev.last_status = status
+            # The green/red grid the device view shows. Derived here so it exists
+            # for a run that died mid-way too: the steps that did pass still
+            # prove their functionality, and the rest go grey.
+            db.flush()
+            checks.recompute(db, run)
 
         await self._db(fin)
         try:

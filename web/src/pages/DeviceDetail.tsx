@@ -10,6 +10,7 @@ import {
   type DeviceDetailPayload,
 } from "../api";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import CheckGrid from "../components/flasher/CheckGrid";
 import { fmtDuration, fmtWhen } from "../components/flasher/common";
 
 export default function DeviceDetail() {
@@ -83,6 +84,11 @@ export default function DeviceDetail() {
 
         <div className="detail-page">
           <div className="detail-left">
+            <div className="card pad">
+              <h2 className="card-title">What this device is proven to do</h2>
+              <CheckGrid checks={device.checks} showRun />
+            </div>
+
             <div className="card pad">
               <h2 className="card-title">Identity</h2>
               <table className="data data-fixed identity-table">
