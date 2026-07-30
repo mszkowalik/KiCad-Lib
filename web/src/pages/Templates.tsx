@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import {
@@ -11,6 +11,7 @@ import {
   type TemplateKind,
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
+import GeometryPaste from "../components/GeometryPaste";
 import TemplateThumb from "../components/TemplateThumb";
 import { ErrorBanner, Spinner } from "../components/Ui";
 
@@ -77,10 +78,9 @@ export default function Templates() {
   const [footprints, setFootprints] = useState<FootprintListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const ctrl = new AbortController();
+  const load = useCallback((signal?: AbortSignal) => {
     setError(null);
-    Promise.all([getSymbols(ctrl.signal), getFootprints(ctrl.signal)])
+    return Promise.all([getSymbols(signal), getFootprints(signal)])
       .then(([s, f]) => {
         setSymbols(s);
         setFootprints(f);
@@ -88,8 +88,17 @@ export default function Templates() {
       .catch((err) => {
         if (!isAbortError(err)) setError(errorMessage(err));
       });
-    return () => ctrl.abort();
   }, []);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    void load(ctrl.signal);
+    return () => ctrl.abort();
+  }, [load]);
+
+  /** A filed creation makes the parent row immediately (its version stays a
+   *  draft), so the list is stale the moment the paste box succeeds. */
+  const reload = () => load();
 
   const loading = symbols === null || footprints === null;
 
@@ -152,6 +161,13 @@ export default function Templates() {
               columns={footprintColumns}
             />
           </div>
+        ) : null}
+
+        {!loading ? (
+          <details className="card pad" key={tab}>
+            <summary>New {tab === "symbols" ? "symbol" : "footprint"} from the clipboard</summary>
+            <GeometryPaste kind={tab} onFiled={() => void reload()} />
+          </details>
         ) : null}
       </div>
     </div>

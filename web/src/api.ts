@@ -305,6 +305,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const body = (await res.json()) as { detail?: unknown };
       if (typeof body.detail === "string") {
         detail = body.detail;
+      } else if (
+        body.detail &&
+        typeof body.detail === "object" &&
+        !Array.isArray(body.detail) &&
+        typeof (body.detail as { error?: unknown }).error === "string"
+      ) {
+        // structured refusal: {error, …context}. The context keys stay in the
+        // payload for non-browser callers; `error` is the readable sentence.
+        detail = (body.detail as { error: string }).error;
       } else if (Array.isArray(body.detail)) {
         // Pydantic validation errors: [{loc, msg, type}, ...]
         detail = body.detail
@@ -493,6 +502,77 @@ export function getTemplate(
 
 export function templatePreviewUrl(kind: TemplateKind, id: number): string {
   return `${API_URL}/api/${kind}/${id}/preview.svg`;
+}
+
+export interface GeometryProposalResult {
+  ok: true;
+  proposal_id: number;
+  version_no: number;
+  /** footprints */
+  pad_count?: number | null;
+  previous_pad_count?: number | null;
+  /** symbols */
+  pin_count?: number | null;
+  previous_pin_count?: number | null;
+  warnings: string[];
+  status: string;
+}
+
+/** File a DRAFT version of a symbol/footprint from pasted editor text. The
+ *  name is never sent — the server takes it from the row, so a paste cannot
+ *  rename the template. */
+export function proposeTemplateEdit(
+  kind: TemplateKind,
+  id: number,
+  source_text: string,
+  comment: string,
+): Promise<GeometryProposalResult> {
+  return request(`/api/${kind}/${id}/propose`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_text, comment }),
+  });
+}
+
+/** File a DRAFT for a template that does not exist yet. The name is read out
+ *  of the pasted text by the server — a footprint header has to match the row
+ *  name anyway, so a separate field could only disagree with it. */
+export function proposeNewTemplate(
+  kind: TemplateKind,
+  source_text: string,
+  comment: string,
+): Promise<GeometryProposalResult & { footprint?: string; symbol?: string }> {
+  return request(`/api/${kind}/propose`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_text, comment }),
+  });
+}
+
+/** Render UNSAVED geometry so the paste box can show it before filing.
+ *  Returns an object URL the caller must revoke. Writes nothing. */
+export async function renderTemplateSource(
+  kind: TemplateKind,
+  source_text: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const res = await fetch(`${API_URL}/api/${kind}/preview.svg`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_text }),
+    signal,
+  });
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const body = (await res.json()) as { detail?: { error?: string } };
+      detail = body.detail?.error ?? "";
+    } catch {
+      // non-JSON error body — fall through to statusText
+    }
+    throw new ApiError(res.status, detail || `${res.status} ${res.statusText}`);
+  }
+  return URL.createObjectURL(await res.blob());
 }
 
 // -------------------------------------------------------------- datasheets

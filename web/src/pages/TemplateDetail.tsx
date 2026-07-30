@@ -12,6 +12,7 @@ import {
 } from "../api";
 import CommentsPanel from "../components/CommentsPanel";
 import { useDialog } from "../components/Dialog";
+import GeometryPaste from "../components/GeometryPaste";
 import { ErrorBanner, Spinner } from "../components/Ui";
 
 function isKind(k: string | undefined): k is TemplateKind {
@@ -265,6 +266,11 @@ export default function TemplateDetail() {
             <pre className="code-block">{data.source_text}</pre>
           </details>
         ) : null}
+
+        <details className="card pad">
+          <summary>Propose an edit</summary>
+          <GeometryPaste kind={kind} id={id} publishedSource={data.source_text} />
+        </details>
 
         {kind === "footprints" ? (
           <div className="card pad danger-card">

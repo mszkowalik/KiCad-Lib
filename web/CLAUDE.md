@@ -76,6 +76,45 @@ a component. When you add an endpoint:
    `isAbortError(err)` to ignore aborts, `<Spinner/>` while loading, and
    `<ErrorBanner/>` on failure.
 
+### `request()` renders a structured refusal from `detail.error`
+
+FastAPI routers may raise `HTTPException(400, detail={"error": "…", …context})`
+so a non-browser caller keeps the machine-readable context. `request()` reads
+`detail.error` for the message; without that branch an object detail matched
+neither the string nor the Pydantic-array case and the user saw a bare
+"400 Bad Request". Backend side of the contract: the `error` string must be
+self-contained — never leave a fact only in a sibling key.
+
+### Symbol/footprint geometry from the clipboard: `components/GeometryPaste.tsx`
+
+**One widget covers all four cases** (symbol|footprint x edit|create) — the flow
+is identical and a second copy would drift. A monospace textarea
+(`text skill-textarea`) that also accepts a dropped `.kicad_mod`/`.kicad_sym`,
+plus a required comment.
+
+- **Edit** — pass `id` and `publishedSource`. `TemplateDetail` does this.
+  `POST /api/{kind}/{id}/propose`; the name is never sent, so a paste cannot
+  rename the template.
+- **Create** — omit `id`. The `Templates` page does this, per tab. The server
+  reads the name out of the pasted text, so there is no name field either.
+  Pass `onFiled` to refresh the list: a creation makes the parent row at once
+  even though its version stays a draft.
+- **Preview before filing** — the Preview button POSTs to
+  `/api/{kind}/preview.svg` and shows the render of the UNSAVED text. It returns
+  an object URL, so revoke the previous one whenever it is replaced, and on
+  unmount.
+
+It only ever files a DRAFT. Approval and the published before/after live in
+Proposals — do not add an approve control here, and do not rebuild the
+side-by-side, `Proposals.tsx` already renders current-vs-draft from
+`geometryProposalPreviewUrl(kind, id, "current"|"draft")`.
+
+**Approving a new footprint version must offer to repoint its components.**
+Components pin `footprint_version_id`, so an approved v4 leaves them on v3 while
+the mirror already serves v4. The Proposals approve step names the components
+still pinning the outgoing version and offers to move them. An offer, never
+automatic — see the rule in `api/CLAUDE.md`. NOT BUILT YET.
+
 ### The API is same-origin — `API_URL` defaults to `""`
 
 `API_URL` in `src/api.ts` is a **path prefix**, and its default is the empty

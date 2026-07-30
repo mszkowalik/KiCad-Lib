@@ -306,6 +306,31 @@ def approve_symbol(ver_id: int, db: Session = Depends(get_db)):
             "mirror_warnings": mirror["warnings"]}
 
 
+def _drop_if_stillborn(db: Session, parent, kind: str) -> bool:
+    """Delete a symbol/footprint row whose ONLY version was just rejected.
+
+    A creation proposal makes the parent row up front with
+    `current_version_id=None`, so rejecting it used to leave a permanent
+    versionless entry in the Templates browser — nothing pointed at it and no
+    UI could remove it. Rejecting the last draft of a template that was never
+    published therefore takes the row with it. A template with any published
+    history is untouched: rejecting one draft must never delete real versions.
+    """
+    if parent.current_version_id is not None:
+        return False
+    if any(v.status != "rejected" for v in parent.versions):
+        return False
+    audit(db, "proposal.reject", kind, parent.id,
+          {"name": parent.name, "removed_stillborn_row": True})
+    # notes live in the generic comments table keyed on (target_type, target_id),
+    # with no FK to cascade — take them with the row or they outlive their target
+    db.query(M.Comment).filter_by(target_type=kind, target_id=parent.id).delete()
+    for v in list(parent.versions):
+        db.delete(v)
+    db.delete(parent)
+    return True
+
+
 @router.post("/symbols/{ver_id}/reject")
 def reject_symbol(ver_id: int, db: Session = Depends(get_db)):
     sv, sym = _geometry_draft(db, "symbol", ver_id)
@@ -313,8 +338,10 @@ def reject_symbol(ver_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "draft symbol proposal not found")
     sv.status = "rejected"
     audit(db, "proposal.reject", "symbol_version", sv.id, {"symbol": sym.name})
+    payload = _geometry_json("symbol", sv, sym)
+    payload["removed_row"] = _drop_if_stillborn(db, sym, "symbol")
     db.commit()
-    return _geometry_json("symbol", sv, sym)
+    return payload
 
 
 @router.post("/footprints/{ver_id}/approve")
@@ -341,5 +368,7 @@ def reject_footprint(ver_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "draft footprint proposal not found")
     fv.status = "rejected"
     audit(db, "proposal.reject", "footprint_version", fv.id, {"footprint": fp.name})
+    payload = _geometry_json("footprint", fv, fp)
+    payload["removed_row"] = _drop_if_stillborn(db, fp, "footprint")
     db.commit()
-    return _geometry_json("footprint", fv, fp)
+    return payload

@@ -1130,54 +1130,15 @@ def propose_symbol_edit(name: str, source_text: str, comment: str) -> str:
         source_text: The complete .kicad_sym file text with the symbol drawing.
         comment: What changed and why (shown in the proposal review).
     """
-    from .generator import load_symbol_lib_from_text
-    from .parse_cache import symbol_parsed
-
-    name = name.strip()
-    if not name or not source_text.strip():
-        return json.dumps({"error": "name and source_text must not be empty"})
-    try:
-        lib = load_symbol_lib_from_text(source_text)
-    except Exception as e:
-        return json.dumps({"error": f"source_text does not parse as a .kicad_sym library: {e}"})
-    entry_names = [s.entryName for s in lib.symbols]
-    if name not in entry_names:
-        return json.dumps({"error": f"source_text contains no symbol named {name!r}",
-                           "symbols_found": entry_names})
-    try:
-        parsed = symbol_parsed(source_text)
-    except Exception as e:
-        return json.dumps({"error": f"symbol metadata extraction failed: {e}"})
+    from .geometry_proposals import propose_symbol_version
 
     db = SessionLocal()
     try:
-        sym = db.query(M.Symbol).filter_by(name=name).first()
-        is_new = sym is None
-        old_pins = None
-        if is_new:
-            sym = M.Symbol(name=name)  # current_version_id stays None until approved
-            db.add(sym)
-            db.flush()
-        else:
-            cur = _current_of(sym)
-            old_pins = (cur.parsed or {}).get("pin_count") if cur else None
-        new_no = max((v.version_no for v in sym.versions), default=0) + 1
-        sv = M.SymbolVersion(symbol_id=sym.id, version_no=new_no, source_text=source_text,
-                             parsed=parsed, status="draft", created_by="jaravis",
-                             comment=comment or None)
-        db.add(sv)
-        db.flush()
-        db.add(M.AuditLog(actor="jaravis", action="proposal.create", entity_type="symbol_version",
-                          entity_id=str(sv.id), details={"symbol": name, "new": is_new}))
-        db.commit()
-        _record_proposal({"proposal_id": sv.id, "component": name, "kind": "symbol",
-                          "version_no": new_no})
-        return json.dumps({
-            "ok": True, "proposal_id": sv.id, "symbol": name, "version_no": new_no,
-            "is_new_symbol": is_new, "pin_count": parsed.get("pin_count"),
-            "previous_pin_count": old_pins,
-            "status": "draft — awaiting user approval in the Proposals view",
-        })
+        res = propose_symbol_version(db, name, source_text, comment, actor="jaravis")
+        if "error" not in res:
+            _record_proposal({"proposal_id": res["proposal_id"], "component": res["symbol"],
+                              "kind": "symbol", "version_no": res["version_no"]})
+        return json.dumps(res)
     finally:
         db.close()
 
@@ -1197,65 +1158,15 @@ def propose_footprint_edit(name: str, source_text: str, comment: str) -> str:
         source_text: The complete .kicad_mod file text.
         comment: What changed and why (shown in the proposal review).
     """
-    from ..util.sexpr import _norm, find_node, parse_sexpr
-    from .parse_cache import footprint_parsed
-
-    name = name.strip()
-    if not name or not source_text.strip():
-        return json.dumps({"error": "name and source_text must not be empty"})
-    try:
-        parsed = footprint_parsed(source_text)
-        tree = parse_sexpr(source_text)
-    except Exception as e:
-        return json.dumps({"error": f"source_text does not parse as a .kicad_mod footprint: {e}"})
-    # the footprint node may BE the tree root rather than a child (same
-    # fallback as parse_cache.footprint_parsed)
-    fp_node = find_node(tree, "footprint") or (tree[0] if tree and isinstance(tree[0], list) else tree)
-    valid = isinstance(fp_node, list) and len(fp_node) > 1 and _norm(fp_node[0]) == "footprint"
-    header = _norm(fp_node[1]) if valid else ""
-    if header != name:
-        return json.dumps({"error": f"footprint header is {header!r} but must be exactly {name!r} "
-                                    "(no easyeda2kicad:/7Sigma: prefix inside the file)"})
-    model_prefix = "${SEVENSIGMA_DIR}/3DModels/"
-    bad_models = [m for m in parsed.get("models") or [] if not m.startswith(model_prefix)]
-    if bad_models:
-        return json.dumps({"error": f"3D model paths must start with {model_prefix}",
-                           "offending": bad_models})
+    from .geometry_proposals import propose_footprint_version
 
     db = SessionLocal()
     try:
-        warnings = []
-        for m in parsed.get("models") or []:
-            rel = m[len(model_prefix):]
-            if db.query(M.Model3D).filter_by(rel_path=rel).first() is None:
-                warnings.append(f"referenced 3D model not in the library: {rel}")
-        fp = db.query(M.Footprint).filter_by(name=name).first()
-        is_new = fp is None
-        old_pads = None
-        if is_new:
-            fp = M.Footprint(name=name)  # current_version_id stays None until approved
-            db.add(fp)
-            db.flush()
-        else:
-            cur = _current_of(fp)
-            old_pads = (cur.parsed or {}).get("pad_count") if cur else None
-        new_no = max((v.version_no for v in fp.versions), default=0) + 1
-        fv = M.FootprintVersion(footprint_id=fp.id, version_no=new_no, source_text=source_text,
-                                parsed=parsed, models=parsed.get("models"), status="draft",
-                                created_by="jaravis", comment=comment or None)
-        db.add(fv)
-        db.flush()
-        db.add(M.AuditLog(actor="jaravis", action="proposal.create", entity_type="footprint_version",
-                          entity_id=str(fv.id), details={"footprint": name, "new": is_new}))
-        db.commit()
-        _record_proposal({"proposal_id": fv.id, "component": name, "kind": "footprint",
-                          "version_no": new_no})
-        return json.dumps({
-            "ok": True, "proposal_id": fv.id, "footprint": name, "version_no": new_no,
-            "is_new_footprint": is_new, "pad_count": parsed.get("pad_count"),
-            "previous_pad_count": old_pads, "warnings": warnings,
-            "status": "draft — awaiting user approval in the Proposals view",
-        })
+        res = propose_footprint_version(db, name, source_text, comment, actor="jaravis")
+        if "error" not in res:
+            _record_proposal({"proposal_id": res["proposal_id"], "component": res["footprint"],
+                              "kind": "footprint", "version_no": res["version_no"]})
+        return json.dumps(res)
     finally:
         db.close()
 

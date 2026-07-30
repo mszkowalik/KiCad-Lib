@@ -455,12 +455,49 @@ up in the UI automatically. Audit actions in use: `proposal.create`,
 - `read_datasheet` returns a LIST of content blocks (text + base64 PNG page
   images rendered with **pymupdf**) — tool results may be
   `Iterable[BetaContent]`, not just str. pymupdf is a pyproject dependency.
-- Geometry proposals: `propose_symbol_edit` / `propose_footprint_edit` accept
-  full source, validate (kiutils/sexpr parse, footprint header must equal the
-  name with NO prefix, 3D paths must start `${SEVENSIGMA_DIR}/3DModels/`;
-  note the footprint node IS the sexpr tree root — reuse parse_cache's
-  fallback). New names create the parent row with `current_version_id=None`,
-  same as components.
+- **Geometry proposals live in `services/geometry_proposals.py`, not in the
+  tool.** `propose_symbol_version` / `propose_footprint_version` own the
+  validation (kiutils/sexpr parse, footprint header must equal the name with NO
+  prefix, 3D paths must start `${SEVENSIGMA_DIR}/3DModels/`; note the footprint
+  node IS the sexpr tree root — reuse parse_cache's fallback), the draft row and
+  the audit entry. New names create the parent row with `current_version_id=None`,
+  same as components. **Two callers must never diverge**: the
+  `propose_symbol_edit`/`propose_footprint_edit` agent tools (which only add
+  `_record_proposal` + `json.dumps`) and `POST /api/{symbols,footprints}/{id}/propose`,
+  the web paste box. The route takes the name from the ROW, never the request,
+  so a paste can never rename a template.
+- **Pasted geometry is normalised before it is parsed.** KiCad's editors put an
+  s-expression on the clipboard, but not necessarily the file body: a footprint
+  can arrive wrapped in an outer node and a symbol as a bare `(symbol …)` with no
+  library. `normalize_footprint_text` / `normalize_symbol_text` reduce both to
+  what the parsers expect, via `slice_node` — a hand-rolled balanced scan rather
+  than parse-and-serialise, because the result is STORED as the version source
+  and must keep the author's formatting byte-for-byte. A payload with no
+  footprint/symbol node at all is refused by name ("this is not a whole
+  footprint"), because a canvas-only selection otherwise parses fine and then
+  fails the header check with a confusing message.
+- **Creation reads the name OUT of the pasted text** (`derive_footprint_name` /
+  `derive_symbol_name`), so `POST /api/{symbols,footprints}/propose` has no name
+  field: a footprint header must equal the row name anyway, so a second field
+  could only ever disagree. That route also REFUSES a name that already exists.
+  The agent tool's "new name = create, known name = edit" overload is right for a
+  call that states the name, but on a form labelled *new* it would file a version
+  against a template the user never opened.
+- **Rejecting the only draft of a never-published template deletes the row**
+  (`proposals._drop_if_stillborn`). A creation proposal makes the parent up front
+  with `current_version_id=None`, so a rejected creation used to leave a
+  permanent versionless entry in the Templates browser that no UI could remove.
+  Guarded twice: the parent must have no `current_version_id` AND no non-rejected
+  version, so rejecting one draft of a published template never touches it.
+- **`POST /api/{symbols,footprints}/preview.svg` renders UNSAVED source.** It is
+  what the paste box previews before filing. It writes nothing and touches no
+  table; `render_svg` is content-addressed, so re-previewing identical text is
+  free. It normalises first — the point is to show what WOULD be filed.
+- **A structured refusal puts its whole message in `error`.** These return
+  `{"error": …, …context}` and the router raises it as the HTTPException detail;
+  the web client renders `detail.error` verbatim. Context keys (`offending`,
+  `symbols_found`, `header`) are extra for non-browser callers — never the only
+  place a fact appears, or the browser shows a bare "400 Bad Request".
 - Approval lives in `routers/proposals.py`: `/symbols/{id}/approve|reject`,
   `/footprints/{id}/approve|reject`, plus
   `/{kind}s/{id}/preview.svg?which=draft|current` (kicad-cli render via the
@@ -472,6 +509,18 @@ up in the UI automatically. Audit actions in use: `proposal.create`,
   `symbol_version_id`/`footprint_version_id`; the KiCad-facing base lib,
   footprint mirror, and HTTP catalog always follow the newest published
   geometry.
+- **Approving a new footprint VERSION must offer to repoint the components that
+  pin the old one** (user decision 2026-07-30). The two facts above pull apart:
+  the mirror and the HTTP catalog jump to the new geometry while every linked
+  `ComponentVersion` still names the previous `footprint_version_id`, so the
+  library and the components silently disagree about which land pattern is
+  current. The approve flow must therefore name the components still pinning the
+  outgoing version and let the user repoint them in the same step. It is an
+  OFFER, never automatic — an old run's component version must be able to keep
+  the geometry it was built against. NOT IMPLEMENTED YET; build it in
+  `routers/proposals.py::approve` plus the Proposals UI, and note that repointing
+  mints a component version per affected part, so it obeys the same draft gate as
+  any other component write.
 
 ## Importing from YAML — two modes
 

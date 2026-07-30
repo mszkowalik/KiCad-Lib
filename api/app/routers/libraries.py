@@ -11,6 +11,14 @@ from sqlalchemy.orm import Session, selectinload
 from .. import models as M
 from ..config import settings
 from ..db import get_db
+from ..services.geometry_proposals import (
+    derive_footprint_name,
+    derive_symbol_name,
+    normalize_footprint_text,
+    normalize_symbol_text,
+    propose_footprint_version,
+    propose_symbol_version,
+)
 from ..services.mirror import top_level_of, update_mirror_symbols, write_manifest
 from ..services.render import render_svg
 from .util import audit
@@ -129,6 +137,125 @@ def get_footprint(fp_id: int, db: Session = Depends(get_db)):
         "models": (cur.models or []) if cur else [],
         "used_by": _used_by(db, f, "footprint_version_id"),
     }
+
+
+# ------------------------------------------------------- paste-box proposals
+class GeometryProposal(BaseModel):
+    """A pasted `.kicad_mod` / `.kicad_sym` body plus its review comment."""
+
+    source_text: str
+    comment: str = ""
+
+
+@router.post("/footprints/{fp_id}/propose")
+def propose_footprint(fp_id: int, body: GeometryProposal, db: Session = Depends(get_db)):
+    """File a DRAFT footprint version from pasted editor text.
+
+    The name comes from the row, never from the request, so the paste box can
+    never rename a footprint by accident. Everything else — clipboard
+    normalisation, header/model validation, the draft row and the audit entry —
+    is `geometry_proposals`, the same code path the agent tool uses."""
+    f = db.get(M.Footprint, fp_id)
+    if f is None:
+        raise HTTPException(404, "footprint not found")
+    res = propose_footprint_version(db, f.name, body.source_text, body.comment, actor="user")
+    if "error" in res:
+        raise HTTPException(400, detail=res)
+    return res
+
+
+@router.post("/symbols/{sym_id}/propose")
+def propose_symbol(sym_id: int, body: GeometryProposal, db: Session = Depends(get_db)):
+    """File a DRAFT base-symbol version from pasted editor text (see above)."""
+    s = db.get(M.Symbol, sym_id)
+    if s is None:
+        raise HTTPException(404, "symbol not found")
+    res = propose_symbol_version(db, s.name, body.source_text, body.comment, actor="user")
+    if "error" in res:
+        raise HTTPException(400, detail=res)
+    return res
+
+
+def _propose_new(kind: str, body: GeometryProposal, db: Session):
+    """Create a brand-new symbol/footprint from pasted text.
+
+    The name is READ OUT of the payload — a footprint header has to match the
+    row name anyway, so a separate name field could only ever disagree with it.
+    An existing name is refused here rather than silently becoming an edit: the
+    agent tool's "new name = create, known name = edit" overload is fine for a
+    tool call that states the name, but on a form labelled *new* it would file a
+    version against a template the user never opened.
+    """
+    is_fp = kind == "footprint"
+    derive = derive_footprint_name if is_fp else derive_symbol_name
+    propose = propose_footprint_version if is_fp else propose_symbol_version
+    ext = ".kicad_mod" if is_fp else ".kicad_sym"
+
+    name = derive(body.source_text or "")
+    if not name:
+        raise HTTPException(400, detail={
+            "error": f"cannot read a {kind} name from this text — paste a whole {ext} body"})
+    model = M.Footprint if is_fp else M.Symbol
+    if db.query(model).filter_by(name=name).first() is not None:
+        raise HTTPException(400, detail={
+            "error": f"{kind} {name!r} already exists — open it and use Propose an edit, "
+                     "which files a new version against it",
+            "existing_name": name})
+    res = propose(db, name, body.source_text, body.comment, actor="user")
+    if "error" in res:
+        raise HTTPException(400, detail=res)
+    return res
+
+
+@router.post("/footprints/propose")
+def propose_new_footprint(body: GeometryProposal, db: Session = Depends(get_db)):
+    """File a DRAFT for a footprint that does not exist yet (see `_propose_new`)."""
+    return _propose_new("footprint", body, db)
+
+
+@router.post("/symbols/propose")
+def propose_new_symbol(body: GeometryProposal, db: Session = Depends(get_db)):
+    """File a DRAFT for a base symbol that does not exist yet (see `_propose_new`)."""
+    return _propose_new("symbol", body, db)
+
+
+class GeometrySource(BaseModel):
+    """Unsaved geometry to render — the paste box's look-before-you-file."""
+
+    source_text: str
+    name: str = ""
+
+
+def _render_source(kind: str, body: GeometrySource):
+    """Render arbitrary (unsaved) source so the paste box can preview it.
+
+    Reuses `render_svg`, which is content-addressed, so re-previewing the same
+    text is free. Normalise first: the point is to show what WOULD be filed,
+    and filing normalises. Nothing is written — this touches no table."""
+    is_fp = kind == "footprint"
+    text = (normalize_footprint_text if is_fp else normalize_symbol_text)(body.source_text or "")
+    if not text.strip():
+        raise HTTPException(400, detail={"error": "nothing to preview"})
+    name = body.name.strip() or (derive_footprint_name(text) if is_fp else derive_symbol_name(text))
+    if not name:
+        raise HTTPException(400, detail={
+            "error": f"cannot read a {kind} name from this text — so it cannot be rendered"})
+    try:
+        svg = render_svg(kind, name, text)
+    except Exception as e:  # noqa: BLE001 — surface render failures to the UI
+        raise HTTPException(502, detail={"error": f"render failed: {e}"}) from e
+    return Response(content=svg, media_type="image/svg+xml",
+                    headers={"Cache-Control": "no-cache"})
+
+
+@router.post("/footprints/preview.svg")
+def preview_footprint_source(body: GeometrySource):
+    return _render_source("footprint", body)
+
+
+@router.post("/symbols/preview.svg")
+def preview_symbol_source(body: GeometrySource):
+    return _render_source("symbol", body)
 
 
 class FootprintMeta(BaseModel):
