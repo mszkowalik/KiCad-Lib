@@ -1,7 +1,7 @@
 {
     "identifier": "com.sevensigma.sync",
     "name": "7Sigma Library Sync",
-    "description": "Fetches the current 7Sigma library (symbols, footprints, 3D models) from the platform and refreshes the installed PCM copies in place, and pushes footprints you edited locally back as draft proposals.",
+    "description": "Fetches the current 7Sigma library (symbols, footprints, 3D models) from the platform and refreshes the installed PCM copies in place, and pushes footprints and symbols you edited locally back as draft proposals. KiCad renders the buttons in the PCB editor only.",
     "runtime": {
         "type": "python"
     },
@@ -23,8 +23,8 @@
             "show-button": true,
             "scopes": ["footprint", "symbol", "pcb", "schematic"],
             "entrypoint": "push.py",
-            "icons-light": ["icon-light-24.png", "icon-light-48.png"],
-            "icons-dark": ["icon-dark-24.png", "icon-dark-48.png"]
+            "icons-light": ["icon-push-light-24.png", "icon-push-light-48.png"],
+            "icons-dark": ["icon-push-dark-24.png", "icon-push-dark-48.png"]
         }
     ]
 }

@@ -820,6 +820,27 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   is stale and `current_version(comp)` returns None, silently skipping
   `update_mirror_symbols`. Precedents: `create_version`, `proposals.approve`,
   `components.add_file`.
+- **IPC plugin buttons appear in the PCB EDITOR ONLY.** `api.v1.schema.json`
+  accepts five scopes (`pcb`, `schematic`, `footprint`, `symbol`,
+  `project_manager`), but KiCad implements the IPC plugin system in the PCB
+  editor alone — the other editors are "planned" (dev-docs, *For Add-on
+  Developers*). The enum being permissive is not a capability; do not read it
+  as one, and do not promise a button in the footprint or symbol editor.
+  Verified against KiCad 10 on 2026-07-31: both actions declare all four
+  scopes, and both render in the PCB editor only. The extra scopes are
+  harmless — the plugin still loads — so they stay as forward compatibility.
+  This costs the push plugin nothing: it reads the SAVED library files off
+  disk, so the focused editor is irrelevant. Edit in the footprint editor,
+  save, push from the PCB editor.
+- **Two constants gate whether a plugin change reaches anyone, and both are
+  manual.** `PLUGIN_VERSION` is what PCM compares to decide "update
+  available", so shipping plugin source without bumping it is a silent no-op.
+  And `ensure_built()` short-circuits on `meta-<tag>.json`, where `tag` hashes
+  the mirror digest plus the plugin FILE contents — NOT `pcm.py` — so a
+  `PLUGIN_VERSION` bump on its own never rebuilds the repository either. Any
+  `pcm.py` edit that changes what a package advertises needs `BUILDER_REV`
+  bumped too. Both were missed in sequence on 2026-07-31 and the repository
+  kept advertising 1.0.4 through four deploys.
 - **KiCad PCM/plugin gotchas** (`services/pcm.py`, `services/pcm_plugin/`):
   package identifiers allow NO underscores (dots/dashes only) but KiCad
   replaces dots with underscores for install directories; `license` must be

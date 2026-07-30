@@ -11,6 +11,12 @@ arbitrary origin that moves between copies. The file the footprint editor
 SAVES has all of it. So the workflow is: edit the footprint in place in the
 installed ``7Sigma.pretty`` library, press Ctrl+S, then press this button.
 
+The button lives in the PCB editor, not the footprint editor: KiCad implements
+the IPC plugin system there only (dev-docs, "For Add-on Developers"). That
+costs nothing here — this reads the SAVED files off disk, so which editor has
+focus is irrelevant. The footprint/symbol scopes in plugin.json are declared
+for the day KiCad honours them.
+
 Nothing is published. Each selected footprint becomes a DRAFT the user
 approves in the platform's Proposals view, with the usual before/after.
 
