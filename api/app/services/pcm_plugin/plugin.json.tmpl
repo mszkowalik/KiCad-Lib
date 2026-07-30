@@ -1,7 +1,7 @@
 {
     "identifier": "com.sevensigma.sync",
     "name": "7Sigma Library Sync",
-    "description": "Fetches the current 7Sigma library (symbols, footprints, 3D models) from the platform and refreshes the installed PCM copies in place.",
+    "description": "Fetches the current 7Sigma library (symbols, footprints, 3D models) from the platform and refreshes the installed PCM copies in place, and pushes footprints you edited locally back as draft proposals.",
     "runtime": {
         "type": "python"
     },
@@ -13,6 +13,16 @@
             "show-button": true,
             "scopes": ["pcb", "schematic"],
             "entrypoint": "sync.py",
+            "icons-light": ["icon-light-24.png", "icon-light-48.png"],
+            "icons-dark": ["icon-dark-24.png", "icon-dark-48.png"]
+        },
+        {
+            "identifier": "push-library",
+            "name": "Push 7Sigma changes",
+            "description": "Send footprints you edited in the installed 7Sigma library to __BASE_URL__ as draft proposals",
+            "show-button": true,
+            "scopes": ["pcb"],
+            "entrypoint": "push.py",
             "icons-light": ["icon-light-24.png", "icon-light-48.png"],
             "icons-dark": ["icon-dark-24.png", "icon-dark-48.png"]
         }

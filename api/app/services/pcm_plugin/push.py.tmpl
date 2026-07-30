@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+"""Push 7Sigma changes — KiCad IPC action plugin entrypoint.
+
+The other half of ``sync.py``. Sync PULLS the library onto this machine;
+this PUSHES local edits back as draft proposals.
+
+Why it exists: KiCad's clipboard is not a usable transport. A footprint-object
+copy never reaches the system clipboard at all, and a select-all copy carries
+shape only — no 3D model, no ``(attr)``, empty Reference/Value, and an
+arbitrary origin that moves between copies. The file the footprint editor
+SAVES has all of it. So the workflow is: edit the footprint in place in the
+installed ``7Sigma.pretty`` library, press Ctrl+S, then press this button.
+
+Nothing is published. Each selected footprint becomes a DRAFT the user
+approves in the platform's Proposals view, with the usual before/after.
+
+Stdlib only — no pip requirements.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+BASE_URL = "__BASE_URL__"
+LIB_DIR_NAME = "com_sevensigma_library"  # com.sevensigma.library, KiCad's dot->underscore rule
+MODELS_INSTALL_DIR = "com_sevensigma_models3d"
+PRETTY = "7Sigma.pretty"
+HERE = Path(__file__).resolve().parent
+THIRD_PARTY = HERE.parents[1]  # .../3rdparty/plugins/<id>/ -> .../3rdparty
+LOCAL_DIR = THIRD_PARTY / "footprints" / LIB_DIR_NAME / PRETTY
+LOCAL_STATE_FILE = HERE / "local_state.json"  # written by sync.py: abspath -> sha256
+
+
+def _notify(message: str) -> None:
+    print(message)
+    if sys.platform == "darwin":
+        try:
+            quoted = json.dumps(message, ensure_ascii=False)  # AppleScript chokes on \uXXXX
+            subprocess.run(
+                ["osascript", "-e",
+                 f'display notification {quoted} with title "7Sigma Library"'],
+                check=False, timeout=10,
+            )
+        except Exception:
+            pass
+
+
+def _osascript(script: str) -> str | None:
+    """Run AppleScript, returning its output, or None when the user cancels.
+
+    Cancelling any dialog makes osascript exit non-zero, which is exactly the
+    signal we want: no selection, push nothing.
+    """
+    try:
+        p = subprocess.run(["osascript", "-e", script], capture_output=True,
+                           text=True, timeout=300)
+    except Exception:
+        return None
+    return p.stdout.strip() if p.returncode == 0 else None
+
+
+def _as_list(items: list[str]) -> str:
+    """An AppleScript list literal."""
+    return "{" + ", ".join('"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+                           for s in items) + "}"
+
+
+def _confirm(names: list[str]) -> list[str] | None:
+    """Ask which footprints to send. Everything is ticked to start with, so
+    the common case — send them all — is one Return press.
+
+    Returns the chosen names, or None when the user cancels or no dialog is
+    available. Never falls through to pushing without an answer.
+    """
+    if sys.platform != "darwin":
+        _notify("Cannot confirm: this dialog needs macOS. Nothing was sent.")
+        return None
+    lst = _as_list(names)
+    plural = "footprint" if len(names) == 1 else "footprints"
+    out = _osascript(
+        f'set L to {lst}\n'
+        f'set picked to choose from list L with title "Push to 7Sigma" '
+        f'with prompt "{len(names)} changed {plural}. Send as draft proposals?" '
+        f'default items L with multiple selections allowed '
+        f'OK button name "Send" cancel button name "Cancel"\n'
+        'if picked is false then error number -128\n'
+        'set AppleScript\'s text item delimiters to linefeed\n'
+        'return picked as text'
+    )
+    if out is None:
+        return None
+    return [n for n in out.splitlines() if n]
+
+
+def _ask_comment(n: int) -> str | None:
+    out = _osascript(
+        f'display dialog "What changed? Shown in the proposal review." '
+        f'with title "Push {n} to 7Sigma" default answer "Edited in the KiCad footprint editor"\n'
+        'return text returned of result'
+    )
+    return None if out is None else (out.strip() or "Edited in the KiCad footprint editor")
+
+
+def _get_json(url: str, timeout: int = 120):
+    req = urllib.request.Request(url, headers={"User-Agent": "sevensigma-push/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
+def _post_json(url: str, payload: dict, timeout: int = 180) -> tuple[int, dict]:
+    req = urllib.request.Request(
+        url, data=json.dumps(payload).encode(),
+        headers={"User-Agent": "sevensigma-push/1.0", "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read()
+        try:
+            return e.code, json.loads(body)
+        except ValueError:
+            return e.code, {"detail": {"error": body[:200].decode("utf-8", "replace")}}
+
+
+def _sha(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def to_platform_text(text: str) -> str:
+    """Undo the packager's 3D-model path rewrite.
+
+    `pcm.py` turns `${SEVENSIGMA_DIR}/3DModels/` into
+    `${KICAD10_3RD_PARTY}/3dmodels/com_sevensigma_models3d/` when it builds the
+    package, because that is where the models install. The platform validator
+    only accepts the `${SEVENSIGMA_DIR}` form, so a push MUST put it back or
+    every footprint carrying a model is refused. The variable name is matched
+    loosely — it is version-stamped (KICAD10_…) and will change with KiCad.
+    """
+    return re.sub(r"\$\{[A-Z0-9_]+\}/3dmodels/" + re.escape(MODELS_INSTALL_DIR) + "/",
+                  "${SEVENSIGMA_DIR}/3DModels/", text)
+
+
+def _changed() -> tuple[list[tuple[str, Path, bool]], list[str]]:
+    """Footprints edited on this machine: (name, path, is_new), plus the names
+    we cannot judge.
+
+    The baseline is what SYNC WROTE (`local_state.json`), never the mirror
+    manifest — the installed bytes legitimately differ from the mirror because
+    of the model-path rewrite above, so a manifest diff calls all 155
+    model-carrying footprints "edited". Comparing against our own record is
+    exact and survives any future transformation.
+    """
+    baseline = {}
+    if LOCAL_STATE_FILE.exists():
+        try:
+            baseline = json.loads(LOCAL_STATE_FILE.read_text())
+        except ValueError:
+            pass
+    upstream_names = {
+        e["path"].split("/")[-1]
+        for e in _get_json(f"{BASE_URL}/files/manifest.json")["files"]
+        if e["path"].startswith(f"Footprints/{PRETTY}/")
+    }
+    out, unknown = [], []
+    for f in sorted(LOCAL_DIR.glob("*.kicad_mod")):
+        rec = baseline.get(str(f))
+        if rec is None:
+            if f.name not in upstream_names:
+                out.append((f.stem, f, True))  # not in the library at all — a creation
+            else:
+                unknown.append(f.name)  # no baseline yet; a sync will record one
+        elif _sha(f) != rec:
+            out.append((f.stem, f, False))
+    return out, unknown
+
+
+def main() -> int:
+    if not LOCAL_DIR.is_dir():
+        _notify(f"No local 7Sigma library at {LOCAL_DIR} — run Sync first.")
+        return 1
+    try:
+        changed, unknown = _changed()
+    except Exception as e:
+        _notify(f"Push failed: cannot reach the platform — {e}")
+        return 1
+    if not changed:
+        msg = "No local changes — every footprint matches what Sync installed."
+        if unknown:
+            msg += (f" ({len(unknown)} have no baseline yet — run Sync once so later "
+                    "edits can be detected.)")
+        _notify(msg)
+        return 0
+
+    labels = [f"{name}{'  (new)' if is_new else ''}" for name, _, is_new in changed]
+    picked = _confirm(labels)
+    if not picked:
+        _notify("Nothing sent.")
+        return 0
+    comment = _ask_comment(len(picked))
+    if comment is None:
+        _notify("Nothing sent.")
+        return 0
+
+    by_label = {lbl: entry for lbl, entry in zip(labels, changed)}
+    try:
+        ids = {f["name"]: f["id"] for f in _get_json(f"{BASE_URL}/api/footprints")}
+    except Exception as e:
+        _notify(f"Push failed: cannot list footprints — {e}")
+        return 1
+
+    filed, failed = [], []
+    for lbl in picked:
+        entry = by_label.get(lbl)
+        if entry is None:
+            continue
+        name, path, _ = entry
+        text = to_platform_text(path.read_text(encoding="utf-8"))
+        fid = ids.get(name)
+        if fid is None:  # not in the library yet — a creation proposal
+            status, res = _post_json(f"{BASE_URL}/api/footprints/propose",
+                                     {"source_text": text, "comment": comment, "name": name})
+        else:
+            status, res = _post_json(f"{BASE_URL}/api/footprints/{fid}/propose",
+                                     {"source_text": text, "comment": comment})
+        if status == 200 and res.get("ok"):
+            filed.append(f"{name} v{res['version_no']}")
+        else:
+            failed.append(f"{name}: {(res.get('detail') or res).get('error', status)}")
+
+    if filed:
+        _notify(f"Proposed {len(filed)}: {', '.join(filed)}. Approve them in the Proposals view.")
+    if failed:
+        _notify("Push errors: " + "; ".join(failed))
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -32,6 +32,7 @@ HERE = Path(__file__).resolve().parent
 THIRD_PARTY = HERE.parents[1]  # .../3rdparty/plugins/<id>/ -> .../3rdparty
 STATE_FILE = HERE / "sync_state.json"
 MODELS_STATE_FILE = HERE / "models_state.json"  # relpath -> sha256 of installed models
+LOCAL_STATE_FILE = HERE / "local_state.json"    # abspath -> sha256 of footprints WE wrote
 LOCK_FILE = HERE / "sync.lock"
 LOCK_STALE_S = 30 * 60  # a lock this old is a crash leftover — take it over
 
@@ -85,6 +86,41 @@ def _acquire_lock() -> bool:
                 pass
             return False
     return False
+
+
+def _sha_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+# What this plugin last WROTE, per absolute path. A file whose current hash no
+# longer matches its record was edited on this machine, so a sync must leave it
+# alone: overwriting would silently destroy unsent work. Same bookkeeping shape
+# as models_state.json, and advisory in the same way — it is always validated
+# against the real file, never trusted on its own.
+_LOCAL: dict = {}
+
+
+def _load_local_state() -> None:
+    global _LOCAL
+    if LOCAL_STATE_FILE.exists():
+        try:
+            _LOCAL = json.loads(LOCAL_STATE_FILE.read_text())
+        except ValueError:
+            _LOCAL = {}
+
+
+def _save_local_state() -> None:
+    LOCAL_STATE_FILE.write_text(json.dumps(_LOCAL, indent=0))
+
+
+def _record_written(target: Path, payload: bytes) -> None:
+    if target.suffix == ".kicad_mod":
+        _LOCAL[str(target)] = hashlib.sha256(payload).hexdigest()
+
+
+def _local_edits() -> dict:
+    """Recorded hash per footprint we wrote, for the clobber check above."""
+    return dict(_LOCAL)
 
 
 def _sync_models_delta(pkg: dict, state: dict) -> str:
@@ -168,6 +204,8 @@ def _apply_package(pkg: dict, state: dict) -> str:
 
     zf = zipfile.ZipFile(io.BytesIO(data))
     written: dict[str, set[str]] = {}
+    local = _local_edits()
+    kept_local: list[str] = []
     for member in zf.infolist():
         if member.is_dir():
             continue
@@ -176,16 +214,43 @@ def _apply_package(pkg: dict, state: dict) -> str:
             continue
         kind, rel = parts[0], Path(*parts[1:])
         target = THIRD_PARTY / kind / dest_name / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(zf.read(member))
         written.setdefault(kind, set()).add(rel.as_posix())
+        payload = zf.read(member)
+        # NEVER clobber a footprint edited here since the last sync — that is
+        # somebody's unsent work. Push it first (the Push button), or delete
+        # the local file to take the platform's copy.
+        #
+        # The test is CURRENT FILE vs what we recorded writing. Comparing the
+        # incoming payload against the record instead would mean "upstream
+        # changed, so keep the local copy", which refuses every legitimate
+        # update — the exact opposite of the intent.
+        if (target.exists() and str(target) in local
+                and _sha_file(target) != local[str(target)]):
+            kept_local.append(target.name)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload)
+        _record_written(target, payload)
 
     # prune files we manage that no longer exist upstream
     for kind, keep in written.items():
         root = THIRD_PARTY / kind / dest_name
         for f in root.rglob("*"):
             if f.is_file() and f.relative_to(root).as_posix() not in keep:
+                if str(f) in local and _sha_file(f) != local[str(f)]:
+                    kept_local.append(f.name)  # locally edited AND gone upstream
+                    continue
                 f.unlink()
+        # a pruned duplicate folder ("7Sigma 2.pretty") otherwise lingers empty
+        # forever, and KiCad registers every .pretty it finds as a library
+        for d in sorted((p for p in root.rglob("*") if p.is_dir()),
+                        key=lambda p: len(p.parts), reverse=True):
+            if not any(d.iterdir()):
+                d.rmdir()
+    _save_local_state()
+    if kept_local:
+        _notify("Kept your local edits (not overwritten): " + ", ".join(sorted(set(kept_local)))
+                + ". Use 'Push 7Sigma changes' to send them.")
 
     state[ident] = sha
     STATE_FILE.write_text(json.dumps(state, indent=1))
@@ -200,6 +265,7 @@ def main() -> int:
         _notify("A sync is already running — hold on, it will notify when done.")
         return 0
     try:
+        _load_local_state()
         _notify("Checking for 7Sigma library updates…")
         try:
             repo = json.loads(_get(f"{BASE_URL}/api/kicad/pcm/repository.json", timeout=120))
