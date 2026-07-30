@@ -199,9 +199,16 @@ def _prev_packages(out: Path, current_meta: Path) -> dict:
 def _resolve_package(out: Path, prev: dict, key: str, subtree: str, version: str,
                      zip_prefix: str, builder) -> dict:
     """Reuse the previous zip + version when the package's content hash is
-    unchanged; build a fresh zip (named by content hash) otherwise."""
+    unchanged; build a fresh zip (named by content hash) otherwise.
+
+    The VERSION is part of the reuse test, not just the content hash. PCM
+    decides "update available" from the version string alone, so a bump with
+    unchanged sources has to reach the repository — keying only on `subtree`
+    kept serving the cached entry and the bump silently did nothing.
+    """
     p = prev.get(key)
-    if p and p.get("subtree") == subtree and (out / p.get("zip", "")).exists():
+    if (p and p.get("subtree") == subtree and p.get("version") == version
+            and (out / p.get("zip", "")).exists()):
         return p
     zip_path = out / f"{zip_prefix}-{subtree[:12]}.zip"
     install_size = builder(zip_path)
