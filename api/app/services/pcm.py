@@ -56,7 +56,11 @@ SOURCE_NICKNAME = "7Sigma"  # the nickname used inside mirror files (repo conven
 LIB_ID = "com.sevensigma.library"
 MODELS_ID = "com.sevensigma.models3d"
 PLUGIN_ID = "com.sevensigma.sync"
-PLUGIN_VERSION = "1.0.4"  # bump when the plugin source changes — PCM update detection
+PLUGIN_VERSION = "1.0.5"  # bump when the plugin source changes — PCM update detection
+# ^ MANUAL, and PCM decides "update available" purely from this string. A new
+# zip with the same version reaches nobody: the content hash changes, the
+# download changes, and every installed copy stays on the old code. Shipping
+# plugin source without bumping this is a silent no-op — it happened twice.
 MODELS_INSTALL_DIR = MODELS_ID.replace(".", "_")
 PCM_FP_PREFIX = "PCM_"  # KiCad's hardcoded auto-registration nickname prefix
 SCHEMA = "https://go.kicad.org/pcm/schemas/v1"
@@ -293,8 +297,10 @@ def ensure_built() -> dict | None:
                 ),
                 _package_entry(
                     PLUGIN_ID, "7Sigma Library Sync",
-                    "Toolbar button (PCB + schematic editors) that pulls library "
-                    "updates from the platform and applies them in place.",
+                    "Two toolbar buttons in the PCB, schematic, footprint and symbol "
+                    "editors: Sync pulls library updates from the platform and applies "
+                    "them in place, Push sends footprints and symbols you edited "
+                    "locally back as draft proposals.",
                     "plugin", packages_meta["plugin"], kicad_version="9.0",
                 ),
             ]
