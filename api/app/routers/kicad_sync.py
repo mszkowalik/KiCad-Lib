@@ -110,6 +110,11 @@ def httplib_file():
             "api_version": "v1",
             "root_url": f"{settings.public_base_url}/kicad/",
             "token": settings.httplib_token,
+            # KiCad caches the catalog in-process for these many seconds. Its
+            # own defaults (600 / 30) expire the category part lists every 10
+            # minutes, and re-filling them costs one request per category.
+            "timeout_categories_seconds": settings.httplib_timeout_categories_s,
+            "timeout_parts_seconds": settings.httplib_timeout_parts_s,
         },
     }
     return Response(

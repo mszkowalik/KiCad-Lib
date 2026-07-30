@@ -111,6 +111,17 @@ class Settings(BaseSettings):
     httplib_symbol_lib: str = "PCM_7Sigma_Base"
     footprint_lib_nickname: str = "PCM_7Sigma"
 
+    # How long KiCad may reuse its OWN in-process copy of the catalog, written
+    # into the .kicad_httplib as source.timeout_categories_seconds /
+    # source.timeout_parts_seconds. KiCad's defaults are 600 and 30, and the
+    # category one is the expensive path: `EnumerateSymbolLib` re-fetches the
+    # part list of EVERY category once it expires, so with the default the
+    # first "Add Symbol" click in any 10-minute window pays the whole catalog.
+    # Raised because approval is the only thing that changes the catalog, and
+    # a client that must see a new part sooner can reopen the project.
+    httplib_timeout_categories_s: int = 3600
+    httplib_timeout_parts_s: int = 600
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

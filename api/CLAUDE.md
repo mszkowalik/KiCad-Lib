@@ -758,6 +758,31 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   overrides it. Never re-add it as a per-component property. Because the name is
   baked into generated `ki_description` values, changing it rebuilds the symbol
   libraries of every category using that footprint — not the `.kicad_mod`.
+- **The KiCad HTTP catalog is on the symbol chooser's critical path — never
+  load the whole library per request.** `EnumerateSymbolLib` walks every
+  category and calls `parts/category/{id}.json` once each, so one slow handler
+  is multiplied by the category count. Both part endpoints therefore go through
+  `kicad_http.library_versions(db)`, which expresses `current_version(comp)` +
+  `in_library` as a SQL filter (`ComponentVersion.id == Component.current_version_id`)
+  instead of loading every component with every version and filtering in Python
+  — that cost ~0.3s per category, ~4s per chooser open on 327 components.
+  Two traps it also closes: `props_dict` reads `Footprint_Name` through
+  `cv.footprint_version`, which lazy-loads a whole `.kicad_mod` body per
+  component unless `source_text`/`parsed`/`models` are deferred; and the
+  `Component` join needs `contains_eager` or the parent row is re-fetched per
+  row. Verified 2026-07-30: 4.14s -> 0.38s wall clock for 15 categories,
+  payloads byte-identical.
+- **KiCad caches the catalog itself, and its defaults are the reason a fast
+  backend still felt slow.** `source.timeout_categories_seconds` (KiCad default
+  **600**) and `source.timeout_parts_seconds` (default **30**) live in the
+  `.kicad_httplib`; the category one expires the part lists of ALL categories at
+  once, so with the default the first "Add Symbol" click in any 10-minute window
+  refetches the entire catalog. `routers/kicad_sync.py::httplib_file` now emits
+  both from `httplib_timeout_categories_s` / `httplib_timeout_parts_s` (3600 /
+  600, editable in Settings). The cache is per KiCad session and always cold on
+  startup, so the server-side cost still matters. **The values are baked into
+  the downloaded file** — changing the knob needs a re-download, exactly like
+  `httplib_token`.
 - **Template resolution is order-independent.** `apply_properties` resolves
   `{Key}` against the *final* property set. It used to resolve against the
   properties applied so far, so a `ki_description` positioned before the

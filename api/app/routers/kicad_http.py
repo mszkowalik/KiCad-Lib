@@ -10,13 +10,13 @@ All values must be strings; auth header is "Authorization: Token <token>".
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Query, Session, contains_eager, defer, joinedload, selectinload
 
 from .. import models as M
 from ..config import settings
 from ..db import get_db
 from ..services.generator import injected_props
-from .util import category_path, current_version, props_dict, resolved_value
+from .util import category_path, props_dict, resolved_value
 
 router = APIRouter(prefix="/kicad/v1", tags=["kicad-http-library"])
 
@@ -24,6 +24,42 @@ router = APIRouter(prefix="/kicad/v1", tags=["kicad-http-library"])
 def require_token(authorization: str = Header(default="")):
     if authorization != f"Token {settings.httplib_token}":
         raise HTTPException(401, "invalid or missing token")
+
+
+def library_versions(db: Session) -> Query:
+    """The live version of every component KiCad may see, one query.
+
+    This is `current_version(comp)` + the `in_library` filter expressed in SQL
+    instead of in Python. It has to be: KiCad's symbol chooser calls
+    `parts/category/{id}.json` once per category when it opens, and the loop
+    that loaded every component with every version and every property, then
+    dropped 95% of them, cost ~0.3s per category — ~4s for 15 categories on
+    327 components.
+
+    `props_dict` reads `Footprint_Name` off the footprint, so the footprint
+    version is eager-loaded WITHOUT its three heavy columns. `source_text`
+    holds a whole `.kicad_mod` body, and lazy-loading one per component pulled
+    the entire footprint corpus into every catalog response.
+    """
+    return (
+        db.query(M.ComponentVersion)
+        .join(M.Component, M.Component.id == M.ComponentVersion.component_id)
+        .filter(
+            M.ComponentVersion.id == M.Component.current_version_id,
+            M.Component.in_library.is_(True),  # BOM-only part — not offered to KiCad
+        )
+        .options(
+            # the join above is already the parent row — never re-fetch it per version
+            contains_eager(M.ComponentVersion.component),
+            selectinload(M.ComponentVersion.properties),
+            joinedload(M.ComponentVersion.footprint_version).options(
+                defer(M.FootprintVersion.source_text),
+                defer(M.FootprintVersion.parsed),
+                defer(M.FootprintVersion.models),
+                joinedload(M.FootprintVersion.footprint),
+            ),
+        )
+    )
 
 
 @router.get("", dependencies=[Depends(require_token)])
@@ -40,24 +76,19 @@ def categories(db: Session = Depends(get_db)):
 
 @router.get("/parts/category/{cat_id}.json", dependencies=[Depends(require_token)])
 def parts_in_category(cat_id: int, db: Session = Depends(get_db)):
-    comps = (
-        db.query(M.Component)
-        .options(selectinload(M.Component.versions).selectinload(M.ComponentVersion.properties))
+    versions = (
+        library_versions(db)
+        .filter(M.ComponentVersion.category_id == cat_id)
         .order_by(M.Component.name)
         .all()
     )
     out = []
-    for comp in comps:
-        if not comp.in_library:
-            continue  # BOM-only part — not offered to KiCad
-        cv = current_version(comp)
-        if cv is None or cv.category_id != cat_id:
-            continue
+    for cv in versions:
         props = props_dict(cv)
         out.append(
             {
-                "id": str(comp.id),
-                "name": comp.name,
+                "id": str(cv.component_id),
+                "name": cv.component.name,
                 "description": resolved_value(props.get("ki_description"), props),
             }
         )
@@ -66,18 +97,10 @@ def parts_in_category(cat_id: int, db: Session = Depends(get_db)):
 
 @router.get("/parts/{part_id}.json", dependencies=[Depends(require_token)])
 def part_detail(part_id: int, db: Session = Depends(get_db)):
-    comp = (
-        db.query(M.Component)
-        .options(
-            selectinload(M.Component.versions).selectinload(M.ComponentVersion.properties),
-            selectinload(M.Component.versions).selectinload(M.ComponentVersion.category),
-        )
-        .filter(M.Component.id == part_id)
-        .first()
-    )
+    comp = db.get(M.Component, part_id)
     if comp is None or not comp.in_library:
         raise HTTPException(404, "part not found")
-    cv = current_version(comp)
+    cv = library_versions(db).filter(M.Component.id == part_id).first()
     if cv is None:
         raise HTTPException(404, "part has no published version")
 

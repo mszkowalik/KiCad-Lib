@@ -2,7 +2,7 @@
 name: kicad-platform-workflow
 description: "How changes become library: every write is a draft proposal, approval automatically regenerates the KiCad libraries and file mirror (there is no manual build), what mirror warnings mean, where the retired YAML pipeline went, and who handles platform setup. Use when asked how to publish, rebuild or regenerate."
 ---
-<!-- platform-skill: platform-workflow v1 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: platform-workflow v2 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Platform workflow — how changes become library
 
@@ -69,13 +69,34 @@ the library tools cover. Jaravis has no shell, no filesystem and no Python
 environment — it acts only through its tools, so installation and deployment
 questions belong with the platform README or an administrator, not in chat.
 
-An agent that *does* have a shell and the repository (e.g. Claude Code) runs it
-with `docker compose up -d --build`; the web UI is on port 5173 and the API on
-8020, and the api/web containers live-mount their sources so edits hot-reload.
-Read the repo's `CLAUDE.md` files before changing platform code.
+There are two places it runs, and they are not interchangeable:
+
+| | Address | What it is |
+|---|---|---|
+| **Deployed** | `http://192.168.200.28/lib` | The instance to use. Always on, served under the `/lib` path prefix by a shared nginx, reachable from the local network only. |
+| Dev | `http://localhost:5173` (API on `:8020`) | A working copy on a developer's machine, sources live-mounted so edits hot-reload. |
+
+The deployed instance is **not** built from a checkout. Container images are
+built by CI on every push and it pulls them, so `docker compose up --build` is
+not how a change reaches it — the images have to be rebuilt and pulled first.
+Note the `/lib` prefix: every URL it serves carries it, including the KiCad HTTP
+catalog, the PCM repository and datasheet links.
+
+**Configuration is editable in the web UI** — Setup → Configuration, the first
+card on the page. A saved value is stored in the database and wins over the
+environment; Revert drops it again. Values that are only read when the app
+starts are labelled, because saving one needs a restart to take effect.
+Infrastructure is deliberately absent: the database URL, the object-storage
+credentials and `SECRET_KEY` cannot be changed under a running platform, the
+last one because it decrypts stored git tokens and a new value would orphan
+them. So "where do I change the public base URL, a token, or an API key" is
+answered by the Setup page, not by a file on disk.
+
+An agent that does have a shell and the repository runs the dev copy with
+`docker compose up -d`; read the repo's `CLAUDE.md` files before changing
+platform code.
 
 ## Related
 
 [[add-component]] — the procedure that produces these drafts.
 [[conventions-symbols]] / [[conventions-footprints]] — what a good draft looks like.
-

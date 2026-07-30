@@ -1,10 +1,21 @@
-# Footprint naming — proposal
+# Footprint naming
 
-**Status: proposal. Nothing in the library has been changed.** This is what I would do and
-why, with the standards cited and every one of the 173 existing footprints decided.
+**Status: APPLIED to the live library** (`http://192.168.200.28/lib`) on 2026-07-30.
+**77 footprints renamed, all 171 carry a package name, zero EasyEDA/LCSC-style names remain.**
+See `07-applied-state.md` for the as-built record read back from production.
+
+> The tables in `02-migration-173.md` are the *proposal* as drafted against the dev database
+> (173 footprints, before the work ran). Where they disagree with `07-applied-state.md`, the
+> applied-state file is the truth.
+
+> **Renaming does not update boards already laid out.** They keep the old footprint string
+> until *Update Footprints from Library* is run in KiCad. One connector
+> (`DF40C-100DS-0.4V-51`) additionally had **wrong pin numbering** and its pads physically
+> move — any board using it must be re-routed and re-checked.
 
 | File | What it is |
 |---|---|
+| `07-applied-state.md` | **What is actually live** — every rename, every package name, read back from production |
 | `01-standard.md` | The naming standard: tier rule, the one grammar, global mechanics, per-family rules, `display_name`, migration waves, open questions, validator rules |
 | `02-migration-173.md` | **Every existing footprint, decided.** 173 rows — current name → action → proposed name → wave → reason |
 | `03-new-parts-catalogue.md` | **Naming parts you don't own yet.** ~8,500 stock footprints distilled into reference tables per family, plus a derivation procedure for anything not in a table |
@@ -142,19 +153,32 @@ the name in one step. **No Wave 3 or Wave 4 rename now adopts a stock name.**
 
 Also rejected: §9 Q13 (`Lightpipe_..._Drill1.98mm` named a drill the footprint omits).
 
-## Suggested order of work
+## What was done, in order
 
-| Wave | What | Renames | Board risk |
-|---|---|--:|---|
-| **0** | Publish the standard into the `conventions-footprints` skill; freeze the 91; add validator rules incl. the stock-adoption copper check | 0 | none |
-| **1** | **`display_name` pass** — fill ~113 empty, fix ~10 wrong | 0 | none |
-| **2** | Delete the 5 zero-reference footprints; resolve the Hirose question | 0 | none |
-| **3** | Correctness renames — names that state something false | 32 | low (≤3 refs each) |
-| **4** | Grammar migration, batched per family | 41 | low |
-| **5** | Geometry follow-ups, **then** the 3 deferred stock-name adoptions | 3 | medium |
+| Wave | What | Status |
+|---|---|---|
+| **0** | Standard published into the `conventions-footprints` skill (v7); Tier 0 names frozen | done |
+| **1** | `display_name` pass — every footprint now carries a package name | done (171/171) |
+| **2** | 5 zero-reference footprints deleted (source archived in the audit row) | done |
+| **2b** | DF40C wrong pin numbering — stock footprint imported, component repointed to v4, old one deprecated | done |
+| **3–4** | 75 correctness + grammar renames | done |
+| **5** | The 2 that could not take a stock name — true measured values recorded instead | done |
 
-Wave 1 is the highest value-to-risk step in the plan and touches no footprint name at all.
+Verified after each step: 0 dangling references, 0 header/filename mismatches, 0 mirror
+warnings on a full rebuild.
 
-**Renaming a footprint does not update already-laid-out boards** — they keep the old string
-until *Update Footprints from Library*. That is the entire reason the waves are ordered this
-way.
+## Still open
+
+- **Symbol layout for connectors — in progress.** Every dual-row connector symbol was
+  checked; only `DF40C-100DS` was wrong (its right column ran 100 down to 51). The fix is a
+  new generic `Conn_02x50_Odd_Even`, **filed as draft proposal 154 and awaiting approval in
+  the Proposals view**. Approving it also removes one per-MPN symbol. See
+  `06-connector-pin-numbering.md` §3.
+- **`Kinghelm` vs `Shenzhen Kinghelm Elec`.** The new switch footprint uses `Kinghelm` to
+  match its two siblings, but the component's canonical manufacturer is
+  `Shenzhen Kinghelm Elec`. `conventions-library` records this as an unresolved open item —
+  it needs one house decision, then a sweep.
+- **Generic connector symbols.** Re-measured: **4 of 26** connector symbols are per-MPN, not
+  12 of 27. `DF40C-100DS` is handled above. `FPC-05F-24PH20` needs a footprint pad
+  renumber first (`25`/`26` → `MP`, one net, as KLC does). `HU2032-LF` needs pin names, not
+  a generic. `USB-B01` needs only a rename. See `06-connector-pin-numbering.md` §2.2–2.3.
