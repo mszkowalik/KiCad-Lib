@@ -17,6 +17,9 @@ dependencies = [
     "minio>=7.2",
     "cryptography>=42",
     "python-multipart>=0.0.9",
+    # Password hashing for the login page. argon2id is the current OWASP
+    # recommendation and the wheel needs no compiler on linux/amd64.
+    "argon2-cffi>=23.1",
     # kiutils is VENDORED at platform/api/kiutils/ — it is the Wittmann-MEE fork
     # plus the manual KiCad-10 patch from the root CLAUDE.md (in_pos_files +
     # _unknown_fields catch-all). The upstream fork cannot parse KiCad-10-saved

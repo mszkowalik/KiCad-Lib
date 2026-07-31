@@ -10,6 +10,7 @@ import {
   useParams,
 } from "react-router-dom";
 import { getProposals } from "./api";
+import { AuthGate, useAuth } from "./auth";
 import { DialogProvider } from "./components/Dialog";
 import Browse from "./pages/Browse";
 import ComponentDetail from "./pages/ComponentDetail";
@@ -111,7 +112,25 @@ function RedirectTemplate() {
   return <Navigate to={`/library/templates/${kind}/${id}`} replace />;
 }
 
-export default function App() {
+/** The signed-in identity and the way out, at the right of the nav. */
+function UserMenu() {
+  const { user, authEnabled, signOut } = useAuth();
+  if (!authEnabled || user === null) return null;
+  return (
+    <span className="topbar-user">
+      <span className="topbar-username" title={`${user.username} (${user.role})`}>
+        {user.display_name || user.username}
+      </span>
+      <button className="btn btn-sm" onClick={() => void signOut()}>
+        Log out
+      </button>
+    </span>
+  );
+}
+
+/** The app itself. Rendered only AFTER the gate has a signed-in user, so no
+ *  screen and no background fetch here ever runs anonymously. */
+function Shell() {
   const [proposalCount, setProposalCount] = useState(0);
 
   const refresh = useCallback(() => {
@@ -151,6 +170,7 @@ export default function App() {
               <NavLink to="/setup" className={navClass}>
                 Setup
               </NavLink>
+              <UserMenu />
             </nav>
           </header>
           <Routes>
@@ -211,5 +231,15 @@ export default function App() {
         </div>
       </ProposalsBadge.Provider>
     </DialogProvider>
+  );
+}
+
+export default function App() {
+  // The gate is the outermost thing in the app: until it has an answer, the
+  // router does not exist. See auth.tsx.
+  return (
+    <AuthGate>
+      <Shell />
+    </AuthGate>
   );
 }

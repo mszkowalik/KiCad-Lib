@@ -135,6 +135,33 @@ Two consequences when you touch this:
 - Show `apiOrigin()`, not `API_URL`, in anything the user reads. `API_URL` is
   `""` for a same-origin build, which reads as a blank in an error message.
 
+### Sign-in: the gate replaces the app, it is not a route
+
+`AuthGate` (`src/auth.tsx`) wraps the router in `App.tsx`. Until `/api/auth/me`
+answers, **nothing** renders; if the answer is "nobody", `pages/Login.tsx`
+renders INSTEAD of the router.
+
+- **Not a `<Route path="/login">`.** A route would mount the shell first, so a
+  signed-out visit fires a request per screen and paints an error banner per
+  panel before the form appears. It also means a deep link survives sign-in: the
+  URL never changed, so the router picks it up once the user exists.
+- **`Shell` holds the app**, and the proposals-badge fetch lives there rather
+  than in `App` — anything in `App` would run anonymously on every visit.
+- **Any 401 from any endpoint drops back to the form.** `api.ts` exposes
+  `setUnauthorizedHandler`, which `AuthGate` registers once. `/api/auth/*` is
+  excluded from that hook: a wrong password is a 401 the login form itself must
+  render, not a reason to re-mount.
+- **`request()` sends `credentials: "include"`.** The session is a cookie and a
+  dev server aimed at a remote API is cross-origin. This is why `CORS_ORIGINS`
+  is an explicit list — the CORS spec forbids `allow_credentials` with a
+  wildcard, so a `"*"` there silently breaks the dev login.
+- **No sign-up link and no password-reset link, ever.** The API has no endpoint
+  for either (user decision 2026-07-31). Accounts and resets live in
+  `components/UsersCard.tsx` on the Setup page, admin only.
+- **`useAuth().isAdmin` is true when auth is DISABLED.** A dev box with
+  `AUTH_ENABLED=0` has no user to ask, and the API takes the same posture — so
+  gate admin UI on `isAdmin`, never on `user?.role === "admin"`.
+
 ## Conventions
 
 - **Pages** are route targets (`src/pages/`, wired in `App.tsx`). **Reusable

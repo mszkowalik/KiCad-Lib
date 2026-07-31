@@ -20,6 +20,7 @@ import io
 import json
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -37,19 +38,81 @@ LOCK_FILE = HERE / "sync.lock"
 LOCK_STALE_S = 30 * 60  # a lock this old is a crash leftover — take it over
 
 
+TOKEN = "__TOKEN__"          # baked in when installed from a personal repository URL
+TOKEN_FILE = HERE / "token.json"
+AGENT = "sevensigma-sync/1.0"
+
+
+def _token() -> str:
+    """The platform API token.
+
+    Normally baked in at install time: a personal PCM repository URL
+    (`…/repository.json?t=<token>`) serves a plugin zip with the token already
+    in this file, so nobody types a credential.
+
+    `token.json` beside this file is the manual fallback — the recovery path
+    after a token rotation, when the installed copy still carries the old one.
+    """
+    global TOKEN
+    if TOKEN:
+        return TOKEN
+    try:
+        TOKEN = str(json.loads(TOKEN_FILE.read_text(encoding="utf-8")).get("token", ""))
+    except Exception:
+        TOKEN = ""
+    return TOKEN
+
+
+def _headers(extra: dict | None = None) -> dict:
+    """Auth goes in a HEADER here, never the query string. Only PCM itself is
+    forced to use `?t=`, and query strings land in the server access logs."""
+    h = {"User-Agent": AGENT}
+    token = _token()
+    if token:
+        h["Authorization"] = "Bearer " + token
+    if extra:
+        h.update(extra)
+    return h
+
+
+AUTH_HINT = (
+    "The platform rejected this plugin's credentials.\n\n"
+    "Fix it one of two ways:\n"
+    "1. Reinstall the plugin from your personal repository URL "
+    "(Setup page > KiCad), which bakes a fresh token in.\n"
+    "2. Put {\"token\": \"7s_…\"} in token.json next to this plugin."
+)
+
+
+def _raise_friendly(err: Exception) -> None:
+    """Turn a bare HTTP 401 into an instruction. Re-raises everything else."""
+    if isinstance(err, urllib.error.HTTPError) and err.code in (401, 403):
+        _notify(AUTH_HINT)
+        raise SystemExit(AUTH_HINT)
+    raise err
+
+
 def _get(url: str, timeout: int = 600) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "sevensigma-sync/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read()
+    req = urllib.request.Request(url, headers=_headers())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read()
+    except Exception as e:
+        _raise_friendly(e)
+        raise
 
 
 def _post_json(url: str, payload: dict, timeout: int = 600) -> bytes:
     req = urllib.request.Request(
         url, data=json.dumps(payload).encode(),
-        headers={"User-Agent": "sevensigma-sync/1.0", "Content-Type": "application/json"},
+        headers=_headers({"Content-Type": "application/json"}),
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read()
+    except Exception as e:
+        _raise_friendly(e)
+        raise
 
 
 def _notify(message: str) -> None:

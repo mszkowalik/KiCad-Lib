@@ -2203,6 +2203,15 @@ select.sel:focus {
   border-radius: 7px; padding: 10px 12px; overflow-x: auto; margin: 10px 0;
   white-space: pre;
 }
+/* A personal repository URL carries a 46-character token, so it runs past the
+   card and `overflow-x: auto` hides the end behind a scrollbar. This is a URL
+   the user must select and copy whole — wrap it instead. */
+.code-block.code-block-wrap {
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: visible;
+}
+
 .kv { border-collapse: collapse; }
 .kv td { padding: 3px 14px 3px 0; vertical-align: top; }
 .kv td:first-child { color: var(--ink-3, #697280); }
@@ -3540,4 +3549,139 @@ a.check-cell:hover {
 }
 @media (max-width: 900px) {
   .check-group { grid-template-columns: 1fr; }
+}
+
+/* ==================================================================== login */
+/* The sign-in screen replaces the whole app shell (see auth.tsx), so it owns
+   the viewport rather than sitting inside .app. Built from the same palette
+   variables as everything else — no colours of its own. */
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.login-brand {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.login-sub {
+  margin: -10px 0 4px;
+  font-size: 13px;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.login-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.login-submit {
+  margin-top: 4px;
+  justify-content: center;
+  padding: 9px 12px;
+}
+
+.login-note {
+  margin: 0;
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ------------------------------------------------------- signed-in user menu */
+
+.topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+}
+
+.topbar-username {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- users card */
+
+/* Fixed widths summing to 100%, per the no-horizontal-scroll table rule. */
+.data.users-table th:nth-child(1),
+.data.users-table td:nth-child(1) { width: 24%; }
+.data.users-table th:nth-child(2),
+.data.users-table td:nth-child(2) { width: 22%; }
+.data.users-table th:nth-child(3),
+.data.users-table td:nth-child(3) { width: 10%; }
+.data.users-table th:nth-child(4),
+.data.users-table td:nth-child(4) { width: 10%; }
+.data.users-table th:nth-child(5),
+.data.users-table td:nth-child(5) { width: 20%; }
+.data.users-table th:nth-child(6),
+.data.users-table td:nth-child(6) { width: 14%; }
+
+.data.users-table td.ctr,
+.data.users-table th.ctr {
+  text-align: center;
+}
+
+/* The expanded detail row spans every column — opt that ONE cell out of the
+   single-line clamp, exactly as the proposals preview cell does. */
+.data.users-table td.user-detail-cell {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.user-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+}
+
+.user-url-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-url {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  align-items: end;
 }

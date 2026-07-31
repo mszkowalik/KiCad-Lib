@@ -57,6 +57,14 @@ services:
       HTTPLIB_TOKEN: ${HTTPLIB_TOKEN:?set HTTPLIB_TOKEN in .env}
       # /api/agent/* can create draft proposals — never leave it open off-host.
       MCP_TOKEN: ${MCP_TOKEN:?set MCP_TOKEN in .env}
+      # Authentication. This deployment is reachable from the internet, so the
+      # gate is not optional — there is deliberately no AUTH_ENABLED override
+      # here. ADMIN_PASSWORD creates the first admin and is then inert; without
+      # it a fresh database comes up with nobody able to sign in.
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env for the first admin}
+      # Served over HTTPS through the tunnel: the cookie must be Secure.
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-kicadlib}

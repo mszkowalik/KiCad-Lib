@@ -56,7 +56,7 @@ SOURCE_NICKNAME = "7Sigma"  # the nickname used inside mirror files (repo conven
 LIB_ID = "com.sevensigma.library"
 MODELS_ID = "com.sevensigma.models3d"
 PLUGIN_ID = "com.sevensigma.sync"
-PLUGIN_VERSION = "1.0.6"  # bump when the plugin source changes — PCM update detection
+PLUGIN_VERSION = "1.0.7"  # bump when the plugin source changes — PCM update detection
 # ^ MANUAL, and PCM decides "update available" purely from this string. A new
 # zip with the same version reaches nobody: the content hash changes, the
 # download changes, and every installed copy stays on the old code. Shipping
@@ -64,7 +64,7 @@ PLUGIN_VERSION = "1.0.6"  # bump when the plugin source changes — PCM update d
 MODELS_INSTALL_DIR = MODELS_ID.replace(".", "_")
 PCM_FP_PREFIX = "PCM_"  # KiCad's hardcoded auto-registration nickname prefix
 SCHEMA = "https://go.kicad.org/pcm/schemas/v1"
-BUILDER_REV = 7  # bump when the package builder output changes for the same mirror
+BUILDER_REV = 8  # bump when the package builder output changes for the same mirror
 # ^ AND whenever anything in THIS FILE changes what a package advertises —
 # PLUGIN_VERSION, a package name/description, a manifest field. `tag` hashes the
 # mirror digest and the plugin FILE contents only, so a pcm.py-only edit leaves
@@ -154,14 +154,25 @@ def _build_models_zip(path: Path) -> int:
     return size
 
 
-def _plugin_files() -> list[tuple[str, bytes]]:
-    """The sync plugin's zip members: templates get the platform URL baked
-    in; icons ship verbatim. plugin.json must sit at the root of the
-    package's plugins/ folder."""
+def _plugin_files(token: str = "") -> list[tuple[str, bytes]]:
+    """The sync plugin's zip members: templates get the platform URL and the
+    caller's API token baked in; icons ship verbatim. plugin.json must sit at
+    the root of the package's plugins/ folder.
+
+    `token` defaults to EMPTY on purpose, and the empty build is the one whose
+    hash feeds the repository tag (see `ensure_built`). Personalisation must
+    never move the tag — otherwise every user's first install would look like a
+    library change and rebuild the 1.4 GB models package.
+
+    A plugin built with no token still works: it falls back to `token.json`
+    beside itself and, failing that, asks the user to paste one.
+    """
     out: list[tuple[str, bytes]] = []
     for f in sorted(_PLUGIN_SRC.iterdir()):
         if f.suffix == ".tmpl":
-            body = f.read_text(encoding="utf-8").replace("__BASE_URL__", settings.public_base_url)
+            body = (f.read_text(encoding="utf-8")
+                    .replace("__BASE_URL__", settings.public_base_url)
+                    .replace("__TOKEN__", token))
             out.append((f"plugins/{f.name[:-5]}", body.encode("utf-8")))
         elif f.name == "icon-pcm.png":
             out.append(("resources/icon.png", f.read_bytes()))
@@ -178,6 +189,52 @@ def _build_plugin_zip(path: Path) -> int:
         for arcname, data in _plugin_files():
             size += _zip_add(zf, arcname, data)
     return size
+
+
+# Per-token plugin zips. Named apart from the shared artifacts so `ensure_built`
+# can leave them alone while it prunes, and so they are obvious on disk.
+PERSONAL_PREFIX = "psync-"
+
+
+def personal_plugin(meta: dict, token: str) -> dict:
+    """The plugin package entry for ONE user, with their token inside the zip.
+
+    Returns the same shape `_resolve_package` produces (`zip`, `version`,
+    `sha256`, `download_size`, `install_size`), so `_package_entry` consumes it
+    unchanged. Built lazily and cached on disk, keyed by the plugin's content
+    hash AND the token — a plugin source change or a rotated token both yield a
+    new name, so a stale personal zip can never be served.
+
+    The sha256 MUST be recomputed here: PCM verifies the download against the
+    value in packages.json, and a personalised zip is a different file.
+    """
+    base = meta["packages"]["plugin"]
+    if not token:
+        return base
+    out = _pcm_dir()
+    key = hashlib.sha256(f"{base['subtree']}:{token}".encode()).hexdigest()[:16]
+    zip_path = out / f"{PERSONAL_PREFIX}{key}.zip"
+    if not zip_path.exists():
+        with _lock:
+            if not zip_path.exists():
+                tmp = zip_path.with_suffix(".part")
+                size = 0
+                with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for arcname, data in _plugin_files(token):
+                        size += _zip_add(zf, arcname, data)
+                # Atomic publish: a half-written zip must never be downloadable,
+                # because PCM would fail its sha256 check and blame the server.
+                tmp.replace(zip_path)
+                log.info(f"PCM: built personal plugin zip {zip_path.name} ({size} B installed)")
+    with zipfile.ZipFile(zip_path) as zf:
+        install_size = sum(i.file_size for i in zf.infolist())
+    return {
+        **base,
+        "zip": zip_path.name,
+        "sha256": _sha256_file(zip_path),
+        "download_size": zip_path.stat().st_size,
+        "install_size": install_size,
+    }
 
 
 def _sha256_file(path: Path) -> str:
@@ -229,8 +286,44 @@ def _resolve_package(out: Path, prev: dict, key: str, subtree: str, version: str
     }
 
 
+def _packages_document(packages_meta: dict, token: str = "") -> dict:
+    """The `packages.json` body. ONE definition, used by the shared build and
+    by every personalised response — the package names, descriptions and types
+    must never fork between them."""
+    return {
+        "packages": [
+            _package_entry(
+                LIB_ID, "7Sigma Library",
+                "7Sigma base symbols and footprints (auto-registered as "
+                "PCM_7Sigma_Base / PCM_7Sigma). Parts are picked from the live "
+                "HTTP catalog, which references these drawings.",
+                "library", packages_meta["library"], token=token,
+            ),
+            _package_entry(
+                MODELS_ID, "7Sigma 3D Models",
+                "STEP/WRL models referenced by the 7Sigma footprints.",
+                "library", packages_meta["models"], token=token,
+            ),
+            _package_entry(
+                PLUGIN_ID, "7Sigma Library Sync",
+                "Two toolbar buttons in the PCB editor: Sync pulls library updates "
+                "from the platform and applies them in place, Push sends footprints "
+                "and symbols you edited locally back as draft proposals. Edit in the "
+                "footprint or symbol editor, save, then push from the PCB editor.",
+                "plugin", packages_meta["plugin"], kicad_version="9.0", token=token,
+            ),
+        ]
+    }
+
+
+def _with_token(url: str, token: str) -> str:
+    """Append `?t=<token>`. KiCad's Plugin and Content Manager sends no headers
+    of any kind, so a query parameter is the only credential it can carry."""
+    return f"{url}?t={token}" if token else url
+
+
 def _package_entry(identifier: str, name: str, description: str, ptype: str,
-                   pmeta: dict, kicad_version: str = "8.0") -> dict:
+                   pmeta: dict, kicad_version: str = "8.0", token: str = "") -> dict:
     return {
         "$schema": f"{SCHEMA}/package",
         "name": name,
@@ -248,7 +341,8 @@ def _package_entry(identifier: str, name: str, description: str, ptype: str,
                 "version": pmeta["version"],
                 "status": "stable",
                 "kicad_version": kicad_version,
-                "download_url": f"{settings.public_base_url}/api/kicad/pcm/{pmeta['zip']}",
+                "download_url": _with_token(
+                    f"{settings.public_base_url}/api/kicad/pcm/{pmeta['zip']}", token),
                 "download_sha256": pmeta["sha256"],
                 "download_size": pmeta["download_size"],
                 "install_size": pmeta["install_size"],
@@ -295,30 +389,7 @@ def ensure_built() -> dict | None:
                 out, prev, "plugin", plugin_hash, PLUGIN_VERSION, "sync", _build_plugin_zip,
             ),
         }
-        packages = {
-            "packages": [
-                _package_entry(
-                    LIB_ID, "7Sigma Library",
-                    "7Sigma base symbols and footprints (auto-registered as "
-                    "PCM_7Sigma_Base / PCM_7Sigma). Parts are picked from the live "
-                    "HTTP catalog, which references these drawings.",
-                    "library", packages_meta["library"],
-                ),
-                _package_entry(
-                    MODELS_ID, "7Sigma 3D Models",
-                    "STEP/WRL models referenced by the 7Sigma footprints.",
-                    "library", packages_meta["models"],
-                ),
-                _package_entry(
-                    PLUGIN_ID, "7Sigma Library Sync",
-                    "Two toolbar buttons in the PCB editor: Sync pulls library updates "
-                    "from the platform and applies them in place, Push sends footprints "
-                    "and symbols you edited locally back as draft proposals. Edit in the "
-                    "footprint or symbol editor, save, then push from the PCB editor.",
-                    "plugin", packages_meta["plugin"], kicad_version="9.0",
-                ),
-            ]
-        }
+        packages = _packages_document(packages_meta)
         packages_bytes = json.dumps(packages, indent=2).encode("utf-8")
         packages_file = out / f"packages-{tag}.json"
         packages_file.write_bytes(packages_bytes)
@@ -356,6 +427,40 @@ def artifact_path(filename: str) -> Path | None:
     """A previously built artifact by exact name (zip / packages json)."""
     p = _pcm_dir() / filename
     return p if (p.exists() and p.is_file() and "/" not in filename) else None
+
+
+# ------------------------------------------------------- personal repository
+# One user, one repository URL. Pasting
+#   {public_base_url}/api/kicad/pcm/repository.json?t=<their token>
+# into KiCad's Plugin and Content Manager installs the library, the 3D models
+# and a sync plugin that already carries that token — so the user pastes once
+# and never types a credential into a dialog.
+#
+# Everything below is generated PER REQUEST rather than stored, because the
+# three documents are chained by hash: personalising a download_url changes
+# packages.json, which changes the sha256 that repository.json publishes. They
+# are small, and generation is deterministic for a given (meta, token), so the
+# hash a client verifies always matches the bytes it later fetches.
+
+def personal_packages(meta: dict, token: str) -> bytes:
+    """`packages.json` for one user: their token on every download URL, and
+    their own plugin zip (different bytes, therefore a different sha256)."""
+    packages_meta = dict(meta["packages"])
+    packages_meta["plugin"] = personal_plugin(meta, token)
+    return json.dumps(_packages_document(packages_meta, token), indent=2).encode("utf-8")
+
+
+def personal_repository(meta: dict, token: str) -> dict:
+    """`repository.json` for one user, pointing at their `packages.json` and
+    publishing its hash."""
+    if not token:
+        return meta["repository"]
+    body = personal_packages(meta, token)
+    repository = json.loads(json.dumps(meta["repository"]))  # deep copy
+    repository["packages"]["url"] = _with_token(
+        f"{settings.public_base_url}/api/kicad/pcm/{meta['packages_file']}", token)
+    repository["packages"]["sha256"] = hashlib.sha256(body).hexdigest()
+    return repository
 
 
 _warmed = False

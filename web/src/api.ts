@@ -291,10 +291,26 @@ export function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";
 }
 
+/** Called by the auth provider when any request comes back 401.
+ *
+ * The session cookie can die between page loads (logout in another tab, an
+ * admin revoking it, plain expiry). Without this hook the SPA would keep
+ * rendering with stale data and one failing panel per screen; instead the
+ * provider flips to the login page the moment the server stops recognising us.
+ */
+let onUnauthorized: (() => void) | null = null;
+
+export function setUnauthorizedHandler(fn: (() => void) | null): void {
+  onUnauthorized = fn;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, init);
+    // `include`, not the `same-origin` default: a dev server aimed at a remote
+    // API is cross-origin, and the session lives in a cookie. The API sets
+    // allow_credentials with an explicit origin list to match.
+    res = await fetch(`${API_URL}${path}`, { credentials: "include", ...init });
   } catch (err) {
     if (isAbortError(err)) throw err;
     throw new ApiError(0, `Cannot reach API at ${apiOrigin()} (${errorMessage(err)})`);
@@ -327,6 +343,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // non-JSON error body — fall through to statusText
     }
+    // A dead session must bounce to the login page, not surface as one broken
+    // panel per screen. `/api/auth/*` is excluded: a wrong password there is a
+    // 401 the login form itself must render.
+    if (res.status === 401 && !path.startsWith("/api/auth/")) onUnauthorized?.();
     throw new ApiError(res.status, detail || `${res.status} ${res.statusText}`);
   }
   return (await res.json()) as T;
@@ -610,9 +630,138 @@ export interface KicadConfig {
   public_base_url: string;
   httplib_root_url: string;
   mirror_url: string;
-  /** PCM repository URL — add in KiCad's Plugin and Content Manager. */
+  /** PCM repository URL — add in KiCad's Plugin and Content Manager.
+   *  Carries `?t=<token>` when the caller is signed in, which is what makes
+   *  the installed sync plugin come with that token already baked in. */
   pcm_repo_url: string;
+  /** `.kicad_httplib` download, carrying the same token. */
+  httplib_url: string;
+  /** True when the two URLs above are personal rather than shared. */
+  personalised: boolean;
   token_hint: string;
+}
+
+// --------------------------------------------------------------------- auth
+
+export interface AuthUser {
+  id: number;
+  username: string;
+  display_name: string;
+  role: string;
+  is_admin: boolean;
+}
+
+export interface AuthState {
+  /** False on a dev box with AUTH_ENABLED=0 — the SPA then skips the gate. */
+  auth_enabled: boolean;
+  user: AuthUser | null;
+}
+
+export function getAuthState(signal?: AbortSignal): Promise<AuthState> {
+  return request("/api/auth/me", { signal });
+}
+
+export function login(username: string, password: string): Promise<AuthUser> {
+  return request("/api/auth/login", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export function logout(): Promise<{ ok: boolean }> {
+  return request("/api/auth/logout", { method: "POST" });
+}
+
+export function changeOwnPassword(
+  current_password: string,
+  new_password: string,
+): Promise<{ ok: boolean }> {
+  return request("/api/auth/password", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ current_password, new_password }),
+  });
+}
+
+// -------------------------------------------------------------------- users
+
+export interface ApiTokenRow {
+  id: number;
+  label: string;
+  prefix: string;
+  /** Full value — only present on single-user reads, never in the list. */
+  token: string;
+  created_at: string | null;
+  last_used_at: string | null;
+}
+
+export interface PlatformUser {
+  id: number;
+  username: string;
+  display_name: string;
+  role: string;
+  active: boolean;
+  created_at: string | null;
+  last_login_at: string | null;
+  session_count: number;
+  tokens: ApiTokenRow[];
+  /** Personal PCM repository URL — empty unless the response revealed tokens. */
+  repository_url: string;
+  /** Personal `.kicad_httplib` download URL. */
+  httplib_url: string;
+}
+
+export function getUsers(signal?: AbortSignal): Promise<PlatformUser[]> {
+  return request("/api/users", { signal });
+}
+
+export function getUser(id: number, signal?: AbortSignal): Promise<PlatformUser> {
+  return request(`/api/users/${id}`, { signal });
+}
+
+export function createUser(body: {
+  username: string;
+  password: string;
+  display_name?: string;
+  role?: string;
+}): Promise<PlatformUser> {
+  return request("/api/users", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateUser(
+  id: number,
+  body: { display_name?: string; role?: string; active?: boolean; password?: string },
+): Promise<PlatformUser> {
+  return request(`/api/users/${id}`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteUser(id: number): Promise<{ ok: boolean }> {
+  return request(`/api/users/${id}`, { method: "DELETE" });
+}
+
+export function revokeUserSessions(id: number): Promise<{ ok: boolean; revoked: number }> {
+  return request(`/api/users/${id}/sessions/revoke`, { method: "POST" });
+}
+
+export function addUserToken(id: number, label: string): Promise<PlatformUser> {
+  return request(`/api/users/${id}/tokens`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ label }),
+  });
+}
+
+export function revokeUserToken(userId: number, tokenId: number): Promise<PlatformUser> {
+  return request(`/api/users/${userId}/tokens/${tokenId}`, { method: "DELETE" });
 }
 
 // ------------------------------------------------------------------ settings

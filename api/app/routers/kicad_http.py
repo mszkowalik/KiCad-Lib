@@ -9,7 +9,7 @@ All values must be strings; auth header is "Authorization: Token <token>".
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Query, Session, contains_eager, defer, joinedload, selectinload
 
 from .. import models as M
@@ -21,9 +21,23 @@ from .util import category_path, props_dict, resolved_value
 router = APIRouter(prefix="/kicad/v1", tags=["kicad-http-library"])
 
 
-def require_token(authorization: str = Header(default="")):
-    if authorization != f"Token {settings.httplib_token}":
-        raise HTTPException(401, "invalid or missing token")
+def require_token(request: Request, authorization: str = Header(default="")):
+    """Accept a PERSONAL token, or the legacy shared one.
+
+    `authgate.AuthGate` has already authenticated anything that reaches here
+    when `auth_enabled` is on, and a personal token resolves to a user — so the
+    only work left is to keep the pre-auth shared secret working, which is also
+    the whole behaviour when auth is switched off for local development.
+
+    Do NOT tighten this back to an equality test against `httplib_token`: that
+    is what rejected every per-user `.kicad_httplib`.
+    """
+    if getattr(request.state, "user", None) is not None:
+        return
+    if settings.auth_legacy_tokens and settings.httplib_token and \
+            authorization == f"Token {settings.httplib_token}":
+        return
+    raise HTTPException(401, "invalid or missing token")
 
 
 def library_versions(db: Session) -> Query:

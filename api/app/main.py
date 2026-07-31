@@ -5,10 +5,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
+from .authgate import AuthGate
 from .config import settings
 from .db import Base, engine
 from .routers import (
     agent,
+    auth as auth_router,
     categories,
     comments,
     components,
@@ -29,6 +31,7 @@ from .routers import (
     run_costs,
     settings as settings_router,
     skills,
+    users,
     view,
 )
 
@@ -38,13 +41,30 @@ settings.ensure_dirs()
 
 app = FastAPI(title="Project Management Platform", version="0.1.0")
 
+# ORDER MATTERS, and it is the reverse of the reading order: `add_middleware`
+# prepends, so the LAST one added is the OUTERMOST and runs first. CORS must be
+# outermost — otherwise the gate's own 401 leaves the stack without CORS
+# headers and a cross-origin dev browser reports an opaque network failure
+# instead of the 401 it can act on.
+#
+# Default-deny gate, inner. It covers the /files mount and the flasher
+# WebSocket, neither of which a router dependency can reach. See authgate.py.
+app.add_middleware(AuthGate)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_methods=["*"],
     allow_headers=["*"],
+    # The session lives in a cookie, so a cross-origin dev server must be
+    # allowed to send it. This is why cors_origins is an explicit list and
+    # never "*" — the CORS spec forbids the two together, and a wildcard here
+    # would silently stop the dev login from working.
+    allow_credentials=True,
 )
 
+app.include_router(auth_router.router)
+app.include_router(users.router)
 app.include_router(categories.router)
 app.include_router(components.router)
 app.include_router(libraries.router)
@@ -616,6 +636,27 @@ def startup() -> None:
     except Exception:
         # A settings table that is not there yet must never stop startup.
         pass
+    # The first admin, from ADMIN_USERNAME / ADMIN_PASSWORD, and ONLY when the
+    # users table is empty. A deployment with auth on and no users can never be
+    # signed into, so this must run — but it must also never be able to reset a
+    # live account, which is why `bootstrap_admin` refuses once one exists.
+    try:
+        from .db import SessionLocal
+        from .services import auth as auth_service
+
+        db = SessionLocal()
+        try:
+            message = auth_service.bootstrap_admin(db)
+            if message and message.startswith("auth: created"):
+                log.info(message)
+            elif message:
+                # "nobody can sign in" is the one startup line an operator must
+                # not scroll past — it means the deployment is locked out.
+                log.warning(message)
+        finally:
+            db.close()
+    except Exception as e:  # noqa: BLE001 — never block startup
+        log.warning(f"auth bootstrap did not run: {type(e).__name__}: {e}")
     if settings.datasheet_autofetch:
         # Fetch missing datasheet PDFs in the background (idempotent —
         # only datasheets without a local copy are downloaded).

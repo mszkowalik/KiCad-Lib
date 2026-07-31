@@ -8,41 +8,99 @@ import json
 import zipfile
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from .. import models as M
 from ..config import settings
-from ..services import pcm
+from ..db import get_db
+from ..services import auth, pcm
 
 router = APIRouter(prefix="/api/kicad", tags=["kicad"])
 
 _CLI_PATH = Path(__file__).parents[2] / "cli" / "kicadlib.py"
 
 
+def caller_token(request: Request, db: Session) -> str:
+    """The API token this request should be personalised for.
+
+    Two callers, two sources. KiCad arrives with `?t=<token>` and that value is
+    used verbatim — it is already what the client holds. A browser arrives with
+    a session cookie, and gets the signed-in user's first live token, which is
+    what makes the Setup page able to show a copy-paste URL without the user
+    ever handling the secret.
+
+    Returns "" when neither applies, and every caller then falls back to the
+    shared, unpersonalised artifacts.
+    """
+    supplied = request.query_params.get("t", "")
+    if supplied:
+        return supplied
+    user = getattr(request.state, "user", None)
+    if user is None:
+        return ""
+    tok = (
+        db.query(M.ApiToken)
+        .filter(M.ApiToken.user_id == user.id, M.ApiToken.revoked_at.is_(None))
+        .order_by(M.ApiToken.id)
+        .first()
+    )
+    return auth.token_cleartext(tok) if tok is not None else ""
+
+
 @router.get("/config")
-def config():
-    """What the UI shows on the KiCad page."""
+def config(request: Request, db: Session = Depends(get_db)):
+    """What the UI shows on the Setup page.
+
+    `pcm_repo_url` and `httplib_url` are PERSONAL when a signed-in user has a
+    token — they carry it, so the Setup page shows a link the user can paste
+    into KiCad directly.
+    """
+    token = caller_token(request, db)
+    base = settings.public_base_url.rstrip("/")
+    suffix = f"?t={token}" if token else ""
     return {
         "public_base_url": settings.public_base_url,
-        "httplib_root_url": f"{settings.public_base_url}/kicad/",
-        "mirror_url": f"{settings.public_base_url}/files/",
-        "pcm_repo_url": f"{settings.public_base_url}/api/kicad/pcm/repository.json",
-        "token_hint": settings.httplib_token[:4] + "…" if settings.httplib_token else "",
+        "httplib_root_url": f"{base}/kicad/",
+        "mirror_url": f"{base}/files/",
+        "pcm_repo_url": f"{base}/api/kicad/pcm/repository.json{suffix}",
+        "httplib_url": f"{base}/api/kicad/httplib-file{suffix}",
+        "personalised": bool(token),
+        "token_hint": (token[:12] + "…") if token else "",
     }
 
 
 # ------------------------------------------------------------ PCM repository
 
 @router.get("/pcm/repository.json")
-def pcm_repository():
+def pcm_repository(request: Request, db: Session = Depends(get_db)):
     """KiCad PCM repository descriptor — paste this URL into Preferences >
-    Plugin and Content Manager > Manage Repositories. Unauthenticated, like
-    the file mirror (PCM cannot send tokens)."""
+    Plugin and Content Manager > Manage Repositories.
+
+    Personal: called as `repository.json?t=<token>` it returns a descriptor
+    whose every URL carries the same token, and whose plugin package is built
+    with that token inside it. One paste installs the library, the models and
+    an already-authenticated sync plugin.
+
+    PCM sends no headers, so the query parameter is the only credential it can
+    carry. `authgate.AuthGate` allows `?t=` on this path for exactly that
+    reason — see `_QUERY_TOKEN_PATHS` there.
+    """
     meta = pcm.ensure_built()
     if meta is None:
         raise HTTPException(503, "file mirror not built yet — run an import first")
-    return meta["repository"]
+    return pcm.personal_repository(meta, pcm_token_or_empty(request, db))
+
+
+def pcm_token_or_empty(request: Request, db: Session) -> str:
+    """`caller_token`, but never raises — a malformed token must degrade to the
+    shared artifacts rather than 500 a KiCad client mid-install."""
+    try:
+        return caller_token(request, db)
+    except Exception:  # noqa: BLE001 — personalisation is never worth an outage
+        return ""
 
 
 class ModelsDeltaIn(BaseModel):
@@ -83,11 +141,21 @@ def pcm_models_delta(body: ModelsDeltaIn):
 
 
 @router.get("/pcm/{filename}")
-def pcm_artifact(filename: str):
-    """Package index + zips referenced by repository.json."""
+def pcm_artifact(filename: str, request: Request, db: Session = Depends(get_db)):
+    """Package index + zips referenced by repository.json.
+
+    The package index is served from MEMORY when the request carries a token,
+    not from the file on disk: its download URLs and the plugin's sha256 differ
+    per user, and the bytes must match the hash `repository.json` just
+    published or PCM rejects the whole repository.
+    """
     meta = pcm.ensure_built()
     if meta is None:
         raise HTTPException(503, "file mirror not built yet — run an import first")
+    token = pcm_token_or_empty(request, db)
+    if filename == meta["packages_file"] and token:
+        return Response(content=pcm.personal_packages(meta, token),
+                        media_type="application/json")
     path = pcm.artifact_path(filename)
     if path is None:
         raise HTTPException(404, "no such PCM artifact (repository may have been rebuilt — refresh)")
@@ -96,10 +164,20 @@ def pcm_artifact(filename: str):
 
 
 @router.get("/httplib-file")
-def httplib_file():
+def httplib_file(request: Request, db: Session = Depends(get_db)):
     """The ready-to-use KiCad HTTP library config. Add it in KiCad under
     Preferences > Manage Symbol Libraries. root_url follows PUBLIC_BASE_URL
-    (localhost now, e.g. https://disfunction.cc/lib later)."""
+    (localhost now, e.g. https://disfunction.cc/lib later).
+
+    The `token` field is the CALLER'S OWN — the signed-in user's when a browser
+    downloads it, the supplied one when the link carries `?t=`. It falls back
+    to the shared `httplib_token` only when neither exists, which is the local
+    development case.
+
+    KiCad stores this file in the clear. That is accepted: it is a read
+    credential for the part catalog on the user's own machine.
+    """
+    token = pcm_token_or_empty(request, db) or settings.httplib_token
     payload = {
         "meta": {"version": 1.0},
         "name": "7Sigma Library (platform)",
@@ -109,7 +187,7 @@ def httplib_file():
             "type": "REST_API",
             "api_version": "v1",
             "root_url": f"{settings.public_base_url}/kicad/",
-            "token": settings.httplib_token,
+            "token": token,
             # KiCad caches the catalog in-process for these many seconds. Its
             # own defaults (600 / 30) expire the category part lists every 10
             # minutes, and re-filling them costs one request per category.

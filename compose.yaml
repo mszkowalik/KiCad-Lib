@@ -55,6 +55,14 @@ services:
       RENDER_MODE: http
       RENDER_URL: http://render:8100
       HTTPLIB_TOKEN: ${HTTPLIB_TOKEN:-dev-token}
+      # Authentication. On by default even in dev, so the login path is the one
+      # that gets exercised daily — a gate only tested before a deploy is a gate
+      # nobody trusts. Set AUTH_ENABLED=false in .env to switch it off locally.
+      AUTH_ENABLED: ${AUTH_ENABLED:-true}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-dev-password-1234}
+      # Dev is plain http://localhost, where a Secure cookie is dropped.
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       # Jaravis (the library agent) activates when this is set in .env
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # Projects module: object storage + git-token encryption key

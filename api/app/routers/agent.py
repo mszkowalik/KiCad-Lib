@@ -33,18 +33,29 @@ router = APIRouter(prefix="/api/agent")
 _TOOLS = {t.name: t for t in jaravis.TOOLS}
 
 
-def _require_auth(authorization: str | None) -> None:
-    if not settings.mcp_token:
+def _require_auth(request: Request, authorization: str | None) -> None:
+    """Accept a PERSONAL token, or the legacy shared `MCP_TOKEN`.
+
+    `authgate.AuthGate` gates this router already when `auth_enabled` is on, so
+    a user's own token arrives resolved. What survives here is the pre-auth
+    shared secret — which is also the only check when auth is switched off.
+    """
+    if getattr(request.state, "user", None) is not None:
         return
-    if authorization != f"Bearer {settings.mcp_token}":
-        raise HTTPException(status_code=401, detail="invalid or missing bearer token")
+    if not settings.mcp_token:
+        # Historic posture: an unset MCP_TOKEN left these endpoints open. That
+        # is now only reachable with auth_enabled=False, i.e. localhost dev.
+        return
+    if settings.auth_legacy_tokens and authorization == f"Bearer {settings.mcp_token}":
+        return
+    raise HTTPException(status_code=401, detail="invalid or missing bearer token")
 
 
 @router.get("/tools")
-def list_tools(authorization: str | None = Header(default=None)) -> list[dict]:
+def list_tools(request: Request, authorization: str | None = Header(default=None)) -> list[dict]:
     """Catalog of every library tool: {name, description, input_schema}. The MCP
     server calls this once to generate its own tool list."""
-    _require_auth(authorization)
+    _require_auth(request, authorization)
     return [t.to_dict() for t in jaravis.TOOLS]
 
 
@@ -60,7 +71,7 @@ async def call_tool(
     list of text/image content blocks. A tool that raises is surfaced as an
     error result (``is_error: true``) rather than a 500, mirroring how the agent
     normally sees tool failures."""
-    _require_auth(authorization)
+    _require_auth(request, authorization)
     tool = _TOOLS.get(name)
     if tool is None:
         raise HTTPException(status_code=404, detail=f"unknown tool {name!r}")

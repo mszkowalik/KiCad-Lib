@@ -866,6 +866,114 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   (full-read policy), so new comment targets get a matching read.
 - When a non-obvious backend convention or workaround emerges, record it here.
 
+## Authentication — default deny, one gate
+
+The platform is reachable from the internet. Before this landed it was
+**publicly readable and writable**: `https://disfunction.cc/lib/` answered for
+anyone, including `/api/settings`, `/api/proposals`, `/api/invoices` and the
+whole `/files` mirror. The compose comment claiming "LAN only" was wrong —
+the published port restricts direct LAN access, but `cloudflared` reaches
+`kicadlib-web` by container name on the shared docker network.
+
+- **`app/authgate.py::AuthGate` is the ONE gate, and it denies by default.**
+  Adding a router does not require thinking about auth — it is covered the
+  moment it is mounted. Never re-open a hole with a per-route exemption; the
+  only exemptions live in `_OPEN_PATHS` / `_OPEN_PREFIXES` there, and each one
+  carries its reason.
+- **It is pure ASGI, not `BaseHTTPMiddleware`, and that is load-bearing.**
+  `BaseHTTPMiddleware` never runs for a WebSocket, so the flasher run socket
+  would have been left open; and it wraps responses in an anyio task pair,
+  which is the shape that breaks Jaravis's long NDJSON streams. Pure ASGI also
+  covers `app.mount("/files", StaticFiles(...))`, which a router dependency
+  cannot reach at all — that mount is exactly what was publicly readable.
+- **Middleware order is the reverse of reading order.** `add_middleware`
+  prepends, so CORS is registered AFTER the gate to end up OUTSIDE it. Get this
+  backwards and the gate's 401 leaves the stack with no CORS headers, and a
+  cross-origin dev browser reports an opaque network failure instead of the 401
+  it can act on.
+- **Four credentials, and `?t=` is scoped on purpose.** Session cookie,
+  `Authorization: Bearer`, `Authorization: Token` (KiCad's fixed format), and a
+  `t` query parameter allowed ONLY on `_QUERY_TOKEN_PATHS`. KiCad's Plugin and
+  Content Manager sends no headers of any kind, so a query parameter is the only
+  credential it can carry — and a token in a URL lands in the nginx and
+  Cloudflare access logs, which is why the list is three entries and not a
+  global fallback.
+- **An open path still resolves identity.** `/api/auth/me` must be reachable
+  signed out AND report who you are when signed in. The gate therefore refuses
+  only non-open paths, rather than skipping resolution for open ones — the first
+  version skipped it and `me` reported `user: null` for a signed-in browser.
+  It still short-circuits when NO credential is present, so a liveness probe
+  never touches Postgres.
+- **Tokens are verified against a SHA-256 digest, not a password hash.** The
+  secret is 32 random bytes, so there is nothing to brute-force, and this check
+  sits on the KiCad symbol chooser's critical path (one request per category on
+  every chooser open) where argon2 would add ~100 ms a call. Passwords, which
+  are low-entropy, get argon2id. Do not "harmonise" these.
+- **`ApiToken` stores the secret TWICE and both copies are needed.**
+  `token_hash` verifies; `token_enc` (Fernet, `services/crypto.py`) lets the
+  Setup page show a user their token again months later. User decision
+  2026-07-31: the token is baked into a personal PCM repository URL, so
+  show-once would mean a rotation and a KiCad re-install every time somebody
+  loses the link. Consequence to keep in mind: a database dump plus SECRET_KEY
+  yields every token, and changing SECRET_KEY makes them unreadable (still
+  verifiable — the fix is a rotation).
+- **Legacy shared tokens are SCOPED, not global.** `httplib_token` still opens
+  `/kicad/v1`, `/files/` and `/api/kicad/`; `mcp_token` still opens
+  `/api/agent/`. Granting either globally would have turned the KiCad library
+  token — which lives in the clear in every user's `.kicad_httplib` — into a
+  master key. Turn both off with `AUTH_LEGACY_TOKENS=false` once every client
+  carries a personal token.
+- **`require_token` / `_require_auth` in `kicad_http.py` and `agent.py` are
+  now fallbacks, not the gate.** They accept `request.state.user` first. Do not
+  tighten either back to an equality test against the shared token: that is
+  precisely what rejected every per-user `.kicad_httplib`.
+- **The first admin comes from `ADMIN_PASSWORD`, and only into an EMPTY users
+  table** (`auth.bootstrap_admin`). It must run, or a fresh deployment can
+  never be signed into; it must never run twice, or the environment could
+  silently reset a live account. A deployment with auth on and no admin logs a
+  warning naming the problem.
+- **No registration endpoint and no password-reset endpoint exist** (user
+  decision 2026-07-31). An admin creates accounts and resets passwords in
+  `routers/users.py`. Do not add either — the login page has no link to them, so
+  an endpoint would be a way in that the UI does not admit to.
+- **A password change or reset ends every session** for that user, and
+  deactivating or deleting one does the same. A reset that leaves live sessions
+  has not reset anything.
+- **Two self-lockout guards in `routers/users.py`**: an admin cannot remove
+  their own admin role, deactivate themselves, or delete themselves, and the
+  last active admin cannot be demoted or deactivated by anyone. Either would
+  leave the platform recoverable only by editing the database.
+
+### The personal PCM repository (how a token reaches KiCad)
+
+One URL per user — `…/api/kicad/pcm/repository.json?t=<token>` — installs the
+library, the 3D models AND a sync plugin with that token already inside it. The
+user pastes once and never types a credential.
+
+- **The three documents are chained by hash, so all three are per-token.**
+  Personalising a `download_url` changes `packages.json`, which changes the
+  sha256 that `repository.json` publishes. `pcm.personal_repository` /
+  `personal_packages` generate them per request (they are small and
+  deterministic for a given (meta, token), so the hash a client verifies always
+  matches the bytes it later fetches). Never cache one without the other.
+- **`_plugin_files(token="")` must stay the default for the repository tag.**
+  `ensure_built` hashes the plugin files to decide whether to rebuild, so if
+  personalisation moved that hash, every user's first install would look like a
+  library change and rebuild the 1.4 GB models package.
+- **A personalised plugin zip needs its sha256 RECOMPUTED** — PCM verifies the
+  download against `packages.json`, and a zip with a different token is a
+  different file. `pcm.personal_plugin` builds it lazily under a
+  `psync-<hash>.zip` name keyed on the plugin content hash AND the token, writes
+  it via a `.part` rename (a half-written zip would fail PCM's check and read as
+  a server fault), and lets `ensure_built`'s prune treat it as the cache it is.
+- **The plugin sends its token as a HEADER, never `?t=`.** Only PCM itself is
+  forced into the query string. Both templates fall back to `token.json` beside
+  the plugin, which is the recovery path after a rotation, and turn a 401 into
+  an instruction rather than a stack trace.
+- **`BUILDER_REV` and `PLUGIN_VERSION` both had to move for this.** See the
+  rule above about them: `pcm.py` changing what a package advertises needs
+  `BUILDER_REV`, and plugin source changes need `PLUGIN_VERSION`.
+
 ## Agent tool surface + MCP server (Claude Code)
 
 The library agent is reachable two ways over the **same** tool set
@@ -888,9 +996,11 @@ Claude Code automatically** — never write per-tool routes. Anthropic server
 tools (`web_search`/`web_fetch`, in `SERVER_TOOLS`) are intentionally NOT
 exposed — Claude Code brings its own web tools.
 
-**Auth:** `settings.mcp_token` (env `MCP_TOKEN`), checked as
-`Authorization: Bearer <token>`. Empty = open (fine on localhost); set it before
-the platform is reachable remotely, since these endpoints can create drafts.
+**Auth:** a **personal API token** (`Authorization: Bearer <token>`), minted per
+user in the Setup page's Users card. The shared `settings.mcp_token` still works
+while `AUTH_LEGACY_TOKENS` is on, scoped to `/api/agent/` only — see the
+authentication section above. Empty `mcp_token` plus `AUTH_ENABLED=false` is the
+localhost-dev posture and nothing else.
 
 **MCP server (`mcp/server.py`):** a stateless stdio client run via
 `uv run --script` (self-contained PEP 723 deps: `mcp`, `httpx`). It imports NO

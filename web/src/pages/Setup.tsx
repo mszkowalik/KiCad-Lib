@@ -17,7 +17,9 @@ import {
   type FxRate,
   type KicadConfig,
 } from "../api";
+import { useAuth } from "../auth";
 import SettingsCard from "../components/SettingsCard";
+import UsersCard from "../components/UsersCard";
 import { useDialog } from "../components/Dialog";
 import { ErrorBanner, Spinner } from "../components/Ui";
 
@@ -32,6 +34,7 @@ const POLL_MS = 2000;
 export default function Setup() {
   const [config, setConfig] = useState<KicadConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { isAdmin } = useAuth();
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -53,6 +56,11 @@ export default function Setup() {
 
         {/* Configuration first: it is what a visit to this page is usually for. */}
         <SettingsCard />
+
+        {/* Admin only. The API refuses a non-admin anyway (403 from
+            /api/users) — hiding the card keeps the page from showing a
+            control that can only fail. */}
+        {isAdmin ? <UsersCard /> : null}
 
         <div className="card pad">
           <h2>Effective URLs</h2>
@@ -98,7 +106,19 @@ export default function Setup() {
             editors that pulls updates on click (changed 3D models transfer as a small
             compressed delta, not the full package).
           </p>
-          <pre className="code-block">{config?.pcm_repo_url ?? "…"}</pre>
+          <pre className="code-block code-block-wrap">{config?.pcm_repo_url ?? "…"}</pre>
+          {config?.personalised ? (
+            <p className="muted dim">
+              This URL is <b>yours</b> — it carries your API token, and the sync plugin it
+              installs arrives with that token already inside it. Do not share it; give a
+              colleague their own account instead.
+            </p>
+          ) : (
+            <p className="muted dim">
+              This URL carries no token. Sign in, or have an administrator issue you one on
+              the Users card, to get a personal URL that also authenticates the sync plugin.
+            </p>
+          )}
           <ol className="kicad-steps">
             <li>
               KiCad → Tools → <b>Plugin and Content Manager</b> → Manage… (repository icon) →
@@ -127,7 +147,9 @@ export default function Setup() {
             footprints still come from the locally synced files — KiCad cannot fetch
             geometry over HTTP.
           </p>
-          <a className="btn btn-primary" href={httplibFileUrl} download>
+          {/* The personalised link when we have one: the file's `token` field is
+              then the signed-in user's own, not the shared fallback. */}
+          <a className="btn btn-primary" href={config?.httplib_url || httplibFileUrl} download>
             Download 7Sigma.kicad_httplib
           </a>
           <ol className="kicad-steps">

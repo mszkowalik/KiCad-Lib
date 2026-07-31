@@ -63,7 +63,45 @@ class Settings(BaseSettings):
     # server / Claude Code drives). Empty = open, which is fine on localhost;
     # set a value before the platform is reachable remotely so the agent
     # endpoints (which can create draft proposals) are not left public.
+    #
+    # LEGACY once auth_enabled is on: both this and httplib_token above are
+    # SHARED secrets that predate per-user tokens. They keep working so an
+    # already-installed .kicad_httplib and the MCP server survive the cutover,
+    # and `auth_legacy_tokens` turns them off once every client carries a
+    # personal token.
     mcp_token: str = ""
+
+    # ------------------------------------------------------------------- auth
+    # Default-deny gate in front of the whole API (main.py::auth_middleware).
+    # Set to false ONLY for a single-user localhost dev box — the platform is
+    # reachable from the internet in production and the API can approve
+    # proposals, edit money records and drive the agent.
+    auth_enabled: bool = True
+
+    # Keep accepting the pre-auth SHARED tokens (httplib_token, mcp_token).
+    # Turn off once every KiCad install and MCP client carries a personal one.
+    auth_legacy_tokens: bool = True
+
+    # First admin, created at startup only when the users table is EMPTY. It is
+    # the bootstrap for a fresh deployment and nothing else: once a user
+    # exists, these are ignored, so leaving them in the environment cannot
+    # resurrect or re-password an account.
+    admin_username: str = "admin"
+    admin_password: str = ""
+
+    # Browser session cookie. `session_cookie_secure` must be true wherever the
+    # platform is served over HTTPS; it is false by default because dev runs on
+    # plain http://localhost and a Secure cookie is silently dropped there.
+    session_cookie_name: str = "kicadlib_session"
+    session_cookie_secure: bool = False
+    session_lifetime_days: int = 30
+    # Sessions idle longer than this are refused even inside their lifetime.
+    session_idle_days: int = 7
+
+    # Sign-in lockout: after this many consecutive failures a username is
+    # locked for `login_lockout_minutes`. A successful sign-in clears it.
+    login_max_failures: int = 8
+    login_lockout_minutes: int = 15
 
     # ------------------------------------------------------------- projects
     # MinIO object storage: project snapshot archives, cached renders

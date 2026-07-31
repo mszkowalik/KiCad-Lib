@@ -1945,3 +1945,111 @@ class AppSetting(Base):
     value: Mapped[str] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_by: Mapped[str] = mapped_column(String(100), default="user")
+
+
+# ----------------------------------------------------------------------- auth
+class User(Base):
+    """A person who may sign in. Created by an admin only.
+
+    There is no self-registration and no password recovery, by user decision
+    2026-07-31: this is a small private platform, and an admin resetting a
+    password in the Setup page is the whole recovery story.
+
+    `username` is stored lowercase (`services/auth.py::normalize_username`) so
+    a login can never fork on case. `role` is `admin` or `user`; admin is what
+    gates user management and the Setup page's configuration writes.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(60), unique=True)
+    password_hash: Mapped[str] = mapped_column(Text)
+    display_name: Mapped[str] = mapped_column(String(120), default="")
+    role: Mapped[str] = mapped_column(String(20), default="user")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    tokens: Mapped[list["ApiToken"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan")
+    sessions: Mapped[list["UserSession"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan")
+
+
+class ApiToken(Base):
+    """A user's machine credential: KiCad, the sync plugin, MCP.
+
+    TWO copies of the secret are stored, and each has one job:
+
+    - `token_hash` (SHA-256) is what a request is verified against. It is a
+      plain digest, not a password hash, because the secret is 32 random bytes
+      — there is nothing to brute-force, and verification sits on the KiCad
+      symbol chooser's critical path where argon2 would cost ~100 ms a call.
+    - `token_enc` (Fernet, `services/crypto.py`) exists so the Setup page can
+      show a user their token AGAIN, months later. User decision 2026-07-31:
+      the token is baked into a personal PCM repository URL, so "show it once
+      and never again" would mean a rotation and a KiCad re-install every time
+      somebody loses the link. The tradeoff is explicit — a database dump plus
+      SECRET_KEY yields every token.
+
+    `prefix` is the first 8 characters, kept in the clear for display and for
+    naming a token in the audit log without revealing it.
+    """
+
+    __tablename__ = "api_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    label: Mapped[str] = mapped_column(String(120), default="")
+    prefix: Mapped[str] = mapped_column(String(16))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    token_enc: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="tokens")
+
+    __table_args__ = (Index("ix_api_token_user", "user_id"),)
+
+
+class UserSession(Base):
+    """A browser session. The cookie carries only `id`, which is random.
+
+    Server-side rows rather than a signed stateless cookie, so that deleting a
+    user, deactivating one, or clicking Log out ends the session immediately
+    instead of at the next expiry.
+    """
+
+    __tablename__ = "user_sessions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    user_agent: Mapped[str] = mapped_column(String(300), default="")
+    ip: Mapped[str] = mapped_column(String(60), default="")
+
+    user: Mapped[User] = relationship(back_populates="sessions")
+
+    __table_args__ = (Index("ix_user_session_user", "user_id"),)
+
+
+class LoginAttempt(Base):
+    """Failed sign-in counter, per username. Feeds the lockout backoff.
+
+    Keyed on the username rather than the IP: the platform sits behind
+    Cloudflare and an nginx hop, so the address a request appears to come from
+    is not a stable identity, while the username being guessed is exactly what
+    needs protecting.
+    """
+
+    __tablename__ = "login_attempts"
+
+    username: Mapped[str] = mapped_column(String(60), primary_key=True)
+    failures: Mapped[int] = mapped_column(Integer, default=0)
+    first_failed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_failed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
