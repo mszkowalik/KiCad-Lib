@@ -551,7 +551,11 @@ table.data {
   color: var(--muted);
 }
 
-input.text {
+/* `select.text` rides along: the rule used to be `input.text` alone, so a
+   <select className="text"> fell back to the native control and sat at a
+   different height from the inputs beside it. */
+input.text,
+select.text {
   font: inherit;
   color: var(--text);
   background: var(--surface);
@@ -560,7 +564,8 @@ input.text {
   padding: 7px 10px;
 }
 
-input.text:focus {
+input.text:focus,
+select.text:focus {
   outline: 2px solid var(--accent-soft);
   border-color: var(--accent);
 }
@@ -862,7 +867,16 @@ a.btn:hover {
   font-size: 12px;
 }
 
-.kv {
+/* `.kv` names TWO different designs, and they must not touch each other:
+   this one is a <dl> laid out as a two-column grid (PartInfo, ProjectDetail,
+   ComponentDetail), and the one further down is a <table> (SettingsCard,
+   Setup's Effective URLs, TemplateDetail).
+   Scoped to `dl` since 2026-07-31. Unscoped, `display: grid` also hit every
+   <table class="kv">: the tbody became a single grid item, so the rows lost
+   table layout entirely and each table shrank to its content — the
+   Configuration card rendered its labels one word per line with inputs about
+   50px wide. Keep both selectors element-qualified. */
+dl.kv {
   display: grid;
   grid-template-columns: 150px minmax(0, 1fr);
   row-gap: 7px;
@@ -2212,9 +2226,35 @@ select.sel:focus {
   overflow-x: visible;
 }
 
-.kv { border-collapse: collapse; }
-.kv td { padding: 3px 14px 3px 0; vertical-align: top; }
-.kv td:first-child { color: var(--ink-3, #697280); }
+/* The <table> flavour of `.kv` — see the note on `dl.kv` above. */
+table.kv { border-collapse: collapse; }
+table.kv td { padding: 3px 14px 3px 0; vertical-align: top; }
+table.kv td:first-child { color: var(--ink-3, #697280); }
+
+/* The Configuration card's key/value table (SettingsCard).
+   `.kv` has no width, so it shrinks to fit its content — and every value cell
+   holds a `.row-input`, which is `width: 100%` and therefore contributes
+   nothing to the intrinsic minimum. The table collapsed to the width of the
+   longest WORD in the help text: labels wrapped one word per line and every
+   input rendered about 50px wide, showing "http:" and nothing else.
+   Fixed layout with explicit columns is the fix — the value column now has a
+   width of its own instead of inheriting zero from its content. */
+table.kv.settings-table {
+  width: 100%;
+  table-layout: fixed;
+}
+table.kv.settings-table td:nth-child(1) {
+  width: 60%;
+  padding-right: 24px;
+}
+table.kv.settings-table td:nth-child(2) {
+  width: 40%;
+}
+/* The label line and its pills sit on one row; only the help text wraps. */
+table.kv.settings-table td:nth-child(1) > div:first-child {
+  color: var(--text);
+  margin-bottom: 2px;
+}
 .kicad-ds-stat { margin: 4px 0 8px; }
 
 /* ------------------------------------------------ datasheet PDF versions */
@@ -3679,9 +3719,25 @@ a.check-cell:hover {
   white-space: nowrap;
 }
 
+/* Four fields on one row, the button on its own line beneath them.
+   `align-items: end` used to bottom-align items of differing height, which put
+   the Role label lower than the other three and left the Create button
+   stretched across whatever column the auto-fit happened to give it. */
 .user-form {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 8px;
-  align-items: end;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px 12px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+
+/* The "Add a user" heading sat flush against the table above it. */
+.users-add-heading {
+  margin-top: 22px;
+  margin-bottom: 10px;
+}
+
+.user-form .user-form-submit {
+  grid-column: 1 / -1;
+  justify-self: start;
 }

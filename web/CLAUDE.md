@@ -47,6 +47,23 @@ component:
   action columns. Don't hand-roll `<table className="data">` headers with
   sorting/filtering — extend DataTable if something is missing.
 
+### `.kv` names TWO designs — keep both selectors element-qualified
+
+`dl.kv` is a two-column CSS grid (PartInfo, ProjectDetail, ComponentDetail).
+`table.kv` is a plain table (SettingsCard, Setup's Effective URLs,
+TemplateDetail). They were both written as bare `.kv`, so `display: grid` also
+landed on every `<table class="kv">`: the `<tbody>` collapsed into a single grid
+item, the rows lost table layout, and each table shrank to its content. The
+Configuration card rendered its labels one word per line with every input about
+50 px wide. Fixed 2026-07-31 by qualifying both. Never drop the element
+qualifier, and never add a third meaning.
+
+A related trap that made it worse: `.row-input` is `width: 100%`, so it
+contributes **nothing** to a table's intrinsic minimum width. Any auto-layout
+table whose value cells hold one will shrink to the width of its labels — give
+such a table `table-layout: fixed` and explicit column widths (see
+`table.kv.settings-table`).
+
 ### Class inventory (reuse these)
 
 | Family | Classes |

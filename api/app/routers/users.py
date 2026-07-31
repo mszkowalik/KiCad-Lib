@@ -147,6 +147,7 @@ def create_user(body: UserIn, db: Session = Depends(get_db),
 
 
 class UserPatch(BaseModel):
+    username: str | None = None
     display_name: str | None = None
     role: str | None = None
     active: bool | None = None
@@ -167,6 +168,19 @@ def update_user(user_id: int, body: UserPatch, db: Session = Depends(get_db),
         raise HTTPException(404, "no such user")
     changed: dict = {}
 
+    if body.username is not None:
+        name = auth.normalize_username(body.username)
+        if not name:
+            raise HTTPException(422, "username cannot be empty")
+        if name != user.username:
+            clash = db.query(M.User).filter(M.User.username == name).first()
+            if clash is not None:
+                raise HTTPException(409, f"user {name!r} already exists")
+            # API tokens are unaffected — they key on the user row, not the
+            # name — so a rename never breaks a KiCad or MCP client.
+            changed["username"] = f"{user.username} -> {name}"
+            auth.clear_failures(db, user.username)
+            user.username = name
     if body.display_name is not None:
         user.display_name = body.display_name.strip()
         changed["display_name"] = user.display_name

@@ -134,6 +134,19 @@ function UserDetail({
         </button>
         <button
           className="btn btn-sm"
+          disabled={busy}
+          onClick={async () => {
+            const name = await dialog.prompt(
+              `New username for ${user.username}. Their API tokens are unaffected, so KiCad keeps working.`,
+              { title: "Rename user" },
+            );
+            if (name) await run(() => updateUser(user.id, { username: name }));
+          }}
+        >
+          Rename
+        </button>
+        <button
+          className="btn btn-sm"
           disabled={busy || user.session_count === 0}
           onClick={() => void run(() => revokeUserSessions(user.id))}
         >
@@ -312,7 +325,7 @@ export default function UsersCard() {
         </table>
       </div>
 
-      <h3>Add a user</h3>
+      <h3 className="users-add-heading">Add a user</h3>
       <div className="user-form">
         <label className="login-field">
           <span className="login-label">Username</span>
@@ -350,7 +363,7 @@ export default function UsersCard() {
           </select>
         </label>
         <button
-          className="btn btn-primary"
+          className="btn btn-primary user-form-submit"
           disabled={busy || !username.trim() || password.length < 10}
           onClick={() => void add()}
         >

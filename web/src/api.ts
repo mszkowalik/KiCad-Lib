@@ -735,7 +735,13 @@ export function createUser(body: {
 
 export function updateUser(
   id: number,
-  body: { display_name?: string; role?: string; active?: boolean; password?: string },
+  body: {
+    username?: string;
+    display_name?: string;
+    role?: string;
+    active?: boolean;
+    password?: string;
+  },
 ): Promise<PlatformUser> {
   return request(`/api/users/${id}`, {
     method: "PATCH",

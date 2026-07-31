@@ -973,6 +973,15 @@ user pastes once and never types a credential.
 - **`BUILDER_REV` and `PLUGIN_VERSION` both had to move for this.** See the
   rule above about them: `pcm.py` changing what a package advertises needs
   `BUILDER_REV`, and plugin source changes need `PLUGIN_VERSION`.
+- **Every client through the tunnel MUST send its own `User-Agent`.**
+  Cloudflare's browser-integrity check answers the bare `Python-urllib/3.x`
+  signature with **403 and error code 1010** before the request ever reaches
+  nginx — it is not an API refusal, and the body is Cloudflare's HTML, so it
+  surfaces as an unexplained failure. Verified 2026-07-31: `Python-urllib/3.11`
+  403s while `sevensigma-sync/1.0`, `curl/8.7.1` and `KiCad/9.0` all pass. Both
+  plugin templates and `cli/kicadlib.py` already set one on every request
+  (`_headers()`), so keep it that way — a new request path that forgets the
+  header works on the LAN and fails only from the internet.
 
 ## Agent tool surface + MCP server (Claude Code)
 

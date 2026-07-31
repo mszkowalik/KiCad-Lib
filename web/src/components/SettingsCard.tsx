@@ -165,7 +165,7 @@ export default function SettingsCard() {
       {(groups ?? []).map((g) => (
         <div key={g.group}>
           <h3>{g.group}</h3>
-          <table className="kv">
+          <table className="kv settings-table">
             <tbody>
               {g.items.map((it) => {
                 const dirty = edits[it.key] !== undefined && edits[it.key] !== asText(it);
