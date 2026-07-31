@@ -21,7 +21,7 @@
         "/Users/mateuszkowalik/Projects/KiCad Lib/mcp/server.py"
       ],
       "env": {
-        "KICAD_API_URL": "${KICAD_API_URL:-http://192.168.200.28/lib}",
+        "KICAD_API_URL": "${KICAD_API_URL:-https://disfunction.cc/lib}",
         "KICAD_MCP_TOKEN": "${KICAD_MCP_TOKEN:-}"
       }
     }

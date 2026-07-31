@@ -1022,6 +1022,11 @@ converted to MCP image content; every other tool returns a JSON string as text.
 **Claude Code wiring (`.mcp.json` at repo root):** a project-scoped stdio entry
 `kicad-library` that runs the server via `uv`, with `KICAD_API_URL` /
 `KICAD_MCP_TOKEN` from env (`${VAR:-default}` expansion keeps them out of git).
+`KICAD_API_URL` defaults to the PUBLIC address, so the server works away from
+the LAN as well as on it. **`KICAD_MCP_TOKEN` must now be set** — the agent
+surface is behind the auth gate, and an unset token gets 401 on every call. Put
+a personal token (Setup page > Users) in the shell profile; never in
+`.mcp.json`, which is tracked.
 MCP config is OS-user-scoped, **not** tied to a Claude account, so it works
 across both logins and survives account switches. (The pre-existing `kicad`
 entry is a separate Node KiCad-IPC server — leave it.)
