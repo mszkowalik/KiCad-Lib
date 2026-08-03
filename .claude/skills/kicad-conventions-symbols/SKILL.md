@@ -2,7 +2,7 @@
 name: kicad-conventions-symbols
 description: "Choosing AND authoring base symbols: pin-type directionality from the component's own viewpoint, V.24 UART and SPI role policy, functional pin grouping, box/pitch geometry formulas, and stacked (shorted) pins. Use when picking a base symbol or writing a propose_symbol_edit."
 ---
-<!-- platform-skill: conventions-symbols v3 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-symbols v5 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Symbol conventions
 
@@ -160,6 +160,12 @@ Rules for a stacked pin:
   that gets shorted stops being `no_connect` and becomes whatever the net is.
 - `(hide yes)` on every pin except the one visible one.
 
+**Approving a symbol version also files the component repoints.** A component
+pins the symbol *version* it was drawn against, so the platform opens a draft
+component version for every part using this base symbol, pinned to the new
+drawing with properties unchanged. Approve those drafts too — the symbol change
+is not finished until they land. See [[platform-workflow]].
+
 ## 6. Before you propose
 
 - `get_symbol` → edit its `source` → `propose_symbol_edit`. The proposal renders
@@ -170,4 +176,3 @@ Rules for a stacked pin:
 
 See [[add-component]] for where symbol choice fits in the full part-creation
 procedure, and [[platform-workflow]] for what happens after approval.
-

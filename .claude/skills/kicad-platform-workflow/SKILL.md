@@ -2,7 +2,7 @@
 name: kicad-platform-workflow
 description: "How changes become library: every write is a draft proposal, approval automatically regenerates the KiCad libraries and file mirror (there is no manual build), what mirror warnings mean, where the retired YAML pipeline went, and who handles platform setup. Use when asked how to publish, rebuild or regenerate."
 ---
-<!-- platform-skill: platform-workflow v2 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: platform-workflow v4 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Platform workflow — how changes become library
 
@@ -46,6 +46,43 @@ edit ([[add-component]]).
 Downstream consumers read the generated state: the KiCad HTTP library endpoint,
 the PCM package, and the published file mirror. None of them need a separate
 publish action.
+
+## Geometry approval also files the component repoints
+
+A `ComponentVersion` **pins** the exact symbol and footprint version it was
+drawn against. Approving new geometry moves the template's own pointer and
+rebuilds the mirror, so KiCad sees the new drawing immediately — but the
+component rows would still name the superseded version, and the library and the
+components would disagree about which drawing is current.
+
+So approving a symbol or footprint version **also files a draft component
+version for every part that uses it**, pinned to the now-current geometry with
+its properties untouched. The approve response lists them under `repointed`.
+This is still draft-gated: it creates proposals, it never publishes. Approve the
+geometry, then approve the component drafts it produced.
+
+Three rules follow, and they matter when a batch touches several drawings:
+
+- **One open auto-draft per component, refreshed — never a second one.** A batch
+  that changes both a symbol and a footprint used by the same part would
+  otherwise file two drafts against the same published parent, each carrying one
+  of the two changes. Approving both would apply the first and then overwrite it
+  with the second, leaving one change applied and a history that claims two.
+  Folding both pins into a single draft makes the result the same in any
+  approval order.
+- **A component with a human or agent edit already under review is skipped**, and
+  named in `repointed.skipped`. Rewriting a proposal somebody is reviewing is
+  worse than a late repoint. Approve or reject that edit, then re-approve the
+  geometry, or repoint it by hand.
+- **It is idempotent.** A component already pinned to current geometry gets no
+  draft.
+
+To repoint by hand — when the automation is off (`AUTO_REPOINT_COMPONENTS`), or
+after resolving a skip — call `propose_component_edit` with the properties from
+`get_component` passed back **unchanged**. There is no footprint-version
+argument: the tool pins whatever is current when the draft is created, so an
+otherwise empty edit *is* the repoint. Approve the geometry first, or the draft
+pins the old version again.
 
 ## Where the old YAML pipeline went
 

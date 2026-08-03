@@ -2,7 +2,7 @@
 name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints, and the naming standard: the KLC tier rule (Tier 0 stock names are frozen), the twelve-slot field order, decided spellings (_HandSoldering, vendor tokens, no rotation in names), the 7Sigma: namespace, validator-enforced pad/silk/fab/courtyard style, the 0.1mm grid, NPTH mechanical holes, thermal vias, non-electrical parts, and why connector pad numbering always follows the datasheet. Use when naming, picking or authoring any footprint."
 ---
-<!-- platform-skill: conventions-footprints v7 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v10 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Footprint conventions
 
@@ -14,6 +14,12 @@ name = creation), reviewed with a visual before/after in the Proposals view.
 
 Never hand-write a footprint from scratch when something close exists: call
 `get_footprint` first, take its `source`, and edit that.
+
+**Approving a footprint version also files the component repoints.** A component
+pins the footprint *version* it was drawn against, so the platform opens a draft
+component version for every name in `used_by_components`, pinned to the new
+drawing with properties unchanged. Approve those drafts too — the footprint
+change is not finished until they land. See [[platform-workflow]].
 
 ## 1. Choosing a footprint
 
@@ -168,6 +174,13 @@ Plus the conventions the validator can't check:
 - `F.SilkS` carries a partial outline that never overlaps pad copper, plus a
   pin-1 indicator. Silkscreen may be omitted on very fine pitch (≤ 0.4 mm) where
   it cannot be drawn clear of the pads; `F.Fab` is still required.
+- **`Cmts.User` carries a pin-1 mark — always.** Every footprint that has a
+  pad `1` (or `A1`) gets a 0.1 mm radius circle (`fp_circle`, 0.2 mm stroke,
+  no fill) on `Cmts.User` at pin 1: centred on the pad for 2-pad chip
+  passives, placed just outside the pad — offset away from the footprint
+  centre, on the 0.1 mm grid — for everything else. It complements the
+  `F.Fab` and `F.SilkS` indicators, never replaces them, and it must stay
+  within 2 mm of the pad-1 centre so verification sweeps can find it.
 - Courtyard clears the outermost pad/body feature by **0.5 mm**, snapped to the
   0.05 mm grid.
 - Global dimension floors: pad ≥ 0.6 mm, drill ≥ 0.3 mm, via ≥ 0.3 mm.
@@ -315,4 +328,3 @@ source, work through this before proposing it:
 
 See [[add-component]] for where footprint choice fits in the full part-creation
 procedure, and [[platform-workflow]] for what happens after approval.
-
