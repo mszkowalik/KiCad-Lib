@@ -846,7 +846,14 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   replaces dots with underscores for install directories; `license` must be
   a value from the schema enum (`unrestricted` for in-house); python-runtime
   IPC plugins REQUIRE a `requirements.txt` or env setup silently aborts and
-  the toolbar button never appears; validate generated metadata against
+  the toolbar button never appears; **KiCad's bundled Python has NO usable CA
+  store on macOS** (its compiled-in cafile path does not exist inside the app
+  bundle), so every `urlopen` of an https URL fails with
+  CERTIFICATE_VERIFY_FAILED — first hit when the platform moved to
+  `https://disfunction.cc` (2026-08-03, plugin 1.0.8). Both templates build an
+  SSL context from certifi (in the plugin venv via `requirements.txt`) with
+  `/etc/ssl/cert.pem` as the stdlib-only fallback; never disable verification
+  — the push plugin carries a write credential; validate generated metadata against
   `go.kicad.org/pcm/schemas/v1` and the plugin manifest against KiCad's
   shipped `api.v1.schema.json` before shipping. The library package ships
   ONLY the deduplicated `7Sigma_Base.kicad_sym` (written by

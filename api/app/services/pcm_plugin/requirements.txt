@@ -1,3 +1,10 @@
-# No dependencies — sync.py is Python stdlib only.
 # This file must exist: KiCad's API plugin manager refuses to finish the
 # plugin's Python environment setup without it ("requirements.txt not found").
+#
+# certifi: KiCad's bundled Python ships WITHOUT a usable CA store on macOS
+# (its compiled-in cafile path does not exist inside the app bundle), so the
+# first https:// platform URL made every urlopen fail with
+# CERTIFICATE_VERIFY_FAILED. The plugins build their SSL context from
+# certifi's bundle, with /etc/ssl/cert.pem as a stdlib-only fallback for the
+# case where the venv install was skipped. Verification is never disabled.
+certifi
