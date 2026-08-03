@@ -149,7 +149,7 @@ def part_detail(part_id: int, db: Session = Depends(get_db)):
         elif key == "Datasheet":
             fields["datasheet"] = {"value": val, "visible": "false"}
         elif key == "Value":
-            fields["value"] = {"value": val, "visible": "true"}
+            fields["value"] = {"value": val, "visible": "false" if hide else "true"}
         else:
             fields[key] = {"value": val, "visible": "false" if hide else "true"}
 
