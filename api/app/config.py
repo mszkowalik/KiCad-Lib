@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     # Fetch missing datasheet PDFs in the background on startup.
     datasheet_autofetch: bool = True
 
+    # Approving a symbol/footprint version files a DRAFT component version per
+    # affected part, so components never stay pinned to superseded geometry
+    # (services/repoint.py). Still draft-gated — this creates proposals, it
+    # never publishes. Turn off to approve geometry without the follow-up.
+    auto_repoint_components: bool = True
+
     # Nightly re-check of EVERY datasheet source URL: conditional GETs
     # (ETag / Last-Modified) ask the supplier whether the document changed and
     # only download when it did — a new PDF becomes a new DatasheetVersion and

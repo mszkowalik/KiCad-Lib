@@ -12,6 +12,7 @@ from ..config import settings
 from ..db import get_db
 from ..services.mirror import top_level_of, update_mirror_footprint, update_mirror_symbols
 from ..services.render import render_svg
+from ..services.repoint import repoint_for
 from .util import audit, category_path
 
 router = APIRouter(prefix="/api/proposals", tags=["proposals"])
@@ -295,6 +296,9 @@ def approve_symbol(ver_id: int, db: Session = Depends(get_db)):
     sv.status = "published"
     sym.current_version_id = sv.id
     audit(db, "proposal.approve", "symbol_version", sv.id, {"symbol": sym.name})
+    # Same transaction as the publish: a crash must not leave the symbol
+    # current with its components silently pinned to the old drawing.
+    repointed = repoint_for(db, "symbol", sym) if settings.auto_repoint_components else None
     db.commit()
 
     # Rebuild the KiCad-facing libraries that show this drawing: the base
@@ -309,7 +313,8 @@ def approve_symbol(ver_id: int, db: Session = Depends(get_db)):
     mirror = update_mirror_symbols(db, settings, tops)
     return {**_geometry_json("symbol", sv, sym),
             "mirror": {k: v for k, v in mirror.items() if k != "warnings"},
-            "mirror_warnings": mirror["warnings"]}
+            "mirror_warnings": mirror["warnings"],
+            "repointed": repointed}
 
 
 def _drop_if_stillborn(db: Session, parent, kind: str) -> bool:
@@ -358,13 +363,17 @@ def approve_footprint(ver_id: int, db: Session = Depends(get_db)):
     fv.status = "published"
     fp.current_version_id = fv.id
     audit(db, "proposal.approve", "footprint_version", fv.id, {"footprint": fp.name})
+    # Same transaction as the publish: a crash must not leave the footprint
+    # current with its components silently pinned to the old drawing.
+    repointed = repoint_for(db, "footprint", fp) if settings.auto_repoint_components else None
     db.commit()
 
     db.expire_all()
     mirror = update_mirror_footprint(db, settings, fp.name)
     return {**_geometry_json("footprint", fv, fp),
             "mirror": {k: v for k, v in mirror.items() if k != "warnings"},
-            "mirror_warnings": mirror["warnings"]}
+            "mirror_warnings": mirror["warnings"],
+            "repointed": repointed}
 
 
 @router.post("/footprints/{ver_id}/reject")

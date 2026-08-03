@@ -527,18 +527,38 @@ up in the UI automatically. Audit actions in use: `proposal.create`,
   `symbol_version_id`/`footprint_version_id`; the KiCad-facing base lib,
   footprint mirror, and HTTP catalog always follow the newest published
   geometry.
-- **Approving a new footprint VERSION must offer to repoint the components that
-  pin the old one** (user decision 2026-07-30). The two facts above pull apart:
-  the mirror and the HTTP catalog jump to the new geometry while every linked
-  `ComponentVersion` still names the previous `footprint_version_id`, so the
-  library and the components silently disagree about which land pattern is
-  current. The approve flow must therefore name the components still pinning the
-  outgoing version and let the user repoint them in the same step. It is an
-  OFFER, never automatic — an old run's component version must be able to keep
-  the geometry it was built against. NOT IMPLEMENTED YET; build it in
-  `routers/proposals.py::approve` plus the Proposals UI, and note that repointing
-  mints a component version per affected part, so it obeys the same draft gate as
-  any other component write.
+- **Approving geometry AUTO-FILES the component repoints** (`services/repoint.py`,
+  user decision 2026-08-04; supersedes the 2026-07-30 "offer, never automatic"
+  decision). The two facts above pull apart: the mirror and the HTTP catalog jump
+  to the new geometry while every linked `ComponentVersion` still names the
+  previous `footprint_version_id`, so the library and the components silently
+  disagree about which land pattern is current. Measured on 2026-08-03: a pin-1
+  sweep published 105 footprint versions and left 185 of 327 components pinned to
+  the superseded drawing. So `approve_symbol` / `approve_footprint` now call
+  `repoint_for`, in the SAME transaction as the publish, and return the result as
+  `repointed`. It is still draft-gated — it mints drafts, never publishes — so an
+  old run's component version keeps the geometry it was built against until
+  somebody approves the follow-up. `AUTO_REPOINT_COMPONENTS=false` turns it off.
+  Four invariants live in that module:
+  - **One open auto-draft per component, refreshed — never a second.** This is
+    the whole reason the module is not a loop in the router. A batch touching a
+    symbol AND a footprint used by the same part would file two drafts against
+    the same published parent, each carrying one pin; approving both applies the
+    first and then overwrites it with the second, so the component ends with one
+    change applied and a history claiming two. `created_by == AUTO_ACTOR`
+    identifies a draft that may be refolded.
+  - **A pending human/agent draft is skipped, not rewritten**, and reported in
+    `repointed.skipped`. Repointing a proposal under review would silently
+    rewrite somebody's edit; a parallel auto-draft would collide on approval.
+  - **Properties are cloned in FULL fidelity** — `hide`, `show_name` and `layout`
+    included. `propose_component_edit` writes only key/value/is_null and lets the
+    rest default, which is fine when a caller is restating properties on purpose,
+    but here the component is not being edited and `hide` drives KiCad field
+    visibility.
+  - **Never read `comp.versions` inside this module.** The session is
+    `expire_on_commit=False` and rows added here are not appended to a loaded
+    relationship, so it goes stale the moment a draft is added — that made the
+    coalescing miss its own draft and open a second one. Use `_versions(db, comp)`.
 
 ## Importing from YAML — two modes
 
@@ -1031,9 +1051,19 @@ converted to MCP image content; every other tool returns a JSON string as text.
 `KICAD_MCP_TOKEN` from env (`${VAR:-default}` expansion keeps them out of git).
 `KICAD_API_URL` defaults to the PUBLIC address, so the server works away from
 the LAN as well as on it. **`KICAD_MCP_TOKEN` must now be set** — the agent
-surface is behind the auth gate, and an unset token gets 401 on every call. Put
-a personal token (Setup page > Users) in the shell profile; never in
-`.mcp.json`, which is tracked.
+surface is behind the auth gate, and an unset token gets 401 on every call.
+**Both values live in `.claude/settings.local.json` under `env`** — it is
+gitignored and its `env` block reaches the Bash tool, so one file serves the MCP
+server and any script. Never put the token in `.mcp.json` or in
+`.claude/settings.json`; both are tracked.
+- **A personal token starts with `7s_`** (`auth.TOKEN_PREFIX`). The 64-character
+  hex secrets are the legacy shared `MCP_TOKEN` / `HTTPLIB_TOKEN`, which
+  `_LEGACY_SCOPES` no longer honours on production — one stored in
+  `settings.local.json` 401s on every agent call and reads as a dead MCP server
+  rather than an expired credential. Check the prefix first.
+- **Prefer the public `KICAD_API_URL`.** The LAN address (`http://192.168.200.28
+  /lib`) reaches the SAME deployment, so it is not wrong, only fragile — it
+  fails silently away from the LAN.
 MCP config is OS-user-scoped, **not** tied to a Claude account, so it works
 across both logins and survives account switches. (The pre-existing `kicad`
 entry is a separate Node KiCad-IPC server — leave it.)

@@ -178,6 +178,28 @@ def list_categories() -> str:
         db.close()
 
 
+LIST_CAP = 400
+
+
+def _capped(rows: list, kind: str) -> list:
+    """Cap a listing, but NEVER silently.
+
+    The old `out[:150]` dropped the tail with nothing in the payload to say so,
+    and an agent cannot tell a short library from a truncated one. A pin-1 audit
+    on 2026-08-03 read 150 of 171 footprints and reported the library clean past
+    "Texas…" — every VQFN was past the cut. If the cap is hit, the last element
+    says so and names the filter that narrows the result.
+    """
+    if len(rows) <= LIST_CAP:
+        return rows
+    return rows[:LIST_CAP] + [{
+        "_truncated": True,
+        "shown": LIST_CAP,
+        "total": len(rows),
+        "note": f"{len(rows) - LIST_CAP} more {kind} not shown - narrow with the `query` filter",
+    }]
+
+
 @beta_tool
 def list_base_symbols(query: str = "") -> str:
     """List available base symbols (graphical templates) with pin counts.
@@ -193,7 +215,7 @@ def list_base_symbols(query: str = "") -> str:
                 continue
             cur = next((v for v in s.versions if v.id == s.current_version_id), None)
             out.append({"name": s.name, "pins": (cur.parsed or {}).get("pin_count") if cur else None})
-        return json.dumps(out[:150])
+        return json.dumps(_capped(out, "symbols"))
     finally:
         db.close()
 
@@ -213,7 +235,7 @@ def list_footprints(query: str = "") -> str:
                 continue
             cur = next((v for v in f.versions if v.id == f.current_version_id), None)
             out.append({"name": f.name, "pads": (cur.parsed or {}).get("pad_count") if cur else None})
-        return json.dumps(out[:150])
+        return json.dumps(_capped(out, "footprints"))
     finally:
         db.close()
 
