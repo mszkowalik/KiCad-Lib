@@ -163,6 +163,79 @@ def property_row_to_dict(prop) -> dict:
     return d
 
 
+# Property-hidden maps per base-symbol VERSION. In-process and advisory, keyed
+# on the version id (observable state): an approved base symbol gets a new id,
+# so a stale entry can never be served.
+_BASE_HIDDEN_BY_SYMBOL_VERSION: dict[int, dict[str, bool]] = {}
+
+
+def _hidden_props_in_lib_text(source_text: str, entry_name: str) -> dict[str, bool]:
+    """{property key: drawn hidden} for `entry_name` in a .kicad_sym text.
+    Reads the modern `(hide yes)` node at property or effects level and the
+    legacy bare `hide` atom; an unparseable or absent symbol yields {}."""
+    from ..util.sexpr import _norm, find_node, iter_nodes, parse_sexpr, sanitize_symbol_text, walk_nodes
+
+    try:
+        tree = parse_sexpr(sanitize_symbol_text(source_text))
+    except Exception:
+        return {}
+    for sym in walk_nodes(tree, "symbol"):
+        if len(sym) < 2 or _norm(sym[1]) != entry_name:
+            continue
+        out: dict[str, bool] = {}
+        for prop in iter_nodes(sym, "property"):
+            if len(prop) < 2:
+                continue
+            hidden = False
+            for hide in walk_nodes(prop, "hide"):
+                if len(hide) < 2 or _norm(hide[1]).lower() in ("yes", "true"):
+                    hidden = True
+                    break
+            if not hidden:
+                eff = find_node(prop, "effects") or []
+                atoms = [a for a in list(prop) + list(eff) if not isinstance(a, list)]
+                hidden = any(_norm(a) == "hide" for a in atoms)
+            out[_norm(prop[1])] = hidden
+        return out
+    return {}
+
+
+def schematic_field_visibility(db, cv) -> dict[str, bool]:
+    """{key: visible-on-schematic} for a component version's properties.
+
+    The rule `apply_properties` bakes into the generated mirror symbols: a key
+    the base symbol carries inherits the base effects, any other key is added
+    hidden, and the row's `layout` effects override either. Visibility is
+    curated ON THE BASE SYMBOL; the component only holds values.
+    `ComponentProperty.hide` is NOT part of the rule — the generator never
+    reads that column (it is True on almost every imported row), so any
+    consumer that wants to agree with the mirror must not either.
+    """
+    from .. import models as M
+
+    svid = db.query(M.Symbol.current_version_id).filter(M.Symbol.name == cv.base_component).scalar()
+    base: dict[str, bool] = {}
+    if svid:
+        if svid not in _BASE_HIDDEN_BY_SYMBOL_VERSION:
+            sv = db.get(M.SymbolVersion, svid)
+            _BASE_HIDDEN_BY_SYMBOL_VERSION[svid] = (
+                _hidden_props_in_lib_text(sv.source_text, cv.base_component) if sv else {}
+            )
+        base = _BASE_HIDDEN_BY_SYMBOL_VERSION[svid]
+    if not base:
+        # unknown or unparseable template: KiCad's own default is a visible Value
+        base = {"Value": False}
+
+    out: dict[str, bool] = {}
+    for p in cv.properties:
+        hidden = base.get(p.key, True)
+        eff = (p.layout or {}).get("effects") or {}
+        if "hide" in eff:
+            hidden = bool(eff["hide"])
+        out[p.key] = not hidden
+    return out
+
+
 # Legacy YAML property keys ↔ ComponentPrice columns, in emission order.
 PRICE_PROP_ORDER = (
     ("Price @1 USD", "price_1"),

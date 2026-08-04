@@ -242,14 +242,13 @@ export function PropertiesEditor({
           <th>Key</th>
           <th>Value</th>
           <th className="ctr">Null</th>
-          <th className="ctr">Hide</th>
           <th className="ctr" aria-label="Actions"></th>
         </tr>
       </thead>
       <tbody>
         {rows.map((r) => (
           <tr key={r.rid}>
-            <td className={"mono prop-key" + (r.hide ? " dim" : "")}>{r.key}</td>
+            <td className="mono prop-key">{r.key}</td>
             <td>
               {r.is_null ? (
                 <span className="null">null</span>
@@ -270,14 +269,6 @@ export function PropertiesEditor({
                 checked={r.is_null}
                 onChange={(e) => updateRow(r.rid, { is_null: e.target.checked })}
                 aria-label={`${r.key} is null`}
-              />
-            </td>
-            <td className="ctr">
-              <input
-                type="checkbox"
-                checked={r.hide}
-                onChange={(e) => updateRow(r.rid, { hide: e.target.checked })}
-                aria-label={`${r.key} hidden`}
               />
             </td>
             <td className="ctr">
@@ -304,7 +295,7 @@ export function PropertiesEditor({
               aria-label="New property key"
             />
           </td>
-          <td colSpan={3}>
+          <td colSpan={2}>
             <input
               type="text"
               className="text mono row-input"

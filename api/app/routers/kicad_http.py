@@ -15,7 +15,7 @@ from sqlalchemy.orm import Query, Session, contains_eager, defer, joinedload, se
 from .. import models as M
 from ..config import settings
 from ..db import get_db
-from ..services.generator import injected_props
+from ..services.generator import injected_props, schematic_field_visibility
 from .util import category_path, props_dict, resolved_value
 
 router = APIRouter(prefix="/kicad/v1", tags=["kicad-http-library"])
@@ -119,20 +119,25 @@ def part_detail(part_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "part has no published version")
 
     props = props_dict(cv)
+    # Field visibility MUST match the generated mirror symbols: base-symbol
+    # effects plus the component's layout override. Keys absent from the map
+    # (injected datasheet links, the derived Footprint_Name) are hidden, the
+    # same default `apply_properties` gives a key the base symbol lacks.
+    visible = schematic_field_visibility(db, cv)
 
     sheets = db.query(M.Datasheet).filter_by(component_id=comp.id).order_by(M.Datasheet.position).all()
 
     # user properties + injected datasheet links (prices stay on the platform)
-    entries = [(p.key, resolved_value(None if p.is_null else p.value, props), p.hide) for p in cv.properties]
+    entries = [(p.key, resolved_value(None if p.is_null else p.value, props)) for p in cv.properties]
     # Emit the footprint-derived name too, unless the component has its own row.
     if not any(p.key == "Footprint_Name" for p in cv.properties) and props.get("Footprint_Name"):
-        entries.append(("Footprint_Name", props["Footprint_Name"], True))
-    entries += [(d["key"], d["value"], True) for d in injected_props(sheets)]
+        entries.append(("Footprint_Name", props["Footprint_Name"]))
+    entries += [(d["key"], d["value"]) for d in injected_props(sheets)]
 
     description = ""
     keywords = ""
     fields: dict[str, dict] = {}
-    for key, val, hide in entries:
+    for key, val in entries:
         if key == "ki_description":
             description = val
         elif key == "ki_keywords":
@@ -149,9 +154,9 @@ def part_detail(part_id: int, db: Session = Depends(get_db)):
         elif key == "Datasheet":
             fields["datasheet"] = {"value": val, "visible": "false"}
         elif key == "Value":
-            fields["value"] = {"value": val, "visible": "false" if hide else "true"}
+            fields["value"] = {"value": val, "visible": "true" if visible.get(key) else "false"}
         else:
-            fields[key] = {"value": val, "visible": "false" if hide else "true"}
+            fields[key] = {"value": val, "visible": "true" if visible.get(key) else "false"}
 
     return {
         "id": str(comp.id),

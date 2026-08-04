@@ -803,6 +803,20 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   startup, so the server-side cost still matters. **The values are baked into
   the downloaded file** — changing the knob needs a re-download, exactly like
   `httplib_token`.
+- **KiCad field visibility is curated ON THE BASE SYMBOL — never per
+  component** (user decision 2026-08-04). The component only holds values; a
+  key the base symbol draws visible (R's Value, C's Voltage/Dielectric, LED's
+  Color) is visible on every component using it, any other key is hidden, and
+  the dormant per-row `layout` effects are the only override. That is the rule
+  `apply_properties` bakes into the mirror symbols, and the HTTP catalog must
+  emit the SAME answer — `generator.schematic_field_visibility` (cached per
+  base-symbol version id) is the one implementation; never consult
+  `ComponentProperty.hide`, which the generator has never read and which is
+  True on almost every imported row. Both wrong answers shipped once: forcing
+  Value visible showed it on every testpoint; obeying the `hide` column hid it
+  on every resistor. The column stays only as a dormant import artifact, and
+  the web editor no longer shows it. To make a category display a parameter,
+  edit the base symbol's property effects — one symbol proposal.
 - **Template resolution is order-independent.** `apply_properties` resolves
   `{Key}` against the *final* property set. It used to resolve against the
   properties applied so far, so a `ki_description` positioned before the

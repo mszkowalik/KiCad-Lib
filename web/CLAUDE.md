@@ -192,6 +192,11 @@ renders INSTEAD of the router.
 - The dev server is Vite with HMR (`npm run dev`, port 5173) — component edits
   hot-reload without a restart.
 - When a non-obvious frontend convention emerges, record it here.
+- **No per-property visibility UI.** KiCad field visibility is curated on the
+  base symbol, never per component (see `api/CLAUDE.md`). The property editor
+  has no Hide checkbox and the views show every parameter plainly. `EditRow`
+  and the POST body still carry `hide`/`show_name`/`layout` untouched — they
+  round-trip the dormant DB columns; do not resurface them as controls.
 
 ### Site structure (UI overhaul, 2026-07-29)
 

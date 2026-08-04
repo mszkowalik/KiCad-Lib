@@ -128,9 +128,8 @@ const plainVal = (p: PropertyRow): string => (p.is_null ? "null" : p.value ?? ""
 function DiffPropertyRow({ row }: { row: DiffPropRow }) {
   const prop = row.draft ?? row.base;
   if (prop === null) return null;
-  const hidden = prop.hide;
-  // `hide` is a KiCad symbol-field visibility flag — the platform view shows
-  // the row at full strength and only badges it.
+  // KiCad field visibility is curated on the base symbol, not per component —
+  // the platform view shows every parameter plainly.
   const trClass = row.status !== "same" ? `diff-${row.status}` : "";
   return (
     <tr className={trClass.trim() || undefined}>
@@ -138,11 +137,6 @@ function DiffPropertyRow({ row }: { row: DiffPropRow }) {
         {row.status === "removed" ? <span className="strike">{row.key}</span> : row.key}
         {row.status === "added" ? <span className="diff-tag">added</span> : null}
         {row.status === "removed" ? <span className="diff-tag">removed</span> : null}
-        {hidden ? (
-          <span className="tag-hidden" title="Not shown as a field on the KiCad symbol — display flag only.">
-            hidden
-          </span>
-        ) : null}
       </td>
       <td className="mono">
         {row.status === "changed" && row.base && row.draft ? (
