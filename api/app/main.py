@@ -25,6 +25,7 @@ from .routers import (
     kicad_sync,
     ledger,
     libraries,
+    models3d,
     production_runs,
     projects,
     proposals,
@@ -68,6 +69,7 @@ app.include_router(users.router)
 app.include_router(categories.router)
 app.include_router(components.router)
 app.include_router(libraries.router)
+app.include_router(models3d.router)
 app.include_router(datasheets.router)
 app.include_router(jaravis.router)
 app.include_router(agent.router)
