@@ -239,6 +239,16 @@ def update_mirror_footprint(db: Session, settings: Settings, name: str) -> dict:
     return {"footprints": 1, "manifest_files": write_manifest(settings), "warnings": []}
 
 
+def update_mirror_model3d(settings: Settings, m: M.Model3D) -> dict:
+    """Incremental mirror update after a 3D model upload: write the one file
+    (models3d carries no version/draft gate, so a successful upload is live
+    immediately), then refresh the manifest."""
+    target = settings.mirror_dir / "3DModels" / m.rel_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(m.data)
+    return {"models3d": 1, "manifest_files": write_manifest(settings)}
+
+
 def rebuild_mirror(db: Session, settings: Settings) -> dict:
     settings.ensure_dirs()
     mirror = settings.mirror_dir
