@@ -288,7 +288,12 @@ def footprint_name_props(footprint_ref: str | None, display_names: dict[str, str
 def injected_props(datasheets) -> list[dict]:
     """Datasheets live in their own table, but are injected back into
     generated symbols (and the KiCad HTTP library). First datasheet ->
-    native Datasheet field; extras -> hidden custom fields "Datasheet 2", ...
+    native Datasheet field; extras -> hidden custom fields named after their
+    own label, so a part with several attached documents (reference
+    schematics, an eval-board datasheet, ...) shows what each one actually is
+    from inside KiCad's Symbol Fields table, not just an index. Falls back to
+    "Datasheet N" when a label is blank, the generic default, or would
+    collide with an already-used field name.
 
     When a datasheet has a locally stored copy, the injected link points at
     the platform's local file instead of the internet URL.
@@ -300,8 +305,16 @@ def injected_props(datasheets) -> list[dict]:
     from ..config import settings
 
     out: list[dict] = []
+    seen: set[str] = set()
     for i, ds in enumerate(datasheets or []):
-        key = "Datasheet" if i == 0 else f"Datasheet {i + 1}"
+        if i == 0:
+            key = "Datasheet"
+        else:
+            label = (ds.label or "").strip()
+            key = label if label and label != "Datasheet" else f"Datasheet {i + 1}"
+            if key in seen:
+                key = f"{key} ({i + 1})"
+        seen.add(key)
         # Link the local copy only when it's an actual PDF — a stored HTML
         # product page is worse than the live link.
         cur = next(
