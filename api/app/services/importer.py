@@ -24,6 +24,7 @@ from ..config import settings
 from ..db import Base, SessionLocal, engine
 from ..routers.util import current_version
 from ..util.sexpr import _norm, parse_sexpr, sanitize_symbol_text, walk_nodes
+from . import material
 from .generator import PRICE_KEY_TO_COL
 from .mirror import rebuild_mirror
 from .parse_cache import footprint_parsed, symbol_parsed
@@ -239,7 +240,8 @@ def run_import() -> dict:
             sym = M.Symbol(name=name)
             db.add(sym)
             db.flush()
-            sv = M.SymbolVersion(symbol_id=sym.id, version_no=1, source_text=text, parsed=parsed)
+            sv = M.SymbolVersion(symbol_id=sym.id, version_no=1, source_text=text, parsed=parsed,
+                                 material_sha=material.material_sha("symbol", text))
             db.add(sv)
             db.flush()
             sym.current_version_id = sv.id
@@ -263,7 +265,8 @@ def run_import() -> dict:
             db.add(fp)
             db.flush()
             fv = M.FootprintVersion(footprint_id=fp.id, version_no=1, source_text=text,
-                                    parsed=parsed, models=models)
+                                    parsed=parsed, models=models,
+                                    material_sha=material.material_sha("footprint", text))
             db.add(fv)
             db.flush()
             fp.current_version_id = fv.id

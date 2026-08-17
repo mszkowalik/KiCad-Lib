@@ -45,3 +45,34 @@ export function StatusPill({ status }: { status: string | null | undefined }) {
   const tone = STATUS_TONES[status.toLowerCase()] ?? "neutral";
   return <span className={`pill ${tone}`}>{status}</span>;
 }
+
+/** Production sign-off state — deliberately its OWN pill, not a StatusPill.
+ *
+ * `published` and `signed` are different claims and must never share a word or
+ * a colour: a published component may never have been checked by anybody. The
+ * labels spell the state out for the same reason — "stale" alone reads like a
+ * cache problem rather than "this needs looking at again". */
+const SIGNOFF_TONES: Record<string, [string, string]> = {
+  signed: ["ok", "signed"],
+  stale: ["warn", "re-check"],
+  revoked: ["err", "revoked"],
+  unsigned: ["neutral", "not signed"],
+};
+
+export function SignoffPill({
+  state,
+  title,
+}: {
+  state: string | null | undefined;
+  title?: string;
+}) {
+  const [tone, label] = SIGNOFF_TONES[(state ?? "").toLowerCase()] ?? [
+    "neutral",
+    "not signed",
+  ];
+  return (
+    <span className={`pill ${tone}`} title={title}>
+      {label}
+    </span>
+  );
+}

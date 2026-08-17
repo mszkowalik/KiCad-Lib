@@ -162,7 +162,67 @@ def get_component(name: str) -> str:
                 for v in comp.versions
             ],
             "user_notes": _user_notes(db, "component", comp.id),
+            # Has a human checked this part for production? See
+            # services/signoff.py. NOT the same thing as a version's
+            # `approved_by`, which only means the edit was let into the library.
+            "production_signoff": _signoff_summary(db, comp),
         })
+    finally:
+        db.close()
+
+
+def _signoff_summary(db, comp) -> dict:
+    from .signoff import state_for
+
+    s = state_for(db, comp)
+    row = s.get("signoff") or {}
+    return {
+        "state": s["state"],
+        "signed_by": row.get("signed_by"),
+        "signed_at": row.get("signed_at"),
+        "how": row.get("kind"),
+        "note": row.get("note"),
+        "signed_version_no": s.get("signed_version_no"),
+        # Why the sign-off did not follow the component to its current version.
+        "needs_recheck_because": s.get("blockers") or [],
+    }
+
+
+@beta_tool
+def list_signoffs(state: str = "") -> str:
+    """List every component's production sign-off state.
+
+    A sign-off records that a human checked the symbol, the land pattern and
+    the part number before boards were built. It is separate from library
+    approval: a published component may never have been checked.
+
+    States: `signed` (the current version is checked), `stale` (an older
+    version was checked and something material changed since), `revoked` (a
+    sign-off was taken back), `unsigned` (never checked).
+
+    Args:
+        state: Optional filter — one of signed, stale, revoked, unsigned.
+    """
+    from .signoff import states_for
+
+    db = SessionLocal()
+    try:
+        comps = db.query(M.Component).all()
+        states = states_for(db, comps)
+        counts: dict[str, int] = {}
+        for s in states.values():
+            counts[s["state"]] = counts.get(s["state"], 0) + 1
+        wanted = state.strip().lower()
+        items = [
+            {"component": c.name, "state": states[c.id]["state"],
+             "signed_by": (states[c.id]["signoff"] or {}).get("signed_by"),
+             "signed_version_no": states[c.id].get("signed_version_no"),
+             "needs_recheck_because": states[c.id].get("blockers") or []}
+            for c in comps
+            if not wanted or states[c.id]["state"] == wanted
+        ]
+        return json.dumps({"counts": counts, "total": len(items),
+                           "components": _capped(items, "components")})
     finally:
         db.close()
 
@@ -1198,6 +1258,7 @@ TOOLS = [
     search_components, get_component, list_categories, list_base_symbols,
     list_footprints, get_symbol, get_footprint, read_datasheet,
     get_price_history, get_audit_log, list_models3d, list_skills, get_skill,
+    list_signoffs,
     # external lookup
     lcsc_lookup, search_jlc_parts, get_jlc_details, refresh_supply,
     # projects
@@ -1264,6 +1325,13 @@ Read / browse (use these to answer questions directly):
 - get_audit_log(limit, entity_type, actor) — who changed what, when
 - list_models3d(query) — stored 3D model files
 - get_skill(name) — read the current text of one of your skill documents
+- list_signoffs(state) — production sign-off state of every component. A sign-off means
+  a HUMAN checked the symbol, the land pattern and the part number before boards were
+  built. It is NOT the same as a version being published: approval only means the edit
+  was let into the library. `stale` means an older version was checked and something
+  material changed since — `needs_recheck_because` names what. You may READ this and
+  report on it; you may never sign anything off, and you must never describe an unsigned
+  or stale part as verified.
 
 Internet access:
 - web_search / web_fetch — general web research: manufacturer pages, app notes,

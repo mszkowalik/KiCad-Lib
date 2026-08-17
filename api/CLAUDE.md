@@ -560,6 +560,72 @@ up in the UI automatically. Audit actions in use: `proposal.create`,
     relationship, so it goes stale the moment a draft is added — that made the
     coalescing miss its own draft and open a second one. Use `_versions(db, comp)`.
 
+### Production sign-off (`services/signoff.py`, `services/material.py`)
+
+A **sign-off** records that a human checked a component's symbol, land pattern
+and part number before boards were built (user design, 2026-08-17). It is a
+different act from library approval and uses a different word everywhere: a
+version's `approved_by` means "this edit was let into the library", and a
+published component may never have been checked by anybody. Never merge the two
+concepts, and never let a UI print one where it means the other.
+
+- **The row names a `component_version_id`, never just a component.** A
+  component version pins its exact `symbol_version_id` and
+  `footprint_version_id`, and version rows are immutable, so naming the version
+  names the three drawings that were checked and can never come to mean
+  something else. Every state is DERIVED from one question — is there a live
+  sign-off on `components.current_version_id`? — so nothing is ever swept or
+  invalidated. `signed` | `stale` | `revoked` | `unsigned`; `revoked` must never
+  render as `unsigned`, because "somebody took this back" is a stronger
+  statement than "nobody looked yet".
+- **`component_signoffs` is append-only, with no unique constraint.** Revoking
+  stamps `revoked_at`; signing again adds a row. The live sign-off of a version
+  is the newest row for it with `revoked_at IS NULL` (`live_signoff`).
+- **Two publish paths must BOTH carry.** `proposals.approve` and
+  `components.create_version` (the in-place save, where the user saving IS the
+  approval) each call `signoff.carry_on_publish` in the same transaction as the
+  publish. Miss one and editing a description silently unsigns the part. Any
+  future third publish path has to call it too.
+- **`NON_MATERIAL_KEYS` is an ALLOW-LIST, and the direction is the point.** A
+  property key is material — it can make the checked part the wrong part —
+  unless it is explicitly listed (`ki_description`, `ki_keywords`,
+  `ki_fp_filters`, `ki_locked`, `Datasheet*`, `Footprint_Name`). A new key
+  nobody has classified blocks the carry, which is the safe way to be wrong.
+- **The material fingerprint is what makes the carry provable.**
+  `services/material.py` hashes only what reaches the board: pads (number, type,
+  shape, position, rotation, size, drill, layers, margins, primitives), the
+  courtyard and the `attr` flags; on symbols, the pin set (number, name,
+  electrical type, graphic style, position, length, hidden, alternates, unit).
+  Silkscreen, fab, `descr`/`tags`, uuids, 3D models, symbol body graphics and
+  field positions are excluded on purpose. Parse with `util/sexpr.py`, never
+  kiutils, and never reuse `parse_cache` here — it drops pad and pin POSITIONS,
+  which is the single most important thing being compared. **An empty
+  `material_sha` means "could not tell" and must NEVER compare equal to another
+  empty one.**
+- **Precedence in `geometry_carries` is deliberate**: `recheck_required is True`
+  wins over everything (an approver who asks for another look has a reason the
+  fingerprint cannot see); then an identical fingerprint yields `auto-carried`;
+  only then does `recheck_required is False` yield `carried`. A waiver on an
+  unchanged drawing is not a waiver — reporting it as one would put a human's
+  name on a decision they never made and would make "somebody took
+  responsibility for a change" indistinguishable from "nothing changed".
+- **Geometry approval asks the question and stores the answer.**
+  `POST /api/proposals/{symbols,footprints}/{id}/approve` takes
+  `{recheck_required, note}`; `GET …/material-diff` supplies the pre-answer the
+  dialog shows. A body-less approval (older client, bulk path) leaves
+  `recheck_required` NULL, and the fingerprint comparison then decides — the
+  same answer the dialog would have suggested.
+- **Nothing is blocked.** No export refuses and no run is gated; the state is a
+  badge (user decision). If that ever changes, change it at a call site —
+  `services/signoff.py` stays a pure record.
+- **`material_sha` is a derived cache**, stamped at version creation
+  (`geometry_proposals`, `importer`) and backfilled in a background thread from
+  `main.py` startup. It is safe for it to be missing: an un-fingerprinted
+  version blocks a carry rather than granting one.
+- Jaravis gets READ access only (`list_signoffs`, plus `production_signoff` on
+  `get_component`). A production check is a human act and there is no draft to
+  gate a robot's version of it.
+
 ## Importing from YAML — two modes
 
 `services/importer.py` runs as a background daemon thread (`IMPORT_STATE` +

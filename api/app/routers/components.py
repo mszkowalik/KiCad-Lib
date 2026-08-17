@@ -20,6 +20,7 @@ from ..services.generator import (
     load_symbol_lib_from_text,
     property_row_to_dict,
 )
+from ..services import signoff
 from ..services.mirror import top_level_of, update_mirror_symbols
 from ..services.render import render_svg
 from .util import audit, category_and_descendant_ids, category_path, current_version, props_dict, resolved_value
@@ -104,6 +105,12 @@ def list_components(
         if d.source_url:
             ds_map[d.component_id] = d.source_url  # descending order → position 0 wins
 
+    # One query for every component's sign-off state — never one per row, and
+    # `detail=False` so no version or property is loaded to derive a word the
+    # list does not print. The badge sits on the browse list's critical path,
+    # same reasoning as kicad_http.library_versions.
+    signoff_states = signoff.states_for(db, comps, detail=False)
+
     items = []
     needle = q.lower() if q else None
     for comp in comps:
@@ -138,6 +145,7 @@ def list_components(
                 "price_bulk": price_bulk or "",
                 "bulk_qty": bulk_qty or "",
                 "datasheet": ds_map.get(comp.id) or "",
+                "signoff": signoff_states.get(comp.id, {}).get("state", "unsigned"),
             }
         )
 
@@ -191,6 +199,9 @@ def component_detail(comp_id: int, db: Session = Depends(get_db)):
         "purchasable": comp.purchasable,
         "current_version_no": cv.version_no if cv else None,
         "versions": [_version_summary(v) for v in comp.versions],
+        # The badge. Full history and the geometry labels come from
+        # GET /api/components/{id}/signoff, which the sign-off card calls.
+        "signoff": signoff.state_for(db, comp)["state"],
     }
 
 
@@ -372,6 +383,11 @@ def create_version(comp_id: int, body: VersionCreate, db: Session = Depends(get_
     pin_datasheets(db, cv)  # record which PDF versions this component version uses
     audit(db, "component.edit", "component", comp.id,
           {"version_no": new_no, "comment": body.comment})
+    # This route publishes directly (the user saving IS the approval), so it is
+    # the SECOND publish path after proposals.approve — the sign-off carry has
+    # to happen here too, or editing a description in place silently unsigns the
+    # part. Same function, same rules, same transaction.
+    carried = signoff.carry_on_publish(db, comp, old_cv, cv)
     db.commit()
 
     if comp.in_library:
@@ -396,6 +412,7 @@ def create_version(comp_id: int, body: VersionCreate, db: Session = Depends(get_
         "component_name": comp.name,
         "mirror": {k: v for k, v in mirror_result.items() if k != "warnings"},
         "mirror_warnings": mirror_result["warnings"],
+        "signoff": carried,
     }
 
 

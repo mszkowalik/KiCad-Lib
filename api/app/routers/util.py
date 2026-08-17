@@ -65,3 +65,20 @@ def audit(db: Session, action: str, entity_type: str, entity_id, details: dict |
           actor: str = "user") -> None:
     db.add(M.AuditLog(actor=actor, action=action, entity_type=entity_type,
                       entity_id=str(entity_id), details=details))
+
+
+def actor_of(request) -> str:
+    """Who is making this request, as a name to store on a record.
+
+    `authgate` resolves every credential onto `request.state.user`, so this is
+    the one place a router needs to look. Falls back to `"user"`, which is what
+    the older write paths hardcode and what `auth_enabled=False` (dev) means.
+
+    Use this whenever a row records WHO did something a person is accountable
+    for — a production sign-off, above all. Do not use it for robot bookkeeping
+    that runs with no request at all.
+    """
+    u = getattr(getattr(request, "state", None), "user", None)
+    if u is None:
+        return "user"
+    return (getattr(u, "display_name", "") or getattr(u, "username", "") or "user").strip() or "user"

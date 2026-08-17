@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
+  bulkSignoff,
   errorMessage,
   getCategories,
   isAbortError,
@@ -10,7 +11,8 @@ import {
   type ComponentListResponse,
 } from "../api";
 import CategoryTree from "../components/CategoryTree";
-import { ErrorBanner, Spinner } from "../components/Ui";
+import { useDialog } from "../components/Dialog";
+import { ErrorBanner, SignoffPill, Spinner } from "../components/Ui";
 import { useStickyState } from "../useStickyState";
 
 const PAGE_SIZE = 1000;
@@ -39,7 +41,8 @@ type ColKey =
   | "footprint"
   | "lcsc"
   | "price_bulk"
-  | "category";
+  | "category"
+  | "signoff";
 
 const COL_LABELS: Record<ColKey, string> = {
   mfg_pn: "Mfg PN",
@@ -50,11 +53,31 @@ const COL_LABELS: Record<ColKey, string> = {
   lcsc: "LCSC",
   price_bulk: "Price @1k",
   category: "Category",
+  signoff: "Sign-off",
+};
+
+/** The label the sign-off column PRINTS. The filter box matches what the user
+ *  can see, so typing "re-check" finds the stale rows. */
+const SIGNOFF_TEXT: Record<string, string> = {
+  signed: "signed",
+  stale: "re-check",
+  revoked: "revoked",
+  unsigned: "not signed",
 };
 
 function colValue(c: ComponentListItem, col: ColKey): string {
-  return col === "category" ? c.category_path : c[col];
+  if (col === "category") return c.category_path;
+  if (col === "signoff") return SIGNOFF_TEXT[c.signoff] ?? c.signoff;
+  return c[col];
 }
+
+/** Sign-off states worst-first: what needs attention sorts to the top. */
+const SIGNOFF_ORDER: Record<string, number> = {
+  revoked: 0,
+  stale: 1,
+  unsigned: 2,
+  signed: 3,
+};
 
 function sortRows(
   rows: ComponentListItem[],
@@ -62,7 +85,13 @@ function sortRows(
 ): ComponentListItem[] {
   const mul = sort.dir === "asc" ? 1 : -1;
   const out = [...rows];
-  if (sort.col === "price_bulk") {
+  if (sort.col === "signoff") {
+    // Rank order, not alphabetical: sorting by this column means "show me what
+    // still needs looking at", and "revoked" before "signed" is that answer.
+    out.sort(
+      (a, b) => ((SIGNOFF_ORDER[a.signoff] ?? 9) - (SIGNOFF_ORDER[b.signoff] ?? 9)) * mul,
+    );
+  } else if (sort.col === "price_bulk") {
     // numeric; empty/unparsable always last regardless of direction
     out.sort((a, b) => {
       const av = parseFloat(a.price_bulk);
@@ -95,6 +124,10 @@ export default function Browse() {
   const [data, setData] = useState<ComponentListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [signing, setSigning] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  const dialog = useDialog();
 
   // Remember the selected library + search across navigation. The "← back" link
   // from a component goes to a bare "/", so on the first mount with no params we
@@ -172,7 +205,7 @@ export default function Browse() {
         setLoading(false);
       });
     return () => ctrl.abort();
-  }, [q, categoryId]);
+  }, [q, categoryId, refresh]);
 
   const selectCategory = (id: number | null) =>
     setParams((prev) => {
@@ -250,6 +283,57 @@ export default function Browse() {
 
   const total = data?.total ?? 0;
 
+  // ---- bulk production sign-off -------------------------------------------
+  // Signing a BOM's worth of parts one page at a time is the whole reason this
+  // exists, so the selection follows the FILTERED rows: filter to "not signed"
+  // (or to a footprint, a category, a search) and Select all means that set.
+  const selectable = visible.filter((c) => c.signoff !== "signed");
+  const allSelected = selectable.length > 0 && selectable.every((c) => selected.has(c.id));
+
+  const toggleAll = () =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allSelected) selectable.forEach((c) => next.delete(c.id));
+      else selectable.forEach((c) => next.add(c.id));
+      return next;
+    });
+
+  const toggleOne = (id: number) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const signSelected = async () => {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    const ok = await dialog.confirm(
+      `Sign off ${ids.length} component${ids.length === 1 ? "" : "s"} for production? ` +
+        "This records that YOU checked each one's symbol and land pattern.",
+      { title: "Sign off for production", confirmLabel: "Sign off", tone: "ok" },
+    );
+    if (!ok) return;
+    setSigning(true);
+    try {
+      const res = await bulkSignoff(ids);
+      setSelected(new Set());
+      setRefresh((n) => n + 1);
+      if (res.skipped.length > 0) {
+        await dialog.alert(
+          `Signed ${res.total}. Skipped ${res.skipped.length}: ` +
+            res.skipped.map((s) => `${s.component ?? s.component_id} (${s.reason})`).join(", "),
+          { title: "Bulk sign-off" },
+        );
+      }
+    } catch (err) {
+      await dialog.alert(errorMessage(err), { title: "Bulk sign-off failed" });
+    } finally {
+      setSigning(false);
+    }
+  };
+
   return (
     <div className="browse">
       <aside className="sidebar">
@@ -288,6 +372,19 @@ export default function Browse() {
                   (data.items.length < total ? ` (showing first ${data.items.length})` : "")
               : ""}
           </span>
+          <button
+            type="button"
+            className="btn btn-sm btn-ok"
+            disabled={selected.size === 0 || signing}
+            onClick={() => void signSelected()}
+          >
+            {signing ? "Signing off…" : `Sign off selected (${selected.size})`}
+          </button>
+          {selected.size > 0 && !signing ? (
+            <button type="button" className="btn btn-sm" onClick={() => setSelected(new Set())}>
+              Clear selection
+            </button>
+          ) : null}
           <Link to="/library/components/new" className="btn btn-sm new-comp-btn">
             New component
           </Link>
@@ -304,6 +401,15 @@ export default function Browse() {
             <table className="data browse-table">
               <thead>
                 <tr>
+                  <th className="ctr">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      disabled={signing || selectable.length === 0}
+                      onChange={toggleAll}
+                      aria-label="Select every unsigned component shown"
+                    />
+                  </th>
                   {sortTh("mfg_pn")}
                   {sortTh("manufacturer")}
                   {sortTh("value")}
@@ -315,8 +421,10 @@ export default function Browse() {
                   </th>
                   {sortTh("price_bulk", "num")}
                   {sortTh("category")}
+                  {sortTh("signoff", "ctr")}
                 </tr>
                 <tr className="filter-row">
+                  <td className="ctr" />
                   {filterTd("mfg_pn")}
                   {filterTd("manufacturer")}
                   {filterTd("value")}
@@ -338,11 +446,26 @@ export default function Browse() {
                   </td>
                   {filterTd("price_bulk")}
                   {filterTd("category")}
+                  {filterTd("signoff")}
                 </tr>
               </thead>
               <tbody>
                 {visible.map((c) => (
                   <tr key={c.id}>
+                    <td className="ctr">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(c.id)}
+                        disabled={signing || c.signoff === "signed"}
+                        onChange={() => toggleOne(c.id)}
+                        aria-label={`Select ${c.name} for sign-off`}
+                        title={
+                          c.signoff === "signed"
+                            ? "already signed off"
+                            : `Select ${c.name} for sign-off`
+                        }
+                      />
+                    </td>
                     <td title={c.mfg_pn}>
                       <Link
                         to={`/library/components/${c.id}`}
@@ -384,11 +507,14 @@ export default function Browse() {
                       {c.price_bulk}
                     </td>
                     <td title={c.category_path}>{c.category_path}</td>
+                    <td className="ctr">
+                      <SignoffPill state={c.signoff} />
+                    </td>
                   </tr>
                 ))}
                 {visible.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="empty">
+                    <td colSpan={11} className="empty">
                       No components match.
                     </td>
                   </tr>

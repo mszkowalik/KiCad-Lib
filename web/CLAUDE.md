@@ -198,6 +198,38 @@ renders INSTEAD of the router.
   and the POST body still carry `hide`/`show_name`/`layout` untouched — they
   round-trip the dormant DB columns; do not resurface them as controls.
 
+### Production sign-off is NOT a status — never render it with `StatusPill`
+
+"Published" and "signed off" are different claims: a published component may
+never have been checked by a human (see the sign-off section of
+`api/CLAUDE.md`). So the state has its own atom, `<SignoffPill state/>` in
+`components/Ui.tsx`, its own vocabulary (`signed` / `re-check` / `revoked` /
+`not signed`) and its own colours. On `ComponentDetail` the two pills sit side
+by side in the header, and `SignoffCard` is deliberately a separate card from
+the meta card that shows "Approved by". Do not merge them, and do not add
+sign-off states to `STATUS_TONES`.
+
+- **`SignoffCard` asks for its note INLINE, not through `dialog.prompt`.** The
+  prompt dialog refuses to resolve on empty input, so an OPTIONAL note asked
+  that way leaves the user unable to say "nothing to add". A revoke DOES use
+  `dialog.prompt`, because there a reason is required and that is exactly the
+  dialog's behaviour.
+- **`RecheckDialog` is its own overlay because the answer is three-way** —
+  re-check / carry the sign-offs / cancel — and `dialog.confirm` cannot express
+  it (its cancel and its "no" are one boolean). It reuses the `modal-backdrop`
+  / `modal-card` classes. **It focuses its suggested button on mount**: the
+  Escape handler sits on the backdrop's `onKeyDown`, which never fires while
+  focus is on `document.body`, so without that focus the dialog could not be
+  dismissed by keyboard at all. Any new overlay built this way needs the same.
+- **A pill is `inline-block`, so a column's ellipsis cannot shorten it** — too
+  narrow simply cuts it off with no visual hint. The browse table's sign-off
+  column is sized for the longest label. Check the rendered width when you add
+  a pill to a `table-layout: fixed` column.
+- The browse filter matches the PRINTED label, not the API's state string
+  (`SIGNOFF_TEXT` in `Browse.tsx`), so typing "re-check" finds the stale rows.
+  Sorting that column uses rank order (worst first), not alphabetical — sorting
+  by it means "show me what still needs looking at".
+
 ### Site structure (UI overhaul, 2026-07-29)
 
 - **Five nav sections**: Library (`/library/...`), Projects (+ `/runs/:id`),

@@ -25,6 +25,7 @@ import re
 from sqlalchemy.orm import Session
 
 from .. import models as M
+from . import material
 
 # KiCad names a copied item after the pseudo-library it invents for the
 # clipboard: `(footprint "clipboard:11d1f418-7567-4c54-…")`. That is an
@@ -276,7 +277,11 @@ def propose_footprint_version(
     new_no = max((v.version_no for v in fp.versions), default=0) + 1
     fv = M.FootprintVersion(footprint_id=fp.id, version_no=new_no, source_text=source_text,
                             parsed=parsed, models=parsed.get("models"), status="draft",
-                            created_by=actor, comment=comment or None)
+                            created_by=actor, comment=comment or None,
+                            # What a production sign-off compares against. Stamped
+                            # at creation so the approval dialog can say whether
+                            # anything reaching the board changed.
+                            material_sha=material.material_sha("footprint", source_text))
     db.add(fv)
     db.flush()
     db.add(M.AuditLog(actor=actor, action="proposal.create", entity_type="footprint_version",
@@ -358,7 +363,9 @@ def propose_symbol_version(
     new_no = max((v.version_no for v in sym.versions), default=0) + 1
     sv = M.SymbolVersion(symbol_id=sym.id, version_no=new_no, source_text=source_text,
                          parsed=parsed, status="draft", created_by=actor,
-                         comment=comment or None)
+                         comment=comment or None,
+                         # See the footprint twin — the sign-off comparison basis.
+                         material_sha=material.material_sha("symbol", source_text))
     db.add(sv)
     db.flush()
     db.add(M.AuditLog(actor=actor, action="proposal.create", entity_type="symbol_version",

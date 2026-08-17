@@ -47,8 +47,9 @@ import {
   type EditDs,
   type EditRow,
 } from "../components/editing";
-import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import { ErrorBanner, SignoffPill, Spinner, StatusPill } from "../components/Ui";
 import CommentsPanel from "../components/CommentsPanel";
+import SignoffCard from "../components/SignoffCard";
 import WhereUsedCard from "../components/WhereUsedCard";
 import { useStickyState } from "../useStickyState";
 
@@ -1170,6 +1171,10 @@ export default function ComponentDetail() {
           <div className="detail-header">
             <h1 className="mono comp-name">{detail.name}</h1>
             {version ? <StatusPill status={version.status} /> : null}
+            <SignoffPill
+              state={detail.signoff}
+              title="Production sign-off — whether a human has checked this part's symbol and land pattern"
+            />
           </div>
           <div className="version-rail" role="tablist" aria-label="Versions">
             {versions.map((v) => {
@@ -1587,6 +1592,20 @@ export default function ComponentDetail() {
               />
             ) : null}
           </section>
+        ) : null}
+
+        {/* Kept apart from the meta card's "Approved by" on purpose: library
+            approval and a production check are different claims. */}
+        {version && !editing && isCurrentSelected ? (
+          <SignoffCard
+            componentId={compId}
+            onChange={() => {
+              // Keep the page's own badge in step with the card.
+              getComponent(compId)
+                .then(setDetail)
+                .catch(() => {});
+            }}
+          />
         ) : null}
 
         <PriceLadderCard compId={compId} />

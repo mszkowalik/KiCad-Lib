@@ -82,6 +82,14 @@ class SymbolVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     created_by: Mapped[str] = mapped_column(String(100), default="import")
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Production sign-off support — see ComponentSignoff and services/material.py.
+    # `material_sha` caches the fingerprint of the pins (derived, "" = not yet
+    # computed or unparseable). `recheck_required` is the approver's answer to
+    # "does this change need a new verification?"; NULL = nobody was ever asked,
+    # which is every row published before this landed.
+    # (Both added by startup migration.)
+    material_sha: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    recheck_required: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     symbol: Mapped[Symbol] = relationship(back_populates="versions")
 
@@ -125,6 +133,11 @@ class FootprintVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     created_by: Mapped[str] = mapped_column(String(100), default="import")
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # See SymbolVersion for what these two mean. Here the fingerprint covers
+    # pads, drills, layers and the courtyard — never silkscreen, fab or 3D.
+    # (Both added by startup migration.)
+    material_sha: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    recheck_required: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     footprint: Mapped[Footprint] = relationship(back_populates="versions")
 
@@ -342,6 +355,67 @@ class Comment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (Index("ix_comments_target", "target_type", "target_id"),)
+
+
+# ------------------------------------------------------------ production sign-off
+class ComponentSignoff(Base):
+    """A human's record that they checked a component before production.
+
+    **This is NOT `ComponentVersion.approved_by`.** That column means "this
+    edit was approved into the library" — an editorial act. This table means
+    "I looked at the symbol, the land pattern and the part number, and I am
+    willing to build boards with it" — a manufacturing act. The two are
+    deliberately separate words and separate rows: a proposal can be perfectly
+    good library data and still deserve a fresh look at the drawing.
+
+    **The row names a `component_version_id`, never just a component.** A
+    component version pins the exact `symbol_version_id` and
+    `footprint_version_id` it was drawn against, so naming the version names
+    the exact three drawings that were checked. Version rows are immutable, so
+    the record can never quietly come to mean something else. A component's
+    state is therefore DERIVED (`services/signoff.py::state_for`): signed when
+    a live row exists on `components.current_version_id`, stale when the live
+    row sits on an older version, unsigned when there is no row at all.
+
+    **Append-only, like everything else here.** Nothing is updated in place and
+    nothing is deleted. Revoking sets `revoked_at`; signing again after a
+    revoke adds another row. There is deliberately no unique constraint — the
+    live sign-off of a version is the newest row for it with `revoked_at IS
+    NULL`.
+
+    `kind` records HOW the signature got here, because that is the difference
+    between evidence and bookkeeping:
+
+    - ``checked``      — a human opened the drawing and said yes.
+    - ``auto-carried`` — the new geometry's material fingerprint was byte-equal
+      to the signed one, so nothing that reaches the board changed. Provable,
+      not a judgement.
+    - ``carried``      — the fingerprint DID change and a human still waived
+      the re-check on the geometry version (`recheck_required=False`). Their
+      name is on it.
+
+    `carried_from_id` is a soft pointer to the sign-off this one descends from,
+    so a chain of carries leads back to the last time somebody actually looked.
+    """
+
+    __tablename__ = "component_signoffs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    component_id: Mapped[int] = mapped_column(ForeignKey("components.id"))
+    component_version_id: Mapped[int] = mapped_column(ForeignKey("component_versions.id"))
+    kind: Mapped[str] = mapped_column(String(20), default="checked")
+    carried_from_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    signed_by: Mapped[str] = mapped_column(String(100), default="user")
+    signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    revoke_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_signoff_component", "component_id"),
+        Index("ix_signoff_version", "component_version_id"),
+    )
 
 
 # --------------------------------------------------------------------- rules

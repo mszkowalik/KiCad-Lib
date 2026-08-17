@@ -18,6 +18,7 @@ import {
 } from "../api";
 import { ProposalsBadge } from "../App";
 import { useDialog } from "../components/Dialog";
+import RecheckDialog from "../components/RecheckDialog";
 import { ErrorBanner, Spinner } from "../components/Ui";
 
 const isGeometry = (p: Proposal): p is GeometryProposal =>
@@ -39,6 +40,10 @@ export default function Proposals() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   /** Progress of a bulk approve; non-null means the whole table is busy. */
   const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
+  /** The geometry proposal whose "does this need a new verification?" question
+   *  is on screen. Single approvals only — the bulk path leaves the answer
+   *  unstated and lets the server fall back to the fingerprint comparison. */
+  const [asking, setAsking] = useState<GeometryProposal | null>(null);
   const { refresh: refreshBadge } = useContext(ProposalsBadge);
   const dialog = useDialog();
 
@@ -72,18 +77,44 @@ export default function Proposals() {
     return () => ctrl.abort();
   }, [load, loadHistory]);
 
-  /** Approves one proposal and returns its mirror warnings. Throws on failure. */
-  const approveOne = async (p: Proposal): Promise<string[]> => {
+  /** Approves one proposal and returns its mirror warnings. Throws on failure.
+   *
+   * `recheck` is the answer to the production-verification question, and only
+   * geometry carries one. `null` means nobody was asked — the server then
+   * compares material fingerprints, which is the same answer the dialog would
+   * have suggested. That is what the bulk path deliberately sends. */
+  const approveOne = async (p: Proposal, recheck: boolean | null = null): Promise<string[]> => {
     if (p.kind === "skill") {
       await approveSkillProposal(p.proposal_id);
       return [];
     }
     if (isGeometry(p)) {
-      const res = await approveGeometryProposal(p.kind, p.proposal_id);
+      const res = await approveGeometryProposal(p.kind, p.proposal_id, recheck);
       return res.mirror_warnings ?? [];
     }
     const res = await approveProposal(p.proposal_id);
     return res.mirror_warnings ?? [];
+  };
+
+  /** Finish a geometry approval once the user has answered the question. */
+  const finishGeometryApprove = async (p: GeometryProposal, recheck: boolean) => {
+    setAsking(null);
+    setBusyId(keyOf(p));
+    setError(null);
+    setNotice(null);
+    try {
+      const warnings = await approveOne(p, recheck);
+      if (warnings.length > 0) {
+        setNotice(`Approved with mirror warnings: ${warnings.join("; ")}`);
+      }
+      load();
+      loadHistory();
+      refreshBadge();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusyId(null);
+    }
   };
 
   // Approving is deliberately unconfirmed — the click IS the decision, and a
@@ -97,6 +128,12 @@ export default function Proposals() {
         tone: "danger",
       });
       if (!confirmed) return;
+    }
+    // A geometry approval republishes a drawing that signed-off components
+    // depend on, so it asks the production-verification question first.
+    if (action === "approve" && isGeometry(p)) {
+      setAsking(p);
+      return;
     }
     setBusyId(keyOf(p));
     setError(null);
@@ -217,6 +254,8 @@ export default function Proposals() {
             ) : null}
             <span className="muted rail-hint">
               {rows.length} pending — approving regenerates the affected library on each one.
+              Bulk approval does not ask the production-verification question: sign-offs
+              carry only where the pads and pins are unchanged.
             </span>
           </div>
           <div className="card table-wrap">
@@ -434,6 +473,16 @@ export default function Proposals() {
           </section>
         ) : null}
       </div>
+
+      {asking ? (
+        <RecheckDialog
+          kind={asking.kind as "symbol" | "footprint"}
+          proposalId={asking.proposal_id}
+          name={asking.component_name}
+          onDecide={(recheck) => void finishGeometryApprove(asking, recheck)}
+          onCancel={() => setAsking(null)}
+        />
+      ) : null}
     </div>
   );
 }

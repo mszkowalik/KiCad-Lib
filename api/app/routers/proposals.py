@@ -4,18 +4,34 @@ Jaravis (and future fix jobs) can only create drafts; nothing becomes part of
 the published library until the user approves it here."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel
 from sqlalchemy.orm import Session, selectinload
 
 from .. import models as M
 from ..config import settings
 from ..db import get_db
+from ..services import material, signoff
 from ..services.mirror import top_level_of, update_mirror_footprint, update_mirror_symbols
 from ..services.render import render_svg
 from ..services.repoint import repoint_for
-from .util import audit, category_path
+from .util import actor_of, audit, category_path
 
 router = APIRouter(prefix="/api/proposals", tags=["proposals"])
+
+
+class GeometryApproveIn(BaseModel):
+    """The approver's answer to "does this change need a new verification?".
+
+    `None` (the default, and what an older client that sends no body produces)
+    means nobody was asked. `services/signoff.py::geometry_carries` then falls
+    back to comparing material fingerprints, which is the same thing the UI
+    would have offered as the default — so an un-answered approval behaves
+    exactly like accepting the suggestion.
+    """
+
+    recheck_required: bool | None = None
+    note: str | None = None
 
 
 def _summary(cv: M.ComponentVersion, comp: M.Component) -> dict:
@@ -189,11 +205,10 @@ def approve(cv_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "draft proposal not found")
     comp = db.get(M.Component, cv.component_id)
 
+    old = db.get(M.ComponentVersion, comp.current_version_id) if comp.current_version_id else None
     tops = {top_level_of(cv.category).name}
-    if comp.current_version_id is not None:
-        old = db.get(M.ComponentVersion, comp.current_version_id)
-        if old is not None:
-            tops.add(top_level_of(old.category).name)
+    if old is not None:
+        tops.add(top_level_of(old.category).name)
 
     cv.status = "published"
     cv.approved_by = "user"
@@ -202,12 +217,16 @@ def approve(cv_id: int, db: Session = Depends(get_db)):
 
     pin_datasheets(db, cv)  # record the PDF versions this approved version uses
     audit(db, "proposal.approve", "component_version", cv.id, {"component": comp.name})
+    # Same transaction as the publish. A repoint draft that only moves the pins
+    # onto an identical drawing must not silently cost the part its production
+    # sign-off — and a real change must not silently keep it.
+    carried = signoff.carry_on_publish(db, comp, old, cv)
     db.commit()
 
     db.expire_all()
     mirror = update_mirror_symbols(db, settings, tops)
     return {**_summary(cv, comp), "mirror": {k: v for k, v in mirror.items() if k != "warnings"},
-            "mirror_warnings": mirror["warnings"]}
+            "mirror_warnings": mirror["warnings"], "signoff": carried}
 
 
 @router.post("/skills/{sv_id}/approve")
@@ -288,13 +307,82 @@ def geometry_preview(kind: str, ver_id: int, which: str = "draft", db: Session =
                     headers={"Cache-Control": "max-age=300"})
 
 
+@router.get("/{kind}s/{ver_id}/material-diff")
+def geometry_material_diff(kind: str, ver_id: int, db: Session = Depends(get_db)):
+    """Does this draft change anything that reaches the board?
+
+    What the approval dialog pre-answers "does this need a new verification?"
+    with. `same_material` is provable — it compares the fingerprints defined in
+    `services/material.py` — so a silkscreen-only edit can carry forty
+    sign-offs on one click, while a moved pad cannot carry any of them by
+    accident.
+    """
+    if kind not in ("symbol", "footprint"):
+        raise HTTPException(404, "kind must be symbol or footprint")
+    v, parent = _geometry_draft(db, kind, ver_id)
+    cur = next((x for x in parent.versions if x.id == parent.current_version_id), None)
+
+    affected = _components_using(db, kind, parent)
+    states = signoff.states_for(db, affected, detail=False)
+    signed = sum(1 for s in states.values() if s["state"] == "signed")
+
+    if cur is None:
+        return {"kind": kind, "name": parent.name, "is_new": True, "same_material": False,
+                "changed": ["this is a new template — there is nothing to compare against"],
+                "suggest_recheck": True, "affected_components": len(affected),
+                "affected_signed": signed}
+
+    old_sha = signoff.ensure_material_sha(cur, kind)
+    new_sha = signoff.ensure_material_sha(v, kind)
+    if db.dirty or db.new:
+        db.commit()  # the fingerprints are a cache; keep what we just computed
+    same = bool(old_sha) and bool(new_sha) and old_sha == new_sha
+    changed = [] if same else material.describe_changes(kind, cur.source_text, v.source_text)
+    if not same and not changed:
+        # Fingerprints differ but the describer found nothing nameable. Say so
+        # rather than showing an empty list that reads like "no change".
+        changed = ["the drawing changed in a way this comparison cannot name"]
+    return {
+        "kind": kind, "name": parent.name, "is_new": False,
+        "from_version": cur.version_no, "to_version": v.version_no,
+        "same_material": same,
+        "changed": changed,
+        "suggest_recheck": not same,
+        "affected_components": len(affected),
+        "affected_signed": signed,
+    }
+
+
+def _components_using(db: Session, kind: str, parent) -> list[M.Component]:
+    """Components whose LIVE version uses this symbol / footprint.
+
+    Same question `repoint._affected` answers, asked here for reporting only.
+    Expressed as a join rather than a loop of `db.get`: this runs every time the
+    approve dialog opens, and loading a FootprintVersion row per component
+    drags its whole `.kicad_mod` body along with it.
+    """
+    q = (
+        db.query(M.Component)
+        .join(M.ComponentVersion, M.ComponentVersion.id == M.Component.current_version_id)
+    )
+    if kind == "symbol":
+        return q.filter(M.ComponentVersion.base_component == parent.name).all()
+    return (
+        q.join(M.FootprintVersion, M.FootprintVersion.id == M.ComponentVersion.footprint_version_id)
+        .filter(M.FootprintVersion.footprint_id == parent.id)
+        .all()
+    )
+
+
 @router.post("/symbols/{ver_id}/approve")
-def approve_symbol(ver_id: int, db: Session = Depends(get_db)):
+def approve_symbol(ver_id: int, request: Request, body: GeometryApproveIn | None = None,
+                   db: Session = Depends(get_db)):
     sv, sym = _geometry_draft(db, "symbol", ver_id)
     if sv.status != "draft":
         raise HTTPException(404, "draft symbol proposal not found")
     sv.status = "published"
     sym.current_version_id = sv.id
+    _record_recheck(db, sv, "symbol", body, actor_of(request), sym.name)
     audit(db, "proposal.approve", "symbol_version", sv.id, {"symbol": sym.name})
     # Same transaction as the publish: a crash must not leave the symbol
     # current with its components silently pinned to the old drawing.
@@ -355,13 +443,37 @@ def reject_symbol(ver_id: int, db: Session = Depends(get_db)):
     return payload
 
 
+def _record_recheck(db: Session, version, kind: str, body: GeometryApproveIn | None,
+                    actor: str, name: str) -> None:
+    """Store the approver's re-verification answer on the geometry version.
+
+    Always stamp the fingerprint, even when nobody answered: it is the fallback
+    `signoff.geometry_carries` uses, and a version published without one can
+    never carry a sign-off.
+    """
+    signoff.ensure_material_sha(version, kind)
+    answer = body.recheck_required if body is not None else None
+    if answer is None:
+        return
+    version.recheck_required = answer
+    # A waiver is a human decision that keeps sign-offs alive across a changed
+    # drawing. It must be attributable, so it gets its own audit row rather
+    # than hiding inside the approval's details.
+    audit(db, "signoff.recheck_decision", f"{kind}_version", version.id,
+          {kind: name, "recheck_required": answer,
+           "note": (body.note or "").strip() or None},
+          actor=actor)
+
+
 @router.post("/footprints/{ver_id}/approve")
-def approve_footprint(ver_id: int, db: Session = Depends(get_db)):
+def approve_footprint(ver_id: int, request: Request, body: GeometryApproveIn | None = None,
+                      db: Session = Depends(get_db)):
     fv, fp = _geometry_draft(db, "footprint", ver_id)
     if fv.status != "draft":
         raise HTTPException(404, "draft footprint proposal not found")
     fv.status = "published"
     fp.current_version_id = fv.id
+    _record_recheck(db, fv, "footprint", body, actor_of(request), fp.name)
     audit(db, "proposal.approve", "footprint_version", fv.id, {"footprint": fp.name})
     # Same transaction as the publish: a crash must not leave the footprint
     # current with its components silently pinned to the old drawing.

@@ -426,49 +426,64 @@ table.data {
   white-space: nowrap;
 }
 
+/* column 1 is the bulk sign-off checkbox, column 11 the sign-off badge —
+   see Browse.tsx. Widths sum to 100%: this table has no max-width cap, so
+   percentages are what keep it off a horizontal scrollbar at any width. */
 .data.browse-table th:nth-child(1),
 .data.browse-table td:nth-child(1) {
-  width: 12%;
+  width: 3%;
 }
 
 .data.browse-table th:nth-child(2),
 .data.browse-table td:nth-child(2) {
-  width: 13%;
+  width: 12%;
 }
 
 .data.browse-table th:nth-child(3),
 .data.browse-table td:nth-child(3) {
-  width: 7%;
+  width: 12%;
 }
 
 .data.browse-table th:nth-child(4),
 .data.browse-table td:nth-child(4) {
-  width: 24%;
+  width: 6%;
 }
 
 .data.browse-table th:nth-child(5),
 .data.browse-table td:nth-child(5) {
-  width: 14%;
+  width: 17%;
 }
 
 .data.browse-table th:nth-child(6),
 .data.browse-table td:nth-child(6) {
-  width: 8%;
+  width: 13%;
 }
 
 .data.browse-table th:nth-child(7),
 .data.browse-table td:nth-child(7) {
-  width: 4%;
+  width: 7%;
 }
 
 .data.browse-table th:nth-child(8),
 .data.browse-table td:nth-child(8) {
-  width: 7%;
+  width: 4%;
 }
 
 .data.browse-table th:nth-child(9),
 .data.browse-table td:nth-child(9) {
-  width: 11%;
+  width: 6%;
+}
+
+.data.browse-table th:nth-child(10),
+.data.browse-table td:nth-child(10) {
+  width: 10%;
+}
+
+/* Wide enough for the longest pill ("not signed"): a pill is inline-block, so
+   the column's ellipsis cannot shorten it — too narrow simply cuts it off. */
+.data.browse-table th:nth-child(11),
+.data.browse-table td:nth-child(11) {
+  width: 10%;
 }
 
 /* Proposals queue + history: fixed columns, no horizontal scroll (reuses

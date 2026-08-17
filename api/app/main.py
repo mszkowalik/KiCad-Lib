@@ -31,6 +31,7 @@ from .routers import (
     proposals,
     run_costs,
     settings as settings_router,
+    signoffs,
     skills,
     users,
     view,
@@ -75,6 +76,7 @@ app.include_router(jaravis.router)
 app.include_router(agent.router)
 app.include_router(proposals.router)
 app.include_router(comments.router)
+app.include_router(signoffs.router)
 app.include_router(skills.router)
 app.include_router(settings_router.router)
 app.include_router(kicad_sync.router)
@@ -216,6 +218,22 @@ _PHASE1_DDL = (
     ("jlc_web_sessions.keepalive_count",
      "ALTER TABLE jlc_web_sessions ADD COLUMN IF NOT EXISTS "
      "keepalive_count integer NOT NULL DEFAULT 0"),
+    # Production sign-off. `material_sha` caches services/material.py's
+    # fingerprint of what a drawing puts on the board; `recheck_required` is
+    # the approver's answer to "does this change need a new verification?".
+    # NULL means nobody was ever asked, which is true of all existing rows —
+    # `signoff.py` then falls back to comparing the fingerprints, so history
+    # behaves sensibly without a backfilled opinion nobody actually held.
+    ("symbol_versions.material_sha",
+     "ALTER TABLE symbol_versions ADD COLUMN IF NOT EXISTS "
+     "material_sha varchar(64) NOT NULL DEFAULT ''"),
+    ("symbol_versions.recheck_required",
+     "ALTER TABLE symbol_versions ADD COLUMN IF NOT EXISTS recheck_required boolean"),
+    ("footprint_versions.material_sha",
+     "ALTER TABLE footprint_versions ADD COLUMN IF NOT EXISTS "
+     "material_sha varchar(64) NOT NULL DEFAULT ''"),
+    ("footprint_versions.recheck_required",
+     "ALTER TABLE footprint_versions ADD COLUMN IF NOT EXISTS recheck_required boolean"),
 )
 
 # name -> "ok" | "failed: ..."; served by GET /api/health/schema.
@@ -659,6 +677,15 @@ def startup() -> None:
             db.close()
     except Exception as e:  # noqa: BLE001 — never block startup
         log.warning(f"auth bootstrap did not run: {type(e).__name__}: {e}")
+    # Fill `material_sha` on geometry versions published before the sign-off
+    # feature existed. Runs in the background: an empty fingerprint blocks a
+    # carry rather than granting one, so nothing is wrong while it works.
+    try:
+        from .services.signoff import start_material_backfill
+
+        start_material_backfill()
+    except Exception as e:  # noqa: BLE001 — a derived cache must never block startup
+        log.warning(f"material backfill did not start: {type(e).__name__}: {e}")
     if settings.datasheet_autofetch:
         # Fetch missing datasheet PDFs in the background (idempotent —
         # only datasheets without a local copy are downloaded).

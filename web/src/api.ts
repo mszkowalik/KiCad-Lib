@@ -59,6 +59,8 @@ export interface ComponentListItem {
   bulk_qty: string;
   /** Primary datasheet source URL ("" when none). */
   datasheet: string;
+  /** Production sign-off state — see SignoffState. */
+  signoff: SignoffState;
 }
 
 export interface ComponentListResponse {
@@ -96,6 +98,8 @@ export interface ComponentDetail {
   purchasable: boolean;
   current_version_no: number | null;
   versions: VersionSummary[];
+  /** Production sign-off state of the CURRENT version — see SignoffState. */
+  signoff: SignoffState;
 }
 
 export interface PropertyRow {
@@ -1376,11 +1380,45 @@ export interface GeometryProposalAction {
   mirror_warnings?: string[];
 }
 
+/** Does a geometry draft change anything that reaches the board?
+ *
+ * Pre-answers the "does this need a new verification?" question on the approve
+ * dialog. `same_material` is provable — it compares pad/pin fingerprints, not
+ * the file text — so a silkscreen-only edit carries every affected sign-off. */
+export interface MaterialDiff {
+  kind: "symbol" | "footprint";
+  name: string;
+  is_new: boolean;
+  from_version?: number;
+  to_version?: number;
+  same_material: boolean;
+  changed: string[];
+  suggest_recheck: boolean;
+  affected_components: number;
+  affected_signed: number;
+}
+
+export function getMaterialDiff(
+  kind: "symbol" | "footprint",
+  id: number,
+  signal?: AbortSignal,
+): Promise<MaterialDiff> {
+  return request(`/api/proposals/${kind}s/${id}/material-diff`, { signal });
+}
+
 export function approveGeometryProposal(
   kind: "symbol" | "footprint",
   id: number,
+  /** The approver's answer. `null` = not asked; the server then falls back to
+   *  the fingerprint comparison, which is what the dialog suggested anyway. */
+  recheckRequired: boolean | null = null,
+  note?: string,
 ): Promise<GeometryProposalAction> {
-  return request(`/api/proposals/${kind}s/${id}/approve`, { method: "POST" });
+  return request(`/api/proposals/${kind}s/${id}/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ recheck_required: recheckRequired, note: note ?? null }),
+  });
 }
 
 export function rejectGeometryProposal(
@@ -1397,6 +1435,93 @@ export function geometryProposalPreviewUrl(
   which: "draft" | "current",
 ): string {
   return `${API_URL}/api/proposals/${kind}s/${id}/preview.svg?which=${which}`;
+}
+
+// ------------------------------------------------------- production sign-off
+
+/** Has a human checked this part before boards were built?
+ *
+ * NOT the same as a version being published — approval only means the edit was
+ * let into the library. See `api/app/services/signoff.py`.
+ *
+ * - `signed`   — the current version was checked.
+ * - `stale`    — an older version was checked and something material changed.
+ * - `revoked`  — a sign-off on the current version was taken back.
+ * - `unsigned` — never checked. */
+export type SignoffState = "signed" | "stale" | "revoked" | "unsigned";
+
+export interface SignoffRow {
+  id: number;
+  component_version_id: number;
+  /** `checked` = a human looked. `auto-carried` = the drawing's fingerprint was
+   *  identical, so nothing reaching the board changed. `carried` = a human
+   *  waived the re-check on a drawing that DID change. */
+  kind: "checked" | "carried" | "auto-carried";
+  carried_from_id: number | null;
+  signed_by: string;
+  signed_at: string | null;
+  note: string | null;
+  revoked_at: string | null;
+  revoked_by: string | null;
+  revoke_reason: string | null;
+}
+
+export interface GeometryLabel {
+  symbol: { name: string; version_no: number } | null;
+  footprint: { name: string; version_no: number } | null;
+}
+
+export interface SignoffDetail {
+  component_id: number;
+  component_name: string;
+  state: SignoffState;
+  signoff: SignoffRow | null;
+  current_version_no: number | null;
+  current: GeometryLabel;
+  signed_version_no: number | null;
+  signed: GeometryLabel;
+  /** Why the sign-off did not follow the component forward — one sentence per
+   *  leg that changed. Empty unless the state is `stale`. */
+  blockers: string[];
+  last_revoked?: SignoffRow;
+  history: SignoffRow[];
+}
+
+export function getSignoff(comp_id: number, signal?: AbortSignal): Promise<SignoffDetail> {
+  return request(`/api/components/${comp_id}/signoff`, { signal });
+}
+
+export function addSignoff(comp_id: number, note?: string): Promise<SignoffDetail> {
+  return request(`/api/components/${comp_id}/signoff`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ note: note ?? null }),
+  });
+}
+
+export function revokeSignoff(comp_id: number, reason: string): Promise<SignoffDetail> {
+  return request(`/api/components/${comp_id}/signoff/revoke`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export interface BulkSignoffResult {
+  signed: string[];
+  skipped: { component_id: number; component?: string; reason: string }[];
+  total: number;
+}
+
+export function bulkSignoff(
+  component_ids: number[],
+  note?: string,
+): Promise<BulkSignoffResult> {
+  return request("/api/signoffs/bulk", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ component_ids, note: note ?? null }),
+  });
 }
 
 export function startImport(): Promise<{ status: string }> {
