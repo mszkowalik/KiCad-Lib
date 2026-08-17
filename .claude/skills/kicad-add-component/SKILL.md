@@ -2,7 +2,7 @@
 name: kicad-add-component
 description: "Full procedure for adding a part to the 7Sigma library: duplicate check, LCSC metadata lookup, category/base-symbol/footprint selection, property construction, and the per-category validation rules a draft must satisfy. Use when adding, drafting, editing or proposing any component."
 ---
-<!-- platform-skill: add-component v7 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: add-component v8 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Add a component
 
@@ -77,6 +77,13 @@ part number + datasheet URL.
    manufacturer part number and must be globally unique. It is created as a
    DRAFT for review in the Proposals view.
 
+   A component draft can reference only **approved** geometry: the tool rejects
+   a `base_component` or `Footprint` that exists only as a draft. When new
+   geometry was authored for the part (§4, §5), file those proposals first, let
+   the user approve them, then file the component proposal. (Verified
+   2026-08-12 on STM32H573IIT3Q: `propose_new_component` returned "base
+   component not found" while the new symbol was still a draft.)
+
 For an existing part, `propose_component_edit` follows the same property rules.
 Before editing a part that may already be placed on a board, check
 `component_where_used` to confirm the change is property-only and safe.
@@ -112,6 +119,5 @@ it — never invent a property key.
 
 [[conventions-library]] — naming, descriptions, category placement.
 [[conventions-symbols]] / [[conventions-footprints]] — choosing and authoring geometry.
-[[verify-datasheets]] — checking the part against its datasheet.
+[[verify-datasheets]] — checking the part against its documentation.
 [[platform-workflow]] — what approval does.
-

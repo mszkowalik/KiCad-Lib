@@ -2,7 +2,7 @@
 name: kicad-conventions-library
 description: "House style for component data: canonical manufacturer names (with the full raw-to-canonical lookup table), ki_description {Key} templating per category, the Value field rule, and category-placement rules. Read before proposing a new component or editing an existing one's properties."
 ---
-<!-- platform-skill: conventions-library v12 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-library v14 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Library conventions
 
@@ -40,6 +40,10 @@ company's own branding — keep EXACTLY as shown):
 - `onsemi` — ON Semiconductor officially rebranded to this lowercase trade
   name in 2021 (investor.onsemi.com, press coverage). Same exception class as
   u-blox. Do not write "Onsemi" or "ON Semiconductor".
+- `8devices` — UAB "8devices" (Lithuania); lowercase "d", confirmed via the
+  company's own site footer copyright line ("© 2012-2026 UAB \"8devices\"")
+  and its logo/header casing throughout 8devices.com. Do not write "8Devices"
+  or "8 Devices".
 
 **All-caps brand exceptions** (genuine manufacturer stylization, not
 distributor shout-casing):
@@ -122,6 +126,7 @@ alphabetically by canonical value.)
 
 | Canonical value | Messy forms seen |
 |---|---|
+| 8devices | 8Devices, 8 DEVICES, 8-Devices (distributor/catalog re-casing; the module is sold through CODICO, whose own datasheet cover never states a manufacturer name — verified against 8devices.com directly) |
 | AMD/Xilinx | Xilinx, AMD/XILINX, XILINX |
 | Analog Devices | ANALOG DEVICES, ADI |
 | Bat Wireless | BAT WIRELESS |
@@ -145,6 +150,7 @@ alphabetically by canonical value.)
 | Kangnex | KANGNEX |
 | KEMET | (none — all-caps is the genuine brand form; do not Title-Case to "Kemet") |
 | Kinghelm | kinghelm — ⚠ conflicts with "Shenzhen Kinghelm Elec" below, see Open items |
+| Linekey | (none — Shanghai Linekey Technology Co., Ltd.; confirmed via the company's own English-language site, en.linekey.cn) |
 | Lite-On | LITEON, LITE-ON |
 | MaxLinear | (none — internal capital, see exceptions above) |
 | MDD (Microdiode Semiconductor) | MDD, Microdiode, Microdiode Semiconductor |
@@ -471,4 +477,3 @@ audited at least once, 308 components checked, 198 component-level edit
 proposals drafted (all left as drafts pending user approval, nothing changed
 live). If you're about to start a "first pass" over a category, check the
 tables above first — it's very likely already been done.
-

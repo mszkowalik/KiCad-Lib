@@ -2,7 +2,8 @@
 name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints, and the naming standard: the KLC tier rule (Tier 0 stock names are frozen), the twelve-slot field order, decided spellings (_HandSoldering, vendor tokens, no rotation in names), the 7Sigma: namespace, validator-enforced pad/silk/fab/courtyard style, the 0.1mm grid, NPTH mechanical holes, thermal vias, non-electrical parts, and why connector pad numbering always follows the datasheet. Use when naming, picking or authoring any footprint."
 ---
-<!-- platform-skill: conventions-footprints v10 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+
+<!-- platform-skill: conventions-footprints v14 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Footprint conventions
 
@@ -116,6 +117,45 @@ with a counter (`_2`, `ThermalVias2`).
 | Vendor token | Canonical manufacturer name from the library conventions table, **spaces and dots removed, casing kept, never abbreviated or truncated**: `MEAN WELL`→`MEANWELL`, `Texas Instruments`→`TexasInstruments`, `Diodes Incorporated`→`DiodesIncorporated`, `OSRAM`→`OSRAM`. Tier 0 exempt. |
 | Rotation / origin | **Never encoded in a name.** A rotated or mis-origined import is a *geometry* defect to fix, not a fact to record in the string. |
 | Character set | `A-Z a-z 0-9 _ . , + -` only. No spaces ever. Commas only to reproduce a vendor's own comma-decimal MPN (`MC_1,5`). |
+
+### One family, two family words — verify against the stock filenames
+
+A family prefix is not always one word per family. Some families split by
+**mount technology into two different family words**, with no `_SMD`/`_THT`
+token anywhere. Section 3.9 of the full standard covers the token; it does not
+cover this, and the section 4 per-family table has no varistor row at all.
+
+**Varistors split. Fuses do not.**
+
+| Part | Prefix | Applies to | Stock evidence |
+|---|---|---|---|
+| Varistor, through-hole disc | `RV_Disc_…` | THT only | 101 of the 102 files in `Varistor.pretty`, every one `(attr through_hole)` |
+| Varistor, SMD | `Varistor_<Vendor>_<Series>…` | SMD only | `Varistor_Panasonic_VF`, the only `(attr smd)` file in that library |
+| Fuse, any mount | `Fuse_…` | chip, SMD cartridge **and** THT | `Fuse_0402_1005Metric`, `Fuse_Littelfuse-NANO2-451_453` (smd), `Fuse_Littelfuse_372_D8.50mm` (tht) |
+| Fuse holder | `Fuseholder_…` | separate family, never `Fuse_` | `Fuseholder_Cylinder-5x20mm_XFCN_PTF-77_P22.6mm_Horizontal` |
+
+`RV` is the varistor's **reference designator**, not a filename prefix. Taking
+it for one is the specific error this section exists to stop — it produced
+`RV_TDK_CU3225_8x6.3mm` for an SMD part on 2026-08-14, corrected to
+`Varistor_TDK_CU3225_8x6.3mm`. KiCad states both spellings itself: the stock
+`Device:Varistor` symbol carries `ki_fp_filters "RV_* Varistor*"`.
+
+**Never `MOV`.** The token appears in zero stock footprint filenames and zero
+stock symbol names. KiCad says `Varistor` (and `VDR` in keywords), and
+"varistor" is the broader class anyway — metal-oxide is one construction among
+several. Put `mov` in the footprint's `tags` and the symbol's `ki_keywords` so a
+search for it still lands, never in the name.
+
+**The check, before you mint any family prefix**, is two commands against the
+shipped library — not recall:
+
+```
+ls <Family>.pretty                       # which family words actually exist
+grep -o 'attr [a-z_]*' <candidate>       # which mount each one is for
+```
+
+If the family word you were about to use exists but every file carrying it is
+the other mount technology, you have the wrong prefix.
 
 ### Connector pad numbering is never a house choice
 
@@ -310,7 +350,74 @@ footprint**, not something baked into the part:
 The pad-shape, silkscreen-width and no-`easyeda2kicad:`-prefix rules still apply
 to exempted parts.
 
-## 9. Imported footprints
+## 9. JLC pick-and-place rotation offsets
+
+A part's orientation in its tape (EIA-481, set by whoever packaged it) and the
+IPC/KLC land pattern KiCad draws are unrelated standards. Where they disagree,
+every placement of that package is off by a constant. That constant is a fab
+fact, not a drawing defect. Record it ON THE FOOTPRINT as a hidden property:
+
+```
+(property "FT Rotation Offset" "180" (at 0 0 0) (layer "F.Fab") (hide yes) ...)
+```
+
+**How the number reaches JLC.** The Fabrication Toolkit builds each CPL row as:
+
+```
+rotation = the footprint's orientation on the board
+if bottom layer:      rotation = 180 - rotation
+if AUTO TRANSLATE on: rotation += transformations.csv   (regex on the footprint NAME)
+rotation = (rotation + "FT Rotation Offset") % 360
+```
+
+Use the primary field name `FT Rotation Offset`; the toolkit's `Rotation Offset`
+and `RotOffset` fallbacks must not appear in the library.
+
+- **Degrees are counter-clockwise positive**, KiCad's convention. Three clicks of
+  the JLC preview's CCW rotate button is `270`. A part that lands exactly 180
+  degrees out means the direction was read backwards.
+- **The value ADDS to `transformations.csv`**, which ships inside the plugin and
+  matches the footprint name with the library nickname stripped, first hit wins.
+  `^QFN-` already contributes 90 and `^SOT-23` already contributes 180. What we
+  store is therefore the REMAINDER measured on top of that, never an absolute
+  angle — and it is only valid while AUTO TRANSLATE stays on (it is on by
+  default; the setting lives in `fabrication-toolkit-options.json` beside the
+  board file). A plugin update that edits those rules silently invalidates every
+  offset recorded here.
+- **It belongs on the FOOTPRINT, not the component.** Verified 2026-08-04: some
+  boards carry library component fields on their placed footprints and some
+  carry none at all, so a component-level field is not reliably present in the
+  CPL. A footprint property arrives with Update Footprints from Library.
+- **NEVER rotate correct geometry** to match a fab's tape, and never encode
+  rotation in a footprint name (§2).
+
+**Only a reviewed export verifies an offset.** "The board shipped and worked"
+proves nothing: rotations corrected by hand in the JLC order preview never reach
+the CPL, so a shipped board can hide a wrong file indefinitely. The one sound
+evidence is: this export's preview was reviewed and this part needed no change.
+
+**Never generalise an offset across a package family.** Refuted empirically on
+2026-08-04: `SOT-23-5` and `SOT-23-6` each need +90, while `SOT-23-3` needs
+NOTHING — same family, same pin-1 bearing of 138 degrees, same CCW numbering.
+Tape orientation can differ per part, so an offset on a shared land pattern
+moves every component using it. Name the witness part in the proposal comment
+and check the siblings on the next order.
+
+Verified offsets (each measured on a reviewed JLC preview):
+
+| Footprint | Offset | Witness part |
+|---|---|---|
+| `U.FL_Kinghelm_KH-IPEX-K501-29_Vertical` | 180 | KH-IPEX-K501-29 (C411563) |
+| `QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm_ThermalVias` | 270 | PCF8574RGTR |
+| `UQFN-16_1.8x2.6mm_P0.4mm` | 270 | TMUX1208RSVR |
+| `SOT-23-5` | 90 | TPS7B6950QDBVRQ1 |
+| `SOT-23-6` | 90 | TPS54302DDCR |
+
+Confirmed needing NO offset: `SOT-23-3`, `SOIC-8` (both variants),
+`DFN-8-1EP_3x3mm`, `USON-10`, `VQFN-14`, `VQFN-40`, and every no-rule footprint
+on the reviewed Dongle V3 export.
+
+## 10. Imported footprints
 
 Origin doesn't change the rules — everything lives in the `7Sigma:` namespace
 and follows §4. When bringing in a footprint from EasyEDA/LCSC or any other

@@ -2,7 +2,7 @@
 name: kicad-conventions-symbols
 description: "Choosing AND authoring base symbols: pin-type directionality from the component's own viewpoint, V.24 UART and SPI role policy, functional pin grouping, box/pitch geometry formulas, and stacked (shorted) pins. Use when picking a base symbol or writing a propose_symbol_edit."
 ---
-<!-- platform-skill: conventions-symbols v5 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-symbols v6 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Symbol conventions
 
@@ -112,6 +112,17 @@ Separate consecutive groups with one blank pin slot (one 2.54 mm step).
 ## 4. Box and layout geometry
 
 - **Pin pitch**: 2.54 mm
+- **Pin stub length**: 2.54 mm (100 mil) by default. This matches KiCad's own
+  native default, and every base symbol in the library uses it except the one
+  exception below.
+- **Exception — very high pin count**: 5.08 mm (200 mil) is permitted only when
+  the pin count is large enough that pin-name labels need the extra room to
+  stay legible without crowding. Verified precedent: `STM32H573IITxQ` (176
+  pins), kept from its original stock drawing, uniform across every pin. Do
+  not reach for 200 mil below that scale — `KSZ8864CNX` (64 pins) and
+  `RED-BEET-2.0` (40 pins) both hold 100 mil pins cleanly, so pin count alone
+  is not the trigger; it takes both a high pin count and long pin-name labels
+  before 200 mil is justified.
 - **Group separator**: one extra 2.54 mm slot, so spacing across a group
   boundary is 5.08 mm
 - **Box margin**: 1.27 mm above the topmost pin and below the bottommost pin

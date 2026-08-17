@@ -16,3 +16,7 @@ render-cache/
 # CLAUDE.md for how they are kept current.
 # Supplier invoices: real PDFs with address/VAT/email — keep them out of git
 jlcpcb_invoives/
+# easyeda2kicad scratch output. Always download with --output ./easyeda_tmp so
+# this one pattern covers it. Geometry that survives review is proposed to the
+# platform, never committed from here.
+easyeda_tmp.*
