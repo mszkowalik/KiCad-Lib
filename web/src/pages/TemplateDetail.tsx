@@ -188,7 +188,15 @@ export default function TemplateDetail() {
         <div className="card pad">
           <h2 className="card-title">Preview</h2>
           <div className="preview-fill template-preview">
-            {previewFailed ? (
+            {data.version_no === null ? (
+              // Draft-only template: the parent row exists with no published
+              // version, so /preview.svg 404s by design. Without this branch the
+              // <img> onError below reported it as a render-service outage.
+              <p className="placeholder">
+                No published version yet — this template exists only as a draft.
+                Preview it in <Link to="/proposals">Proposals</Link>.
+              </p>
+            ) : previewFailed ? (
               <p className="placeholder">
                 Preview unavailable — the render service (kicad-cli) is offline.
               </p>
