@@ -932,6 +932,45 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   This costs the push plugin nothing: it reads the SAVED library files off
   disk, so the focused editor is irrelevant. Edit in the footprint editor,
   save, push from the PCB editor.
+- **"Did I edit this?" is a CANONICAL comparison, never a byte hash**
+  (`services/pcm_plugin/kicad_canon.py`, shared by both entrypoints). KiCad
+  rewrites the WHOLE file it saves and writes tokens the platform's generator
+  omits — every `(property …)` gains `(show_name no)` and
+  `(do_not_autoplace no)`, every symbol gains
+  `(duplicate_pin_numbers_are_jumpers no)` and `(in_pos_files yes)`, pins come
+  back sorted, and every footprint pad and graphic gets a fresh `(uuid …)`.
+  Measured 2026-08-20: editing ONE symbol changed the text of all 183 entries
+  in `7Sigma_Base.kicad_sym`, Push offered to propose every one of them, and
+  Sync froze the whole library. The canonical form drops default-valued tokens
+  and uuids, normalises numbers and sorts the unordered children of
+  `(symbol …)` / `(footprint …)`. It is a COMPARISON KEY: it is never written
+  to a library file. Extend `DEFAULTS` when a KiCad release starts printing
+  another default — the symptom is "everything is suddenly edited" right after
+  a KiCad upgrade.
+- **The unit of protection is the drawing, not the file.** Every base symbol
+  lives in one generated `.kicad_sym`, so "never overwrite a file edited here"
+  meant one edited symbol blocked updates to the other 182. `_merge_symbols`
+  keeps the edited ENTRIES and takes the rest from the platform; the entries it
+  keeps must NOT be re-recorded (`_record_written(..., skip=…)`), or the next
+  sync overwrites the unsent edit and Push forgets it exists.
+- **Reconcile, or an approved edit stays pending for ever.** A sync that
+  refuses to clobber a local edit must still notice when that edit IS the
+  platform's copy now — pushed, approved and come back. Without it the baseline
+  keeps the pre-edit hash, the file is "edited" for ever, and Push keeps
+  offering to propose it again (reported 2026-08-20, five footprints). Push
+  carries the same belt-and-braces check: it verifies the FLAGGED items against
+  the live mirror and corrects the baseline, so a wrong state file self-heals.
+  A failed fetch leaves the item flagged — offering an edit twice is annoying,
+  losing one is not recoverable.
+- **The prune must never delete a library file the plugin did not write.** It
+  is either a local edit or a footprint drawn here and not yet pushed; the old
+  rule deleted anything absent from the package, which destroyed new work
+  before Push could send it. Models are exempt — they carry no per-file record,
+  so they prune as before.
+- **`local_state.json` records both hashes** (`{"r": raw, "c": canonical}`) and
+  still reads a bare string as a pre-1.1.0 raw-only record. Dropping that
+  fallback would make every installed file read as edited on the first run
+  after an upgrade.
 - **Two constants gate whether a plugin change reaches anyone, and both are
   manual.** `PLUGIN_VERSION` is what PCM compares to decide "update
   available", so shipping plugin source without bumping it is a silent no-op.

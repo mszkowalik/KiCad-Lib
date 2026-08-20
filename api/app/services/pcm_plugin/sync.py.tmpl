@@ -10,6 +10,12 @@ requirements.txt — KiCad's bundled Python has no CA store on macOS).
 The 3rd-party root is derived from this file's own install location
 (3rdparty/plugins/<id>/sync.py), so custom KiCad paths work automatically.
 
+Local edits are never overwritten, and the unit of protection is the DRAWING,
+not the file: a symbol you edited survives while the other 182 in the same
+generated library still update, and an edit that has been pushed, approved and
+has come back is adopted and stops counting as pending. Both tests compare a
+canonical form of the s-expression — see kicad_canon.py.
+
 Reopen the symbol chooser / footprint viewer after a sync — KiCad re-reads
 changed library files; a KiCad restart is only needed after very large
 changes.
@@ -26,11 +32,17 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))  # KiCad runs this as a script; be explicit anyway
+from kicad_canon import (  # noqa: E402 — needs the line above
+    canon_hash, matches, merge_symbol_lib, record, split_symbols,
+)
+
 BASE_URL = "__BASE_URL__"
 MANAGED_KINDS = ("symbols", "footprints", "3dmodels")
 MODELS_ID = "com.sevensigma.models3d"
 DELTA_MAX_FILES = 500  # larger deltas fall back to the full package zip
-HERE = Path(__file__).resolve().parent
+LIB_SUFFIXES = (".kicad_mod", ".kicad_sym")  # what this plugin tracks per file
 THIRD_PARTY = HERE.parents[1]  # .../3rdparty/plugins/<id>/ -> .../3rdparty
 STATE_FILE = HERE / "sync_state.json"
 MODELS_STATE_FILE = HERE / "models_state.json"  # relpath -> sha256 of installed models
@@ -182,15 +194,15 @@ def _acquire_lock() -> bool:
     return False
 
 
-def _sha_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-# What this plugin last WROTE, per absolute path. A file whose current hash no
-# longer matches its record was edited on this machine, so a sync must leave it
-# alone: overwriting would silently destroy unsent work. Same bookkeeping shape
-# as models_state.json, and advisory in the same way — it is always validated
-# against the real file, never trusted on its own.
+# What this plugin last WROTE, keyed by absolute path (and by
+# "<path>::<entry>" for the symbols inside one library file). A file whose
+# content no longer matches its record was edited on this machine, so a sync
+# must not simply overwrite it: that would destroy unsent work.
+#
+# Each record is {"r": raw sha256, "c": canonical sha256}; a bare string is the
+# pre-1.1.0 file, which held the raw hash alone. The canonical hash is what
+# makes the record survive a KiCad re-save — see kicad_canon.py for why a raw
+# hash on its own reports 183 edited symbols after one edit.
 _LOCAL: dict = {}
 
 
@@ -207,68 +219,63 @@ def _save_local_state() -> None:
     LOCAL_STATE_FILE.write_text(json.dumps(_LOCAL, indent=0))
 
 
-def split_symbols(text: str) -> list[tuple[str, str]]:
-    """Top-level ``(symbol "NAME" ...)`` entries of a .kicad_sym library.
-
-    A balanced scan, so a ")" inside a property value cannot end an entry
-    early, and so unit sub-symbols (``NAME_1_1``) stay nested inside their
-    parent instead of being mistaken for entries of their own.
-
-    MIRRORED in sync.py — keep the two identical.
-    """
-    out, i, n = [], 0, len(text)
-    needle = '(symbol "'
-    while True:
-        i = text.find(needle, i)
-        if i < 0:
-            return out
-        # a top-level entry sits one tab in; anything deeper is a unit
-        line_start = text.rfind("\n", 0, i) + 1
-        if text[line_start:i] != "\t":
-            i += len(needle)
-            continue
-        name_end = text.find('"', i + len(needle))
-        name = text[i + len(needle):name_end]
-        depth, k, in_str = 0, i, False
-        while k < n:
-            c = text[k]
-            if in_str:
-                if c == "\\":
-                    k += 2
-                    continue
-                if c == '"':
-                    in_str = False
-            elif c == '"':
-                in_str = True
-            elif c == "(":
-                depth += 1
-            elif c == ")":
-                depth -= 1
-                if depth == 0:
-                    out.append((name, text[i:k + 1]))
-                    break
-            k += 1
-        i = k + 1
+def _unchanged(key: str, data: bytes) -> bool:
+    """True when `data` is still what this plugin wrote for `key`."""
+    return matches(_LOCAL.get(key), data)
 
 
-def _record_written(target: Path, payload: bytes) -> None:
+def _record_written(target: Path, payload: bytes, skip: set | None = None) -> None:
     """Baseline for the clobber check, and for what Push diffs against.
 
-    Footprints are one file each, so the file hash is the unit. Symbols all
-    live in ONE generated library, so the unit of change is an entry inside
-    it — record those too or Push cannot tell which symbol you edited.
+    Footprints are one file each, so the file is the unit. Symbols all live in
+    ONE generated library, so the unit is an entry inside it — record those too
+    or Push cannot tell which symbol you edited.
+
+    `skip` names entries whose record must SURVIVE: after a merge the file on
+    disk carries the user's unsent edit, and re-recording it would both let the
+    next sync overwrite that edit and make Push forget it exists. The file-level
+    record is left alone for the same reason.
     """
     if target.suffix == ".kicad_mod":
-        _LOCAL[str(target)] = hashlib.sha256(payload).hexdigest()
+        _LOCAL[str(target)] = record(payload)
     elif target.suffix == ".kicad_sym":
-        _LOCAL[str(target)] = hashlib.sha256(payload).hexdigest()
-        for name, entry in split_symbols(payload.decode("utf-8", "replace")):
-            _LOCAL[f"{target}::{name}"] = hashlib.sha256(entry.encode("utf-8")).hexdigest()
+        text = payload.decode("utf-8", "replace")
+        entries = split_symbols(text)
+        prefix = f"{target}::"
+        live = {name for name, _ in entries}
+        for key in [k for k in _LOCAL
+                    if k.startswith(prefix) and k[len(prefix):] not in live]:
+            del _LOCAL[key]  # the entry is gone from the library
+        if not skip:
+            _LOCAL[str(target)] = record(payload)
+        for name, entry in entries:
+            if skip and name in skip:
+                continue
+            _LOCAL[prefix + name] = record(entry)
 
 
-def _local_edits() -> dict:
-    """Recorded hash per footprint we wrote, for the clobber check above."""
-    return dict(_LOCAL)
+def _merge_symbols(target: Path, payload: bytes, current: bytes) -> tuple[bytes, list[str]]:
+    """The platform's symbol library with the locally edited entries kept.
+
+    Returns the bytes to write and the names that were kept. Every base symbol
+    lives in one generated file, so the whole-file rule "never overwrite an
+    edited file" froze all 183 of them the moment one was edited — the unit of
+    protection has to be the entry.
+    """
+    up_text = payload.decode("utf-8", "replace")
+    lo_text = current.decode("utf-8", "replace")
+    upstream = dict(split_symbols(up_text))
+    keep: list[str] = []
+    for name, entry in split_symbols(lo_text):
+        twin = upstream.get(name)
+        if twin is not None and canon_hash(entry) == canon_hash(twin):
+            continue  # same drawing either way — take the platform's copy
+        if _unchanged(f"{target}::{name}", entry.encode("utf-8")):
+            continue  # untouched here: upstream changed it, or removed it
+        keep.append(name)
+    if not keep:
+        return payload, []
+    return merge_symbol_lib(up_text, lo_text, set(keep)).encode("utf-8"), keep
 
 
 def _sync_models_delta(pkg: dict, state: dict) -> str:
@@ -352,8 +359,8 @@ def _apply_package(pkg: dict, state: dict) -> str:
 
     zf = zipfile.ZipFile(io.BytesIO(data))
     written: dict[str, set[str]] = {}
-    local = _local_edits()
     kept_local: list[str] = []
+    settled: list[str] = []
     for member in zf.infolist():
         if member.is_dir():
             continue
@@ -364,29 +371,47 @@ def _apply_package(pkg: dict, state: dict) -> str:
         target = THIRD_PARTY / kind / dest_name / rel
         written.setdefault(kind, set()).add(rel.as_posix())
         payload = zf.read(member)
-        # NEVER clobber a footprint edited here since the last sync — that is
-        # somebody's unsent work. Push it first (the Push button), or delete
-        # the local file to take the platform's copy.
-        #
-        # The test is CURRENT FILE vs what we recorded writing. Comparing the
-        # incoming payload against the record instead would mean "upstream
-        # changed, so keep the local copy", which refuses every legitimate
-        # update — the exact opposite of the intent.
-        if (target.exists() and str(target) in local
-                and _sha_file(target) != local[str(target)]):
-            kept_local.append(target.name)
-            continue
+        skip: set = set()
+        current = target.read_bytes() if target.is_file() else None
+        # NEVER clobber work edited here and not yet sent — that is somebody's
+        # unsent drawing. The test is CURRENT FILE vs what we recorded writing:
+        # comparing the incoming payload against the record instead would mean
+        # "upstream changed, so keep the local copy", which refuses every
+        # legitimate update — the exact opposite of the intent.
+        # Library files only: a 3D model carries no record, so an unscoped test
+        # would try to parse 1.4 GB of STEP as s-expressions on every full sync.
+        if (target.suffix in LIB_SUFFIXES and current is not None
+                and not _unchanged(str(target), current)):
+            if canon_hash(current.decode("utf-8", "replace")) == \
+                    canon_hash(payload.decode("utf-8", "replace")):
+                # The local edit IS the platform's copy now: it was pushed and
+                # approved and has come back, or KiCad merely re-saved the file
+                # in its own spelling. Take the platform bytes and re-record —
+                # without this the file stays "edited" for ever and Push keeps
+                # offering to propose it again (reported 2026-08-20).
+                settled.append(target.name)
+            elif target.suffix == ".kicad_sym":
+                payload, kept = _merge_symbols(target, payload, current)
+                skip = set(kept)
+                kept_local.extend(f"{n} (symbol)" for n in kept)
+            else:
+                kept_local.append(target.name)
+                continue
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(payload)
-        _record_written(target, payload)
+        _record_written(target, payload, skip)
 
     # prune files we manage that no longer exist upstream
     for kind, keep in written.items():
         root = THIRD_PARTY / kind / dest_name
         for f in root.rglob("*"):
             if f.is_file() and f.relative_to(root).as_posix() not in keep:
-                if str(f) in local and _sha_file(f) != local[str(f)]:
-                    kept_local.append(f.name)  # locally edited AND gone upstream
+                # A library file this plugin did not write last is either a
+                # local edit or a footprint drawn here that was never pushed.
+                # Deleting it would destroy work that Push exists to send.
+                # Models carry no record at all, so they prune as before.
+                if f.suffix in LIB_SUFFIXES and not _unchanged(str(f), f.read_bytes()):
+                    kept_local.append(f.name)
                     continue
                 f.unlink()
         # a pruned duplicate folder ("7Sigma 2.pretty") otherwise lingers empty
@@ -399,6 +424,9 @@ def _apply_package(pkg: dict, state: dict) -> str:
     if kept_local:
         _notify("Kept your local edits (not overwritten): " + ", ".join(sorted(set(kept_local)))
                 + ". Use 'Push 7Sigma changes' to send them.")
+    if settled:
+        _notify(f"{len(settled)} local edit(s) now match the platform and are no longer "
+                "pending: " + ", ".join(sorted(set(settled))))
 
     state[ident] = sha
     STATE_FILE.write_text(json.dumps(state, indent=1))

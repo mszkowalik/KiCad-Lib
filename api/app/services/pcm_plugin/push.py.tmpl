@@ -17,32 +17,40 @@ costs nothing here — this reads the SAVED files off disk, so which editor has
 focus is irrelevant. The footprint/symbol scopes in plugin.json are declared
 for the day KiCad honours them.
 
-Nothing is published. Each selected footprint becomes a DRAFT the user
-approves in the platform's Proposals view, with the usual before/after.
+Nothing is published. Each selected footprint or symbol becomes a DRAFT the
+user approves in the platform's Proposals view, with the usual before/after.
+
+"Edited" is decided against a CANONICAL form of the drawing (kicad_canon.py),
+never against the bytes: KiCad rewrites the whole file it saves in its own
+spelling, so a byte comparison called all 183 symbols edited after one edit.
 
 Only dependency: certifi (see requirements.txt — KiCad's bundled Python has
 no CA store on macOS).
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))  # KiCad runs this as a script; be explicit anyway
+from kicad_canon import canon_hash, matches, record, split_symbols  # noqa: E402
 
 BASE_URL = "__BASE_URL__"
 LIB_DIR_NAME = "com_sevensigma_library"  # com.sevensigma.library, KiCad's dot->underscore rule
 MODELS_INSTALL_DIR = "com_sevensigma_models3d"
 PRETTY = "7Sigma.pretty"
-HERE = Path(__file__).resolve().parent
+SYM_FILE = "7Sigma_Base.kicad_sym"
 THIRD_PARTY = HERE.parents[1]  # .../3rdparty/plugins/<id>/ -> .../3rdparty
 LOCAL_DIR = THIRD_PARTY / "footprints" / LIB_DIR_NAME / PRETTY
-SYM_LIB = THIRD_PARTY / "symbols" / LIB_DIR_NAME / "7Sigma_Base.kicad_sym"
-LOCAL_STATE_FILE = HERE / "local_state.json"  # written by sync.py: abspath -> sha256
+SYM_LIB = THIRD_PARTY / "symbols" / LIB_DIR_NAME / SYM_FILE
+LOCAL_STATE_FILE = HERE / "local_state.json"  # written by sync.py: what it installed
 
 
 def _notify(message: str) -> None:
@@ -188,6 +196,18 @@ def _get_json(url: str, timeout: int = 120):
         raise
 
 
+def _get_text(url: str, timeout: int = 120) -> str:
+    req = urllib.request.Request(url, headers=_headers())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX) as resp:
+            return resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            _notify(AUTH_HINT)
+            raise SystemExit(AUTH_HINT) from e
+        raise
+
+
 def _post_json(url: str, payload: dict, timeout: int = 180) -> tuple[int, dict]:
     req = urllib.request.Request(
         url, data=json.dumps(payload).encode(),
@@ -207,66 +227,34 @@ def _post_json(url: str, payload: dict, timeout: int = 180) -> tuple[int, dict]:
             return e.code, {"detail": {"error": body[:200].decode("utf-8", "replace")}}
 
 
-def _sha(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+_ENTRIES: dict | None = None
 
 
-def split_symbols(text: str) -> list[tuple[str, str]]:
-    """Top-level ``(symbol "NAME" ...)`` entries of a .kicad_sym library.
-
-    A balanced scan, so a ")" inside a property value cannot end an entry
-    early, and so unit sub-symbols (``NAME_1_1``) stay nested inside their
-    parent instead of being mistaken for entries of their own.
-
-    MIRRORED in sync.py — keep the two identical.
-    """
-    out, i, n = [], 0, len(text)
-    needle = '(symbol "'
-    while True:
-        i = text.find(needle, i)
-        if i < 0:
-            return out
-        # a top-level entry sits one tab in; anything deeper is a unit
-        line_start = text.rfind("\n", 0, i) + 1
-        if text[line_start:i] != "\t":
-            i += len(needle)
-            continue
-        name_end = text.find('"', i + len(needle))
-        name = text[i + len(needle):name_end]
-        depth, k, in_str = 0, i, False
-        while k < n:
-            c = text[k]
-            if in_str:
-                if c == "\\":
-                    k += 2
-                    continue
-                if c == '"':
-                    in_str = False
-            elif c == '"':
-                in_str = True
-            elif c == "(":
-                depth += 1
-            elif c == ")":
-                depth -= 1
-                if depth == 0:
-                    out.append((name, text[i:k + 1]))
-                    break
-            k += 1
-        i = k + 1
+def installed_symbols() -> dict:
+    """Every installed symbol entry by name. Read once — the library is 1.3 MB."""
+    global _ENTRIES
+    if _ENTRIES is None:
+        _ENTRIES = dict(split_symbols(SYM_LIB.read_text(encoding="utf-8"))) \
+            if SYM_LIB.is_file() else {}
+    return _ENTRIES
 
 
-def to_platform_symbol(entry: str) -> str:
-    """Wrap one symbol entry as a .kicad_sym library the platform accepts.
+def to_platform_symbol_entry(name: str) -> str:
+    """One installed symbol entry, in the spelling the platform stores.
 
-    Also undoes the packager's nickname rewrite: it turns `"7Sigma:` into
+    Undoes the packager's nickname rewrite: it turns `"7Sigma:` into
     `"PCM_7Sigma:` so footprint refs resolve against the installed library.
     The platform stores the `7Sigma:` form, so a push must put it back or the
     proposal would flip every footprint reference in the symbol.
     """
-    entry = entry.replace('"PCM_7Sigma:', '"7Sigma:')
+    return installed_symbols()[name].replace('"PCM_7Sigma:', '"7Sigma:')
+
+
+def to_platform_symbol(name: str) -> str:
+    """That entry wrapped as the .kicad_sym library the platform accepts."""
     return (
         '(kicad_symbol_lib\n\t(version 20251024)\n\t(generator "kicad_symbol_editor")\n'
-        '\t(generator_version "10.0")\n' + entry + "\n)\n"
+        '\t(generator_version "10.0")\n' + to_platform_symbol_entry(name) + "\n)\n"
     )
 
 
@@ -284,8 +272,24 @@ def to_platform_text(text: str) -> str:
                   "${SEVENSIGMA_DIR}/3DModels/", text)
 
 
-def _changed() -> tuple[list[tuple[str, Path, bool]], list[str]]:
-    """Footprints edited on this machine: (name, path, is_new), plus the names
+def _load_state() -> dict:
+    if LOCAL_STATE_FILE.exists():
+        try:
+            return json.loads(LOCAL_STATE_FILE.read_text())
+        except ValueError:
+            pass
+    return {}
+
+
+def _save_state(state: dict) -> None:
+    """Write the baseline back atomically — Sync writes this file too."""
+    tmp = LOCAL_STATE_FILE.with_suffix(".json.part")
+    tmp.write_text(json.dumps(state, indent=0))
+    tmp.replace(LOCAL_STATE_FILE)
+
+
+def _changed(baseline: dict) -> tuple[list[tuple[str, str, Path, bool]], list[str]]:
+    """Items edited on this machine: (kind, name, path, is_new), plus the names
     we cannot judge.
 
     The baseline is what SYNC WROTE (`local_state.json`), never the mirror
@@ -293,13 +297,11 @@ def _changed() -> tuple[list[tuple[str, Path, bool]], list[str]]:
     of the model-path rewrite above, so a manifest diff calls all 155
     model-carrying footprints "edited". Comparing against our own record is
     exact and survives any future transformation.
+
+    The comparison is CANONICAL (`kicad_canon.matches`): KiCad rewrites the
+    whole file it saves, in its own spelling, so a byte comparison reported
+    every symbol in the library as edited after a single edit.
     """
-    baseline = {}
-    if LOCAL_STATE_FILE.exists():
-        try:
-            baseline = json.loads(LOCAL_STATE_FILE.read_text())
-        except ValueError:
-            pass
     upstream_names = {
         e["path"].split("/")[-1]
         for e in _get_json(f"{BASE_URL}/files/manifest.json")["files"]
@@ -313,33 +315,82 @@ def _changed() -> tuple[list[tuple[str, Path, bool]], list[str]]:
                 out.append(("footprint", f.stem, f, True))  # not in the library — a creation
             else:
                 unknown.append(f.name)  # no baseline yet; a sync will record one
-        elif _sha(f) != rec:
+        elif not matches(rec, f.read_bytes()):
             out.append(("footprint", f.stem, f, False))
 
     # symbols all live in ONE generated library file, so the unit of change is
     # an entry inside it, not the file — diff per entry against the baseline
     if SYM_LIB.is_file():
-        for name, entry in split_symbols(SYM_LIB.read_text(encoding="utf-8")):
+        for name, entry in installed_symbols().items():
             rec = baseline.get(f"{SYM_LIB}::{name}")
-            cur = hashlib.sha256(entry.encode("utf-8")).hexdigest()
             if rec is None:
                 unknown.append(f"{name} (symbol)")
-            elif cur != rec:
+            elif not matches(rec, entry):
                 out.append(("symbol", name, SYM_LIB, False))
     return out, unknown
+
+
+def _drop_settled(changed: list, baseline: dict) -> tuple[list, list[str]]:
+    """Drop the flagged items whose drawing already IS the platform's current one.
+
+    A stale baseline is not hypothetical. Before plugin 1.1.0 a sync that
+    refused to overwrite a local edit never re-recorded it, so a footprint that
+    had been pushed, approved and synced stayed flagged for ever and this
+    dialog kept offering to propose it again — reported 2026-08-20, five
+    footprints. Checking the FLAGGED items (only those) against the live mirror
+    costs one request each, corrects the baseline, and makes the whole
+    bookkeeping self-healing. A fetch that fails leaves the item flagged:
+    offering an edit twice is annoying, losing one is not recoverable.
+    """
+    still, settled, upstream_syms = [], [], None
+    for item in changed:
+        kind, name, path, is_new = item
+        if is_new:
+            still.append(item)  # nothing upstream to compare against
+            continue
+        try:
+            if kind == "symbol":
+                if upstream_syms is None:
+                    upstream_syms = dict(split_symbols(
+                        _get_text(f"{BASE_URL}/files/Symbols/{SYM_FILE}")))
+                theirs = upstream_syms.get(name)
+                mine = to_platform_symbol_entry(name)
+                current = installed_symbols()[name]  # PCM_ spelling, as sync wrote it
+                key = f"{SYM_LIB}::{name}"
+            else:
+                quoted = urllib.parse.quote(f"{name}.kicad_mod")
+                theirs = _get_text(f"{BASE_URL}/files/Footprints/{PRETTY}/{quoted}")
+                current = path.read_text(encoding="utf-8")
+                mine = to_platform_text(current)
+                key = str(path)
+        except Exception:
+            still.append(item)
+            continue
+        if theirs is not None and canon_hash(mine) == canon_hash(theirs):
+            baseline[key] = record(current)  # record it AS INSTALLED, like sync does
+            settled.append(name)
+        else:
+            still.append(item)
+    return still, settled
 
 
 def main() -> int:
     if not LOCAL_DIR.is_dir():
         _notify(f"No local 7Sigma library at {LOCAL_DIR} — run Sync first.")
         return 1
+    baseline = _load_state()
     try:
-        changed, unknown = _changed()
+        changed, unknown = _changed(baseline)
+        changed, settled = _drop_settled(changed, baseline)
     except Exception as e:
         _notify(f"Push failed: cannot reach the platform — {e}")
         return 1
+    if settled:
+        _save_state(baseline)
     if not changed:
-        msg = "No local changes — every footprint matches what Sync installed."
+        msg = "No local changes — every footprint and symbol matches the platform."
+        if settled:
+            msg += f" ({len(settled)} were already approved and are now cleared.)"
         if unknown:
             msg += (f" ({len(unknown)} have no baseline yet — run Sync once so later "
                     "edits can be detected.)")
@@ -361,7 +412,6 @@ def main() -> int:
     try:
         ids = {f["name"]: f["id"] for f in _get_json(f"{BASE_URL}/api/footprints")}
         sym_ids = {s["name"]: s["id"] for s in _get_json(f"{BASE_URL}/api/symbols")}
-        entries = dict(split_symbols(SYM_LIB.read_text(encoding="utf-8"))) if SYM_LIB.is_file() else {}
     except Exception as e:
         _notify(f"Push failed: cannot list the library — {e}")
         return 1
@@ -378,7 +428,7 @@ def main() -> int:
                 failed.append(f"{name}: no such symbol on the platform")
                 continue
             status, res = _post_json(f"{BASE_URL}/api/symbols/{sid}/propose",
-                                     {"source_text": to_platform_symbol(entries[name]),
+                                     {"source_text": to_platform_symbol(name),
                                       "comment": comment})
         else:
             text = to_platform_text(path.read_text(encoding="utf-8"))

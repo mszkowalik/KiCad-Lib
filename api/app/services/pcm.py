@@ -56,7 +56,7 @@ SOURCE_NICKNAME = "7Sigma"  # the nickname used inside mirror files (repo conven
 LIB_ID = "com.sevensigma.library"
 MODELS_ID = "com.sevensigma.models3d"
 PLUGIN_ID = "com.sevensigma.sync"
-PLUGIN_VERSION = "1.0.8"  # bump when the plugin source changes — PCM update detection
+PLUGIN_VERSION = "1.1.0"  # bump when the plugin source changes — PCM update detection
 # ^ MANUAL, and PCM decides "update available" purely from this string. A new
 # zip with the same version reaches nobody: the content hash changes, the
 # download changes, and every installed copy stays on the old code. Shipping
@@ -169,6 +169,8 @@ def _plugin_files(token: str = "") -> list[tuple[str, bytes]]:
     """
     out: list[tuple[str, bytes]] = []
     for f in sorted(_PLUGIN_SRC.iterdir()):
+        if not f.is_file():
+            continue  # a __pycache__ left by running a plugin from the source tree
         if f.suffix == ".tmpl":
             body = (f.read_text(encoding="utf-8")
                     .replace("__BASE_URL__", settings.public_base_url)
@@ -178,7 +180,8 @@ def _plugin_files(token: str = "") -> list[tuple[str, bytes]]:
             out.append(("resources/icon.png", f.read_bytes()))
         else:
             # icons, requirements.txt (MANDATORY — KiCad aborts the plugin's
-            # Python env setup without it), any future static file
+            # Python env setup without it), kicad_canon.py (imported by both
+            # entrypoints), any future static file
             out.append((f"plugins/{f.name}", f.read_bytes()))
     return out
 
