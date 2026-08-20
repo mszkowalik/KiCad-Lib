@@ -288,9 +288,8 @@ def _save_state(state: dict) -> None:
     tmp.replace(LOCAL_STATE_FILE)
 
 
-def _changed(baseline: dict) -> tuple[list[tuple[str, str, Path, bool]], list[str]]:
-    """Items edited on this machine: (kind, name, path, is_new), plus the names
-    we cannot judge.
+def _changed(baseline: dict) -> list[tuple[str, str, Path, bool]]:
+    """Items edited on this machine: (kind, name, path, is_new).
 
     The baseline is what SYNC WROTE (`local_state.json`), never the mirror
     manifest — the installed bytes legitimately differ from the mirror because
@@ -301,20 +300,29 @@ def _changed(baseline: dict) -> tuple[list[tuple[str, str, Path, bool]], list[st
     The comparison is CANONICAL (`kicad_canon.matches`): KiCad rewrites the
     whole file it saves, in its own spelling, so a byte comparison reported
     every symbol in the library as edited after a single edit.
+
+    A MISSING record means "unknown", never "unchanged", and unknown items are
+    FLAGGED. Sync deliberately withholds a record for an entry it kept back
+    (`_record_written(..., skip=…)`), so the very drawings this button exists
+    to send are the ones with no baseline: an edit made before the first sync
+    that protected it never got one, and no later sync writes one either.
+    BTS723GW sat unpushable for exactly that reason — Push reported "no local
+    changes" over a moved pin (2026-08-21). `_drop_settled` then decides every
+    flagged item against the live mirror: same drawing, record a baseline and
+    drop it; different drawing, offer it. That costs one request per unknown
+    footprint and one for the whole symbol library, so a machine with no state
+    file pays ~200 small requests once and ends up with a correct baseline.
     """
     upstream_names = {
         e["path"].split("/")[-1]
         for e in _get_json(f"{BASE_URL}/files/manifest.json")["files"]
         if e["path"].startswith(f"Footprints/{PRETTY}/")
     }
-    out, unknown = [], []
+    out = []
     for f in sorted(LOCAL_DIR.glob("*.kicad_mod")):
         rec = baseline.get(str(f))
-        if rec is None:
-            if f.name not in upstream_names:
-                out.append(("footprint", f.stem, f, True))  # not in the library — a creation
-            else:
-                unknown.append(f.name)  # no baseline yet; a sync will record one
+        if rec is None and f.name not in upstream_names:
+            out.append(("footprint", f.stem, f, True))  # not in the library — a creation
         elif not matches(rec, f.read_bytes()):
             out.append(("footprint", f.stem, f, False))
 
@@ -322,12 +330,9 @@ def _changed(baseline: dict) -> tuple[list[tuple[str, str, Path, bool]], list[st
     # an entry inside it, not the file — diff per entry against the baseline
     if SYM_LIB.is_file():
         for name, entry in installed_symbols().items():
-            rec = baseline.get(f"{SYM_LIB}::{name}")
-            if rec is None:
-                unknown.append(f"{name} (symbol)")
-            elif not matches(rec, entry):
+            if not matches(baseline.get(f"{SYM_LIB}::{name}"), entry):
                 out.append(("symbol", name, SYM_LIB, False))
-    return out, unknown
+    return out
 
 
 def _drop_settled(changed: list, baseline: dict) -> tuple[list, list[str]]:
@@ -339,7 +344,9 @@ def _drop_settled(changed: list, baseline: dict) -> tuple[list, list[str]]:
     dialog kept offering to propose it again — reported 2026-08-20, five
     footprints. Checking the FLAGGED items (only those) against the live mirror
     costs one request each, corrects the baseline, and makes the whole
-    bookkeeping self-healing. A fetch that fails leaves the item flagged:
+    bookkeeping self-healing. It is also where an item with NO baseline gets
+    one: `_changed` flags those rather than hiding them, and this is what tells
+    an unrecorded local edit from an unrecorded untouched file. A fetch that fails leaves the item flagged:
     offering an edit twice is annoying, losing one is not recoverable.
     """
     still, settled, upstream_syms = [], [], None
@@ -380,7 +387,7 @@ def main() -> int:
         return 1
     baseline = _load_state()
     try:
-        changed, unknown = _changed(baseline)
+        changed = _changed(baseline)
         changed, settled = _drop_settled(changed, baseline)
     except Exception as e:
         _notify(f"Push failed: cannot reach the platform — {e}")
@@ -391,9 +398,6 @@ def main() -> int:
         msg = "No local changes — every footprint and symbol matches the platform."
         if settled:
             msg += f" ({len(settled)} were already approved and are now cleared.)"
-        if unknown:
-            msg += (f" ({len(unknown)} have no baseline yet — run Sync once so later "
-                    "edits can be detected.)")
         _notify(msg)
         return 0
 

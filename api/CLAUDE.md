@@ -967,6 +967,16 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   rule deleted anything absent from the package, which destroyed new work
   before Push could send it. Models are exempt — they carry no per-file record,
   so they prune as before.
+- **A missing baseline means "unknown", and Push must FLAG an unknown item.**
+  The two rules above combine into a trap: Sync withholds a record for an entry
+  it kept back, so a drawing edited before the first sync that protected it
+  never gets a baseline, and no later sync writes one. Push treated "no record"
+  as "cannot judge", listed the item in a footnote and offered it to nobody —
+  a moved pin on BTS723GW was unpushable and Push reported "no local changes"
+  (2026-08-21). `_changed` now flags an unrecorded item and lets `_drop_settled`
+  settle it against the live mirror, which is the only test that can tell an
+  unrecorded edit from an unrecorded untouched file. Never re-introduce a
+  branch that answers "unknown" with silence.
 - **`local_state.json` records both hashes** (`{"r": raw, "c": canonical}`) and
   still reads a bare string as a pre-1.1.0 raw-only record. Dropping that
   fallback would make every installed file read as edited on the first run
