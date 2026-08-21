@@ -64,7 +64,7 @@ PLUGIN_VERSION = "1.1.1"  # bump when the plugin source changes — PCM update d
 MODELS_INSTALL_DIR = MODELS_ID.replace(".", "_")
 PCM_FP_PREFIX = "PCM_"  # KiCad's hardcoded auto-registration nickname prefix
 SCHEMA = "https://go.kicad.org/pcm/schemas/v1"
-BUILDER_REV = 9  # bump when the package builder output changes for the same mirror
+BUILDER_REV = 10  # bump when the package builder output changes for the same mirror
 # ^ AND whenever anything in THIS FILE changes what a package advertises —
 # PLUGIN_VERSION, a package name/description, a manifest field. `tag` hashes the
 # mirror digest and the plugin FILE contents only, so a pcm.py-only edit leaves
@@ -108,8 +108,28 @@ def _subtree_hash(entries: list[dict], prefixes: tuple[str, ...]) -> str:
     return hashlib.sha256("\n".join(keys).encode()).hexdigest()
 
 
+# Every zip member is stamped with this instead of "now", which is what
+# `writestr(str, ...)` and `write(path, ...)` use by default. A package zip is
+# named by its CONTENT hash and its sha256 is published in packages.json, so the
+# same content must always produce the same bytes: rebuilding an unchanged
+# package (a version bump, a pruned cache, a restart) otherwise emits a
+# different file at the same URL, and any cache in front of the origin — the
+# Cloudflare tunnel this deployment runs behind caches .zip by default — then
+# hands PCM the old bytes with the new hash. That is the "Downloaded archive
+# hash ... does not match repository entry" install failure. 1980-01-01 is the
+# earliest timestamp the zip format can store.
+ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
+
+
+def _zip_entry(arcname: str) -> zipfile.ZipInfo:
+    zi = zipfile.ZipInfo(arcname, ZIP_EPOCH)
+    zi.compress_type = zipfile.ZIP_DEFLATED
+    zi.external_attr = 0o644 << 16
+    return zi
+
+
 def _zip_add(zf: zipfile.ZipFile, arcname: str, data: bytes) -> int:
-    zf.writestr(arcname, data)
+    zf.writestr(_zip_entry(arcname), data)
     return len(data)
 
 
@@ -149,7 +169,11 @@ def _build_models_zip(path: Path) -> int:
             if not f.is_file():
                 continue
             rel = f.relative_to(root).as_posix()
-            zf.write(f, f"3dmodels/{rel}")
+            # NOT zf.write(f, ...): that stamps each member with the source
+            # file's mtime, which a mirror regeneration changes even when the
+            # model bytes do not — see ZIP_EPOCH. Largest model is ~15 MB, so
+            # reading one at a time is fine.
+            zf.writestr(_zip_entry(f"3dmodels/{rel}"), f.read_bytes(), compresslevel=6)
             size += f.stat().st_size
     return size
 
@@ -216,7 +240,10 @@ def personal_plugin(meta: dict, token: str) -> dict:
         return base
     out = _pcm_dir()
     key = hashlib.sha256(f"{base['subtree']}:{token}".encode()).hexdigest()[:16]
-    zip_path = out / f"{PERSONAL_PREFIX}{key}.zip"
+    # The plugin's content hash is IN THE NAME so `ensure_built` can tell a
+    # current personal zip from one built for an older plugin, and keep the
+    # first while pruning the second.
+    zip_path = out / f"{PERSONAL_PREFIX}{base['subtree'][:12]}r{BUILDER_REV}-{key}.zip"
     if not zip_path.exists():
         with _lock:
             if not zip_path.exists():
@@ -277,8 +304,18 @@ def _resolve_package(out: Path, prev: dict, key: str, subtree: str, version: str
     if (p and p.get("subtree") == subtree and p.get("version") == version
             and (out / p.get("zip", "")).exists()):
         return p
-    zip_path = out / f"{zip_prefix}-{subtree[:12]}.zip"
-    install_size = builder(zip_path)
+    # The builder revision is part of the NAME, not just the meta tag: the zip
+    # bytes for one content hash are fixed (ZIP_EPOCH), but a change to the
+    # builder itself legitimately re-encodes them, and re-encoding under the old
+    # URL is what a CDN in front of the origin cannot see. A new revision = a new
+    # URL = a guaranteed cache miss.
+    zip_path = out / f"{zip_prefix}-{subtree[:12]}r{BUILDER_REV}.zip"
+    # Atomic publish, same reason as `personal_plugin`: this rewrites a name a
+    # client may be downloading right now, and a half-written zip must never be
+    # served — PCM would fail its sha256 check and blame the server.
+    tmp = zip_path.with_suffix(".part")
+    install_size = builder(tmp)
+    tmp.replace(zip_path)
     return {
         "zip": zip_path.name,
         "version": version,
@@ -418,8 +455,13 @@ def ensure_built() -> dict | None:
         meta_path.write_text(json.dumps(meta, indent=2))
         # prune artifacts of older states (carried-forward zips are in `files`)
         keep = set(meta["files"]) | {meta_path.name}
+        # Personal plugin zips are not in `files` — one per user, built lazily.
+        # Keep the ones built from THIS plugin revision: deleting them made the
+        # next repository.json rebuild them, and before ZIP_EPOCH that produced
+        # different bytes and a different sha256 for an already-advertised URL.
+        personal = f"{PERSONAL_PREFIX}{packages_meta['plugin']['subtree'][:12]}r{BUILDER_REV}-"
         for f in out.iterdir():
-            if f.name not in keep:
+            if f.name not in keep and not f.name.startswith(personal):
                 f.unlink(missing_ok=True)
         sizes = {k: f"{(out / p['zip']).stat().st_size >> 20} MB" for k, p in packages_meta.items()}
         log.info(f"PCM: packages ready {sizes}")

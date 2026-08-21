@@ -200,7 +200,41 @@ def _hidden_props_in_lib_text(source_text: str, entry_name: str) -> dict[str, bo
     return {}
 
 
-def schematic_field_visibility(db, cv) -> dict[str, bool]:
+def base_hidden_maps(db, names) -> dict[str, dict[str, bool]]:
+    """`{base_component: {property key: drawn hidden}}` for many templates at once.
+
+    Same answer `schematic_field_visibility` needs per component, resolved for a
+    whole catalog page in two queries instead of two per row. The KiCad symbol
+    chooser asks for every part of a category in one response, so a per-row
+    Symbol lookup here is a per-part query on that critical path.
+    """
+    from .. import models as M
+
+    names = {n for n in names if n}
+    if not names:
+        return {}
+    by_name = {
+        name: svid
+        for name, svid in db.query(M.Symbol.name, M.Symbol.current_version_id)
+        .filter(M.Symbol.name.in_(names))
+        .all()
+        if svid
+    }
+    missing = {svid for svid in by_name.values() if svid not in _BASE_HIDDEN_BY_SYMBOL_VERSION}
+    if missing:
+        by_id = {svid: name for name, svid in by_name.items()}
+        for svid, text in (
+            db.query(M.SymbolVersion.id, M.SymbolVersion.source_text)
+            .filter(M.SymbolVersion.id.in_(missing))
+            .all()
+        ):
+            _BASE_HIDDEN_BY_SYMBOL_VERSION[svid] = _hidden_props_in_lib_text(text, by_id[svid])
+        for svid in missing:  # a dangling current_version_id must not be re-queried
+            _BASE_HIDDEN_BY_SYMBOL_VERSION.setdefault(svid, {})
+    return {name: _BASE_HIDDEN_BY_SYMBOL_VERSION[svid] for name, svid in by_name.items()}
+
+
+def schematic_field_visibility(db, cv, base: dict[str, bool] | None = None) -> dict[str, bool]:
     """{key: visible-on-schematic} for a component version's properties.
 
     The rule `apply_properties` bakes into the generated mirror symbols: a key
@@ -210,18 +244,12 @@ def schematic_field_visibility(db, cv) -> dict[str, bool]:
     `ComponentProperty.hide` is NOT part of the rule — the generator never
     reads that column (it is True on almost every imported row), so any
     consumer that wants to agree with the mirror must not either.
-    """
-    from .. import models as M
 
-    svid = db.query(M.Symbol.current_version_id).filter(M.Symbol.name == cv.base_component).scalar()
-    base: dict[str, bool] = {}
-    if svid:
-        if svid not in _BASE_HIDDEN_BY_SYMBOL_VERSION:
-            sv = db.get(M.SymbolVersion, svid)
-            _BASE_HIDDEN_BY_SYMBOL_VERSION[svid] = (
-                _hidden_props_in_lib_text(sv.source_text, cv.base_component) if sv else {}
-            )
-        base = _BASE_HIDDEN_BY_SYMBOL_VERSION[svid]
+    Pass `base` (one entry of `base_hidden_maps`) when resolving many versions
+    that share templates — it skips this row's own template lookup.
+    """
+    if base is None:
+        base = base_hidden_maps(db, {cv.base_component}).get(cv.base_component) or {}
     if not base:
         # unknown or unparseable template: KiCad's own default is a visible Value
         base = {"Value": False}

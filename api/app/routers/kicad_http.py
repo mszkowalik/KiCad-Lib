@@ -6,6 +6,12 @@ Spec: https://dev-docs.kicad.org/en/apis-and-binding/http-libraries/
  - GET {root}/v1/parts/category/{id}.json
  - GET {root}/v1/parts/{id}.json
 All values must be strings; auth header is "Authorization: Token <token>".
+
+The two parts endpoints return the SAME body per part (`part_payload`). The
+spec allows a category listing to carry only {id, name, description}, but
+KiCad treats a `fields` object as "this record is complete" and then never
+issues the per-part request — which is the difference between 15 requests and
+400+ to open the symbol chooser.
 """
 from __future__ import annotations
 
@@ -15,7 +21,7 @@ from sqlalchemy.orm import Query, Session, contains_eager, defer, joinedload, se
 from .. import models as M
 from ..config import settings
 from ..db import get_db
-from ..services.generator import injected_props, schematic_field_visibility
+from ..services.generator import base_hidden_maps, injected_props, schematic_field_visibility
 from .util import category_path, props_dict, resolved_value
 
 router = APIRouter(prefix="/kicad/v1", tags=["kicad-http-library"])
@@ -88,45 +94,42 @@ def categories(db: Session = Depends(get_db)):
     return [{"id": str(c.id), "name": category_path(c)} for c in cats]
 
 
-@router.get("/parts/category/{cat_id}.json", dependencies=[Depends(require_token)])
-def parts_in_category(cat_id: int, db: Session = Depends(get_db)):
-    versions = (
-        library_versions(db)
-        .filter(M.ComponentVersion.category_id == cat_id)
-        .order_by(M.Component.name)
+def datasheets_by_component(db: Session, comp_ids) -> dict[int, list[M.Datasheet]]:
+    """Every component's datasheet rows, one query, WITHOUT the stored PDFs.
+
+    `injected_props` reads only `content_type` and `filename` off the current
+    version, but `DatasheetVersion.data` holds the whole document — lazy-loading
+    the relationship pulled a component's PDFs (megabytes) into memory just to
+    decide whether a link should point at the local copy.
+    """
+    comp_ids = list(comp_ids)
+    if not comp_ids:
+        return {}
+    rows = (
+        db.query(M.Datasheet)
+        .filter(M.Datasheet.component_id.in_(comp_ids))
+        .options(selectinload(M.Datasheet.versions).defer(M.DatasheetVersion.data))
+        .order_by(M.Datasheet.component_id, M.Datasheet.position)
         .all()
     )
-    out = []
-    for cv in versions:
-        props = props_dict(cv)
-        out.append(
-            {
-                "id": str(cv.component_id),
-                "name": cv.component.name,
-                "description": resolved_value(props.get("ki_description"), props),
-            }
-        )
+    out: dict[int, list[M.Datasheet]] = {}
+    for d in rows:
+        out.setdefault(d.component_id, []).append(d)
     return out
 
 
-@router.get("/parts/{part_id}.json", dependencies=[Depends(require_token)])
-def part_detail(part_id: int, db: Session = Depends(get_db)):
-    comp = db.get(M.Component, part_id)
-    if comp is None or not comp.in_library:
-        raise HTTPException(404, "part not found")
-    cv = library_versions(db).filter(M.Component.id == part_id).first()
-    if cv is None:
-        raise HTTPException(404, "part has no published version")
+def part_payload(cv, sheets: list[M.Datasheet], visible: dict[str, bool]) -> dict:
+    """One part in KiCad's part shape — the SAME body for the per-part endpoint
+    and for each entry of a category listing.
 
+    KiCad's `SelectAll` calls `setPartExtendedData` on every item it parses and
+    takes a `fields` object as "this record is complete" (`detailsLoaded`), so a
+    listing that carries this body costs the symbol chooser ZERO per-part
+    requests. Serving the short {id, name, description} form instead made the
+    chooser fetch `parts/{id}.json` once per part — 400+ serial round trips,
+    minutes of waiting to open the dialog. Keep the two shapes identical.
+    """
     props = props_dict(cv)
-    # Field visibility MUST match the generated mirror symbols: base-symbol
-    # effects plus the component's layout override. Keys absent from the map
-    # (injected datasheet links, the derived Footprint_Name) are hidden, the
-    # same default `apply_properties` gives a key the base symbol lacks.
-    visible = schematic_field_visibility(db, cv)
-
-    sheets = db.query(M.Datasheet).filter_by(component_id=comp.id).order_by(M.Datasheet.position).all()
-
     # user properties + injected datasheet links (prices stay on the platform)
     entries = [(p.key, resolved_value(None if p.is_null else p.value, props)) for p in cv.properties]
     # Emit the footprint-derived name too, unless the component has its own row.
@@ -159,8 +162,8 @@ def part_detail(part_id: int, db: Session = Depends(get_db)):
             fields[key] = {"value": val, "visible": "true" if visible.get(key) else "false"}
 
     return {
-        "id": str(comp.id),
-        "name": comp.name,
+        "id": str(cv.component_id),
+        "name": cv.component.name,
         # the component's BASE drawing — all components sharing a template
         # reuse one symbol, so the local library never needs per-part updates
         "symbolIdStr": f"{settings.httplib_symbol_lib}:{cv.base_component}",
@@ -168,3 +171,43 @@ def part_detail(part_id: int, db: Session = Depends(get_db)):
         "keywords": keywords,
         "fields": fields,
     }
+
+
+def part_payloads(db: Session, versions: list) -> list[dict]:
+    """`part_payload` for a whole page, with the two per-row lookups batched."""
+    sheets = datasheets_by_component(db, {cv.component_id for cv in versions})
+    # Field visibility MUST match the generated mirror symbols: base-symbol
+    # effects plus the component's layout override. Keys absent from the map
+    # (injected datasheet links, the derived Footprint_Name) are hidden, the
+    # same default `apply_properties` gives a key the base symbol lacks.
+    bases = base_hidden_maps(db, {cv.base_component for cv in versions})
+    return [
+        part_payload(
+            cv,
+            sheets.get(cv.component_id, []),
+            schematic_field_visibility(db, cv, bases.get(cv.base_component) or {}),
+        )
+        for cv in versions
+    ]
+
+
+@router.get("/parts/category/{cat_id}.json", dependencies=[Depends(require_token)])
+def parts_in_category(cat_id: int, db: Session = Depends(get_db)):
+    versions = (
+        library_versions(db)
+        .filter(M.ComponentVersion.category_id == cat_id)
+        .order_by(M.Component.name)
+        .all()
+    )
+    return part_payloads(db, versions)
+
+
+@router.get("/parts/{part_id}.json", dependencies=[Depends(require_token)])
+def part_detail(part_id: int, db: Session = Depends(get_db)):
+    comp = db.get(M.Component, part_id)
+    if comp is None or not comp.in_library:
+        raise HTTPException(404, "part not found")
+    cv = library_versions(db).filter(M.Component.id == part_id).first()
+    if cv is None:
+        raise HTTPException(404, "part has no published version")
+    return part_payloads(db, [cv])[0]

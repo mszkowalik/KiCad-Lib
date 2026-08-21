@@ -9,7 +9,7 @@ import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -91,7 +91,10 @@ def pcm_repository(request: Request, db: Session = Depends(get_db)):
     meta = pcm.ensure_built()
     if meta is None:
         raise HTTPException(503, "file mirror not built yet — run an import first")
-    return pcm.personal_repository(meta, pcm_token_or_empty(request, db))
+    # Per-user body, and it publishes the hash of a document that changes on
+    # every rebuild — never let anything between here and KiCad hold on to it.
+    return JSONResponse(pcm.personal_repository(meta, pcm_token_or_empty(request, db)),
+                        headers={"Cache-Control": "no-store"})
 
 
 def pcm_token_or_empty(request: Request, db: Session) -> str:
@@ -154,13 +157,22 @@ def pcm_artifact(filename: str, request: Request, db: Session = Depends(get_db))
         raise HTTPException(503, "file mirror not built yet — run an import first")
     token = pcm_token_or_empty(request, db)
     if filename == meta["packages_file"] and token:
+        # Per-user body under a shared URL — a cache between here and KiCad
+        # must never hand one user's index to another, or reuse it after a
+        # rebuild changed the hashes it publishes.
         return Response(content=pcm.personal_packages(meta, token),
-                        media_type="application/json")
+                        media_type="application/json",
+                        headers={"Cache-Control": "no-store"})
     path = pcm.artifact_path(filename)
     if path is None:
         raise HTTPException(404, "no such PCM artifact (repository may have been rebuilt — refresh)")
     media = "application/json" if path.suffix == ".json" else "application/zip"
-    return FileResponse(path, media_type=media, filename=path.name)
+    # A zip name carries its content hash and its bytes are reproducible
+    # (pcm.ZIP_EPOCH), so the URL is immutable and worth caching at the edge —
+    # the models package is ~250 MB. The index is not.
+    cache = "public, max-age=31536000, immutable" if path.suffix == ".zip" else "no-store"
+    return FileResponse(path, media_type=media, filename=path.name,
+                        headers={"Cache-Control": cache})
 
 
 @router.get("/httplib-file")
