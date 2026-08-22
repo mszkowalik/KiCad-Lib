@@ -10,11 +10,18 @@ requirements.txt — KiCad's bundled Python has no CA store on macOS).
 The 3rd-party root is derived from this file's own install location
 (3rdparty/plugins/<id>/sync.py), so custom KiCad paths work automatically.
 
-Local edits are never overwritten, and the unit of protection is the DRAWING,
-not the file: a symbol you edited survives while the other 182 in the same
-generated library still update, and an edit that has been pushed, approved and
-has come back is adopted and stops counting as pending. Both tests compare a
+Local edits are never overwritten SILENTLY, and the unit of protection is the
+DRAWING, not the file: a symbol you edited survives while the other 182 in the
+same generated library still update, and an edit that has been pushed, approved
+and has come back is adopted and stops counting as pending. Both tests compare a
 canonical form of the s-expression — see kicad_canon.py.
+
+When a drawing changed here AND on the platform, the sync stops and ASKS. Every
+such clash across every package is collected first and presented in ONE window
+(conflict_ui.py) with a Mine/Server choice per row, so the answer is given once
+per sync rather than once per file. Declining to choose — cancel, a closed
+window, no usable dialog backend — always keeps the local copy, which is the
+behaviour this plugin had before the dialog existed.
 
 Reopen the symbol chooser / footprint viewer after a sync — KiCad re-reads
 changed library files; a KiCad restart is only needed after very large
@@ -37,6 +44,7 @@ sys.path.insert(0, str(HERE))  # KiCad runs this as a script; be explicit anyway
 from kicad_canon import (  # noqa: E402 — needs the line above
     canon_hash, matches, merge_symbol_lib, record, split_symbols,
 )
+import conflict_ui  # noqa: E402 — same reason
 
 BASE_URL = "__BASE_URL__"
 MANAGED_KINDS = ("symbols", "footprints", "3dmodels")
@@ -254,28 +262,38 @@ def _record_written(target: Path, payload: bytes, skip: set | None = None) -> No
             _LOCAL[prefix + name] = record(entry)
 
 
-def _merge_symbols(target: Path, payload: bytes, current: bytes) -> tuple[bytes, list[str]]:
-    """The platform's symbol library with the locally edited entries kept.
+def _conflicting_entries(target: Path, payload: bytes, current: bytes) -> list[str]:
+    """Names inside one symbol library that were edited here AND differ from
+    the platform's copy — i.e. the ones a human has to arbitrate.
 
-    Returns the bytes to write and the names that were kept. Every base symbol
-    lives in one generated file, so the whole-file rule "never overwrite an
-    edited file" froze all 183 of them the moment one was edited — the unit of
-    protection has to be the entry.
+    Every base symbol lives in one generated file, so the whole-file rule
+    "never overwrite an edited file" froze all 183 of them the moment one was
+    edited — the unit has to be the entry.
     """
     up_text = payload.decode("utf-8", "replace")
     lo_text = current.decode("utf-8", "replace")
     upstream = dict(split_symbols(up_text))
-    keep: list[str] = []
+    out: list[str] = []
     for name, entry in split_symbols(lo_text):
         twin = upstream.get(name)
         if twin is not None and canon_hash(entry) == canon_hash(twin):
             continue  # same drawing either way — take the platform's copy
         if _unchanged(f"{target}::{name}", entry.encode("utf-8")):
             continue  # untouched here: upstream changed it, or removed it
-        keep.append(name)
+        out.append(name)
+    return out
+
+
+def _merge_symbols(payload: bytes, current: bytes, keep: set[str]) -> bytes:
+    """The platform's symbol library with `keep` replaced by the local copies.
+
+    `keep` is what the user chose to hold on to; everything else takes the
+    platform's drawing. An empty set means the whole upstream file wins.
+    """
     if not keep:
-        return payload, []
-    return merge_symbol_lib(up_text, lo_text, set(keep)).encode("utf-8"), keep
+        return payload
+    return merge_symbol_lib(payload.decode("utf-8", "replace"),
+                            current.decode("utf-8", "replace"), keep).encode("utf-8")
 
 
 def _sync_models_delta(pkg: dict, state: dict) -> str:
@@ -343,24 +361,13 @@ def _sync_models_delta(pkg: dict, state: dict) -> str:
     return "updated" if (need or removed) else "fresh"
 
 
-def _apply_package(pkg: dict, state: dict) -> str:
-    """Install/refresh one library package. Returns 'updated' | 'fresh'."""
-    ident = pkg["identifier"]
-    dest_name = ident.replace(".", "_")  # KiCad's install-directory convention
-    ver = pkg["versions"][0]
-    sha = ver["download_sha256"]
-    targets_exist = any((THIRD_PARTY / kind / dest_name).exists() for kind in MANAGED_KINDS)
-    if state.get(ident) == sha and targets_exist:
-        return "fresh"
+def _members(zf: zipfile.ZipFile, dest_name: str):
+    """The zip entries this plugin manages, as (kind, relpath, target).
 
-    data = _get(ver["download_url"])
-    if hashlib.sha256(data).hexdigest() != sha:
-        raise RuntimeError(f"{pkg['name']}: download checksum mismatch")
-
-    zf = zipfile.ZipFile(io.BytesIO(data))
-    written: dict[str, set[str]] = {}
-    kept_local: list[str] = []
-    settled: list[str] = []
+    One definition shared by the conflict scan and the write pass — they must
+    agree on which files are in play or the dialog would ask about a file the
+    apply pass never touches.
+    """
     for member in zf.infolist():
         if member.is_dir():
             continue
@@ -368,16 +375,77 @@ def _apply_package(pkg: dict, state: dict) -> str:
         if len(parts) < 2 or parts[0] not in MANAGED_KINDS:
             continue
         kind, rel = parts[0], Path(*parts[1:])
-        target = THIRD_PARTY / kind / dest_name / rel
+        yield member, kind, rel, THIRD_PARTY / kind / dest_name / rel
+
+
+def _fetch_package(pkg: dict, state: dict) -> bytes | None:
+    """The package zip, or None when the installed copy is already current."""
+    ident = pkg["identifier"]
+    dest_name = ident.replace(".", "_")  # KiCad's install-directory convention
+    ver = pkg["versions"][0]
+    sha = ver["download_sha256"]
+    targets_exist = any((THIRD_PARTY / kind / dest_name).exists() for kind in MANAGED_KINDS)
+    if state.get(ident) == sha and targets_exist:
+        return None
+    if ver["download_size"] > 10 * 1024 * 1024:
+        _notify(f"Downloading {pkg['name']} ({ver['download_size'] >> 20} MB)…")
+    data = _get(ver["download_url"])
+    if hashlib.sha256(data).hexdigest() != sha:
+        raise RuntimeError(f"{pkg['name']}: download checksum mismatch")
+    return data
+
+
+def _scan_conflicts(pkg: dict, data: bytes) -> list[dict]:
+    """Drawings that changed here AND on the platform, for one package.
+
+    Read-only: nothing is written and no question is asked yet, so every
+    package can be scanned before the single dialog goes up.
+    """
+    dest_name = pkg["identifier"].replace(".", "_")
+    found: list[dict] = []
+    zf = zipfile.ZipFile(io.BytesIO(data))
+    for member, _kind, _rel, target in _members(zf, dest_name):
+        if target.suffix not in LIB_SUFFIXES or not target.is_file():
+            continue
+        current = target.read_bytes()
+        if _unchanged(str(target), current):
+            continue  # untouched here — upstream simply wins
+        payload = zf.read(member)
+        if canon_hash(current.decode("utf-8", "replace")) == \
+                canon_hash(payload.decode("utf-8", "replace")):
+            continue  # settled: the local edit IS the platform's copy now
+        if target.suffix == ".kicad_sym":
+            for name in _conflicting_entries(target, payload, current):
+                found.append({"key": f"{target}::{name}", "kind": "symbol",
+                              "name": name})
+        else:
+            found.append({"key": str(target), "kind": "footprint",
+                          "name": target.name})
+    return found
+
+
+def _apply_package(pkg: dict, state: dict, data: bytes,
+                   decisions: dict[str, str]) -> str:
+    """Install/refresh one library package. Returns 'updated' | 'fresh'."""
+    ident = pkg["identifier"]
+    dest_name = ident.replace(".", "_")
+    sha = pkg["versions"][0]["download_sha256"]
+
+    zf = zipfile.ZipFile(io.BytesIO(data))
+    written: dict[str, set[str]] = {}
+    kept_local: list[str] = []
+    settled: list[str] = []
+    overwritten: list[str] = []
+    for member, kind, rel, target in _members(zf, dest_name):
         written.setdefault(kind, set()).add(rel.as_posix())
         payload = zf.read(member)
         skip: set = set()
         current = target.read_bytes() if target.is_file() else None
-        # NEVER clobber work edited here and not yet sent — that is somebody's
-        # unsent drawing. The test is CURRENT FILE vs what we recorded writing:
-        # comparing the incoming payload against the record instead would mean
-        # "upstream changed, so keep the local copy", which refuses every
-        # legitimate update — the exact opposite of the intent.
+        # NEVER clobber work edited here and not yet sent WITHOUT ASKING — that
+        # is somebody's unsent drawing. The test is CURRENT FILE vs what we
+        # recorded writing: comparing the incoming payload against the record
+        # instead would mean "upstream changed, so keep the local copy", which
+        # refuses every legitimate update — the exact opposite of the intent.
         # Library files only: a 3D model carries no record, so an unscoped test
         # would try to parse 1.4 GB of STEP as s-expressions on every full sync.
         if (target.suffix in LIB_SUFFIXES and current is not None
@@ -391,9 +459,15 @@ def _apply_package(pkg: dict, state: dict) -> str:
                 # offering to propose it again (reported 2026-08-20).
                 settled.append(target.name)
             elif target.suffix == ".kicad_sym":
-                payload, kept = _merge_symbols(target, payload, current)
-                skip = set(kept)
-                kept_local.extend(f"{n} (symbol)" for n in kept)
+                # Only the entries the user chose to keep are held back; the
+                # rest of the library updates as usual.
+                keep = {n for n in _conflicting_entries(target, payload, current)
+                        if decisions.get(f"{target}::{n}") != conflict_ui.SERVER}
+                payload = _merge_symbols(payload, current, keep)
+                skip = keep
+                kept_local.extend(f"{n} (symbol)" for n in sorted(keep))
+            elif decisions.get(str(target)) == conflict_ui.SERVER:
+                overwritten.append(target.name)  # user chose the platform copy
             else:
                 kept_local.append(target.name)
                 continue
@@ -424,6 +498,9 @@ def _apply_package(pkg: dict, state: dict) -> str:
     if kept_local:
         _notify("Kept your local edits (not overwritten): " + ", ".join(sorted(set(kept_local)))
                 + ". Use 'Push 7Sigma changes' to send them.")
+    if overwritten:
+        _notify(f"Replaced with the platform version, as you chose: "
+                + ", ".join(sorted(set(overwritten))))
     if settled:
         _notify(f"{len(settled)} local edit(s) now match the platform and are no longer "
                 "pending: " + ", ".join(sorted(set(settled))))
@@ -458,23 +535,63 @@ def main() -> int:
                 pass
 
         updated, fresh, failed = [], [], []
+
+        # Pass 1 — fetch what is stale and find every clash, WITHOUT writing.
+        # The dialog has to be able to list conflicts from all packages at once,
+        # so nothing may be applied until every package has been looked at.
+        pending: list[tuple[dict, bytes]] = []
+        conflicts: list[dict] = []
         for pkg in packages:
             if pkg.get("type") != "library":
                 continue  # never self-update the plugin from inside itself
             try:
-                result = None
                 if pkg["identifier"] == MODELS_ID:
-                    # models: incremental per-file delta (LZMA) when possible
+                    # models: incremental per-file delta (LZMA) when possible.
+                    # No library files, so no conflicts and nothing to ask.
                     try:
                         result = _sync_models_delta(pkg, state)
+                        (updated if result == "updated" else fresh).append(pkg["name"])
+                        continue
                     except Exception:
-                        result = None  # fall back to the full package zip
-                if result is None:
-                    if state.get(pkg["identifier"]) != pkg["versions"][0]["download_sha256"] \
-                            and pkg["versions"][0]["download_size"] > 10 * 1024 * 1024:
-                        _notify(f"Downloading {pkg['name']} "
-                                f"({pkg['versions'][0]['download_size'] >> 20} MB)…")
-                    result = _apply_package(pkg, state)
+                        pass  # fall back to the full package zip below
+                data = _fetch_package(pkg, state)
+                if data is None:
+                    fresh.append(pkg["name"])
+                    continue
+                pending.append((pkg, data))
+                if pkg["identifier"] != MODELS_ID:
+                    conflicts.extend(_scan_conflicts(pkg, data))
+            except Exception as e:
+                failed.append(f"{pkg['name']}: {e}")
+
+        # One question for the whole sync.
+        decisions: dict[str, str] = {}
+        if conflicts:
+            decisions, backend = conflict_ui.resolve(conflicts)
+            if backend == "none":
+                _notify(f"{len(conflicts)} conflict(s) found but no dialog is "
+                        "available here — kept your local copies. Use 'Push "
+                        "7Sigma changes' to send them, or delete the file to "
+                        "take the platform version.")
+            elif backend == "too-many":
+                _notify(f"{len(conflicts)} conflicts — too many to review one by "
+                        "one, so every local copy was kept. This usually means "
+                        "the sync state was lost; Push what you want to keep, "
+                        "then delete the local files and sync again.")
+
+        # The dialog can sit open for a long time, and a lock older than
+        # LOCK_STALE_S is treated as a crash leftover. Restart its clock so the
+        # write pass does not begin already looking abandoned. (A sync started
+        # while the dialog was open can still have taken the lock over; both
+        # would write the same upstream bytes, so the cost is wasted work, not
+        # a corrupt install.)
+        if conflicts:
+            LOCK_FILE.touch(exist_ok=True)
+
+        # Pass 2 — write.
+        for pkg, data in pending:
+            try:
+                result = _apply_package(pkg, state, data, decisions)
                 (updated if result == "updated" else fresh).append(pkg["name"])
             except Exception as e:
                 failed.append(f"{pkg['name']}: {e}")

@@ -949,10 +949,30 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   a KiCad upgrade.
 - **The unit of protection is the drawing, not the file.** Every base symbol
   lives in one generated `.kicad_sym`, so "never overwrite a file edited here"
-  meant one edited symbol blocked updates to the other 182. `_merge_symbols`
-  keeps the edited ENTRIES and takes the rest from the platform; the entries it
-  keeps must NOT be re-recorded (`_record_written(..., skip=…)`), or the next
-  sync overwrites the unsent edit and Push forgets it exists.
+  meant one edited symbol blocked updates to the other 182.
+  `_conflicting_entries` finds the edited ENTRIES and `_merge_symbols` keeps
+  only the ones the user chose; the entries it keeps must NOT be re-recorded
+  (`_record_written(..., skip=…)`), or the next sync overwrites the unsent edit
+  and Push forgets it exists.
+- **A two-way clash is a QUESTION, not a policy.** When a drawing changed here
+  AND on the platform, the old rule kept the local copy silently and for ever,
+  so an approved fix could never come back down — the only escape was deleting
+  the file by hand (reported 2026-08-23, the mirrored KSZ8864 footprint).
+  Sync now runs in two passes: `_fetch_package` + `_scan_conflicts` gather every
+  clash across EVERY package without writing anything, `conflict_ui.resolve`
+  asks once in one window, then `_apply_package` writes. Keep the passes
+  separate — asking per package would put three dialogs in front of one sync,
+  and asking mid-write would leave a half-applied package if the user cancels.
+  `_members()` is deliberately shared by both passes: if the scan and the write
+  disagreed on which zip entries are in play, the dialog would ask about a file
+  that never gets touched.
+- **Every failure path in the conflict UI resolves to "mine".** Cancel, a closed
+  window, no wx, no osascript, an absurd conflict count — all keep the local
+  copy, which is what the plugin did before the dialog existed. Refusing an
+  update is recoverable; destroying an unsent drawing is not. `resolve()` always
+  returns a decision for every key so no caller has to handle a gap. wxPython
+  ships inside KiCad (4.2.2 on the 3.9 runtime), with the AppleScript list Push
+  already uses as the fallback.
 - **Reconcile, or an approved edit stays pending for ever.** A sync that
   refuses to clobber a local edit must still notice when that edit IS the
   platform's copy now — pushed, approved and come back. Without it the baseline
