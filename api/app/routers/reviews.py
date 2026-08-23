@@ -366,12 +366,38 @@ def save_checklist(cl_id: int, body: ChecklistSaveIn, request: Request,
 
 @router.post("/checklists")
 def create_checklist(body: ChecklistCreateIn, request: Request, db: Session = Depends(get_db)):
+    """Create a checklist. A new one is only ever CATEGORY-SCOPED, and only for
+    components.
+
+    `checklists.resolve` reads exactly one base list per kind (the first with
+    `category_id IS NULL`) and merges category-scoped lists on top of it, so a
+    second base list would be created, listed, edited — and never reach a single
+    verification. Symbols and footprints carry no category at all, which leaves
+    them one list each. Both cases are refused here and named as such, because
+    the alternative is a checklist that silently does nothing.
+    """
     if body.subject_kind not in _PARENT:
         raise HTTPException(422, "subject_kind must be component, symbol or footprint")
     if db.query(M.Checklist).filter_by(name=body.name.strip()).first():
         raise HTTPException(409, f"checklist {body.name!r} already exists")
-    if body.category_id is not None and db.get(M.Category, body.category_id) is None:
+    if body.subject_kind != "component":
+        raise HTTPException(422, {
+            "error": f"a {body.subject_kind} has no category, so it can only ever have one "
+                     f"checklist — edit the base {body.subject_kind} checklist instead"})
+    if body.category_id is None:
+        raise HTTPException(422, {
+            "error": "a new checklist must name a category. Only ONE base checklist per kind is "
+                     "ever read, so a second one would never reach a verification — add your "
+                     "items to the base component checklist, or scope them to a category"})
+    if db.get(M.Category, body.category_id) is None:
         raise HTTPException(422, "category not found")
+    twin = (db.query(M.Checklist)
+            .filter_by(subject_kind=body.subject_kind, category_id=body.category_id).first())
+    if twin is not None:
+        raise HTTPException(409, {
+            "error": f"{twin.name!r} already scopes this category — edit it rather than adding a "
+                     "second list for the same one",
+            "checklist_id": twin.id})
     items = _validate_items(body.items, body.subject_kind)
     actor = actor_of(request)
     cl = M.Checklist(name=body.name.strip(), subject_kind=body.subject_kind,

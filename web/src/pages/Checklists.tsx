@@ -586,9 +586,13 @@ function ResolvedPreview({ kind }: { kind: ReviewKind }) {
   );
 }
 
-/** Create a list. Kind and category are fixed at creation: they decide which
- *  subjects it applies to, and changing that later would silently move every
- *  future check. */
+/** Create a list.
+ *
+ * Only ever a CATEGORY-SCOPED component list. `checklists.resolve` reads one
+ * base list per kind and merges category-scoped ones on top, and symbols and
+ * footprints carry no category — so anything else would be created, listed,
+ * edited, and never reach a single verification. The API refuses those too;
+ * this form just does not offer them. */
 function NewChecklist({
   onCancel,
   onCreated,
@@ -597,7 +601,6 @@ function NewChecklist({
   onCreated: (id: number) => void | Promise<void>;
 }) {
   const [name, setName] = useState("");
-  const [kind, setKind] = useState<ReviewKind>("component");
   const [categoryId, setCategoryId] = useState<number | "">("");
   const [description, setDescription] = useState("");
   const [cats, setCats] = useState<{ id: number; label: string }[] | null>(null);
@@ -618,8 +621,8 @@ function NewChecklist({
     try {
       const made = await createChecklist({
         name: name.trim(),
-        subject_kind: kind,
-        category_id: kind === "component" && categoryId !== "" ? categoryId : null,
+        subject_kind: "component",
+        category_id: categoryId === "" ? null : categoryId,
         description: description.trim(),
         items: [],
       });
@@ -637,8 +640,10 @@ function NewChecklist({
         <h1 className="skill-title">New checklist</h1>
       </div>
       <p className="muted">
-        A category-scoped list MERGES on top of the base one for its kind — it does not replace
-        it. Use it for what one family needs on top of the standard checks.
+        A new list is always a COMPONENT list scoped to a category, and it MERGES on top of the
+        base one rather than replacing it — use it for what one family needs beyond the standard
+        checks. Symbols and footprints have no category and therefore one list each: add those
+        items to the base symbol or footprint checklist.
       </p>
       {error ? <ErrorBanner message={error} /> : null}
       <div className="skill-desc">
@@ -654,27 +659,16 @@ function NewChecklist({
       <div className="btn-row">
         <select
           className="sel"
-          value={kind}
-          onChange={(e) => setKind(e.target.value as ReviewKind)}
+          value={categoryId === "" ? "" : String(categoryId)}
+          onChange={(e) => setCategoryId(e.target.value === "" ? "" : Number(e.target.value))}
         >
-          <option value="component">component</option>
-          <option value="symbol">symbol</option>
-          <option value="footprint">footprint</option>
+          <option value="">— choose the category it applies to —</option>
+          {(cats ?? []).map((c) => (
+            <option key={c.id} value={String(c.id)}>
+              {c.label}
+            </option>
+          ))}
         </select>
-        {kind === "component" ? (
-          <select
-            className="sel"
-            value={categoryId === "" ? "" : String(categoryId)}
-            onChange={(e) => setCategoryId(e.target.value === "" ? "" : Number(e.target.value))}
-          >
-            <option value="">no category — a second base list</option>
-            {(cats ?? []).map((c) => (
-              <option key={c.id} value={String(c.id)}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        ) : null}
       </div>
       <div className="skill-desc">
         <input
@@ -690,7 +684,7 @@ function NewChecklist({
         <button
           type="button"
           className="btn btn-accent"
-          disabled={busy || !name.trim()}
+          disabled={busy || !name.trim() || categoryId === ""}
           onClick={() => void create()}
         >
           {busy ? "Creating…" : "Create"}

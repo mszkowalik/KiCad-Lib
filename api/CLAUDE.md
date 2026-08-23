@@ -709,9 +709,13 @@ review axis records who verified each version against its documentation.
     with a `from` per item, which is the only honest way to look at a
     category-scoped list — it MERGES on top of the base one rather than
     replacing it.
-  - **Deleting is category-scoped only.** A base checklist would leave its kind
-    with nothing to answer. Past verifications are safe either way because of
-    the snapshot above.
+  - **Only ONE base list per kind is ever read**, and symbols and footprints
+    carry no category — so `create_checklist` accepts a CATEGORY-SCOPED
+    COMPONENT list and nothing else, and refuses a second list for a category
+    that already has one. Anything else would be created, listed, edited and
+    never reach a verification. Deleting is category-scoped for the mirror
+    reason: a base checklist would leave its kind with nothing to answer. Past
+    verifications are safe either way because of the snapshot above.
   - `save_checklist` / `create_checklist` call `db.expire_all()` before
     re-reading. Without it the response described the checklist as it was
     BEFORE the save (`version_no: null`, zero items, the new row missing from
