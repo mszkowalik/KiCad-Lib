@@ -60,17 +60,25 @@ export default function ReviewCard({
     onChange?.(next);
   };
 
-  const answer = async (item: ChecklistItemDef, result: "checked" | "na" | "skipped") => {
+  const answer = async (item: ChecklistItemDef, result: "checked" | "na" | "skipped" | "flagged") => {
     let itemNote: string | undefined;
     if (result !== "checked") {
       const why = await dialog.prompt(
         result === "na"
           ? `Why does "${item.text}" not apply?`
-          : `Why can "${item.text}" not be verified?`,
-        { title: result === "na" ? "Not applicable" : "Skipped" },
+          : result === "flagged"
+            ? `What is wrong with "${item.text}"? (goes on the second-pass list)`
+            : `Why can "${item.text}" not be verified?`,
+        { title: result === "na" ? "Not applicable" : result === "flagged" ? "Flag an issue" : "Skipped" },
       );
       if (why === null) return;
       itemNote = why.trim() || undefined;
+      if (result === "flagged" && !itemNote) {
+        await dialog.alert("A flag needs a note — it IS the second-pass worklist entry.", {
+          title: "Flag an issue",
+        });
+        return;
+      }
     }
     setAnswers((prev) => ({ ...prev, [item.key]: { key: item.key, result, note: itemNote } }));
   };
@@ -268,6 +276,14 @@ export default function ReviewCard({
                     <button type="button" className="btn btn-sm" onClick={() => void answer(item, "skipped")}>
                       Skip
                     </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-danger"
+                      onClick={() => void answer(item, "flagged")}
+                      title="Verified and found wrong — record the defect without fixing it"
+                    >
+                      Flag
+                    </button>
                   </div>
                 ) : null}
               </li>
@@ -293,6 +309,7 @@ const RESULT_TONE: Record<string, string> = {
   na: "neutral",
   skipped: "warn",
   failed: "err",
+  flagged: "err",
 };
 
 function explain(d: ReviewDetail, openCount: number): string {
@@ -304,7 +321,9 @@ function explain(d: ReviewDetail, openCount: number): string {
     case "partial":
       return `Partially verified — ${d.skipped} skipped, ${openCount} item(s) still open.`;
     case "failed":
-      return `${d.failed} machine check(s) failing — fix the data and republish, or review the items.`;
+      return d.flagged
+        ? `${d.flagged} item(s) flagged as wrong (second-pass list)${d.failed - d.flagged ? `, ${d.failed - d.flagged} machine check(s) failing` : ""}.`
+        : `${d.failed} machine check(s) failing — fix the data and republish, or review the items.`;
     default:
       return "This version has not been verified against its documentation yet.";
   }

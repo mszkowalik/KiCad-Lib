@@ -331,6 +331,36 @@ function HealthTab({ health }: { health: ReviewHealth }) {
         )}
       </section>
       <section className="card pad meta-card">
+        <h3 className="card-title">Flagged for a second pass</h3>
+        {health.flagged.length === 0 ? (
+          <p className="muted">Nothing is flagged — no known defects awaiting a fix.</p>
+        ) : (
+          <ul className="notes-list">
+            {health.flagged.map((f, i) => (
+              <li key={i} className="note">
+                <div className="note-head">
+                  <Link
+                    className="comp-link"
+                    to={
+                      f.kind === "component"
+                        ? `/library/components/${f.id}`
+                        : `/library/templates/${f.kind}s/${f.id}`
+                    }
+                  >
+                    {f.name}
+                  </Link>{" "}
+                  <span className="mono muted">{f.key}</span>{" "}
+                  <span className="pill err">flagged</span>
+                </div>
+                <p className="muted">
+                  {f.note ?? ""} <span className="dim">— {f.actor_type} · {f.actor}</span>
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section className="card pad meta-card">
         <h3 className="card-title">Chronically skipped checklist items</h3>
         {health.top_skipped_items.length === 0 ? (
           <p className="muted">Nothing is being skipped.</p>

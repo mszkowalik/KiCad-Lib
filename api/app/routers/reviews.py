@@ -131,7 +131,7 @@ def record_check(kind: str, parent_id: int, body: CheckIn, request: Request,
         for i in body.items:
             if str(i.get("result", "")) == "failed":
                 raise HTTPException(422, "result 'failed' is reserved for machine checks — "
-                                         "fix the data or use 'skipped' with a note")
+                                         "use 'flagged' with a note to record a found defect")
     actor = actor_of(request)
     res = review_svc.record_check(db, kind, parent, parent.current_version_id,
                                   actor=actor, actor_type="human",
@@ -445,7 +445,44 @@ def review_health(db: Session = Depends(get_db)):
         "used_not_signed": sorted(used_not_signed),
         "used_deprecated": sorted(used_deprecated),
         "top_skipped_items": [{"key": k, "count": n} for k, n in top_skipped],
+        "flagged": flagged_worklist(db),
     }
+
+
+def flagged_worklist(db: Session) -> list[dict]:
+    """Every `flagged` item on a CURRENT version — the second-pass list.
+
+    A flag records "verified and found wrong, deliberately not fixed yet"
+    (user design 2026-08-23), so this is the answer to "what needs a
+    correction pass". Flags on superseded versions are history, not work.
+    """
+    out: list[dict] = []
+    for kind, model in (("component", M.Component), ("symbol", M.Symbol),
+                        ("footprint", M.Footprint)):
+        parents = db.query(model).filter(model.current_version_id.isnot(None)).all()
+        by_parent: dict[int, list[M.ReviewRecord]] = {}
+        ids = [p.id for p in parents]
+        if not ids:
+            continue
+        q = (db.query(M.ReviewRecord)
+             .filter(M.ReviewRecord.subject_kind == kind,
+                     M.ReviewRecord.subject_id.in_(ids))
+             .order_by(M.ReviewRecord.id))
+        for r in q:
+            by_parent.setdefault(r.subject_id, []).append(r)
+        for p in parents:
+            rec = review_svc.effective_record(by_parent.get(p.id, []), p.current_version_id)
+            if rec is None:
+                continue
+            for item in rec.items or []:
+                if item.get("result") == "flagged":
+                    out.append({"kind": kind, "id": p.id, "name": p.name,
+                                "key": item.get("key"), "note": item.get("note"),
+                                "actor": item.get("actor"),
+                                "actor_type": item.get("actor_type"),
+                                "at": item.get("at")})
+    out.sort(key=lambda r: (r["kind"], r["name"], r["key"] or ""))
+    return out
 
 
 # ------------------------------------------------------- project design review

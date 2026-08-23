@@ -84,7 +84,7 @@ export function SignoffPill({
 const REVIEW_TONES: Record<string, [string, string]> = {
   checked: ["ok", "checked"],
   partial: ["warn", "partial"],
-  failed: ["err", "checks fail"],
+  failed: ["err", "issues"],
   unreviewed: ["neutral", "unreviewed"],
 };
 

@@ -35,7 +35,10 @@ from .. import models as M
 from . import checklists, signoff
 
 KINDS = ("component", "symbol", "footprint")
-RESULTS = ("checked", "na", "skipped", "failed")
+# `failed` = a machine rule violation; `flagged` = an agent or human verified
+# an item and found it WRONG, recorded without fixing it (the second-pass
+# list, user design 2026-08-23). Both read as state "failed" ("issues").
+RESULTS = ("checked", "na", "skipped", "failed", "flagged")
 TIER = {"machine": 0, "agent": 1, "human": 2}
 STATE_RANK = {"failed": 0, "unreviewed": 1, "partial": 2, "checked": 3}
 
@@ -103,15 +106,18 @@ def state_from_record(record: M.ReviewRecord | None, checklist_items: list[dict]
     """
     if record is None:
         return {"state": "unreviewed", "provenance": None, "record_id": None,
-                "answered": 0, "total": 0, "skipped": 0, "failed": 0, "unanswered": []}
+                "answered": 0, "total": 0, "skipped": 0, "failed": 0, "flagged": 0,
+                "unanswered": []}
 
     if record.items is None:
         # One-click human confirmation: no item breakdown, full check.
         return {"state": "checked", "provenance": "human", "record_id": record.id,
-                "answered": 0, "total": 0, "skipped": 0, "failed": 0, "unanswered": []}
+                "answered": 0, "total": 0, "skipped": 0, "failed": 0, "flagged": 0,
+                "unanswered": []}
 
     by_key = {i.get("key"): i for i in record.items}
-    failed = [k for k, i in by_key.items() if i.get("result") == "failed"]
+    failed = [k for k, i in by_key.items() if i.get("result") in ("failed", "flagged")]
+    flagged = [k for k, i in by_key.items() if i.get("result") == "flagged"]
     skipped = [k for k, i in by_key.items() if i.get("result") == "skipped"]
     expected = [i["key"] for i in (checklist_items or [])]
     unanswered = [k for k in expected if k not in by_key]
@@ -125,7 +131,8 @@ def state_from_record(record: M.ReviewRecord | None, checklist_items: list[dict]
         state = "checked"
     return {"state": state, "provenance": _provenance(record), "record_id": record.id,
             "answered": answered, "total": max(len(expected), len(by_key)),
-            "skipped": len(skipped), "failed": len(failed), "unanswered": unanswered}
+            "skipped": len(skipped), "failed": len(failed), "flagged": len(flagged),
+            "unanswered": unanswered}
 
 
 def _checklist_items_of(db: Session, record: M.ReviewRecord | None) -> list[dict] | None:
@@ -273,6 +280,11 @@ def record_check(db: Session, kind: str, parent, version_id: int, actor: str,
             result = str(item.get("result", "")).strip()
             if not key or result not in RESULTS:
                 blocked.append(f"{key or '?'}: bad result {result!r}")
+                continue
+            if result == "flagged" and not str(item.get("note") or "").strip():
+                # A flag IS the second-pass worklist entry — without a note the
+                # next person has no idea what to fix.
+                blocked.append(f"{key}: flagged needs a note saying what is wrong")
                 continue
             old = merged.get(key)
             if old is not None and TIER.get(old.get("actor_type", "machine"), 0) > TIER.get(actor_type, 0):

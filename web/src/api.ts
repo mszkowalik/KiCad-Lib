@@ -4513,7 +4513,7 @@ export interface ChecklistItemDef {
   machine?: boolean;
   /** Present when the item is already answered on the current record. */
   answered?: {
-    result: "checked" | "na" | "skipped" | "failed";
+    result: "checked" | "na" | "skipped" | "failed" | "flagged";
     note: string | null;
     actor: string;
     actor_type: ReviewActor;
@@ -4524,7 +4524,7 @@ export interface ChecklistItemDef {
 export interface ReviewRecordItem {
   key: string;
   text?: string;
-  result: "checked" | "na" | "skipped" | "failed";
+  result: "checked" | "na" | "skipped" | "failed" | "flagged";
   note?: string | null;
   actor: string;
   actor_type: ReviewActor;
@@ -4556,6 +4556,8 @@ export interface ReviewStateDetail {
   total: number;
   skipped: number;
   failed: number;
+  /** Items verified and found WRONG, deliberately not fixed (subset of failed). */
+  flagged?: number;
   unanswered: string[];
 }
 
@@ -4578,7 +4580,8 @@ export function getReviewDetail(kind: ReviewKind, id: number, signal?: AbortSign
 
 export interface ReviewCheckAnswer {
   key: string;
-  result: "checked" | "na" | "skipped";
+  /** "flagged" = verified and found wrong, recorded without fixing — note required. */
+  result: "checked" | "na" | "skipped" | "flagged";
   note?: string;
 }
 
@@ -4663,6 +4666,17 @@ export interface ReviewHealth {
   used_not_signed: string[];
   used_deprecated: string[];
   top_skipped_items: { key: string; count: number }[];
+  /** The second-pass worklist: every flagged item on a current version. */
+  flagged: {
+    kind: ReviewKind;
+    id: number;
+    name: string;
+    key: string;
+    note: string | null;
+    actor: string;
+    actor_type: ReviewActor;
+    at: string;
+  }[];
 }
 
 export function getReviewHealth(signal?: AbortSignal): Promise<ReviewHealth> {

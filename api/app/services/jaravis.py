@@ -1350,8 +1350,9 @@ def get_review_checklist(kind: str, name: str) -> str:
         return json.dumps({
             "kind": kind, "name": parent.name, "version_id": version_id,
             "state": state["state"], "items": items, "extra_items": extras,
-            "results_allowed": ["checked", "na", "skipped"],
+            "results_allowed": ["checked", "na", "skipped", "flagged"],
             "note": "machine items are answered automatically; answer the judgment items. "
+                    "'flagged' = verified and found wrong, not fixed (note required). "
                     "Add ad-hoc points with keys like custom:<slug>.",
         })
     finally:
@@ -1363,10 +1364,17 @@ def record_verification(kind: str, name: str, items_json: str, note: str = "") -
     """Record a documentation verification on the CURRENT version of a
     component, symbol or footprint. Cumulative: your answers merge on top of
     the machine checks and any earlier record; you can NEVER overwrite an item
-    a human answered. Every item is {"key", "result", "note"} with result
-    "checked" (verified against the documentation), "na" (does not apply —
-    say why), or "skipped" (applies but could not be verified — say what was
-    missing; the version then reads checked-partial until a follow-up).
+    a human answered. Every item is {"key", "result", "note"} with result:
+    - "checked": verified against the documentation and CORRECT.
+    - "na": does not apply to this part — say why.
+    - "skipped": applies but could not be verified (missing documentation) —
+      say what was missing; the version reads checked-partial.
+    - "flagged": verified and found WRONG, deliberately NOT fixed — the note
+      MUST describe the exact discrepancy (e.g. "pad pitch 0.5mm, datasheet
+      says 0.65mm"). Flagging puts the part on the issues list for a later
+      correction pass; use it when the user asked for review without changes,
+      or when a fix needs their decision. Do not silently fix AND flag —
+      one or the other.
     Verify HONESTLY: read the datasheet first (read_datasheet); never mark
     "checked" on something you did not actually compare. Ad-hoc extra points
     use keys like custom:<slug> and free-text notes.
@@ -1393,8 +1401,8 @@ def record_verification(kind: str, name: str, items_json: str, note: str = "") -
         bad = [i for i in items if str(i.get("result", "")) == "failed"]
         if bad:
             return json.dumps({"error": "result 'failed' is reserved for machine checks — "
-                                        "use 'skipped' with a note describing the problem, "
-                                        "or fix the data and re-publish"})
+                                        "use 'flagged' with a note describing the defect "
+                                        "(second-pass list), or fix the data and re-publish"})
         res = review_svc.record_check(db, kind, parent, version_id, actor="jaravis",
                                       actor_type="agent", items=items, note=note or None)
         db.commit()

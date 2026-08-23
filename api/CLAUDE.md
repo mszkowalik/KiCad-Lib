@@ -418,8 +418,10 @@ up in the UI automatically. Audit actions in use: `proposal.create`,
   future agent run, so `propose_skill_update` still files a draft.
 - The agent records verifications with `get_review_checklist` /
   `record_verification` and must be honest there: `skipped` when the
-  documentation does not allow a check, never `checked` on a guess. It can
-  never overwrite an item a human answered, and `failed` is machine-only.
+  documentation does not allow a check, `flagged` (note REQUIRED) when it
+  verified an item and found it WRONG without fixing it, never `checked` on a
+  guess. It can never overwrite an item a human answered, and `failed` is
+  machine-only.
 - Production sign-off stays human-only; `refresh_supply` re-fetches
   auto-managed LCSC/JLC data live (same domain the background refresher owns).
 
@@ -677,7 +679,12 @@ review axis records who verified each version against its documentation.
   (consuming `M.Rule` global defaults) — plus **`fp.model3d`: a missing 3D
   model FAILS the check** and stays failed until a human/agent marks the item
   `na` in a follow-up. Machine items answer `checked|failed|na`, never
-  `skipped`; `failed` is machine-only (agents/humans use `skipped` + a note).
+  `skipped`; `failed` is machine-only. Agents/humans additionally have
+  **`flagged`** (verified and found WRONG, deliberately not fixed — note
+  required, enforced in `record_check`): it ranks like `failed` (state
+  "issues") and feeds the second-pass worklist
+  (`reviews.flagged_worklist`, surfaced on the health panel). Review-only
+  passes use it instead of editing.
 - **Carries mirror the sign-off carry**: equal `material_sha` or
   `recheck_required=False` (the minor-change waiver, settable at publish time
   via `minor_change` on the geometry tools/paste box) clones the record onto
