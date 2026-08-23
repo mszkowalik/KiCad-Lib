@@ -244,6 +244,17 @@ sign-off states to `STATUS_TONES`.
   `SectionNav` in `App.tsx`; every pre-overhaul route redirects, so never link
   to `/components/...`, `/invoices`, `/parts-stock`, `/kicad`, `/proposals` in
   new code — use the new paths.
+- **The Reviews queue is a workbench, not just a table.** A row expands
+  inline (`components/ReviewWorkbench.tsx`): ReviewCards on the left, the
+  archived datasheet in an iframe plus the symbol/footprint renders on the
+  right, Prev/Next walking the FILTERED list. Links inside a row must
+  `stopPropagation()` — the row itself is the expand toggle. The template
+  tabs sort by `used_by` (leverage) before name; keep that ordering, it is
+  the point of the column. "Queue shown → agent" files review requests;
+  "Confirm agent checks" is the bulk human confirmation.
+- **`dialog.select`** exists alongside confirm/prompt/alert — a fixed radio
+  set resolving the chosen value or null. Use it where a preset beats free
+  text (the skip-reason codes were the first user).
 - **"← Back" means BACK, not UP: use `BackLink` from `components/Ui.tsx`.**
   A plain `<Link>` to a parent page is wrong on any page you can arrive at from
   more than one place — opening a footprint from a component and pressing Back

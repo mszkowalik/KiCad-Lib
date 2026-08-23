@@ -40,7 +40,8 @@ MANUFACTURER_PROPS = ("Manufacturer 1", "Manufacturer Part Number 1",
 # remove a check below — `GET /api/checklists/meta` serves it verbatim.
 MACHINE_KEYS: dict[str, tuple[str, ...]] = {
     "footprint": (
-        "fp.parse", "fp.courtyard_present", "fp.courtyard_width", "fp.fab_outline",
+        "fp.parse", "fp.courtyard_present", "fp.courtyard_width", "fp.courtyard_grid",
+        "fp.fab_outline",
         "fp.fab_width", "fp.silk_width", "fp.smd_pad_shape", "fp.min_drill",
         "fp.min_th_pad", "fp.via_dims", "fp.model3d",
     ),
@@ -94,9 +95,44 @@ def _parse_fp_graphics(content: str) -> list[dict]:
                 "type": found_type.lstrip("("),
                 "layer": layer_m.group(1),
                 "width": float(width_m.group(1)) if width_m else None,
+                "block": block,  # for coordinate checks (courtyard grid)
             })
         i = j + 1
     return results
+
+
+# every drawn coordinate pair a graphic block can carry
+_COORD_RE = re.compile(r"\((?:start|end|mid|center|xy)\s+(-?[\d.]+)\s+(-?[\d.]+)\)")
+
+
+def _off_grid(value: float, grid: float = 0.1) -> bool:
+    """True when `value` does not sit on the grid. The comparison is scaled to
+    grid units first — 1.05 is off a 0.1 grid, 0.30000000000000004 is not."""
+    scaled = value / grid
+    return abs(scaled - round(scaled)) > 1e-3
+
+
+def _courtyard_grid_item(entries: list[dict]) -> dict:
+    """`fp.courtyard_grid`: every courtyard coordinate on the 0.1 mm grid.
+
+    The courtyard is the clearance envelope other footprints are placed
+    against, so an off-grid corner quietly poisons every board-level spacing
+    decision made from it (user request 2026-08-24). Checks every coordinate a
+    CrtYd graphic carries — line ends, arc mids, circle centers, polygon
+    points — on both F.CrtYd and B.CrtYd.
+    """
+    coords: list[tuple[float, float]] = []
+    for e in entries:
+        if e["layer"].endswith(".CrtYd"):
+            coords += [(float(x), float(y)) for x, y in _COORD_RE.findall(e.get("block", ""))]
+    if not coords:
+        return _item("fp.courtyard_grid", "na", "no courtyard graphics")
+    bad = sorted({v for xy in coords for v in xy if _off_grid(v)})
+    if bad:
+        shown = ", ".join(f"{v:g}" for v in bad[:8]) + ("…" if len(bad) > 8 else "")
+        return _item("fp.courtyard_grid", "failed",
+                     f"courtyard coordinates off the 0.1 mm grid: {shown}")
+    return _item("fp.courtyard_grid", "checked")
 
 
 def _iter_pad_blocks(content: str):
@@ -141,6 +177,8 @@ def validate_footprint(db: Session, version: M.FootprintVersion) -> list[dict]:
     items.append(_item("fp.courtyard_present", "checked" if has_crtyd else "failed",
                        "" if has_crtyd else "no F.CrtYd courtyard outline"))
     items.append(_width_items(graphics, "F.CrtYd", CRTYD_WIDTH, "fp.courtyard_width"))
+
+    items.append(_courtyard_grid_item(graphics))
 
     fab = [e for e in graphics if e["layer"] == "F.Fab"]
     items.append(_item("fp.fab_outline", "checked" if fab else "failed",

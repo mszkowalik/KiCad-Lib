@@ -565,6 +565,39 @@ class ReviewRecord(Base):
     )
 
 
+class ReviewRequest(Base):
+    """One subject queued for AGENT verification (user design 2026-08-24).
+
+    The review tiers (machine < agent < human) always allowed the agent to
+    verify, but nothing pointed it at the queue — 469 unreviewed subjects and
+    the only way to use the agent was naming parts one at a time. A request is
+    that pointer: the user queues rows from the Reviews page, the agent reads
+    them back with `get_review_worklist`, and `record_check` marks the request
+    done the moment a verification for that subject lands (whoever wrote it —
+    a human answering first is just as done).
+
+    Deliberately NOT a draft or a gate: the request carries no content and
+    blocks nothing. Open = `done_at IS NULL`; requests are small and append-
+    only enough that nothing prunes them — history is cheap and answers "when
+    did I ask".
+    """
+
+    __tablename__ = "review_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    subject_kind: Mapped[str] = mapped_column(String(20))  # component | symbol | footprint
+    subject_id: Mapped[int] = mapped_column(Integer)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_by: Mapped[str] = mapped_column(String(100), default="user")
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    done_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    __table_args__ = (
+        Index("ix_review_request_subject", "subject_kind", "subject_id"),
+    )
+
+
 class SnapshotReview(Base):
     """The end-of-design review of one project snapshot (user design
     2026-08-23): "I walked the BOM of commit <sha> and finished the review".

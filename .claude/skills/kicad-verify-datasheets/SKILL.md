@@ -2,7 +2,7 @@
 name: kicad-verify-datasheets
 description: "How to check a part against its datasheet with read_datasheet, which returns page text AND rendered page images: pinout vs symbol pin directions, land pattern vs footprint, electrical values vs properties. Use when verifying or cross-checking a component against its documentation."
 ---
-<!-- platform-skill: verify-datasheets v4 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: verify-datasheets v7 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Verify a part against its datasheet
 

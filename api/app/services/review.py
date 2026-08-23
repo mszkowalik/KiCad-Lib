@@ -310,7 +310,7 @@ def record_check(db: Session, kind: str, parent, version_id: int, actor: str,
             if old is not None and TIER.get(old.get("actor_type", "machine"), 0) > TIER.get(actor_type, 0):
                 blocked.append(f"{key}: already answered by {old.get('actor_type')}")
                 continue
-            merged[key] = {
+            entry = {
                 "key": key,
                 "text": text,
                 "result": result,
@@ -319,6 +319,21 @@ def record_check(db: Session, kind: str, parent, version_id: int, actor: str,
                 "actor_type": actor_type,
                 "at": now,
             }
+            # A skip may carry a structured reason ("html_datasheet",
+            # "no_land_pattern", …) so the health tab can aggregate WHY things
+            # are unverifiable instead of re-reading 84 free-text notes. Free
+            # text stays in `note`; the code is optional and skip-only.
+            reason = str(item.get("reason") or "").strip()
+            if reason and result == "skipped":
+                entry["reason"] = reason[:40]
+            merged[key] = entry
+
+    # A verification — whoever wrote it — answers any open agent request for
+    # this subject. Marking rather than deleting keeps "when did I ask" cheap.
+    for req in db.query(M.ReviewRequest).filter_by(
+            subject_kind=kind, subject_id=parent.id, done_at=None):
+        req.done_at = _utcnow()
+        req.done_by = actor
 
     record = M.ReviewRecord(
         subject_kind=kind,

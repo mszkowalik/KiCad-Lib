@@ -4425,6 +4425,9 @@ export interface ReviewCheckAnswer {
   /** Required for a key the checklist does not define (a custom check added
    *  for this part alone): the record is the only place that wording lives. */
   text?: string;
+  /** Skip only: a structured reason code so the health tab can aggregate WHY
+   *  things are unverifiable ("html_datasheet", "no_land_pattern", …). */
+  reason?: string;
 }
 
 export function recordReviewCheck(
@@ -4474,6 +4477,8 @@ export interface ReviewQueueComponent {
   signoff_state: SignoffState;
   lifecycle: LifecycleState;
   used_in: string[];
+  /** An open agent-verification request exists for this subject. */
+  agent_requested: boolean;
 }
 
 export interface ReviewQueueTemplate {
@@ -4485,16 +4490,24 @@ export interface ReviewQueueTemplate {
   skipped: number;
   failed: number;
   unanswered: number;
+  /** Live components pinning this drawing — on a non-checked row, the number
+   *  of parts this one template is holding down. Sort by it: 18 failed
+   *  symbols were dragging 159 components when this landed. */
+  used_by: number;
+  agent_requested: boolean;
 }
 
 export interface ReviewQueue {
   components: ReviewQueueComponent[];
   symbols: ReviewQueueTemplate[];
   footprints: ReviewQueueTemplate[];
+  /** Set when the queue is scoped to one snapshot's BOM (review-before-build). */
+  scope: { snapshot_id: number; sha: string; project: string; components: number } | null;
 }
 
-export function getReviewQueue(signal?: AbortSignal): Promise<ReviewQueue> {
-  return request("/api/reviews/queue", { signal });
+export function getReviewQueue(signal?: AbortSignal, snapshotId?: number): Promise<ReviewQueue> {
+  const q = snapshotId ? `?snapshot_id=${snapshotId}` : "";
+  return request(`/api/reviews/queue${q}`, { signal });
 }
 
 export interface ReviewHealth {
@@ -4507,6 +4520,11 @@ export interface ReviewHealth {
   used_not_signed: string[];
   used_deprecated: string[];
   top_skipped_items: { key: string; count: number }[];
+  /** WHY items are skipped, from the structured reason a skip can carry. */
+  skip_reasons: { reason: string; count: number }[];
+  /** Machine failures + flags grouped by checklist key — the work plan view:
+   *  one systemic fix clears a whole row. */
+  failing_keys: Record<ReviewKind, { key: string; count: number }[]>;
   /** The second-pass worklist: every flagged item on a current version. */
   flagged: {
     kind: ReviewKind;
@@ -4522,6 +4540,54 @@ export interface ReviewHealth {
 
 export function getReviewHealth(signal?: AbortSignal): Promise<ReviewHealth> {
   return request("/api/reviews/health", { signal });
+}
+
+// agent verification worklist
+
+export interface ReviewRequestRow {
+  id: number;
+  kind: ReviewKind;
+  subject_id: number;
+  name: string;
+  note: string | null;
+  requested_by: string;
+  requested_at: string;
+  done_at: string | null;
+  done_by: string | null;
+}
+
+/** Queue subjects for the agent to verify. Idempotent per open request. */
+export function createReviewRequests(
+  items: { kind: ReviewKind; id: number }[],
+  note?: string,
+): Promise<{ ok: true; added: number; already_queued_or_unpublished: number; open_total: number }> {
+  return request("/api/reviews/requests", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ items, note: note ?? null }),
+  });
+}
+
+export function listReviewRequests(
+  includeDone = false,
+  signal?: AbortSignal,
+): Promise<ReviewRequestRow[]> {
+  return request(`/api/reviews/requests?include_done=${includeDone}`, { signal });
+}
+
+export function withdrawReviewRequest(id: number): Promise<{ ok: true }> {
+  return request(`/api/reviews/requests/${id}`, { method: "DELETE" });
+}
+
+/** One human gesture over every agent-checked subject: writes the same
+ *  one-click confirmation "Mark checked" writes, library-wide. Touches
+ *  nothing partial, failed or already human-confirmed. */
+export function confirmAgentChecks(): Promise<{
+  ok: true;
+  confirmed: Record<ReviewKind, string[]>;
+  total: number;
+}> {
+  return request("/api/reviews/confirm-agent", { method: "POST" });
 }
 
 // checklists

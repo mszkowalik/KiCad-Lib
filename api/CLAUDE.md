@@ -690,6 +690,29 @@ review axis records who verified each version against its documentation.
   A human UI save publishes a version directly; the agent never edits
   checklists. The editor is `web/src/pages/Checklists.tsx`
   (`/reviews/checklists`), and four rules hold it up:
+  - **The agent worklist** (`review_requests`, endpoints under
+    `/api/reviews/requests`): the user queues subjects from the Reviews page,
+    the agent reads them with the `get_review_worklist` tool, and
+    `record_check` marks a subject's open requests done the moment ANY
+    verification lands on it — whoever wrote it. Requests gate nothing and
+    carry no content; done rows are kept, never pruned ("when did I ask" is
+    cheap to answer). `POST /api/reviews/confirm-agent` is the other half:
+    one human gesture writing the same one-click confirmation "Mark checked"
+    writes, over every subject whose effective state is checked with agent
+    provenance — for a component that is its OWN record's provenance, not the
+    aggregate, so confirming a part never silently vouches for an unchecked
+    footprint.
+  - **The queue ranks by leverage.** `GET /api/reviews/queue` returns
+    `used_by` per template (live components pinning it) because 18 failed
+    symbols were dragging 159 components (measured 2026-08-24) and a
+    state-sorted list hid it; `?snapshot_id=` scopes the whole queue to one
+    snapshot's BOM and the drawings it pins (review-before-build). Health adds
+    `failing_keys` (machine failures + flags grouped by checklist key — the
+    work-plan view) and `skip_reasons`, both counted over EFFECTIVE records
+    only, so the numbers cannot drift from the queue.
+  - **A skip may carry a structured `reason`** (`html_datasheet`,
+    `no_document`, …) — `record_check` stores it skip-only, capped at 40
+    chars; the ReviewCard offers the presets. Free text stays in `note`.
   - **`machine: true` is a claim about `services/validator.py`, not a wish.**
     `validator.MACHINE_KEYS` is the registry of keys that module answers, per
     kind; `GET /api/checklists/meta` serves it, the editor greys the flag out

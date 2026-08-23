@@ -1417,6 +1417,42 @@ def record_verification(kind: str, name: str, items_json: str, note: str = "") -
 
 
 @beta_tool
+def get_review_worklist(limit: int = 20) -> str:
+    """Subjects the user QUEUED for you to verify — work these before picking
+    parts yourself. Each row names a component, symbol or footprint whose
+    current version awaits a documentation check. For each one: read the
+    datasheet (read_datasheet), compare with get_symbol / get_footprint /
+    get_component, then record_verification — recording ANY verification on
+    the subject marks its request done automatically. Requests carry an
+    optional note from the user; respect it.
+
+    Args:
+        limit: Max rows (default 20, cap 100) — verify a batch, then re-read.
+    """
+    db = SessionLocal()
+    try:
+        rows = (db.query(M.ReviewRequest).filter_by(done_at=None)
+                .order_by(M.ReviewRequest.id).limit(max(1, min(limit, 100))).all())
+        names: dict[tuple[str, int], str] = {}
+        for kind, model in (("component", M.Component), ("symbol", M.Symbol),
+                            ("footprint", M.Footprint)):
+            ids = [r.subject_id for r in rows if r.subject_kind == kind]
+            if ids:
+                for pid, name in db.query(model.id, model.name).filter(model.id.in_(ids)):
+                    names[(kind, pid)] = name
+        open_total = db.query(M.ReviewRequest).filter_by(done_at=None).count()
+        return json.dumps({
+            "open_total": open_total,
+            "items": [{"kind": r.subject_kind,
+                       "name": names.get((r.subject_kind, r.subject_id), "?"),
+                       "note": r.note, "requested_by": r.requested_by,
+                       "requested_at": r.requested_at.isoformat()} for r in rows],
+        })
+    finally:
+        db.close()
+
+
+@beta_tool
 def list_reviews(state: str = "") -> str:
     """Review states across the library: every component's effective state
     (its own record AND its pinned symbol/footprint records — the weakest leg
@@ -1460,7 +1496,7 @@ TOOLS = [
     get_price_history, get_audit_log, list_models3d, list_skills, get_skill,
     list_signoffs,
     # review axis
-    get_review_checklist, record_verification, list_reviews,
+    get_review_checklist, record_verification, list_reviews, get_review_worklist,
     # external lookup
     lcsc_lookup, search_jlc_parts, get_jlc_details, refresh_supply,
     # projects

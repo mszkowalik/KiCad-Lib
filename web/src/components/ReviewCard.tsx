@@ -68,19 +68,40 @@ export default function ReviewCard({
     onChange?.(next);
   };
 
+  // Why a skip happened, as a CODE the health tab can count. 84 free-text
+  // notes saying "datasheet is HTML" in different words were one problem
+  // wearing 84 hats; a reason makes them one number with one fix.
+  const SKIP_REASONS = [
+    ["html_datasheet", "datasheet archived as HTML, not a PDF"],
+    ["no_document", "no datasheet/documentation available"],
+    ["no_land_pattern", "datasheet has no land-pattern drawing"],
+    ["ambiguous_doc", "documentation is ambiguous or contradictory"],
+    ["other", "other (say what in the note)"],
+  ] as const;
+
   const answer = async (
     item: { key: string; text: string },
     result: "checked" | "na" | "skipped" | "flagged",
   ) => {
     let itemNote: string | undefined;
-    if (result !== "checked") {
+    let reason: string | undefined;
+    if (result === "skipped") {
+      const picked = await dialog.select(
+        `Why can "${item.text}" not be verified?`,
+        SKIP_REASONS.map(([value, label]) => ({ value, label })),
+        { title: "Skipped" },
+      );
+      if (picked === null) return;
+      reason = picked;
+      const why = await dialog.prompt("Anything to add? (optional)", { title: "Skipped" });
+      if (why === null) return;
+      itemNote = why.trim() || undefined;
+    } else if (result !== "checked") {
       const why = await dialog.prompt(
         result === "na"
           ? `Why does "${item.text}" not apply?`
-          : result === "flagged"
-            ? `What is wrong with "${item.text}"? (goes on the second-pass list)`
-            : `Why can "${item.text}" not be verified?`,
-        { title: result === "na" ? "Not applicable" : result === "flagged" ? "Flag an issue" : "Skipped" },
+          : `What is wrong with "${item.text}"? (goes on the second-pass list)`,
+        { title: result === "na" ? "Not applicable" : "Flag an issue" },
       );
       if (why === null) return;
       itemNote = why.trim() || undefined;
@@ -93,7 +114,7 @@ export default function ReviewCard({
     }
     setAnswers((prev) => ({
       ...prev,
-      [item.key]: { key: item.key, result, note: itemNote, text: item.text },
+      [item.key]: { key: item.key, result, note: itemNote, text: item.text, reason },
     }));
   };
 

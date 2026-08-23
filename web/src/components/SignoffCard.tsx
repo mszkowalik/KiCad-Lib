@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   addSignoff,
+  recordReviewCheck,
   errorMessage,
   getSignoff,
   isAbortError,
@@ -24,9 +25,13 @@ import { ErrorBanner, SignoffPill, Spinner } from "./Ui";
  */
 export default function SignoffCard({
   componentId,
+  reviewState,
   onChange,
 }: {
   componentId: number;
+  /** The component's aggregate verification state, when the page knows it —
+   *  enables the combined "Verify + sign off" gesture on unreviewed parts. */
+  reviewState?: string | null;
   /** Fired after a successful sign or revoke, so the page can refresh its badge. */
   onChange?: (state: SignoffDetail) => void;
 }) {
@@ -60,10 +65,20 @@ export default function SignoffCard({
   // The note is an inline field, NOT a dialog.prompt: the prompt dialog
   // refuses to resolve on empty input, so an OPTIONAL note asked that way
   // would leave the user with no way to say "nothing to add".
-  const sign = async () => {
+  const sign = async (alsoVerify = false) => {
     setBusy(true);
     setActionError(null);
     try {
+      if (alsoVerify) {
+        // "I checked it and I will build with it" is one act said twice —
+        // this writes both records in that one breath. Verification first: a
+        // sign-off is the stronger claim, so it must not exist for a moment
+        // over an unverified part if the second call fails.
+        await recordReviewCheck("component", componentId, {
+          one_click: true,
+          note: note.trim() || undefined,
+        });
+      }
       apply(await addSignoff(componentId, note.trim() || undefined));
       setNote("");
     } catch (err) {
@@ -212,6 +227,17 @@ export default function SignoffCard({
             <button type="button" className="btn btn-ok" disabled={busy} onClick={() => void sign()}>
               {detail.state === "stale" ? "Re-check and sign off" : "Sign off"}
             </button>
+            {reviewState && reviewState !== "checked" && reviewState !== "failed" ? (
+              <button
+                type="button"
+                className="btn"
+                disabled={busy}
+                title="Record a one-click documentation check on the component data AND sign it off — one gesture for both claims"
+                onClick={() => void sign(true)}
+              >
+                Verify + sign off
+              </button>
+            ) : null}
           </>
         ) : (
           <button

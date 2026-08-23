@@ -84,11 +84,23 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
         if (warning.unsigned.length) parts.push(`not signed off: ${warning.unsigned.join(", ")}`);
         if (warning.unreviewed.length) parts.push(`not verified: ${warning.unreviewed.join(", ")}`);
         if (warning.deprecated.length) parts.push(`deprecated parts: ${warning.deprecated.join(", ")}`);
+        // Three-way, because "go fix it" is the answer this dialog exists
+        // for: the review queue scoped to THIS snapshot's BOM is one click,
+        // not a mental note to filter 400 rows later.
         const go = await dialog.confirm(
           `This snapshot is not review-clean:\n\n• ${parts.join("\n• ")}\n\nCreate the production batch anyway?`,
-          { title: "Design review incomplete", confirmLabel: "Create anyway", tone: "danger" },
+          { title: "Design review incomplete", confirmLabel: "Create anyway", tone: "danger",
+            cancelLabel: "Not yet" },
         );
         if (go) return void create(true);
+        if (
+          snapshot &&
+          (await dialog.confirm(
+            "Open the review queue scoped to this snapshot's BOM?",
+            { title: "Review first", confirmLabel: "Open review queue", tone: "ok" },
+          ))
+        )
+          navigate(`/reviews?snapshot=${snapshot.id}`);
         return;
       }
       setError(errorMessage(err));

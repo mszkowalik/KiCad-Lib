@@ -32,6 +32,11 @@ export interface PromptOptions {
   confirmLabel?: string;
 }
 
+export interface SelectOptions {
+  title?: string;
+  confirmLabel?: string;
+}
+
 export interface AlertOptions {
   title?: string;
 }
@@ -43,12 +48,20 @@ export interface DialogApi {
   prompt: (message: string, opts?: PromptOptions) => Promise<string | null>;
   /** Resolves once the user dismisses the message. */
   alert: (message: string, opts?: AlertOptions) => Promise<void>;
+  /** Pick one of a fixed set. Resolves the chosen value, or null if cancelled. */
+  select: (
+    message: string,
+    options: { value: string; label: string }[],
+    opts?: SelectOptions,
+  ) => Promise<string | null>;
 }
 
 type Request =
   | { id: number; kind: "confirm"; message: string; opts: ConfirmOptions; resolve: (v: boolean) => void }
   | { id: number; kind: "prompt"; message: string; opts: PromptOptions; resolve: (v: string | null) => void }
-  | { id: number; kind: "alert"; message: string; opts: AlertOptions; resolve: () => void };
+  | { id: number; kind: "alert"; message: string; opts: AlertOptions; resolve: () => void }
+  | { id: number; kind: "select"; message: string; opts: SelectOptions;
+      options: { value: string; label: string }[]; resolve: (v: string | null) => void };
 
 const DialogContext = createContext<DialogApi | null>(null);
 
@@ -65,7 +78,13 @@ const TONE_CLASS: Record<NonNullable<ConfirmOptions["tone"]>, string> = {
 };
 
 function DialogBox({ req, onDone }: { req: Request; onDone: () => void }) {
-  const [value, setValue] = useState(req.kind === "prompt" ? (req.opts.initial ?? "") : "");
+  const [value, setValue] = useState(
+    req.kind === "prompt"
+      ? (req.opts.initial ?? "")
+      : req.kind === "select"
+        ? req.options[0]?.value ?? ""
+        : "",
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const primaryRef = useRef<HTMLButtonElement>(null);
 
@@ -80,7 +99,7 @@ function DialogBox({ req, onDone }: { req: Request; onDone: () => void }) {
 
   const cancel = () => {
     if (req.kind === "confirm") req.resolve(false);
-    else if (req.kind === "prompt") req.resolve(null);
+    else if (req.kind === "prompt" || req.kind === "select") req.resolve(null);
     else req.resolve();
     onDone();
   };
@@ -88,7 +107,7 @@ function DialogBox({ req, onDone }: { req: Request; onDone: () => void }) {
   const accept = () => {
     if (req.kind === "prompt" && !value.trim()) return;
     if (req.kind === "confirm") req.resolve(true);
-    else if (req.kind === "prompt") req.resolve(value);
+    else if (req.kind === "prompt" || req.kind === "select") req.resolve(value);
     else req.resolve();
     onDone();
   };
@@ -100,7 +119,11 @@ function DialogBox({ req, onDone }: { req: Request; onDone: () => void }) {
 
   const title =
     req.opts.title ??
-    (req.kind === "confirm" ? "Confirm" : req.kind === "prompt" ? "Input needed" : "Notice");
+    (req.kind === "confirm"
+      ? "Confirm"
+      : req.kind === "prompt" || req.kind === "select"
+        ? "Input needed"
+        : "Notice");
   const confirmLabel =
     (req.kind !== "alert" ? req.opts.confirmLabel : undefined) ?? (req.kind === "alert" ? "OK" : "Confirm");
   const cancelLabel = (req.kind === "confirm" ? req.opts.cancelLabel : undefined) ?? "Cancel";
@@ -122,6 +145,21 @@ function DialogBox({ req, onDone }: { req: Request; onDone: () => void }) {
       <div className="card pad modal-card" role="dialog" aria-modal="true" aria-label={title}>
         <div className="card-title">{title}</div>
         <p className="modal-msg">{req.message}</p>
+        {req.kind === "select" ? (
+          <div className="modal-options" role="radiogroup">
+            {req.options.map((o) => (
+              <label key={o.value} className="proj-inline-field proj-check">
+                <input
+                  type="radio"
+                  name="dialog-select"
+                  checked={value === o.value}
+                  onChange={() => setValue(o.value)}
+                />
+                {o.label}
+              </label>
+            ))}
+          </div>
+        ) : null}
         {req.kind === "prompt" ? (
           <form onSubmit={onSubmit}>
             <input
@@ -171,6 +209,10 @@ export function DialogProvider({ children }: { children: ReactNode }) {
         new Promise<string | null>((resolve) => push({ kind: "prompt", message, opts, resolve })),
       alert: (message, opts = {}) =>
         new Promise<void>((resolve) => push({ kind: "alert", message, opts, resolve })),
+      select: (message, options, opts = {}) =>
+        new Promise<string | null>((resolve) =>
+          push({ kind: "select", message, opts, options, resolve } as Omit<Request, "id">),
+        ),
     }),
     [push],
   );

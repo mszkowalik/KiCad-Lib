@@ -416,6 +416,118 @@ def create_checklist(body: ChecklistCreateIn, request: Request, db: Session = De
     return get_checklist(cl.id, db)
 
 
+# ------------------------------------------------------------- agent worklist
+class RequestsIn(BaseModel):
+    """Subjects to queue for agent verification: [{kind, id}]."""
+
+    items: list[dict]
+    note: str | None = None
+
+
+@router.post("/reviews/requests")
+def create_review_requests(body: RequestsIn, request: Request, db: Session = Depends(get_db)):
+    """Queue subjects for the agent. Idempotent per open request — re-queuing
+    something already waiting is a no-op, not a duplicate. Nothing is gated:
+    a request is a pointer the agent reads back with `get_review_worklist`."""
+    actor = actor_of(request)
+    open_now = {(r.subject_kind, r.subject_id)
+                for r in db.query(M.ReviewRequest).filter_by(done_at=None)}
+    added, skipped = 0, 0
+    for it in body.items:
+        kind = str(it.get("kind", ""))
+        sid = it.get("id")
+        if kind not in _PARENT or not isinstance(sid, int):
+            raise HTTPException(422, f"each item needs kind (component|symbol|footprint) and id — got {it!r}")
+        if _parent_or_404(db, kind, sid).current_version_id is None:
+            skipped += 1  # nothing published to verify
+            continue
+        if (kind, sid) in open_now:
+            skipped += 1
+            continue
+        db.add(M.ReviewRequest(subject_kind=kind, subject_id=sid,
+                               note=(body.note or "").strip() or None, requested_by=actor))
+        open_now.add((kind, sid))
+        added += 1
+    audit(db, "review.request", "review_request", 0,
+          {"added": added, "skipped": skipped}, actor=actor)
+    db.commit()
+    return {"ok": True, "added": added, "already_queued_or_unpublished": skipped,
+            "open_total": len(open_now)}
+
+
+@router.get("/reviews/requests")
+def list_review_requests(include_done: bool = False, db: Session = Depends(get_db)):
+    q = db.query(M.ReviewRequest).order_by(M.ReviewRequest.id.desc())
+    if not include_done:
+        q = q.filter(M.ReviewRequest.done_at.is_(None))
+    rows = q.limit(500).all()
+    names: dict[tuple[str, int], str] = {}
+    for kind, model in (("component", M.Component), ("symbol", M.Symbol),
+                        ("footprint", M.Footprint)):
+        ids = [r.subject_id for r in rows if r.subject_kind == kind]
+        if ids:
+            for pid, name in db.query(model.id, model.name).filter(model.id.in_(ids)):
+                names[(kind, pid)] = name
+    return [{"id": r.id, "kind": r.subject_kind, "subject_id": r.subject_id,
+             "name": names.get((r.subject_kind, r.subject_id), "?"),
+             "note": r.note, "requested_by": r.requested_by,
+             "requested_at": r.requested_at.isoformat(),
+             "done_at": r.done_at.isoformat() if r.done_at else None,
+             "done_by": r.done_by}
+            for r in rows]
+
+
+@router.delete("/reviews/requests/{req_id}")
+def withdraw_review_request(req_id: int, request: Request, db: Session = Depends(get_db)):
+    r = db.get(M.ReviewRequest, req_id)
+    if r is None:
+        raise HTTPException(404, "request not found")
+    if r.done_at is None:
+        r.done_at = review_svc._utcnow()
+        r.done_by = f"withdrawn by {actor_of(request)}"
+        db.commit()
+    return {"ok": True}
+
+
+@router.post("/reviews/confirm-agent")
+def confirm_agent_checks(request: Request, db: Session = Depends(get_db)):
+    """One human gesture over every agent-checked subject.
+
+    The tier system makes `checked (agent)` a real state but not the final
+    one; confirming each part one page at a time makes trusting the agent more
+    work than not using it. This writes the same one-click human confirmation
+    the ReviewCard's "Mark checked" button writes, for every subject whose
+    effective state is checked with agent provenance — nothing partial, failed
+    or human-touched is touched.
+    """
+    actor = actor_of(request)
+    confirmed: dict[str, list[str]] = {"component": [], "symbol": [], "footprint": []}
+    for kind, model in (("component", M.Component), ("symbol", M.Symbol),
+                        ("footprint", M.Footprint)):
+        parents = db.query(model).filter(model.current_version_id.isnot(None)).all()
+        states = _template_states(db, kind, parents) if kind != "component" else None
+        if kind == "component":
+            comp_states = review_svc.states_for_components(db, parents)
+        for p in parents:
+            if kind == "component":
+                # the component's OWN record, not the aggregate — confirming the
+                # part must not silently vouch for an unchecked footprint
+                s = comp_states[p.id].get("parts", {}).get("component",
+                                                           comp_states[p.id])
+            else:
+                s = states[p.id]
+            if s["state"] == "checked" and s.get("provenance") == "agent":
+                review_svc.record_check(db, kind, p, p.current_version_id,
+                                        actor=actor, actor_type="human", items=None,
+                                        note="Bulk confirmation of the agent's verification")
+                confirmed[kind].append(p.name)
+    total = sum(len(v) for v in confirmed.values())
+    audit(db, "review.confirm_agent", "review_record", 0,
+          {"confirmed": total}, actor=actor)
+    db.commit()
+    return {"ok": True, "confirmed": confirmed, "total": total}
+
+
 # ---------------------------------------------------------------- used-in map
 def used_in_projects(db: Session) -> dict[int, list[str]]:
     """component_id -> project names whose LATEST ready snapshot uses it."""
@@ -494,13 +606,51 @@ def delete_checklist(cl_id: int, request: Request, db: Session = Depends(get_db)
 
 
 @router.get("/reviews/queue")
-def review_queue(db: Session = Depends(get_db)):
+def review_queue(snapshot_id: int | None = None, db: Session = Depends(get_db)):
+    """The review worklist.
+
+    ``snapshot_id`` scopes it to one project snapshot's BOM — the
+    review-before-build case the run-creation warning points at. Components
+    narrow to that BOM, and the template tabs narrow to the drawings those
+    components pin, so "review this batch" is a finite list with an end.
+    """
     comps = db.query(M.Component).options(
         selectinload(M.Component.versions).selectinload(M.ComponentVersion.properties)
     ).all()
+
+    scope_note = None
+    if snapshot_id is not None:
+        snap = db.get(M.ProjectSnapshot, snapshot_id)
+        if snap is None:
+            raise HTTPException(404, "snapshot not found")
+        bom_ids = {cid for (cid,) in db.query(M.SnapshotBomLine.component_id)
+                   .filter(M.SnapshotBomLine.snapshot_id == snapshot_id,
+                           M.SnapshotBomLine.component_id.isnot(None)).distinct()}
+        comps = [c for c in comps if c.id in bom_ids]
+        proj = db.get(M.Project, snap.project_id)
+        scope_note = {"snapshot_id": snapshot_id, "sha": snap.sha[:10],
+                      "project": proj.name if proj else "?", "components": len(comps)}
+
     review_states = review_svc.states_for_components(db, comps)
     signoff_states = signoff.states_for(db, comps, detail=False)
     used = used_in_projects(db)
+
+    # Which templates each live component pins — the leverage map. 18 failed
+    # symbols made 159 components read "failed" (measured 2026-08-24): the
+    # queue has to say which drawing unblocks how many parts, or the debt
+    # looks 10x wider than it is.
+    sym_users: dict[str, int] = {}
+    fp_users: dict[int, int] = {}
+    fp_parent_of = dict(db.query(M.FootprintVersion.id, M.FootprintVersion.footprint_id))
+    for c in comps:
+        cv = next((v for v in c.versions if v.id == c.current_version_id), None)
+        if cv is None:
+            continue
+        if cv.base_component:
+            sym_users[cv.base_component] = sym_users.get(cv.base_component, 0) + 1
+        fp_id = fp_parent_of.get(cv.footprint_version_id) if cv.footprint_version_id else None
+        if fp_id is not None:
+            fp_users[fp_id] = fp_users.get(fp_id, 0) + 1
 
     comp_rows = []
     for c in comps:
@@ -520,25 +670,41 @@ def review_queue(db: Session = Depends(get_db)):
 
     syms = db.query(M.Symbol).order_by(M.Symbol.name).all()
     fps = db.query(M.Footprint).order_by(M.Footprint.name).all()
+    if snapshot_id is not None:
+        syms = [s for s in syms if sym_users.get(s.name)]
+        fps = [f for f in fps if fp_users.get(f.id)]
     sym_states = _template_states(db, "symbol", syms)
     fp_states = _template_states(db, "footprint", fps)
 
-    def _template_rows(kind, parents, states):
+    # open agent requests, so the queue can show what is already handed off
+    requested = {(r.subject_kind, r.subject_id)
+                 for r in db.query(M.ReviewRequest).filter_by(done_at=None)}
+
+    def _template_rows(kind, parents, states, users):
         rows = []
         for p in parents:
             if p.current_version_id is None:
                 continue
             s = states[p.id]
+            n = users.get(p.name if kind == "symbol" else p.id, 0)
             rows.append({"id": p.id, "name": p.name, "kind": kind,
                          "review_state": s["state"], "provenance": s.get("provenance"),
                          "skipped": s["skipped"], "failed": s["failed"],
-                         "unanswered": len(s["unanswered"])})
+                         "unanswered": len(s["unanswered"]),
+                         # live components pinning this drawing; on a non-checked
+                         # row this IS the number of parts it is holding down
+                         "used_by": n,
+                         "agent_requested": (kind, p.id) in requested})
         return rows
+
+    for row in comp_rows:
+        row["agent_requested"] = ("component", row["id"]) in requested
 
     return {
         "components": comp_rows,
-        "symbols": _template_rows("symbol", syms, sym_states),
-        "footprints": _template_rows("footprint", fps, fp_states),
+        "symbols": _template_rows("symbol", syms, sym_states, sym_users),
+        "footprints": _template_rows("footprint", fps, fp_states, fp_users),
+        "scope": scope_note,
     }
 
 
@@ -569,14 +735,38 @@ def review_health(db: Session = Depends(get_db)):
             if c.lifecycle_state in HIDDEN_LIFECYCLE:
                 used_deprecated.append(c.name)
 
-    # Chronic skips: which checklist items are most often unverifiable.
+    # Chronic skips and failing keys, counted over EFFECTIVE records only —
+    # summing every historical record would count one part once per follow-up
+    # and make the numbers drift from the queue. Grouping failures by KEY is
+    # the work plan: "fp.model3d failing on 61 footprints" is one job, "218
+    # failed parts" is a wall.
     skip_counts: dict[str, int] = {}
-    for r in (db.query(M.ReviewRecord)
-              .filter(M.ReviewRecord.revoked_at.is_(None))
-              .order_by(M.ReviewRecord.id)):
-        for item in r.items or []:
-            if item.get("result") == "skipped":
-                skip_counts[item.get("key", "?")] = skip_counts.get(item.get("key", "?"), 0) + 1
+    skip_reasons: dict[str, int] = {}
+    fail_keys: dict[str, dict[str, int]] = {"component": {}, "symbol": {}, "footprint": {}}
+    for kind, model in (("component", M.Component), ("symbol", M.Symbol),
+                        ("footprint", M.Footprint)):
+        parents = {p.id: p for p in
+                   db.query(model).filter(model.current_version_id.isnot(None))}
+        by_parent: dict[int, list[M.ReviewRecord]] = {}
+        for r in (db.query(M.ReviewRecord)
+                  .filter(M.ReviewRecord.subject_kind == kind,
+                          M.ReviewRecord.subject_id.in_(parents))
+                  .order_by(M.ReviewRecord.id)):
+            by_parent.setdefault(r.subject_id, []).append(r)
+        for pid, parent in parents.items():
+            rec = review_svc.effective_record(by_parent.get(pid, []),
+                                              parent.current_version_id)
+            if rec is None:
+                continue
+            for item in rec.items or []:
+                key = item.get("key", "?")
+                res = item.get("result")
+                if res == "skipped":
+                    skip_counts[key] = skip_counts.get(key, 0) + 1
+                    reason = item.get("reason") or "unstated"
+                    skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
+                elif res in ("failed", "flagged"):
+                    fail_keys[kind][key] = fail_keys[kind].get(key, 0) + 1
     top_skipped = sorted(skip_counts.items(), key=lambda kv: -kv[1])[:10]
 
     return {
@@ -585,6 +775,11 @@ def review_health(db: Session = Depends(get_db)):
         "used_not_signed": sorted(used_not_signed),
         "used_deprecated": sorted(used_deprecated),
         "top_skipped_items": [{"key": k, "count": n} for k, n in top_skipped],
+        "skip_reasons": [{"reason": k, "count": n}
+                         for k, n in sorted(skip_reasons.items(), key=lambda kv: -kv[1])],
+        "failing_keys": {k: [{"key": key, "count": n}
+                             for key, n in sorted(v.items(), key=lambda kv: -kv[1])]
+                         for k, v in fail_keys.items()},
         "flagged": flagged_worklist(db),
     }
 

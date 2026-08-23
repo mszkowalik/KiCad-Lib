@@ -27,6 +27,8 @@ SEED_ITEMS: dict[str, list[dict]] = {
         {"key": "fp.parse", "text": "Footprint source parses as a valid .kicad_mod", "machine": True},
         {"key": "fp.courtyard_present", "text": "F.CrtYd courtyard outline is present", "machine": True},
         {"key": "fp.courtyard_width", "text": "Courtyard line width is 0.05 mm", "machine": True},
+        {"key": "fp.courtyard_grid", "text": "Courtyard coordinates sit on the 0.1 mm grid",
+         "machine": True},
         {"key": "fp.fab_outline", "text": "F.Fab body outline is present", "machine": True},
         {"key": "fp.fab_width", "text": "F.Fab line width is 0.1 mm", "machine": True},
         {"key": "fp.silk_width", "text": "F.SilkS line width is 0.1 mm", "machine": True},

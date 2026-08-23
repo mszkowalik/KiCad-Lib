@@ -186,6 +186,67 @@ function DiffMeta({
   );
 }
 
+/** The three verification claims on one card: the component's data, and the
+ *  two drawings it pins. Summary pills always; the full ReviewCard mounts on
+ *  expand, so the page stays one screen and the cards' fetches only happen
+ *  when someone is actually verifying. */
+function VerificationSection({
+  detail,
+  version,
+  onChanged,
+}: {
+  detail: ComponentDetailT;
+  version: VersionDetail;
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState<"component" | "symbol" | "footprint" | null>(null);
+  const parts = detail.review?.parts ?? {};
+  const rows: { key: "component" | "symbol" | "footprint"; label: string; id: number | null }[] = [
+    { key: "component", label: "Component data", id: detail.id },
+    ...(version.symbol
+      ? [{ key: "symbol" as const, label: `Symbol — ${version.symbol.name}`, id: version.symbol.id }]
+      : []),
+    ...(version.footprint
+      ? [{
+          key: "footprint" as const,
+          label: `Footprint — ${version.footprint.name}`,
+          id: version.footprint.id,
+        }]
+      : []),
+  ];
+  return (
+    <section className="card pad meta-card">
+      <h3 className="card-title">
+        Verification <ReviewPill state={detail.review?.state} provenance={detail.review?.provenance} />
+      </h3>
+      <ul className="notes-list">
+        {rows.map((r) => (
+          <li key={r.key} className="note">
+            <div className="note-head">
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setOpen(open === r.key ? null : r.key)}
+              >
+                {open === r.key ? "▾" : "▸"}
+              </button>{" "}
+              <span>{r.label}</span>{" "}
+              <ReviewPill
+                state={parts[r.key]?.state}
+                provenance={parts[r.key]?.provenance ?? null}
+              />
+            </div>
+            {open === r.key && r.id !== null ? (
+              <ReviewCard kind={r.key} id={r.id} label={r.label} onChange={onChanged} />
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+
 /** One pinned drawing: a link to it, which version this part was generated
  *  against, whether the library still serves that version, and whether anybody
  *  has verified it.
@@ -1721,42 +1782,17 @@ export default function ComponentDetail() {
           </section>
         ) : null}
 
-        {version && !editing && isCurrentSelected ? (
-          <ReviewCard
-            kind="component"
-            id={compId}
-            label="Component data verification"
-            onChange={() => {
-              getComponent(compId)
-                .then(setDetail)
-                .catch(() => {});
-            }}
-          />
-        ) : null}
-
         {/* The pinned drawings, verifiable HERE. A component is where you
             notice a land pattern is wrong, and the check belongs to the
             footprint — so before this the trail was: open the footprint page,
-            verify, navigate back and lose your place. Each card is the same
-            ReviewCard the template page shows, pointed at the pinned parent. */}
-        {version && !editing && isCurrentSelected && version.symbol ? (
-          <ReviewCard
-            kind="symbol"
-            id={version.symbol.id}
-            label={`Symbol verification — ${version.symbol.name}`}
-            onChange={() => {
-              getComponent(compId)
-                .then(setDetail)
-                .catch(() => {});
-            }}
-          />
-        ) : null}
-        {version && !editing && isCurrentSelected && version.footprint ? (
-          <ReviewCard
-            kind="footprint"
-            id={version.footprint.id}
-            label={`Footprint verification — ${version.footprint.name}`}
-            onChange={() => {
+            verify, navigate back and lose your place. Collapsed to summary
+            rows: three fully-mounted cards were two screens tall, and most
+            visits only need the pills. Expanding mounts the real ReviewCard. */}
+        {version && !editing && isCurrentSelected ? (
+          <VerificationSection
+            detail={detail}
+            version={version}
+            onChanged={() => {
               getComponent(compId)
                 .then(setDetail)
                 .catch(() => {});
@@ -1769,6 +1805,7 @@ export default function ComponentDetail() {
         {version && !editing && isCurrentSelected ? (
           <SignoffCard
             componentId={compId}
+            reviewState={detail.review?.parts?.component?.state ?? detail.review?.state}
             onChange={() => {
               // Keep the page's own badge in step with the card.
               getComponent(compId)
