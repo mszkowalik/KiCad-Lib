@@ -45,9 +45,23 @@ If a helper is *almost* right, extend it in place rather than forking a near-cop
 Routers stay thin (parse request → call a service/helper → shape the response).
 Non-trivial logic and anything with side effects lives in `services/`.
 
-## The versioning + proposal model (core invariant)
+## The versioning + publish model (core invariant)
 
 Read this before touching components, symbols, footprints, or skills.
+
+**AUTO-PUBLISH (user design 2026-08-23).** Writes to components, symbols and
+footprints publish IMMEDIATELY — the draft-approval gate is gone for them
+(skills stay draft-gated; `run_sync` still files drafts). What replaced the
+gate is the **review axis** (`services/review.py`, section below): every
+publish records a machine validation, and verification/sign-off happen
+afterwards, asynchronously. All publish doors go through
+`services/publish.py` — `publish_component_version` /
+`publish_geometry_version` — which owns the datasheet pins, the sign-off
+carry, the review-record carry and the machine check. A new publish path that
+bypasses it silently loses all four. Mirror refreshes are its
+`refresh_mirror_for_*` twins, AFTER the commit. `routers/proposals.py` still
+exists for skills and leftover drafts, and its approve endpoints call the same
+publish functions.
 
 - **Immutable version rows.** `ComponentVersion`, `SymbolVersion`,
   `FootprintVersion`, `SkillVersion` are append-only. You never mutate a live
@@ -395,13 +409,19 @@ up in the UI automatically. Audit actions in use: `proposal.create`,
   stock, projects, snapshots, BOMs, production runs, notes, audit log. When a
   new table/service lands, add a matching Jaravis read tool; withholding data
   from it is a bug, not a safety feature.
-- **Jaravis may view AND edit symbols and footprints** — not just reference
-  them. Edits follow the same structural gate as components: its tools create
-  `SymbolVersion`/`FootprintVersion` DRAFTS that the user approves in the
-  Proposals view ("with user permission" = the approval gate, never bypassed).
-- Writes of any kind stay draft-gated; read access is unrestricted. The only
-  robot-owned exception: `refresh_supply` re-fetches auto-managed
-  LCSC/JLC data live (same domain the background refresher owns).
+- **Jaravis may view AND edit symbols, footprints and components — and its
+  writes AUTO-PUBLISH** (user design 2026-08-23, superseding the draft gate).
+  The `propose_*` tools keep their names but publish immediately through
+  `services/publish.py`; accountability moved from the gate to the review
+  axis (machine validation on every publish, verification records, the
+  review queue). **Skill writes stay draft-gated** — a bad skill steers every
+  future agent run, so `propose_skill_update` still files a draft.
+- The agent records verifications with `get_review_checklist` /
+  `record_verification` and must be honest there: `skipped` when the
+  documentation does not allow a check, never `checked` on a guess. It can
+  never overwrite an item a human answered, and `failed` is machine-only.
+- Production sign-off stays human-only; `refresh_supply` re-fetches
+  auto-managed LCSC/JLC data live (same domain the background refresher owns).
 
 ### Jaravis implementation notes (`services/jaravis.py`)
 
@@ -625,6 +645,67 @@ concepts, and never let a UI print one where it means the other.
 - Jaravis gets READ access only (`list_signoffs`, plus `production_signoff` on
   `get_component`). A production check is a human act and there is no draft to
   gate a robot's version of it.
+- **First human sign-off promotes `in_design` -> `released`**
+  (`signoffs._promote_on_first_sign`) — the ONE automatic lifecycle
+  transition. Deprecated/obsolete are never touched by it.
+
+### The review axis (`services/review.py`, user design 2026-08-23)
+
+Publishing and reviewing are separate axes. Versions publish immediately; the
+review axis records who verified each version against its documentation.
+
+- **`review_records`** — append-only, CUMULATIVE, polymorphic
+  (`subject_kind` + `subject_version_id`, like `Comment`). Each record stores
+  the FULL merged item snapshot; the effective record of a version is simply
+  the newest non-revoked one. Items carry per-item provenance
+  `{actor, actor_type, at}` with the tier rule machine < agent < human
+  enforced at write time (`record_check`) — a lower tier never overwrites a
+  higher tier's answer. `items=None` = a one-click human confirmation.
+- **States are DERIVED, never stored** (`state_from_record`): `unreviewed` |
+  `failed` (a machine item failed) | `partial` (skipped or unanswered items) |
+  `checked`. A component's effective state is the WEAKEST of its own record
+  and its pinned symbol/footprint records (`component_effective` /
+  `states_for_components` — always the bulk variant on list surfaces).
+- **Checklists** (`checklists` + `checklist_versions`,
+  `services/checklists.py`): seeded from code on first start, resolved per
+  subject (base for the kind + category-scoped merges), items keyed stably.
+  A human UI save publishes directly (same rationale as
+  `components.create_version`); the agent never edits checklists.
+- **The machine tier** (`services/validator.py`) runs inside every publish
+  (`machine_check_on_publish`, never raises): the old YAML validator's
+  footprint style/dimension checks, symbol basics, component property rules
+  (consuming `M.Rule` global defaults) — plus **`fp.model3d`: a missing 3D
+  model FAILS the check** and stays failed until a human/agent marks the item
+  `na` in a follow-up. Machine items answer `checked|failed|na`, never
+  `skipped`; `failed` is machine-only (agents/humans use `skipped` + a note).
+- **Carries mirror the sign-off carry**: equal `material_sha` or
+  `recheck_required=False` (the minor-change waiver, settable at publish time
+  via `minor_change` on the geometry tools/paste box) clones the record onto
+  the new version as kind `carry`; component data changes are judged by
+  `signoff.data_carries`. Repoints therefore keep verifications on
+  silk-only edits and strip them on pad moves.
+- **`Component.lifecycle_state`** (`in_design|released|deprecated|obsolete`):
+  usage fitness, separate from review state. `deprecated`/`obsolete`
+  (`mirror.HIDDEN_LIFECYCLE`) are excluded from the generated symbol libs AND
+  both `kicad_http` part endpoints — platform-only. Changed via
+  `PATCH /api/components/{id}/lifecycle`, which rebuilds the mirror when
+  visibility flips.
+- **The `7S Version` field** (`generator.version_prop`, "c5 s3 f7") is
+  injected into every emitted symbol (mirror + HTTP catalog), lands on placed
+  schematic symbols, and is read back at ingest into
+  `SnapshotBomLine.lib_version` (BOM export field `7S Version` → label
+  `LibVersion` — `project_ops.BOM_FIELDS`, BOTH copies). It answers "which
+  library versions was this board drawn with" from the committed source.
+- **`snapshot_reviews`** — the end-of-design record
+  (`POST /api/projects/{id}/review/complete`), storing per-component states
+  at completion so a later run can say "3 components changed since the
+  review". `routers/reviews.py::snapshot_review_issues` is the ONE
+  implementation both the project Review tab and the run-creation gate use.
+- **The run-creation gate WARNS, it never blocks**: `create_run` answers 409
+  `{review_warning: true, …}` for a snapshot with unsigned/unreviewed/
+  deprecated parts, changes since the last review, or no completed review;
+  re-posting with `ack_review=true` proceeds and audits
+  `production.review_ack`. Everything else stays reporting-only.
 
 ## Importing from YAML — two modes
 

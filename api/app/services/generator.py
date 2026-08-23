@@ -360,3 +360,21 @@ def injected_props(datasheets) -> list[dict]:
             value = ds.source_url or ""
         out.append({"key": key, "value": value})
     return out
+
+
+VERSION_PROP_KEY = "7S Version"
+
+
+def version_prop(cv_no: int | None, sym_no: int | None, fp_no: int | None) -> list[dict]:
+    """The merged library-version field baked into every emitted symbol.
+
+    ``"c5 s3 f7"`` = component version 5, pinned symbol version 3, pinned
+    footprint version 7. It lands (hidden) on every placed symbol, so a
+    project committed to git records exactly which library versions the board
+    was drawn with — the BOM extractor reads it back into
+    ``SnapshotBomLine.lib_version``. Missing legs are simply omitted.
+    """
+    parts = [f"{tag}{no}" for tag, no in (("c", cv_no), ("s", sym_no), ("f", fp_no)) if no]
+    if not parts:
+        return []
+    return [{"key": VERSION_PROP_KEY, "value": " ".join(parts)}]

@@ -436,7 +436,7 @@ table.data {
 
 .data.browse-table th:nth-child(2),
 .data.browse-table td:nth-child(2) {
-  width: 12%;
+  width: 11%;
 }
 
 .data.browse-table th:nth-child(3),
@@ -451,12 +451,12 @@ table.data {
 
 .data.browse-table th:nth-child(5),
 .data.browse-table td:nth-child(5) {
-  width: 17%;
+  width: 14%;
 }
 
 .data.browse-table th:nth-child(6),
 .data.browse-table td:nth-child(6) {
-  width: 13%;
+  width: 11%;
 }
 
 .data.browse-table th:nth-child(7),
@@ -476,14 +476,20 @@ table.data {
 
 .data.browse-table th:nth-child(10),
 .data.browse-table td:nth-child(10) {
-  width: 10%;
+  width: 8%;
 }
 
 /* Wide enough for the longest pill ("not signed"): a pill is inline-block, so
    the column's ellipsis cannot shorten it — too narrow simply cuts it off. */
 .data.browse-table th:nth-child(11),
 .data.browse-table td:nth-child(11) {
-  width: 10%;
+  width: 9%;
+}
+
+/* Review (verification) pill — same sizing reasoning as the sign-off column. */
+.data.browse-table th:nth-child(12),
+.data.browse-table td:nth-child(12) {
+  width: 9%;
 }
 
 /* Proposals queue + history: fixed columns, no horizontal scroll (reuses
@@ -508,6 +514,54 @@ table.data {
 .data.proposals-table td:nth-child(8) { width: 12%; }
 .data.proposals-table th:nth-child(9),
 .data.proposals-table td:nth-child(9) { width: 24%; }
+
+/* project design-review table (ReviewTab.tsx) */
+.data.project-review-table { table-layout: fixed; }
+.data.project-review-table th:nth-child(1),
+.data.project-review-table td:nth-child(1) { width: 3%; }
+.data.project-review-table th:nth-child(2),
+.data.project-review-table td:nth-child(2) { width: 22%; }
+.data.project-review-table th:nth-child(3),
+.data.project-review-table td:nth-child(3) { width: 15%; }
+.data.project-review-table th:nth-child(4),
+.data.project-review-table td:nth-child(4) { width: 14%; }
+.data.project-review-table th:nth-child(5),
+.data.project-review-table td:nth-child(5) { width: 15%; }
+.data.project-review-table th:nth-child(6),
+.data.project-review-table td:nth-child(6) { width: 11%; }
+.data.project-review-table th:nth-child(7),
+.data.project-review-table td:nth-child(7) { width: 10%; }
+.data.project-review-table th:nth-child(8),
+.data.project-review-table td:nth-child(8) { width: 10%; }
+
+/* review queue tables (Reviews.tsx) — fixed layout, widths sum to 100% */
+.data.reviews-table { table-layout: fixed; }
+.data.reviews-table th:nth-child(1),
+.data.reviews-table td:nth-child(1) { width: 22%; }
+.data.reviews-table th:nth-child(2),
+.data.reviews-table td:nth-child(2) { width: 14%; }
+.data.reviews-table th:nth-child(3),
+.data.reviews-table td:nth-child(3) { width: 10%; }
+.data.reviews-table th:nth-child(4),
+.data.reviews-table td:nth-child(4) { width: 22%; }
+.data.reviews-table th:nth-child(5),
+.data.reviews-table td:nth-child(5) { width: 9%; }
+.data.reviews-table th:nth-child(6),
+.data.reviews-table td:nth-child(6) { width: 9%; }
+.data.reviews-table th:nth-child(7),
+.data.reviews-table td:nth-child(7) { width: 14%; }
+
+.data.reviews-template-table { table-layout: fixed; }
+.data.reviews-template-table th:nth-child(1),
+.data.reviews-template-table td:nth-child(1) { width: 48%; }
+.data.reviews-template-table th:nth-child(2),
+.data.reviews-template-table td:nth-child(2) { width: 16%; }
+.data.reviews-template-table th:nth-child(3),
+.data.reviews-template-table td:nth-child(3) { width: 12%; }
+.data.reviews-template-table th:nth-child(4),
+.data.reviews-template-table td:nth-child(4) { width: 12%; }
+.data.reviews-template-table th:nth-child(5),
+.data.reviews-template-table td:nth-child(5) { width: 12%; }
 
 /* bulk-approve bar above the pending table */
 .proposals-bulk {

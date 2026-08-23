@@ -151,11 +151,14 @@ class GeometryProposal(BaseModel):
     #: creation only — required when the payload carries no usable name of its
     #: own, which is every straight clipboard paste
     name: str = ""
+    #: True = "small change, no re-verification needed": carries verifications
+    #: and production sign-offs across the changed drawing (recheck waiver)
+    minor_change: bool | None = None
 
 
 @router.post("/footprints/{fp_id}/propose")
 def propose_footprint(fp_id: int, body: GeometryProposal, db: Session = Depends(get_db)):
-    """File a DRAFT footprint version from pasted editor text.
+    """Publish a footprint version from pasted editor text (auto-publish).
 
     The name comes from the row, never from the request, so the paste box can
     never rename a footprint by accident. Everything else — clipboard
@@ -164,7 +167,8 @@ def propose_footprint(fp_id: int, body: GeometryProposal, db: Session = Depends(
     f = db.get(M.Footprint, fp_id)
     if f is None:
         raise HTTPException(404, "footprint not found")
-    res = propose_footprint_version(db, f.name, body.source_text, body.comment, actor="user")
+    res = propose_footprint_version(db, f.name, body.source_text, body.comment, actor="user",
+                                    minor_change=body.minor_change)
     if "error" in res:
         raise HTTPException(400, detail=res)
     return res
@@ -172,11 +176,12 @@ def propose_footprint(fp_id: int, body: GeometryProposal, db: Session = Depends(
 
 @router.post("/symbols/{sym_id}/propose")
 def propose_symbol(sym_id: int, body: GeometryProposal, db: Session = Depends(get_db)):
-    """File a DRAFT base-symbol version from pasted editor text (see above)."""
+    """Publish a base-symbol version from pasted editor text (see above)."""
     s = db.get(M.Symbol, sym_id)
     if s is None:
         raise HTTPException(404, "symbol not found")
-    res = propose_symbol_version(db, s.name, body.source_text, body.comment, actor="user")
+    res = propose_symbol_version(db, s.name, body.source_text, body.comment, actor="user",
+                                 minor_change=body.minor_change)
     if "error" in res:
         raise HTTPException(400, detail=res)
     return res

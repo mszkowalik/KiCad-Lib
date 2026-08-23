@@ -110,6 +110,9 @@ def list_components(
     # list does not print. The badge sits on the browse list's critical path,
     # same reasoning as kicad_http.library_versions.
     signoff_states = signoff.states_for(db, comps, detail=False)
+    from ..services import review as review_svc
+
+    review_states = review_svc.states_for_components(db, comps)
 
     items = []
     needle = q.lower() if q else None
@@ -146,6 +149,9 @@ def list_components(
                 "bulk_qty": bulk_qty or "",
                 "datasheet": ds_map.get(comp.id) or "",
                 "signoff": signoff_states.get(comp.id, {}).get("state", "unsigned"),
+                "review": review_states.get(comp.id, {}).get("state", "unreviewed"),
+                "review_provenance": review_states.get(comp.id, {}).get("provenance"),
+                "lifecycle": comp.lifecycle_state,
             }
         )
 
@@ -202,7 +208,17 @@ def component_detail(comp_id: int, db: Session = Depends(get_db)):
         # The badge. Full history and the geometry labels come from
         # GET /api/components/{id}/signoff, which the sign-off card calls.
         "signoff": signoff.state_for(db, comp)["state"],
+        "lifecycle": comp.lifecycle_state,
+        "review": _review_badge(db, comp, cv),
     }
+
+
+def _review_badge(db: Session, comp: M.Component, cv: M.ComponentVersion | None) -> dict:
+    from ..services import review as review_svc
+
+    eff = review_svc.component_effective(db, comp, cv)
+    return {"state": eff["state"], "provenance": eff.get("provenance"),
+            "blockers": eff.get("blockers", [])}
 
 
 def _get_version(comp: M.Component, version_no: int) -> M.ComponentVersion:
@@ -281,7 +297,6 @@ def create_version(comp_id: int, body: VersionCreate, db: Session = Depends(get_
     approval). The previous version stays forever; the current pointer
     advances; only the affected mirror libraries are regenerated."""
     comp = _get_component(db, comp_id)
-    old_cv = current_version(comp)
 
     category = db.get(M.Category, body.category_id)
     if category is None:
@@ -331,9 +346,8 @@ def create_version(comp_id: int, body: VersionCreate, db: Session = Depends(get_
         footprint_version_id=fp_version_id,
         category_id=body.category_id,
         removed_properties=body.removed_properties or None,
-        status="published",
+        status="draft",  # published just below via the shared publish path
         created_by="user",
-        approved_by="user",
         comment=body.comment,
     )
     db.add(cv)
@@ -350,7 +364,6 @@ def create_version(comp_id: int, body: VersionCreate, db: Session = Depends(get_
             show_name=p.show_name,
             layout=p.layout,
         ))
-    comp.current_version_id = cv.id
 
     if body.datasheets is not None:
         old_rows = {d.id: d for d in _datasheet_rows(db, comp.id)}
@@ -378,31 +391,19 @@ def create_version(comp_id: int, body: VersionCreate, db: Session = Depends(get_
                 old.position = None
 
     db.flush()
-    from ..services.datasheet_store import pin_datasheets
-
-    pin_datasheets(db, cv)  # record which PDF versions this component version uses
     audit(db, "component.edit", "component", comp.id,
           {"version_no": new_no, "comment": body.comment})
-    # This route publishes directly (the user saving IS the approval), so it is
-    # the SECOND publish path after proposals.approve — the sign-off carry has
-    # to happen here too, or editing a description in place silently unsigns the
-    # part. Same function, same rules, same transaction.
-    carried = signoff.carry_on_publish(db, comp, old_cv, cv)
+    # This route publishes directly (the user saving IS the approval). The
+    # shared publish path pins the datasheets and runs the sign-off carry, the
+    # review-record carry and the machine validation — same function, same
+    # rules, same transaction as every other publish door.
+    from ..services.publish import publish_component_version, refresh_mirror_for_component
+
+    res = publish_component_version(db, comp, cv, actor="user", approved_by="user")
+    carried = res["signoff"]
     db.commit()
 
-    if comp.in_library:
-        # Incremental mirror update: old top-level lib + new one (may differ on move)
-        tops = {top_level_of(category).name}
-        if old_cv is not None:
-            tops.add(top_level_of(old_cv.category).name)
-        # The new version was linked via FK, not via the relationship — expire the
-        # session BEFORE the mirror regenerates, or it sees stale collections and
-        # silently drops the just-edited component from the library file.
-        db.expire_all()
-        mirror_result = update_mirror_symbols(db, settings, tops)
-    else:
-        # BOM-only part — never in the generated libraries, nothing to rebuild
-        mirror_result = {"symbol_libs": 0, "components_in_libs": 0, "warnings": []}
+    mirror_result = refresh_mirror_for_component(db, settings, comp, res["tops"])
 
     comp = _get_component(db, comp_id)  # reload with relationships
     cv = next(v for v in comp.versions if v.version_no == new_no)

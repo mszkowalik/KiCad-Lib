@@ -11,6 +11,7 @@ import {
   type TemplateKind,
 } from "../api";
 import CommentsPanel from "../components/CommentsPanel";
+import ReviewCard from "../components/ReviewCard";
 import { useDialog } from "../components/Dialog";
 import GeometryPaste from "../components/GeometryPaste";
 import { ErrorBanner, Spinner } from "../components/Ui";
@@ -274,6 +275,8 @@ export default function TemplateDetail() {
             <pre className="code-block">{data.source_text}</pre>
           </details>
         ) : null}
+
+        <ReviewCard kind={noun === "footprint" ? "footprint" : "symbol"} id={id} />
 
         <details className="card pad">
           <summary>Propose an edit</summary>

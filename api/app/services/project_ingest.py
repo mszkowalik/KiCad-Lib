@@ -168,6 +168,9 @@ def parse_bom_csv(data: bytes) -> list[dict]:
                 "dnp": _flag(row.get("DNP")),
                 "exclude_from_bom": _flag(row.get("ExcludeBOM")),
                 "exclude_from_board": _flag(row.get("ExcludeBoard")),
+                # the injected "7S Version" field ("c5 s3 f7") as committed in
+                # the schematic — which library versions the board was drawn with
+                "lib_version": (row.get("LibVersion") or "").strip(),
             }
         )
     return rows

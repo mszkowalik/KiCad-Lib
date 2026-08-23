@@ -21,7 +21,8 @@ from sqlalchemy.orm import Query, Session, contains_eager, defer, joinedload, se
 from .. import models as M
 from ..config import settings
 from ..db import get_db
-from ..services.generator import base_hidden_maps, injected_props, schematic_field_visibility
+from ..services.generator import base_hidden_maps, injected_props, schematic_field_visibility, version_prop
+from ..services.mirror import HIDDEN_LIFECYCLE
 from .util import category_path, props_dict, resolved_value
 
 router = APIRouter(prefix="/kicad/v1", tags=["kicad-http-library"])
@@ -67,6 +68,8 @@ def library_versions(db: Session) -> Query:
         .filter(
             M.ComponentVersion.id == M.Component.current_version_id,
             M.Component.in_library.is_(True),  # BOM-only part — not offered to KiCad
+            # deprecated/obsolete parts are platform-only (mirror.HIDDEN_LIFECYCLE)
+            M.Component.lifecycle_state.notin_(HIDDEN_LIFECYCLE),
         )
         .options(
             # the join above is already the parent row — never re-fetch it per version
@@ -77,6 +80,12 @@ def library_versions(db: Session) -> Query:
                 defer(M.FootprintVersion.parsed),
                 defer(M.FootprintVersion.models),
                 joinedload(M.FootprintVersion.footprint),
+            ),
+            # version_no only feeds the injected "7S Version" field — the
+            # heavy columns must stay out of the chooser's critical path.
+            joinedload(M.ComponentVersion.symbol_version).options(
+                defer(M.SymbolVersion.source_text),
+                defer(M.SymbolVersion.parsed),
             ),
         )
     )
@@ -136,6 +145,13 @@ def part_payload(cv, sheets: list[M.Datasheet], visible: dict[str, bool]) -> dic
     if not any(p.key == "Footprint_Name" for p in cv.properties) and props.get("Footprint_Name"):
         entries.append(("Footprint_Name", props["Footprint_Name"]))
     entries += [(d["key"], d["value"]) for d in injected_props(sheets)]
+    # Same "7S Version" field the generated mirror symbols carry — which
+    # library versions a placed part was drawn with.
+    entries += [(d["key"], d["value"]) for d in version_prop(
+        cv.version_no,
+        cv.symbol_version.version_no if cv.symbol_version else None,
+        cv.footprint_version.version_no if cv.footprint_version else None,
+    )]
 
     description = ""
     keywords = ""
@@ -205,7 +221,7 @@ def parts_in_category(cat_id: int, db: Session = Depends(get_db)):
 @router.get("/parts/{part_id}.json", dependencies=[Depends(require_token)])
 def part_detail(part_id: int, db: Session = Depends(get_db)):
     comp = db.get(M.Component, part_id)
-    if comp is None or not comp.in_library:
+    if comp is None or not comp.in_library or comp.lifecycle_state in HIDDEN_LIFECYCLE:
         raise HTTPException(404, "part not found")
     cv = library_versions(db).filter(M.Component.id == part_id).first()
     if cv is None:

@@ -76,3 +76,51 @@ export function SignoffPill({
     </span>
   );
 }
+
+/** Review (verification) state — its own pill for the same reason as
+ * SignoffPill: "published" says nothing about whether anybody compared the
+ * part against its documentation. `partial` = items skipped or unanswered;
+ * `failed` = a machine check found a violation. */
+const REVIEW_TONES: Record<string, [string, string]> = {
+  checked: ["ok", "checked"],
+  partial: ["warn", "partial"],
+  failed: ["err", "checks fail"],
+  unreviewed: ["neutral", "unreviewed"],
+};
+
+export function ReviewPill({
+  state,
+  provenance,
+  title,
+}: {
+  state: string | null | undefined;
+  provenance?: string | null;
+  title?: string;
+}) {
+  const [tone, label] = REVIEW_TONES[(state ?? "").toLowerCase()] ?? ["neutral", "unreviewed"];
+  const suffix = state === "checked" && provenance && provenance !== "human" ? ` (${provenance})` : "";
+  return (
+    <span className={`pill ${tone}`} title={title}>
+      {label}
+      {suffix}
+    </span>
+  );
+}
+
+/** Usage-fitness lifecycle — what the part may be used for, not whether it was
+ * checked. Deprecated/obsolete parts are hidden from KiCad. */
+const LIFECYCLE_TONES: Record<string, [string, string]> = {
+  in_design: ["neutral", "in design"],
+  released: ["ok", "released"],
+  deprecated: ["warn", "deprecated"],
+  obsolete: ["err", "obsolete"],
+};
+
+export function LifecyclePill({ state, title }: { state: string | null | undefined; title?: string }) {
+  const [tone, label] = LIFECYCLE_TONES[(state ?? "").toLowerCase()] ?? ["neutral", state ?? "?"];
+  return (
+    <span className={`pill ${tone}`} title={title}>
+      {label}
+    </span>
+  );
+}

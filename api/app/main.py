@@ -29,6 +29,7 @@ from .routers import (
     production_runs,
     projects,
     proposals,
+    reviews,
     run_costs,
     settings as settings_router,
     signoffs,
@@ -77,6 +78,7 @@ app.include_router(agent.router)
 app.include_router(proposals.router)
 app.include_router(comments.router)
 app.include_router(signoffs.router)
+app.include_router(reviews.router)
 app.include_router(skills.router)
 app.include_router(settings_router.router)
 app.include_router(kicad_sync.router)
@@ -562,6 +564,18 @@ def startup() -> None:
             conn.execute(text(
                 "ALTER TABLE footprints ADD COLUMN IF NOT EXISTS display_name varchar(200) NOT NULL DEFAULT ''"
             ))
+            # Usage-fitness lifecycle (in_design | released | deprecated |
+            # obsolete) — see models.Component.lifecycle_state.
+            conn.execute(text(
+                "ALTER TABLE components ADD COLUMN IF NOT EXISTS "
+                "lifecycle_state varchar(20) NOT NULL DEFAULT 'in_design'"
+            ))
+            # The "7S Version" field as committed in the schematic (which
+            # component version the board was drawn with).
+            conn.execute(text(
+                "ALTER TABLE snapshot_bom_lines ADD COLUMN IF NOT EXISTS "
+                "lib_version varchar(60) NOT NULL DEFAULT ''"
+            ))
             conn.execute(text(
                 """
                 INSERT INTO project_cost_revisions
@@ -686,6 +700,21 @@ def startup() -> None:
         start_material_backfill()
     except Exception as e:  # noqa: BLE001 — a derived cache must never block startup
         log.warning(f"material backfill did not start: {type(e).__name__}: {e}")
+    # Seed the review checklists on first start (idempotent — only kinds with
+    # no base checklist yet get one).
+    try:
+        from .db import SessionLocal
+        from .services.checklists import seed_checklists
+
+        db = SessionLocal()
+        try:
+            seeded = seed_checklists(db)
+            if seeded:
+                log.info(f"checklists: seeded {seeded}")
+        finally:
+            db.close()
+    except Exception as e:  # noqa: BLE001 — never block startup
+        log.warning(f"checklist seed did not run: {type(e).__name__}: {e}")
     if settings.datasheet_autofetch:
         # Fetch missing datasheet PDFs in the background (idempotent —
         # only datasheets without a local copy are downloaded).

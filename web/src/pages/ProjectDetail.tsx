@@ -19,9 +19,10 @@ import CostsTab from "../components/project/CostsTab";
 import HistoryTab from "../components/project/HistoryTab";
 import NotesTab from "../components/project/NotesTab";
 import RunsTab from "../components/project/RunsTab";
+import ReviewTab from "../components/project/ReviewTab";
 import SchematicTab from "../components/project/SchematicTab";
 
-const TABS = ["BOM", "Board", "Schematic", "History", "Costs", "Runs", "Notes", "Settings"] as const;
+const TABS = ["BOM", "Board", "Schematic", "History", "Review", "Costs", "Runs", "Notes", "Settings"] as const;
 type Tab = (typeof TABS)[number];
 
 /** Visible labels; the keys stay stable so sticky tab state survives. */
@@ -260,6 +261,7 @@ export default function ProjectDetail() {
             onIngested={() => loadSnapshots()}
           />
         ) : null}
+        {tab === "Review" ? <ReviewTab project={project} snapshot={snapshot} /> : null}
         {tab === "Costs" ? <CostsTab projectId={project.id} snapshot={snapshot} /> : null}
         {tab === "Runs" ? (
           <RunsTab project={project} snapshots={snapshots} snapshot={snapshot} board={boardName} variant={variant} />

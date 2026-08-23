@@ -1053,12 +1053,14 @@ def propose_new_component(
     datasheet_url: str = "",
     comment: str = "",
 ) -> str:
-    """Propose a NEW component as a DRAFT. It will NOT be published — the user
-    must review and approve it in the Proposals view. Follow library
-    conventions: include a Footprint property with the 7Sigma: prefix,
-    ki_description, Value where applicable, Manufacturer 1 / Manufacturer Part
-    Number 1 / Supplier 1 / Supplier Part Number 1 / LCSC Part when known.
-    Do NOT include price keys or Datasheet as properties.
+    """Create a NEW component. It PUBLISHES IMMEDIATELY (auto-publish): the
+    library, mirror and KiCad catalog update at once, a machine validation
+    record is written, and the version starts UNREVIEWED on the review axis —
+    verify it afterwards with get_review_checklist + record_verification.
+    Follow library conventions: include a Footprint property with the 7Sigma:
+    prefix, ki_description, Value where applicable, Manufacturer 1 /
+    Manufacturer Part Number 1 / Supplier 1 / Supplier Part Number 1 /
+    LCSC Part when known. Do NOT include price keys or Datasheet as properties.
 
     Args:
         name: Globally unique component name (usually the MPN).
@@ -1066,7 +1068,7 @@ def propose_new_component(
         base_component: Base symbol name (check with list_base_symbols).
         properties_json: JSON array of {"key": ..., "value": ...} in display order.
         datasheet_url: Optional datasheet URL.
-        comment: Short note shown to the user in the proposal review.
+        comment: Short note recorded on the published version.
     """
     db = SessionLocal()
     try:
@@ -1113,12 +1115,33 @@ def propose_new_component(
                                source_url=datasheet_url.strip()))
         db.add(M.AuditLog(actor="jaravis", action="proposal.create", entity_type="component_version",
                           entity_id=str(cv.id), details={"component": comp.name, "new": True}))
-        db.commit()
+        result = _publish_component(db, comp, cv)
         _record_proposal({"proposal_id": cv.id, "component": comp.name, "kind": "new"})
         return json.dumps({"ok": True, "proposal_id": cv.id, "component": comp.name,
-                           "status": "draft — awaiting user approval in the Proposals view"})
+                           **result})
     finally:
         db.close()
+
+
+def _publish_component(db, comp, cv) -> dict:
+    """Auto-publish tail shared by the two component write tools: publish flow,
+    commit, mirror refresh, review state for the response."""
+    from ..config import settings
+    from .publish import publish_component_version, refresh_mirror_for_component
+    from .review import component_effective
+
+    res = publish_component_version(db, comp, cv, actor="jaravis")
+    db.commit()
+    mirror = refresh_mirror_for_component(db, settings, comp, res["tops"])
+    eff = component_effective(db, comp, cv)
+    return {
+        "status": "published",
+        "review_state": eff["state"],
+        "review_blockers": eff.get("blockers", []),
+        "signoff_carry": res["signoff"],
+        "mirror_warnings": mirror.get("warnings", []),
+        "next_step": "verify against the datasheet: get_review_checklist + record_verification",
+    }
 
 
 @beta_tool
@@ -1129,15 +1152,17 @@ def propose_component_edit(
     base_component: str = "",
     category: str = "",
 ) -> str:
-    """Propose an EDIT to an existing component as a DRAFT new version. The
-    current version stays live until the user approves the proposal.
+    """EDIT an existing component. The new version PUBLISHES IMMEDIATELY
+    (auto-publish) — the library and KiCad catalog update at once, and the
+    review carry rules decide whether the previous verification and production
+    sign-off survive (they do only when nothing material changed).
     properties_json REPLACES the full property list — call get_component
     first, take its properties array, modify it, and pass the complete list.
 
     Args:
         name: Exact name of the existing component.
         properties_json: COMPLETE JSON array of {"key": ..., "value": ...} in display order.
-        comment: What changed and why (shown in the proposal review).
+        comment: What changed and why (recorded on the published version).
         base_component: Optional new base symbol; empty = keep current.
         category: Optional new category name/path (moves the component); empty = keep current.
     """
@@ -1188,35 +1213,43 @@ def propose_component_edit(
             ))
         db.add(M.AuditLog(actor="jaravis", action="proposal.create", entity_type="component_version",
                           entity_id=str(cv.id), details={"component": comp.name, "new": False}))
-        db.commit()
+        result = _publish_component(db, comp, cv)
         _record_proposal({"proposal_id": cv.id, "component": comp.name, "kind": "edit",
                           "version_no": new_no})
         return json.dumps({"ok": True, "proposal_id": cv.id, "component": comp.name,
-                           "version_no": new_no,
-                           "status": "draft — awaiting user approval in the Proposals view"})
+                           "version_no": new_no, **result})
     finally:
         db.close()
 
 
 @beta_tool
-def propose_symbol_edit(name: str, source_text: str, comment: str) -> str:
-    """Propose a new version of a base symbol — or a brand-new base symbol —
-    as a DRAFT the user must approve in the Proposals view (with a visual
-    before/after preview). source_text must be a complete .kicad_sym library
-    text containing a symbol named exactly `name`: call get_symbol first,
-    take its `source`, and edit that. Follow the symbol conventions from your
-    skill documents (pin grouping, grid, electrical types).
+def propose_symbol_edit(name: str, source_text: str, comment: str,
+                        minor_change: bool = False) -> str:
+    """Create a new version of a base symbol — or a brand-new base symbol.
+    It PUBLISHES IMMEDIATELY (auto-publish): the mirror and KiCad libraries
+    update at once, a machine validation record is written, affected
+    components are repointed automatically, and the version starts UNREVIEWED
+    unless nothing material changed (then the previous verification carries).
+    source_text must be a complete .kicad_sym library text containing a symbol
+    named exactly `name`: call get_symbol first, take its `source`, and edit
+    that. Follow the symbol conventions from your skill documents (pin
+    grouping, grid, electrical types).
 
     Args:
-        name: Base symbol name. Existing name = edit proposal; new name = creation proposal.
+        name: Base symbol name. Existing name = edit; new name = creation.
         source_text: The complete .kicad_sym file text with the symbol drawing.
-        comment: What changed and why (shown in the proposal review).
+        comment: What changed and why (recorded on the published version).
+        minor_change: True ONLY for a change that genuinely needs no
+            re-verification (cosmetic cleanup) — it carries verifications and
+            production sign-offs across the changed drawing, with your name
+            on the waiver. When unsure, leave False.
     """
     from .geometry_proposals import propose_symbol_version
 
     db = SessionLocal()
     try:
-        res = propose_symbol_version(db, name, source_text, comment, actor="jaravis")
+        res = propose_symbol_version(db, name, source_text, comment, actor="jaravis",
+                                     minor_change=True if minor_change else None)
         if "error" not in res:
             _record_proposal({"proposal_id": res["proposal_id"], "component": res["symbol"],
                               "kind": "symbol", "version_no": res["version_no"]})
@@ -1226,29 +1259,184 @@ def propose_symbol_edit(name: str, source_text: str, comment: str) -> str:
 
 
 @beta_tool
-def propose_footprint_edit(name: str, source_text: str, comment: str) -> str:
-    """Propose a new version of a footprint — or a brand-new footprint — as a
-    DRAFT the user must approve in the Proposals view (with a visual
-    before/after preview). source_text must be a complete .kicad_mod text
-    whose header reads (footprint "<name>" ...) with NO library prefix: call
-    get_footprint first, take its `source`, and edit that. 3D model paths
-    must use ${SEVENSIGMA_DIR}/3DModels/... . Follow the footprint
-    conventions from your skill documents.
+def propose_footprint_edit(name: str, source_text: str, comment: str,
+                           minor_change: bool = False) -> str:
+    """Create a new version of a footprint — or a brand-new footprint.
+    It PUBLISHES IMMEDIATELY (auto-publish): the mirror and KiCad libraries
+    update at once, a machine validation record is written (courtyard, fab,
+    silk widths, pad shapes, drill minimums, 3D model presence — a missing 3D
+    model FAILS the check), affected components are repointed automatically,
+    and the version starts UNREVIEWED unless nothing material changed.
+    source_text must be a complete .kicad_mod text whose header reads
+    (footprint "<name>" ...) with NO library prefix: call get_footprint
+    first, take its `source`, and edit that. 3D model paths must use
+    ${SEVENSIGMA_DIR}/3DModels/... . Follow the footprint conventions from
+    your skill documents.
 
     Args:
         name: Footprint name WITHOUT the 7Sigma: prefix. Existing = edit; new = creation.
         source_text: The complete .kicad_mod file text.
-        comment: What changed and why (shown in the proposal review).
+        comment: What changed and why (recorded on the published version).
+        minor_change: True ONLY for a change that genuinely needs no
+            re-verification — it carries verifications and production
+            sign-offs across the changed drawing. When unsure, leave False.
     """
     from .geometry_proposals import propose_footprint_version
 
     db = SessionLocal()
     try:
-        res = propose_footprint_version(db, name, source_text, comment, actor="jaravis")
+        res = propose_footprint_version(db, name, source_text, comment, actor="jaravis",
+                                        minor_change=True if minor_change else None)
         if "error" not in res:
             _record_proposal({"proposal_id": res["proposal_id"], "component": res["footprint"],
                               "kind": "footprint", "version_no": res["version_no"]})
         return json.dumps(res)
+    finally:
+        db.close()
+
+
+def _review_subject(db, kind: str, name: str):
+    """Resolve a review subject (parent row + its current version id)."""
+    model = {"component": M.Component, "symbol": M.Symbol, "footprint": M.Footprint}.get(kind)
+    if model is None:
+        return None, None, f"kind must be component, symbol or footprint (got {kind!r})"
+    parent = db.query(model).filter_by(name=name.strip()).first()
+    if parent is None:
+        return None, None, f"{kind} {name!r} not found"
+    if parent.current_version_id is None:
+        return None, None, f"{kind} {name!r} has no published version"
+    return parent, parent.current_version_id, None
+
+
+@beta_tool
+def get_review_checklist(kind: str, name: str) -> str:
+    """The resolved verification checklist for one component, symbol or
+    footprint, MERGED with what has already been answered on its current
+    version (machine checks run automatically on publish; earlier agent/human
+    answers are included with their provenance). Call this BEFORE
+    record_verification: answer the unanswered items, re-answer what you can
+    improve, and never guess — use result "skipped" with a reason when the
+    documentation does not let you verify an item.
+
+    Args:
+        kind: "component" | "symbol" | "footprint".
+        name: The exact name.
+    """
+    from . import checklists as checklists_svc
+    from . import review as review_svc
+
+    db = SessionLocal()
+    try:
+        parent, version_id, err = _review_subject(db, kind, name)
+        if err:
+            return json.dumps({"error": err})
+        cat_id = review_svc._category_of(db, kind, parent)
+        resolved = checklists_svc.resolve(db, kind, cat_id)
+        rows = review_svc.records_for(db, kind, parent.id)
+        record = review_svc.effective_record(rows, version_id)
+        answered = {i["key"]: i for i in (record.items or [])} if record else {}
+        items = []
+        for item in resolved["items"]:
+            merged = dict(item)
+            prev = answered.get(item["key"])
+            if prev:
+                merged["answered"] = {k: prev.get(k) for k in
+                                      ("result", "note", "actor", "actor_type", "at")}
+            items.append(merged)
+        extras = [i for k, i in answered.items()
+                  if k not in {it["key"] for it in resolved["items"]}]
+        state = review_svc.state_from_record(record, resolved["items"] if record and
+                                             record.items is not None else None)
+        return json.dumps({
+            "kind": kind, "name": parent.name, "version_id": version_id,
+            "state": state["state"], "items": items, "extra_items": extras,
+            "results_allowed": ["checked", "na", "skipped"],
+            "note": "machine items are answered automatically; answer the judgment items. "
+                    "Add ad-hoc points with keys like custom:<slug>.",
+        })
+    finally:
+        db.close()
+
+
+@beta_tool
+def record_verification(kind: str, name: str, items_json: str, note: str = "") -> str:
+    """Record a documentation verification on the CURRENT version of a
+    component, symbol or footprint. Cumulative: your answers merge on top of
+    the machine checks and any earlier record; you can NEVER overwrite an item
+    a human answered. Every item is {"key", "result", "note"} with result
+    "checked" (verified against the documentation), "na" (does not apply —
+    say why), or "skipped" (applies but could not be verified — say what was
+    missing; the version then reads checked-partial until a follow-up).
+    Verify HONESTLY: read the datasheet first (read_datasheet); never mark
+    "checked" on something you did not actually compare. Ad-hoc extra points
+    use keys like custom:<slug> and free-text notes.
+
+    Args:
+        kind: "component" | "symbol" | "footprint".
+        name: The exact name.
+        items_json: JSON array of {"key", "result", "note"} answers.
+        note: Optional overall note (what documentation was used).
+    """
+    from . import review as review_svc
+
+    db = SessionLocal()
+    try:
+        parent, version_id, err = _review_subject(db, kind, name)
+        if err:
+            return json.dumps({"error": err})
+        try:
+            items = json.loads(items_json)
+            assert isinstance(items, list) and all(isinstance(i, dict) for i in items)
+        except Exception:
+            return json.dumps({"error": "items_json must be a JSON array of "
+                                        '{"key", "result", "note"} objects'})
+        bad = [i for i in items if str(i.get("result", "")) == "failed"]
+        if bad:
+            return json.dumps({"error": "result 'failed' is reserved for machine checks — "
+                                        "use 'skipped' with a note describing the problem, "
+                                        "or fix the data and re-publish"})
+        res = review_svc.record_check(db, kind, parent, version_id, actor="jaravis",
+                                      actor_type="agent", items=items, note=note or None)
+        db.commit()
+        return json.dumps({"ok": True, "kind": kind, "name": parent.name,
+                           "state": res["state"], "blocked_items": res["blocked"]})
+    finally:
+        db.close()
+
+
+@beta_tool
+def list_reviews(state: str = "") -> str:
+    """Review states across the library: every component's effective state
+    (its own record AND its pinned symbol/footprint records — the weakest leg
+    wins). States: unreviewed, failed (machine check violations), partial
+    (skipped/unanswered items), checked. Filter with `state`; empty = all.
+    Use this to find what still needs verification.
+
+    Args:
+        state: Optional filter — "unreviewed" | "failed" | "partial" | "checked".
+    """
+    from . import review as review_svc
+
+    db = SessionLocal()
+    try:
+        from sqlalchemy.orm import selectinload
+
+        comps = db.query(M.Component).options(
+            selectinload(M.Component.versions).selectinload(M.ComponentVersion.properties)
+        ).all()
+        states = review_svc.states_for_components(db, comps)
+        items = [
+            {"component": c.name, "state": states[c.id]["state"],
+             "provenance": states[c.id].get("provenance"),
+             "blockers": states[c.id].get("blockers", []),
+             "lifecycle": c.lifecycle_state}
+            for c in comps
+            if not state or states[c.id]["state"] == state
+        ]
+        counts: dict[str, int] = {}
+        for s in states.values():
+            counts[s["state"]] = counts.get(s["state"], 0) + 1
+        return json.dumps({"counts": counts, "total": len(items), "items": items})
     finally:
         db.close()
 
@@ -1259,12 +1447,14 @@ TOOLS = [
     list_footprints, get_symbol, get_footprint, read_datasheet,
     get_price_history, get_audit_log, list_models3d, list_skills, get_skill,
     list_signoffs,
+    # review axis
+    get_review_checklist, record_verification, list_reviews,
     # external lookup
     lcsc_lookup, search_jlc_parts, get_jlc_details, refresh_supply,
     # projects
     list_projects, get_project, get_project_bom, get_production_run,
     component_where_used,
-    # proposals (draft-gated writes)
+    # writes (auto-publish; skills stay draft-gated)
     propose_new_component, propose_component_edit,
     propose_symbol_edit, propose_footprint_edit, propose_skill_update,
 ]

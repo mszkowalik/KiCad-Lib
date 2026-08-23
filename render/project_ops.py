@@ -33,11 +33,12 @@ class OpError(RuntimeError):
 # separate lines.
 BOM_FIELDS = (
     "Reference,Value,Footprint,LCSC Part,Manufacturer Part,Manufacturer,"
-    "${QUANTITY},${DNP},${EXCLUDE_FROM_BOM},${EXCLUDE_FROM_BOARD},${SYMBOL_NAME},${SYMBOL_LIBRARY}"
+    "${QUANTITY},${DNP},${EXCLUDE_FROM_BOM},${EXCLUDE_FROM_BOARD},${SYMBOL_NAME},${SYMBOL_LIBRARY},"
+    "7S Version"
 )
 BOM_LABELS = (
     "Reference,Value,Footprint,LCSC,MPN,Manufacturer,"
-    "Quantity,DNP,ExcludeBOM,ExcludeBoard,SymbolName,SymbolLibrary"
+    "Quantity,DNP,ExcludeBOM,ExcludeBoard,SymbolName,SymbolLibrary,LibVersion"
 )
 BOM_GROUP = "Value,Footprint,LCSC Part,${SYMBOL_NAME},${DNP}"
 

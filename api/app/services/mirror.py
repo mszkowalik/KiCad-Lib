@@ -30,7 +30,13 @@ from .generator import (
     injected_props,
     load_symbol_lib_from_text,
     property_row_to_dict,
+    version_prop,
 )
+
+# Lifecycle states hidden from every KiCad-facing surface (generated symbol
+# libraries and the HTTP catalog): the part stays fully visible on the
+# platform, KiCad's chooser just stops offering it (user decision 2026-08-23).
+HIDDEN_LIFECYCLE = ("deprecated", "obsolete")
 
 
 def top_level_of(category: M.Category) -> M.Category:
@@ -94,6 +100,8 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
     for comp in components:
         if not comp.in_library:
             continue  # BOM-only part — never emitted into KiCad libraries
+        if comp.lifecycle_state in HIDDEN_LIFECYCLE:
+            continue  # deprecated/obsolete — platform-only, never offered to KiCad
         cv = next((v for v in comp.versions if v.id == comp.current_version_id), None)
         if cv is None or cv.status != "published":
             continue
@@ -109,6 +117,11 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
         by_top = {k: v for k, v in by_top.items() if k in only_tops}
 
     fp_display = footprint_display_names(db)
+    # Footprint version numbers for the injected "7S Version" field — id and
+    # number only, never the rows (a FootprintVersion row drags a .kicad_mod).
+    fp_ver_no = dict(db.execute(
+        select(M.FootprintVersion.id, M.FootprintVersion.version_no)
+    ).all())
     symbols_dir = settings.mirror_dir / "Symbols"
     symbols_dir.mkdir(parents=True, exist_ok=True)
     for top_name in sorted(by_top):
@@ -129,6 +142,8 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
                     footprint_name_props(fp_ref, fp_display)
                     + own
                     + injected_props(sheets.get(comp.id))
+                    + version_prop(cv.version_no, sv.version_no,
+                                   fp_ver_no.get(cv.footprint_version_id))
                 )
                 syms.append(
                     build_component_symbol(template, comp.name, props, cv.removed_properties, warnings)

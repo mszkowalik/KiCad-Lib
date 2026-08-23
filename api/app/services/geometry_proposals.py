@@ -205,10 +205,18 @@ def derive_symbol_name(source_text: str, allow_placeholder: bool = False) -> str
 
 
 def propose_footprint_version(
-    db: Session, name: str, source_text: str, comment: str, actor: str = "jaravis"
+    db: Session, name: str, source_text: str, comment: str, actor: str = "jaravis",
+    publish: bool = True, minor_change: bool | None = None,
 ) -> dict:
-    """Create a draft `FootprintVersion`. Returns the result dict, or one
-    carrying an ``error`` key — the caller decides how to surface it."""
+    """Create — and by default PUBLISH — a `FootprintVersion`.
+
+    Auto-publish (user design 2026-08-23): the version goes live at once with
+    a machine validation record; review happens on the review axis.
+    ``minor_change=True`` waives the re-verification (``recheck_required=False``
+    — carries sign-offs and review records across the changed drawing, with
+    the actor's name on the waiver). ``publish=False`` keeps the old
+    draft-gated behaviour. Returns the result dict, or one carrying an
+    ``error`` key — the caller decides how to surface it."""
     from ..util.sexpr import _norm, find_node, parse_sexpr
     from .parse_cache import footprint_parsed
 
@@ -286,13 +294,19 @@ def propose_footprint_version(
     db.flush()
     db.add(M.AuditLog(actor=actor, action="proposal.create", entity_type="footprint_version",
                       entity_id=str(fv.id), details={"footprint": name, "new": is_new}))
-    db.commit()
-    return {
+    if not publish:
+        db.commit()
+        return {
+            "ok": True, "proposal_id": fv.id, "footprint": name, "version_no": new_no,
+            "is_new_footprint": is_new, "pad_count": pads, "previous_pad_count": old_pads,
+            "warnings": warnings,
+            "status": "draft — awaiting user approval in the Proposals view",
+        }
+    return _publish_geometry(db, "footprint", fp, fv, actor, minor_change, comment, {
         "ok": True, "proposal_id": fv.id, "footprint": name, "version_no": new_no,
         "is_new_footprint": is_new, "pad_count": pads, "previous_pad_count": old_pads,
         "warnings": warnings,
-        "status": "draft — awaiting user approval in the Proposals view",
-    }
+    })
 
 
 # --------------------------------------------------------------------------
@@ -300,9 +314,12 @@ def propose_footprint_version(
 
 
 def propose_symbol_version(
-    db: Session, name: str, source_text: str, comment: str, actor: str = "jaravis"
+    db: Session, name: str, source_text: str, comment: str, actor: str = "jaravis",
+    publish: bool = True, minor_change: bool | None = None,
 ) -> dict:
-    """Create a draft `SymbolVersion`. Same contract as the footprint side."""
+    """Create — and by default PUBLISH — a `SymbolVersion`. Same contract as
+    the footprint side (see `propose_footprint_version` on auto-publish and
+    `minor_change`)."""
     from .generator import load_symbol_lib_from_text
     from .parse_cache import symbol_parsed
 
@@ -370,10 +387,42 @@ def propose_symbol_version(
     db.flush()
     db.add(M.AuditLog(actor=actor, action="proposal.create", entity_type="symbol_version",
                       entity_id=str(sv.id), details={"symbol": name, "new": is_new}))
-    db.commit()
-    return {
+    if not publish:
+        db.commit()
+        return {
+            "ok": True, "proposal_id": sv.id, "symbol": name, "version_no": new_no,
+            "is_new_symbol": is_new, "pin_count": pins, "previous_pin_count": old_pins,
+            "warnings": warnings,
+            "status": "draft — awaiting user approval in the Proposals view",
+        }
+    return _publish_geometry(db, "symbol", sym, sv, actor, minor_change, comment, {
         "ok": True, "proposal_id": sv.id, "symbol": name, "version_no": new_no,
         "is_new_symbol": is_new, "pin_count": pins, "previous_pin_count": old_pins,
         "warnings": warnings,
-        "status": "draft — awaiting user approval in the Proposals view",
+    })
+
+
+def _publish_geometry(db: Session, kind: str, parent, version, actor: str,
+                      minor_change: bool | None, comment: str, payload: dict) -> dict:
+    """The shared publish tail: publish flow, repoint, commit, mirror refresh."""
+    from ..config import settings
+    from .publish import publish_geometry_version, refresh_mirror_for_geometry
+    from .repoint import repoint_for
+    from .review import version_state
+
+    recheck = None if minor_change is None else (not minor_change)
+    publish_geometry_version(db, kind, parent, version, actor,
+                             recheck_required=recheck, recheck_note=comment)
+    repointed = repoint_for(db, kind, parent) if settings.auto_repoint_components else None
+    db.commit()
+    mirror = refresh_mirror_for_geometry(db, settings, kind, parent)
+    state = version_state(db, kind, parent.id, version.id)
+    return {
+        **payload,
+        "status": "published",
+        "review_state": state["state"],
+        "machine_check": {"failed": state["failed"], "skipped": state["skipped"],
+                          "answered": state["answered"], "total": state["total"]},
+        "repointed": repointed,
+        "mirror_warnings": mirror.get("warnings", []),
     }

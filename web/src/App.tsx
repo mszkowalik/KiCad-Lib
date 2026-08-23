@@ -30,6 +30,7 @@ import ProductionWrites from "./pages/ProductionWrites";
 import ProjectDetail from "./pages/ProjectDetail";
 import Projects from "./pages/Projects";
 import Proposals from "./pages/Proposals";
+import Reviews from "./pages/Reviews";
 import RunDetail from "./pages/RunDetail";
 import Setup from "./pages/Setup";
 import Skills from "./pages/Skills";
@@ -163,6 +164,9 @@ function Shell() {
               <NavLink to="/production" className={navClass}>
                 Production
               </NavLink>
+              <NavLink to="/reviews" className={navClass}>
+                Reviews
+              </NavLink>
               <NavLink to="/proposals" className={navClass}>
                 Proposals
                 {proposalCount > 0 ? <span className="badge">{proposalCount}</span> : null}
@@ -209,6 +213,7 @@ function Shell() {
               <Route path="/production/writes" element={<ProductionWrites />} />
             </Route>
 
+            <Route path="/reviews" element={<Reviews />} />
             <Route path="/proposals" element={<Proposals />} />
             <Route path="/setup" element={<Setup />} />
             <Route path="/view" element={<FileViewer />} />

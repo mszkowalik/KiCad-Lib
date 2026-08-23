@@ -175,6 +175,19 @@ class Component(Base):
     # project BOM lines matching it are excluded from totals, order
     # quantities and stock checks. (Added by startup migration.)
     purchasable: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # Usage-fitness lifecycle, separate from any review state (user design
+    # 2026-08-23): what the part may be USED for, not whether it was checked.
+    #   in_design  — default; the part exists but nobody vouched for it yet
+    #   released   — auto-promoted on the FIRST human production sign-off
+    #   deprecated — do not use in new designs; hidden from KiCad (chooser,
+    #                generated libraries), still fully visible on the platform
+    #   obsolete   — hidden from KiCad, kept for history
+    # Set manually via PATCH /api/components/{id}/lifecycle except the one
+    # automatic promotion. Distributor status (LCSC EOL etc.) may SUGGEST a
+    # change in the UI but never sets this silently.
+    # (Added by startup migration.)
+    lifecycle_state: Mapped[str] = mapped_column(String(20), default="in_design",
+                                                 server_default="in_design")
 
     versions: Mapped[list["ComponentVersion"]] = relationship(
         back_populates="component", order_by="ComponentVersion.version_no"
@@ -416,6 +429,154 @@ class ComponentSignoff(Base):
         Index("ix_signoff_component", "component_id"),
         Index("ix_signoff_version", "component_version_id"),
     )
+
+
+# ----------------------------------------------------------- review checklists
+class Checklist(Base):
+    """A named inspection checklist for verifying library entities against
+    their documentation (user design 2026-08-23).
+
+    Scoped by ``subject_kind`` (component | symbol | footprint) and optionally
+    by ``category_id``: a check against a part resolves the base checklist for
+    its kind PLUS every category-scoped checklist on the part's category path,
+    merged (``services/checklists.py``). Items live on the version rows.
+
+    Seeded from code on first startup (``services/checklists.py::seed``);
+    edited in the web UI, where a human save publishes directly — same
+    rationale as ``components.create_version`` (the user saving IS the
+    approval). The agent never edits checklists.
+    """
+
+    __tablename__ = "checklists"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), unique=True)
+    subject_kind: Mapped[str] = mapped_column(String(20))  # component | symbol | footprint
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"), nullable=True)
+    description: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    current_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    versions: Mapped[list["ChecklistVersion"]] = relationship(
+        back_populates="checklist", order_by="ChecklistVersion.version_no"
+    )
+
+
+class ChecklistVersion(Base):
+    """One immutable revision of a checklist's item list.
+
+    ``items`` is a JSON array of ``{key, text, hint?, machine?}``. ``key`` is
+    the STABLE identity of an item across checklist versions — check records
+    reference items by key, so renaming an item's text never orphans history.
+    ``machine: true`` marks an item ``services/validator.py`` answers
+    automatically on publish; everything else is a judgment call for an agent
+    or a human.
+    """
+
+    __tablename__ = "checklist_versions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    checklist_id: Mapped[int] = mapped_column(ForeignKey("checklists.id"))
+    version_no: Mapped[int] = mapped_column(Integer)
+    items: Mapped[list] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20), default="published")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(100), default="seed")
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    checklist: Mapped[Checklist] = relationship(back_populates="versions")
+
+    __table_args__ = (UniqueConstraint("checklist_id", "version_no", name="uq_checklist_version"),)
+
+
+# --------------------------------------------------------------- review records
+class ReviewRecord(Base):
+    """A verification of ONE version of a component, symbol or footprint
+    against its documentation (user design 2026-08-23).
+
+    **This is the review axis, not the publish axis.** Versions publish
+    immediately (auto-publish); this table records who has actually looked at
+    each version and what exactly they inspected. It is a different act again
+    from `ComponentSignoff` (the human production sign-off): a check says "the
+    drawing matches the documentation", a sign-off says "I will build boards
+    with it".
+
+    **Append-only and cumulative.** Each record stores a FULL merged snapshot
+    of the item results so far — a follow-up verification starts from the
+    previous record's items, answers what it can, and writes a new complete
+    record. The effective record of a version is simply the newest non-revoked
+    one. Every item carries its own provenance ``{actor, actor_type, at}``, so
+    an item a human answered in March keeps their name when the agent extends
+    the record in June, and precedence (machine < agent < human) is enforced
+    per item at write time.
+
+    ``items``: JSON array of ``{key, text?, result, note?, actor, actor_type,
+    at}`` with ``result`` in ``checked | na | skipped | failed``. ``na`` =
+    does not apply to this part; ``skipped`` = applies but could not be
+    verified (missing documentation) — the honest escape hatch that makes the
+    version read *checked (partial)*; ``failed`` = a machine check found a
+    concrete violation. Ad-hoc points beyond the checklist use ``custom:``
+    keys. Items are matched to the checklist named by
+    ``checklist_version_id``; unanswered checklist items count as partial.
+
+    ``kind``: ``check`` (someone verified) | ``carry`` (the record moved to a
+    new version because nothing material changed, or the change was waived —
+    same rules as the sign-off carry). The version's state is DERIVED
+    (``services/review.py::version_state``), never stored.
+
+    The subject reference is polymorphic (``subject_kind`` +
+    ``subject_version_id``), same pattern as ``Comment`` — no FK on purpose.
+    """
+
+    __tablename__ = "review_records"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    subject_kind: Mapped[str] = mapped_column(String(20))  # component | symbol | footprint
+    subject_id: Mapped[int] = mapped_column(Integer)       # parent row id
+    subject_version_id: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(20), default="check")  # check | carry
+    carried_from_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    checklist_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("checklist_versions.id"), nullable=True
+    )
+    items: Mapped[list | None] = mapped_column(JSONB, nullable=True)  # None = one-click human check
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(100), default="user")
+    actor_type: Mapped[str] = mapped_column(String(20), default="human")  # machine | agent | human
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    revoke_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_review_subject_version", "subject_kind", "subject_version_id"),
+        Index("ix_review_subject", "subject_kind", "subject_id"),
+    )
+
+
+class SnapshotReview(Base):
+    """The end-of-design review of one project snapshot (user design
+    2026-08-23): "I walked the BOM of commit <sha> and finished the review".
+
+    One row per completed review pass; append-only, newest wins. ``summary``
+    stores the component states AT the moment of completion (counts plus the
+    per-component state list), so a later production run can say precisely
+    "3 components changed since the review" instead of "something moved".
+    Production-run creation warns from this — it never blocks on it.
+    """
+
+    __tablename__ = "snapshot_reviews"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(Integer)
+    snapshot_id: Mapped[int] = mapped_column(Integer)
+    sha: Mapped[str] = mapped_column(String(40), default="")
+    reviewed_by: Mapped[str] = mapped_column(String(100), default="user")
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    __table_args__ = (Index("ix_snapshot_review_snapshot", "snapshot_id"),)
 
 
 # --------------------------------------------------------------------- rules
@@ -982,6 +1143,12 @@ class SnapshotBomLine(Base):
     exclude_from_bom: Mapped[bool] = mapped_column(Boolean, default=False)
     exclude_from_board: Mapped[bool] = mapped_column(Boolean, default=False)
     component_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The "7S Version" field the generator bakes into every emitted symbol
+    # ("c5 s3 f7") as it appeared in the schematic at this commit — the answer
+    # to "which component version was this board actually drawn with", straight
+    # from the committed source rather than inferred later. Empty on lines whose
+    # symbols predate the field. (Added by startup migration.)
+    lib_version: Mapped[str] = mapped_column(String(60), default="", server_default="")
 
     snapshot: Mapped[ProjectSnapshot] = relationship(back_populates="bom_lines")
 

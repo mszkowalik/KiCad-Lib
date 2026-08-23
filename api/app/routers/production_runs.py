@@ -106,6 +106,9 @@ class RunIn(BaseModel):
     customer: str = ""
     order_ref: str = ""
     order_date: str = ""
+    # explicit confirmation of the design-review warning (never stored) —
+    # see the gate in create_run
+    ack_review: bool = False
 
 
 class RunPatch(BaseModel):
@@ -154,7 +157,31 @@ def create_run(project_id: int, body: RunIn, db: Session = Depends(get_db)):
             raise HTTPException(409, f"snapshot is {snap.status}")
         if body.board and body.board not in [b["name"] for b in snap.boards or []]:
             raise HTTPException(404, "board not in snapshot")
-    r = M.ProductionRun(project_id=project_id, **body.model_dump())
+        # The design-review warning gate (user decision 2026-08-23): a run from
+        # a snapshot with unsigned / unreviewed / deprecated components, or one
+        # whose review was never completed, needs an EXPLICIT confirmation.
+        # 409 + the issue list; the client re-posts with ack_review=true and
+        # the acknowledgement is audited. Warning only — never a hard block.
+        from .reviews import snapshot_review_issues
+
+        issues = snapshot_review_issues(db, snap)
+        problems = {
+            "unsigned": issues["unsigned"],
+            "unreviewed": issues["unreviewed"],
+            "deprecated": issues["deprecated"],
+            "changed_since_review": issues["changed_since_review"],
+            "review_completed": issues["reviewed"],
+        }
+        needs_ack = (issues["unsigned"] or issues["unreviewed"] or issues["deprecated"]
+                     or issues["changed_since_review"] or not issues["reviewed"])
+        if needs_ack and not body.ack_review:
+            raise HTTPException(409, {"review_warning": True, **problems})
+        if needs_ack:
+            audit(db, "production.review_ack", "project_snapshot", snap.id,
+                  {"project_id": project_id, "label": body.label, **problems})
+    data = body.model_dump()
+    data.pop("ack_review", None)  # gate flag, not a run column
+    r = M.ProductionRun(project_id=project_id, **data)
     db.add(r)
     db.flush()
     # economics are not stored — they resolve from price history at the

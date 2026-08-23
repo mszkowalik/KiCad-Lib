@@ -23,6 +23,7 @@ import {
   refreshPricePoints,
   setComponentInLibrary,
   setComponentPurchasable,
+  setLifecycle,
   setPricePoints,
   symbolSvgUrl,
   uploadDatasheetFile,
@@ -30,6 +31,7 @@ import {
   type DatasheetRow,
   type Model3DFile,
   type PricePointsResponse,
+  type LifecycleState,
   type PropertyRow,
   type VersionDetail,
 } from "../api";
@@ -47,9 +49,10 @@ import {
   type EditDs,
   type EditRow,
 } from "../components/editing";
-import { ErrorBanner, SignoffPill, Spinner, StatusPill } from "../components/Ui";
+import { ErrorBanner, LifecyclePill, ReviewPill, SignoffPill, Spinner, StatusPill } from "../components/Ui";
 import CommentsPanel from "../components/CommentsPanel";
 import SignoffCard from "../components/SignoffCard";
+import ReviewCard from "../components/ReviewCard";
 import WhereUsedCard from "../components/WhereUsedCard";
 import { useStickyState } from "../useStickyState";
 
@@ -726,6 +729,64 @@ function FoldedText({ text }: { text: string }) {
   );
 }
 
+
+/** The lifecycle control in the page header: pill + a select. Deprecated and
+ * obsolete hide the part from KiCad (chooser + generated libraries), so those
+ * two confirm first. The one automatic transition (in_design -> released on
+ * first human sign-off) happens server-side. */
+function LifecycleSelect({
+  detail,
+  onChanged,
+}: {
+  detail: ComponentDetailT;
+  onChanged: () => void;
+}) {
+  const dialog = useDialog();
+  const [busy, setBusy] = useState(false);
+
+  const change = async (state: LifecycleState) => {
+    if (state === detail.lifecycle) return;
+    if (
+      (state === "deprecated" || state === "obsolete") &&
+      !(await dialog.confirm(
+        `Mark ${detail.name} as ${state}? It disappears from KiCad (chooser and generated libraries) and stays platform-only.`,
+        { title: "Change lifecycle", confirmLabel: `Mark ${state}`, tone: "danger" },
+      ))
+    )
+      return;
+    setBusy(true);
+    try {
+      await setLifecycle(detail.id, state);
+      onChanged();
+    } catch (err) {
+      await dialog.alert(errorMessage(err), { title: "Lifecycle change failed" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <span className="btn-row">
+      <LifecyclePill
+        state={detail.lifecycle}
+        title="Usage fitness — released on first human sign-off; deprecated/obsolete are hidden from KiCad"
+      />
+      <select
+        className="text"
+        value={detail.lifecycle}
+        disabled={busy}
+        onChange={(e) => void change(e.target.value as LifecycleState)}
+        title="Change the lifecycle state"
+      >
+        <option value="in_design">in design</option>
+        <option value="released">released</option>
+        <option value="deprecated">deprecated</option>
+        <option value="obsolete">obsolete</option>
+      </select>
+    </span>
+  );
+}
+
 export default function ComponentDetail() {
   const { id } = useParams();
   const compId = Number(id);
@@ -1175,6 +1236,18 @@ export default function ComponentDetail() {
               state={detail.signoff}
               title="Production sign-off — whether a human has checked this part's symbol and land pattern"
             />
+            <ReviewPill
+              state={detail.review?.state}
+              provenance={detail.review?.provenance}
+              title={
+                detail.review?.blockers?.length
+                  ? `Verification — ${detail.review.blockers.join("; ")}`
+                  : "Verification against the documentation (component + pinned symbol/footprint)"
+              }
+            />
+            <LifecycleSelect detail={detail} onChanged={() => {
+              getComponent(compId).then(setDetail).catch(() => {});
+            }} />
           </div>
           <div className="version-rail" role="tablist" aria-label="Versions">
             {versions.map((v) => {
@@ -1592,6 +1665,18 @@ export default function ComponentDetail() {
               />
             ) : null}
           </section>
+        ) : null}
+
+        {version && !editing && isCurrentSelected ? (
+          <ReviewCard
+            kind="component"
+            id={compId}
+            onChange={() => {
+              getComponent(compId)
+                .then(setDetail)
+                .catch(() => {});
+            }}
+          />
         ) : null}
 
         {/* Kept apart from the meta card's "Approved by" on purpose: library

@@ -115,8 +115,22 @@ def add_signoff(comp_id: int, body: SignIn, request: Request, db: Session = Depe
     row = signoff.sign(db, comp, actor, body.note)
     audit(db, "signoff.sign", "component_version", comp.current_version_id,
           {"component": comp.name, "note": row.note}, actor=actor)
+    _promote_on_first_sign(db, comp, actor)
     db.commit()
     return _detail(db, comp)
+
+
+def _promote_on_first_sign(db: Session, comp: M.Component, actor: str) -> None:
+    """First human sign-off moves an in_design part to `released` — the one
+    automatic lifecycle transition (user decision 2026-08-23). Deprecated and
+    obsolete parts are never touched: re-signing an old part is not a
+    statement about its fitness for new designs."""
+    if comp.lifecycle_state != "in_design":
+        return
+    comp.lifecycle_state = "released"
+    audit(db, "lifecycle.promote", "component", comp.id,
+          {"component": comp.name, "state": "released",
+           "trigger": "first human sign-off"}, actor=actor)
 
 
 @router.post("/components/{comp_id}/signoff/revoke")
@@ -186,6 +200,7 @@ def bulk_signoff(body: BulkIn, request: Request, db: Session = Depends(get_db)):
         signoff.sign(db, comp, actor, body.note)
         audit(db, "signoff.sign", "component_version", comp.current_version_id,
               {"component": comp.name, "note": body.note, "bulk": True}, actor=actor)
+        _promote_on_first_sign(db, comp, actor)
         signed.append(comp.name)
     db.commit()
     return {"signed": signed, "skipped": skipped, "total": len(signed)}

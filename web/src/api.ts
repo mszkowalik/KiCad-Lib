@@ -61,6 +61,10 @@ export interface ComponentListItem {
   datasheet: string;
   /** Production sign-off state — see SignoffState. */
   signoff: SignoffState;
+  /** Effective review state (component + pinned symbol/footprint legs). */
+  review: ReviewState;
+  review_provenance: ReviewActor | null;
+  lifecycle: LifecycleState;
 }
 
 export interface ComponentListResponse {
@@ -100,6 +104,10 @@ export interface ComponentDetail {
   versions: VersionSummary[];
   /** Production sign-off state of the CURRENT version — see SignoffState. */
   signoff: SignoffState;
+  lifecycle: LifecycleState;
+  /** Effective review state: weakest of the component's own record and its
+   *  pinned symbol/footprint records. */
+  review: { state: ReviewState; provenance: ReviewActor | null; blockers: string[] };
 }
 
 export interface PropertyRow {
@@ -276,11 +284,16 @@ export interface ImportStatus {
 
 export class ApiError extends Error {
   readonly status: number;
+  /** The parsed `detail` payload of a structured refusal, when the body
+   *  carried one — lets a caller render context (e.g. the production-run
+   *  review warning) instead of only the sentence. */
+  readonly detail?: unknown;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, detail?: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -321,8 +334,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     let detail = "";
+    let detailPayload: unknown;
     try {
       const body = (await res.json()) as { detail?: unknown };
+      detailPayload = body.detail;
       if (typeof body.detail === "string") {
         detail = body.detail;
       } else if (
@@ -351,7 +366,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // panel per screen. `/api/auth/*` is excluded: a wrong password there is a
     // 401 the login form itself must render.
     if (res.status === 401 && !path.startsWith("/api/auth/")) onUnauthorized?.();
-    throw new ApiError(res.status, detail || `${res.status} ${res.statusText}`);
+    throw new ApiError(res.status, detail || `${res.status} ${res.statusText}`, detailPayload);
   }
   return (await res.json()) as T;
 }
@@ -2291,6 +2306,28 @@ export interface RunCreate {
   status?: string;
   run_date?: string;
   notes?: string;
+  /** Explicit confirmation of the design-review warning. Without it a
+   *  snapshot with unsigned/unreviewed/deprecated components (or one whose
+   *  review was never completed) answers 409 with a ReviewWarningDetail. */
+  ack_review?: boolean;
+}
+
+/** The 409 payload of the run-creation review gate (`ApiError.detail`). */
+export interface ReviewWarningDetail {
+  review_warning: true;
+  unsigned: string[];
+  unreviewed: string[];
+  deprecated: string[];
+  changed_since_review: string[];
+  review_completed: boolean;
+}
+
+export function reviewWarningOf(err: unknown): ReviewWarningDetail | null {
+  if (err instanceof ApiError && err.status === 409 && err.detail &&
+      typeof err.detail === "object" && (err.detail as { review_warning?: unknown }).review_warning === true) {
+    return err.detail as ReviewWarningDetail;
+  }
+  return null;
 }
 
 export interface RunPatchBody {
@@ -4451,4 +4488,287 @@ export function flasherWsUrl(runId: number): string {
   if (/^https?:\/\//.test(API_URL)) return API_URL.replace(/^http/, "ws") + path;
   const scheme = window.location.protocol === "https:" ? "wss" : "ws";
   return `${scheme}://${window.location.host}${API_URL}${path}`;
+}
+
+// ------------------------------------------------------------- review axis
+
+/** Verification state of a version (see api/app/services/review.py).
+ *
+ * - `unreviewed` — nobody looked at this version yet.
+ * - `failed`     — a machine check found a concrete violation.
+ * - `partial`    — items skipped (unverifiable) or still unanswered.
+ * - `checked`    — every applicable checklist item answered. */
+export type ReviewState = "unreviewed" | "failed" | "partial" | "checked";
+
+export type ReviewActor = "machine" | "agent" | "human";
+
+export type ReviewKind = "component" | "symbol" | "footprint";
+
+export type LifecycleState = "in_design" | "released" | "deprecated" | "obsolete";
+
+export interface ChecklistItemDef {
+  key: string;
+  text: string;
+  hint?: string;
+  machine?: boolean;
+  /** Present when the item is already answered on the current record. */
+  answered?: {
+    result: "checked" | "na" | "skipped" | "failed";
+    note: string | null;
+    actor: string;
+    actor_type: ReviewActor;
+    at: string;
+  };
+}
+
+export interface ReviewRecordItem {
+  key: string;
+  text?: string;
+  result: "checked" | "na" | "skipped" | "failed";
+  note?: string | null;
+  actor: string;
+  actor_type: ReviewActor;
+  at: string;
+}
+
+export interface ReviewRecordRow {
+  id: number;
+  subject_kind: ReviewKind;
+  subject_version_id: number;
+  kind: "check" | "carry";
+  carried_from_id: number | null;
+  checklist_version_id: number | null;
+  items: ReviewRecordItem[] | null;
+  note: string | null;
+  created_by: string;
+  actor_type: ReviewActor;
+  created_at: string | null;
+  revoked_at: string | null;
+  revoked_by: string | null;
+  revoke_reason: string | null;
+}
+
+export interface ReviewStateDetail {
+  state: ReviewState;
+  provenance: ReviewActor | null;
+  record_id: number | null;
+  answered: number;
+  total: number;
+  skipped: number;
+  failed: number;
+  unanswered: string[];
+}
+
+export interface ReviewDetail extends ReviewStateDetail {
+  kind: ReviewKind;
+  id: number;
+  name: string;
+  version_id: number | null;
+  checklist_version_id: number | null;
+  items: ChecklistItemDef[];
+  extra_items: ReviewRecordItem[];
+  record: ReviewRecordRow | null;
+  history: ReviewRecordRow[];
+  blocked_items?: string[];
+}
+
+export function getReviewDetail(kind: ReviewKind, id: number, signal?: AbortSignal): Promise<ReviewDetail> {
+  return request(`/api/reviews/${kind}/${id}`, { signal });
+}
+
+export interface ReviewCheckAnswer {
+  key: string;
+  result: "checked" | "na" | "skipped";
+  note?: string;
+}
+
+export function recordReviewCheck(
+  kind: ReviewKind,
+  id: number,
+  body: { items?: ReviewCheckAnswer[] | null; note?: string; one_click?: boolean },
+): Promise<ReviewDetail> {
+  return request(`/api/reviews/${kind}/${id}/check`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({
+      items: body.items ?? null,
+      note: body.note ?? null,
+      one_click: body.one_click ?? false,
+    }),
+  });
+}
+
+export function revokeReviewCheck(kind: ReviewKind, id: number, reason: string): Promise<ReviewDetail> {
+  return request(`/api/reviews/${kind}/${id}/revoke`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function setLifecycle(
+  comp_id: number,
+  state: LifecycleState,
+  note?: string,
+): Promise<{ component_id: number; lifecycle_state: LifecycleState; changed: boolean; hidden_from_kicad?: boolean }> {
+  return request(`/api/components/${comp_id}/lifecycle`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ state, note: note ?? null }),
+  });
+}
+
+export interface ReviewQueueComponent {
+  id: number;
+  name: string;
+  version_no: number | null;
+  category_path: string;
+  review_state: ReviewState;
+  provenance: ReviewActor | null;
+  blockers: string[];
+  signoff_state: SignoffState;
+  lifecycle: LifecycleState;
+  used_in: string[];
+}
+
+export interface ReviewQueueTemplate {
+  id: number;
+  name: string;
+  kind: "symbol" | "footprint";
+  review_state: ReviewState;
+  provenance: ReviewActor | null;
+  skipped: number;
+  failed: number;
+  unanswered: number;
+}
+
+export interface ReviewQueue {
+  components: ReviewQueueComponent[];
+  symbols: ReviewQueueTemplate[];
+  footprints: ReviewQueueTemplate[];
+  drafts: { components: number; skills: number; symbols: number; footprints: number };
+}
+
+export function getReviewQueue(signal?: AbortSignal): Promise<ReviewQueue> {
+  return request("/api/reviews/queue", { signal });
+}
+
+export interface ReviewHealth {
+  components: {
+    total: number;
+    review: Record<string, number>;
+    signoff: Record<string, number>;
+    lifecycle: Record<string, number>;
+  };
+  used_not_signed: string[];
+  used_deprecated: string[];
+  top_skipped_items: { key: string; count: number }[];
+}
+
+export function getReviewHealth(signal?: AbortSignal): Promise<ReviewHealth> {
+  return request("/api/reviews/health", { signal });
+}
+
+// checklists
+
+export interface ChecklistSummary {
+  id: number;
+  name: string;
+  subject_kind: ReviewKind;
+  category_id: number | null;
+  category_path: string | null;
+  description: string;
+  version_no: number | null;
+  item_count: number;
+}
+
+export interface ChecklistDetail {
+  id: number;
+  name: string;
+  subject_kind: ReviewKind;
+  category_id: number | null;
+  description: string;
+  version_no: number | null;
+  items: { key: string; text: string; hint?: string; machine?: boolean }[];
+  history: { version_no: number; created_at: string; created_by: string; comment: string | null; item_count: number }[];
+}
+
+export function listChecklists(signal?: AbortSignal): Promise<ChecklistSummary[]> {
+  return request("/api/checklists", { signal });
+}
+
+export function getChecklist(id: number, signal?: AbortSignal): Promise<ChecklistDetail> {
+  return request(`/api/checklists/${id}`, { signal });
+}
+
+export function saveChecklist(
+  id: number,
+  items: ChecklistDetail["items"],
+  comment?: string,
+  description?: string,
+): Promise<ChecklistDetail> {
+  return request(`/api/checklists/${id}`, {
+    method: "PUT",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ items, comment: comment ?? null, description: description ?? null }),
+  });
+}
+
+// project design review
+
+export interface ProjectReviewRow {
+  board: string;
+  refs: string;
+  qty: number;
+  value: string;
+  footprint: string;
+  lcsc: string;
+  mpn: string;
+  lib_version: string;
+  component_id: number | null;
+  component_name: string | null;
+  current_version_no: number | null;
+  review_state: ReviewState | null;
+  review_blockers: string[];
+  signoff_state: SignoffState | null;
+  lifecycle: LifecycleState | null;
+  matched: boolean;
+}
+
+export interface ProjectReview {
+  project_id: number;
+  project_name: string;
+  sha: string;
+  ref_name: string;
+  snapshot_id: number;
+  rows: ProjectReviewRow[];
+  unsigned: string[];
+  unreviewed: string[];
+  deprecated: string[];
+  unmatched_lines: number;
+  reviewed: boolean;
+  last_review: { id: number; reviewed_by: string; reviewed_at: string; note: string | null; sha: string } | null;
+  changed_since_review: string[];
+  clean: boolean;
+  past_reviews: {
+    id: number;
+    sha: string;
+    reviewed_by: string;
+    reviewed_at: string;
+    note: string | null;
+    summary_counts: Record<string, number> | null;
+  }[];
+}
+
+export function getProjectReview(projectId: number, sha?: string, signal?: AbortSignal): Promise<ProjectReview> {
+  const q = sha ? `?sha=${encodeURIComponent(sha)}` : "";
+  return request(`/api/projects/${projectId}/review${q}`, { signal });
+}
+
+export function completeProjectReview(projectId: number, sha: string, note?: string): Promise<ProjectReview> {
+  return request(`/api/projects/${projectId}/review/complete`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ sha, note: note ?? null }),
+  });
 }

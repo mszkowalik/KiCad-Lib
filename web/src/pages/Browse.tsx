@@ -12,7 +12,7 @@ import {
 } from "../api";
 import CategoryTree from "../components/CategoryTree";
 import { useDialog } from "../components/Dialog";
-import { ErrorBanner, SignoffPill, Spinner } from "../components/Ui";
+import { ErrorBanner, LifecyclePill, ReviewPill, SignoffPill, Spinner } from "../components/Ui";
 import { useStickyState } from "../useStickyState";
 
 const PAGE_SIZE = 1000;
@@ -42,7 +42,8 @@ type ColKey =
   | "lcsc"
   | "price_bulk"
   | "category"
-  | "signoff";
+  | "signoff"
+  | "review";
 
 const COL_LABELS: Record<ColKey, string> = {
   mfg_pn: "Mfg PN",
@@ -54,6 +55,7 @@ const COL_LABELS: Record<ColKey, string> = {
   price_bulk: "Price @1k",
   category: "Category",
   signoff: "Sign-off",
+  review: "Review",
 };
 
 /** The label the sign-off column PRINTS. The filter box matches what the user
@@ -65,9 +67,22 @@ const SIGNOFF_TEXT: Record<string, string> = {
   unsigned: "not signed",
 };
 
+/** Printed labels for the review column — filter matches what the user sees,
+ *  including the lifecycle words shown alongside for deprecated/obsolete. */
+const REVIEW_TEXT: Record<string, string> = {
+  checked: "checked",
+  partial: "partial",
+  failed: "checks fail",
+  unreviewed: "unreviewed",
+};
+
 function colValue(c: ComponentListItem, col: ColKey): string {
   if (col === "category") return c.category_path;
   if (col === "signoff") return SIGNOFF_TEXT[c.signoff] ?? c.signoff;
+  if (col === "review") {
+    const life = c.lifecycle === "deprecated" || c.lifecycle === "obsolete" ? ` ${c.lifecycle}` : "";
+    return (REVIEW_TEXT[c.review] ?? c.review) + life;
+  }
   return c[col];
 }
 
@@ -77,6 +92,13 @@ const SIGNOFF_ORDER: Record<string, number> = {
   stale: 1,
   unsigned: 2,
   signed: 3,
+};
+
+const REVIEW_ORDER: Record<string, number> = {
+  failed: 0,
+  unreviewed: 1,
+  partial: 2,
+  checked: 3,
 };
 
 function sortRows(
@@ -90,6 +112,11 @@ function sortRows(
     // still needs looking at", and "revoked" before "signed" is that answer.
     out.sort(
       (a, b) => ((SIGNOFF_ORDER[a.signoff] ?? 9) - (SIGNOFF_ORDER[b.signoff] ?? 9)) * mul,
+    );
+  } else if (sort.col === "review") {
+    // Same worst-first rank ordering as the sign-off column.
+    out.sort(
+      (a, b) => ((REVIEW_ORDER[a.review] ?? 9) - (REVIEW_ORDER[b.review] ?? 9)) * mul,
     );
   } else if (sort.col === "price_bulk") {
     // numeric; empty/unparsable always last regardless of direction
@@ -422,6 +449,7 @@ export default function Browse() {
                   {sortTh("price_bulk", "num")}
                   {sortTh("category")}
                   {sortTh("signoff", "ctr")}
+                  {sortTh("review", "ctr")}
                 </tr>
                 <tr className="filter-row">
                   <td className="ctr" />
@@ -447,6 +475,7 @@ export default function Browse() {
                   {filterTd("price_bulk")}
                   {filterTd("category")}
                   {filterTd("signoff")}
+                  {filterTd("review")}
                 </tr>
               </thead>
               <tbody>
@@ -510,11 +539,17 @@ export default function Browse() {
                     <td className="ctr">
                       <SignoffPill state={c.signoff} />
                     </td>
+                    <td className="ctr">
+                      <ReviewPill state={c.review} provenance={c.review_provenance} />
+                      {c.lifecycle === "deprecated" || c.lifecycle === "obsolete" ? (
+                        <LifecyclePill state={c.lifecycle} title="Hidden from KiCad" />
+                      ) : null}
+                    </td>
                   </tr>
                 ))}
                 {visible.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="empty">
+                    <td colSpan={12} className="empty">
                       No components match.
                     </td>
                   </tr>

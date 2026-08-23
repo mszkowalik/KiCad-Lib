@@ -125,6 +125,10 @@ personal API token. Full rules in `api/CLAUDE.md` (backend) and `web/CLAUDE.md`
   relate to the database.
 - Backend and frontend conventions: see `api/CLAUDE.md` and `web/CLAUDE.md`.
   Record new non-obvious rules in the most specific of those files.
-- Writes to library data go through **draft proposals** approved in the
-  Proposals view — never publish directly (see the versioning section of
-  `api/CLAUDE.md`).
+- Writes to components, symbols and footprints **AUTO-PUBLISH** (2026-08-23):
+  the old draft gate is gone for them; accountability lives on the **review
+  axis** — machine validation on every publish, checklist verifications,
+  the Reviews queue, human sign-off, and the per-component lifecycle
+  (`released` on first sign-off; `deprecated`/`obsolete` hidden from KiCad).
+  See "The review axis" in `api/CLAUDE.md`. **Skills stay draft-gated** and
+  are still approved in the Proposals view.

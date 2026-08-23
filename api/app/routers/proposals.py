@@ -12,7 +12,12 @@ from .. import models as M
 from ..config import settings
 from ..db import get_db
 from ..services import material, signoff
-from ..services.mirror import top_level_of, update_mirror_footprint, update_mirror_symbols
+from ..services.publish import (
+    publish_component_version,
+    publish_geometry_version,
+    refresh_mirror_for_component,
+    refresh_mirror_for_geometry,
+)
 from ..services.render import render_svg
 from ..services.repoint import repoint_for
 from .util import actor_of, audit, category_path
@@ -200,33 +205,21 @@ def list_history(limit: int = 200, db: Session = Depends(get_db)):
 
 @router.post("/{cv_id}/approve")
 def approve(cv_id: int, db: Session = Depends(get_db)):
+    """Approve a leftover draft. Auto-publish made drafts the exception, but
+    approving one must do everything a direct publish does — the shared
+    `services/publish.py` path keeps the two from diverging."""
     cv = db.get(M.ComponentVersion, cv_id)
     if cv is None or cv.status != "draft":
         raise HTTPException(404, "draft proposal not found")
     comp = db.get(M.Component, cv.component_id)
 
-    old = db.get(M.ComponentVersion, comp.current_version_id) if comp.current_version_id else None
-    tops = {top_level_of(cv.category).name}
-    if old is not None:
-        tops.add(top_level_of(old.category).name)
-
-    cv.status = "published"
-    cv.approved_by = "user"
-    comp.current_version_id = cv.id
-    from ..services.datasheet_store import pin_datasheets
-
-    pin_datasheets(db, cv)  # record the PDF versions this approved version uses
+    res = publish_component_version(db, comp, cv, actor="user", approved_by="user")
     audit(db, "proposal.approve", "component_version", cv.id, {"component": comp.name})
-    # Same transaction as the publish. A repoint draft that only moves the pins
-    # onto an identical drawing must not silently cost the part its production
-    # sign-off — and a real change must not silently keep it.
-    carried = signoff.carry_on_publish(db, comp, old, cv)
     db.commit()
 
-    db.expire_all()
-    mirror = update_mirror_symbols(db, settings, tops)
+    mirror = refresh_mirror_for_component(db, settings, comp, res["tops"])
     return {**_summary(cv, comp), "mirror": {k: v for k, v in mirror.items() if k != "warnings"},
-            "mirror_warnings": mirror["warnings"], "signoff": carried}
+            "mirror_warnings": mirror["warnings"], "signoff": res["signoff"]}
 
 
 @router.post("/skills/{sv_id}/approve")
@@ -380,25 +373,16 @@ def approve_symbol(ver_id: int, request: Request, body: GeometryApproveIn | None
     sv, sym = _geometry_draft(db, "symbol", ver_id)
     if sv.status != "draft":
         raise HTTPException(404, "draft symbol proposal not found")
-    sv.status = "published"
-    sym.current_version_id = sv.id
-    _record_recheck(db, sv, "symbol", body, actor_of(request), sym.name)
+    publish_geometry_version(db, "symbol", sym, sv, actor_of(request),
+                             recheck_required=body.recheck_required if body else None,
+                             recheck_note=body.note if body else None)
     audit(db, "proposal.approve", "symbol_version", sv.id, {"symbol": sym.name})
     # Same transaction as the publish: a crash must not leave the symbol
     # current with its components silently pinned to the old drawing.
     repointed = repoint_for(db, "symbol", sym) if settings.auto_repoint_components else None
     db.commit()
 
-    # Rebuild the KiCad-facing libraries that show this drawing: the base
-    # library always (PCM package / HTTP catalog), plus every top-level
-    # generated library containing a component that uses this base symbol.
-    db.expire_all()
-    tops: set[str] = set()
-    for comp in db.query(M.Component).all():
-        cv = next((x for x in comp.versions if x.id == comp.current_version_id), None)
-        if cv is not None and cv.base_component == sym.name:
-            tops.add(top_level_of(cv.category).name)
-    mirror = update_mirror_symbols(db, settings, tops)
+    mirror = refresh_mirror_for_geometry(db, settings, "symbol", sym)
     return {**_geometry_json("symbol", sv, sym),
             "mirror": {k: v for k, v in mirror.items() if k != "warnings"},
             "mirror_warnings": mirror["warnings"],
@@ -443,45 +427,22 @@ def reject_symbol(ver_id: int, db: Session = Depends(get_db)):
     return payload
 
 
-def _record_recheck(db: Session, version, kind: str, body: GeometryApproveIn | None,
-                    actor: str, name: str) -> None:
-    """Store the approver's re-verification answer on the geometry version.
-
-    Always stamp the fingerprint, even when nobody answered: it is the fallback
-    `signoff.geometry_carries` uses, and a version published without one can
-    never carry a sign-off.
-    """
-    signoff.ensure_material_sha(version, kind)
-    answer = body.recheck_required if body is not None else None
-    if answer is None:
-        return
-    version.recheck_required = answer
-    # A waiver is a human decision that keeps sign-offs alive across a changed
-    # drawing. It must be attributable, so it gets its own audit row rather
-    # than hiding inside the approval's details.
-    audit(db, "signoff.recheck_decision", f"{kind}_version", version.id,
-          {kind: name, "recheck_required": answer,
-           "note": (body.note or "").strip() or None},
-          actor=actor)
-
-
 @router.post("/footprints/{ver_id}/approve")
 def approve_footprint(ver_id: int, request: Request, body: GeometryApproveIn | None = None,
                       db: Session = Depends(get_db)):
     fv, fp = _geometry_draft(db, "footprint", ver_id)
     if fv.status != "draft":
         raise HTTPException(404, "draft footprint proposal not found")
-    fv.status = "published"
-    fp.current_version_id = fv.id
-    _record_recheck(db, fv, "footprint", body, actor_of(request), fp.name)
+    publish_geometry_version(db, "footprint", fp, fv, actor_of(request),
+                             recheck_required=body.recheck_required if body else None,
+                             recheck_note=body.note if body else None)
     audit(db, "proposal.approve", "footprint_version", fv.id, {"footprint": fp.name})
     # Same transaction as the publish: a crash must not leave the footprint
     # current with its components silently pinned to the old drawing.
     repointed = repoint_for(db, "footprint", fp) if settings.auto_repoint_components else None
     db.commit()
 
-    db.expire_all()
-    mirror = update_mirror_footprint(db, settings, fp.name)
+    mirror = refresh_mirror_for_geometry(db, settings, "footprint", fp)
     return {**_geometry_json("footprint", fv, fp),
             "mirror": {k: v for k, v in mirror.items() if k != "warnings"},
             "mirror_warnings": mirror["warnings"],
