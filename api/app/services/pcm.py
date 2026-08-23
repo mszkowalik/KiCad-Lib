@@ -56,7 +56,7 @@ SOURCE_NICKNAME = "7Sigma"  # the nickname used inside mirror files (repo conven
 LIB_ID = "com.sevensigma.library"
 MODELS_ID = "com.sevensigma.models3d"
 PLUGIN_ID = "com.sevensigma.sync"
-PLUGIN_VERSION = "1.1.1"  # bump when the plugin source changes — PCM update detection
+PLUGIN_VERSION = "1.2.0"  # bump when the plugin source changes — PCM update detection
 # ^ MANUAL, and PCM decides "update available" purely from this string. A new
 # zip with the same version reaches nobody: the content hash changes, the
 # download changes, and every installed copy stays on the old code. Shipping
@@ -183,6 +183,10 @@ def _plugin_files(token: str = "") -> list[tuple[str, bytes]]:
     caller's API token baked in; icons ship verbatim. plugin.json must sit at
     the root of the package's plugins/ folder.
 
+    `__THIRD_PARTY_VAR__` is the same constant the library zip's model-path
+    rewrite uses, so push.py can spell an installed model path exactly as the
+    packager would — the two can never drift apart across a KiCad release.
+
     `token` defaults to EMPTY on purpose, and the empty build is the one whose
     hash feeds the repository tag (see `ensure_built`). Personalisation must
     never move the tag — otherwise every user's first install would look like a
@@ -198,6 +202,7 @@ def _plugin_files(token: str = "") -> list[tuple[str, bytes]]:
         if f.suffix == ".tmpl":
             body = (f.read_text(encoding="utf-8")
                     .replace("__BASE_URL__", settings.public_base_url)
+                    .replace("__THIRD_PARTY_VAR__", THIRD_PARTY_VAR)
                     .replace("__TOKEN__", token))
             out.append((f"plugins/{f.name[:-5]}", body.encode("utf-8")))
         elif f.name == "icon-pcm.png":

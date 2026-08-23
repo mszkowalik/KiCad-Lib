@@ -16,12 +16,19 @@ same generated library still update, and an edit that has been pushed, approved
 and has come back is adopted and stops counting as pending. Both tests compare a
 canonical form of the s-expression — see kicad_canon.py.
 
-When a drawing changed here AND on the platform, the sync stops and ASKS. Every
-such clash across every package is collected first and presented in ONE window
+Every local change the sync finds is ASKED about, in ONE window
 (conflict_ui.py) with a Mine/Server choice per row, so the answer is given once
-per sync rather than once per file. Declining to choose — cancel, a closed
-window, no usable dialog backend — always keeps the local copy, which is the
-behaviour this plugin had before the dialog existed.
+per sync rather than once per file. Three kinds of row: a drawing changed here
+AND on the platform (the real clash), a drawing changed only here (the platform
+has nothing new to give — the choice exists so an edit can be DISCARDED, which
+otherwise needed deleting the file by hand), and a drawing that exists only
+here, where taking the platform's side deletes it. Declining to choose —
+cancel, a closed window, no usable dialog backend — always keeps the local copy,
+which is the behaviour this plugin had before the dialog existed.
+
+Because of the second kind, a package with no upstream change is still fetched
+while any local edit is outstanding. It is 0.5 MB, and it is the only way the
+window can show what the platform would give back.
 
 Reopen the symbol chooser / footprint viewer after a sync — KiCad re-reads
 changed library files; a KiCad restart is only needed after very large
@@ -57,6 +64,13 @@ MODELS_STATE_FILE = HERE / "models_state.json"  # relpath -> sha256 of installed
 LOCAL_STATE_FILE = HERE / "local_state.json"    # abspath -> sha256 of footprints WE wrote
 LOCK_FILE = HERE / "sync.lock"
 LOCK_STALE_S = 30 * 60  # a lock this old is a crash leftover — take it over
+
+# Why a drawing is in the conflict window. Shown per row, because the answer
+# depends on it: a two-way clash is a real arbitration, while "changed here
+# only" is simply the user's own edit offered back for discarding.
+BOTH = "changed here and on the platform"
+MINE_ONLY = "changed here only"
+NEW_HERE = "only here — never sent"
 
 
 TOKEN = "__TOKEN__"          # baked in when installed from a personal repository URL
@@ -262,9 +276,9 @@ def _record_written(target: Path, payload: bytes, skip: set | None = None) -> No
             _LOCAL[prefix + name] = record(entry)
 
 
-def _conflicting_entries(target: Path, payload: bytes, current: bytes) -> list[str]:
-    """Names inside one symbol library that were edited here AND differ from
-    the platform's copy — i.e. the ones a human has to arbitrate.
+def _conflicting_entries(target: Path, payload: bytes, current: bytes) -> list[tuple[str, str]]:
+    """Names inside one symbol library that were edited here and differ from
+    the platform's copy, each with why it is being asked about.
 
     Every base symbol lives in one generated file, so the whole-file rule
     "never overwrite an edited file" froze all 183 of them the moment one was
@@ -273,14 +287,20 @@ def _conflicting_entries(target: Path, payload: bytes, current: bytes) -> list[s
     up_text = payload.decode("utf-8", "replace")
     lo_text = current.decode("utf-8", "replace")
     upstream = dict(split_symbols(up_text))
-    out: list[str] = []
+    out: list[tuple[str, str]] = []
     for name, entry in split_symbols(lo_text):
         twin = upstream.get(name)
         if twin is not None and canon_hash(entry) == canon_hash(twin):
             continue  # same drawing either way — take the platform's copy
         if _unchanged(f"{target}::{name}", entry.encode("utf-8")):
             continue  # untouched here: upstream changed it, or removed it
-        out.append(name)
+        if twin is None:
+            note = NEW_HERE
+        elif _unchanged(f"{target}::{name}", twin.encode("utf-8")):
+            note = MINE_ONLY  # the platform still has what we last wrote
+        else:
+            note = BOTH
+        out.append((name, note))
     return out
 
 
@@ -378,14 +398,41 @@ def _members(zf: zipfile.ZipFile, dest_name: str):
         yield member, kind, rel, THIRD_PARTY / kind / dest_name / rel
 
 
-def _fetch_package(pkg: dict, state: dict) -> bytes | None:
-    """The package zip, or None when the installed copy is already current."""
+def _has_local_edits(dest_name: str) -> bool:
+    """True when any installed library file differs from what this plugin last
+    wrote — an edit made here, or a drawing created here.
+
+    This is what makes "drop my changes and take the platform's copy" possible.
+    The package is skipped when its content sha matches the installed one, so
+    with nothing changed upstream the sync used to end at "already up to date"
+    and never mentioned the local edit at all: the only way to discard it was
+    to delete the file by hand. When this returns True the package is fetched
+    anyway, purely so the edit can be listed in the conflict window.
+
+    Cheap in the normal case: `matches` compares the raw sha first, so an
+    untouched tree costs one hash per file and never a canonical parse.
+    """
+    for kind in ("symbols", "footprints"):
+        root = THIRD_PARTY / kind / dest_name
+        if not root.is_dir():
+            continue
+        for f in root.rglob("*"):
+            if f.is_file() and f.suffix in LIB_SUFFIXES and not _unchanged(str(f), f.read_bytes()):
+                return True
+    return False
+
+
+def _fetch_package(pkg: dict, state: dict, force: bool = False) -> bytes | None:
+    """The package zip, or None when the installed copy is already current.
+
+    `force` fetches it regardless — see `_has_local_edits`.
+    """
     ident = pkg["identifier"]
     dest_name = ident.replace(".", "_")  # KiCad's install-directory convention
     ver = pkg["versions"][0]
     sha = ver["download_sha256"]
     targets_exist = any((THIRD_PARTY / kind / dest_name).exists() for kind in MANAGED_KINDS)
-    if state.get(ident) == sha and targets_exist:
+    if state.get(ident) == sha and targets_exist and not force:
         return None
     if ver["download_size"] > 10 * 1024 * 1024:
         _notify(f"Downloading {pkg['name']} ({ver['download_size'] >> 20} MB)…")
@@ -396,7 +443,15 @@ def _fetch_package(pkg: dict, state: dict) -> bytes | None:
 
 
 def _scan_conflicts(pkg: dict, data: bytes) -> list[dict]:
-    """Drawings that changed here AND on the platform, for one package.
+    """Every local change the user could want to drop, for one package.
+
+    Three kinds of row, all asked in the same window:
+      * a drawing changed here AND on the platform — the genuine clash;
+      * a drawing changed only here — nothing is at stake for the platform,
+        but "take the platform's copy" is the only way to discard the edit
+        short of deleting the file;
+      * a library file that exists only here and was never pushed, where
+        taking the platform's side means DELETING it.
 
     Read-only: nothing is written and no question is asked yet, so every
     package can be scanned before the single dialog goes up.
@@ -404,7 +459,9 @@ def _scan_conflicts(pkg: dict, data: bytes) -> list[dict]:
     dest_name = pkg["identifier"].replace(".", "_")
     found: list[dict] = []
     zf = zipfile.ZipFile(io.BytesIO(data))
-    for member, _kind, _rel, target in _members(zf, dest_name):
+    upstream: dict[str, set] = {}
+    for member, kind, rel, target in _members(zf, dest_name):
+        upstream.setdefault(kind, set()).add(rel.as_posix())
         if target.suffix not in LIB_SUFFIXES or not target.is_file():
             continue
         current = target.read_bytes()
@@ -415,12 +472,30 @@ def _scan_conflicts(pkg: dict, data: bytes) -> list[dict]:
                 canon_hash(payload.decode("utf-8", "replace")):
             continue  # settled: the local edit IS the platform's copy now
         if target.suffix == ".kicad_sym":
-            for name in _conflicting_entries(target, payload, current):
+            for name, note in _conflicting_entries(target, payload, current):
                 found.append({"key": f"{target}::{name}", "kind": "symbol",
-                              "name": name})
+                              "name": name, "note": note})
         else:
+            # The payload still matching our record means the platform has not
+            # touched this drawing since we wrote it, so the only change is the
+            # user's own.
             found.append({"key": str(target), "kind": "footprint",
-                          "name": target.name})
+                          "name": target.name,
+                          "note": MINE_ONLY if _unchanged(str(target), payload) else BOTH})
+
+    # files this package does not carry: drawn here and never pushed, or left
+    # behind by a rename upstream. The prune deliberately keeps them, so this
+    # window is the only place they can be cleared.
+    for kind, keep in upstream.items():
+        root = THIRD_PARTY / kind / dest_name
+        if not root.is_dir():
+            continue
+        for f in root.rglob("*"):
+            if (f.is_file() and f.suffix in LIB_SUFFIXES
+                    and f.relative_to(root).as_posix() not in keep
+                    and not _unchanged(str(f), f.read_bytes())):
+                found.append({"key": str(f), "kind": "footprint", "name": f.name,
+                              "note": NEW_HERE, "delete": True})
     return found
 
 
@@ -436,6 +511,7 @@ def _apply_package(pkg: dict, state: dict, data: bytes,
     kept_local: list[str] = []
     settled: list[str] = []
     overwritten: list[str] = []
+    deleted: list[str] = []
     for member, kind, rel, target in _members(zf, dest_name):
         written.setdefault(kind, set()).add(rel.as_posix())
         payload = zf.read(member)
@@ -461,7 +537,7 @@ def _apply_package(pkg: dict, state: dict, data: bytes,
             elif target.suffix == ".kicad_sym":
                 # Only the entries the user chose to keep are held back; the
                 # rest of the library updates as usual.
-                keep = {n for n in _conflicting_entries(target, payload, current)
+                keep = {n for n, _note in _conflicting_entries(target, payload, current)
                         if decisions.get(f"{target}::{n}") != conflict_ui.SERVER}
                 payload = _merge_symbols(payload, current, keep)
                 skip = keep
@@ -482,11 +558,14 @@ def _apply_package(pkg: dict, state: dict, data: bytes,
             if f.is_file() and f.relative_to(root).as_posix() not in keep:
                 # A library file this plugin did not write last is either a
                 # local edit or a footprint drawn here that was never pushed.
-                # Deleting it would destroy work that Push exists to send.
+                # Deleting it would destroy work that Push exists to send — so
+                # it goes only when the user asked for it in the dialog.
                 # Models carry no record at all, so they prune as before.
                 if f.suffix in LIB_SUFFIXES and not _unchanged(str(f), f.read_bytes()):
-                    kept_local.append(f.name)
-                    continue
+                    if decisions.get(str(f)) != conflict_ui.SERVER:
+                        kept_local.append(f.name)
+                        continue
+                    deleted.append(f.name)
                 f.unlink()
         # a pruned duplicate folder ("7Sigma 2.pretty") otherwise lingers empty
         # forever, and KiCad registers every .pretty it finds as a library
@@ -499,8 +578,11 @@ def _apply_package(pkg: dict, state: dict, data: bytes,
         _notify("Kept your local edits (not overwritten): " + ", ".join(sorted(set(kept_local)))
                 + ". Use 'Push 7Sigma changes' to send them.")
     if overwritten:
-        _notify(f"Replaced with the platform version, as you chose: "
+        _notify("Replaced with the platform version, as you chose: "
                 + ", ".join(sorted(set(overwritten))))
+    if deleted:
+        _notify("Deleted, as you chose (they exist nowhere else): "
+                + ", ".join(sorted(set(deleted))))
     if settled:
         _notify(f"{len(settled)} local edit(s) now match the platform and are no longer "
                 "pending: " + ", ".join(sorted(set(settled))))
@@ -554,7 +636,12 @@ def main() -> int:
                         continue
                     except Exception:
                         pass  # fall back to the full package zip below
-                data = _fetch_package(pkg, state)
+                # A package that changed nowhere is skipped — UNLESS something
+                # here was edited, in which case it is fetched purely so the
+                # edit can be offered for discarding (see _has_local_edits).
+                data = _fetch_package(
+                    pkg, state,
+                    force=_has_local_edits(pkg["identifier"].replace(".", "_")))
                 if data is None:
                     fresh.append(pkg["name"])
                     continue
@@ -569,13 +656,13 @@ def main() -> int:
         if conflicts:
             decisions, backend = conflict_ui.resolve(conflicts)
             if backend == "none":
-                _notify(f"{len(conflicts)} conflict(s) found but no dialog is "
+                _notify(f"{len(conflicts)} local change(s) found but no dialog is "
                         "available here — kept your local copies. Use 'Push "
                         "7Sigma changes' to send them, or delete the file to "
                         "take the platform version.")
             elif backend == "too-many":
-                _notify(f"{len(conflicts)} conflicts — too many to review one by "
-                        "one, so every local copy was kept. This usually means "
+                _notify(f"{len(conflicts)} local changes — too many to review one "
+                        "by one, so every local copy was kept. This usually means "
                         "the sync state was lost; Push what you want to keep, "
                         "then delete the local files and sync again.")
 

@@ -1,7 +1,7 @@
 {
     "identifier": "com.sevensigma.sync",
     "name": "7Sigma Library Sync",
-    "description": "Fetches the current 7Sigma library (symbols, footprints, 3D models) from the platform and refreshes the installed PCM copies in place, and pushes footprints and symbols you edited locally back as draft proposals. KiCad renders the buttons in the PCB editor only.",
+    "description": "Fetches the current 7Sigma library (symbols, footprints, 3D models) from the platform and refreshes the installed PCM copies in place, asking what to do with anything you edited here, and pushes footprints and symbols you edited locally back to the platform together with the 3D models they reference. KiCad renders the buttons in the PCB editor only.",
     "runtime": {
         "type": "python"
     },
@@ -19,7 +19,7 @@
         {
             "identifier": "push-library",
             "name": "Push 7Sigma changes",
-            "description": "Send footprints and symbols you edited in the installed 7Sigma library to __BASE_URL__ as draft proposals",
+            "description": "Send footprints and symbols you edited in the installed 7Sigma library to __BASE_URL__, uploading any 3D model they reference from outside the library",
             "show-button": true,
             "scopes": ["footprint", "symbol", "pcb", "schematic"],
             "entrypoint": "push.py",

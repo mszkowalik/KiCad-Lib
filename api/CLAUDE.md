@@ -1070,11 +1070,48 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   the live mirror and corrects the baseline, so a wrong state file self-heals.
   A failed fetch leaves the item flagged — offering an edit twice is annoying,
   losing one is not recoverable.
-- **The prune must never delete a library file the plugin did not write.** It
-  is either a local edit or a footprint drawn here and not yet pushed; the old
-  rule deleted anything absent from the package, which destroyed new work
-  before Push could send it. Models are exempt — they carry no per-file record,
-  so they prune as before.
+- **The prune must never delete a library file the plugin did not write** —
+  unless the user asked for it in the window. It is either a local edit or a
+  footprint drawn here and not yet pushed; the old rule deleted anything absent
+  from the package, which destroyed new work before Push could send it. Models
+  are exempt — they carry no per-file record, so they prune as before.
+- **Every local change is offered back, not just the two-way clashes.** A
+  drawing edited here while the platform's copy stayed put is not a conflict,
+  but "throw my edit away and take the platform's copy" is still something only
+  this window can do — otherwise the answer is "delete the file by hand". So
+  `_scan_conflicts` emits three kinds of row, each labelled with its `note`:
+  changed on both sides, changed only here, and exists only here (where the
+  server side means DELETE). The cost is that a package with no upstream change
+  is fetched anyway while any local edit is outstanding (`_has_local_edits`
+  forces it) — 0.5 MB for the library package, and the only way the window can
+  show what the platform would give back. Every failure path still resolves to
+  "mine".
+- **Push carries the 3D model, or the footprint cannot be pushed at all.** A
+  footprint drawn here points its `(model …)` wherever the file actually sits —
+  ~/Downloads, KiCad's own `3dmodels/` tree, a project folder — and
+  `geometry_proposals` refuses any path outside `${SEVENSIGMA_DIR}/3DModels/`.
+  So `push.py` resolves each off-library reference on disk
+  (`model_paths.resolve`, expanding `${KICAD*_3RD_PARTY}` and
+  `${KICAD*_3DMODEL_DIR}` from the install layout — KiCad does not export its
+  path variables to a plugin), asks where each one goes (`model_ui`, suggested
+  path editable), uploads them to `/api/models3d/upload` FIRST, then rewrites
+  the reference and sends the footprint. A reference whose file is missing
+  blocks that footprint with a named error rather than letting the platform
+  answer with a validation refusal.
+  - **The local file is repointed at the installed copy afterwards, and its
+    baseline is deliberately NOT re-recorded.** Repointing stops the model
+    vanishing when ~/Downloads is cleared and stops the next push re-uploading
+    it; leaving the baseline alone means the next sync settles the file by
+    comparing drawings, which is the one path that cannot lose an edit if the
+    mirror is still rebuilding. The rewritten path uses `THIRD_PARTY_VAR`,
+    baked into the template by `_plugin_files` as `__THIRD_PARTY_VAR__` — the
+    same constant the library zip's rewrite uses, so `to_platform_text` undoes
+    exactly what was written and the round trip is byte-stable.
+  - **The suggested folder follows what the library already does**: the
+    footprint's current model folder, else the source file's own `*.3dshapes`
+    folder (a model adopted from KiCad keeps KiCad's category), else
+    `7Sigma.3dshapes/`. Nineteen hand-uploaded files sit loose at the root of
+    `3DModels/` from before that rule existed.
 - **A missing baseline means "unknown", and Push must FLAG an unknown item.**
   The two rules above combine into a trap: Sync withholds a record for an entry
   it kept back, so a drawing edited before the first sync that protected it
@@ -1282,6 +1319,22 @@ to `/api/agent/tools/{name}`, needing only `KICAD_API_URL`
 (default `http://localhost:8020`) + optional `KICAD_MCP_TOKEN`.
 `read_datasheet`'s list-of-content-blocks return (text + base64 PNG pages) is
 converted to MCP image content; every other tool returns a JSON string as text.
+
+- **`mcp` is pinned `>=1.2,<2`, and the pin is load-bearing.** mcp 2.0.0
+  removed the low-level `Server.list_tools()` / `Server.call_tool()`
+  decorators this file is built on, so the unpinned spec resolved to a version
+  that died at import with `'Server' object has no attribute 'list_tools'`.
+  `uv` resolves fresh on a cold start, so it would have broken with no local
+  change (caught 2026-08-24). Lift the pin only with a port to the 2.x API.
+- **One tool is LOCAL, not proxied: `upload_model3d`** (`LOCAL_TOOLS`, merged
+  into the catalog in `list_tools` and dispatched before the proxy). A 3D model
+  is a multi-megabyte file on the user's own disk; proxying it would mean
+  base64 through a tool call, and the platform-side agent cannot read that
+  filesystem at all. It reads the file locally and posts multipart to
+  `/api/models3d/upload`, then returns the ready `(model …)` node. Its default
+  `rel_path` rule duplicates `services/pcm_plugin/model_paths.suggest_rel_path`
+  (this script imports no app code) — change both together. Keep local tools to
+  that shape: something the API genuinely cannot do because the bytes are here.
 
 **Claude Code wiring (`.mcp.json` at repo root):** a project-scoped stdio entry
 `kicad-library` that runs the server via `uv`, with `KICAD_API_URL` /

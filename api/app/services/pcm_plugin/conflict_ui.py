@@ -1,10 +1,13 @@
-"""Sync conflict resolution UI — one window for every clashing drawing.
+"""Sync's local-changes window — one window for every drawing sync would touch.
 
-A conflict is a library file (or one symbol entry inside the generated symbol
-library) that differs BOTH from what sync last wrote here AND from what the
-platform is now serving. Before this module the local copy always won, in
-silence and for ever: there was no way to take the platform's version short of
-deleting the file by hand, so an approved fix could never come back down.
+A row is a library file (or one symbol entry inside the generated symbol
+library) that no longer matches what sync last wrote here. Its `note` says why
+it is being asked about — the platform changed it too, only this machine
+changed it, or it exists only here — and the answer is the same either way:
+keep mine, or take the platform's copy. Before this module the local copy always
+won, in silence and for ever: there was no way to take the platform's version
+short of deleting the file by hand, so an approved fix could never come back
+down, and an experiment made locally could never be abandoned.
 
 The unit is the DRAWING, not the file — see kicad_canon.py. A conflict is only
 raised when the canonical forms genuinely differ, so a KiCad re-save in its own
@@ -38,9 +41,20 @@ _SANE_ROWS = 200
 
 
 def _label(c: dict) -> str:
-    """What the user sees for one conflict. Symbols are tagged because a
-    symbol name and a footprint name can otherwise look identical."""
-    return f"{c['name']} (symbol)" if c["kind"] == "symbol" else c["name"]
+    """What the user sees for one row. Symbols are tagged because a symbol name
+    and a footprint name can otherwise look identical."""
+    name = f"{c['name']} (symbol)" if c["kind"] == "symbol" else c["name"]
+    note = _note(c)
+    return f"{name} — {note}" if note else name
+
+
+def _note(c: dict) -> str:
+    """Why this row is here, plus the warning that answering "server" on a
+    drawing the platform does not have means deleting it."""
+    note = c.get("note") or ""
+    if c.get("delete"):
+        note = (note + " — " if note else "") + "server = DELETE it"
+    return note
 
 
 def _all_mine(conflicts: list[dict]) -> dict[str, str]:
@@ -81,15 +95,16 @@ def _run_wx_dialog(wx, conflicts: list[dict]) -> dict[str, str]:
 
     outer = wx.BoxSizer(wx.VERTICAL)
     intro = wx.StaticText(dlg, label=(
-        f"{n} drawing{'' if n == 1 else 's'} changed here AND on the platform.\n"
-        "Pick which version to keep. \"Mine\" leaves your file untouched — "
-        "use Push to send it."))
+        f"{n} drawing{'' if n == 1 else 's'} on this machine no longer match the "
+        "platform.\nPick which version to keep. \"Mine\" leaves your file "
+        "untouched — use Push to send it.\n\"Server\" throws your version away "
+        "and takes the platform's."))
     outer.Add(intro, 0, wx.ALL, 12)
 
     scroll = wx.ScrolledWindow(dlg, style=wx.VSCROLL)
     scroll.SetScrollRate(0, 12)
-    grid = wx.FlexGridSizer(cols=3, vgap=4, hgap=16)
-    grid.AddGrowableCol(0, 1)
+    grid = wx.FlexGridSizer(cols=4, vgap=4, hgap=16)
+    grid.AddGrowableCol(1, 1)
 
     buttons: dict[str, tuple] = {}
     for kind in ("footprint", "symbol"):
@@ -100,11 +115,16 @@ def _run_wx_dialog(wx, conflicts: list[dict]) -> dict[str, str]:
                                               else "Symbols"))
         header.SetFont(header.GetFont().Bold())
         grid.Add(header, 0, wx.TOP, 8)
+        grid.Add(wx.StaticText(scroll, label=""), 0, wx.TOP, 8)
         grid.Add(wx.StaticText(scroll, label="Mine"), 0, wx.TOP, 8)
         grid.Add(wx.StaticText(scroll, label="Server"), 0, wx.TOP, 8)
         for c in rows:
             grid.Add(wx.StaticText(scroll, label=c["name"]), 0,
                      wx.ALIGN_CENTER_VERTICAL)
+            why = wx.StaticText(scroll, label=_note(c))
+            why.SetForegroundColour(
+                wx.SystemSettings.GetColour(wx.SYS_COLOUR_GRAYTEXT))
+            grid.Add(why, 0, wx.ALIGN_CENTER_VERTICAL)
             # RB_GROUP opens a new radio group, so each row is independent
             mine = wx.RadioButton(scroll, label="", style=wx.RB_GROUP)
             server = wx.RadioButton(scroll, label="")
@@ -114,7 +134,7 @@ def _run_wx_dialog(wx, conflicts: list[dict]) -> dict[str, str]:
             buttons[c["key"]] = (mine, server)
 
     scroll.SetSizer(grid)
-    scroll.SetMinSize((520, min(360, 90 + 26 * n)))
+    scroll.SetMinSize((720, min(380, 90 + 26 * n)))
     outer.Add(scroll, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 12)
 
     bulk = wx.BoxSizer(wx.HORIZONTAL)
@@ -186,9 +206,9 @@ def _resolve_osascript(conflicts: list[dict]) -> dict[str, str] | None:
     lst = "{" + ", ".join('"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
                           for s in labels) + "}"
     n = len(conflicts)
-    prompt = (f"{n} drawing{'' if n == 1 else 's'} changed here AND on the "
-              "platform. Tick the ones to REPLACE with the platform version. "
-              "Unticked keeps yours — use Push to send it.")
+    prompt = (f"{n} drawing{'' if n == 1 else 's'} here no longer match the "
+              "platform. Tick the ones to REPLACE with the platform version, "
+              "discarding your copy. Unticked keeps yours — use Push to send it.")
     script = (
         f"set L to {lst}\n"
         f'set picked to choose from list L with title "7Sigma Sync conflicts" '
@@ -220,12 +240,15 @@ def _resolve_osascript(conflicts: list[dict]) -> dict[str, str] | None:
 # --------------------------------------------------------------------------
 
 def resolve(conflicts: list[dict]) -> tuple[dict[str, str], str]:
-    """Ask once for every conflict. Returns (key -> MINE|SERVER, backend name).
+    """Ask once for every row. Returns (key -> MINE|SERVER, backend name).
 
     `conflicts` items carry:
-      key   unique id — the absolute path, or "<path>::<entry>" for a symbol
-      kind  "footprint" | "symbol"
-      name  what to show
+      key     unique id — the absolute path, or "<path>::<entry>" for a symbol
+      kind    "footprint" | "symbol"
+      name    what to show
+      note    why it is being asked about (optional)
+      delete  True when "server" means deleting a file the platform has never
+              seen (optional)
 
     The returned map ALWAYS covers every key, whatever happened, so the caller
     never has to handle a missing decision.

@@ -2,7 +2,7 @@
 """Push 7Sigma changes — KiCad IPC action plugin entrypoint.
 
 The other half of ``sync.py``. Sync PULLS the library onto this machine;
-this PUSHES local edits back as draft proposals.
+this PUSHES local edits back, with the 3D models they reference.
 
 Why it exists: KiCad's clipboard is not a usable transport. A footprint-object
 copy never reaches the system clipboard at all, and a select-all copy carries
@@ -17,8 +17,13 @@ costs nothing here — this reads the SAVED files off disk, so which editor has
 focus is irrelevant. The footprint/symbol scopes in plugin.json are declared
 for the day KiCad honours them.
 
-Nothing is published. Each selected footprint or symbol becomes a DRAFT the
-user approves in the platform's Proposals view, with the usual before/after.
+Each selected footprint or symbol becomes a new version on the platform
+(footprints and symbols auto-publish since 2026-08-23; accountability lives on
+the review axis, not on a draft gate). A footprint whose 3D model sits outside
+the library — in ~/Downloads, in KiCad's own 3dmodels tree, beside a project —
+carries that file with it: Push uploads the model, rewrites the reference to
+`${SEVENSIGMA_DIR}/3DModels/…`, and repoints the local copy at the installed
+one. See model_paths.py and model_ui.py.
 
 "Edited" is decided against a CANONICAL form of the drawing (kicad_canon.py),
 never against the bytes: KiCad rewrites the whole file it saves in its own
@@ -29,6 +34,7 @@ no CA store on macOS).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -41,10 +47,19 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))  # KiCad runs this as a script; be explicit anyway
 from kicad_canon import canon_hash, matches, record, split_symbols  # noqa: E402
+import model_ui  # noqa: E402 — same reason
+from model_paths import (  # noqa: E402
+    MODEL_PREFIX, is_library_path, model_paths, resolve, rewrite_model_path,
+    suggest_rel_path, var_names,
+)
 
 BASE_URL = "__BASE_URL__"
 LIB_DIR_NAME = "com_sevensigma_library"  # com.sevensigma.library, KiCad's dot->underscore rule
 MODELS_INSTALL_DIR = "com_sevensigma_models3d"
+# The KiCad path variable the packager writes into installed footprints. Baked
+# in by pcm.py (THIRD_PARTY_VAR) so the two never drift — it is version-stamped
+# and moves with each KiCad major release.
+THIRD_PARTY_VAR = "__THIRD_PARTY_VAR__"
 PRETTY = "7Sigma.pretty"
 SYM_FILE = "7Sigma_Base.kicad_sym"
 THIRD_PARTY = HERE.parents[1]  # .../3rdparty/plugins/<id>/ -> .../3rdparty
@@ -88,8 +103,8 @@ def _as_list(items: list[str]) -> str:
 
 
 def _confirm(names: list[str]) -> list[str] | None:
-    """Ask which footprints to send. Everything is ticked to start with, so
-    the common case — send them all — is one Return press.
+    """Ask which footprints and symbols to send. Everything is ticked to start
+    with, so the common case — send them all — is one Return press.
 
     Returns the chosen names, or None when the user cancels or no dialog is
     available. Never falls through to pushing without an answer.
@@ -102,7 +117,7 @@ def _confirm(names: list[str]) -> list[str] | None:
     out = _osascript(
         f'set L to {lst}\n'
         f'set picked to choose from list L with title "Push to 7Sigma" '
-        f'with prompt "{len(names)} changed {plural}. Send as draft proposals?" '
+        f'with prompt "{len(names)} changed {plural}. Send to the platform?" '
         f'default items L with multiple selections allowed '
         f'OK button name "Send" cancel button name "Cancel"\n'
         'if picked is false then error number -128\n'
@@ -160,9 +175,9 @@ AUTH_HINT = (
 def _token() -> str:
     """The platform API token — baked in at install time, else `token.json`.
 
-    Push WRITES (it files draft proposals), so this credential also carries the
-    identity the proposal is attributed to. A shared token would make every
-    proposal anonymous.
+    Push WRITES (library versions and 3D model files), so this credential also
+    carries the identity the new version is attributed to. A shared token would
+    make every push anonymous.
     """
     global TOKEN
     if TOKEN:
@@ -225,6 +240,183 @@ def _post_json(url: str, payload: dict, timeout: int = 180) -> tuple[int, dict]:
             return e.code, json.loads(body)
         except ValueError:
             return e.code, {"detail": {"error": body[:200].decode("utf-8", "replace")}}
+
+
+def _post_multipart(url: str, filename: str, data: bytes,
+                    timeout: int = 900) -> tuple[int, dict]:
+    """One file to a `UploadFile = File(...)` endpoint, field name "file".
+
+    Hand-rolled because the plugin runs on KiCad's bundled Python with no
+    requests/httpx — the same reason every other call here is urllib. The
+    boundary is derived from the payload so it can never occur inside it.
+    """
+    boundary = "----7sigma" + hashlib.sha256(data).hexdigest()[:32]
+    head = (f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+            "Content-Type: application/octet-stream\r\n\r\n").encode("utf-8")
+    body = head + data + f"\r\n--{boundary}--\r\n".encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers=_headers({
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "Content-Length": str(len(body)),
+    }))
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX) as resp:
+            return resp.status, json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            _notify(AUTH_HINT)
+            raise SystemExit(AUTH_HINT) from e
+        raw = e.read()
+        try:
+            return e.code, json.loads(raw)
+        except ValueError:
+            return e.code, {"detail": raw[:200].decode("utf-8", "replace")}
+    except Exception as e:  # noqa: BLE001 — timeout, connection reset, DNS
+        return 0, {"detail": repr(e)}
+
+
+# --------------------------------------------------------------- 3D models
+
+def _stock_models_dir() -> Path | None:
+    """KiCad's own 3dmodels tree, so a model picked out of it resolves.
+
+    KiCad keeps `KICAD*_3DMODEL_DIR` in its own settings and does not export it
+    to a plugin's environment, so the value has to be guessed from the install
+    layout. A miss is harmless: the file simply reads as "cannot find", which
+    is reported rather than acted on.
+    """
+    for p in (Path("/Applications/KiCad/KiCad.app/Contents/SharedSupport/3dmodels"),
+              Path("/usr/share/kicad/3dmodels"),
+              Path("/usr/local/share/kicad/3dmodels"),
+              Path("C:/Program Files/KiCad/share/kicad/3dmodels")):
+        if p.is_dir():
+            return p
+    return None
+
+
+def _path_vars(names) -> dict:
+    """What KiCad's path variables mean on this machine, for the names asked
+    about. Only the two families a 3D model reference realistically uses."""
+    out: dict[str, str] = {}
+    for n in names:
+        if n.endswith("_3RD_PARTY"):
+            out[n] = str(THIRD_PARTY)
+        elif n.endswith("_3DMODEL_DIR"):
+            stock = _stock_models_dir()
+            if stock is not None:
+                out[n] = str(stock)
+    return out
+
+
+def installed_model_path(rel: str) -> str:
+    """`rel` as the installed library spells it — what a local file must say so
+    KiCad renders the model straight after a push, and what the next sync will
+    write for the same footprint (so the two compare equal and settle)."""
+    return f"${{{THIRD_PARTY_VAR}}}/3dmodels/{MODELS_INSTALL_DIR}/{rel}"
+
+
+def _plan_models(name: str, path: Path, fid) -> tuple[list[dict], str | None]:
+    """The off-library 3D models one footprint references.
+
+    Returns (items, error). An item is one reference to upload: `footprint`,
+    `src` (the file on this machine), `orig` (the path as written) and `rel`
+    (the suggested place under 3DModels/, editable in the dialog). The error is
+    set when a reference names a file that is not there — the push of THAT
+    footprint has to stop, because the platform refuses a non-library path and
+    would reject it anyway, with a worse message.
+    """
+    text = to_platform_text(path.read_text(encoding="utf-8"))
+    refs = [p for p in model_paths(text) if not is_library_path(p)]
+    if not refs:
+        return [], None
+    existing: list = []
+    if fid is not None:
+        try:
+            existing = _get_json(f"{BASE_URL}/api/footprints/{fid}").get("models") or []
+        except Exception:  # noqa: BLE001 — only affects the suggested folder
+            existing = []
+    items, missing = [], []
+    for ref in dict.fromkeys(refs):  # each distinct path once, order kept
+        src = resolve(ref, _path_vars(var_names(ref)), path.parent)
+        if src is None:
+            missing.append(ref)
+            continue
+        items.append({"footprint": name, "src": src, "orig": ref,
+                      "rel": suggest_rel_path(src, existing)})
+    if missing:
+        return items, ("cannot find the 3D model file(s) it references: "
+                       + ", ".join(missing))
+    return items, None
+
+
+def _upload_models(items: list[dict]) -> list[str]:
+    """Upload every planned model, once per target path. Marks each item `ok`
+    or `error`; returns the human-readable failures."""
+    errors: list[str] = []
+    done: dict[str, Path] = {}
+    for it in items:
+        rel, src = it["rel"], it["src"]
+        prev = done.get(rel)
+        if prev is not None:
+            if prev == src:
+                it["ok"] = True  # two footprints, same file — uploaded already
+            else:
+                it["error"] = f"two different files both target 3DModels/{rel}"
+                errors.append(f"{it['footprint']}: {it['error']}")
+            continue
+        try:
+            data = src.read_bytes()
+        except OSError as e:
+            it["error"] = f"cannot read {src}: {e}"
+            errors.append(f"{it['footprint']}: {it['error']}")
+            continue
+        _notify(f"Uploading {src.name} ({len(data) >> 10} kB) as 3DModels/{rel}…")
+        status, res = _post_multipart(
+            f"{BASE_URL}/api/models3d/upload?rel_path={urllib.parse.quote(rel)}",
+            src.name, data)
+        if status == 200 and res.get("ok"):
+            done[rel] = src
+            it["ok"] = True
+            it["data"] = data
+        else:
+            detail = res.get("detail") or res
+            if isinstance(detail, dict):
+                detail = detail.get("error") or json.dumps(detail)[:200]
+            it["error"] = f"upload failed ({status}): {detail}"
+            errors.append(f"{it['footprint']}: {it['error']}")
+    return errors
+
+
+def _install_model_locally(rel: str, data: bytes) -> None:
+    """Put the uploaded bytes where the installed library keeps its models, so
+    the footprint renders now instead of after the next sync. The next sync
+    finds the same sha256 in the manifest and downloads nothing."""
+    try:
+        target = THIRD_PARTY / "3dmodels" / MODELS_INSTALL_DIR / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.is_file() or target.read_bytes() != data:
+            target.write_bytes(data)
+    except OSError:
+        pass  # cosmetic — the model is in the library, sync will fetch it
+
+
+def _relink_local(path: Path, plan: list[dict]) -> None:
+    """Repoint the LOCAL footprint at the stored model.
+
+    Without this the file keeps naming ~/Downloads: the model would vanish from
+    the board the day that folder is cleared, and every later push would upload
+    it again. The baseline in local_state.json is deliberately NOT re-recorded —
+    the next sync compares this file against the platform's copy, finds the same
+    drawing, and settles it there, which is the one path that cannot lose an
+    edit if the mirror is still rebuilding.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+        for it in plan:
+            text = rewrite_model_path(text, it["orig"], installed_model_path(it["rel"]))
+        path.write_text(text, encoding="utf-8")
+    except OSError as e:
+        _notify(f"Uploaded the model but could not rewrite {path.name}: {e}")
 
 
 _ENTRIES: dict | None = None
@@ -420,12 +612,43 @@ def main() -> int:
         _notify(f"Push failed: cannot list the library — {e}")
         return 1
 
+    # --- 3D models -------------------------------------------------------
+    # A footprint drawn here points its (model …) at wherever the file sits on
+    # this machine. The platform only stores library paths, so the file goes up
+    # FIRST and the reference is rewritten — otherwise the push is refused and
+    # the user is told to go and upload a STEP by hand.
+    plans: list[dict] = []
+    blocked: dict[str, str] = {}
+    for kind, name, path, _is_new in (by_label[lbl] for lbl in picked if lbl in by_label):
+        if kind != "footprint":
+            continue
+        items, err = _plan_models(name, path, ids.get(name))
+        plans.extend(items)
+        if err:
+            blocked[name] = err
+    if plans:
+        chosen, backend = model_ui.confirm(plans)
+        if chosen is None:
+            _notify("Nothing sent — the 3D model step was cancelled.")
+            return 0
+        plans = chosen
+        if backend in ("none", "too-many"):
+            _notify(f"Could not open the 3D model window for {len(plans)} file(s) — "
+                    "used the suggested paths under 3DModels/.")
+        _upload_models(plans)
+        for it in plans:
+            if it.get("error"):
+                blocked.setdefault(it["footprint"], it["error"])
+
     filed, failed = [], []
     for lbl in picked:
         entry = by_label.get(lbl)
         if entry is None:
             continue
         kind, name, path, _ = entry
+        if name in blocked and kind == "footprint":
+            failed.append(f"{name}: {blocked[name]}")
+            continue
         if kind == "symbol":
             sid = sym_ids.get(name)
             if sid is None:
@@ -435,7 +658,10 @@ def main() -> int:
                                      {"source_text": to_platform_symbol(name),
                                       "comment": comment})
         else:
+            plan = [i for i in plans if i["footprint"] == name]
             text = to_platform_text(path.read_text(encoding="utf-8"))
+            for it in plan:
+                text = rewrite_model_path(text, it["orig"], MODEL_PREFIX + it["rel"])
             fid = ids.get(name)
             if fid is None:  # not in the library yet — a creation proposal
                 status, res = _post_json(f"{BASE_URL}/api/footprints/propose",
@@ -443,13 +669,20 @@ def main() -> int:
             else:
                 status, res = _post_json(f"{BASE_URL}/api/footprints/{fid}/propose",
                                          {"source_text": text, "comment": comment})
+            if status == 200 and res.get("ok") and plan:
+                # The library now owns the model — point the local copy at the
+                # installed one and drop the bytes in beside it.
+                for it in plan:
+                    if it.get("data"):
+                        _install_model_locally(it["rel"], it["data"])
+                _relink_local(path, plan)
         if status == 200 and res.get("ok"):
             filed.append(f"{name} v{res['version_no']}")
         else:
             failed.append(f"{name}: {(res.get('detail') or res).get('error', status)}")
 
     if filed:
-        _notify(f"Proposed {len(filed)}: {', '.join(filed)}. Approve them in the Proposals view.")
+        _notify(f"Sent {len(filed)}: {', '.join(filed)}.")
     if failed:
         _notify("Push errors: " + "; ".join(failed))
     return 1 if failed else 0
