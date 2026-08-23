@@ -5,7 +5,6 @@ import {
   isAbortError,
   recordReviewCheck,
   revokeReviewCheck,
-  type ChecklistItemDef,
   type ReviewCheckAnswer,
   type ReviewDetail,
   type ReviewKind,
@@ -24,10 +23,15 @@ import { ErrorBanner, ReviewPill, Spinner } from "./Ui";
 export default function ReviewCard({
   kind,
   id,
+  label,
   onChange,
 }: {
   kind: ReviewKind;
   id: number;
+  /** Card heading. Defaults to "Verification" — pass a specific one when a
+   *  page shows several cards (the component page verifies the part AND the
+   *  two drawings it pins), or every heading reads the same. */
+  label?: string;
   onChange?: (detail: ReviewDetail) => void;
 }) {
   const [detail, setDetail] = useState<ReviewDetail | null>(null);
@@ -38,6 +42,10 @@ export default function ReviewCard({
   const [answers, setAnswers] = useState<Record<string, ReviewCheckAnswer>>({});
   const [note, setNote] = useState("");
   const [showItems, setShowItems] = useState(false);
+  // A check this part needed that no checklist anticipated. It lives in this
+  // subject's record only — the checklist document is untouched, which is what
+  // makes it safe to add one without deciding it applies to every part.
+  const [customText, setCustomText] = useState("");
   const dialog = useDialog();
 
   useEffect(() => {
@@ -60,7 +68,10 @@ export default function ReviewCard({
     onChange?.(next);
   };
 
-  const answer = async (item: ChecklistItemDef, result: "checked" | "na" | "skipped" | "flagged") => {
+  const answer = async (
+    item: { key: string; text: string },
+    result: "checked" | "na" | "skipped" | "flagged",
+  ) => {
     let itemNote: string | undefined;
     if (result !== "checked") {
       const why = await dialog.prompt(
@@ -80,7 +91,37 @@ export default function ReviewCard({
         return;
       }
     }
-    setAnswers((prev) => ({ ...prev, [item.key]: { key: item.key, result, note: itemNote } }));
+    setAnswers((prev) => ({
+      ...prev,
+      [item.key]: { key: item.key, result, note: itemNote, text: item.text },
+    }));
+  };
+
+  /** `custom.<slug>`, unique against the checklist, the recorded extras and
+   *  anything already pending — the key is the identity a later record merges
+   *  onto, so a collision would silently overwrite a different question. */
+  const customKey = (text: string): string => {
+    const taken = new Set<string>([
+      ...(detail?.items ?? []).map((i) => i.key),
+      ...(detail?.extra_items ?? []).map((i) => i.key),
+      ...Object.keys(answers),
+    ]);
+    const slug =
+      text
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 40) || "check";
+    let key = `custom.${slug}`;
+    for (let n = 2; taken.has(key); n += 1) key = `custom.${slug}-${n}`;
+    return key;
+  };
+
+  const addCustom = async (result: "checked" | "na" | "skipped" | "flagged") => {
+    const text = customText.trim();
+    if (!text) return;
+    await answer({ key: customKey(text), text }, result);
+    setCustomText("");
   };
 
   const save = async () => {
@@ -97,6 +138,7 @@ export default function ReviewCard({
       setVerifying(false);
       setAnswers({});
       setNote("");
+      setCustomText("");
       if (next.blocked_items && next.blocked_items.length > 0) {
         await dialog.alert(
           `Kept the existing higher-tier answers for: ${next.blocked_items.join(", ")}`,
@@ -157,18 +199,23 @@ export default function ReviewCard({
   if (!detail) {
     return (
       <section className="card pad meta-card">
-        <h3 className="card-title">Verification</h3>
+        <h3 className="card-title">{label ?? "Verification"}</h3>
         <Spinner label="Loading verification state" />
       </section>
     );
   }
 
   const openCount = detail.items.filter((i) => !i.answered || i.answered.result === "skipped").length;
+  // Answers to keys the checklist does not define and the record does not
+  // carry yet — they have no row of their own to render in, so they get one.
+  const known = new Set([...detail.items.map((i) => i.key), ...detail.extra_items.map((i) => i.key)]);
+  const pendingCustom = Object.values(answers).filter((a) => !known.has(a.key));
 
   return (
     <section className="card pad meta-card">
       <h3 className="card-title">
-        Verification <ReviewPill state={detail.state} provenance={detail.provenance} />
+        {label ?? "Verification"}{" "}
+        <ReviewPill state={detail.state} provenance={detail.provenance} />
       </h3>
 
       <p className="muted">{explain(detail, openCount)}</p>
@@ -226,6 +273,7 @@ export default function ReviewCard({
               onClick={() => {
                 setVerifying(false);
                 setAnswers({});
+                setCustomText("");
               }}
             >
               Cancel
@@ -292,12 +340,95 @@ export default function ReviewCard({
           {detail.extra_items.map((item) => (
             <li key={item.key} className="note">
               <div className="note-head">
-                <span className="mono">{item.key}</span> <span>{item.text}</span>{" "}
+                <span>{item.text}</span>{" "}
                 <span className={`pill ${RESULT_TONE[item.result] ?? "neutral"}`}>{item.result}</span>
+                <span className="badge" title={`Added for this ${detail.kind} only — ${item.key}`}>
+                  custom
+                </span>
               </div>
               {item.note ? <p className="muted">{item.note}</p> : null}
             </li>
           ))}
+          {pendingCustom.map((a) => (
+            <li key={a.key} className="note">
+              <div className="note-head">
+                <span>{a.text}</span>{" "}
+                <span className="pill ok" title="unsaved answer">
+                  {a.result} ✎
+                </span>
+                <span className="badge">custom</span>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy}
+                  onClick={() =>
+                    setAnswers((prev) => {
+                      const next = { ...prev };
+                      delete next[a.key];
+                      return next;
+                    })
+                  }
+                >
+                  Remove
+                </button>
+              </div>
+              {a.note ? <p className="muted">{a.note}</p> : null}
+            </li>
+          ))}
+          {verifying ? (
+            <li className="note">
+              <div className="note-head">
+                <input
+                  className="text row-input"
+                  value={customText}
+                  maxLength={200}
+                  disabled={busy}
+                  placeholder="Add a check of your own — what did you verify?"
+                  aria-label="Custom check"
+                  onChange={(e) => setCustomText(e.target.value)}
+                />
+              </div>
+              <div className="btn-row">
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy || !customText.trim()}
+                  onClick={() => void addCustom("checked")}
+                >
+                  Checked
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy || !customText.trim()}
+                  onClick={() => void addCustom("na")}
+                >
+                  N/A
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy || !customText.trim()}
+                  onClick={() => void addCustom("skipped")}
+                >
+                  Skip
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-danger"
+                  disabled={busy || !customText.trim()}
+                  onClick={() => void addCustom("flagged")}
+                  title="Verified and found wrong — record the defect without fixing it"
+                >
+                  Flag
+                </button>
+                <span className="rail-hint">
+                  Recorded on this {detail.kind} alone — it does not change the checklist
+                  every other part is measured against.
+                </span>
+              </div>
+            </li>
+          ) : null}
         </ul>
       ) : null}
     </section>

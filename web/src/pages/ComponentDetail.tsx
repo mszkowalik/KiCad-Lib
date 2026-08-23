@@ -32,7 +32,9 @@ import {
   type Model3DFile,
   type PricePointsResponse,
   type LifecycleState,
+  type PinnedRef,
   type PropertyRow,
+  type ReviewPart,
   type VersionDetail,
 } from "../api";
 import { fileHref } from "../viewkind";
@@ -49,7 +51,7 @@ import {
   type EditDs,
   type EditRow,
 } from "../components/editing";
-import { ErrorBanner, LifecyclePill, ReviewPill, SignoffPill, Spinner, StatusPill } from "../components/Ui";
+import { BackLink, ErrorBanner, LifecyclePill, ReviewPill, SignoffPill, Spinner, StatusPill } from "../components/Ui";
 import CommentsPanel from "../components/CommentsPanel";
 import SignoffCard from "../components/SignoffCard";
 import ReviewCard from "../components/ReviewCard";
@@ -180,6 +182,54 @@ function DiffMeta({
     <span className="diff-meta">
       <span className="diff-new">{children}</span>
       <span className="diff-old"> was {oldText || "—"}</span>
+    </span>
+  );
+}
+
+/** One pinned drawing: a link to it, which version this part was generated
+ *  against, whether the library still serves that version, and whether anybody
+ *  has verified it.
+ *
+ * The name is a LINK because a component is the place you find out a land
+ * pattern is wrong, and reading it meant copying the name into the template
+ * browser. `is_current === false` is the state auto-repoint exists to remove:
+ * KiCad is served the newest drawing, so a stale pin means the board in the
+ * schematic and the board in the library are not the same drawing. */
+function PinnedGeometry({
+  kind,
+  pin,
+  review,
+}: {
+  kind: "symbols" | "footprints";
+  pin: PinnedRef;
+  /** Verification of THIS version — omitted when an older component version is
+   *  on screen, because the state on file describes the live pins. */
+  review?: ReviewPart;
+}) {
+  const noun = kind === "symbols" ? "symbol" : "footprint";
+  return (
+    <span className="pin-line">
+      <Link to={`/library/templates/${kind}/${pin.id}`} className="mono comp-link">
+        {pin.name}
+      </Link>{" "}
+      <span className="pin-ver">v{pin.version_no}</span>
+      {pin.is_current ? null : (
+        <span
+          className="pill warn"
+          title={`This component was generated against v${pin.version_no}, but KiCad is served v${pin.current_version_no}. Publish a new component version to move it onto the current drawing.`}
+        >
+          library serves v{pin.current_version_no}
+        </span>
+      )}
+      {review ? (
+        <ReviewPill
+          state={review.state}
+          provenance={review.provenance}
+          title={`Verification of this ${noun} version${
+            review.unanswered?.length ? ` — unanswered: ${review.unanswered.join(", ")}` : ""
+          }`}
+        />
+      ) : null}
     </span>
   );
 }
@@ -1184,9 +1234,7 @@ export default function ComponentDetail() {
     return (
       <div className="main-solo">
         <div className="page">
-          <Link to={backTo} className="backlink">
-            &larr; Back
-          </Link>
+          <BackLink to={backTo} />
           <ErrorBanner message={`Component failed to load: ${detailError}`} />
         </div>
       </div>
@@ -1211,6 +1259,11 @@ export default function ComponentDetail() {
     ? `Footprint — ${version.footprint.name} v${version.footprint.version_no}`
     : "Footprint — not pinned";
 
+  // `detail.review.parts` describes the drawings the CURRENT version pins, so
+  // its per-drawing pills may only be shown while the current version is the
+  // one on screen. An older version pins older drawings with their own records.
+  const showsLiveGeometry = version !== null && version.version_no === detail.current_version_no;
+
   // Diff mode: a draft is selected and its current published baseline loaded.
   const diff = !editing && baseline !== null && version !== null;
   const propRows: DiffPropRow[] =
@@ -1226,9 +1279,7 @@ export default function ComponentDetail() {
     <div className="detail-page">
       <div className="detail-left">
         <div className="detail-top">
-          <Link to={backTo} className="backlink">
-            &larr; Back
-          </Link>
+          <BackLink to={backTo} />
           <div className="detail-header">
             <h1 className="mono comp-name">{detail.name}</h1>
             {version ? <StatusPill status={version.status} /> : null}
@@ -1311,7 +1362,8 @@ export default function ComponentDetail() {
 
         {version?.status === "draft" ? (
           <div className="banner-warn" role="status">
-            Draft proposal — approve or reject in <Link to="/proposals">Proposals</Link>.
+            Draft — filed before writes published directly, and never approved. Nothing files
+            drafts any more; this version is history.
             {diff ? (
               <>
                 {" "}
@@ -1407,10 +1459,11 @@ export default function ComponentDetail() {
                   oldText={baseline ? symKey(baseline) : ""}
                 >
                   {version.symbol ? (
-                    <span className="mono">
-                      {version.symbol.name}{" "}
-                      <span className="pin-ver">v{version.symbol.version_no}</span>
-                    </span>
+                    <PinnedGeometry
+                      kind="symbols"
+                      pin={version.symbol}
+                      review={showsLiveGeometry ? detail.review?.parts?.symbol : undefined}
+                    />
                   ) : (
                     // no pinned symbol — the base ref is the only information left
                     <span className="mono">
@@ -1426,10 +1479,11 @@ export default function ComponentDetail() {
                   oldText={baseline ? fpKey(baseline) : ""}
                 >
                   {version.footprint ? (
-                    <span className="mono">
-                      {version.footprint.name}{" "}
-                      <span className="pin-ver">v{version.footprint.version_no}</span>
-                    </span>
+                    <PinnedGeometry
+                      kind="footprints"
+                      pin={version.footprint}
+                      review={showsLiveGeometry ? detail.review?.parts?.footprint : undefined}
+                    />
                   ) : (
                     <span className="null">not pinned</span>
                   )}
@@ -1671,6 +1725,37 @@ export default function ComponentDetail() {
           <ReviewCard
             kind="component"
             id={compId}
+            label="Component data verification"
+            onChange={() => {
+              getComponent(compId)
+                .then(setDetail)
+                .catch(() => {});
+            }}
+          />
+        ) : null}
+
+        {/* The pinned drawings, verifiable HERE. A component is where you
+            notice a land pattern is wrong, and the check belongs to the
+            footprint — so before this the trail was: open the footprint page,
+            verify, navigate back and lose your place. Each card is the same
+            ReviewCard the template page shows, pointed at the pinned parent. */}
+        {version && !editing && isCurrentSelected && version.symbol ? (
+          <ReviewCard
+            kind="symbol"
+            id={version.symbol.id}
+            label={`Symbol verification — ${version.symbol.name}`}
+            onChange={() => {
+              getComponent(compId)
+                .then(setDetail)
+                .catch(() => {});
+            }}
+          />
+        ) : null}
+        {version && !editing && isCurrentSelected && version.footprint ? (
+          <ReviewCard
+            kind="footprint"
+            id={version.footprint.id}
+            label={`Footprint verification — ${version.footprint.name}`}
             onChange={() => {
               getComponent(compId)
                 .then(setDetail)

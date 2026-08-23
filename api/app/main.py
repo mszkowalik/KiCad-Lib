@@ -28,7 +28,6 @@ from .routers import (
     models3d,
     production_runs,
     projects,
-    proposals,
     reviews,
     run_costs,
     settings as settings_router,
@@ -75,7 +74,6 @@ app.include_router(models3d.router)
 app.include_router(datasheets.router)
 app.include_router(jaravis.router)
 app.include_router(agent.router)
-app.include_router(proposals.router)
 app.include_router(comments.router)
 app.include_router(signoffs.router)
 app.include_router(reviews.router)
@@ -236,6 +234,13 @@ _PHASE1_DDL = (
      "material_sha varchar(64) NOT NULL DEFAULT ''"),
     ("footprint_versions.recheck_required",
      "ALTER TABLE footprint_versions ADD COLUMN IF NOT EXISTS recheck_required boolean"),
+    # The resolved checklist a review record was measured against. Before it,
+    # only the BASE checklist version was pinned, so an unanswered
+    # category-scoped item read as partial when the check was saved and as
+    # checked on the next load. Old rows stay NULL and keep the old behaviour
+    # rather than being given an opinion nobody recorded.
+    ("review_records.checklist_items",
+     "ALTER TABLE review_records ADD COLUMN IF NOT EXISTS checklist_items jsonb"),
 )
 
 # name -> "ok" | "failed: ..."; served by GET /api/health/schema.

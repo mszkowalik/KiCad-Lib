@@ -58,9 +58,13 @@ def _geometry_label(db: Session, cv: M.ComponentVersion | None) -> dict:
     fv = db.get(M.FootprintVersion, cv.footprint_version_id) if cv.footprint_version_id else None
     sym = db.get(M.Symbol, sv.symbol_id) if sv else None
     fp = db.get(M.Footprint, fv.footprint_id) if fv else None
+    # `id` is the PARENT row, so the card can link to the drawing that was
+    # signed instead of printing a name to copy into the template browser.
     return {
-        "symbol": {"name": sym.name, "version_no": sv.version_no} if sv and sym else None,
-        "footprint": {"name": fp.name, "version_no": fv.version_no} if fv and fp else None,
+        "symbol": {"id": sym.id, "name": sym.name, "version_no": sv.version_no}
+        if sv and sym else None,
+        "footprint": {"id": fp.id, "name": fp.name, "version_no": fv.version_no}
+        if fv and fp else None,
     }
 
 

@@ -2,7 +2,7 @@
  *  esptool output, every tx/rx console line, engine notes. Polls while the
  *  run is still going, so this page doubles as a live tail. */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import {
   errorMessage,
   getProgrammingLogs,
@@ -13,7 +13,7 @@ import {
   type ProgrammingRunDetail,
 } from "../api";
 import { useDialog } from "../components/Dialog";
-import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import { BackLink, ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import CheckGrid from "../components/flasher/CheckGrid";
 import { fmtDuration, fmtWhen } from "../components/flasher/common";
 
@@ -99,9 +99,9 @@ export default function FlashRunDetail() {
     <div className="main-solo">
       <div className="page">
         <div className="toolbar">
-          <Link className="backlink" to={run.device ? `/production/devices/${run.device.id}` : "/production/devices"}>
+          <BackLink to={run.device ? `/production/devices/${run.device.id}` : "/production/devices"}>
             ← {run.device ? (run.device.serial || run.device.mac) : "Devices"}
-          </Link>
+          </BackLink>
           <h1>Programming run #{run.id}</h1>
           <StatusPill status={run.status} />
           {run.status === "running" ? (

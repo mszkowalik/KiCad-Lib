@@ -71,6 +71,42 @@ def refresh_mirror_for_component(db: Session, settings: Settings, comp: M.Compon
     return update_mirror_symbols(db, settings, tops)
 
 
+def publish_skill_version(db: Session, skill: M.Skill, content: str, actor: str,
+                          comment: str | None = None) -> M.SkillVersion:
+    """Publish one skill version. Caller owns the transaction.
+
+    **Skills auto-publish too (user decision 2026-08-24).** They were the last
+    thing behind the draft gate the 2026-08-23 change left standing, on the
+    reasoning that a bad skill steers every future agent run. The gate is gone:
+    a skill document is prose, its versions are immutable, and rolling one back
+    is opening the previous version and saving it — the same recovery the web
+    editor always had. Nothing else in the platform files drafts any more.
+
+    Both doors come here — the web editor (where the user editing IS the
+    author) and the agent's `propose_skill_update`. There is no review axis for
+    a skill: no material fingerprint, no checklist, nothing to carry. The
+    version rows and the audit trail are the whole record.
+
+    `skill.versions` is deliberately NOT read: the session is
+    `expire_on_commit=False` and a version added here is not appended to an
+    already-loaded relationship, so the numbering would repeat itself (same
+    trap as `services/repoint.py`).
+    """
+    if not content.strip():
+        raise ValueError("skill content must not be empty")
+    numbers = [n for (n,) in db.query(M.SkillVersion.version_no).filter_by(skill_id=skill.id)]
+    sv = M.SkillVersion(skill_id=skill.id, version_no=max(numbers, default=0) + 1,
+                        content=content, status="published", created_by=actor,
+                        comment=(comment or "").strip() or None)
+    db.add(sv)
+    db.flush()
+    skill.current_version_id = sv.id
+    db.add(M.AuditLog(actor=actor, action="publish", entity_type="skill_version",
+                      entity_id=str(sv.id),
+                      details={"skill": skill.name, "version_no": sv.version_no}))
+    return sv
+
+
 def publish_geometry_version(db: Session, kind: str, parent, version, actor: str,
                              recheck_required: bool | None = None,
                              recheck_note: str | None = None) -> dict:

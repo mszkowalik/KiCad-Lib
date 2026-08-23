@@ -36,9 +36,9 @@ interface NewSkillDraft {
 export default function Skills() {
   const [list, setList] = useState<SkillListItem[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
-  // Selection lives in the URL so a skill is linkable and the Proposals deep
-  // link lands on the right document; the sticky copy only restores the last
-  // skill on a bare /library/skills visit.
+  // Selection lives in the URL so a skill is linkable — an agent's answer, a
+  // chat message or a bookmark lands on the right document; the sticky copy
+  // only restores the last skill on a bare /library/skills visit.
   const params = useParams();
   const navigate = useNavigate();
   const urlId = params.id != null ? Number(params.id) : null;
@@ -238,7 +238,6 @@ export default function Skills() {
 
   const restore = async () => {
     if (selectedId === null || viewVersion === null || saving) return;
-    if (viewVersion.status === "draft") return; // drafts go through Proposals
     const confirmed = await dialog.confirm(
       `Restore v${viewVersion.version_no} as the new current version of ${viewVersion.name}?`,
       { title: "Restore version", confirmLabel: "Restore" },
@@ -315,8 +314,6 @@ export default function Skills() {
   );
   const editorValue = viewingOld ? (viewVersion?.content ?? "") : editorText;
   const versions = detail ? [...detail.versions].sort((a, b) => a.version_no - b.version_no) : [];
-  const viewedInfo = viewNo !== null ? versions.find((v) => v.version_no === viewNo) : undefined;
-  const viewIsDraft = viewedInfo?.status === "draft";
 
   return (
     <div className="skills-layout">
@@ -424,7 +421,14 @@ export default function Skills() {
                 const isSelected = viewNo === null ? isCurrent : v.version_no === viewNo;
                 const isDraft = v.status === "draft";
                 const isRejected = v.status === "rejected";
-                const statusNote = isDraft ? " — draft proposal" : isRejected ? " — rejected" : "";
+                // Drafts and rejections are HISTORY: nothing has filed one since
+                // skills started publishing directly (2026-08-24). They stay
+                // readable, and restoring one publishes its text like any other.
+                const statusNote = isDraft
+                  ? " — draft, never published"
+                  : isRejected
+                    ? " — rejected"
+                    : "";
                 const commentNote = v.comment ? ` — ${v.comment}` : "";
                 return (
                   <button
@@ -451,20 +455,14 @@ export default function Skills() {
             {viewingOld ? (
               <div className="banner-warn skill-view-banner" role="status">
                 viewing v{viewNo} — current is v{detail.current_version_no}
-                {viewIsDraft ? (
-                  <span className="draft-note">
-                    Draft proposal — approve or reject in <Link to="/proposals">Proposals</Link>
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn btn-sm restore-btn"
-                    disabled={saving || viewVersion === null}
-                    onClick={() => void restore()}
-                  >
-                    {saving ? "Restoring…" : "Restore this version"}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="btn btn-sm restore-btn"
+                  disabled={saving || viewVersion === null}
+                  onClick={() => void restore()}
+                >
+                  {saving ? "Restoring…" : "Restore this version"}
+                </button>
               </div>
             ) : null}
 

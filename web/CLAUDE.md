@@ -114,23 +114,27 @@ plus a required comment.
   rename the template.
 - **Create** — omit `id`. The `Templates` page does this, per tab. The server
   reads the name out of the pasted text, so there is no name field either.
-  Pass `onFiled` to refresh the list: a creation makes the parent row at once
-  even though its version stays a draft.
+  Pass `onFiled` to refresh the list: a creation makes the parent row and its
+  first published version at once.
 - **Preview before filing** — the Preview button POSTs to
   `/api/{kind}/preview.svg` and shows the render of the UNSAVED text. It returns
   an object URL, so revoke the previous one whenever it is replaced, and on
   unmount.
 
-It only ever files a DRAFT. Approval and the published before/after live in
-Proposals — do not add an approve control here, and do not rebuild the
-side-by-side, `Proposals.tsx` already renders current-vs-draft from
-`geometryProposalPreviewUrl(kind, id, "current"|"draft")`.
+**It PUBLISHES.** There is no approval step anywhere in the platform any more
+(2026-08-24), so the Preview button is the only look before the fact — say so
+in the copy, and never write "draft" here again. The box also carries the
+**minor-change waiver** (`minor_change`), the one control the deleted approve
+dialog owned that had nowhere else to live: ticked, it carries the sign-offs
+and verification records of every affected component across the new drawing
+under the user's name; unticked sends `null`, and the server compares material
+fingerprints instead. Default it to unticked — the safe answer is the one that
+makes people look again.
 
-**Approving a new footprint version must offer to repoint its components.**
-Components pin `footprint_version_id`, so an approved v4 leaves them on v3 while
-the mirror already serves v4. The Proposals approve step names the components
-still pinning the outgoing version and offers to move them. An offer, never
-automatic — see the rule in `api/CLAUDE.md`. NOT BUILT YET.
+**A footprint publish repoints its components by itself** (`services/repoint.py`),
+so nothing here has to offer it. What the UI must show instead is the state a
+repoint prevents: `PinnedRef.is_current === false` on the component page, which
+renders as "library serves v5" beside the pinned version.
 
 ### The API is same-origin — `API_URL` defaults to `""`
 
@@ -162,8 +166,10 @@ renders INSTEAD of the router.
   signed-out visit fires a request per screen and paints an error banner per
   panel before the form appears. It also means a deep link survives sign-in: the
   URL never changed, so the router picks it up once the user exists.
-- **`Shell` holds the app**, and the proposals-badge fetch lives there rather
-  than in `App` — anything in `App` would run anonymously on every visit.
+- **`Shell` holds the app** and must stay free of background fetches: anything
+  in `App` would run anonymously on every visit, and anything in `Shell` runs on
+  every page. (It used to poll `/api/proposals` for a nav badge; that queue is
+  gone.)
 - **Any 401 from any endpoint drops back to the form.** `api.ts` exposes
   `setUnauthorizedHandler`, which `AuthGate` registers once. `/api/auth/*` is
   excluded from that hook: a wrong password is a 401 the login form itself must
@@ -233,10 +239,18 @@ sign-off states to `STATUS_TONES`.
 ### Site structure (UI overhaul, 2026-07-29)
 
 - **Five nav sections**: Library (`/library/...`), Projects (+ `/runs/:id`),
-  Production (`/production/...`), Proposals, Setup. Second-level navigation is
+  Production (`/production/...`), Reviews (`/reviews` queue,
+  `/reviews/checklists` editor), Setup. Second-level navigation is
   `SectionNav` in `App.tsx`; every pre-overhaul route redirects, so never link
-  to `/components/...`, `/invoices`, `/parts-stock`, `/kicad` in new code —
-  use the new paths.
+  to `/components/...`, `/invoices`, `/parts-stock`, `/kicad`, `/proposals` in
+  new code — use the new paths.
+- **"← Back" means BACK, not UP: use `BackLink` from `components/Ui.tsx`.**
+  A plain `<Link>` to a parent page is wrong on any page you can arrive at from
+  more than one place — opening a footprint from a component and pressing Back
+  landed on the footprint LIST, losing the component you were verifying.
+  `BackLink` calls `navigate(-1)` when `window.history.state.idx > 0` and falls
+  back to its `to` for a directly-opened page, which also keeps a real href for
+  middle-click. `to` stays required.
 - **A run is edited only on `/runs/:id`** (`pages/RunDetail.tsx`): status,
   sale (price/device, qty_good…), notes, overrides, materials, costs, files,
   serials. The project Runs tab is a plain list. Do not add run-editing UI
@@ -304,7 +318,7 @@ The fix for any table (add it when you create the table, don't wait for it to
 overflow):
 
 1. Add a table-scoped modifier class (e.g. `jlc-stock-table`, `browse-table`,
-   `proposals-table`; see `styles.css`) and give it `table-layout: fixed` plus
+   `users-table`; see `styles.css`) and give it `table-layout: fixed` plus
    `nth-child` width percentages summing to **100%**.
 2. Apply `overflow: hidden; text-overflow: ellipsis; white-space: nowrap` to
    every `th`/`td` — the shared `.data-fixed` helper does exactly this, so
@@ -312,11 +326,11 @@ overflow):
    the widths. Reuse `.data-fixed` rather than re-declaring the ellipsis rules.
 3. Add a `title` attribute with the full value on any cell that can truncate, so
    the hidden text is available on hover.
-4. If one row genuinely must break the clamp (e.g. a full-width `colSpan`
-   expansion row like the proposals before/after preview), opt *that cell* out
-   with `white-space: normal; overflow: visible` — never relax the whole table.
+4. If one row genuinely must break the clamp (e.g. the full-width `colSpan`
+   expansion row in the users table), opt *that cell* out with
+   `white-space: normal; overflow: visible` — never relax the whole table.
 
-Compound selectors (`.data.proposals-table td:nth-child(n)`) are needed to
+Compound selectors (`.data.users-table td:nth-child(n)`) are needed to
 outrank existing width rules such as `.data td.ctr { width: 1% }`.
 
 

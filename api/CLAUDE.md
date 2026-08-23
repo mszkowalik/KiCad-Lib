@@ -49,37 +49,45 @@ Non-trivial logic and anything with side effects lives in `services/`.
 
 Read this before touching components, symbols, footprints, or skills.
 
-**AUTO-PUBLISH (user design 2026-08-23).** Writes to components, symbols and
-footprints publish IMMEDIATELY — the draft-approval gate is gone for them
-(skills stay draft-gated; `run_sync` still files drafts). What replaced the
-gate is the **review axis** (`services/review.py`, section below): every
-publish records a machine validation, and verification/sign-off happen
-afterwards, asynchronously. All publish doors go through
-`services/publish.py` — `publish_component_version` /
-`publish_geometry_version` — which owns the datasheet pins, the sign-off
-carry, the review-record carry and the machine check. A new publish path that
-bypasses it silently loses all four. Mirror refreshes are its
-`refresh_mirror_for_*` twins, AFTER the commit. `routers/proposals.py` still
-exists for skills and leftover drafts, and its approve endpoints call the same
-publish functions.
+**AUTO-PUBLISH, EVERYWHERE.** Components, symbols and footprints since
+2026-08-23; **skills since 2026-08-24**, which removed the last draft gate in
+the platform. What replaced the gate is the **review axis**
+(`services/review.py`, section below): every publish records a machine
+validation, and verification/sign-off happen afterwards, asynchronously. All
+publish doors go through `services/publish.py` —
+`publish_component_version` / `publish_geometry_version` /
+`publish_skill_version` — which own the datasheet pins, the sign-off carry,
+the review-record carry and the machine check. A new publish path that
+bypasses them silently loses all four. Mirror refreshes are the
+`refresh_mirror_for_*` twins, AFTER the commit.
+
+**Nothing files drafts any more, and there is nowhere to approve one.**
+`routers/proposals.py` is DELETED, with the Proposals view, the nav badge and
+`RecheckDialog`; `/proposals` redirects to `/reviews`. `POST
+/api/import/sync` (the retired YAML diff, the one remaining draft producer)
+answers **410** rather than writing rows nothing can act on — the destructive
+full import still works, because it writes published rows. Draft and rejected
+version rows from before all this stay readable as history: never write a new
+one, and never re-introduce an approval queue without reading the review-axis
+section first.
 
 - **Immutable version rows.** `ComponentVersion`, `SymbolVersion`,
   `FootprintVersion`, `SkillVersion` are append-only. You never mutate a live
   version in place — you create a new one.
 - **`current_version_id`** on the parent (`Component`, `Symbol`, …) is a plain
   `Integer` (deliberately **not** a FK) pointing at the live version. `None`
-  means "no published version yet" (e.g. a brand-new component that only has a
-  draft). `current_version(comp)` resolves it.
-- **`status` is a `String(20)`**, default `"published"`. The only live values:
-  - `"draft"` — a proposal; **nothing is live**.
-  - `"published"` — approved / live (also what the wipe-importer writes directly).
-  - `"rejected"` — a killed draft (kept as a tombstone, never deleted).
-  There is **no `"approved"` status** — approval flips `draft` → `published` and
-  records identity in the separate `approved_by` column.
-- **Approval is the single choke point** (`routers/proposals.py::approve`): it
-  sets `status="published"`, `approved_by`, points `current_version_id` at the
-  version, pins datasheets, and rebuilds the affected mirror libraries. Produce
-  a **draft** and you get all of that for free — never hand-roll publishing.
+  means "no published version yet" — now only a leftover from the draft era (a
+  creation that was filed and never approved). `current_version(comp)` resolves it.
+- **`status` is a `String(20)`**, default `"published"`. Live values:
+  - `"published"` — the only status anything writes now.
+  - `"draft"` / `"rejected"` — HISTORY. Nothing produces either; both stay
+    readable, and the UI labels them as never-published.
+  There is **no `"approved"` status**; `approved_by` records who published when
+  a person did it through a UI save.
+- **`services/publish.py` is the single choke point**: it sets
+  `status="published"`, moves `current_version_id`, pins datasheets, carries
+  the sign-off and the review record, and runs the machine validation. Call it
+  — never hand-roll a publish, and never move `current_version_id` yourself.
 - **Prices and datasheets are NOT properties.** They live in `component_prices`
   and `datasheets` (component-scoped, auto-managed). Keep them out of
   `ComponentProperty`; the price keys (`PRICE_KEY_TO_COL`) and `Datasheet*` keys
@@ -389,17 +397,25 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
   verified byte-for-byte against real `mosquitto_passwords.txt` pairs. Any
   change strands the deployed fleet.
 
-### Creating a proposal (the one true pattern)
+### Creating a version (the one true pattern)
 
 Mirror `services/jaravis.py`. New component: `Component(name=…)` with
 `current_version_id` left `None`; `ComponentVersion(version_no=1,
-status="draft", created_by=<actor>, comment=…)`; `ComponentProperty` rows with
-`position`; `AuditLog(action="proposal.create", entity_type="component_version",
-…)`. Edit: same, but `version_no = max(existing)+1`, carry
-`removed_properties` forward, and **leave `current_version_id` untouched**. The
-Proposals list keys purely off `status=="draft"`, so a well-formed draft shows
-up in the UI automatically. Audit actions in use: `proposal.create`,
-`proposal.approve`, `proposal.reject`, `import`.
+created_by=<actor>, comment=…)`; `ComponentProperty` rows with `position`; then
+**`publish.publish_component_version(db, comp, cv, actor=…)`** and, after the
+commit, `refresh_mirror_for_component`. Edit: same, but `version_no =
+max(existing)+1` and carry `removed_properties` forward. Geometry: build the
+version row and call `publish_geometry_version` + `refresh_mirror_for_geometry`
+— or better, go through `services/geometry_proposals.py`, which owns the
+parsing, the model-path rules and the repoint. Skills:
+`publish.publish_skill_version`.
+
+Never set `status` or move `current_version_id` by hand: those two lines are
+what the publish functions exist to own, and a path that writes them itself
+skips the datasheet pins, the sign-off carry, the review carry and the machine
+validation. Audit actions in use: `publish`, `review.check`, `review.revoke`,
+`signoff.*`, `import`. (`proposal.create` / `proposal.approve` /
+`proposal.reject` appear in history only.)
 
 ## Jaravis capability policy (user directive, 2026-07)
 
@@ -414,8 +430,11 @@ up in the UI automatically. Audit actions in use: `proposal.create`,
   The `propose_*` tools keep their names but publish immediately through
   `services/publish.py`; accountability moved from the gate to the review
   axis (machine validation on every publish, verification records, the
-  review queue). **Skill writes stay draft-gated** — a bad skill steers every
-  future agent run, so `propose_skill_update` still files a draft.
+  review queue). **Skill writes publish too** (2026-08-24): the argument for
+  keeping that one gate — a bad skill steers every future agent run — lost to
+  the fact that a skill is prose, its versions are immutable, and the undo is
+  restoring the previous version from the Skills page. `propose_skill_update`
+  says so in its own description, so the agent knows the write is live.
 - The agent records verifications with `get_review_checklist` /
   `record_verification` and must be honest there: `skipped` when the
   documentation does not allow a check, `flagged` (note REQUIRED) when it
@@ -538,40 +557,35 @@ up in the UI automatically. Audit actions in use: `proposal.create`,
   the web client renders `detail.error` verbatim. Context keys (`offending`,
   `symbols_found`, `header`) are extra for non-browser callers — never the only
   place a fact appears, or the browser shows a bare "400 Bad Request".
-- Approval lives in `routers/proposals.py`: `/symbols/{id}/approve|reject`,
-  `/footprints/{id}/approve|reject`, plus
-  `/{kind}s/{id}/preview.svg?which=draft|current` (kicad-cli render via the
-  render container) for the before/after review in the Proposals UI. Symbol
-  approve rebuilds the base lib + affected top-level libs
-  (`update_mirror_symbols`); footprint approve writes the one `.kicad_mod`
-  (`mirror.update_mirror_footprint`). The PCM packages pick the change up
+- Publishing geometry rebuilds the mirror through
+  `publish.refresh_mirror_for_geometry`: a symbol publish rebuilds the base lib
+  + the affected top-level libs (`update_mirror_symbols`), a footprint publish
+  writes its own `.kicad_mod` AND those symbol libs (the injected "7S Version"
+  field moves when a repoint bumps a component version). The PCM packages pick the change up
   lazily via the manifest hash. Components keep their pinned
   `symbol_version_id`/`footprint_version_id`; the KiCad-facing base lib,
   footprint mirror, and HTTP catalog always follow the newest published
   geometry.
-- **Approving geometry AUTO-FILES the component repoints** (`services/repoint.py`,
-  user decision 2026-08-04; supersedes the 2026-07-30 "offer, never automatic"
-  decision). The two facts above pull apart: the mirror and the HTTP catalog jump
-  to the new geometry while every linked `ComponentVersion` still names the
+- **Publishing geometry AUTO-PUBLISHES the component repoints**
+  (`services/repoint.py`, user decision 2026-08-04, publishing since
+  2026-08-23). The two facts above pull apart: the mirror and the HTTP catalog
+  jump to the new geometry while every linked `ComponentVersion` still names the
   previous `footprint_version_id`, so the library and the components silently
   disagree about which land pattern is current. Measured on 2026-08-03: a pin-1
   sweep published 105 footprint versions and left 185 of 327 components pinned to
-  the superseded drawing. So `approve_symbol` / `approve_footprint` now call
-  `repoint_for`, in the SAME transaction as the publish, and return the result as
-  `repointed`. It is still draft-gated — it mints drafts, never publishes — so an
-  old run's component version keeps the geometry it was built against until
-  somebody approves the follow-up. `AUTO_REPOINT_COMPONENTS=false` turns it off.
-  Four invariants live in that module:
-  - **One open auto-draft per component, refreshed — never a second.** This is
-    the whole reason the module is not a loop in the router. A batch touching a
-    symbol AND a footprint used by the same part would file two drafts against
-    the same published parent, each carrying one pin; approving both applies the
-    first and then overwrites it with the second, so the component ends with one
-    change applied and a history claiming two. `created_by == AUTO_ACTOR`
-    identifies a draft that may be refolded.
-  - **A pending human/agent draft is skipped, not rewritten**, and reported in
-    `repointed.skipped`. Repointing a proposal under review would silently
-    rewrite somebody's edit; a parallel auto-draft would collide on approval.
+  the superseded drawing. So a geometry publish calls `repoint_for` in the SAME
+  transaction and returns the result as `repointed`; each affected component
+  gets a published version through `publish_component_version`, so the sign-off
+  carry, the review carry and the machine check all run.
+  `AUTO_REPOINT_COMPONENTS=false` turns it off. What a stale pin looks like to
+  a user is `PinnedRef.is_current === false` on the component page ("library
+  serves v5") — the state this exists to prevent. Invariants in that module:
+  - **A leftover human/agent draft is skipped, not rewritten**, and reported in
+    `repointed.skipped`. Nothing files drafts any more, so this only fires on
+    rows from before the gate was removed — but rewriting one would still be
+    rewriting somebody's unfinished edit.
+  - **A leftover auto-draft is refreshed and published** rather than left beside
+    a new parallel version.
   - **Properties are cloned in FULL fidelity** — `hide`, `show_name` and `layout`
     included. `propose_component_edit` writes only key/value/is_null and lets the
     rest default, which is fine when a caller is restating properties on purpose,
@@ -579,8 +593,10 @@ up in the UI automatically. Audit actions in use: `proposal.create`,
     visibility.
   - **Never read `comp.versions` inside this module.** The session is
     `expire_on_commit=False` and rows added here are not appended to a loaded
-    relationship, so it goes stale the moment a draft is added — that made the
+    relationship, so it goes stale the moment a version is added — that made the
     coalescing miss its own draft and open a second one. Use `_versions(db, comp)`.
+    `publish.publish_skill_version` avoids the same trap by querying the version
+    numbers instead of reading `skill.versions`.
 
 ### Production sign-off (`services/signoff.py`, `services/material.py`)
 
@@ -671,8 +687,36 @@ review axis records who verified each version against its documentation.
 - **Checklists** (`checklists` + `checklist_versions`,
   `services/checklists.py`): seeded from code on first start, resolved per
   subject (base for the kind + category-scoped merges), items keyed stably.
-  A human UI save publishes directly (same rationale as
-  `components.create_version`); the agent never edits checklists.
+  A human UI save publishes a version directly; the agent never edits
+  checklists. The editor is `web/src/pages/Checklists.tsx`
+  (`/reviews/checklists`), and four rules hold it up:
+  - **`machine: true` is a claim about `services/validator.py`, not a wish.**
+    `validator.MACHINE_KEYS` is the registry of keys that module answers, per
+    kind; `GET /api/checklists/meta` serves it, the editor greys the flag out
+    for anything else, and `_validate_items` refuses it. An item flagged
+    machine that nothing answers can never be answered by anyone — it pins
+    every subject of that kind at "partial" for ever.
+  - **A review record snapshots the RESOLVED list it was measured against**
+    (`ReviewRecord.checklist_items`, startup-migrated). Before it,
+    `checklist_version_id` named the base version alone, so a category-scoped
+    item was expected while a check was being written and forgotten on the next
+    read — an unanswered one silently upgraded the state from partial to
+    checked. `_checklist_items_of` prefers the snapshot and falls back to the
+    pinned base version for older rows; the carries copy it. Never re-resolve
+    from the current checklists on read, or editing a checklist would rewrite
+    the state of every past check.
+  - **`GET /api/checklists/resolve?kind=&category_id=`** returns the merged list
+    with a `from` per item, which is the only honest way to look at a
+    category-scoped list — it MERGES on top of the base one rather than
+    replacing it.
+  - **Deleting is category-scoped only.** A base checklist would leave its kind
+    with nothing to answer. Past verifications are safe either way because of
+    the snapshot above.
+  - `save_checklist` / `create_checklist` call `db.expire_all()` before
+    re-reading. Without it the response described the checklist as it was
+    BEFORE the save (`version_no: null`, zero items, the new row missing from
+    the history) while the save itself had landed — the same
+    `expire_on_commit=False` trap as `services/repoint.py`.
 - **The machine tier** (`services/validator.py`) runs inside every publish
   (`machine_check_on_publish`, never raises): the old YAML validator's
   footprint style/dimension checks, symbol basics, component property rules
@@ -685,6 +729,16 @@ review axis records who verified each version against its documentation.
   "issues") and feeds the second-pass worklist
   (`reviews.flagged_worklist`, surfaced on the health panel). Review-only
   passes use it instead of editing.
+- **A check may answer a key the checklist does not define** — a custom item,
+  recorded on that ONE subject. The agent could always do it (any key reaches
+  `record_check`); the review card can now too, and both must send the item's
+  `text`, because the record is the only place that wording will ever live —
+  `record_check` blocks a textless unknown key rather than storing a bare key
+  nobody can read. Custom items count in the state exactly like checklist items
+  (`state_from_record` measures `total` as `max(expected, answered)`), and
+  `_detail` returns them as `extra_items`. Adding one does NOT touch the
+  checklist document, which is the point: it says "this part needed this
+  check", not "every part does".
 - **Carries mirror the sign-off carry**: equal `material_sha` or
   `recheck_required=False` (the minor-change waiver, settable at publish time
   via `minor_change` on the geometry tools/paste box) clones the record onto

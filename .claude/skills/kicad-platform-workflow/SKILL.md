@@ -2,87 +2,124 @@
 name: kicad-platform-workflow
 description: "How changes become library: every write is a draft proposal, approval automatically regenerates the KiCad libraries and file mirror (there is no manual build), what mirror warnings mean, where the retired YAML pipeline went, and who handles platform setup. Use when asked how to publish, rebuild or regenerate."
 ---
-<!-- platform-skill: platform-workflow v4 — source of truth is the platform; check with list_skills, refresh with get_skill -->
-
+<!-- platform-skill: platform-workflow v7 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Platform workflow — how changes become library
 
 Postgres is the source of truth. Every symbol, footprint, component and skill is
 a row with an append-only version history; the KiCad files people actually use
 are **generated output**, never the master copy.
 
-## Nothing is published directly
+## Writes publish immediately — review happens on its own axis
 
-All writes to library data go in as **drafts**:
+**Every write publishes at once** — components, symbols and footprints since
+2026-08-23, skills since 2026-08-24. There is no approval gate left anywhere in
+the platform and no Proposals view: the tool call is the publish, the mirror and
+the KiCad catalog update in the same breath, and the accountability moved to the
+**review axis** described below.
 
-| Tool | Creates |
+| Tool | Effect |
 |---|---|
-| `propose_new_component` / `propose_component_edit` | draft component version |
-| `propose_symbol_edit` | draft base-symbol version (new name = creation) |
-| `propose_footprint_edit` | draft footprint version (new name = creation) |
-| `propose_skill_update` | draft skill version |
+| `propose_new_component` / `propose_component_edit` | publishes a component version |
+| `propose_symbol_edit` | publishes a base-symbol version (new name = creation) |
+| `propose_footprint_edit` | publishes a footprint version (new name = creation) |
+| `propose_skill_update` | publishes a skill version — live for every later agent run |
 
-A draft changes nothing. The user reviews it in the **Proposals** view — with a
-visual before/after for symbol and footprint drafts — and approves or rejects
-it. Versions are immutable: approving advances a pointer, and any earlier
-version can be restored, which is why approval is a cheap, reversible decision.
+Versions stay immutable and append-only: publishing advances a pointer, and any
+earlier version can be restored, so a bad publish is reversible — publish a new
+version restoring the previous content.
 
-Skills edited directly in the web UI are the exception: the person editing *is*
-the approval, so a UI save creates a new version and makes it current
-immediately. Jaravis-proposed skill changes still go through Proposals.
+Skills were the last exception, on the reasoning that a bad skill steers every
+future agent run. That gate is gone too: a skill is prose, its versions are
+immutable, and the undo is restoring the previous version from the Skills page.
+So write a skill update only when you would defend it to the next reader — you
+are changing what every later run is told, with nobody between you and it.
 
-## Approval regenerates everything automatically
+## The review axis: machine → agent → human
 
-There is **no manual build step and no pipeline to run.** On approval the
-platform regenerates the affected KiCad symbol library and refreshes the file
-mirror in-process. If someone asks how to rebuild or regenerate the library, the
-answer is: approve the pending proposal — that *is* the regeneration.
+Every published version starts a verification trail:
 
-Regeneration reports **mirror warnings** rather than failing the approval. The
-usual one is `unresolved template {Key}` — a `ki_description` referencing a
-property the component doesn't carry. The approval still lands; the warning
-means the generated description is wrong and the component needs a follow-up
-edit ([[add-component]]).
+1. **Machine** — the validator runs inside every publish and records the
+   mechanical checklist items (courtyard/fab/silk widths, pad shapes, drill
+   minimums, property rules — and a **required 3D model**: a footprint without
+   one reads `failed` until a human or agent marks the item n/a with a reason).
+2. **Agent** — after publishing, verify against the documentation:
+   `get_review_checklist` returns the resolved checklist merged with what is
+   already answered; `record_verification` records your answers. Be honest:
+   `checked` only for what you actually compared against the datasheet,
+   `na` (with a reason) for items that do not apply, `skipped` (with a reason)
+   for items the documentation does not let you verify, and **`flagged`**
+   (note required) for an item you verified and found WRONG without fixing
+   it. A flag puts the part on the "issues" list and the second-pass
+   worklist on the health panel — use it for review-only passes ("go over
+   the library and list what needs fixing") and for defects whose fix needs
+   the user's decision. Do not silently fix AND flag — one or the other.
+   You can never overwrite an item a human answered.
+3. **Human** — the user works the **Reviews** queue and the per-component
+   verification card, and separately signs off parts for production. The first
+   human sign-off promotes a component's lifecycle to `released`.
 
-Downstream consumers read the generated state: the KiCad HTTP library endpoint,
-the PCM package, and the published file mirror. None of them need a separate
-publish action.
+States are derived, never stored: `unreviewed` → `partial` (skipped or
+unanswered items) → `checked`; `failed` when a machine check found a violation.
+A component's effective state is the WEAKEST of its own record and its pinned
+symbol and footprint records. Verifications are cumulative — a follow-up (the
+datasheet turned up, the checklist grew) starts from everything already
+answered.
 
-## Geometry approval also files the component repoints
+**Carry rules:** a new version that changes nothing that reaches the board
+(equal material fingerprint), or whose change was explicitly waived as minor
+(`minor_change=true` on the geometry tools — use it ONLY for genuinely cosmetic
+cleanups), inherits the previous verification and sign-off. Anything else
+starts unreviewed again, on purpose.
+
+**Lifecycle:** each component carries `in_design` / `released` / `deprecated` /
+`obsolete`. Deprecated and obsolete parts stay fully visible on the platform
+but are hidden from KiCad (chooser and generated libraries). Only the
+in_design→released transition is automatic (first human sign-off).
+
+## Publishing regenerates everything automatically
+
+There is **no manual build step and no pipeline to run.** A publish regenerates
+the affected KiCad symbol library and refreshes the file mirror in-process.
+Every emitted symbol carries a hidden **`7S Version`** field ("c5 s3 f7" =
+component / symbol / footprint version numbers), so a schematic committed to
+git records exactly which library versions the board was drawn with.
+
+Regeneration reports **mirror warnings** rather than failing. The usual one is
+`unresolved template {Key}` — a `ki_description` referencing a property the
+component doesn't carry. The publish still lands; the warning means the
+generated description is wrong and the component needs a follow-up edit
+([[add-component]]).
+
+## Geometry publishes also repoint the components
 
 A `ComponentVersion` **pins** the exact symbol and footprint version it was
-drawn against. Approving new geometry moves the template's own pointer and
-rebuilds the mirror, so KiCad sees the new drawing immediately — but the
-component rows would still name the superseded version, and the library and the
-components would disagree about which drawing is current.
+drawn against. Publishing new geometry therefore also publishes a repoint
+version for every part that uses it — properties untouched, pins moved — listed
+under `repointed` in the response. The carry rules above decide whether each
+part keeps its verification and sign-off (a silk tweak keeps them; a moved pad
+strips them and the part shows up in the review queue). A component still
+carrying an unfinished draft from before the gate was removed is skipped, and
+named in `repointed.skipped`.
 
-So approving a symbol or footprint version **also files a draft component
-version for every part that uses it**, pinned to the now-current geometry with
-its properties untouched. The approve response lists them under `repointed`.
-This is still draft-gated: it creates proposals, it never publishes. Approve the
-geometry, then approve the component drafts it produced.
+A part left pinned to a superseded drawing is visible on its component page:
+the pinned version reads "library serves v5" beside it. That is what a repoint
+prevents.
 
-Three rules follow, and they matter when a batch touches several drawings:
+### A check the checklist never thought of
 
-- **One open auto-draft per component, refreshed — never a second one.** A batch
-  that changes both a symbol and a footprint used by the same part would
-  otherwise file two drafts against the same published parent, each carrying one
-  of the two changes. Approving both would apply the first and then overwrite it
-  with the second, leaving one change applied and a history that claims two.
-  Folding both pins into a single draft makes the result the same in any
-  approval order.
-- **A component with a human or agent edit already under review is skipped**, and
-  named in `repointed.skipped`. Rewriting a proposal somebody is reviewing is
-  worse than a late repoint. Approve or reject that edit, then re-approve the
-  geometry, or repoint it by hand.
-- **It is idempotent.** A component already pinned to current geometry gets no
-  draft.
+`record_verification` accepts a key the checklist does not define — use
+`custom.<slug>` and include a `text` saying what you checked (without the text
+the item is refused, because the record is the only place that wording lives).
+It is recorded on that ONE part and does not change the checklist every other
+part is measured against. People can add the same thing from the review card in
+the web UI.
 
-To repoint by hand — when the automation is off (`AUTO_REPOINT_COMPONENTS`), or
-after resolving a skip — call `propose_component_edit` with the properties from
-`get_component` passed back **unchanged**. There is no footprint-version
-argument: the tool pins whatever is current when the draft is created, so an
-otherwise empty edit *is* the repoint. Approve the geometry first, or the draft
-pins the old version again.
+## Production runs warn, they never block
+
+Creating a production run from a snapshot with unsigned, unreviewed or
+deprecated components — or one whose design review was never completed in the
+project's Review tab — answers 409 with the list; the user confirms explicitly
+and the acknowledgement is audited. Nothing else is ever gated on review state.
 
 ## Where the old YAML pipeline went
 
@@ -92,12 +129,12 @@ root. That pipeline is **retired** — it lives with its full history on the
 anyone to run `main.py`, edit YAML sources, or regenerate from files; those
 instructions are stale.
 
-The import station endpoints still exist for a clean cutover:
-`POST /api/import` is **destructive** (wipes and reloads everything from YAML,
-writing rows directly as published) and `POST /api/import/sync` is
-non-destructive (diffs YAML against the DB and files draft proposals). Neither
-is part of normal work — treat the destructive one as off-limits unless the user
-explicitly asks for a full reload.
+One import endpoint still exists for a clean cutover: `POST /api/import` is
+**destructive** (wipes and reloads everything from YAML, writing rows directly
+as published). Treat it as off-limits unless the user explicitly asks for a full
+reload. `POST /api/import/sync`, which used to file draft proposals, answers
+**410**: with no approval path left, it would only write rows nobody could act
+on.
 
 ## Running the platform itself
 
@@ -135,5 +172,5 @@ platform code.
 
 ## Related
 
-[[add-component]] — the procedure that produces these drafts.
-[[conventions-symbols]] / [[conventions-footprints]] — what a good draft looks like.
+[[add-component]] — the procedure that produces these publishes.
+[[conventions-symbols]] / [[conventions-footprints]] — what a good version looks like.

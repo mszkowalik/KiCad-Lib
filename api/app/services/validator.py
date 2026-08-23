@@ -33,6 +33,24 @@ PIN_GRID = 1.27
 MANUFACTURER_PROPS = ("Manufacturer 1", "Manufacturer Part Number 1",
                       "Supplier 1", "Supplier Part Number 1")
 
+# Every checklist key THIS module answers, per subject kind. A checklist item
+# marked `machine: true` whose key is not here is answered by nobody: it stays
+# unanswered for ever and holds the subject at "partial". The checklist editor
+# reads this list to refuse exactly that, so keep it in step when you add or
+# remove a check below — `GET /api/checklists/meta` serves it verbatim.
+MACHINE_KEYS: dict[str, tuple[str, ...]] = {
+    "footprint": (
+        "fp.parse", "fp.courtyard_present", "fp.courtyard_width", "fp.fab_outline",
+        "fp.fab_width", "fp.silk_width", "fp.smd_pad_shape", "fp.min_drill",
+        "fp.min_th_pad", "fp.via_dims", "fp.model3d",
+    ),
+    "symbol": ("sym.parse", "sym.fields", "sym.pins_grid"),
+    "component": (
+        "cmp.required_props", "cmp.footprint_ref", "cmp.lcsc_format",
+        "cmp.manufacturer", "cmp.templates",
+    ),
+}
+
 
 def _item(key: str, result: str, note: str = "") -> dict:
     out = {"key": key, "result": result}

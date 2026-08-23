@@ -1,23 +1,28 @@
 """Skills — the editable convention documents Jaravis's system prompt is built
 from (conventions-library / -footprints / -symbols, seeded from
 app/seed_skills/). Editing creates a new immutable version and advances the
-current pointer (the user editing IS the approval); Jaravis rebuilds its prompt
-from current versions on every chat call, so edits apply immediately."""
+current pointer; Jaravis rebuilds its prompt from current versions on every
+chat call, so edits apply immediately. Since 2026-08-24 the agent's
+`propose_skill_update` publishes the same way — skills were the last thing
+behind the draft gate, and it is gone."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, selectinload
 
 from .. import models as M
 from ..db import get_db
-from .util import audit
+from ..services.publish import publish_skill_version
+from .util import actor_of, audit
 
 router = APIRouter(prefix="/api/skills", tags=["skills"])
 
 
 class SkillEdit(BaseModel):
     content: str
+    #: what changed, shown in the version history (the editor leaves it empty)
+    comment: str = ""
 
 
 class SkillCreate(SkillEdit):
@@ -87,20 +92,23 @@ def skill_version(skill_id: int, version_no: int, db: Session = Depends(get_db))
 
 
 @router.post("/{skill_id}/versions")
-def edit_skill(skill_id: int, body: SkillEdit, db: Session = Depends(get_db)):
+def edit_skill(skill_id: int, body: SkillEdit, request: Request,
+               db: Session = Depends(get_db)):
+    """Save the editor's text as the new live version.
+
+    Publishing lives in `services/publish.py::publish_skill_version`, shared
+    with the agent's `propose_skill_update` — one place decides what a skill
+    publish records."""
     s = db.query(M.Skill).options(selectinload(M.Skill.versions)).filter_by(id=skill_id).first()
     if s is None:
         raise HTTPException(404, "skill not found")
-    if not body.content.strip():
-        raise HTTPException(422, "skill content must not be empty")
-    new_no = max((v.version_no for v in s.versions), default=0) + 1
-    v = M.SkillVersion(skill_id=s.id, version_no=new_no, content=body.content, created_by="user")
-    db.add(v)
-    db.flush()
-    s.current_version_id = v.id
-    audit(db, "skill.edit", "skill", s.id, {"name": s.name, "version_no": new_no})
+    try:
+        v = publish_skill_version(db, s, body.content, actor=actor_of(request),
+                                  comment=body.comment)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
     db.commit()
-    return {"id": s.id, "name": s.name, "current_version_no": new_no}
+    return {"id": s.id, "name": s.name, "current_version_no": v.version_no}
 
 
 @router.patch("/{skill_id}")

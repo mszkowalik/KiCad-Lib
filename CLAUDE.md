@@ -1,7 +1,7 @@
 # 7Sigma KiCad Library Platform
 
 Web-hosted component library for KiCad: Postgres-backed catalog with versioned
-components/symbols/footprints, draft-proposal workflow, KiCad HTTP library +
+components/symbols/footprints, publish-then-review workflow, KiCad HTTP library +
 PCM packages, project BOMs and production-run economics, and the Jaravis agent
 (also exposed to Claude Code over MCP).
 
@@ -61,10 +61,13 @@ agent's job, and it costs one tool call:
    platform, and never record a new convention only in the file — it would be
    lost on the next refresh.
 
-To *change* a convention, propose it: `propose_skill_update(name, content,
-comment)` files a **draft** the user approves in the Proposals view. Writes to
-skills are draft-gated exactly like components; approval is what makes the new
-version the one `list_skills` reports. Then refresh the local file.
+To *change* a convention, write it: `propose_skill_update(name, content,
+comment)` **publishes a new version immediately** (2026-08-24 — skills were the
+last thing behind the draft gate, and it is gone, along with the Proposals
+view). The version it writes is what `list_skills` reports and what every later
+agent run reads, so get it right rather than filing it and walking away. Then
+refresh the local file. To undo one, `get_skill` the previous version's text
+and write it back — or restore it on the Skills page.
 
 A skill's `description` is unversioned and lives on `Skill` — edit it in the
 Skills view; it becomes the frontmatter `description`, which is what an agent
@@ -125,10 +128,13 @@ personal API token. Full rules in `api/CLAUDE.md` (backend) and `web/CLAUDE.md`
   relate to the database.
 - Backend and frontend conventions: see `api/CLAUDE.md` and `web/CLAUDE.md`.
   Record new non-obvious rules in the most specific of those files.
-- Writes to components, symbols and footprints **AUTO-PUBLISH** (2026-08-23):
-  the old draft gate is gone for them; accountability lives on the **review
-  axis** — machine validation on every publish, checklist verifications,
-  the Reviews queue, human sign-off, and the per-component lifecycle
-  (`released` on first sign-off; `deprecated`/`obsolete` hidden from KiCad).
-  See "The review axis" in `api/CLAUDE.md`. **Skills stay draft-gated** and
-  are still approved in the Proposals view.
+- **Every write AUTO-PUBLISHES** — components, symbols and footprints since
+  2026-08-23, skills since 2026-08-24. There is no draft gate and no approval
+  queue left in the platform: the Proposals view and `routers/proposals.py`
+  were removed, `/proposals` redirects to Reviews, and the YAML sync
+  (`POST /api/import/sync`), whose drafts nothing could approve any more,
+  answers 410. Accountability lives on the **review axis** — machine
+  validation on every publish, checklist verifications, the Reviews queue,
+  human sign-off, and the per-component lifecycle (`released` on first
+  sign-off; `deprecated`/`obsolete` hidden from KiCad). See "The review axis"
+  in `api/CLAUDE.md`.

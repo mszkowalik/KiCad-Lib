@@ -19,6 +19,7 @@ from ..db import get_db
 from ..services import checklists as checklists_svc
 from ..services import review as review_svc
 from ..services import signoff
+from ..services import validator
 from ..services.mirror import HIDDEN_LIFECYCLE, top_level_of, update_mirror_symbols
 from .util import actor_of, audit, category_path
 
@@ -210,6 +211,57 @@ def list_checklists(db: Session = Depends(get_db)):
     return out
 
 
+@router.get("/checklists/meta")
+def checklist_meta():
+    """What the checklist editor needs to be honest about `machine: true`.
+
+    A machine item is answered by `services/validator.py` on every publish —
+    but only for the keys that module implements. Marking any other key
+    `machine` produces an item nobody ever answers, which pins the subject at
+    "partial" for ever. The editor greys the flag out for unknown keys, and
+    `_validate_items` refuses it outright.
+    """
+    return {"subject_kinds": list(_PARENT),
+            "machine_keys": {k: list(v) for k, v in validator.MACHINE_KEYS.items()}}
+
+
+@router.get("/checklists/resolve")
+def resolve_checklist(kind: str, category_id: int | None = None,
+                      db: Session = Depends(get_db)):
+    """The merged list a subject of this kind (in this category) is measured
+    against: the base checklist plus every category-scoped one on the category
+    path, most specific winning a key collision. This is what the review card
+    shows and what a check is scored against — the editor previews it so a
+    category-scoped list can be seen in context rather than in isolation."""
+    if kind not in _PARENT:
+        raise HTTPException(422, "kind must be component, symbol or footprint")
+    if category_id is not None and db.get(M.Category, category_id) is None:
+        raise HTTPException(422, "category not found")
+    resolved = checklists_svc.resolve(db, kind, category_id)
+    # which checklist each item came from, so the preview can attribute them
+    sources: dict[str, str] = {}
+    base = db.query(M.Checklist).filter_by(subject_kind=kind, category_id=None).first()
+    if base is not None:
+        cur = next((v for v in base.versions if v.id == base.current_version_id), None)
+        for item in (cur.items if cur else []) or []:
+            sources[item["key"]] = base.name
+    if category_id is not None:
+        cat = db.get(M.Category, category_id)
+        path_ids = []
+        while cat is not None:
+            path_ids.append(cat.id)
+            cat = cat.parent
+        scoped = (db.query(M.Checklist)
+                  .filter(M.Checklist.subject_kind == kind,
+                          M.Checklist.category_id.in_(path_ids)).all()) if path_ids else []
+        for cl in sorted(scoped, key=lambda c: path_ids.index(c.category_id), reverse=True):
+            cur = next((v for v in cl.versions if v.id == cl.current_version_id), None)
+            for item in (cur.items if cur else []) or []:
+                sources[item["key"]] = cl.name
+    return {"kind": kind, "category_id": category_id,
+            "items": [{**i, "from": sources.get(i["key"], "")} for i in resolved["items"]]}
+
+
 @router.get("/checklists/{cl_id}")
 def get_checklist(cl_id: int, db: Session = Depends(get_db)):
     cl = db.get(M.Checklist, cl_id)
@@ -228,7 +280,32 @@ def get_checklist(cl_id: int, db: Session = Depends(get_db)):
     }
 
 
-def _validate_items(items: list[dict]) -> list[dict]:
+@router.get("/checklists/{cl_id}/versions/{version_no}")
+def get_checklist_version(cl_id: int, version_no: int, db: Session = Depends(get_db)):
+    """One past version's items, so the editor can show what a list used to say
+    and put it back (saving them republishes as a new version — the history is
+    append-only, exactly like a skill)."""
+    cl = db.get(M.Checklist, cl_id)
+    if cl is None:
+        raise HTTPException(404, "checklist not found")
+    v = next((x for x in cl.versions if x.version_no == version_no), None)
+    if v is None:
+        raise HTTPException(404, "version not found")
+    return {"id": cl.id, "name": cl.name, "version_no": v.version_no,
+            "created_at": v.created_at.isoformat(), "created_by": v.created_by,
+            "comment": v.comment, "items": v.items or []}
+
+
+def _validate_items(items: list[dict], subject_kind: str) -> list[dict]:
+    """Clean one checklist's items, and refuse the two shapes that cannot work.
+
+    A duplicate key would silently drop an item (the resolver is keyed by key),
+    and a `machine: true` flag on a key `services/validator.py` does not answer
+    would create an item nobody can ever answer — the subject would sit at
+    "partial" for ever with no way to clear it. Both are refused here rather
+    than discovered months later on a part nobody can finish reviewing.
+    """
+    machine_keys = set(validator.MACHINE_KEYS.get(subject_kind, ()))
     clean = []
     seen: set[str] = set()
     for i in items:
@@ -243,6 +320,13 @@ def _validate_items(items: list[dict]) -> list[dict]:
         if str(i.get("hint", "")).strip():
             item["hint"] = str(i["hint"]).strip()
         if i.get("machine"):
+            if key not in machine_keys:
+                raise HTTPException(422, {
+                    "error": f"{key!r} is marked machine-checked, but the validator does not "
+                             f"answer it — the item would stay unanswered for ever. "
+                             f"Machine keys for a {subject_kind}: "
+                             + ", ".join(sorted(machine_keys)),
+                    "key": key})
             item["machine"] = True
         clean.append(item)
     return clean
@@ -257,7 +341,7 @@ def save_checklist(cl_id: int, body: ChecklistSaveIn, request: Request,
     cl = db.get(M.Checklist, cl_id)
     if cl is None:
         raise HTTPException(404, "checklist not found")
-    items = _validate_items(body.items)
+    items = _validate_items(body.items, cl.subject_kind)
     actor = actor_of(request)
     new_no = max((v.version_no for v in cl.versions), default=0) + 1
     cv = M.ChecklistVersion(checklist_id=cl.id, version_no=new_no, items=items,
@@ -271,6 +355,12 @@ def save_checklist(cl_id: int, body: ChecklistSaveIn, request: Request,
     audit(db, "checklist.publish", "checklist", cl.id,
           {"checklist": cl.name, "version_no": new_no, "items": len(items)}, actor=actor)
     db.commit()
+    # The session is `expire_on_commit=False` and the version row added above is
+    # not appended to the already-loaded `cl.versions`, so re-reading without
+    # this returns the checklist as it was BEFORE the save: version_no null,
+    # zero items, the new row missing from the history. The save landed; only
+    # the answer was wrong. Same trap as `services/repoint.py`.
+    db.expire_all()
     return get_checklist(cl_id, db)
 
 
@@ -282,7 +372,7 @@ def create_checklist(body: ChecklistCreateIn, request: Request, db: Session = De
         raise HTTPException(409, f"checklist {body.name!r} already exists")
     if body.category_id is not None and db.get(M.Category, body.category_id) is None:
         raise HTTPException(422, "category not found")
-    items = _validate_items(body.items)
+    items = _validate_items(body.items, body.subject_kind)
     actor = actor_of(request)
     cl = M.Checklist(name=body.name.strip(), subject_kind=body.subject_kind,
                      category_id=body.category_id, description=body.description.strip())
@@ -296,6 +386,7 @@ def create_checklist(body: ChecklistCreateIn, request: Request, db: Session = De
     audit(db, "checklist.create", "checklist", cl.id,
           {"checklist": cl.name, "subject_kind": cl.subject_kind}, actor=actor)
     db.commit()
+    db.expire_all()  # see the note in save_checklist
     return get_checklist(cl.id, db)
 
 
@@ -344,6 +435,38 @@ def _template_states(db: Session, kind: str, parents: list) -> dict[int, dict]:
 
 
 # ---------------------------------------------------------------- review queue
+@router.delete("/checklists/{cl_id}")
+def delete_checklist(cl_id: int, request: Request, db: Session = Depends(get_db)):
+    """Remove a category-scoped checklist.
+
+    Refused for a BASE checklist (no category): it is what every subject of its
+    kind is measured against, and a kind with no checklist reads as "nothing to
+    answer". Empty its items instead if that is really the intent.
+
+    Past verifications are NOT harmed by deleting a category checklist: every
+    review record snapshots the resolved list it was measured against
+    (`ReviewRecord.checklist_items`), so its state keeps comparing against what
+    was in force when it was written. Records made before that column existed
+    pin the BASE checklist version, which this endpoint never deletes — so
+    there is nothing here to guard beyond the base rule above.
+    """
+    cl = db.get(M.Checklist, cl_id)
+    if cl is None:
+        raise HTTPException(404, "checklist not found")
+    if cl.category_id is None:
+        raise HTTPException(409, {
+            "error": f"{cl.name!r} is the base checklist for every {cl.subject_kind} — "
+                     "edit its items instead of deleting it"})
+    name = cl.name
+    for v in list(cl.versions):
+        db.delete(v)
+    db.delete(cl)
+    audit(db, "checklist.delete", "checklist", cl_id, {"checklist": name},
+          actor=actor_of(request))
+    db.commit()
+    return {"ok": True, "deleted": name}
+
+
 @router.get("/reviews/queue")
 def review_queue(db: Session = Depends(get_db)):
     comps = db.query(M.Component).options(
@@ -386,19 +509,10 @@ def review_queue(db: Session = Depends(get_db)):
                          "unanswered": len(s["unanswered"])})
         return rows
 
-    # drafts still pending in the old queue (skills + any leftovers)
-    draft_counts = {
-        "components": db.query(M.ComponentVersion).filter_by(status="draft").count(),
-        "skills": db.query(M.SkillVersion).filter_by(status="draft").count(),
-        "symbols": db.query(M.SymbolVersion).filter_by(status="draft").count(),
-        "footprints": db.query(M.FootprintVersion).filter_by(status="draft").count(),
-    }
-
     return {
         "components": comp_rows,
         "symbols": _template_rows("symbol", syms, sym_states),
         "footprints": _template_rows("footprint", fps, fp_states),
-        "drafts": draft_counts,
     }
 
 

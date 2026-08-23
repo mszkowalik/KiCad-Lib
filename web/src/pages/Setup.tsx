@@ -220,10 +220,11 @@ export default function Setup() {
             </li>
             <li>
               <strong>Change a convention —</strong>{" "}
-              <span className="mono">propose_skill_update</span> files a draft you approve in
-              Proposals. Approval is what moves the version number that{" "}
-              <span className="mono">list_skills</span> reports; never record a rule only in the
-              local file, or the next refresh drops it.
+              <span className="mono">propose_skill_update</span> publishes a new version at once
+              (no approval step since 2026-08-24) and that is what{" "}
+              <span className="mono">list_skills</span> reports from then on. Never record a rule
+              only in the local file, or the next refresh drops it. To undo one, open the
+              previous version on this page and restore it.
             </li>
           </ol>
         </div>

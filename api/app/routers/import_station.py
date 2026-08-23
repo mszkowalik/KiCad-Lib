@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from .. import models as M
 from ..db import SessionLocal
-from ..services.importer import IMPORT_STATE, start_import, start_sync
+from ..services.importer import IMPORT_STATE, start_import
 
 router = APIRouter(prefix="/api/import", tags=["import"])
 
@@ -20,11 +20,18 @@ def trigger_import():
 
 @router.post("/sync")
 def trigger_sync():
-    """Non-destructive: diff Sources/*.yaml against the DB and create draft
-    proposals for new/changed components. Progress polled at /status like import."""
-    if not start_sync():
-        raise HTTPException(409, "an import or sync is already running")
-    return {"status": "started"}
+    """RETIRED (2026-08-24). The YAML sync diffs Sources/*.yaml against the DB
+    and files DRAFT component versions — and drafts no longer have an approval
+    path anywhere: every write in the platform publishes immediately and the
+    Proposals view is gone. Running it would leave rows nothing can act on.
+
+    The destructive full import (`POST /api/import`) still works, because it
+    writes published rows directly. To re-run either against the old YAML
+    sources, check out `archive/yaml-library` in the repo the compose file
+    mounts at /repo."""
+    raise HTTPException(410, "the YAML sync filed draft proposals, and there is no "
+                             "approval path any more — use POST /api/import (destructive, "
+                             "writes published rows) or the archive/yaml-library branch")
 
 
 @router.get("/status")

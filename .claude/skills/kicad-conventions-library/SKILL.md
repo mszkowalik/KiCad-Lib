@@ -2,8 +2,8 @@
 name: kicad-conventions-library
 description: "House style for component data: canonical manufacturer names (with the full raw-to-canonical lookup table), ki_description {Key} templating per category, the Value field rule, and category-placement rules. Read before proposing a new component or editing an existing one's properties."
 ---
-<!-- platform-skill: conventions-library v14 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
+<!-- platform-skill: conventions-library v21 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Library conventions
 
 This is the house style for component **data**: manufacturer naming,
@@ -53,8 +53,19 @@ distributor shout-casing):
 - `TDK` — Tokyo Denki Kagaku; all-caps is TDK Corporation's own brand/logo
   usage, not a spelled-out Title Case name. Distinct from `TDK InvenSense`
   below (a joint-venture brand).
+- `TDSEMIC` — all-caps on the company's own datasheet letterhead logo and in
+  the footer URL printed on every page of it (tdsemic.net). Same evidence
+  class as the KEMET/OSRAM entries: the manufacturer's own material, not a
+  distributor listing. No fuller company name was found on any primary
+  source, so none is recorded here — do not expand the acronym on a guess.
 - `XR` — Dongguan Xiangru Electronics Co., Ltd.; branded and listed everywhere
   simply as "XR", including its own LCSC brand page (titled literally "XR").
+- `YLPTEC` — Zhongshan Yichuan Electronic Technology (中山市易川电子科技);
+  all-caps on the company's own datasheet letterhead logo, in the
+  WWW.YLPTEC.COM footer printed on every datasheet page, and silkscreened on
+  the module body in its own outline drawings. Same evidence class as the
+  KEMET/OSRAM entries: the manufacturer's own material, not a distributor
+  listing. Do not Title-Case to "Ylptec".
 - `YXC` — Shenzhen Yangxing Technology Co., Ltd.'s self-owned brand.
 - `XINGLIGHT` — confirmed via the manufacturer's own site (xinglight.cn) and
   DigiKey's supplier page.
@@ -79,6 +90,12 @@ distributor shout-casing):
 - `RCH` — Wenzhou RuiChuan Electronics Co., Ltd.; consistent all-caps brand
   code. (Confirmed via distributor listings, not a formal press kit —
   slightly lower certainty than the others in this list.)
+- `RESI` — C&B Electronics (Shenzhen) Co., Ltd.'s precision-resistor brand;
+  the company's own English site en.resistor.today prints "Brand: RESI" in
+  body text and titles its series pages "Precision RESI Resistor". LCSC also
+  lists the brand as "RESI" and sometimes as "Resistor Today" in URLs — use
+  `RESI`. Same evidence class as the KEMET/OSRAM entries: the manufacturer's
+  own material.
 - `SOFNG` — sofng.com's own copyright notice ("SOFNG All Rights Reserved").
   (Same lower-certainty caveat as RCH.)
 - `SCTF` — sctfcrystal.com self-titles as "SCTF | Crystal Oscillator
@@ -134,6 +151,7 @@ alphabetically by canonical value.)
 | Bourns | BOURNS |
 | Ckmtw | (none; full form "Ckmtw(Shenzhen Cankemeng)" also seen) |
 | DEGSON | Degson |
+| Diodes Incorporated | Diodes Inc, DIODES — the LCSC/JLC feed shouts "DIODES"; "Diodes Inc" was an earlier house form, already normalized to the full legal name on AP63357QZV-7 and the Diodes transistors. The footprint vendor token is `DiodesIncorporated` |
 | Dorabo | DORABO |
 | ECS Inc. | ECS — note: ECS's own materials are internally inconsistent ("ECS Inc. International" in press releases, "ECS International" on an About page); "ECS Inc." was picked as house standard because it matches both the company's own site `<title>` and DigiKey's distributor listing |
 | Espressif Systems | Espressif, ESPRESSIF, Espresiff (typo) |
@@ -145,11 +163,13 @@ alphabetically by canonical value.)
 | Hanxia | hanxia |
 | Hirose | HRS, HRS (Hirose) — HRS is only Hirose's part-number abbreviation/trademark code, not a display brand form |
 | HCTL | (none — all-caps genuine brand, see exceptions above) |
+| Infineon Technologies | Infineon (LCSC's short feed form) — the company's own datasheet legal text uses "Infineon Technologies" in running prose and "Infineon Technologies AG" as the publisher; the AG is the legal-entity suffix and is dropped, as with other Co./Ltd. suffixes in this table |
 | ISSI | (none — all-caps genuine brand, see exceptions above) |
 | Jushuo | JUSHUO |
 | Kangnex | KANGNEX |
 | KEMET | (none — all-caps is the genuine brand form; do not Title-Case to "Kemet") |
 | Kinghelm | kinghelm — ⚠ conflicts with "Shenzhen Kinghelm Elec" below, see Open items |
+| Kongshen | kangshen (LCSC's own romanization of 康深; the company writes "Kongshen" itself) |
 | Linekey | (none — Shanghai Linekey Technology Co., Ltd.; confirmed via the company's own English-language site, en.linekey.cn) |
 | Lite-On | LITEON, LITE-ON |
 | MaxLinear | (none — internal capital, see exceptions above) |
@@ -164,6 +184,7 @@ alphabetically by canonical value.)
 | Phoenix Contact | PhoenixContact (no space, in footprint names only — component Manufacturer 1 should still read "Phoenix Contact") |
 | RCH | (none — all-caps genuine brand, see exceptions above) |
 | Renata | RENATA |
+| RESI | (none — all-caps genuine brand, see exceptions above; "Resistor Today" appears in LCSC product URLs but is not the brand form) |
 | Ronghe | ronghe |
 | Samsung Electro-Mechanics | Samsung |
 | Samwha Capacitor | SAMWHA |
@@ -179,11 +200,12 @@ alphabetically by canonical value.)
 | TAKACHI | Takachi |
 | TDK | (none — all-caps genuine brand, see exceptions above; distinct from "TDK InvenSense" below) |
 | TDK InvenSense | (none — joint TDK/InvenSense brand, distinct from plain "TDK" above) |
+| TDSEMIC | (none — all-caps genuine brand, see exceptions above) |
 | Telit Cinterion | (none — standard capitalization, two words, no hyphen; official name since the Feb 2023 rebrand) |
 | Texas Instruments | TI, TEXAS INSTRUMENTS |
 | TOGNJING | (none — all-caps, lower confidence, see exceptions above) |
 | u-blox | ublox, U-BLOX, U-Blox |
-| UMW (Youtai Semiconductor Co., Ltd.) | UMW |
+| UMW (Youtai Semiconductor Co., Ltd.) | UMW — the UMW PCF8574 datasheet footer instead reads "UTD Semiconductor Co.,Limited", same umw-ic.com site. Raised 2026-08-20 and DECIDED: keep this form. Do not re-open on the strength of that footer. |
 | UNI-ROYAL(Uniroyal Elec) | Uni-Royal, UNI-ROYAL, UNIROYAL |
 | Vishay | VISHAY, Vishay Intertechnology |
 | Vishay Semiconductors | (none — distinct business-unit brand from plain "Vishay", used for Vishay's optoelectronics/photodiode parts; don't collapse to plain "Vishay") |
@@ -197,6 +219,7 @@ alphabetically by canonical value.)
 | Xunpu | XUNPU |
 | Yageo | YAGEO |
 | Yajingxin | TAE |
+| YLPTEC | (none — all-caps genuine brand, see exceptions above) |
 | YXC | YXC Crystal Oscillators — the "Crystal Oscillators" suffix is LCSC brand-page title padding, not part of the brand name (same pattern as Vishay Intertechnology -> Vishay) |
 
 ### Open items — could not confidently resolve, do not guess
@@ -289,7 +312,8 @@ across every affected sibling at once, not piecemeal.
 
 | Category / sub-family | Template |
 |---|---|
-| Resistor | `{Value} {Power} {Tolerance} {Footprint_Name}` |
+| Resistor (general purpose, thick film) | `{Value} {Power} {Tolerance} {Footprint_Name}` |
+| Resistor (precision thin film, tempco specified) | `{Value} {Power} {Tolerance} {Tempco} {Footprint_Name}` — adds the `Tempco` property (format `10ppm/°C`, `25ppm/°C`). Use this variant only when the part is bought FOR its temperature coefficient. Without it a 10ppm and a 25ppm part of the same value, size and tolerance describe identically, and the library already holds both: `RT0402BRB071KL` (1K, 0.1%, 10ppm) sits beside the thick-film 1% `0402WGF1001TCE`, both `Value = 1K` |
 | Capacitor (ceramic MLCC/general) | `{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}` |
 | Capacitor (polarized: Aluminum Electrolytic / Tantalum) | same template as above, extending the `{Dielectric}` slot: `Al Elec` for aluminum electrolytics, `Tantalum` for tantalum caps |
 | Diodes / Schottky | `Schottky Diode {Maximum Reverse Voltage} {Forward Voltage} {Continuous Current} {Footprint_Name}` |
@@ -313,7 +337,7 @@ across every affected sibling at once, not piecemeal.
 | ICs / DC-DC converter IC (switching regulator) | `{Topology} {Output Voltage} {Input Voltage} {Output Current} {Footprint_Name}` (`Output Voltage` = `Adj` for adjustable parts — verify against the datasheet, do not assume fixed-output) |
 | ICs / DC-DC converter module | `{Topology} {Output Voltage} {Input Voltage} {Output Current} {Footprint_Name}`, `Topology` = `Isolated`/`Non-Isolated` |
 | ICs / Battery Charger (linear, single-cell) | `{Interface} Battery Charger {Charge Current} {Footprint_Name}` (`Interface` = `Standalone` or `I2C`) |
-| ICs / single-gate logic (Schmitt-trigger inverter/buffer, SC-70-5) | `{Function} {Output Current} {Input Voltage} {Footprint_Name}` |
+| ICs / single-gate logic (TI 74LVC1Gxx / SN74LVC1Gxx family, ANY package) | `{Function} {Output Current} {Input Voltage} {Footprint_Name}` — first written for the SC-70-5 Schmitt-trigger inverters and buffers, but the family outgrew that scope and the template held. It now also carries `SN74LVC1G123DCTR` (retriggerable monostable, SSOP-8) and `SN74LVC1G74DCUR` (D flip-flop with preset and clear, VSSOP-8). Do not restrict this row to inverters or to one package again. `Function` is hand-composed from the datasheet title, shortened enough to read on a schematic sheet but keeping whatever distinguishes the part — for the '74 that means keeping "with Preset and Clear", because both inputs are asynchronous and both must be tied high to run |
 | ICs / Analog switches — multiplexers (TMUX1208 family) | `{Channels} Analog Multiplexer {Footprint_Name}` |
 | ICs / Voltage-level translators (TI TXSxxxxE) | `{Bit Width} Bidirectional Level Translator {VCCA Range}/{VCCB Range} {Footprint_Name}` |
 | ICs / Winbond serial NOR flash memory (W25Qxx) | `{Capacity} {Voltage Range} {Max Frequency} SPI {Footprint_Name}` |
@@ -330,11 +354,12 @@ across every affected sibling at once, not piecemeal.
 | Mechanical_7S / Enclosure (Hammond/Takachi) | Two manufacturers, three materials/finishes, wildly different form factors (small flanged box to wall-mount enclosure) — forcing one template across 5 siblings would drop meaningful wording or need several one-off properties for marginal benefit |
 | Mechanical_7S / MountingHole_Pad | Generic KiCad placeholders, not manufactured parts — no Manufacturer 1; dimensions already fully encoded in the name + footprint |
 | Mechanical_7S / 7Sigma_Logo | One-off internal schematic graphic asset, not a manufactured/purchased component |
+| ICs / Voltage reference, shunt (LM4040D25FTA) | The library's first voltage reference, so there is no sibling to validate a shared property set against, and the rule for a sub-family of one is to leave clean verified free text. Its description carries the output voltage, the grade tolerance and the 60uA~15mA operating current range, the last because a shunt reference is only in regulation inside that band and the bias resistor has to hold it there across the whole supply and load range. When a SECOND reference lands, template both on `{Output Voltage} {Tolerance} {Operating Current} {Footprint_Name}` and backfill the discrete properties — do not template at n=1 |
 | Relays (whole category) | Only 2 components, two unrelated sub-families (12A THT power relay vs. 1A SMD signal relay) with n=1 each — no shared property set to template against yet. Revisit once more Relays (especially more of one sub-family) are added |
 | TestPoints (whole category) | Only 3 components, genuinely heterogeneous: 1 sourced manufacturer part vs. 2 generic user-defined pad footprints with no shared discrete property |
 | Connectors / FFC-FPC, pin/debug headers, SMA-RF coax, one-off connectors (USB-C receptacle, board-to-board, RJ45 jacks, USB receptacles, battery holders, singleton types) | Each sub-type has only 2-3 siblings or is a singleton, and the distinguishing attributes (position count, pitch, shielding, mount style) aren't yet captured as discrete properties. Templating off 2 data points felt forced; copy-paste description bugs were fixed instead |
 | Connectors / broader terminal-block family (Phoenix Contact-style MCV/MSTBVA/WJ*/DB2E*/15EDG*/DMCV/XY302V/DB301V, ~36 members) | Already has its own internally-consistent free-text convention predating this pass ("Pluggable terminal block plug; {pitch}mm" / "Pluggable terminal block; {pitch}mm" / "Screw Terminal Block; {pitch}mm" / descriptive cage-clamp sentences). Only the smaller plug/base sub-set above (with a real footprint) got literal `{Pitch}`-property templates this pass. Reconciling the WHOLE family onto one discrete `Pitch` property is a recommended future full-family pass (needs both Connectors chunks reviewed together) — don't fragment the family's current uniformity by templating only part of it again |
-| ICs / Fuel Gauge, Logic (buffers/flip-flops/gates), MCU-SoC & wireless modules (ESP32/cellular/GNSS/UWB), Op-amp + high-side-switch + LED-driver singletons, Cellular/LTE modules, Magnetometers, Op-Amps, Microphones, MCU (RP2040), MCU (STM32 family), RS232/RS485 transceivers, SIMO multi-rail regulator, Single-channel gate driver, LED driver IC (WS2811N), GNSS receiver module (u-blox ZED-F9P) | Each has only 1-3 siblings that are structurally different from each other (different core architecture, different protocol, different topology) with no safe shared property set — forcing a template would either drop real distinguishing info or fabricate fields. Garbled/copy-pasted descriptions were cleaned up to accurate free text where found instead. Revisit each once the sub-family has enough genuine siblings |
+| ICs / Fuel Gauge, MCU-SoC & wireless modules (ESP32/cellular/GNSS/UWB), Op-amp + high-side-switch + LED-driver singletons, Cellular/LTE modules, Magnetometers, Op-Amps, Microphones, MCU (RP2040), MCU (STM32 family), RS232/RS485 transceivers, SIMO multi-rail regulator, Single-channel gate driver, LED driver IC (WS2811N), GNSS receiver module (u-blox ZED-F9P) | Each has only 1-3 siblings that are structurally different from each other (different core architecture, different protocol, different topology) with no safe shared property set — forcing a template would either drop real distinguishing info or fabricate fields. Garbled/copy-pasted descriptions were cleaned up to accurate free text where found instead. Revisit each once the sub-family has enough genuine siblings |
 
 ### Remaining work (targeted follow-ups, not a from-scratch sweep)
 Every category in the library has now been audited at least once (see the

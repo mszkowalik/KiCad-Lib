@@ -3,8 +3,7 @@ name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints, and the naming standard: the KLC tier rule (Tier 0 stock names are frozen), the twelve-slot field order, decided spellings (_HandSoldering, vendor tokens, no rotation in names), the 7Sigma: namespace, validator-enforced pad/silk/fab/courtyard style, the 0.1mm grid, NPTH mechanical holes, thermal vias, non-electrical parts, and why connector pad numbering always follows the datasheet. Use when naming, picking or authoring any footprint."
 ---
 
-<!-- platform-skill: conventions-footprints v14 — source of truth is the platform; check with list_skills, refresh with get_skill -->
-
+<!-- platform-skill: conventions-footprints v17 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 Footprints live in the `7Sigma:` namespace and are always referenced as
@@ -172,6 +171,61 @@ Fast check for a part with differential pairs: in the real numbering, P and N of
 on **same-parity pins exactly 2 apart**. If your footprint puts a foreign signal between
 them, the numbering is wrong.
 
+### Quad packages are always counter-clockwise — a mirrored one is always a bug
+
+**QFN, QFP, TQFP, LQFP, VQFN, DFN and SOIC number counter-clockwise when seen
+from the TOP, starting at the pin nearest the pin-1 mark.** There is no
+clockwise variant and no mirrored variant. Every datasheet pinout figure is a
+TOP view unless it says BOTTOM. KiCad stock uses the same direction, so a
+house footprint that disagrees with stock on *direction* is wrong — stock is
+not the odd one out.
+
+In KiCad coordinates **Y points DOWN**, so on a square quad package pin 1 sits
+at **negative Y** (top) on the left edge:
+
+| Pins | Edge | Runs |
+|---|---|---|
+| first quarter | left, `x` negative | top to bottom, `y` increasing |
+| second quarter | bottom, `y` positive | left to right, `x` increasing |
+| third quarter | right, `x` positive | bottom to top, `y` decreasing |
+| last quarter | top, `y` negative | right to left, `x` decreasing |
+
+**This is the trap.** Reading a datasheet figure with Y-up in your head and
+writing it out with KiCad's Y-down flips the part about the X axis. The pad
+grid of a quad package is symmetric, so nothing looks wrong — the outline, the
+pitch, the courtyard and the pad count all still check out, and the pin-1
+silk arrow moves along with the error, so the drawing stays internally
+consistent. Only the numbers are mirrored. On the board every signal lands on
+the wrong pin.
+
+**Run this check before proposing any quad footprint. It is two lines and it
+is not optional:**
+
+```
+# pin 1 must be top-left: x negative AND y negative
+# pin (N/4 + 1) must be on the BOTTOM edge: y positive
+grep -A1 '(pad "1"' <file>          # expect (at -X -Y)
+grep -A1 '(pad "17"' <file>         # 64-pin: expect (at -X +Y)
+```
+
+If pin 1 sits at positive Y, the footprint is mirrored. Fix it by negating Y
+on every pad, on the `F.SilkS` pin-1 marker and corner brackets, on the
+`F.Fab` body chamfer and on the `Cmts.User` pin-1 circle — not by renumbering
+the pads in place, which moves the error into the silkscreen instead.
+
+Cross-check against a second source whenever the part is on LCSC: the JLCPCB
+land pattern (`easyeda2kicad --lcsc_id=C…`) and the nearest KiCad stock
+footprint of the same body and pitch. Both use the same direction. If your
+drawing disagrees with both, your drawing is wrong.
+
+**Never write "stock numbering runs the opposite direction" in a proposal
+comment.** It never does. That exact sentence shipped as the justification for
+the mirrored `Microchip_QFN-64-1EP_8x8mm_P0.4mm_EP3.7x3.7mm_ThermalVias` v1
+(KSZ8864CNXI-TR) on 2026-08-23 — the claim was the mirror error rationalised,
+and it survived review because it sounded like a considered finding. A real
+reason to skip Tier 0 is measurable copper: a different pad size, a different
+pad centre, a different EP. Direction never is.
+
 ## 3. The package name (`{Footprint_Name}`)
 
 Every footprint carries a short human package name — `0402`, `SOT-23-6`,
@@ -233,14 +287,69 @@ redrawn by hand) or could break correctness.
 ### 3D model path
 
 ```
-(model "${SEVENSIGMA_DIR}/3DModels/<category>.3dshapes/<NAME>.step"
+(model "${SEVENSIGMA_DIR}/3DModels/<folder>/<NAME>.step"
   (offset (xyz 0 0 0))
   (scale (xyz 1 1 1))
   (rotate (xyz 0 0 0))
 )
 ```
 
-Always the `${SEVENSIGMA_DIR}` variable — never a hardcoded path.
+Always the `${SEVENSIGMA_DIR}` variable — never a hardcoded path, never
+`${KIPRJMOD}`, never a folder in your home directory. A footprint that names a
+path outside `${SEVENSIGMA_DIR}/3DModels/` is REFUSED, so the file must be in
+the library before the footprint points at it.
+
+**Every footprint carries a model — no exceptions.** A footprint proposed with
+no `(model ...)` line is incomplete, even when nothing suitable is stored yet,
+and the machine check fails its `fp.model3d` item until a human or agent marks
+the item `na`. Check what exists with `list_models3d`.
+
+**Three doors put a file in the library, and they write the same store.**
+
+1. **The KiCad *Push 7Sigma changes* button does it for you.** Point the
+   footprint at the file wherever it actually is — `~/Downloads`, KiCad's own
+   `3dmodels/` tree, a folder beside the project — save, and push. Push finds
+   every reference that is not a library path, shows you the target path for
+   each one (editable), uploads the files, rewrites the footprint to
+   `${SEVENSIGMA_DIR}/3DModels/…` and repoints your local copy at the stored
+   model. Nothing has to be moved by hand first.
+2. **`upload_model3d(file_path, rel_path)`** — the agent's door, over MCP. It
+   reads the file off the machine running the MCP server and returns the
+   `(model ...)` node to paste. `rel_path` is optional; see the folder rule
+   below.
+3. **Raw HTTP**, for a script:
+
+```
+POST /api/models3d/upload?rel_path=<folder>/<NAME>.step
+     multipart/form-data, field "file"
+```
+
+An upload is live immediately — models carry no draft gate — and re-uploading
+the same `rel_path` REPLACES the file. That is how a wrong model is corrected:
+same path, new bytes, never a second path.
+
+**Which folder.** Three rules, first match wins:
+
+1. The folder the footprint's CURRENT model uses. Replacing a model must not
+   move it.
+2. The source file's own folder when that is a `*.3dshapes` directory — a model
+   taken from KiCad's tree keeps KiCad's category (`Package_SO.3dshapes`,
+   `Capacitor_SMD.3dshapes`, …), which is what every adopted Tier 0 footprint
+   in the library already does.
+3. Otherwise `7Sigma.3dshapes/` — models we drew or obtained from a vendor for
+   a 7Sigma part. Do not drop new files loose at the root of `3DModels/`; the
+   nineteen that sit there predate this rule.
+
+KiCad's own `3dmodels/` tree, beside the stock footprints, is the first place
+to look. A Tier 0 adoption inherits its stock model: keep the stock filename,
+and point a `_ThermalVias` variant at the plain STEP, which is the only one
+KiCad ships.
+
+**A borrowed model must say so.** Reusing another vendor's solid for a shared
+outline beats shipping none, but the proposal comment has to name the source
+part, every dimension that differs, and any `offset` used to correct the
+difference. A model is a visual aid, never fabrication data — an undisclosed
+mismatch reads as vendor geometry to the next person.
 
 ## 5. Pad placement grid
 

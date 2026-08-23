@@ -79,7 +79,12 @@ def start_import() -> bool:
 
 
 def start_sync() -> bool:
-    """Kick off a non-destructive YAML→proposals sync. False if a job is running."""
+    """Kick off a non-destructive YAML→proposals sync. False if a job is running.
+
+    NO LONGER REACHABLE from the API (2026-08-24): `POST /api/import/sync`
+    answers 410, because the drafts this files have no approval path since the
+    Proposals view was removed. Kept for the `archive/yaml-library` branch.
+    """
     return _start(run_sync)
 
 

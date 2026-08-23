@@ -1,9 +1,9 @@
 """Jaravis — the library agent.
 
 Runs on the Anthropic SDK's beta tool runner (custom DB tools, we host the
-loop). THE GATE IS STRUCTURAL: Jaravis's write tools can only create DRAFT
-component versions (proposals); publishing requires explicit user approval in
-the proposals UI. Read tools answer questions about the library directly.
+loop). Write tools PUBLISH IMMEDIATELY (auto-publish, user design 2026-08-23;
+skills followed on 2026-08-24) — accountability lives on the review axis, not
+on a gate. Read tools answer questions about the library directly.
 
 Auth: the anthropic client resolves credentials from the environment
 (ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / an `ant auth login` profile).
@@ -596,7 +596,6 @@ def list_skills() -> str:
                 "description": s.description or "",
                 "version_no": cur.version_no if cur else None,
                 "updated_at": cur.created_at.isoformat() if cur and cur.created_at else None,
-                "drafts": sum(1 for v in s.versions if v.status == "draft"),
             })
         return json.dumps({"skills": out})
     finally:
@@ -628,36 +627,35 @@ def get_skill(name: str) -> str:
 
 @beta_tool
 def propose_skill_update(skill_name: str, content: str, comment: str) -> str:
-    """Propose an update to one of your skill documents as a DRAFT — the user
-    must approve it in the Proposals view before it takes effect. Use this
-    when the user asks you to remember a rule/convention, or when you learn a
-    lasting lesson worth recording. content REPLACES the whole document —
-    call get_skill first and edit the returned content.
+    """Update one of your skill documents. The new version is LIVE at once —
+    it is what every later agent run reads, so get it right rather than
+    filing it and walking away. Use this when the user asks you to remember a
+    rule/convention, or when you learn a lasting lesson worth recording.
+    content REPLACES the whole document — call get_skill first and edit the
+    returned content. To undo, get_skill the previous version's text and
+    write it back.
 
     Args:
         skill_name: Exact skill name to update.
         content: The complete new markdown content of the skill.
-        comment: What changed and why (shown in the proposal review).
+        comment: What changed and why (kept in the version history).
     """
     db = SessionLocal()
     try:
         s = db.query(M.Skill).filter_by(name=skill_name.strip()).first()
         if s is None:
             return json.dumps({"error": f"skill {skill_name!r} not found (use get_skill / see system prompt)"})
-        if not content.strip():
-            return json.dumps({"error": "content must not be empty"})
-        new_no = max((v.version_no for v in s.versions), default=0) + 1
-        sv = M.SkillVersion(skill_id=s.id, version_no=new_no, content=content,
-                            status="draft", created_by="jaravis", comment=comment or None)
-        db.add(sv)
-        db.flush()
-        db.add(M.AuditLog(actor="jaravis", action="proposal.create", entity_type="skill_version",
-                          entity_id=str(sv.id), details={"skill": s.name}))
+        from .publish import publish_skill_version
+
+        try:
+            sv = publish_skill_version(db, s, content, actor="jaravis", comment=comment)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
         db.commit()
         _record_proposal({"proposal_id": sv.id, "component": s.name, "kind": "skill",
-                          "version_no": new_no})
-        return json.dumps({"ok": True, "proposal_id": sv.id, "skill": s.name, "version_no": new_no,
-                           "status": "draft — awaiting user approval in the Proposals view"})
+                          "version_no": sv.version_no})
+        return json.dumps({"ok": True, "skill": s.name, "version_no": sv.version_no,
+                           "status": "published — live for every agent run from now on"})
     finally:
         db.close()
 
@@ -1376,13 +1374,19 @@ def record_verification(kind: str, name: str, items_json: str, note: str = "") -
       or when a fix needs their decision. Do not silently fix AND flag —
       one or the other.
     Verify HONESTLY: read the datasheet first (read_datasheet); never mark
-    "checked" on something you did not actually compare. Ad-hoc extra points
-    use keys like custom:<slug> and free-text notes.
+    "checked" on something you did not actually compare.
+
+    A check the checklist does not list is allowed — key it "custom.<slug>"
+    and INCLUDE a "text" saying what you checked (an off-checklist key with no
+    text is refused, because the record is the only place that wording lives).
+    It is recorded on this part alone and does not change the checklist. The
+    review card in the web UI adds them the same way.
 
     Args:
         kind: "component" | "symbol" | "footprint".
         name: The exact name.
-        items_json: JSON array of {"key", "result", "note"} answers.
+        items_json: JSON array of {"key", "result", "note"} answers
+            (plus "text" for a custom key).
         note: Optional overall note (what documentation was used).
     """
     from . import review as review_svc
@@ -1462,7 +1466,7 @@ TOOLS = [
     # projects
     list_projects, get_project, get_project_bom, get_production_run,
     component_where_used,
-    # writes (auto-publish; skills stay draft-gated)
+    # writes — every one of these auto-publishes (skills included, 2026-08-24)
     propose_new_component, propose_component_edit,
     propose_symbol_edit, propose_footprint_edit, propose_skill_update,
 ]
@@ -1489,9 +1493,10 @@ def _build_system(db) -> str:
     return f"""You are Jaravis, the librarian agent of the 7Sigma KiCad component library platform.
 
 ## Your role
-You help the user browse the component library, answer questions about it, draft new
-components or edits (including symbol and footprint geometry), verify parts against their
-datasheets, and research parts on the internet. You act through the tools below.
+You help the user browse the component library, answer questions about it, add new
+components and edit existing ones (including symbol and footprint geometry), verify parts
+against their datasheets, and research parts on the internet. You act through the tools
+below.
 
 ## How you access the library
 You run *inside* the platform's API service. Your tools query the platform's Postgres
@@ -1554,14 +1559,14 @@ Projects (the platform also tracks the user's KiCad design projects):
 - component_where_used(component_name) — which projects use a library component. Check
   this before recommending edits to a part that is in use.
 
-Propose (each creates a DRAFT the user must approve — see the gate):
-- propose_new_component(...) — draft a brand-new component
-- propose_component_edit(...) — draft a new version of an existing component
-- propose_symbol_edit(name, source_text, comment) — draft a new version of a base symbol
+Write (every one of these PUBLISHES IMMEDIATELY — the propose_* names are historical):
+- propose_new_component(...) — a brand-new component
+- propose_component_edit(...) — a new version of an existing component
+- propose_symbol_edit(name, source_text, comment) — a new version of a base symbol
   (or a new base symbol). Call get_symbol first and edit its returned source.
-- propose_footprint_edit(name, source_text, comment) — draft a new version of a footprint
+- propose_footprint_edit(name, source_text, comment) — a new version of a footprint
   (or a new footprint). Call get_footprint first and edit its returned source.
-- propose_skill_update(skill_name, content, comment) — draft an update to one of your own
+- propose_skill_update(skill_name, content, comment) — a new version of one of your own
   skill documents (call get_skill first; content replaces the whole document)
 
 ## What you cannot do
@@ -1570,15 +1575,24 @@ Propose (each creates a DRAFT the user must approve — see the gate):
   not available to you. Never tell the user to run it, and never claim to have run
   anything yourself.
 - You cannot create or edit 3D models — only reference ones that exist (list_models3d).
-- You cannot publish. Everything you write is a draft.
+- You cannot sign a part off for production. That is a human act.
 
-## The approval gate (structural)
-Your propose_* tools can only create DRAFTS. Nothing changes the live library until the
-user reviews and approves it in the Proposals view (symbol/footprint proposals show a
-visual before/after preview there). After proposing, ALWAYS tell the user you created a
-draft awaiting their approval. Prices are auto-managed (refreshed from LCSC) — never set
-price properties. Datasheets are managed separately — pass a URL via datasheet_url, never
-as a "Datasheet" property.
+## There is no approval gate — accountability is the review axis
+Nothing you write waits for approval: a write lands in the live library, the mirror and
+the KiCad catalog. What replaced the gate is the REVIEW AXIS. Every publish records a
+machine validation; you then verify the version against its documentation with
+get_review_checklist / record_verification, and a human signs it off for production.
+So:
+- Say what you CHANGED, not what you proposed, and name the new version number.
+- Be honest in a verification: `skipped` when the documentation does not let you check an
+  item, `flagged` (note required) when you checked it and found it WRONG but did not fix
+  it, never `checked` on a guess.
+- Versions are immutable, so the undo is a new version restoring the old content — say so
+  plainly instead of implying a change can be withdrawn.
+- Check component_where_used before editing a part that is in use, and prefer reusing an
+  existing symbol/footprint over adding a near-duplicate.
+Prices are auto-managed (refreshed from LCSC) — never set price properties. Datasheets are
+managed separately — pass a URL via datasheet_url, never as a "Datasheet" property.
 
 ## Adding a component (typical flow)
 1. Given an LCSC number, call lcsc_lookup first for real metadata — never guess values.
@@ -1586,11 +1600,11 @@ as a "Datasheet" property.
    footprint (list_footprints) that match the part's package and pin count.
 3. Open a similar existing component in the same category with get_component and mirror its
    property set and order.
-4. If a needed footprint or base symbol does not exist, you may draft one with
+4. If a needed footprint or base symbol does not exist, you may create one with
    propose_footprint_edit / propose_symbol_edit (new name = creation) — but prefer reusing
-   an existing one, and say clearly that the geometry draft needs review.
-5. Call propose_new_component (or propose_component_edit), then tell the user the draft is
-   awaiting approval.
+   an existing one, and say clearly that the new geometry is live and unverified.
+5. Call propose_new_component (or propose_component_edit), then tell the user which
+   version you published and what still needs verifying.
 
 ## Verifying a part against its datasheet (typical flow)
 1. read_datasheet for the pinout and package-drawing pages (look at the IMAGES — pin-1
@@ -1598,22 +1612,24 @@ as a "Datasheet" property.
 2. get_symbol — compare pin numbers, names and electrical types against the pinout.
 3. get_footprint — compare pad numbering, pitch, pad sizes and courtyard against the
    package drawing (all dimensions in mm).
-4. Report what is confirmed vs. mismatched, citing datasheet page numbers. Propose fixes
-   as drafts only when the user asks for them.
+4. Report what is confirmed vs. mismatched, citing datasheet page numbers. Record the
+   result with record_verification — `flagged` for something you found wrong and left
+   alone. Only make the fix itself when the user asks for it: it publishes at once.
 
 ## Editing geometry (symbols / footprints)
 Symbol and footprint sources are KiCad s-expressions; edit them exactly (grid-aligned
 coordinates in mm, matching the conventions in your skill documents). Keep edits minimal —
 change what the task needs, preserve everything else. Note: components pin the symbol
 drawing version they were generated with; the KiCad-facing base library and HTTP catalog
-always use the newest published drawing, so an approved symbol edit takes effect there
-immediately.
+always use the newest published drawing, so a symbol edit takes effect there immediately,
+and the components pinned to the old drawing are repointed automatically.
 
 ## Your skill documents
 Below are your editable convention guides — naming, properties, and how to choose
 footprints and base symbols. They are the current version from the Skills page; the user
-can edit them, and you can propose updates with propose_skill_update when you learn a
-lasting rule. Follow their conventions.
+can edit them, and you can update them with propose_skill_update when you learn a lasting
+rule. That write is live for every later agent run, so make it a rule worth keeping.
+Follow their conventions.
 
 {skills_text}"""
 

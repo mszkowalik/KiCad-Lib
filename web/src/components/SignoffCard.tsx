@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   addSignoff,
   errorMessage,
@@ -165,14 +166,24 @@ export default function SignoffCard({
             {detail.signed.symbol ? (
               <>
                 {" · "}
-                {detail.signed.symbol.name}{" "}
+                <Link
+                  to={`/library/templates/symbols/${detail.signed.symbol.id}`}
+                  className="comp-link"
+                >
+                  {detail.signed.symbol.name}
+                </Link>{" "}
                 <span className="pin-ver">v{detail.signed.symbol.version_no}</span>
               </>
             ) : null}
             {detail.signed.footprint ? (
               <>
                 {" · "}
-                {detail.signed.footprint.name}{" "}
+                <Link
+                  to={`/library/templates/footprints/${detail.signed.footprint.id}`}
+                  className="comp-link"
+                >
+                  {detail.signed.footprint.name}
+                </Link>{" "}
                 <span className="pin-ver">v{detail.signed.footprint.version_no}</span>
               </>
             ) : null}

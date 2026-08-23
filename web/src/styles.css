@@ -492,29 +492,6 @@ table.data {
   width: 9%;
 }
 
-/* Proposals queue + history: fixed columns, no horizontal scroll (reuses
-   .data-fixed for the single-line ellipsis treatment; compound selectors
-   outrank .data td.ctr's width:1%). */
-/* column 1 is the bulk-select checkbox — see Proposals.tsx */
-.data.proposals-table th:nth-child(1),
-.data.proposals-table td:nth-child(1) { width: 3%; }
-.data.proposals-table th:nth-child(2),
-.data.proposals-table td:nth-child(2) { width: 13%; }
-.data.proposals-table th:nth-child(3),
-.data.proposals-table td:nth-child(3) { width: 7%; }
-.data.proposals-table th:nth-child(4),
-.data.proposals-table td:nth-child(4) { width: 5%; }
-.data.proposals-table th:nth-child(5),
-.data.proposals-table td:nth-child(5) { width: 13%; }
-.data.proposals-table th:nth-child(6),
-.data.proposals-table td:nth-child(6) { width: 7%; }
-.data.proposals-table th:nth-child(7),
-.data.proposals-table td:nth-child(7) { width: 16%; }
-.data.proposals-table th:nth-child(8),
-.data.proposals-table td:nth-child(8) { width: 12%; }
-.data.proposals-table th:nth-child(9),
-.data.proposals-table td:nth-child(9) { width: 24%; }
-
 /* project design-review table (ReviewTab.tsx) */
 .data.project-review-table { table-layout: fixed; }
 .data.project-review-table th:nth-child(1),
@@ -564,36 +541,6 @@ table.data {
 .data.reviews-template-table td:nth-child(5) { width: 12%; }
 
 /* bulk-approve bar above the pending table */
-.proposals-bulk {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-  min-height: 30px;
-}
-
-/* the expandable before/after preview spans all columns — opt it out of the
-   single-line clamp so the images render at full height */
-.data.proposals-table td.preview-cell {
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-}
-
-.data.proposals-history-table th:nth-child(1),
-.data.proposals-history-table td:nth-child(1) { width: 10%; }
-.data.proposals-history-table th:nth-child(2),
-.data.proposals-history-table td:nth-child(2) { width: 20%; }
-.data.proposals-history-table th:nth-child(3),
-.data.proposals-history-table td:nth-child(3) { width: 10%; }
-.data.proposals-history-table th:nth-child(4),
-.data.proposals-history-table td:nth-child(4) { width: 7%; }
-.data.proposals-history-table th:nth-child(5),
-.data.proposals-history-table td:nth-child(5) { width: 10%; }
-.data.proposals-history-table th:nth-child(6),
-.data.proposals-history-table td:nth-child(6) { width: 25%; }
-.data.proposals-history-table th:nth-child(7),
-.data.proposals-history-table td:nth-child(7) { width: 18%; }
 
 .history-section {
   margin-top: 28px;
@@ -900,7 +847,7 @@ a.btn:hover {
   background: currentColor;
 }
 
-/* draft proposals: amber, dashed */
+/* a draft version — history only, nothing files them now: amber, dashed */
 .vchip.draft {
   border-style: dashed;
   border-color: var(--warn);
@@ -930,10 +877,6 @@ a.btn:hover {
 .vchip.rejected.selected {
   background: var(--surface-2);
   color: var(--muted);
-}
-
-.draft-note {
-  font-size: 12px;
 }
 
 /* `.kv` names TWO different designs, and they must not touch each other:
@@ -971,6 +914,17 @@ dl.kv {
 .pin-ver {
   color: var(--copper);
   font-size: 12px;
+}
+
+/* One pinned drawing on the component page: link, version, and the pills that
+   say whether the library still serves it and whether anybody checked it.
+   Wraps rather than overflowing — a long footprint name plus two pills does
+   not fit a narrow meta column. */
+.pin-line {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .preview-panel {
@@ -1054,23 +1008,7 @@ dl.kv {
   white-space: nowrap;
 }
 
-/* side-by-side current/draft compare inside a proposals table row */
-.proposal-preview {
-  display: flex;
-  gap: 12px;
-  padding: 8px 4px 10px;
-}
-
-.proposal-preview > div {
-  flex: 1;
-  min-width: 0;
-}
-
-.proposal-preview .preview-fill {
-  height: 280px;
-}
-
-/* template detail: fixed-height preview canvas (same dark canvas as proposals) */
+/* template detail: fixed-height preview canvas */
 .template-preview {
   height: 360px;
 }
@@ -1740,21 +1678,6 @@ select.sel:focus {
   overflow-x: auto;
   max-height: 180px;
   overflow-y: auto;
-}
-
-.proposal-note {
-  margin-top: 6px;
-  border: 1px solid var(--warn);
-  background: var(--warn-soft);
-  color: var(--warn);
-  border-radius: 6px;
-  padding: 8px 12px;
-  font-size: 12px;
-}
-
-.proposal-note a {
-  color: inherit;
-  text-decoration: underline;
 }
 
 .chat-input {
@@ -3756,7 +3679,7 @@ a.check-cell:hover {
 }
 
 /* The expanded detail row spans every column — opt that ONE cell out of the
-   single-line clamp, exactly as the proposals preview cell does. */
+   single-line clamp rather than relaxing the whole table. */
 .data.users-table td.user-detail-cell {
   white-space: normal;
   overflow: visible;
@@ -3810,3 +3733,22 @@ a.check-cell:hover {
   grid-column: 1 / -1;
   justify-self: start;
 }
+
+/* The checklist editor's item table. Every cell holds a `.row-input`, which is
+   `width: 100%` and so contributes nothing to the intrinsic minimum — without
+   fixed layout and explicit widths the table collapses to the longest word in
+   the header, exactly as `.kv.settings-table` did. Widths sum to 100%. */
+.data.checklist-table {
+  width: 100%;
+  table-layout: fixed;
+}
+.data.checklist-table th:nth-child(1),
+.data.checklist-table td:nth-child(1) { width: 20%; }
+.data.checklist-table th:nth-child(2),
+.data.checklist-table td:nth-child(2) { width: 34%; }
+.data.checklist-table th:nth-child(3),
+.data.checklist-table td:nth-child(3) { width: 26%; }
+.data.checklist-table th:nth-child(4),
+.data.checklist-table td:nth-child(4) { width: 6%; }
+.data.checklist-table th:nth-child(5),
+.data.checklist-table td:nth-child(5) { width: 14%; white-space: nowrap; }

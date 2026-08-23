@@ -9,7 +9,7 @@ import {
   patchDevice,
   type DeviceDetailPayload,
 } from "../api";
-import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import { BackLink, ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import CheckGrid from "../components/flasher/CheckGrid";
 import { fmtDuration, fmtWhen } from "../components/flasher/common";
 
@@ -74,7 +74,7 @@ export default function DeviceDetail() {
     <div className="main-solo">
       <div className="page">
         <div className="toolbar">
-          <Link className="backlink" to="/production/devices">← Devices</Link>
+          <BackLink to="/production/devices">← Devices</BackLink>
           <h1 className="mono">{device.serial || device.mac}</h1>
           {device.last_status ? <StatusPill status={device.last_status} /> : null}
           <span className="toolbar-total">

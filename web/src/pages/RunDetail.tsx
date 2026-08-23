@@ -34,7 +34,7 @@ import {
   type RunInfo,
   type SnapshotInfo,
 } from "../api";
-import { ErrorBanner, Spinner } from "../components/Ui";
+import { BackLink, ErrorBanner, Spinner } from "../components/Ui";
 import ProductionPanel from "../components/project/ProductionPanel";
 import RunCosts from "../components/run/RunCosts";
 import RunMaterials from "../components/run/RunMaterials";
@@ -120,9 +120,9 @@ export default function RunDetail() {
       <div className="page">
         <div className="detail-top">
           <div>
-            <Link to={`/projects/${run.project_id}`} className="backlink">
+            <BackLink to={`/projects/${run.project_id}`} className="backlink">
               ← {project?.name ?? "project"}
-            </Link>
+            </BackLink>
             <h1>{run.label}</h1>
             <span className="muted">
               {run.qty} device(s) · {run.run_date || "no date"}

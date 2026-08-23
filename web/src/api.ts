@@ -74,9 +74,16 @@ export interface ComponentListResponse {
   items: ComponentListItem[];
 }
 
+/** A drawing a component version PINS. `version_no` is what this component was
+ *  generated against; `current_version_no` is what the library serves KiCad
+ *  today, so `is_current === false` means the part is drawn on a superseded
+ *  symbol or land pattern. `id` is the parent row, for linking. */
 export interface PinnedRef {
+  id: number;
   name: string;
   version_no: number;
+  current_version_no: number | null;
+  is_current: boolean;
 }
 
 export interface VersionSummary {
@@ -107,7 +114,26 @@ export interface ComponentDetail {
   lifecycle: LifecycleState;
   /** Effective review state: weakest of the component's own record and its
    *  pinned symbol/footprint records. */
-  review: { state: ReviewState; provenance: ReviewActor | null; blockers: string[] };
+  review: {
+    state: ReviewState;
+    provenance: ReviewActor | null;
+    blockers: string[];
+    /** Per-drawing breakdown the aggregate is the WEAKEST of, so the page can
+     *  say WHICH of the three is unchecked instead of only "partial". */
+    parts: Partial<Record<"component" | "symbol" | "footprint", ReviewPart>>;
+  };
+}
+
+/** One subject's verification state within `ComponentDetail.review.parts`. */
+export interface ReviewPart {
+  state: ReviewState;
+  provenance: ReviewActor | null;
+  answered?: number;
+  total?: number;
+  skipped?: number;
+  failed?: number;
+  flagged?: number;
+  unanswered?: string[];
 }
 
 export interface PropertyRow {
@@ -557,23 +583,30 @@ export interface GeometryProposalResult {
   status: string;
 }
 
-/** File a DRAFT version of a symbol/footprint from pasted editor text. The
+/** PUBLISH a new version of a symbol/footprint from pasted editor text. The
  *  name is never sent — the server takes it from the row, so a paste cannot
- *  rename the template. */
+ *  rename the template.
+ *
+ *  `minorChange === true` is the recheck WAIVER: it carries the production
+ *  sign-offs and verification records of every affected component across the
+ *  new drawing, with the user's name on the decision. `null` (the default)
+ *  means nobody was asked, and the server compares material fingerprints —
+ *  silkscreen-only edits carry, a moved pad does not. */
 export function proposeTemplateEdit(
   kind: TemplateKind,
   id: number,
   source_text: string,
   comment: string,
+  minorChange: boolean | null = null,
 ): Promise<GeometryProposalResult> {
   return request(`/api/${kind}/${id}/propose`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source_text, comment }),
+    body: JSON.stringify({ source_text, comment, minor_change: minorChange }),
   });
 }
 
-/** File a DRAFT for a template that does not exist yet. The name is read out
+/** Publish the first version of a template that does not exist yet. The name is read out
  *  of the pasted text by the server — a footprint header has to match the row
  *  name anyway, so a separate field could only disagree with it. */
 export function proposeNewTemplate(
@@ -1261,197 +1294,6 @@ export function createSkill(
   });
 }
 
-// --------------------------------------------------------------- proposals
-
-export interface ComponentProposal {
-  kind: "component";
-  proposal_id: number;
-  component_id: number;
-  component_name: string;
-  version_no: number;
-  is_new_component: boolean;
-  base_component: string;
-  category_path: string;
-  created_by: string | null;
-  created_at: string;
-  comment: string | null;
-  status: string;
-}
-
-export interface SkillProposal {
-  kind: "skill";
-  proposal_id: number;
-  skill_id: number;
-  skill_name: string;
-  /** Equals skill_name — provided by the API to keep table display simple. */
-  component_name: string;
-  version_no: number;
-  created_by: string | null;
-  created_at: string;
-  comment: string | null;
-  status: string;
-}
-
-/** Symbol / footprint geometry proposal (drafted by Jaravis). */
-export interface GeometryProposal {
-  kind: "symbol" | "footprint";
-  proposal_id: number;
-  /** The parent symbol/footprint id — links the row to the template page. */
-  template_id: number;
-  /** The symbol/footprint name — field named like the others to keep the table simple. */
-  component_name: string;
-  version_no: number;
-  is_new_component: boolean;
-  created_by: string | null;
-  created_at: string;
-  comment: string | null;
-  status: string;
-}
-
-export type Proposal = ComponentProposal | SkillProposal | GeometryProposal;
-
-/** A decided proposal (approved/rejected) — one row of the proposals history,
- *  sourced from the audit log so all four kinds share one shape. */
-export interface ProposalHistoryRow {
-  kind: "component" | "skill" | "symbol" | "footprint";
-  outcome: "approved" | "rejected";
-  decided_at: string;
-  decided_by: string;
-  proposal_id: number | null;
-  /** Present for component kind — lets the row link to the component detail. */
-  component_id: number | null;
-  /** Symbol/footprint kinds — the parent template's id, so the row links to
-   *  its template page. Null when the template no longer exists (a rejected
-   *  creation takes its stillborn row with it). */
-  template_id: number | null;
-  /** Display name (component / skill / symbol / footprint). */
-  component_name: string;
-  version_no: number | null;
-  created_by: string | null;
-  created_at: string | null;
-  comment: string | null;
-  category_path: string;
-}
-
-/** Approve/reject responses for component proposals (no `kind` field). */
-export interface ComponentProposalAction {
-  proposal_id: number;
-  component_id: number;
-  component_name: string;
-  version_no: number;
-  is_new_component: boolean;
-  base_component: string;
-  category_path: string;
-  created_by: string | null;
-  created_at: string;
-  comment: string | null;
-  status: string;
-  mirror?: Record<string, number>;
-  mirror_warnings?: string[];
-}
-
-export interface SkillProposalAction {
-  kind: string;
-  proposal_id: number;
-  skill_name: string;
-  version_no: number;
-  status: string;
-}
-
-export function getProposals(signal?: AbortSignal): Promise<Proposal[]> {
-  return request("/api/proposals", { signal });
-}
-
-export function getProposalHistory(
-  limit = 200,
-  signal?: AbortSignal,
-): Promise<ProposalHistoryRow[]> {
-  return request(`/api/proposals/history?limit=${limit}`, { signal });
-}
-
-export function approveProposal(id: number): Promise<ComponentProposalAction> {
-  return request(`/api/proposals/${id}/approve`, { method: "POST" });
-}
-
-export function rejectProposal(id: number): Promise<ComponentProposalAction> {
-  return request(`/api/proposals/${id}/reject`, { method: "POST" });
-}
-
-export function approveSkillProposal(id: number): Promise<SkillProposalAction> {
-  return request(`/api/proposals/skills/${id}/approve`, { method: "POST" });
-}
-
-export function rejectSkillProposal(id: number): Promise<SkillProposalAction> {
-  return request(`/api/proposals/skills/${id}/reject`, { method: "POST" });
-}
-
-export interface GeometryProposalAction {
-  kind: string;
-  proposal_id: number;
-  component_name: string;
-  version_no: number;
-  status: string;
-  mirror?: Record<string, number>;
-  mirror_warnings?: string[];
-}
-
-/** Does a geometry draft change anything that reaches the board?
- *
- * Pre-answers the "does this need a new verification?" question on the approve
- * dialog. `same_material` is provable — it compares pad/pin fingerprints, not
- * the file text — so a silkscreen-only edit carries every affected sign-off. */
-export interface MaterialDiff {
-  kind: "symbol" | "footprint";
-  name: string;
-  is_new: boolean;
-  from_version?: number;
-  to_version?: number;
-  same_material: boolean;
-  changed: string[];
-  suggest_recheck: boolean;
-  affected_components: number;
-  affected_signed: number;
-}
-
-export function getMaterialDiff(
-  kind: "symbol" | "footprint",
-  id: number,
-  signal?: AbortSignal,
-): Promise<MaterialDiff> {
-  return request(`/api/proposals/${kind}s/${id}/material-diff`, { signal });
-}
-
-export function approveGeometryProposal(
-  kind: "symbol" | "footprint",
-  id: number,
-  /** The approver's answer. `null` = not asked; the server then falls back to
-   *  the fingerprint comparison, which is what the dialog suggested anyway. */
-  recheckRequired: boolean | null = null,
-  note?: string,
-): Promise<GeometryProposalAction> {
-  return request(`/api/proposals/${kind}s/${id}/approve`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ recheck_required: recheckRequired, note: note ?? null }),
-  });
-}
-
-export function rejectGeometryProposal(
-  kind: "symbol" | "footprint",
-  id: number,
-): Promise<GeometryProposalAction> {
-  return request(`/api/proposals/${kind}s/${id}/reject`, { method: "POST" });
-}
-
-/** SVG preview of a geometry proposal — draft or the live current version. */
-export function geometryProposalPreviewUrl(
-  kind: "symbol" | "footprint",
-  id: number,
-  which: "draft" | "current",
-): string {
-  return `${API_URL}/api/proposals/${kind}s/${id}/preview.svg?which=${which}`;
-}
-
 // ------------------------------------------------------- production sign-off
 
 /** Has a human checked this part before boards were built?
@@ -1481,9 +1323,11 @@ export interface SignoffRow {
   revoke_reason: string | null;
 }
 
+/** The drawings a component version pins, named for a human. `id` is the
+ *  parent symbol/footprint row, so the label can be a link. */
 export interface GeometryLabel {
-  symbol: { name: string; version_no: number } | null;
-  footprint: { name: string; version_no: number } | null;
+  symbol: { id: number; name: string; version_no: number } | null;
+  footprint: { id: number; name: string; version_no: number } | null;
 }
 
 export interface SignoffDetail {
@@ -1541,11 +1385,6 @@ export function bulkSignoff(
 
 export function startImport(): Promise<{ status: string }> {
   return request("/api/import", { method: "POST" });
-}
-
-/** Non-destructive: diff Sources/*.yaml against the DB → draft proposals. */
-export function startSync(): Promise<{ status: string }> {
-  return request("/api/import/sync", { method: "POST" });
 }
 
 export function getImportStatus(signal?: AbortSignal): Promise<ImportStatus> {
@@ -4583,6 +4422,9 @@ export interface ReviewCheckAnswer {
   /** "flagged" = verified and found wrong, recorded without fixing — note required. */
   result: "checked" | "na" | "skipped" | "flagged";
   note?: string;
+  /** Required for a key the checklist does not define (a custom check added
+   *  for this part alone): the record is the only place that wording lives. */
+  text?: string;
 }
 
 export function recordReviewCheck(
@@ -4649,7 +4491,6 @@ export interface ReviewQueue {
   components: ReviewQueueComponent[];
   symbols: ReviewQueueTemplate[];
   footprints: ReviewQueueTemplate[];
-  drafts: { components: number; skills: number; symbols: number; footprints: number };
 }
 
 export function getReviewQueue(signal?: AbortSignal): Promise<ReviewQueue> {
@@ -4726,6 +4567,77 @@ export function saveChecklist(
     headers: JSON_HEADERS,
     body: JSON.stringify({ items, comment: comment ?? null, description: description ?? null }),
   });
+}
+
+export interface ChecklistMeta {
+  subject_kinds: ReviewKind[];
+  /** Keys `services/validator.py` answers on publish, per kind. `machine: true`
+   *  on anything else makes an item nobody can ever answer — the API refuses it
+   *  and the editor greys the flag out. */
+  machine_keys: Record<string, string[]>;
+}
+
+export function getChecklistMeta(signal?: AbortSignal): Promise<ChecklistMeta> {
+  return request("/api/checklists/meta", { signal });
+}
+
+export interface ResolvedChecklist {
+  kind: ReviewKind;
+  category_id: number | null;
+  /** `from` names the checklist an item came from — the base one, or the
+   *  category-scoped list that overrode it. */
+  items: { key: string; text: string; hint?: string; machine?: boolean; from: string }[];
+}
+
+/** What a subject of this kind (in this category) is actually measured
+ *  against: base checklist + every category-scoped one on the path. */
+export function resolveChecklist(
+  kind: ReviewKind,
+  categoryId: number | null,
+  signal?: AbortSignal,
+): Promise<ResolvedChecklist> {
+  const q = categoryId === null ? "" : `&category_id=${categoryId}`;
+  return request(`/api/checklists/resolve?kind=${kind}${q}`, { signal });
+}
+
+export interface ChecklistVersionDetail {
+  id: number;
+  name: string;
+  version_no: number;
+  created_at: string;
+  created_by: string;
+  comment: string | null;
+  items: ChecklistDetail["items"];
+}
+
+/** A past version's items — load one to read it or to put it back (saving
+ *  republishes it as a new version; the history is append-only). */
+export function getChecklistVersion(
+  id: number,
+  versionNo: number,
+  signal?: AbortSignal,
+): Promise<ChecklistVersionDetail> {
+  return request(`/api/checklists/${id}/versions/${versionNo}`, { signal });
+}
+
+export function createChecklist(body: {
+  name: string;
+  subject_kind: ReviewKind;
+  category_id: number | null;
+  description: string;
+  items: ChecklistDetail["items"];
+}): Promise<ChecklistDetail> {
+  return request("/api/checklists", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+/** Category-scoped lists only — the base checklist of a kind cannot be
+ *  deleted, and past verifications keep their own snapshot either way. */
+export function deleteChecklist(id: number): Promise<{ ok: true; deleted: string }> {
+  return request(`/api/checklists/${id}`, { method: "DELETE" });
 }
 
 // project design review

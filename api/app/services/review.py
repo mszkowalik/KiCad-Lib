@@ -136,7 +136,17 @@ def state_from_record(record: M.ReviewRecord | None, checklist_items: list[dict]
 
 
 def _checklist_items_of(db: Session, record: M.ReviewRecord | None) -> list[dict] | None:
-    if record is None or record.checklist_version_id is None:
+    """What this record was measured against — the snapshot it carries, else
+    the base checklist version it pinned (rows written before 2026-08-24).
+
+    Never re-resolve from the current checklists here: an edit to a checklist
+    would then rewrite the state of every check ever recorded.
+    """
+    if record is None:
+        return None
+    if record.checklist_items is not None:
+        return list(record.checklist_items)
+    if record.checklist_version_id is None:
         return None
     cv = db.get(M.ChecklistVersion, record.checklist_version_id)
     return list(cv.items or []) if cv else None
@@ -287,12 +297,22 @@ def record_check(db: Session, kind: str, parent, version_id: int, actor: str,
                 blocked.append(f"{key}: flagged needs a note saying what is wrong")
                 continue
             old = merged.get(key)
+            # A key the checklist does not define is a CUSTOM check — one this
+            # part needed and no checklist anticipated. It is legal (both the
+            # agent and the review card can add one), but it has to carry its
+            # own text: the record is the only place that text will ever live,
+            # and without it the item renders as a bare key forever.
+            text = str(item.get("text") or text_by_key.get(key)
+                       or (old or {}).get("text") or "").strip()
+            if not text:
+                blocked.append(f"{key}: not on the checklist, so it needs its own text")
+                continue
             if old is not None and TIER.get(old.get("actor_type", "machine"), 0) > TIER.get(actor_type, 0):
                 blocked.append(f"{key}: already answered by {old.get('actor_type')}")
                 continue
             merged[key] = {
                 "key": key,
-                "text": item.get("text") or text_by_key.get(key, ""),
+                "text": text,
                 "result": result,
                 "note": (item.get("note") or "").strip() or None,
                 "actor": actor,
@@ -307,6 +327,9 @@ def record_check(db: Session, kind: str, parent, version_id: int, actor: str,
         kind=record_kind,
         carried_from_id=prev.id if prev else None,
         checklist_version_id=resolved["checklist_version_id"],
+        # The FULL resolved list, category-scoped items included — see the
+        # column comment on M.ReviewRecord.checklist_items.
+        checklist_items=list(resolved["items"]),
         items=list(merged.values()) if merged is not None else None,
         note=(note or "").strip() or None,
         created_by=actor,
@@ -366,6 +389,7 @@ def carry_geometry(db: Session, kind: str, parent, old_version, new_version) -> 
         subject_kind=kind, subject_id=parent.id, subject_version_id=new_version.id,
         kind="carry", carried_from_id=prev.id,
         checklist_version_id=prev.checklist_version_id,
+        checklist_items=prev.checklist_items,  # a carry measures against the same list
         items=prev.items, note=(
             f"Carried from v{old_version.version_no}: "
             + ("nothing that reaches the board changed"
@@ -399,6 +423,7 @@ def carry_component(db: Session, comp: M.Component, old_cv, new_cv) -> dict | No
         subject_kind="component", subject_id=comp.id, subject_version_id=new_cv.id,
         kind="carry", carried_from_id=prev.id,
         checklist_version_id=prev.checklist_version_id,
+        checklist_items=prev.checklist_items,  # a carry measures against the same list
         items=prev.items,
         note=f"Carried from v{old_cv.version_no}: component data unchanged",
         created_by="review", actor_type=prev.actor_type,

@@ -177,8 +177,51 @@ def _get_component(db: Session, comp_id: int) -> M.Component:
     return comp
 
 
-def _version_summary(cv: M.ComponentVersion) -> dict:
+def _pin_currency(db: Session, comp: M.Component) -> dict[int, int | None]:
+    """version_id -> the version_no its PARENT serves now, for every geometry
+    version this component pins.
+
+    A component version pins the exact drawing it was generated against, while
+    KiCad is served the newest published one — so "pinned to v3, library serves
+    v5" is a real state a person needs to see, and it is invisible from the
+    version row alone. Resolved in four queries for the whole page rather than
+    per version row (the kicad_http lesson).
+    """
+    sym_vids = {v.symbol_version_id for v in comp.versions if v.symbol_version_id}
+    fp_vids = {v.footprint_version_id for v in comp.versions if v.footprint_version_id}
+    out: dict[int, int | None] = {}
+    for ver_model, parent_model, fk, vids in (
+            (M.SymbolVersion, M.Symbol, M.SymbolVersion.symbol_id, sym_vids),
+            (M.FootprintVersion, M.Footprint, M.FootprintVersion.footprint_id, fp_vids)):
+        if not vids:
+            continue
+        parent_of = dict(db.query(ver_model.id, fk).filter(ver_model.id.in_(vids)))
+        live = dict(db.query(parent_model.id, parent_model.current_version_id)
+                    .filter(parent_model.id.in_(set(parent_of.values()))))
+        live_ids = {i for i in live.values() if i}
+        numbers = dict(db.query(ver_model.id, ver_model.version_no)
+                       .filter(ver_model.id.in_(live_ids))) if live_ids else {}
+        for vid, pid in parent_of.items():
+            out[vid] = numbers.get(live.get(pid))
+    return out
+
+
+def _version_summary(cv: M.ComponentVersion, live_nos: dict[int, int | None] | None = None) -> dict:
     sv, fv = cv.symbol_version, cv.footprint_version
+    live_nos = live_nos or {}
+
+    def pin(version, parent, parent_id) -> dict:
+        """One pinned drawing: what it is, where it lives, and whether the
+        library still serves it."""
+        live_no = live_nos.get(version.id)
+        return {
+            "id": parent_id,               # the parent row — what a link points at
+            "name": parent.name,
+            "version_no": version.version_no,
+            "current_version_no": live_no,
+            "is_current": live_no is None or live_no == version.version_no,
+        }
+
     return {
         "version_no": cv.version_no,
         "status": cv.status,
@@ -189,8 +232,8 @@ def _version_summary(cv: M.ComponentVersion) -> dict:
         "category_id": cv.category_id,
         "category_path": category_path(cv.category),
         "base_component": cv.base_component,
-        "symbol": {"name": sv.symbol.name, "version_no": sv.version_no} if sv else None,
-        "footprint": {"name": fv.footprint.name, "version_no": fv.version_no} if fv else None,
+        "symbol": pin(sv, sv.symbol, sv.symbol_id) if sv else None,
+        "footprint": pin(fv, fv.footprint, fv.footprint_id) if fv else None,
     }
 
 
@@ -198,13 +241,14 @@ def _version_summary(cv: M.ComponentVersion) -> dict:
 def component_detail(comp_id: int, db: Session = Depends(get_db)):
     comp = _get_component(db, comp_id)
     cv = current_version(comp)
+    live_nos = _pin_currency(db, comp)
     return {
         "id": comp.id,
         "name": comp.name,
         "in_library": comp.in_library,
         "purchasable": comp.purchasable,
         "current_version_no": cv.version_no if cv else None,
-        "versions": [_version_summary(v) for v in comp.versions],
+        "versions": [_version_summary(v, live_nos) for v in comp.versions],
         # The badge. Full history and the geometry labels come from
         # GET /api/components/{id}/signoff, which the sign-off card calls.
         "signoff": signoff.state_for(db, comp)["state"],
@@ -217,8 +261,12 @@ def _review_badge(db: Session, comp: M.Component, cv: M.ComponentVersion | None)
     from ..services import review as review_svc
 
     eff = review_svc.component_effective(db, comp, cv)
+    # `parts` is the per-drawing breakdown the aggregate is the WEAKEST of.
+    # Without it the page can only say "partial" and leave the user to guess
+    # which of the three — the data, the symbol or the land pattern — is the
+    # one nobody has checked.
     return {"state": eff["state"], "provenance": eff.get("provenance"),
-            "blockers": eff.get("blockers", [])}
+            "blockers": eff.get("blockers", []), "parts": eff.get("parts", {})}
 
 
 def _get_version(comp: M.Component, version_no: int) -> M.ComponentVersion:
@@ -234,7 +282,7 @@ def version_detail(comp_id: int, version_no: int, db: Session = Depends(get_db))
     cv = _get_version(comp, version_no)
     props = props_dict(cv)
     return {
-        **_version_summary(cv),
+        **_version_summary(cv, _pin_currency(db, comp)),
         "component_id": comp.id,
         "component_name": comp.name,
         # Component-scoped (identical across versions): auto-managed data.
@@ -408,7 +456,7 @@ def create_version(comp_id: int, body: VersionCreate, db: Session = Depends(get_
     comp = _get_component(db, comp_id)  # reload with relationships
     cv = next(v for v in comp.versions if v.version_no == new_no)
     return {
-        **_version_summary(cv),
+        **_version_summary(cv, _pin_currency(db, comp)),
         "component_id": comp.id,
         "component_name": comp.name,
         "mirror": {k: v for k, v in mirror_result.items() if k != "warnings"},
@@ -474,8 +522,8 @@ class ComponentCreate(VersionCreate):
 
 @router.post("")
 def create_component(body: ComponentCreate, db: Session = Depends(get_db)):
-    """Manually add a new component (v1 published — the user creating IS the
-    approval). Jaravis proposals go through the draft flow instead."""
+    """Manually add a new component: v1, published. Every door publishes now —
+    the agent's tools included — so there is no other flow to contrast with."""
     name = body.name.strip()
     if not name:
         raise HTTPException(422, "component name must not be empty")

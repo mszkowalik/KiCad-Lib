@@ -14,7 +14,7 @@ import CommentsPanel from "../components/CommentsPanel";
 import ReviewCard from "../components/ReviewCard";
 import { useDialog } from "../components/Dialog";
 import GeometryPaste from "../components/GeometryPaste";
-import { ErrorBanner, Spinner } from "../components/Ui";
+import { BackLink, ErrorBanner, Spinner } from "../components/Ui";
 
 function isKind(k: string | undefined): k is TemplateKind {
   return k === "symbols" || k === "footprints";
@@ -114,9 +114,9 @@ export default function TemplateDetail() {
     return (
       <div className="main-solo">
         <div className="page">
-          <Link to="/library/templates" className="backlink">
+          <BackLink to="/library/templates" className="backlink">
             ← All templates
-          </Link>
+          </BackLink>
           <ErrorBanner message={error} />
         </div>
       </div>
@@ -127,9 +127,9 @@ export default function TemplateDetail() {
     return (
       <div className="main-solo">
         <div className="page">
-          <Link to="/library/templates" className="backlink">
+          <BackLink to="/library/templates" className="backlink">
             ← All templates
-          </Link>
+          </BackLink>
           <Spinner label="Loading template" />
         </div>
       </div>
@@ -141,9 +141,9 @@ export default function TemplateDetail() {
   return (
     <div className="main-solo">
       <div className="page">
-        <Link to="/library/templates" className="backlink">
+        <BackLink to="/library/templates" className="backlink">
           ← All templates
-        </Link>
+        </BackLink>
         <div className="toolbar">
           <h1 className="mono">{data.name}</h1>
           <span className="pill neutral">{data.kind}</span>
@@ -190,12 +190,13 @@ export default function TemplateDetail() {
           <h2 className="card-title">Preview</h2>
           <div className="preview-fill template-preview">
             {data.version_no === null ? (
-              // Draft-only template: the parent row exists with no published
-              // version, so /preview.svg 404s by design. Without this branch the
-              // <img> onError below reported it as a render-service outage.
+              // A parent row with no published version: a creation that was
+              // filed as a draft before writes published directly, and never
+              // approved. /preview.svg 404s by design, and without this branch
+              // the <img> onError below called it a render-service outage.
               <p className="placeholder">
-                No published version yet — this template exists only as a draft.
-                Preview it in <Link to="/proposals">Proposals</Link>.
+                No published version — nothing to preview. Paste the source below to publish
+                one.
               </p>
             ) : previewFailed ? (
               <p className="placeholder">

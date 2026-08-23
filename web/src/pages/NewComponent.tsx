@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { createComponent, errorMessage } from "../api";
 import {
   BaseSymbolSelect,
@@ -13,7 +13,7 @@ import {
   type EditDs,
   type EditRow,
 } from "../components/editing";
-import { ErrorBanner } from "../components/Ui";
+import { BackLink, ErrorBanner } from "../components/Ui";
 
 const FP_DATALIST_ID = "fp-options-new";
 
@@ -74,9 +74,9 @@ export default function NewComponent() {
   return (
     <div className="main-solo">
       <div className="page">
-        <Link to="/" className="backlink">
+        <BackLink to="/" className="backlink">
           &larr; Browse
-        </Link>
+        </BackLink>
         <h1>New component</h1>
         <p className="muted">
           Creates a published v1 directly — you are the approval. Names are globally unique.

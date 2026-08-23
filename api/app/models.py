@@ -517,7 +517,10 @@ class ReviewRecord(Base):
     version read *checked (partial)*; ``failed`` = a machine check found a
     concrete violation. Ad-hoc points beyond the checklist use ``custom:``
     keys. Items are matched to the checklist named by
-    ``checklist_version_id``; unanswered checklist items count as partial.
+    ``checklist_version_id``; unanswered checklist items count as partial. The
+    checklist those items come from is snapshotted in ``checklist_items`` (see
+    the column comment) — never re-resolved on read, or an edit to a checklist
+    would rewrite the state of every past check.
 
     ``kind``: ``check`` (someone verified) | ``carry`` (the record moved to a
     new version because nothing material changed, or the change was waived —
@@ -540,6 +543,14 @@ class ReviewRecord(Base):
         ForeignKey("checklist_versions.id"), nullable=True
     )
     items: Mapped[list | None] = mapped_column(JSONB, nullable=True)  # None = one-click human check
+    #: The RESOLVED checklist this record was measured against — base checklist
+    #: plus every category-scoped one that applied, snapshotted. Without it
+    #: `checklist_version_id` names the base version alone, so a category-scoped
+    #: item was expected while the check was being written and forgotten on the
+    #: next page load: an unanswered one silently upgraded the state from
+    #: "partial" to "checked". NULL on rows written before 2026-08-24, which
+    #: fall back to the pinned base version.
+    checklist_items: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[str] = mapped_column(String(100), default="user")
     actor_type: Mapped[str] = mapped_column(String(20), default="human")  # machine | agent | human

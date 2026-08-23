@@ -18,8 +18,9 @@ import { ErrorBanner } from "./Ui";
  *
  * Editing passes `id`, which is how the server learns the name; creating omits
  * it and the server reads the name out of the pasted text. Either way this
- * only ever files a DRAFT: approval, and the published before/after, live in
- * the Proposals view.
+ * PUBLISHES: the new version is live in the library, the mirror and KiCad as
+ * soon as the server answers. Preview first — that render is the only look
+ * before the fact, now that there is no approval step to look at it in.
  */
 export default function GeometryPaste({
   kind,
@@ -41,6 +42,10 @@ export default function GeometryPaste({
   const [src, setSrc] = useState(publishedSource ?? "");
   const [newName, setNewName] = useState("");
   const [comment, setComment] = useState("");
+  // The recheck waiver. Unticked = null (nobody was asked) and the server
+  // decides by material fingerprint; ticked = "small change", which carries
+  // sign-offs and verifications across the new drawing under the user's name.
+  const [minorChange, setMinorChange] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<GeometryProposalResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -64,7 +69,7 @@ export default function GeometryPaste({
   };
 
   /** Render the pasted text through kicad-cli without saving anything, so a
-   *  mistake is visible before it becomes a proposal. */
+   *  mistake is visible before it is published. */
   const preview = async () => {
     if (!src.trim() || rendering) return;
     const ctrl = new AbortController();
@@ -91,7 +96,7 @@ export default function GeometryPaste({
     try {
       const res = creating
         ? await proposeNewTemplate(kind, src, comment, newName)
-        : await proposeTemplateEdit(kind, id, src, comment);
+        : await proposeTemplateEdit(kind, id, src, comment, minorChange ? true : null);
       setResult(res);
       if (creating) {
         setSrc("");
@@ -124,8 +129,9 @@ export default function GeometryPaste({
         {creating
           ? `Paste a whole ${ext} body, or drop the file on the box. The name is read from the pasted text; type one below when it has none of its own.`
           : `Paste the ${noun} from the KiCad editor, or drop a ${ext} file on the box. The text is prefilled with the published source, so select all and paste over it.`}{" "}
-        Filing creates a <strong>draft</strong>. Nothing changes until you approve it in
-        Proposals, where you get the visual before/after.
+        Saving <strong>publishes</strong> — the new version reaches the library, the file
+        mirror and KiCad straight away. Versions are immutable, so the way back is to paste
+        the old source and save again.
       </p>
       {!creating ? (
         <p className="muted">
@@ -171,11 +177,28 @@ export default function GeometryPaste({
           className="text"
           value={comment}
           maxLength={2000}
-          placeholder="What changed and why — shown in the proposal review"
-          aria-label="Proposal comment"
+          placeholder="What changed and why — kept in the version history"
+          aria-label="Version comment"
           onChange={(e) => setComment(e.target.value)}
         />
       </div>
+      {!creating ? (
+        <div className="skill-desc">
+          <label className="proj-inline-field proj-check">
+            <input
+              type="checkbox"
+              checked={minorChange}
+              onChange={(e) => setMinorChange(e.target.checked)}
+            />
+            Small change — keep the existing verifications and production sign-offs
+          </label>
+          <span className="rail-hint">
+            Tick only for an edit that cannot change what reaches the board: silkscreen,
+            fab, a description. A moved pad or a changed pin must drop them, and leaving
+            this unticked lets the platform compare the pad and pin fingerprints itself.
+          </span>
+        </div>
+      ) : null}
       <div className="btn-row">
         <button
           type="button"
@@ -183,7 +206,7 @@ export default function GeometryPaste({
           disabled={busy || !src.trim() || !comment.trim()}
           onClick={() => void file()}
         >
-          {busy ? "Filing…" : creating ? `File new ${noun}` : "File draft"}
+          {busy ? "Publishing…" : creating ? `Publish new ${noun}` : "Publish version"}
         </button>
         <button type="button" className="btn" disabled={rendering || !src.trim()} onClick={() => void preview()}>
           {rendering ? "Rendering…" : stale ? "Re-render preview" : "Preview"}
@@ -222,8 +245,8 @@ export default function GeometryPaste({
       {result ? (
         <>
           <div className="banner-ok">
-            Draft v{result.version_no} filed. <Link to="/proposals">Review it in Proposals</Link> to
-            see the before/after and approve it.
+            Published v{result.version_no}. It is live in the library and the KiCad mirror;
+            what still needs checking is in <Link to="/reviews">Reviews</Link>.
           </div>
           {result.warnings.length > 0 ? (
             <div className="banner-warn">

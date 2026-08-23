@@ -1,4 +1,49 @@
-/** Small shared UI atoms: spinner, error banner, status pill. */
+/** Small shared UI atoms: spinner, error banner, status pill, back link. */
+import { Link, useNavigate } from "react-router-dom";
+
+/** "← Back" that means BACK, not UP.
+ *
+ * Every one of these used to be a plain `<Link to={somewhere}>` naming a place
+ * in the site hierarchy — so opening a footprint from a component and pressing
+ * Back landed you in the footprint LIST, not on the component you came from,
+ * and the trail to finish verifying that part was gone. React Router keeps its
+ * position in the history stack on `history.state.idx`, so `idx > 0` means
+ * there IS an in-app entry behind this one and `navigate(-1)` returns to it.
+ *
+ * `to` stays required and stays the anchor's real href: it is the answer for a
+ * page opened directly (a pasted link, a new tab, `idx === 0`), and keeping a
+ * real href is what preserves middle-click and "open in new tab".
+ */
+export function BackLink({
+  to,
+  children,
+  className = "backlink",
+}: {
+  /** Where to go when there is no history to go back to. */
+  to: string;
+  children?: React.ReactNode;
+  className?: string;
+}) {
+  const navigate = useNavigate();
+  const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+  return (
+    <Link
+      to={to}
+      className={className}
+      onClick={(e) => {
+        // Let the browser handle the modified clicks it already handles well.
+        if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0)
+          return;
+        if (idx > 0) {
+          e.preventDefault();
+          navigate(-1);
+        }
+      }}
+    >
+      {children ?? <>&larr; Back</>}
+    </Link>
+  );
+}
 
 export function Spinner({ label }: { label?: string }) {
   return (

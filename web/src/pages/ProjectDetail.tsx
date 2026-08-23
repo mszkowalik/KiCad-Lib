@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import {
   deleteProject,
   errorMessage,
@@ -11,7 +11,7 @@ import {
   type ProjectInfo,
   type SnapshotInfo,
 } from "../api";
-import { ErrorBanner, Spinner } from "../components/Ui";
+import { BackLink, ErrorBanner, Spinner } from "../components/Ui";
 import { useStickyState } from "../useStickyState";
 import BomTab from "../components/project/BomTab";
 import BoardTab from "../components/project/BoardTab";
@@ -138,7 +138,7 @@ export default function ProjectDetail() {
       <div className="main-solo">
         <div className="page">
           <ErrorBanner message={error} />
-          <Link className="backlink" to="/projects">← All projects</Link>
+          <BackLink to="/projects">← All projects</BackLink>
         </div>
       </div>
     );
@@ -156,7 +156,7 @@ export default function ProjectDetail() {
       <div className="page">
         <div className="detail-top">
           <div>
-            <Link className="backlink" to="/projects">← All projects</Link>
+            <BackLink to="/projects">← All projects</BackLink>
             <h1>{project.name}</h1>
             <div className="muted mono">{project.git_url}</div>
           </div>

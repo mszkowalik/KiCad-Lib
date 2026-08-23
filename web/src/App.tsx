@@ -1,4 +1,3 @@
-import { createContext, useCallback, useEffect, useState } from "react";
 import {
   Link,
   Navigate,
@@ -9,10 +8,10 @@ import {
   useLocation,
   useParams,
 } from "react-router-dom";
-import { getProposals } from "./api";
 import { AuthGate, useAuth } from "./auth";
 import { DialogProvider } from "./components/Dialog";
 import Browse from "./pages/Browse";
+import Checklists from "./pages/Checklists";
 import ComponentDetail from "./pages/ComponentDetail";
 import DeviceDetail from "./pages/DeviceDetail";
 import Devices from "./pages/Devices";
@@ -29,20 +28,12 @@ import ProductionOverview from "./pages/ProductionOverview";
 import ProductionWrites from "./pages/ProductionWrites";
 import ProjectDetail from "./pages/ProjectDetail";
 import Projects from "./pages/Projects";
-import Proposals from "./pages/Proposals";
 import Reviews from "./pages/Reviews";
 import RunDetail from "./pages/RunDetail";
 import Setup from "./pages/Setup";
 import Skills from "./pages/Skills";
 import Templates from "./pages/Templates";
 import TemplateDetail from "./pages/TemplateDetail";
-
-/** Live pending-proposals count for the nav badge. `refresh()` after any
- *  approve/reject or when the agent reports new proposals. */
-export const ProposalsBadge = createContext<{ count: number; refresh: () => void }>({
-  count: 0,
-  refresh: () => {},
-});
 
 function NotFound() {
   return (
@@ -85,6 +76,11 @@ const LIBRARY_LINKS = [
   { to: "/library/components", label: "Components" },
   { to: "/library/templates", label: "Symbols & footprints" },
   { to: "/library/skills", label: "Skills" },
+];
+
+const REVIEW_LINKS = [
+  { to: "/reviews", label: "Queue", end: true },
+  { to: "/reviews/checklists", label: "Checklists" },
 ];
 
 const PRODUCTION_LINKS = [
@@ -132,109 +128,94 @@ function UserMenu() {
 /** The app itself. Rendered only AFTER the gate has a signed-in user, so no
  *  screen and no background fetch here ever runs anonymously. */
 function Shell() {
-  const [proposalCount, setProposalCount] = useState(0);
-
-  const refresh = useCallback(() => {
-    getProposals()
-      .then((list) => setProposalCount(list.length))
-      .catch(() => {
-        /* nav badge only — never surface errors here */
-      });
-  }, []);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
   return (
     <DialogProvider>
-      <ProposalsBadge.Provider value={{ count: proposalCount, refresh }}>
-        <div className="app">
-          <header className="topbar">
-            <Link to="/" className="brand">
-              Project Management Platform
-            </Link>
-            <nav className="topbar-nav">
-              <NavLink to="/library" className={navClass}>
-                Library
-              </NavLink>
-              <NavLink to="/projects" className={navClass}>
-                Projects
-              </NavLink>
-              <NavLink to="/production" className={navClass}>
-                Production
-              </NavLink>
-              <NavLink to="/reviews" className={navClass}>
-                Reviews
-              </NavLink>
-              <NavLink to="/proposals" className={navClass}>
-                Proposals
-                {proposalCount > 0 ? <span className="badge">{proposalCount}</span> : null}
-              </NavLink>
-              <NavLink to="/setup" className={navClass}>
-                Setup
-              </NavLink>
-              <UserMenu />
-            </nav>
-          </header>
-          <Routes>
-            <Route path="/" element={<RedirectBrowse />} />
+      <div className="app">
+        <header className="topbar">
+          <Link to="/" className="brand">
+            Project Management Platform
+          </Link>
+          <nav className="topbar-nav">
+            <NavLink to="/library" className={navClass}>
+              Library
+            </NavLink>
+            <NavLink to="/projects" className={navClass}>
+              Projects
+            </NavLink>
+            <NavLink to="/production" className={navClass}>
+              Production
+            </NavLink>
+            <NavLink to="/reviews" className={navClass}>
+              Reviews
+            </NavLink>
+            <NavLink to="/setup" className={navClass}>
+              Setup
+            </NavLink>
+            <UserMenu />
+          </nav>
+        </header>
+        <Routes>
+          <Route path="/" element={<RedirectBrowse />} />
 
-            {/* Library */}
-            <Route element={<SectionNav links={LIBRARY_LINKS} />}>
-              <Route path="/library" element={<Navigate to="/library/components" replace />} />
-              <Route path="/library/components" element={<Browse />} />
-              <Route path="/library/components/new" element={<NewComponent />} />
-              <Route path="/library/components/:id" element={<ComponentDetail />} />
-              <Route path="/library/templates" element={<Templates />} />
-              <Route path="/library/templates/:kind/:id" element={<TemplateDetail />} />
-              <Route path="/library/skills/:id?" element={<Skills />} />
-            </Route>
+          {/* Library */}
+          <Route element={<SectionNav links={LIBRARY_LINKS} />}>
+            <Route path="/library" element={<Navigate to="/library/components" replace />} />
+            <Route path="/library/components" element={<Browse />} />
+            <Route path="/library/components/new" element={<NewComponent />} />
+            <Route path="/library/components/:id" element={<ComponentDetail />} />
+            <Route path="/library/templates" element={<Templates />} />
+            <Route path="/library/templates/:kind/:id" element={<TemplateDetail />} />
+            <Route path="/library/skills/:id?" element={<Skills />} />
+          </Route>
 
-            {/* Projects */}
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/projects/:id" element={<ProjectDetail />} />
-            <Route path="/runs/:id" element={<RunDetail />} />
+          {/* Projects */}
+          <Route path="/projects" element={<Projects />} />
+          <Route path="/projects/:id" element={<ProjectDetail />} />
+          <Route path="/runs/:id" element={<RunDetail />} />
 
-            {/* Production */}
-            <Route element={<SectionNav links={PRODUCTION_LINKS} />}>
-              <Route path="/production" element={<ProductionOverview />} />
-              <Route path="/production/invoices" element={<Invoices />} />
-              <Route path="/production/stock" element={<Stock />} />
-              <Route path="/production/jlc" element={<ProductionJlc />} />
-              <Route path="/production/deployments" element={<Deployments />} />
-              <Route path="/production/files" element={<FlasherAdmin />} />
-              <Route path="/production/artifacts" element={<Navigate to="/production/files" replace />} />
-              <Route path="/production/flasher" element={<Navigate to="/production/deployments" replace />} />
-              <Route path="/production/bench" element={<FlashBench />} />
-              <Route path="/production/devices" element={<Devices />} />
-              <Route path="/production/devices/:id" element={<DeviceDetail />} />
-              <Route path="/production/flash-runs/:id" element={<FlashRunDetail />} />
-              <Route path="/production/writes" element={<ProductionWrites />} />
-            </Route>
+          {/* Production */}
+          <Route element={<SectionNav links={PRODUCTION_LINKS} />}>
+            <Route path="/production" element={<ProductionOverview />} />
+            <Route path="/production/invoices" element={<Invoices />} />
+            <Route path="/production/stock" element={<Stock />} />
+            <Route path="/production/jlc" element={<ProductionJlc />} />
+            <Route path="/production/deployments" element={<Deployments />} />
+            <Route path="/production/files" element={<FlasherAdmin />} />
+            <Route path="/production/artifacts" element={<Navigate to="/production/files" replace />} />
+            <Route path="/production/flasher" element={<Navigate to="/production/deployments" replace />} />
+            <Route path="/production/bench" element={<FlashBench />} />
+            <Route path="/production/devices" element={<Devices />} />
+            <Route path="/production/devices/:id" element={<DeviceDetail />} />
+            <Route path="/production/flash-runs/:id" element={<FlashRunDetail />} />
+            <Route path="/production/writes" element={<ProductionWrites />} />
+          </Route>
 
+          <Route element={<SectionNav links={REVIEW_LINKS} />}>
             <Route path="/reviews" element={<Reviews />} />
-            <Route path="/proposals" element={<Proposals />} />
-            <Route path="/setup" element={<Setup />} />
-            <Route path="/view" element={<FileViewer />} />
+            <Route path="/reviews/checklists" element={<Checklists />} />
+          </Route>
+          <Route path="/setup" element={<Setup />} />
+          <Route path="/view" element={<FileViewer />} />
 
-            {/* Old addresses keep working */}
-            <Route
-              path="/components/new"
-              element={<Navigate to="/library/components/new" replace />}
-            />
-            <Route path="/components/:id" element={<RedirectComponent />} />
-            <Route path="/templates" element={<Navigate to="/library/templates" replace />} />
-            <Route path="/templates/:kind/:id" element={<RedirectTemplate />} />
-            <Route path="/skills" element={<Navigate to="/library/skills" replace />} />
-            <Route path="/invoices" element={<Navigate to="/production/invoices" replace />} />
-            <Route path="/parts-stock" element={<Navigate to="/production/stock" replace />} />
-            <Route path="/jlc-stock" element={<Navigate to="/production/stock" replace />} />
-            <Route path="/kicad" element={<Navigate to="/setup" replace />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </div>
-      </ProposalsBadge.Provider>
+          {/* Old addresses keep working */}
+          <Route
+            path="/components/new"
+            element={<Navigate to="/library/components/new" replace />}
+          />
+          <Route path="/components/:id" element={<RedirectComponent />} />
+          <Route path="/templates" element={<Navigate to="/library/templates" replace />} />
+          <Route path="/templates/:kind/:id" element={<RedirectTemplate />} />
+          <Route path="/skills" element={<Navigate to="/library/skills" replace />} />
+          <Route path="/invoices" element={<Navigate to="/production/invoices" replace />} />
+          <Route path="/parts-stock" element={<Navigate to="/production/stock" replace />} />
+          <Route path="/jlc-stock" element={<Navigate to="/production/stock" replace />} />
+          <Route path="/kicad" element={<Navigate to="/setup" replace />} />
+          {/* The approval queue is gone (2026-08-24) — every write publishes.
+              Reviews is where a published version is judged now. */}
+          <Route path="/proposals" element={<Navigate to="/reviews" replace />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </div>
     </DialogProvider>
   );
 }
