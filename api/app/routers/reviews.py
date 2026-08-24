@@ -688,6 +688,8 @@ def review_queue(snapshot_id: int | None = None, db: Session = Depends(get_db)):
             s = states[p.id]
             n = users.get(p.name if kind == "symbol" else p.id, 0)
             rows.append({"id": p.id, "name": p.name, "kind": kind,
+                         # the preview URL's cache key (libraries._preview)
+                         "version_id": p.current_version_id,
                          "review_state": s["state"], "provenance": s.get("provenance"),
                          "skipped": s["skipped"], "failed": s["failed"],
                          "unanswered": len(s["unanswered"]),

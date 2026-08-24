@@ -16,10 +16,14 @@ export default function TemplateThumb({
   kind,
   id,
   name,
+  versionId,
 }: {
   kind: TemplateKind;
   id: number;
   name: string;
+  /** Live version id — keys the URL so a republished drawing shows the NEW
+   *  picture instead of whatever the browser already had. */
+  versionId?: number | null;
 }) {
   const [pop, setPop] = useState<{ x: number; y: number } | null>(null);
   const [failed, setFailed] = useState(false);
@@ -40,7 +44,7 @@ export default function TemplateThumb({
     >
       <img
         className="tpl-thumb"
-        src={templatePreviewUrl(kind, id)}
+        src={templatePreviewUrl(kind, id, versionId)}
         loading="lazy"
         alt={name}
         onError={() => setFailed(true)}
@@ -49,7 +53,7 @@ export default function TemplateThumb({
         <img
           className="tpl-thumb-pop"
           style={{ left: pop.x, top: pop.y }}
-          src={templatePreviewUrl(kind, id)}
+          src={templatePreviewUrl(kind, id, versionId)}
           alt={name}
         />
       ) : null}

@@ -74,6 +74,8 @@ def list_symbols(db: Session = Depends(get_db)):
             "id": s.id,
             "name": s.name,
             "version_no": cur.version_no if cur else None,
+            # the preview URL's cache key — see _preview()
+            "version_id": cur.id if cur else None,
             "pin_count": (cur.parsed or {}).get("pin_count") if cur else None,
             "comment_count": counts.get(s.id, 0),
         })
@@ -93,6 +95,8 @@ def list_footprints(db: Session = Depends(get_db)):
             "id": f.id,
             "name": f.name,
             "version_no": cur.version_no if cur else None,
+            # the preview URL's cache key — see _preview()
+            "version_id": cur.id if cur else None,
             "pad_count": (cur.parsed or {}).get("pad_count") if cur else None,
             "comment_count": counts.get(f.id, 0),
         })
@@ -111,6 +115,8 @@ def get_symbol(sym_id: int, db: Session = Depends(get_db)):
         "name": s.name,
         "kind": "symbol",
         "version_no": cur.version_no if cur else None,
+            # the preview URL's cache key — see _preview()
+            "version_id": cur.id if cur else None,
         "created_at": cur.created_at.isoformat() if cur else None,
         "created_by": cur.created_by if cur else None,
         "comment": cur.comment if cur else None,
@@ -132,6 +138,8 @@ def get_footprint(fp_id: int, db: Session = Depends(get_db)):
         "display_name": f.display_name or "",
         "kind": "footprint",
         "version_no": cur.version_no if cur else None,
+            # the preview URL's cache key — see _preview()
+            "version_id": cur.id if cur else None,
         "created_at": cur.created_at.isoformat() if cur else None,
         "created_by": cur.created_by if cur else None,
         "comment": cur.comment if cur else None,
@@ -387,7 +395,25 @@ def delete_footprint(fp_id: int, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------- preview
-def _preview(kind: str, parent, db: Session) -> Response:
+def _preview(kind: str, parent, db: Session, v: int | None = None) -> Response:
+    """The current version, rendered.
+
+    ``v`` is a CACHE KEY, not a selector: it never changes what is rendered.
+    The URL used to be `/api/footprints/28/preview.svg` for every version of
+    footprint 28, so nothing ever told a browser — or an `<img>` already in the
+    DOM — that the drawing had moved. Pushing a new land pattern left the old
+    picture on screen until a hard reload, which reads as "the upload did not
+    work" (reported 2026-08-24 on D_SOD-323, whose pads went 0.6x0.45 ->
+    0.7x0.7). Callers pass the live version id; a new version is a new URL, so
+    staleness is impossible and the response can then be cached hard — these
+    are kicad-cli renders, the most expensive GET in the app.
+
+    A stale `v` (an older id) still renders the CURRENT drawing. That is
+    deliberate: this endpoint means "what does this template look like now",
+    and a caller holding an old id is out of date about the version, not
+    entitled to an old picture. `GET /api/{kind}/{id}/versions/...` is where
+    history lives.
+    """
     cur = _current(parent)
     if cur is None:
         raise HTTPException(404, "no published version to preview")
@@ -395,21 +421,27 @@ def _preview(kind: str, parent, db: Session) -> Response:
         svg = render_svg(kind, parent.name, cur.source_text)
     except Exception as e:  # noqa: BLE001 — surface render failures to the UI
         raise HTTPException(502, f"render failed: {e}") from e
+    # Immutable ONLY when the caller keyed the URL to the version it wanted and
+    # that is the version we rendered. Otherwise the URL is version-agnostic
+    # and must never be held.
+    fresh = v is not None and v == cur.id
+    cache = ("public, max-age=31536000, immutable" if fresh else "no-cache")
     return Response(content=svg, media_type="image/svg+xml",
-                    headers={"Cache-Control": "no-cache"})
+                    headers={"Cache-Control": cache,
+                             "X-Version-Id": str(cur.id)})
 
 
 @router.get("/symbols/{sym_id}/preview.svg")
-def symbol_preview(sym_id: int, db: Session = Depends(get_db)):
+def symbol_preview(sym_id: int, v: int | None = None, db: Session = Depends(get_db)):
     s = db.get(M.Symbol, sym_id)
     if s is None:
         raise HTTPException(404, "symbol not found")
-    return _preview("symbol", s, db)
+    return _preview("symbol", s, db, v)
 
 
 @router.get("/footprints/{fp_id}/preview.svg")
-def footprint_preview(fp_id: int, db: Session = Depends(get_db)):
+def footprint_preview(fp_id: int, v: int | None = None, db: Session = Depends(get_db)):
     f = db.get(M.Footprint, fp_id)
     if f is None:
         raise HTTPException(404, "footprint not found")
-    return _preview("footprint", f, db)
+    return _preview("footprint", f, db, v)

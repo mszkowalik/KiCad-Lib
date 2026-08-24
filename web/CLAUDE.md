@@ -252,6 +252,17 @@ sign-off states to `STATUS_TONES`.
   tabs sort by `used_by` (leverage) before name; keep that ordering, it is
   the point of the column. "Queue shown → agent" files review requests;
   "Confirm agent checks" is the bulk human confirmation.
+- **A preview URL must carry the version: `templatePreviewUrl(kind, id, versionId)`.**
+  Without it the URL is the same for every version of a template, so a browser
+  — or an `<img>` already mounted — has no reason to refetch and a freshly
+  pushed land pattern keeps showing the old picture until a hard reload
+  (reported 2026-08-24: D_SOD-323's pads went 0.6x0.45 -> 0.7x0.7 and the
+  image did not move). With it the server answers `immutable` for a year, which
+  also stops re-rendering the most expensive GET in the app. Every payload that
+  feeds a preview now carries `version_id` beside `version_no`.
+- **The Reviews queue refetches on window focus** and has a Refresh button:
+  pushing from KiCad changes its data behind its back, and returning to the
+  browser is exactly when it is read.
 - **`dialog.select`** exists alongside confirm/prompt/alert — a fixed radio
   set resolving the chosen value or null. Use it where a preset beats free
   text (the skip-reason codes were the first user).

@@ -690,6 +690,12 @@ review axis records who verified each version against its documentation.
   A human UI save publishes a version directly; the agent never edits
   checklists. The editor is `web/src/pages/Checklists.tsx`
   (`/reviews/checklists`), and four rules hold it up:
+  - **`GET /api/{kind}/{id}/preview.svg?v=<version_id>`**: `v` is a CACHE KEY,
+    never a selector — it always renders the CURRENT drawing. It exists so the
+    URL changes when the drawing does; a matching `v` gets
+    `immutable, max-age=1y`, a missing or stale one gets `no-cache`, and
+    `X-Version-Id` always reports what was rendered. Before this the URL was
+    version-agnostic and a pushed footprint kept showing its old picture.
   - **The agent worklist** (`review_requests`, endpoints under
     `/api/reviews/requests`): the user queues subjects from the Reviews page,
     the agent reads them with the `get_review_worklist` tool, and

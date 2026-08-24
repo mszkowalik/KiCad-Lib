@@ -4,6 +4,7 @@ import {
   datasheetFileUrl,
   errorMessage,
   getComponent,
+  getTemplate,
   getVersion,
   isAbortError,
   symbolSvgUrl,
@@ -38,6 +39,11 @@ export function ComponentWorkbench({
   const [version, setVersion] = useState<VersionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dsIndex, setDsIndex] = useState(0);
+  // The pinned footprint's LIVE version id — the preview URL's cache key, so a
+  // freshly pushed land pattern shows the new drawing rather than the picture
+  // the browser already has. The component's own version tells us which
+  // version it PINS, which is not necessarily what the library serves.
+  const [footprintVersionId, setFootprintVersionId] = useState<number | null>(null);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -45,11 +51,17 @@ export function ComponentWorkbench({
     setVersion(null);
     setError(null);
     setDsIndex(0);
+    setFootprintVersionId(null);
     getComponent(compId, ctrl.signal)
-      .then((d) => {
+      .then(async (d) => {
         setDetail(d);
-        if (d.current_version_no !== null)
-          return getVersion(compId, d.current_version_no, ctrl.signal).then(setVersion);
+        if (d.current_version_no === null) return;
+        const v = await getVersion(compId, d.current_version_no, ctrl.signal);
+        setVersion(v);
+        if (v.footprint)
+          setFootprintVersionId(
+            (await getTemplate("footprints", v.footprint.id, ctrl.signal)).version_id,
+          );
       })
       .catch((err) => {
         if (!isAbortError(err)) setError(errorMessage(err));
@@ -104,7 +116,7 @@ export function ComponentWorkbench({
           {live?.footprint ? (
             <img
               className="workbench-preview"
-              src={templatePreviewUrl("footprints", live.footprint.id)}
+              src={templatePreviewUrl("footprints", live.footprint.id, footprintVersionId)}
               alt="footprint"
             />
           ) : null}
@@ -148,11 +160,14 @@ export function TemplateWorkbench({
   kind,
   id,
   name,
+  versionId,
   onChanged,
 }: {
   kind: "symbol" | "footprint";
   id: number;
   name: string;
+  /** Live version id, for the preview URL's cache key. */
+  versionId?: number | null;
   onChanged?: () => void;
 }) {
   return (
@@ -168,7 +183,7 @@ export function TemplateWorkbench({
       <div className="workbench-side">
         <img
           className="workbench-preview workbench-preview-lg"
-          src={templatePreviewUrl(kind === "symbol" ? "symbols" : "footprints", id)}
+          src={templatePreviewUrl(kind === "symbol" ? "symbols" : "footprints", id, versionId)}
           alt={name}
         />
       </div>

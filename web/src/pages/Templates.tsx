@@ -22,7 +22,7 @@ const symbolColumns: Column<SymbolListItem>[] = [
     width: 10,
     interactive: false,
     get: () => "",
-    render: (r) => <TemplateThumb kind="symbols" id={r.id} name={r.name} />,
+    render: (r) => <TemplateThumb kind="symbols" id={r.id} name={r.name} versionId={r.version_id} />,
   },
   {
     key: "name",
@@ -48,7 +48,7 @@ const footprintColumns: Column<FootprintListItem>[] = [
     width: 10,
     interactive: false,
     get: () => "",
-    render: (r) => <TemplateThumb kind="footprints" id={r.id} name={r.name} />,
+    render: (r) => <TemplateThumb kind="footprints" id={r.id} name={r.name} versionId={r.version_id} />,
   },
   {
     key: "name",

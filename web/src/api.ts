@@ -203,6 +203,8 @@ export interface SymbolListItem {
   id: number;
   name: string;
   version_no: number | null;
+  /** Cache key for templatePreviewUrl — see that function. */
+  version_id: number | null;
   pin_count: number | null;
   comment_count: number;
 }
@@ -211,6 +213,8 @@ export interface FootprintListItem {
   id: number;
   name: string;
   version_no: number | null;
+  /** Cache key for templatePreviewUrl — see that function. */
+  version_id: number | null;
   pad_count: number | null;
   comment_count: number;
 }
@@ -513,6 +517,8 @@ export interface TemplateDetail {
   name: string;
   kind: "symbol" | "footprint";
   version_no: number | null;
+  /** Cache key for templatePreviewUrl — see that function. */
+  version_id: number | null;
   created_at: string | null;
   created_by: string | null;
   comment: string | null;
@@ -565,8 +571,21 @@ export function getTemplate(
   return request(`/api/${kind}/${id}`, { signal });
 }
 
-export function templatePreviewUrl(kind: TemplateKind, id: number): string {
-  return `${API_URL}/api/${kind}/${id}/preview.svg`;
+/** Preview of a template's CURRENT drawing.
+ *
+ * Always pass `versionId` when you have it. Without it the URL is identical
+ * for every version of the template, so a browser — or an `<img>` already
+ * mounted — has no reason to refetch after a push, and the old land pattern
+ * stays on screen until a hard reload (reported 2026-08-24: a pushed
+ * D_SOD-323 kept showing its pre-edit pads). With it the URL changes per
+ * version and the server may cache the response for a year. */
+export function templatePreviewUrl(
+  kind: TemplateKind,
+  id: number,
+  versionId?: number | null,
+): string {
+  const v = versionId ? `?v=${versionId}` : "";
+  return `${API_URL}/api/${kind}/${id}/preview.svg${v}`;
 }
 
 export interface GeometryProposalResult {
@@ -4490,6 +4509,8 @@ export interface ReviewQueueTemplate {
   skipped: number;
   failed: number;
   unanswered: number;
+  /** Cache key for templatePreviewUrl — see that function. */
+  version_id: number | null;
   /** Live components pinning this drawing — on a non-checked row, the number
    *  of parts this one template is holding down. Sort by it: 18 failed
    *  symbols were dragging 159 components when this landed. */

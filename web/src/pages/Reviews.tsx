@@ -71,6 +71,16 @@ export default function Reviews() {
     return () => ctrl.abort();
   }, [load]);
 
+  // Pushing from KiCad changes this page's data behind its back, and coming
+  // back to the browser is exactly when it is read. Refetch on focus so the
+  // queue is never quietly a few minutes stale — with a manual button for the
+  // times the answer still looks wrong.
+  useEffect(() => {
+    const onFocus = () => load();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [load]);
+
   const setTab = (t: Tab) => {
     const next = new URLSearchParams(params);
     next.set("tab", t);
@@ -133,6 +143,17 @@ export default function Reviews() {
               </button>
             ))}
           </nav>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              setNotice(null);
+              load();
+            }}
+            title="Refetch the queue — the page also refreshes whenever you come back to this window"
+          >
+            Refresh
+          </button>
           <button
             type="button"
             className="btn btn-sm"
@@ -454,7 +475,7 @@ function TemplatesTab({
                     onNext={openIndex >= 0 && openIndex < filtered.length - 1 ? () => step(1) : undefined}
                     onClose={() => setOpenId(null)}
                   >
-                    <TemplateWorkbench kind={oneKind} id={r.id} name={r.name} onChanged={onChanged} />
+                    <TemplateWorkbench kind={oneKind} id={r.id} name={r.name} versionId={r.version_id} onChanged={onChanged} />
                   </BenchFrame>
                 }
                 cells={

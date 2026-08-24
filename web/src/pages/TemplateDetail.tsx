@@ -204,7 +204,7 @@ export default function TemplateDetail() {
               </p>
             ) : (
               <img
-                src={templatePreviewUrl(kind, id)}
+                src={templatePreviewUrl(kind, id, data.version_id)}
                 alt={`${data.name} preview`}
                 onError={() => setPreviewFailed(true)}
               />
