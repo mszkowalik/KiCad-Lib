@@ -1129,6 +1129,40 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   only the ones the user chose; the entries it keeps must NOT be re-recorded
   (`_record_written(..., skip=…)`), or the next sync overwrites the unsent edit
   and Push forgets it exists.
+- **A conflict row is ONE ITEM in EVERY path, including the orphan path.** The
+  rule above covered the normal case and missed the other one: a library file
+  the upstream package no longer carries (a rename upstream, a stale duplicate)
+  was emitted as a single row, hardcoded `"kind": "footprint"` — so a
+  `.kicad_sym` appeared as one line under the "Footprints" header whose "server"
+  answer deleted all 196 symbols at once. Reported 2026-08-24. `_scan_conflicts`
+  now splits it per entry, and the matching prune in `_apply_package` rewrites
+  the file with `kicad_canon.drop_symbols` instead of unlinking it, removing it
+  only when every entry was released. Two things follow: the prune must clear
+  `_LOCAL` for the entries it drops and the file-level record when it rewrites
+  (the kept entries keep their own records, which is what Push reads), and it
+  must name only the entries that HAD a row in `kept_local` — the unedited rest
+  are stale copies of upstream drawings, and reporting them made one notify list
+  195 symbols.
+- **3D models carry per-file records too, since plugin 1.3.0, and their check is
+  stat-first.** Models used to bypass the conflict window entirely, and not
+  merely coarsely: `_sync_models_delta` compared the upstream sha against the
+  RECORDED sha in `models_state.json`, never against the bytes on disk, so a
+  model edited here read as current, was never re-fetched, was never asked
+  about, and was overwritten in silence by the next full-zip fallback.
+  `local_state.json` held zero model keys. What blocked the fix was cost — 4745
+  models, about 1.4 GB, is not hashable on every sync. So each record is now
+  `{"s": sha, "m": mtime, "z": size}` and `_model_edits` stats the tree and
+  hashes ONLY the files whose size or mtime moved (measured: 3 reads for 3 edits
+  out of 50 files). A bare-string record is pre-1.3.0 and adopts the current
+  stat at the sha it already asserted, so the upgrade reports no edits rather
+  than a wave of false ones. Consequences to keep: `_sync_models_delta` is split
+  into `_scan_models_delta` (read-only, returns a plan plus rows) and
+  `_apply_models_delta`, because the single-dialog rule below forbids asking
+  mid-write; a model the user KEEPS must not be re-recorded, so the record
+  cleanup keys on what is still ON DISK rather than on `upstream`; and the
+  full-zip path must WRITE the records it builds — it used to delete
+  `models_state.json`, which would now leave the next sync unable to tell an
+  edit from a write.
 - **A two-way clash is a QUESTION, not a policy.** When a drawing changed here
   AND on the platform, the old rule kept the local copy silently and for ever,
   so an approved fix could never come back down — the only escape was deleting
@@ -1160,8 +1194,12 @@ token injected per-invocation via `http.extraheader` — never written to disk),
 - **The prune must never delete a library file the plugin did not write** —
   unless the user asked for it in the window. It is either a local edit or a
   footprint drawn here and not yet pushed; the old rule deleted anything absent
-  from the package, which destroyed new work before Push could send it. Models
-  are exempt — they carry no per-file record, so they prune as before.
+  from the package, which destroyed new work before Push could send it. **Models
+  are no longer exempt** (they were, while they carried no record): a model with
+  no record was placed here by hand and a model whose record is dirty was edited
+  here, and both now survive a prune unless the dialog released them. A model the
+  plugin wrote and nothing touched still prunes silently — that is a genuine
+  upstream deletion, not work.
 - **Every local change is offered back, not just the two-way clashes.** A
   drawing edited here while the platform's copy stayed put is not a conflict,
   but "throw my edit away and take the platform's copy" is still something only
@@ -1212,7 +1250,16 @@ token injected per-invocation via `http.extraheader` — never written to disk),
 - **`local_state.json` records both hashes** (`{"r": raw, "c": canonical}`) and
   still reads a bare string as a pre-1.1.0 raw-only record. Dropping that
   fallback would make every installed file read as edited on the first run
-  after an upgrade.
+  after an upgrade. `models_state.json` follows the same shape for the same
+  reason — `{"s","m","z"}` now, a bare sha before 1.3.0 — and it is PRIVATE to
+  `sync.py`: nothing else reads it, which is what made the format change safe.
+- **The dialog has two row ceilings, not one.** Answers are per item now, so a
+  single sync can legitimately raise hundreds of rows and collapsing them all to
+  "kept everything" is the worse answer. `conflict_ui._WX_MAX_ROWS` (600) is the
+  give-up point; `_SANE_ROWS` (200) now gates only the AppleScript backend,
+  whose `choose from list` cannot be scrolled sensibly. Notifications that list
+  names go through `_names()`, which caps at 8 plus a count — a macOS
+  notification truncates anyway.
 - **Two constants gate whether a plugin change reaches anyone, and both are
   manual.** `PLUGIN_VERSION` is what PCM compares to decide "update
   available", so shipping plugin source without bumping it is a silent no-op.

@@ -18,13 +18,24 @@ canonical form of the s-expression — see kicad_canon.py.
 
 Every local change the sync finds is ASKED about, in ONE window
 (conflict_ui.py) with a Mine/Server choice per row, so the answer is given once
-per sync rather than once per file. Three kinds of row: a drawing changed here
-AND on the platform (the real clash), a drawing changed only here (the platform
-has nothing new to give — the choice exists so an edit can be DISCARDED, which
-otherwise needed deleting the file by hand), and a drawing that exists only
-here, where taking the platform's side deletes it. Declining to choose —
-cancel, a closed window, no usable dialog backend — always keeps the local copy,
-which is the behaviour this plugin had before the dialog existed.
+per sync rather than once per file. ONE ROW IS ONE ITEM — a symbol entry, a
+footprint, a single 3D model — and never a whole library, in any path: a symbol
+library the platform has stopped carrying is split per entry too, or "server"
+would release 196 drawings on one click. Three kinds of row: an item changed
+here AND on the platform (the real clash), an item changed only here (the
+platform has nothing new to give — the choice exists so an edit can be
+DISCARDED, which otherwise needed deleting the file by hand), and an item that
+exists only here, where taking the platform's side deletes it. Declining to
+choose — cancel, a closed window, no usable dialog backend — always keeps the
+local copy, which is the behaviour this plugin had before the dialog existed.
+
+3D models join that window as of plugin 1.3.0. They used to bypass it twice
+over: the delta compared the upstream sha against the RECORDED sha, so a model
+edited here read as current and was never re-fetched OR asked about, and the
+full-zip fallback overwrote it without a word. `models_state.json` therefore
+stores size and mtime beside each sha, and `_model_edits` stats the tree (fast)
+and hashes only the files whose stat moved — 4745 models are about 1.4 GB, so
+hashing all of them every sync was the reason the check did not exist.
 
 Because of the second kind, a package with no upstream change is still fetched
 while any local edit is outstanding. It is 0.5 MB, and it is the only way the
@@ -49,7 +60,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))  # KiCad runs this as a script; be explicit anyway
 from kicad_canon import (  # noqa: E402 — needs the line above
-    canon_hash, matches, merge_symbol_lib, record, split_symbols,
+    canon_hash, drop_symbols, matches, merge_symbol_lib, raw_hash, record,
+    split_symbols,
 )
 import conflict_ui  # noqa: E402 — same reason
 
@@ -195,6 +207,20 @@ def _notify(message: str) -> None:
             pass
 
 
+def _names(items, cap: int = 8) -> str:
+    """A readable name list for a notification.
+
+    Answers are per item now, so a single sync can touch hundreds of them and a
+    full join turns a macOS notification into an unreadable wall (and is
+    truncated by the OS anyway). The count carries the scale; the names carry
+    the example.
+    """
+    uniq = sorted(set(items))
+    if len(uniq) <= cap:
+        return ", ".join(uniq)
+    return ", ".join(uniq[:cap]) + f", and {len(uniq) - cap} more"
+
+
 def _acquire_lock() -> bool:
     """One sync at a time — repeated button presses while a sync runs must
     not stack downloads. Atomic create; stale locks are taken over."""
@@ -316,22 +342,85 @@ def _merge_symbols(payload: bytes, current: bytes, keep: set[str]) -> bytes:
                             current.decode("utf-8", "replace"), keep).encode("utf-8")
 
 
-def _sync_models_delta(pkg: dict, state: dict) -> str:
-    """Incremental models update: diff the mirror manifest against what is
-    installed and fetch ONLY changed files as an LZMA-compressed batch.
-    Raises to signal 'use the full package zip instead' (first install or
-    huge delta)."""
+def _model_rel(dest: Path, f: Path) -> str:
+    return f"3DModels/{f.relative_to(dest).as_posix()}"
+
+
+def _model_record(f: Path, sha: str) -> dict:
+    """State entry for a model file this plugin wrote: its sha plus the stat it
+    had immediately after the write.
+
+    `models_state.json` used to hold the bare sha, which was enough to decide
+    WHAT to download but could never see a local edit: the comparison was
+    upstream-sha against recorded-sha, so a model edited here still read as
+    current and was silently clobbered on the next full sync. The stat is what
+    makes the edit visible affordably — see `_model_edits`.
+    """
+    st = f.stat()
+    return {"s": sha, "m": int(st.st_mtime), "z": st.st_size}
+
+
+def _model_edits(dest: Path, local: dict) -> dict[str, str]:
+    """{relpath: sha on disk} for every installed model that no longer holds
+    what this plugin wrote. Upgrades pre-1.3.0 records in place.
+
+    Stat first, hash only the suspects. The models tree is 4745 files and about
+    1.4 GB, so hashing all of it on every sync is not affordable, and a file
+    nothing touched still carries the size and mtime of the write. Any edit
+    moves at least one of the two, and only then is the file read.
+
+    A bare-string record is pre-1.3.0 and carries no stat to compare against.
+    It adopts the current stat at the sha that record already asserted, so the
+    upgrade reports no edits rather than a wave of false ones.
+    """
+    dirty: dict[str, str] = {}
+    for f in dest.rglob("*"):
+        if not f.is_file():
+            continue
+        rel = _model_rel(dest, f)
+        rec = local.get(rel)
+        if rec is None:
+            continue  # never written by this plugin — the prune scan asks
+        try:
+            st = f.stat()
+        except OSError:
+            continue
+        m, z = int(st.st_mtime), st.st_size
+        if isinstance(rec, str):
+            local[rel] = {"s": rec, "m": m, "z": z}
+            continue
+        if not isinstance(rec, dict):
+            continue
+        if rec.get("z") == z and rec.get("m") == m:
+            continue  # untouched — the cheap answer, and the normal one
+        disk = raw_hash(f.read_bytes())
+        if disk == rec.get("s"):
+            local[rel] = {"s": disk, "m": m, "z": z}  # re-stamped, same bytes
+            continue
+        dirty[rel] = disk
+    return dirty
+
+
+def _model_base(rec) -> str | None:
+    if isinstance(rec, dict):
+        return rec.get("s")
+    return rec if isinstance(rec, str) else None
+
+
+def _scan_models_delta(pkg: dict, state: dict) -> tuple[dict, list[dict]]:
+    """Read-only pass over the models package: what the delta would fetch and
+    prune, plus a conflict row for every model edited or drawn HERE.
+
+    Returns (plan, conflicts). Raises to signal 'use the full package zip
+    instead' (first install or huge delta). Nothing is written and nothing is
+    asked, so the one dialog can carry model rows next to the library ones.
+    """
     ident = pkg["identifier"]
     sha = pkg["versions"][0]["download_sha256"]
     dest = THIRD_PARTY / "3dmodels" / ident.replace(".", "_")
-    if state.get(ident) == sha and dest.exists():
-        return "fresh"
     if not dest.exists():
         raise RuntimeError("first install — full package needed")
 
-    manifest = json.loads(_get(f"{BASE_URL}/files/manifest.json", timeout=120))
-    upstream = {e["path"]: e["sha256"] for e in manifest["files"]
-                if e["path"].startswith("3DModels/")}
     local: dict = {}
     if MODELS_STATE_FILE.exists():
         try:
@@ -339,17 +428,94 @@ def _sync_models_delta(pkg: dict, state: dict) -> str:
         except ValueError:
             pass
 
-    def local_sha(rel: str):
+    dirty = _model_edits(dest, local)
+    if state.get(ident) == sha and not dirty:
+        # Nothing changed either end. The record upgrade above may still have
+        # rewritten entries, so the plan carries `local` back to be saved.
+        return {"dest": dest, "sha": sha, "fresh": True, "local": local}, []
+
+    manifest = json.loads(_get(f"{BASE_URL}/files/manifest.json", timeout=120))
+    upstream = {e["path"]: e["sha256"] for e in manifest["files"]
+                if e["path"].startswith("3DModels/")}
+
+    need: list[str] = []
+    asked: dict[str, str] = {}   # relpath -> dialog key
+    conflicts: list[dict] = []
+    for rel, up in upstream.items():
         f = dest / rel[len("3DModels/"):]
         if not f.is_file():
-            return None
-        if rel not in local:  # seed lazily (first delta after a PCM install)
-            local[rel] = hashlib.sha256(f.read_bytes()).hexdigest()
-        return local[rel]
+            need.append(rel)
+            continue
+        if rel in dirty:
+            disk = dirty[rel]
+            if disk == up:
+                # the local edit IS the platform's copy now — it was pushed and
+                # approved and has come back. Adopt it and stop asking.
+                local[rel] = _model_record(f, disk)
+                continue
+            key = str(f)
+            base = _model_base(local.get(rel))
+            conflicts.append({"key": key, "kind": "model",
+                              "name": f.relative_to(dest).as_posix(),
+                              "note": BOTH if base != up else MINE_ONLY})
+            asked[rel] = key
+            need.append(rel)
+            continue
+        base = _model_base(local.get(rel))
+        if base is None:
+            # installed by the full package zip, before any record existed.
+            # Seed it from disk, exactly as the bare-sha version did.
+            local[rel] = _model_record(f, raw_hash(f.read_bytes()))
+            base = local[rel]["s"]
+        if base != up:
+            need.append(rel)
 
-    need = [rel for rel, s in upstream.items() if local_sha(rel) != s]
     if len(need) > DELTA_MAX_FILES:
         raise RuntimeError("delta too large — full package needed")
+
+    # models upstream no longer lists. One this plugin wrote and nothing touched
+    # is a genuine upstream deletion and prunes silently, as before. Anything
+    # else was put here by hand, so deleting it is the user's call.
+    stale: list[Path] = []
+    doomed: dict[str, Path] = {}
+    for f in dest.rglob("*"):
+        if not f.is_file():
+            continue
+        rel = _model_rel(dest, f)
+        if rel in upstream:
+            continue
+        if local.get(rel) is not None and rel not in dirty:
+            stale.append(f)
+            continue
+        key = str(f)
+        conflicts.append({"key": key, "kind": "model",
+                          "name": f.relative_to(dest).as_posix(),
+                          "note": NEW_HERE, "delete": True})
+        doomed[key] = f
+
+    plan = {"dest": dest, "sha": sha, "local": local, "need": need,
+            "asked": asked, "stale": stale, "doomed": doomed}
+    return plan, conflicts
+
+
+def _apply_models_delta(pkg: dict, state: dict, plan: dict,
+                        decisions: dict[str, str]) -> str:
+    """Write pass for the models package: fetch what the user did not keep,
+    prune what upstream dropped, and delete only what the user agreed to."""
+    ident = pkg["identifier"]
+    dest, local = plan["dest"], plan["local"]
+
+    if plan.get("fresh"):
+        MODELS_STATE_FILE.write_text(json.dumps(local, indent=0))
+        return "fresh"
+
+    kept = {rel for rel, key in plan["asked"].items()
+            if decisions.get(key) != conflict_ui.SERVER}
+    need = [rel for rel in plan["need"] if rel not in kept]
+    if kept:
+        _notify("Kept your local 3D model(s) (not overwritten): "
+                + _names(r[len("3DModels/"):] for r in kept)
+                + ". Use 'Push 7Sigma changes' to send them.")
 
     if need:
         _notify(f"Downloading {len(need)} changed model file(s)…")
@@ -365,18 +531,37 @@ def _sync_models_delta(pkg: dict, state: dict) -> str:
             target.parent.mkdir(parents=True, exist_ok=True)
             payload = zf.read(member)
             target.write_bytes(payload)
-            local[rel] = hashlib.sha256(payload).hexdigest()
+            local[rel] = _model_record(target, raw_hash(payload))
 
-    # prune models removed upstream
-    removed = 0
-    for f in list(dest.rglob("*")):
-        if f.is_file() and f"3DModels/{f.relative_to(dest).as_posix()}" not in upstream:
-            f.unlink()
-            removed += 1
-    local = {rel: s for rel, s in local.items() if rel in upstream}
+    removed, deleted = 0, []
+    for f in plan["stale"]:
+        f.unlink(missing_ok=True)
+        removed += 1
+    for key, f in plan["doomed"].items():
+        if decisions.get(key) != conflict_ui.SERVER:
+            continue
+        f.unlink(missing_ok=True)
+        removed += 1
+        deleted.append(f.relative_to(dest).as_posix())
+    if deleted:
+        _notify("Deleted, as you chose (they exist nowhere else): "
+                + _names(deleted))
+
+    # An empty ".3dshapes" folder left by a prune otherwise lingers for ever and
+    # KiCad still offers it in the 3D file browser.
+    for d in sorted((p for p in dest.rglob("*") if p.is_dir()),
+                    key=lambda p: len(p.parts), reverse=True):
+        if not any(d.iterdir()):
+            d.rmdir()
+
+    # A record for a file no longer on disk is dead weight. Keying on the disk
+    # rather than on `upstream` is what lets a model the user KEPT hold on to
+    # its baseline, so the next sync can still tell it was edited here.
+    local = {rel: rec for rel, rec in local.items()
+             if (dest / rel[len("3DModels/"):]).is_file()}
 
     MODELS_STATE_FILE.write_text(json.dumps(local, indent=0))
-    state[ident] = sha
+    state[ident] = plan["sha"]
     STATE_FILE.write_text(json.dumps(state, indent=1))
     return "updated" if (need or removed) else "fresh"
 
@@ -491,9 +676,24 @@ def _scan_conflicts(pkg: dict, data: bytes) -> list[dict]:
         if not root.is_dir():
             continue
         for f in root.rglob("*"):
-            if (f.is_file() and f.suffix in LIB_SUFFIXES
-                    and f.relative_to(root).as_posix() not in keep
-                    and not _unchanged(str(f), f.read_bytes())):
+            if not (f.is_file() and f.suffix in LIB_SUFFIXES
+                    and f.relative_to(root).as_posix() not in keep):
+                continue
+            current = f.read_bytes()
+            if _unchanged(str(f), current):
+                continue
+            if f.suffix == ".kicad_sym":
+                # The unit is the ENTRY here too. A symbol library upstream no
+                # longer carries used to be ONE row, tagged as a footprint, so
+                # "server" threw away every drawing inside it on one click.
+                for name, entry in split_symbols(
+                        current.decode("utf-8", "replace")):
+                    if _unchanged(f"{f}::{name}", entry.encode("utf-8")):
+                        continue  # a stale copy of an upstream symbol, not work
+                    found.append({"key": f"{f}::{name}", "kind": "symbol",
+                                  "name": name, "note": NEW_HERE,
+                                  "delete": True})
+            else:
                 found.append({"key": str(f), "kind": "footprint", "name": f.name,
                               "note": NEW_HERE, "delete": True})
     return found
@@ -512,18 +712,45 @@ def _apply_package(pkg: dict, state: dict, data: bytes,
     settled: list[str] = []
     overwritten: list[str] = []
     deleted: list[str] = []
+
+    # The models package reaches this function only when the delta path gave up
+    # (first install, or a delta past DELTA_MAX_FILES), so the per-model dialog
+    # never ran. An edited model must still not be clobbered here: keep it, say
+    # so, and let the next sync — a small delta by then — ask properly.
+    models_state: dict = {}
+    models_dirty: dict[str, str] = {}
+    if ident == MODELS_ID:
+        if MODELS_STATE_FILE.exists():
+            try:
+                models_state = json.loads(MODELS_STATE_FILE.read_text())
+            except ValueError:
+                models_state = {}
+        models_root = THIRD_PARTY / "3dmodels" / dest_name
+        if models_root.is_dir():
+            models_dirty = _model_edits(models_root, models_state)
+
     for member, kind, rel, target in _members(zf, dest_name):
         written.setdefault(kind, set()).add(rel.as_posix())
         payload = zf.read(member)
         skip: set = set()
-        current = target.read_bytes() if target.is_file() else None
+        # Library files only: reading a model here would pull 1.4 GB of STEP
+        # through memory for a value the canonical test never uses. Models have
+        # their own comparison, already done in `models_dirty` above.
+        current = (target.read_bytes()
+                   if target.suffix in LIB_SUFFIXES and target.is_file() else None)
         # NEVER clobber work edited here and not yet sent WITHOUT ASKING — that
         # is somebody's unsent drawing. The test is CURRENT FILE vs what we
         # recorded writing: comparing the incoming payload against the record
         # instead would mean "upstream changed, so keep the local copy", which
         # refuses every legitimate update — the exact opposite of the intent.
-        # Library files only: a 3D model carries no record, so an unscoped test
-        # would try to parse 1.4 GB of STEP as s-expressions on every full sync.
+        # A 3D model has no canonical form to compare, so it is never parsed.
+        if kind == "3dmodels" and models_dirty:
+            mrel = f"3DModels/{rel.as_posix()}"
+            if mrel in models_dirty:
+                if decisions.get(str(target)) != conflict_ui.SERVER:
+                    kept_local.append(rel.as_posix())
+                    continue
+                overwritten.append(rel.as_posix())
         if (target.suffix in LIB_SUFFIXES and current is not None
                 and not _unchanged(str(target), current)):
             if canon_hash(current.decode("utf-8", "replace")) == \
@@ -549,7 +776,11 @@ def _apply_package(pkg: dict, state: dict, data: bytes,
                 continue
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(payload)
-        _record_written(target, payload, skip)
+        if kind == "3dmodels":
+            models_state[f"3DModels/{rel.as_posix()}"] = _model_record(
+                target, raw_hash(payload))
+        else:
+            _record_written(target, payload, skip)
 
     # prune files we manage that no longer exist upstream
     for kind, keep in written.items():
@@ -560,12 +791,52 @@ def _apply_package(pkg: dict, state: dict, data: bytes,
                 # local edit or a footprint drawn here that was never pushed.
                 # Deleting it would destroy work that Push exists to send — so
                 # it goes only when the user asked for it in the dialog.
-                # Models carry no record at all, so they prune as before.
-                if f.suffix in LIB_SUFFIXES and not _unchanged(str(f), f.read_bytes()):
-                    if decisions.get(str(f)) != conflict_ui.SERVER:
-                        kept_local.append(f.name)
-                        continue
-                    deleted.append(f.name)
+                if kind == "3dmodels":
+                    mrel = f"3DModels/{f.relative_to(root).as_posix()}"
+                    if models_state.get(mrel) is None or mrel in models_dirty:
+                        # placed here by hand, or edited here: the same rule the
+                        # library files get, for the same reason
+                        if decisions.get(str(f)) != conflict_ui.SERVER:
+                            kept_local.append(f.relative_to(root).as_posix())
+                            continue
+                        deleted.append(f.relative_to(root).as_posix())
+                    models_state.pop(mrel, None)
+                elif f.suffix in LIB_SUFFIXES:
+                    current = f.read_bytes()
+                    if not _unchanged(str(f), current):
+                        if f.suffix == ".kicad_sym":
+                            # Answered per entry, so the file cannot simply go:
+                            # drop the symbols the user released and rewrite the
+                            # rest back. It only disappears when nothing is left.
+                            text = current.decode("utf-8", "replace")
+                            entries = split_symbols(text)
+                            drop, mine = set(), []
+                            for n, e in entries:
+                                if decisions.get(f"{f}::{n}") == conflict_ui.SERVER:
+                                    drop.add(n)
+                                elif not _unchanged(f"{f}::{n}", e.encode("utf-8")):
+                                    # only the entries that HAD a row are the
+                                    # user's work; the rest are stale copies of
+                                    # upstream drawings and are not worth naming
+                                    mine.append(n)
+                            deleted.extend(f"{n} (symbol)" for n in sorted(drop))
+                            kept_local.extend(f"{n} (symbol)" for n in sorted(mine))
+                            for n in drop:
+                                _LOCAL.pop(f"{f}::{n}", None)
+                            if len(drop) < len(entries):
+                                if drop:
+                                    f.write_bytes(drop_symbols(text, drop).encode("utf-8"))
+                                    # the file-level record described the text
+                                    # before the drop; the kept entries keep
+                                    # their own records, which is what Push reads
+                                    _LOCAL.pop(str(f), None)
+                                continue
+                            _LOCAL.pop(str(f), None)
+                        elif decisions.get(str(f)) != conflict_ui.SERVER:
+                            kept_local.append(f.name)
+                            continue
+                        else:
+                            deleted.append(f.name)
                 f.unlink()
         # a pruned duplicate folder ("7Sigma 2.pretty") otherwise lingers empty
         # forever, and KiCad registers every .pretty it finds as a library
@@ -575,23 +846,28 @@ def _apply_package(pkg: dict, state: dict, data: bytes,
                 d.rmdir()
     _save_local_state()
     if kept_local:
-        _notify("Kept your local edits (not overwritten): " + ", ".join(sorted(set(kept_local)))
+        _notify("Kept your local edits (not overwritten): " + _names(kept_local)
                 + ". Use 'Push 7Sigma changes' to send them.")
     if overwritten:
         _notify("Replaced with the platform version, as you chose: "
-                + ", ".join(sorted(set(overwritten))))
+                + _names(overwritten))
     if deleted:
         _notify("Deleted, as you chose (they exist nowhere else): "
-                + ", ".join(sorted(set(deleted))))
+                + _names(deleted))
     if settled:
         _notify(f"{len(settled)} local edit(s) now match the platform and are no longer "
-                "pending: " + ", ".join(sorted(set(settled))))
+                "pending: " + _names(settled))
 
     state[ident] = sha
     STATE_FILE.write_text(json.dumps(state, indent=1))
     if ident == MODELS_ID:
-        # full-zip path invalidates the per-file delta bookkeeping
-        MODELS_STATE_FILE.unlink(missing_ok=True)
+        # The full zip just rewrote the tree, so the records built above ARE the
+        # delta bookkeeping. Dropping the file (as this did before models carried
+        # records) would leave the next sync unable to tell an edit from a write.
+        models_state = {rel: rec for rel, rec in models_state.items()
+                        if (THIRD_PARTY / "3dmodels" / dest_name
+                            / rel[len("3DModels/"):]).is_file()}
+        MODELS_STATE_FILE.write_text(json.dumps(models_state, indent=0))
     return "updated"
 
 
@@ -622,6 +898,7 @@ def main() -> int:
         # The dialog has to be able to list conflicts from all packages at once,
         # so nothing may be applied until every package has been looked at.
         pending: list[tuple[dict, bytes]] = []
+        models: tuple[dict, dict] | None = None
         conflicts: list[dict] = []
         for pkg in packages:
             if pkg.get("type") != "library":
@@ -629,10 +906,12 @@ def main() -> int:
             try:
                 if pkg["identifier"] == MODELS_ID:
                     # models: incremental per-file delta (LZMA) when possible.
-                    # No library files, so no conflicts and nothing to ask.
+                    # Scanned, not applied — a model edited here is a row in the
+                    # same dialog as the symbols and footprints.
                     try:
-                        result = _sync_models_delta(pkg, state)
-                        (updated if result == "updated" else fresh).append(pkg["name"])
+                        plan, rows = _scan_models_delta(pkg, state)
+                        models = (pkg, plan)
+                        conflicts.extend(rows)
                         continue
                     except Exception:
                         pass  # fall back to the full package zip below
@@ -676,6 +955,13 @@ def main() -> int:
             LOCK_FILE.touch(exist_ok=True)
 
         # Pass 2 — write.
+        if models is not None:
+            pkg, plan = models
+            try:
+                result = _apply_models_delta(pkg, state, plan, decisions)
+                (updated if result == "updated" else fresh).append(pkg["name"])
+            except Exception as e:
+                failed.append(f"{pkg['name']}: {e}")
         for pkg, data in pending:
             try:
                 result = _apply_package(pkg, state, data, decisions)

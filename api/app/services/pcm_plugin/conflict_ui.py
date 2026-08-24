@@ -1,7 +1,9 @@
 """Sync's local-changes window — one window for every drawing sync would touch.
 
-A row is a library file (or one symbol entry inside the generated symbol
-library) that no longer matches what sync last wrote here. Its `note` says why
+A row is ONE item — a symbol entry inside the generated symbol library, a
+footprint file, or a single 3D model — that no longer matches what sync last
+wrote here. Never a whole library: releasing 196 symbols on one click was the
+old behaviour for a library file upstream had stopped carrying. Its `note` says why
 it is being asked about — the platform changed it too, only this machine
 changed it, or it exists only here — and the answer is the same either way:
 keep mine, or take the platform's copy. Before this module the local copy always
@@ -11,7 +13,8 @@ down, and an experiment made locally could never be abandoned.
 
 The unit is the DRAWING, not the file — see kicad_canon.py. A conflict is only
 raised when the canonical forms genuinely differ, so a KiCad re-save in its own
-spelling never asks a question.
+spelling never asks a question. 3D models carry no canonical form, so they are
+compared by sha behind a size/mtime pre-filter — see `_model_edits` in sync.py.
 
 Three backends, tried in order, so a missing dependency degrades instead of
 failing:
@@ -35,15 +38,22 @@ import sys
 MINE = "mine"
 SERVER = "server"
 
-# Beyond this the wx list is a scrolling wall and the AppleScript list is
-# unusable. The dialog still works; it just stops pretending to be reviewable.
-_SANE_ROWS = 200
+# The wx list scrolls, so it stays usable far longer than AppleScript's
+# `choose from list`, which cannot be scrolled sensibly at all. Two ceilings,
+# because collapsing 300 per-item rows into "kept everything" is a worse answer
+# than a long window the user can scroll.
+_SANE_ROWS = 200        # AppleScript backend only
+_WX_MAX_ROWS = 600      # above this the grid costs more widgets than it is worth
 
 
 def _label(c: dict) -> str:
     """What the user sees for one row. Symbols are tagged because a symbol name
     and a footprint name can otherwise look identical."""
-    name = f"{c['name']} (symbol)" if c["kind"] == "symbol" else c["name"]
+    name = c["name"]
+    if c["kind"] == "symbol":
+        name += " (symbol)"
+    elif c["kind"] == "model":
+        name += " (3D model)"
     note = _note(c)
     return f"{name} — {note}" if note else name
 
@@ -107,12 +117,12 @@ def _run_wx_dialog(wx, conflicts: list[dict]) -> dict[str, str]:
     grid.AddGrowableCol(1, 1)
 
     buttons: dict[str, tuple] = {}
-    for kind in ("footprint", "symbol"):
+    for kind, heading in (("footprint", "Footprints"), ("symbol", "Symbols"),
+                          ("model", "3D models")):
         rows = [c for c in conflicts if c["kind"] == kind]
         if not rows:
             continue
-        header = wx.StaticText(scroll, label=("Footprints" if kind == "footprint"
-                                              else "Symbols"))
+        header = wx.StaticText(scroll, label=heading)
         header.SetFont(header.GetFont().Bold())
         grid.Add(header, 0, wx.TOP, 8)
         grid.Add(wx.StaticText(scroll, label=""), 0, wx.TOP, 8)
@@ -244,7 +254,7 @@ def resolve(conflicts: list[dict]) -> tuple[dict[str, str], str]:
 
     `conflicts` items carry:
       key     unique id — the absolute path, or "<path>::<entry>" for a symbol
-      kind    "footprint" | "symbol"
+      kind    "footprint" | "symbol" | "model"
       name    what to show
       note    why it is being asked about (optional)
       delete  True when "server" means deleting a file the platform has never
@@ -255,12 +265,14 @@ def resolve(conflicts: list[dict]) -> tuple[dict[str, str], str]:
     """
     if not conflicts:
         return {}, "none"
-    if len(conflicts) > _SANE_ROWS:
+    if len(conflicts) > _WX_MAX_ROWS:
         # Something is structurally wrong (a wiped state file, a re-import).
         # Asking 900 questions helps nobody; keep everything and say so.
         return _all_mine(conflicts), "too-many"
 
     for backend, fn in (("wx", _resolve_wx), ("osascript", _resolve_osascript)):
+        if backend == "osascript" and len(conflicts) > _SANE_ROWS:
+            continue  # a `choose from list` this long cannot be reviewed
         out = fn(conflicts)
         if out is not None:
             # a backend may only answer for what it was given

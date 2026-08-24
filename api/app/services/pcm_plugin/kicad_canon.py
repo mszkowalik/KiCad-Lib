@@ -278,3 +278,27 @@ def merge_symbol_lib(upstream_text: str, local_text: str, keep: set) -> str:
     else:
         out.append(tail)
     return "".join(out)
+
+
+def drop_symbols(text: str, drop: set) -> str:
+    """The library with the named entries removed.
+
+    Sync needs this when the platform stops carrying a symbol library outright:
+    the user answers per symbol, so some entries go and the rest stay, and
+    deleting the whole file would take the kept ones with them. Returns the text
+    unchanged when `drop` names nothing that is in it.
+    """
+    spans = [(s, e) for name, s, e in entry_spans(text) if name in drop]
+    if not spans:
+        return text
+    out, pos = [], 0
+    for start, end in spans:
+        # take the entry's own indent and trailing newline with it, or the file
+        # accumulates blank tabbed lines every time one is dropped
+        line_start = text.rfind("\n", 0, start) + 1
+        cut_from = line_start if not text[line_start:start].strip() else start
+        cut_to = end + 1 if text[end:end + 1] == "\n" else end
+        out.append(text[pos:cut_from])
+        pos = cut_to
+    out.append(text[pos:])
+    return "".join(out)
