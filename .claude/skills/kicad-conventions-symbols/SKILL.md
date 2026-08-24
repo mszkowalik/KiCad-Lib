@@ -2,7 +2,7 @@
 name: kicad-conventions-symbols
 description: "Choosing AND authoring base symbols: pin-type directionality from the component's own viewpoint, V.24 UART and SPI role policy, functional pin grouping, box/pitch geometry formulas, and stacked (shorted) pins. Use when picking a base symbol or writing a propose_symbol_edit."
 ---
-<!-- platform-skill: conventions-symbols v6 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-symbols v7 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Symbol conventions
 
@@ -89,11 +89,11 @@ all four SPI pins `bidirectional`. Only when the role is guaranteed:
 Group pins by **functional block**, never by pad order or alphabetically.
 Within a group, order by signal role (clock before data, enable before data).
 
-**Left side** — power and slow/simple interfaces:
-1. Main power supply (VBATT, VCC)
-2. Ground — all GND pins together
-3. SIM / other slow external interfaces
-4. Reserved / NC
+**Left side** — supplies at the top, ground at the bottom:
+1. Main power supply (VBATT, VCC, VIO — every rail the part consumes)
+2. SIM / other slow external interfaces
+3. Reserved / NC
+4. Ground — all GND pins together, in the bottom slot or slots
 
 **Right side** — host interfaces and control:
 1. RF / antenna
@@ -108,6 +108,32 @@ Within a group, order by signal role (clock before data, enable before data).
 10. Reserved / NC
 
 Separate consecutive groups with one blank pin slot (one 2.54 mm step).
+
+### Ground goes at the bottom of the left side
+
+Put every supply pin at the top of the left side. Put every GND pin at the
+bottom of the left side. Do not place ground directly below the main supply.
+
+The reason is wire geometry on the sheet. A ground symbol points down. A GND
+pin partway down the left edge forces the wire to turn back underneath the box
+to reach that symbol. A GND pin in the bottom slot drops straight into it.
+
+This is a house rule from the library owner, recorded 2026-08-24. It changes
+placement only. GND stays `power_in` (§2).
+
+### Two-sided bus parts: logic left, bus right
+
+A differential bus transceiver has two distinct faces, the host logic side and
+the bus side. Put the host logic pins (TXD, RXD, mode control) on the **left**
+with the supplies. Put the bus pair alone on the **right**. Do not apply the
+right-side list above to the logic pins of such a part.
+
+The bus pair then routes straight out to the connector without crossing the
+logic nets. Place each bus pin level with the logic pin it serves, so the
+transmit path reads across the box.
+
+Precedent in this library: `SP3485` (RO, RE, DE, DI left; A, B right) and
+`TCAN3413` (VCC, VIO, TXD, RXD, STB left; CANH, CANL right; GND bottom left).
 
 ## 4. Box and layout geometry
 
