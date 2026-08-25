@@ -103,6 +103,9 @@ interface Props<T> {
 
 type Dir = "asc" | "desc";
 
+/** Per-instance scratch keys for tables that do not ask to be remembered. */
+let anonTables = 0;
+
 export default function DataTable<T>({
   columns,
   rows,
@@ -124,8 +127,12 @@ export default function DataTable<T>({
   onRowClick,
 }: Props<T>) {
   // One hook either way: an unkeyed table gets a per-instance scratch key, so
-  // there is no second code path to keep in step.
-  const key = persistKey ?? "";
+  // there is no second code path to keep in step. The counter matters — every
+  // unkeyed table sharing the literal key `table::sort` would have meant two
+  // of them on one page silently sharing a sort and a filter set.
+  const ownKeyRef = useRef<string | null>(null);
+  if (ownKeyRef.current === null) ownKeyRef.current = `anon-${++anonTables}`;
+  const key = persistKey ?? ownKeyRef.current;
   const [sort, setSort] = useStickyState<{ key: string; dir: Dir } | null>(
     `table:${key}:sort`,
     defaultSort ?? null,
