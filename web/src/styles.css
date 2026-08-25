@@ -4021,3 +4021,17 @@ a.check-cell:hover {
   color: var(--accent);
   display: block;
 }
+
+/* The member picker inside a grouped change row. A subject's individual
+   changes sit here; only the selected one fetches its diff. */
+.change-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.change-members .change-kind {
+  min-width: 0;
+  padding: 0 5px;
+  font-size: 0.72rem;
+}

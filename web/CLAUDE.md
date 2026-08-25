@@ -473,6 +473,18 @@ Each kind answers "what changed" in the terms it is edited in: components as a
 property table, drawings as before/after renders plus their pin or pad rows,
 skills as a text diff, events as their audit detail.
 
+**The feed lists SUBJECTS, not individual changes.** A burst of agent work
+writes a check, a carry and a publish against the same part within seconds, so
+an ungrouped feed reads as a wall of near-identical lines with the one
+interesting row buried in it (user report 2026-08-25: `LQW15AN2N2C10D` appeared
+three times in fifteen rows). `groupRows` merges by NAME across everything
+loaded — not just adjacent rows, because those three copies were seven rows
+apart — and a group sits at its newest change, growing as older pages arrive.
+The row advertises the member that carries a diff (a version publish outranks
+an event, `KIND_RANK`); the unfold lists every member and fetches the diff for
+the selected one only. A nameless event has no subject to group on and stays
+its own row rather than being lumped in with every other nameless event.
+
 ### `GeometryDiff`: flatten each render before blending, or the diff lies
 
 The difference pane draws both versions at ONE shared px-per-mm scale (kicad-cli
