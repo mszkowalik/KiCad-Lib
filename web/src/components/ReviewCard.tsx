@@ -305,6 +305,12 @@ export default function ReviewCard({
 
       {showItems ? (
         <ul className="notes-list">
+          {detail.items_carried ? (
+            <li className="note muted dim">
+              These answers were recorded before the confirmation that set this state — the
+              confirmation vouches for the subject as a whole and records no items of its own.
+            </li>
+          ) : null}
           {detail.items.map((item) => {
             const pending = answers[item.key];
             const a = item.answered;
@@ -334,6 +340,19 @@ export default function ReviewCard({
                   ) : null}
                 </div>
                 {a?.note && !pending ? <p className="muted">{a.note}</p> : null}
+                {/* What this answer replaced. Accepting a flag keeps the flag
+                    readable — otherwise clearing a defect means deleting the
+                    only description of it. */}
+                {a?.superseded && !pending ? (
+                  <p className="muted dim superseded">
+                    was{" "}
+                    <span className={`pill ${RESULT_TONE[a.superseded.result] ?? "neutral"}`}>
+                      {a.superseded.result}
+                    </span>
+                    {a.superseded.actor ? ` by ${a.superseded.actor}` : ""}
+                    {a.superseded.note ? ` — ${a.superseded.note}` : ""}
+                  </p>
+                ) : null}
                 {verifying && (!item.machine || a?.result === "failed") ? (
                   <div className="btn-row">
                     <button type="button" className="btn btn-sm" onClick={() => void answer(item, "checked")}>

@@ -4415,6 +4415,17 @@ export interface ChecklistItemDef {
     actor: string;
     actor_type: ReviewActor;
     at: string;
+    /** The answer this one replaced, kept so accepting a flag never erases
+     *  what was flagged. A real finding (flagged/failed) outlives any number
+     *  of later routine re-checks. */
+    superseded?: {
+      result: "checked" | "na" | "skipped" | "failed" | "flagged";
+      note?: string | null;
+      actor?: string;
+      actor_type?: ReviewActor;
+      at?: string;
+      reason?: string;
+    };
   };
 }
 
@@ -4465,6 +4476,9 @@ export interface ReviewDetail extends ReviewStateDetail {
   version_id: number | null;
   checklist_version_id: number | null;
   items: ChecklistItemDef[];
+  /** The answers shown were recorded BEFORE the record that set the state —
+   *  a one-click "Mark checked" carries no item breakdown of its own. */
+  items_carried?: boolean;
   extra_items: ReviewRecordItem[];
   record: ReviewRecordRow | null;
   history: ReviewRecordRow[];

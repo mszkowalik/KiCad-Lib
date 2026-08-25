@@ -4056,3 +4056,11 @@ a.check-cell:hover {
   flex-wrap: wrap;
   gap: 4px;
 }
+
+/* The answer a checklist item's current answer replaced. Accepting a flag has
+   to keep the flag readable — clearing a defect must never mean deleting the
+   only description of it. */
+.superseded {
+  margin-top: 2px;
+  font-size: 0.8rem;
+}

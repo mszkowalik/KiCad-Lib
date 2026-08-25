@@ -67,6 +67,31 @@ def effective_record(rows: list[M.ReviewRecord], version_id: int | None) -> M.Re
     )
 
 
+def itemised_record(rows: list[M.ReviewRecord], version_id: int | None) -> M.ReviewRecord | None:
+    """The newest non-revoked record on one version that HAS an item breakdown.
+
+    A one-click human confirmation is stored with `items=None` on purpose — it
+    means "I vouch for this whole subject", and `state_from_record` reads that
+    sentinel as a full check without measuring completeness. The side effect is
+    that the effective record then carries no per-item answers, so a review card
+    reading `effective_record` alone rendered an EMPTY checklist the moment
+    somebody pressed Mark checked, throwing away the visible evidence of what
+    the machine and the agent had actually verified (user report 2026-08-25).
+
+    So the state still comes from `effective_record` and only the ITEMS come
+    from here. Never merge the two into one record: repopulating `items` on the
+    confirmation would make `state_from_record` measure it, and a subject with
+    a legitimately skipped item would flip from checked back to partial.
+    """
+    if version_id is None:
+        return None
+    return next(
+        (r for r in reversed(rows)
+         if r.subject_version_id == version_id and r.revoked_at is None and r.items is not None),
+        None,
+    )
+
+
 def record_json(r: M.ReviewRecord) -> dict:
     return {
         "id": r.id,
@@ -290,6 +315,27 @@ def _category_of(db: Session, kind: str, parent) -> int | None:
     return cv.category_id if cv else None
 
 
+# Results worth remembering after they are overwritten: a defect somebody found
+# and a check the machine failed. A plain "checked" or "na" is not a finding, so
+# it never displaces one.
+_NOTABLE_RESULTS = ("flagged", "failed")
+
+
+def _answer_snapshot(entry: dict) -> dict:
+    """The part of an answer worth keeping once it has been replaced."""
+    return {k: entry.get(k) for k in ("result", "note", "actor", "actor_type", "at", "reason")
+            if entry.get(k) is not None}
+
+
+def _notable(candidate: dict | None, inherited: dict | None) -> dict | None:
+    """Of the answer just replaced and the one it had itself replaced, the one a
+    later reader needs to see."""
+    for pick in (candidate, inherited):
+        if pick is not None and pick.get("result") in _NOTABLE_RESULTS:
+            return pick
+    return candidate or inherited
+
+
 def record_check(db: Session, kind: str, parent, version_id: int, actor: str,
                  actor_type: str, items: list[dict] | None, note: str | None = None,
                  record_kind: str = "check") -> dict:
@@ -345,6 +391,19 @@ def record_check(db: Session, kind: str, parent, version_id: int, actor: str,
                 "actor_type": actor_type,
                 "at": now,
             }
+            # Accepting a flag must not erase what was flagged. Re-answering an
+            # item overwrote it outright, so the only way to clear a defect was
+            # to delete the description of it — and the note IS the record of
+            # what somebody found (user report 2026-08-25). The answer being
+            # replaced is kept on the entry instead, and a real finding beats a
+            # routine re-check when both are candidates, so a flag survives any
+            # number of later "checked" answers.
+            superseded = _notable(
+                _answer_snapshot(old) if old and old.get("result") != result else None,
+                (old or {}).get("superseded"),
+            )
+            if superseded is not None:
+                entry["superseded"] = superseded
             # A skip may carry a structured reason ("html_datasheet",
             # "no_land_pattern", …) so the health tab can aggregate WHY things
             # are unverifiable instead of re-reading 84 free-text notes. Free

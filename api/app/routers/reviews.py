@@ -84,15 +84,31 @@ def _detail(db: Session, kind: str, parent) -> dict:
     record = review_svc.effective_record(rows, version_id)
     cat_id = review_svc._category_of(db, kind, parent)
     resolved = checklists_svc.resolve(db, kind, cat_id)
-    answered = {i["key"]: i for i in (record.items or [])} if record else {}
+    # The STATE comes from the effective record; the per-item answers may have
+    # to come from an earlier one. A one-click "Mark checked" is stored with no
+    # item breakdown by design, and reading the answers off it alone blanked the
+    # card — see `itemised_record` for why the two must stay separate.
+    items_record = (
+        record if (record is not None and record.items is not None)
+        else review_svc.itemised_record(rows, version_id)
+    )
+    answered = {i["key"]: i for i in (items_record.items or [])} if items_record else {}
+    # True when the answers on show were recorded BEFORE the record that set the
+    # state. The card says so rather than crediting them to whoever confirmed.
+    items_carried = (
+        items_record is not None and record is not None and items_record.id != record.id
+    )
 
     items = []
     for item in resolved["items"]:
         merged = dict(item)
         prev = answered.get(item["key"])
         if prev:
+            # `superseded` rides along: it is what the current answer replaced,
+            # and dropping it here is what made accepting a flag look like the
+            # flag had never existed.
             merged["answered"] = {k: prev.get(k) for k in
-                                  ("result", "note", "actor", "actor_type", "at")}
+                                  ("result", "note", "actor", "actor_type", "at", "superseded")}
         items.append(merged)
     extras = [i for k, i in answered.items()
               if k not in {it["key"] for it in resolved["items"]}]
@@ -108,6 +124,7 @@ def _detail(db: Session, kind: str, parent) -> dict:
         **state,
         "state_detail": state,
         "items": items,
+        "items_carried": items_carried,
         "extra_items": extras,
         "record": review_svc.record_json(record) if record else None,
         "history": [review_svc.record_json(r) for r in reversed(rows)],

@@ -716,6 +716,24 @@ review axis records who verified each version against its documentation.
     `failing_keys` (machine failures + flags grouped by checklist key — the
     work-plan view) and `skip_reasons`, both counted over EFFECTIVE records
     only, so the numbers cannot drift from the queue.
+  - **A one-click confirmation stores `items=None`, and the card must not read
+    its answers off it.** That sentinel is what makes `state_from_record`
+    return a full check without measuring completeness, so it cannot be
+    repopulated — a subject with a legitimately skipped item would flip back to
+    partial. But `_detail` read the per-item answers from the effective record
+    alone, so pressing **Mark checked** blanked the whole checklist and threw
+    away the visible evidence of what the machine and the agent had verified
+    (user report 2026-08-25). The state still comes from `effective_record`;
+    the ITEMS come from `review.itemised_record`, the newest non-revoked record
+    that has a breakdown, and `items_carried` tells the card to say so rather
+    than crediting those answers to whoever pressed the button.
+  - **Re-answering an item keeps what it replaced** (`superseded` on the entry).
+    Accepting a flag used to mean deleting the only description of the defect,
+    so the answer being overwritten is kept on the new entry, and `_notable`
+    makes a real finding (`flagged`/`failed`) outlive any number of later
+    routine re-checks. `_detail` must include `superseded` in the projection it
+    builds for `answered` — a fixed key list there is exactly what hid it the
+    first time.
   - **A skip may carry a structured `reason`** (`html_datasheet`,
     `no_document`, …) — `record_check` stores it skip-only, capped at 40
     chars; the ReviewCard offers the presets. Free text stays in `note`.
