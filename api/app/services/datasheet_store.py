@@ -171,6 +171,21 @@ def classify_text_layer(
     return inspect_document(data, content_type, filename)[0]
 
 
+def _index_pages(version_id: int) -> None:
+    """Kick off per-page extraction for a freshly stored version.
+
+    Fire-and-forget in a daemon thread: a 642-page document is minutes of work
+    and must never sit inside the upload or fetch request. The startup sweep
+    catches anything a crash loses, because the version's `pages_indexed_at`
+    stays NULL. Imported lazily — `datasheet_pages` imports this module."""
+    try:
+        from .datasheet_pages import index_one
+
+        index_one(version_id)
+    except Exception as e:  # noqa: BLE001 — a derived cache must never fail a store
+        log.warning(f"could not start page indexing for version {version_id}: {e}")
+
+
 def pin_datasheets(db: Session, cv: M.ComponentVersion) -> None:
     """Record which datasheet versions (PDF contents) this component version
     uses. Called on every component-version creation/approval."""
@@ -340,6 +355,7 @@ def fetch_datasheet(db: Session, ds: M.Datasheet, conditional: bool = True) -> d
                                "content_type": content_type,
                                "component_bumped_to": bumped}))
     db.commit()
+    _index_pages(dv.id)
     is_pdf = (content_type == "application/pdf") or filename.lower().endswith(".pdf")
     return {"id": ds.id, "result": "new_version", "version_no": new_no,
             "looks_like_pdf": is_pdf, "component_bumped_to": bumped}
@@ -394,6 +410,7 @@ def store_upload(
                                "content_type": content_type,
                                "component_bumped_to": bumped}))
     db.commit()
+    _index_pages(dv.id)
     is_pdf = (content_type == "application/pdf") or (filename or "").lower().endswith(".pdf")
     return {"id": ds.id, "result": "new_version", "version_no": new_no,
             "looks_like_pdf": is_pdf, "component_bumped_to": bumped}
@@ -442,6 +459,7 @@ def add_component_file(
                                "size": len(data), "content_type": content_type,
                                "component_bumped_to": bumped}))
     db.commit()
+    _index_pages(dv.id)
     return {"id": ds.id, "result": "created", "version_no": 1,
             "component_bumped_to": bumped}
 

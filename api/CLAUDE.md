@@ -161,6 +161,88 @@ section first.
     instead of dying. Any copy already held survives untouched — and the gate
     runs BEFORE the sha comparison, so a supplier that starts serving an error
     page reads as "rejected", not as "unchanged".
+- **Fixing a component's datasheet: three doors, and only one of them is free.**
+  The MCP tool surface has no way to attach a datasheet to an EXISTING
+  component, and successive agent passes concluded from that the platform
+  cannot do it and recorded `cmp.datasheet` as `skipped` on
+  `LC76GPAMD`, `LE310X1-EU/-LA`, `LE910R1-EU` and `MP34DT05TR-A`. That
+  conclusion is wrong — it is a gap in the tool surface, not in the API:
+  - `POST /api/datasheets/{ds_id}/fetch` — server re-downloads `source_url`.
+    No version bump. Use first; the server reaches some hosts the agent cannot.
+  - `POST /api/datasheets/{ds_id}/upload` — push a PDF fetched by hand. The
+    response says `component_bumped_to: null`, and that is the point: **the
+    component version does NOT move, so its verification answers survive.**
+    This is the door for a host that 403s the server (verified 2026-08-25 on
+    `PESD1CAN,215`, whose Nexperia URL the server cannot reach).
+  - `POST /api/components/{id}/versions` with `datasheets: [{label,
+    source_url}]` — the only way to create, replace or reorder the ROWS, and
+    hence to fix a wrong `source_url`. It **bumps the component version and
+    drops every agent answer**, so do it first and re-record afterwards. Pass
+    an existing row's `id` to keep its stored PDF; omit a row to archive it.
+
+  Reachability is asymmetric and worth testing rather than assuming: on
+  2026-08-25 `ti.com`, `assets.nexperia.com`, `hammfg.com`, `quectel.com`,
+  `infineon.com`, `italtronic.com`, `degson.com`, `china-fenghua.com`,
+  `samwha.com` and `telit.com` all served real PDFs to the agent's machine,
+  while `phoenixcontact.com` (403), `st.com` (timeout) and `renata.com` (500)
+  refused both it and the server. A 403 or a login wall arrives as a
+  200-status HTML page, so check `file` says `PDF document` before uploading.
+- **Datasheets are indexed PER PAGE, and the index is a finding aid — never an
+  authority** (`services/datasheet_pages.py`, 2026-08-25). `DatasheetPage`
+  holds one row per page of layout-aware markdown from `pymupdf4llm` (same
+  MuPDF engine and Artifex licence as the `pymupdf` already used; it pulls
+  onnxruntime, MIT). Keyed on the IMMUTABLE `datasheet_version_id`, so a row
+  never goes stale — new PDF content is a new version with its own pages.
+  Measured on the live corpus: 0.18–0.27 s per page, ~9400 pages on the
+  current copies, 16.4 MB of text.
+  - **Why it exists**: `read_datasheet` returns at most 6 pages chosen by
+    GUESSING a page number, and RP2040 is 642 pages with its absolute maximum
+    ratings on page 615. Nothing could search datasheet text at all.
+  - **What it may not be trusted for.** The extractor keeps a table's grid and
+    recovers the text drawn inside a mechanical figure, both of which plain
+    extraction destroys — the TPS61023 land-pattern drawing yields
+    `6X (0.67)`, `4X (0.5)`, `(1.48)`, and the STM32H725 LQFP100 pinout figure
+    yields a correct pin-number-to-name map for all 100 pins. It ALSO shreds
+    text that wraps inside a merged cell ("voltage must be supplied from" →
+    "voage mus e suppe rom", STM32H725 p117) and reorders multi-line pin labels
+    ("PC15-OSC32_OUT" → "OSC32_OUTPC15-", UFBGA169 ballout), and a unit in a
+    merged column lands on one row of the group. So the index FINDS a page and
+    the page image settles the value. Do not build a check that reads a
+    dimension out of `content`.
+  - **`extract_kind` is never blank on a written row.** `text` |
+    `picture_text` (all of it came from inside a drawing) | `fallback_text`
+    (layout extraction failed, plain extraction used) | `empty_scan` |
+    `failed`. The extractor returns zero characters on a scanned page in
+    0.08 s and raises NOTHING, so an unmarked empty row would make search
+    return nothing and let a reader conclude the page is blank. This is the
+    page-level twin of `DatasheetVersion.text_layer`.
+  - **`pages_indexed_at` on the version is the coverage marker, not "has any
+    page rows"** — a non-PDF legitimately yields zero pages and would
+    otherwise be retried on every sweep for ever.
+  - **The `tsv` column is GENERATED and the config is `simple`.** It cannot
+    disagree with the content beside it, and `datasheet_pages._TSCONFIG` must
+    stay identical to the DDL in `main.py` — a query parsed with a different
+    config does not match the GIN index and silently falls back to a seq scan.
+    `english` was rejected on purpose: datasheet tokens are part numbers,
+    package codes and dimensions, which stemming damages.
+  - **Search excludes superseded versions by default** (`d.current_version_id
+    = dv.id`). Including them returns the same hit several times and points at
+    a page the library no longer serves.
+  - Sweeps mirror the fetch/classify pair: `POST /api/datasheets/index`
+    (`missing` = the retroactive backfill, `current`, `all`),
+    `POST /api/datasheets/index/stop` (stops BETWEEN versions — a
+    half-extracted document would read as complete, because
+    `extract_version` stamps `pages_indexed_at` itself),
+    `GET /api/datasheets/index-status`. Startup arms `missing` after 120 s
+    unless `DATASHEET_PAGE_INDEX_ON_STARTUP=false`. A store path fires
+    `_index_pages` in a daemon thread — a 642-page document is three minutes
+    of work and must never sit in the upload request. **In dev, a source edit
+    reloads uvicorn and KILLS a running sweep**; the version's NULL
+    `pages_indexed_at` is what makes that recoverable.
+  - Read surfaces: `GET /api/datasheets/search`, `/{id}/outline`,
+    `/{id}/pages/{n}`, and the agent tools `search_datasheets` /
+    `datasheet_outline` (34 client tools now — the count in the Jaravis
+    section below has been stale since before this).
 - **`GET`/`DELETE /api/datasheets/broken`** list and remove documents that were
   archived before the gate existed. `purge_broken` does three things in order,
   and all three are load-bearing: NULL the `ComponentVersionDatasheet` pins (a
@@ -799,6 +881,29 @@ review axis records who verified each version against its documentation.
     the ITEMS come from `review.itemised_record`, the newest non-revoked record
     that has a breakdown, and `items_carried` tells the card to say so rather
     than crediting those answers to whoever pressed the button.
+  - **The WRITE path still has the other half of that bug** (found 2026-08-25,
+    not yet fixed). `itemised_record` repaired reading; `record_check` still
+    builds its new snapshot by carrying from `effective_record`. So when the
+    newest record on a version is a one-click confirmation, writing ONE item
+    carries from `items=None`, inherits nothing, and the new record becomes the
+    only answer — silently discarding every per-item answer underneath it.
+    Reproduced on `PESD1CAN,215`: a single `cmp.datasheet_text` answer took it
+    from 12 answered items to 1, with the 12 recoverable only from a snapshot
+    taken earlier in the session. `carried_from_id` pointed at the one-click
+    record, which is the tell. The fix is for `record_check` to seed from
+    `itemised_record` rather than `effective_record`; until then, never record a
+    partial item set on a subject whose latest record is a one-click human
+    confirm — read the checklist first and re-send every answer it already has.
+  - **Adding an item to a base checklist un-answers it on every existing
+    subject, and nothing backfills it.** `machine_check_on_publish` is the only
+    caller of `validator.validate`, and it runs inside the publish transaction —
+    there is no endpoint that re-runs the validator on an already-published
+    version. So publishing checklist v2 with `cmp.datasheet_text` (2026-08-25)
+    moved all 418 components from checked to partial at once, and the only ways
+    out are a mass republish, which would drop every agent answer, or answering
+    the item by hand. It was backfilled by hand from the `text_layer` column the
+    validator itself reads. Before adding a machine item to a base checklist,
+    decide who answers it for the existing rows.
   - **Re-answering an item keeps what it replaced** (`superseded` on the entry).
     Accepting a flag used to mean deleting the only description of the defect,
     so the answer being overwritten is kept on the new entry, and `_notable`
@@ -1189,14 +1294,48 @@ back past it.** `installed_packages.json` records the download URL and sha of
 each version PCM has seen, and an update uses that record rather than
 re-reading `packages.json` — so refreshing the repository does not rewrite it.
 A user whose recorded version has aged out of the grace window has to uninstall
-and reinstall the package. That is also why the library package's version
-string moving on every publish (it is date+time derived) is worth remembering
-when this is reported.
+and reinstall the package.
+
+**A stale `packages-<tag>.json` is served from the build ITS OWN TAG names**,
+not from the current one — `pcm.meta_for_packages_file` loads `meta-<tag>.json`
+and `pcm_artifact` personalises that. Answering from the current build fails the
+hash the client's cached repository record published, and falling through to the
+shared file on disk hands KiCad download URLs with no `?t=` on them, so every
+zip fetch after it is unauthenticated. Retention is what makes this work: the
+grace window keeps the zips an old index names, its personal plugin zip
+included.
 
 **Diagnosing this class of report**: fetch `repository.json`, then
 `packages.json`, then the zip, and compare the advertised `download_sha256`
 against the served bytes. A 404 body, not a hash difference, is the usual
 answer — and it means the client is stale, not that the package is broken.
+
+## Each PCM package is versioned from ITS OWN content
+
+A package's version string is what PCM compares to decide "update available",
+and the three packages differ in where it comes from: `library` and `models3d`
+derive it from the mirror manifest's `generated_at`, `sync` carries the manual
+`PLUGIN_VERSION`. **A content package keeps its previous version while its own
+subtree hash is unchanged** — `_resolve_package` reuses the whole cached entry,
+version included. Only the plugin (`pinned_version=True`) takes the passed-in
+version on a cache hit, because that one is authored by hand and a bump with
+untouched sources still has to reach the repository.
+
+Getting this wrong is expensive in both directions, and the module has now been
+wrong in both:
+
+- Reuse the zip but keep the old version, and a `PLUGIN_VERSION` bump becomes a
+  silent no-op — nobody is offered the new plugin.
+- Put the version IN the reuse test, and the 260 MB models zip is re-encoded on
+  **every mirror regeneration**, because a content package's version follows the
+  mirror timestamp and that moves on every component publish. Same content, same
+  URL, same bytes (`ZIP_EPOCH`), minutes of CPU — and PCM offered every user a
+  260 MB update for an unchanged 3D model tree. Measured 2026-08-25: seven
+  rebuilds of `models3d-68a2993fcf88r10.zip` in one morning of footprint edits.
+
+The module docstring has promised per-content versioning since it was written;
+until 2026-08-25 the code did not do it. When the reuse rule changes again,
+check both failure modes before believing the fix.
 
 ## Conventions
 

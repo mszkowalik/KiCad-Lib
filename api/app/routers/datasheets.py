@@ -11,6 +11,14 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..config import settings
 from ..db import get_db
+from ..services.datasheet_pages import (
+    INDEX_STATE,
+    index_counts,
+)
+from ..services.datasheet_pages import outline as dp_outline
+from ..services.datasheet_pages import page_text as dp_page_text
+from ..services.datasheet_pages import search as dp_search
+from ..services.datasheet_pages import start_index, stop_index
 from ..services.datasheet_store import (
     CLASSIFY_STATE,
     BadDocument,
@@ -86,6 +94,69 @@ def broken(db: Session = Depends(get_db)):
 def purge(request: Request, db: Session = Depends(get_db)):
     """Remove every document `GET /broken` lists. Audited per row."""
     return purge_broken(db, actor=actor_of(request))
+
+
+class IndexBody(BaseModel):
+    mode: str = "missing"  # "missing" | "current" | "all"
+
+
+@router.post("/index")
+def index_pages(body: IndexBody):
+    """Extract per-page text for the archived documents.
+
+    'missing' is the retroactive backfill (versions never indexed) and is what
+    startup arms by itself. 'current' does only the versions a datasheet
+    actually serves, for a fast first pass. 'all' re-extracts everything, for
+    when the extractor improves."""
+    if body.mode not in ("missing", "current", "all"):
+        raise HTTPException(422, "mode must be 'missing', 'current' or 'all'")
+    if not start_index(body.mode):
+        raise HTTPException(409, "a page-index run is already in progress")
+    return {"status": "started", "mode": body.mode}
+
+
+@router.post("/index/stop")
+def index_stop():
+    """Stop a running page-index sweep at the next version boundary. Never
+    mid-document — a half-extracted document would read as complete."""
+    if not stop_index():
+        raise HTTPException(409, "no page-index run is in progress")
+    return {"status": "stopping"}
+
+
+@router.get("/index-status")
+def index_status(db: Session = Depends(get_db)):
+    return {**INDEX_STATE, **index_counts(db)}
+
+
+@router.get("/search")
+def search_pages(q: str, limit: int = 20, component: str = "",
+                 include_superseded: bool = False, db: Session = Depends(get_db)):
+    """Full-text search across archived datasheet pages. Returns the component,
+    the document, the page number and the section it sits in — the answer to
+    "which page do I read", not the page itself."""
+    return dp_search(db, q, limit=limit, component=component,
+                     include_superseded=include_superseded)
+
+
+@router.get("/{ds_id}/outline")
+def outline(ds_id: int, db: Session = Depends(get_db)):
+    """The document's section map, plus which pages carry tables, which are
+    drawings, and which cannot be read at all."""
+    res = dp_outline(db, ds_id)
+    if res is None:
+        raise HTTPException(404, "datasheet not found, or it has no local copy")
+    return res
+
+
+@router.get("/{ds_id}/pages/{page_no}")
+def page(ds_id: int, page_no: int, db: Session = Depends(get_db)):
+    """One extracted page as markdown. A derived cache — see the
+    `DatasheetPage` docstring on what it may not be trusted for."""
+    res = dp_page_text(db, ds_id, page_no)
+    if res is None:
+        raise HTTPException(404, "page not indexed — run POST /api/datasheets/index")
+    return res
 
 
 @router.post("/{ds_id}/fetch")

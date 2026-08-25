@@ -320,10 +320,68 @@ class DatasheetVersion(Base):
     text_layer: Mapped[str] = mapped_column(String(10), default="", server_default="")
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     text_pages: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # When the per-page extraction last ran for this version. NULL = never,
+    # which is what the backfill sweep claims. It is a separate marker rather
+    # than "does this version have any DatasheetPage rows", because a non-PDF
+    # legitimately yields ZERO pages and would otherwise be retried for ever.
+    # (Added by startup migration.)
+    pages_indexed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     datasheet: Mapped[Datasheet] = relationship(back_populates="versions")
 
     __table_args__ = (UniqueConstraint("datasheet_id", "version_no", name="uq_datasheet_version"),)
+
+
+class DatasheetPage(Base):
+    """One page of an archived datasheet, extracted for search and navigation.
+
+    A DERIVED CACHE, never an authority. The layout extractor preserves the
+    row/column association of a table and recovers the text drawn inside a
+    mechanical figure, both of which plain text extraction destroys — but it
+    also shreds text that wraps inside a merged cell ("voltage must be
+    supplied from" came back as "voage mus e suppe rom" on STM32H725 p117) and
+    reorders multi-line pin labels ("PC15-OSC32_OUT" became
+    "OSC32_OUTPC15-"). So these rows are for FINDING a page. Every value that
+    enters the library is still read off the page image.
+
+    Keyed on ``datasheet_version_id``, which is immutable, so a row never goes
+    stale: new PDF content is a new version and gets its own pages. Rebuildable
+    from the stored PDF at any time (``services/datasheet_pages.py``).
+
+    ``extract_kind`` is the load-bearing column and the page-level twin of
+    ``DatasheetVersion.text_layer``. An empty ``content`` must never be
+    ambiguous: the layout extractor returns zero characters on a scanned page
+    in 0.08s with no error, so an unmarked empty row would make search return
+    nothing and let a reader conclude the page is blank."""
+
+    __tablename__ = "datasheet_pages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    datasheet_version_id: Mapped[int] = mapped_column(ForeignKey("datasheet_versions.id"))
+    page_no: Mapped[int] = mapped_column(Integer)  # 1-based, as printed and as read_datasheet takes it
+    # Markdown, not plain text: tables keep their grid and figure text is
+    # fenced in picture-text markers. Column is `content` and not `text`
+    # because `to_tsvector('simple', text)` reads as the TYPE inside the
+    # generated-column expression.
+    content: Mapped[str] = mapped_column(Text, default="")
+    chars: Mapped[int] = mapped_column(Integer, default=0)
+    # "text" | "picture_text" (all of it came from inside a drawing) |
+    # "fallback_text" (layout extractor failed, plain extraction used) |
+    # "empty_scan" (no text layer — the image is the only content) |
+    # "failed" (nothing extracted and not a known scan).
+    extract_kind: Mapped[str] = mapped_column(String(16), default="")
+    # Section path this page sits in ("6 Specifications / 6.1 Absolute Maximum
+    # Ratings"), carried forward from the PDF outline. NULL when the document
+    # has no outline — 96 of the ~390 archived documents carry one.
+    section: Mapped[str | None] = mapped_column(Text, nullable=True)
+    has_table: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    __table_args__ = (
+        UniqueConstraint("datasheet_version_id", "page_no", name="uq_datasheet_page"),
+        Index("ix_datasheet_page_version", "datasheet_version_id"),
+    )
 
 
 class ComponentVersionDatasheet(Base):

@@ -510,6 +510,89 @@ def read_datasheet(component: str, pages: str = "", datasheet_label: str = "") -
 
 
 @beta_tool
+def search_datasheets(query: str, component: str = "", limit: int = 20) -> str:
+    """Search the TEXT of every archived datasheet and get back the exact pages
+    to read. Use this BEFORE read_datasheet: it turns "which page shows the
+    land pattern" into one call instead of guessing page numbers six at a time.
+    RP2040 alone is 642 pages.
+
+    Each hit names the component, the document, the page number, the section
+    that page sits in, and a snippet. Feed the page number straight into
+    read_datasheet.
+
+    Two fields decide how far to trust a hit:
+    - `extract_kind`: "text" is prose. "picture_text" means the words were
+      recovered from INSIDE a drawing (dimension callouts, ballout grids) —
+      useful and often exactly what you want, but the reading order is not
+      guaranteed. "empty_scan" pages hold no text at all.
+    - `has_table`: the page has a table whose grid survived extraction.
+
+    The extracted text is a FINDING AID, never the authority. It preserves
+    table grids and recovers text drawn inside figures, but it also shreds text
+    that wraps inside a merged cell and can reorder a multi-line pin label. Read
+    the page image with read_datasheet before you record any value from it.
+
+    Args:
+        query: Words to search for. Quotes force a phrase ("land pattern"),
+            OR and - work ("pinout OR ballout", "package -reel").
+        component: Optional filter, matched as a substring of the component name.
+        limit: Maximum hits (default 20, cap 100).
+    """
+    from .datasheet_pages import search as _search
+
+    db = SessionLocal()
+    try:
+        return json.dumps(_search(db, query, limit=limit, component=component))
+    finally:
+        db.close()
+
+
+@beta_tool
+def datasheet_outline(component: str, datasheet_label: str = "") -> str:
+    """The map of one archived datasheet: its sections with the page each one
+    starts on, which pages carry tables, which pages are drawings, and which
+    pages cannot be read at all.
+
+    Call this first on any document longer than a few pages. It is the cheap
+    way to find the pinout, the absolute maximum ratings, the package outline
+    and the recommended land pattern without opening pages one by one.
+
+    `sections` comes from the document's own PDF outline and is absent when the
+    publisher did not write one — about a quarter of the library's documents
+    carry it. When it is empty, fall back to search_datasheets.
+
+    Args:
+        component: Exact component name.
+        datasheet_label: Which datasheet when the component has several
+            (case-insensitive substring of its label). Empty = the primary one.
+    """
+    from .datasheet_pages import outline as _outline
+
+    db = SessionLocal()
+    try:
+        comp = db.query(M.Component).filter_by(name=component.strip()).first()
+        if comp is None:
+            return json.dumps({"error": f"component {component!r} not found"})
+        sheets = (db.query(M.Datasheet)
+                  .filter_by(component_id=comp.id, archived=False)
+                  .order_by(M.Datasheet.position).all())
+        if not sheets:
+            return json.dumps({"error": f"{component!r} has no datasheets"})
+        needle = datasheet_label.strip().lower()
+        ds = next((d for d in sheets if needle and needle in d.label.lower()),
+                  None if needle else sheets[0])
+        if ds is None:
+            return json.dumps({"error": f"no datasheet label matches {datasheet_label!r}",
+                               "available": [d.label for d in sheets]})
+        res = _outline(db, ds.id)
+        if res is None:
+            return json.dumps({"error": f"datasheet {ds.label!r} has no local copy"})
+        return json.dumps({"component": comp.name, **res})
+    finally:
+        db.close()
+
+
+@beta_tool
 def get_price_history(component: str, limit: int = 12) -> str:
     """Historical price timeline of a component, newest first. Each entry is
     the COMPLETE set of price points effective at that moment (all sources —
@@ -1501,6 +1584,7 @@ TOOLS = [
     # library reads
     search_components, get_component, list_categories, list_base_symbols,
     list_footprints, get_symbol, get_footprint, read_datasheet,
+    search_datasheets, datasheet_outline,
     get_price_history, get_audit_log, list_models3d, list_skills, get_skill,
     list_signoffs,
     # review axis

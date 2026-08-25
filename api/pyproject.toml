@@ -14,6 +14,10 @@ dependencies = [
     "httpx>=0.27",
     "anthropic>=0.117",
     "pymupdf>=1.26",
+    # Layout-aware markdown for the per-page datasheet index. Same engine and
+    # same Artifex dual licence as pymupdf above, so it adds no new licence
+    # question; it does pull onnxruntime (MIT) for its OCR-decision model.
+    "pymupdf4llm>=1.28",
     "minio>=7.2",
     "cryptography>=42",
     "python-multipart>=0.0.9",

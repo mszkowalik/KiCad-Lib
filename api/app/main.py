@@ -256,6 +256,24 @@ _PHASE1_DDL = (
      "ALTER TABLE datasheet_versions ADD COLUMN IF NOT EXISTS page_count integer"),
     ("datasheet_versions.text_pages",
      "ALTER TABLE datasheet_versions ADD COLUMN IF NOT EXISTS text_pages integer"),
+    # Per-page extraction (services/datasheet_pages.py). The marker is on the
+    # VERSION and not derived from "has any page rows", because a non-PDF
+    # legitimately yields zero pages and would be retried on every sweep.
+    ("datasheet_versions.pages_indexed_at",
+     "ALTER TABLE datasheet_versions ADD COLUMN IF NOT EXISTS pages_indexed_at timestamptz"),
+    # The search vector is a GENERATED column, so it can never disagree with
+    # the content beside it — no trigger to forget and no app code to skip.
+    # The config is `simple` and must stay identical to
+    # datasheet_pages._TSCONFIG: a query parsed with a different config does
+    # not match this index and Postgres silently falls back to a seq scan.
+    # `english` was rejected on purpose — datasheet tokens are part numbers,
+    # package codes and dimensions, which stemming damages.
+    ("datasheet_pages.tsv",
+     "ALTER TABLE datasheet_pages ADD COLUMN IF NOT EXISTS tsv tsvector "
+     "GENERATED ALWAYS AS (to_tsvector('simple', coalesce(content, ''))) STORED"),
+    ("ix_datasheet_pages_tsv",
+     "CREATE INDEX IF NOT EXISTS ix_datasheet_pages_tsv "
+     "ON datasheet_pages USING GIN (tsv)"),
 )
 
 # name -> "ok" | "failed: ..."; served by GET /api/health/schema.
@@ -762,6 +780,22 @@ def startup() -> None:
         _t.Timer(30.0, lambda: start_text_layer_classify("missing")).start()
     except Exception as e:  # noqa: BLE001 — a cosmetic tag must never block startup
         log.warning(f"could not arm the datasheet text-layer backfill: {e}")
+
+    # Extract per-page text for every document stored before the page index
+    # existed. Self-limiting in the same way: "missing" only claims versions
+    # with pages_indexed_at IS NULL, so every boot after the backfill finds
+    # nothing. Measured cost of the first full run on ~9400 pages is about 40
+    # minutes of background CPU, hence the long delay — it must not compete
+    # with the fetch and classify sweeps, which are the ones it reads from.
+    if settings.datasheet_page_index_on_startup:
+        try:
+            import threading as _t2
+
+            from .services.datasheet_pages import start_index
+
+            _t2.Timer(120.0, lambda: start_index("missing")).start()
+        except Exception as e:  # noqa: BLE001 — a derived cache must never block startup
+            log.warning(f"could not arm the datasheet page-index backfill: {e}")
     if settings.fx_autofetch:
         from .services.fx import start_auto_refresh
 

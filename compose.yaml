@@ -78,6 +78,10 @@ services:
       JLC_SECRET_KEY: ${JLC_SECRET_KEY:-}
       # KiCad library nicknames as referenced by the live HTTP catalog —
       # defaults match the PCM install (PCM_7Sigma_Base / PCM_7Sigma)
+      # Per-page datasheet text index (search + outline). The retroactive
+      # sweep is ~40 min of background CPU the first time it runs, so a
+      # deployment can defer it and trigger POST /api/datasheets/index by hand.
+      DATASHEET_PAGE_INDEX_ON_STARTUP: ${DATASHEET_PAGE_INDEX_ON_STARTUP:-true}
       HTTPLIB_SYMBOL_LIB: ${HTTPLIB_SYMBOL_LIB:-PCM_7Sigma_Base}
       FOOTPRINT_LIB_NICKNAME: ${FOOTPRINT_LIB_NICKNAME:-PCM_7Sigma}
     volumes:

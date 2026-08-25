@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     # UTC unless TZ is set).
     datasheet_recheck_nightly: bool = True
     datasheet_recheck_hour: int = 3
+    # Extract per-page text for documents stored before the page index existed
+    # (services/datasheet_pages.py). Self-limiting — it only claims versions
+    # with pages_indexed_at IS NULL — but the FIRST run is ~40 minutes of
+    # background CPU on ~9400 pages, so a deployment that would rather run it
+    # by hand (POST /api/datasheets/index) can turn the sweep off.
+    datasheet_page_index_on_startup: bool = True
 
     # Token expected in "Authorization: Token <...>" on /kicad/v1/* endpoints.
     httplib_token: str = "dev-token"
