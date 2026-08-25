@@ -23,7 +23,10 @@ the review axis, not on a draft gate). A footprint whose 3D model sits outside
 the library — in ~/Downloads, in KiCad's own 3dmodels tree, beside a project —
 carries that file with it: Push uploads the model, rewrites the reference to
 `${SEVENSIGMA_DIR}/3DModels/…`, and repoints the local copy at the installed
-one. See model_paths.py and model_ui.py.
+one. So does one whose model was dropped into the INSTALLED library's own
+3dmodels tree — that path reads as a library reference after
+`to_platform_text`, so it has to be checked against what the library actually
+holds rather than trusted. See `_plan_models`, model_paths.py and model_ui.py.
 
 "Edited" is decided against a CANONICAL form of the drawing (kicad_canon.py),
 never against the bytes: KiCad rewrites the whole file it saves in its own
@@ -49,8 +52,8 @@ sys.path.insert(0, str(HERE))  # KiCad runs this as a script; be explicit anyway
 from kicad_canon import canon_hash, matches, record, split_symbols  # noqa: E402
 import model_ui  # noqa: E402 — same reason
 from model_paths import (  # noqa: E402
-    MODEL_PREFIX, is_library_path, model_paths, resolve, rewrite_model_path,
-    suggest_rel_path, var_names,
+    MODEL_PREFIX, is_library_path, model_paths, rel_of, resolve,
+    rewrite_model_path, suggest_rel_path, var_names,
 )
 
 BASE_URL = "__BASE_URL__"
@@ -315,18 +318,68 @@ def installed_model_path(rel: str) -> str:
     return f"${{{THIRD_PARTY_VAR}}}/3dmodels/{MODELS_INSTALL_DIR}/{rel}"
 
 
-def _plan_models(name: str, path: Path, fid) -> tuple[list[dict], str | None]:
-    """The off-library 3D models one footprint references.
+_MODEL_ROWS: dict[str, dict | None] = {}
 
-    Returns (items, error). An item is one reference to upload: `footprint`,
-    `src` (the file on this machine), `orig` (the path as written) and `rel`
-    (the suggested place under 3DModels/, editable in the dialog). The error is
-    set when a reference names a file that is not there — the push of THAT
-    footprint has to stop, because the platform refuses a non-library path and
-    would reject it anyway, with a worse message.
+
+def _stored_model(rel: str) -> dict | None:
+    """The library's record for `3DModels/<rel>`, or None when it holds no such
+    file. Raises when the question could not be asked — the caller must not read
+    a failed request as "absent" and re-upload over a stored model.
+
+    Asked one rel at a time rather than by listing everything: the list endpoint
+    caps at 300 rows and the library is already close to that, so a listing
+    could answer "absent" about a model that is simply on the next page.
     """
-    text = to_platform_text(path.read_text(encoding="utf-8"))
-    refs = [p for p in model_paths(text) if not is_library_path(p)]
+    if rel not in _MODEL_ROWS:
+        res = _get_json(f"{BASE_URL}/api/models3d"
+                        f"?query={urllib.parse.quote(rel)}&limit=300")
+        _MODEL_ROWS[rel] = next(
+            (r for r in (res.get("models") or []) if r.get("rel_path") == rel), None)
+    return _MODEL_ROWS[rel]
+
+
+def _sha256(src: Path) -> str | None:
+    """The file's digest in the spelling `/api/models3d` reports, or None when it
+    cannot be read."""
+    try:
+        return hashlib.sha256(src.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _plan_models(name: str, path: Path, fid) -> tuple[list[dict], str | None]:
+    """The 3D models one footprint references that the library does not hold.
+
+    Two kinds, both needing the same upload:
+
+    * **Off-library** — a STEP in ~/Downloads, in KiCad's own 3dmodels tree, or
+      beside a project. Where it lands under `3DModels/` is a decision, so the
+      suggestion is shown and editable in the dialog.
+    * **A library path the library does not actually have.** The installed
+      library's own 3dmodels tree is the one place `to_platform_text` rewrites
+      into a `${SEVENSIGMA_DIR}` reference, so a file dropped in there BY HAND
+      reads as "already stored". Trusting that filed a footprint pointing at
+      bytes the platform had never seen, and its `fp.model3d` check failed after
+      publishing (D_SOD-123FL v5, 2026-08-25).
+    * **A library path whose bytes CHANGED here.** Editing the STEP in place, at
+      the path the footprint already names, is the normal way a wrong model gets
+      corrected — and "the row exists" would skip it, so the fix would never
+      leave this machine. The local digest is compared against the store's, and
+      a difference plans an upload that REPLACES that `rel_path`.
+
+    For both library cases the `rel` is the path the footprint already names, so
+    it is prefilled rather than suggested. A replacement is not private to one
+    footprint: every footprint pointing at that `rel_path` gets the new solid,
+    which is why `_upload_models` announces it as "Replacing".
+
+    Returns (items, error). An item carries `footprint`, `src` (the file on this
+    machine), `local` (the path the LOCAL file writes, for the relink), `orig`
+    (the path the PUSHED text will spell, for the reference rewrite) and `rel`
+    (where it goes under 3DModels/). The error is set when a reference names a
+    file that is not there — the push of THAT footprint has to stop, because the
+    platform would reject it anyway, with a worse message.
+    """
+    refs = dict.fromkeys(model_paths(path.read_text(encoding="utf-8")))
     if not refs:
         return [], None
     existing: list = []
@@ -335,14 +388,36 @@ def _plan_models(name: str, path: Path, fid) -> tuple[list[dict], str | None]:
             existing = _get_json(f"{BASE_URL}/api/footprints/{fid}").get("models") or []
         except Exception:  # noqa: BLE001 — only affects the suggested folder
             existing = []
-    items, missing = [], []
-    for ref in dict.fromkeys(refs):  # each distinct path once, order kept
+    items, missing, unchecked = [], [], []
+    for ref in refs:  # each distinct path once, order kept
+        plat = to_platform_text(ref)  # how the pushed text will spell it
+        rel, stored = "", None
+        if is_library_path(plat):
+            rel = rel_of(plat)
+            try:
+                stored = _stored_model(rel)
+            except Exception:  # noqa: BLE001 — cannot tell, so change nothing
+                unchecked.append(rel)
+                continue
         src = resolve(ref, _path_vars(var_names(ref)), path.parent)
         if src is None:
+            if stored is not None:
+                continue  # the library holds it; this machine just has no copy
             missing.append(ref)
             continue
-        items.append({"footprint": name, "src": src, "orig": ref,
-                      "rel": suggest_rel_path(src, existing)})
+        if stored is not None:
+            local_sha = _sha256(src)
+            if local_sha is None or not stored.get("sha256"):
+                unchecked.append(rel)  # cannot compare — never overwrite blind
+                continue
+            if local_sha == stored["sha256"]:
+                continue  # byte-identical to the library — nothing to send
+        items.append({"footprint": name, "src": src, "local": ref, "orig": plat,
+                      "rel": rel or suggest_rel_path(src, existing),
+                      "replaces": stored})
+    if unchecked:
+        _notify(f"{name}: could not check whether the library holds "
+                + ", ".join(unchecked) + " — sent the reference unchanged.")
     if missing:
         return items, ("cannot find the 3D model file(s) it references: "
                        + ", ".join(missing))
@@ -370,7 +445,8 @@ def _upload_models(items: list[dict]) -> list[str]:
             it["error"] = f"cannot read {src}: {e}"
             errors.append(f"{it['footprint']}: {it['error']}")
             continue
-        _notify(f"Uploading {src.name} ({len(data) >> 10} kB) as 3DModels/{rel}…")
+        verb = "Replacing" if it.get("replaces") else "Uploading"
+        _notify(f"{verb} {src.name} ({len(data) >> 10} kB) as 3DModels/{rel}…")
         status, res = _post_multipart(
             f"{BASE_URL}/api/models3d/upload?rel_path={urllib.parse.quote(rel)}",
             src.name, data)
@@ -405,16 +481,21 @@ def _relink_local(path: Path, plan: list[dict]) -> None:
 
     Without this the file keeps naming ~/Downloads: the model would vanish from
     the board the day that folder is cleared, and every later push would upload
-    it again. The baseline in local_state.json is deliberately NOT re-recorded —
+    it again. A model the user had already dropped into the installed tree is
+    the one case where this changes nothing, and then the file is left alone
+    rather than rewritten with its own bytes. The baseline in local_state.json
+    is deliberately NOT re-recorded —
     the next sync compares this file against the platform's copy, finds the same
     drawing, and settles it there, which is the one path that cannot lose an
     edit if the mirror is still rebuilding.
     """
     try:
-        text = path.read_text(encoding="utf-8")
+        before = path.read_text(encoding="utf-8")
+        text = before
         for it in plan:
-            text = rewrite_model_path(text, it["orig"], installed_model_path(it["rel"]))
-        path.write_text(text, encoding="utf-8")
+            text = rewrite_model_path(text, it["local"], installed_model_path(it["rel"]))
+        if text != before:  # a model already installed where it belongs needs no write
+            path.write_text(text, encoding="utf-8")
     except OSError as e:
         _notify(f"Uploaded the model but could not rewrite {path.name}: {e}")
 

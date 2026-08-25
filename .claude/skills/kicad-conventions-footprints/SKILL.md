@@ -3,7 +3,7 @@ name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints, and the naming standard: the KLC tier rule (Tier 0 stock names are frozen), the twelve-slot field order, decided spellings (_HandSoldering, vendor tokens, no rotation in names), the 7Sigma: namespace, validator-enforced pad/silk/fab/courtyard style, the 0.1mm grid, NPTH mechanical holes, thermal vias, non-electrical parts, and why connector pad numbering always follows the datasheet. Use when naming, picking or authoring any footprint."
 ---
 
-<!-- platform-skill: conventions-footprints v17 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v22 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 Footprints live in the `7Sigma:` namespace and are always referenced as
@@ -23,12 +23,99 @@ change is not finished until they land. See [[platform-workflow]].
 
 ## 1. Choosing a footprint
 
-- Find candidates with `list_footprints` (it shows each one's pad count).
-- Match the part's **physical package** — use the package string from
-  `lcsc_lookup` (`0402`, `SOT-23-5`, `QFN-28`) to pick the footprint whose name
-  and pad count correspond.
-- Pad count should match the base symbol's pin count ([[conventions-symbols]]).
-  A mismatch means the wrong footprint or the wrong symbol.
+### Two different jobs: creating a footprint, and checking one that exists
+
+**Creating a new footprint → import it from JLCPCB/EasyEDA.** Pull the exact LCSC
+part with `easyeda2kicad --lcsc_id=C<number> --full --output ./easyeda_tmp`, then
+run it through the import checklist in §10 and name it per §2. `--full` also
+fetches the 3D model, and **for a new footprint you take EasyEDA's model too** —
+it is drawn to the same land, so it aligns. (Still measure its bounding box before
+setting the offset: §10 and the EasyEDA meshes are frequently z-centred.)
+
+**A footprint that already exists → COMPARE, do not replace.** Pull the JLC land
+anyway and diff it, but record what you find in the verification notes rather than
+redrawing. Two reasons: a lot of this library is deliberately hand-drawn (see
+"House-prepared footprints" below), and silently republishing geometry under
+someone's feet repoints every component on it.
+
+Escalate to the user, do not fix, when the diff shows:
+- **different pad numbering or pad ordering** — this one changes netlists
+- a different pad count, or an exposed pad present in one and absent in the other
+- the body on a different side of the pins, or a different pitch
+- anything you cannot explain from the datasheet
+
+Note in the record and move on when the diff is only: pad size within a few tenths,
+silk or courtyard width, fillet style, or text placement. Those are house style and
+§4 already governs them.
+
+The only exception is an explicit instruction from the user to replace a specific
+footprint — as with `Converter_DCDC_YLPTEC_B2415S-1WR3_THT` on 2026-08-24, whose
+body was mirrored about the pin row.
+
+### Reusing a land for a NEW part — annotate, never re-cut
+
+When a new component reuses a footprint that already exists, **do not edit that
+footprint to match the new part's datasheet.** Not by a tenth of a millimetre, not
+to add its exposed pad, not to widen a pad for its lead. The land was drawn and
+verified for the parts already on it, and re-cutting it to suit an arrival silently
+changes every board that uses the others.
+
+Instead, record a verification item on the NEW component saying what you compared
+and what still needs confirming — that a human has to decide whether this part can
+actually sit on this land. Give them the numbers: the new part's lead pitch, lead
+span and body against the drawn pads, and the JLC land for the new part's own LCSC
+code if one exists.
+
+If the land genuinely does not fit the new part, that is a **new footprint**, not an
+edit to the old one.
+
+These boards are assembled by JLCPCB. The land JLC publishes for a part is the
+one their pick-and-place and reflow process is built around, and it is derived
+from the manufacturer's own recommended land rather than from a generic family
+rule. Starting there removes a whole class of defect at the source.
+
+**A KiCad stock or generic JEDEC footprint is the exception, and it requires
+certainty — not resemblance.** Use one only when you have diffed its pad
+positions, pad sizes, pitch, exposed pad and pad NUMBERING against the
+manufacturer's own recommended land drawing, and they agree. Say in the proposal
+comment which drawing you compared and on which page.
+
+"It has the right package name" is not certainty. The names collide constantly:
+
+- `SOIC-16` and `SOIC-16W` share a pin count and differ by 3.6 mm of body width,
+  so the wrong one leaves pads that never reach the leads.
+- `SOT-23-6`, `TSOT-23-6` and `SOT-363` are three different bodies.
+- A generic `QFN-16` says nothing about whether the part has an exposed pad, how
+  big it is, or whether it is pin 17 or unnumbered.
+- `USON`, `WSON`, `XSON` and `DFN` are used interchangeably by different vendors
+  for lands that are not interchangeable.
+
+Picking a plausible generic and moving on is how a wrong footprint reaches a
+fabricated board. It has happened repeatedly in this library and each instance
+costs a rework or a respin — which is the whole reason this rule exists.
+
+### House-prepared footprints — ours on purpose, not drift
+
+Some families were drawn in house and are correct as they stand. A difference from
+KiCad stock or from JLC on these is **not** evidence of a defect, and they must not
+be "corrected" toward either. Keep this list current as more are confirmed:
+
+| Family | Status |
+|---|---|
+| `R_0402_1005Metric`, `R_0805_2012Metric`, `R_1206_3216Metric` | Hand-drawn by Mateusz Kowalik. Confirmed 2026-08-24: "those are made manually by me". Their tens-of-micrometres differences from KiCad stock are deliberate. |
+| SOIC family | Prepared in house. |
+
+When a house-prepared land disagrees with JLC, say so in the verification note and
+leave it alone unless the user asks.
+
+### Then check the mechanics
+
+- Find existing candidates with `list_footprints` (it shows each one's pad count)
+  before importing a duplicate — if the library already holds the right land for
+  this exact package, reuse it rather than creating a second copy.
+- Pad count must match the base symbol's pin count ([[conventions-symbols]]),
+  **counting the exposed pad**. A symbol with 64 pins on a footprint with 65 pads
+  leaves the thermal pad with no net and nothing warns.
 - Reference it as `7Sigma:<name>` with no other prefix. A reference to a
   footprint that does not exist is rejected by the proposal tools.
 
@@ -59,6 +146,12 @@ component body, not the land pattern.
 
 Full standard, per-footprint migration table and the catalogue of canonical names for
 packages not yet in the library: `docs/footprint-naming/` in the platform repo.
+
+**The tier test names a footprint. It does not choose one.** Run it on copper you
+have already sourced and verified per §1. Question 1 asks whether stock happens to
+match the land you already have — it is never a reason to adopt a stock land
+pattern you have not checked against the manufacturer's drawing. Tier 0 is a claim
+that our copper matches stock, not a licence to make our copper *be* stock.
 
 ### Run this test in order, stop at the first Yes
 
@@ -258,6 +351,23 @@ block — a footprint that breaks them raises validator warnings.
 | `F.CrtYd` courtyard | required, closed, line width `0.05 mm` |
 | Header prefix | no `easyeda2kicad:` prefix — the internal `(footprint "NAME")` must equal the filename, unprefixed |
 
+### The one decided exception: a polarity mark may be 0.2 mm
+
+**A cathode bar, or the equivalent orientation mark on any part that needs
+one, is drawn at 0.2 mm on purpose.** Decided by Mateusz Kowalik on
+2026-08-25, on `D_SOD-123FL` v5: some marks have to stay readable beside the
+pads, and 0.1 mm does not.
+
+`fp.silk_width` still FAILS on such a footprint. **That failure is expected,
+not a defect to fix.** Accept the item on the footprint's checklist with a
+note naming the mark, and move on.
+
+**Never narrow a 0.2 mm polarity mark to 0.1 mm.** That is exactly what
+`D_SOD-123FL` v4 did — an agent read the 0.2 mm bar the user had drawn in v3
+as house-style drift and "corrected" it, citing this very section. Everything
+else on `F.SilkS` — body outlines, corner brackets, pin-1 indicators — stays
+at 0.1 mm, so a footprint drawn wholly at 0.2 mm is still wrong.
+
 Plus the conventions the validator can't check:
 
 - **Pad names map exactly to the symbol's pin numbers.** Net assignment fails
@@ -282,7 +392,8 @@ Plus the conventions the validator can't check:
 **Fix every validator warning by default** — including ones that were already
 there before you touched the footprint. Only stop to ask if the fix is
 non-obvious (would need the symbol's pin layout changed, or a body outline
-redrawn by hand) or could break correctness.
+redrawn by hand) or could break correctness. The standing exception is the
+0.2 mm polarity mark above: leave it alone and record why.
 
 ### 3D model path
 
@@ -308,11 +419,28 @@ the item `na`. Check what exists with `list_models3d`.
 
 1. **The KiCad *Push 7Sigma changes* button does it for you.** Point the
    footprint at the file wherever it actually is — `~/Downloads`, KiCad's own
-   `3dmodels/` tree, a folder beside the project — save, and push. Push finds
-   every reference that is not a library path, shows you the target path for
-   each one (editable), uploads the files, rewrites the footprint to
-   `${SEVENSIGMA_DIR}/3DModels/…` and repoints your local copy at the stored
-   model. Nothing has to be moved by hand first.
+   `3dmodels/` tree, the installed 7Sigma models tree, a folder beside the
+   project — save, and push. Push checks every reference against the model
+   store, shows you the target path for each file the library does not hold
+   **or holds with different bytes** (editable), uploads them, rewrites the
+   footprint to `${SEVENSIGMA_DIR}/3DModels/…` and repoints your local copy at
+   the stored model. Nothing has to be moved by hand first.
+
+   **This is also how a wrong model is corrected.** Edit the STEP in place, at
+   the path the footprint already names, and push: the digest no longer matches
+   the store, so push replaces that `rel_path` and announces it as
+   "Replacing …". A replacement is not private to one footprint — every
+   footprint pointing at that path gets the new solid, which is the same reason
+   `upload_model3d` to an existing path is the documented fix rather than a
+   second path.
+
+   **This needs plugin 1.4.0 or newer.** Before that, a file dropped into the
+   INSTALLED library's own `3dmodels/` tree was the one case push skipped:
+   that path rewrites into a `${SEVENSIGMA_DIR}` reference, so it read as
+   already stored. The push filed a footprint pointing at bytes the platform
+   had never seen, and `fp.model3d` failed after publishing — `D_SOD-123FL`
+   v5, 2026-08-25. Check the version in the Plugin and Content Manager when a
+   model goes missing after a push.
 2. **`upload_model3d(file_path, rel_path)`** — the agent's door, over MCP. It
    reads the file off the machine running the MCP server and returns the
    `(model ...)` node to paste. `rel_path` is optional; see the folder rule
@@ -528,9 +656,11 @@ on the reviewed Dongle V3 export.
 
 ## 10. Imported footprints
 
-Origin doesn't change the rules — everything lives in the `7Sigma:` namespace
-and follows §4. When bringing in a footprint from EasyEDA/LCSC or any other
-source, work through this before proposing it:
+An EasyEDA/LCSC import is the normal path into this library, not a fallback —
+see §1. Origin doesn't change the rules, though: everything lives in the
+`7Sigma:` namespace and follows §4. The import gives you the right *land*; this
+checklist makes it conform to the house drawing style. Work through it before
+proposing:
 
 - [ ] Header prefix stripped (`"easyeda2kicad:NAME"` → `"NAME"`)
 - [ ] Pads `oval`/`rect` → `roundrect` with `(roundrect_rratio 0.25)`

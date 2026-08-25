@@ -57,7 +57,7 @@ SOURCE_NICKNAME = "7Sigma"  # the nickname used inside mirror files (repo conven
 LIB_ID = "com.sevensigma.library"
 MODELS_ID = "com.sevensigma.models3d"
 PLUGIN_ID = "com.sevensigma.sync"
-PLUGIN_VERSION = "1.3.0"  # bump when the plugin source changes — PCM update detection
+PLUGIN_VERSION = "1.4.0"  # bump when the plugin source changes — PCM update detection
 # ^ MANUAL, and PCM decides "update available" purely from this string. A new
 # zip with the same version reaches nobody: the content hash changes, the
 # download changes, and every installed copy stays on the old code. Shipping

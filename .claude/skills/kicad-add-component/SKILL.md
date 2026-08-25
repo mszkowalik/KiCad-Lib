@@ -2,13 +2,14 @@
 name: kicad-add-component
 description: "Full procedure for adding a part to the 7Sigma library: duplicate check, LCSC metadata lookup, category/base-symbol/footprint selection, property construction, and the per-category validation rules a draft must satisfy. Use when adding, drafting, editing or proposing any component."
 ---
-<!-- platform-skill: add-component v8 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: add-component v10 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Add a component
 
-End-to-end procedure for adding a part to the 7Sigma library. Everything lands
-as a **draft proposal** — nothing is published until it is approved
-([[platform-workflow]]).
+End-to-end procedure for adding a part to the 7Sigma library. Every write
+**publishes immediately** — there is no draft gate and no approval queue
+([[platform-workflow]]). Accountability is on the review axis instead: verify
+what you publish and record it.
 
 **Inputs.** Preferred: an LCSC part number (`Cxxxxx`). Otherwise: manufacturer
 part number + datasheet URL.
@@ -24,9 +25,16 @@ part number + datasheet URL.
    package string. Use it — don't retype values from a web page.
    `search_jlc_parts` / `get_jlc_details` cover the JLCPCB assembly catalogue.
 
-   Metadata lookup is all that is automated. There is **no** automated symbol,
-   footprint or 3D-model download from EasyEDA/LCSC — geometry is authored, not
-   imported (§4, §5).
+   **Then pull the EasyEDA/JLC component itself:**
+
+   ```
+   .venv/bin/easyeda2kicad --lcsc_id=C<number> --full --output ./easyeda_tmp
+   ```
+
+   `--full` gets the symbol, the footprint and the 3D model. This is the default
+   source for new geometry — these boards are assembled by JLCPCB, so JLC's land
+   is the one their process is built around. Always `--output ./easyeda_tmp`;
+   `easyeda_tmp.*` is the git ignore rule.
 
 3. **Pick the category.** Match where similar parts already live (chip resistors
    → `Resistor`, MLCC → `Capacitor`, TVS → `Circuit_Protection` or `Diodes` per
@@ -37,15 +45,45 @@ part number + datasheet URL.
 
 4. **Pick the base symbol.** `list_base_symbols`: `R` for resistors, `C` for
    MLCC, `CE` for polarized caps, `L` for inductors, `D_*` for diodes, `Q_*` for
-   transistors, part-specific symbols for ICs. Never invent a name — the
-   proposal is rejected if it doesn't exist. If nothing fits, author one
-   ([[conventions-symbols]]).
+   transistors, part-specific symbols for ICs. Never invent a name — the write is
+   rejected if it doesn't exist.
+
+   **If nothing fits, start from the EasyEDA symbol** in
+   `easyeda_tmp.kicad_sym` rather than drawing from scratch, then bring it up to
+   [[conventions-symbols]]: pin electrical types (EasyEDA leaves nearly
+   everything `unspecified`), functional grouping, and the field defaults — clear
+   the `easyeda2kicad:` Footprint default and the HTML Datasheet URL it ships, or
+   they emit as real library data later.
 
 5. **Pick the footprint.** `list_footprints`, referenced as `7Sigma:<name>`.
-   Map from the package in step 2: an 0402 resistor → `7Sigma:R_0402_1005Metric`,
-   an 0402 MLCC → `7Sigma:C_0402_1005Metric`. Pad count must match the symbol's
-   pin count. If nothing matches the package, author one
-   ([[conventions-footprints]]) — don't force the part onto a near-miss.
+
+   **If the library already has one for this package: use it, and COMPARE it
+   against the JLC land from step 2 rather than replacing it.** Record the
+   differences in the verification note.
+
+   **Never edit an existing footprint to fit the part you are adding.** The land
+   was drawn and verified for the parts already on it; re-cutting it silently
+   changes their boards. Record a verification item on your NEW component instead,
+   stating the new part's lead pitch, lead span and body against the drawn pads, so
+   a human can confirm the part really can sit on this land. If it cannot, author a
+   new footprint — do not modify the old one. Escalate to the user — do not fix —
+   when the diff shows different pad numbering or ordering, a different pad
+   count, an exposed pad present in one and not the other, the body on a
+   different side of the pins, or a different pitch. Note and move on when it is
+   only pad size within a few tenths, silk or courtyard width, or text placement.
+   Several families here are hand-drawn on purpose; see the house-prepared list
+   in [[conventions-footprints]] §1.
+
+   **If nothing matches: import it from `easyeda_tmp.pretty/`**, conform it to
+   house style ([[conventions-footprints]] §10 checklist and §4), and **take the
+   EasyEDA 3D model too** from `easyeda_tmp.3dshapes/` — it is drawn to the same
+   land, so it aligns. Measure the mesh bounding box before setting the offset;
+   EasyEDA meshes are frequently z-centred while the footprint ships
+   `(offset 0 0 0)`, which buries half the part in the board.
+
+   Pad count must match the symbol's pin count, counting any exposed pad. Never
+   force the part onto a near-miss because the package name looks similar —
+   `SOIC-16` and `SOIC-16W`, `SOT-23-6` and `TSOT-23-6` are different lands.
 
 6. **Build the properties** in the conventional order for the category. The
    reliable way to get this right is to mirror a sibling: `get_component` on an

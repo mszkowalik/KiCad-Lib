@@ -464,10 +464,15 @@ A full-library `Value` audit was run **2026-07-25**: 317 components checked,
 component already had a non-empty, on-rule `Value`. Known follow-ups left
 open deliberately:
 
-- `BLM18EG101TN1D` (ferrite bead) still has `Value = 68nH` while its
-  `Impedance` property reads `100Ω@100MHz`. Per the table above a ferrite
-  bead's `Value` should be the impedance — flagged for a maintainer decision
-  rather than changed, because 68nH is also a real published spec for the part.
+- `BLM18EG101TN1D` (ferrite bead) — RESOLVED 2026-08-25. `Value` was `68nH`
+  while `Impedance` read `100Ω@100MHz`; fixed so `Value` now reads
+  `100Ω@100MHz`, matching the rule above. The earlier "68nH is also a real
+  published spec" excuse for leaving it did not hold up: the attached Murata
+  reference spec (JENF243A-0021N-01, 8 pages) never publishes an inductance
+  figure for this part at all — only impedance (100MHz/1GHz), rated current
+  and DC resistance. Re-check any other Ferrite Bead component whose `Value`
+  reads as an inductance rather than `<Z>@<f>` before assuming the number is
+  real; verify it is actually in the attached datasheet first.
 - `Pin_0.7mm_Soldering_Pin` carried **duplicate empty** `Manufacturer 1` and
   `Manufacturer Part Number 1` rows. The duplicates were dropped in its
   backfill draft. If duplicate keys show up elsewhere, drop them the same way —

@@ -61,12 +61,14 @@ agent's job, and it costs one tool call:
    platform, and never record a new convention only in the file — it would be
    lost on the next refresh.
 
-To *change* a convention, write it: `propose_skill_update(name, content,
-comment)` **publishes a new version immediately** (2026-08-24 — skills were the
-last thing behind the draft gate, and it is gone, along with the Proposals
-view). The version it writes is what `list_skills` reports and what every later
-agent run reads, so get it right rather than filing it and walking away. Then
-refresh the local file. To undo one, `get_skill` the previous version's text
+To *change* a convention, write it: `propose_skill_update(skill_name, content,
+comment)` — the first argument is `skill_name`, not `name`; `name` is rejected
+with `bad arguments for 'propose_skill_update'` — and it **publishes a new
+version immediately** (2026-08-24 — skills were the last thing behind the
+draft gate, and it is gone, along with the Proposals view). The version it
+writes is what `list_skills` reports and what every later agent run reads, so
+get it right rather than filing it and walking away. Then refresh the local
+file. To undo one, `get_skill` the previous version's text
 and write it back — or restore it on the Skills page.
 
 A skill's `description` is unversioned and lives on `Skill` — edit it in the
@@ -138,3 +140,39 @@ personal API token. Full rules in `api/CLAUDE.md` (backend) and `web/CLAUDE.md`
   human sign-off, and the per-component lifecycle (`released` on first
   sign-off; `deprecated`/`obsolete` hidden from KiCad). See "The review axis"
   in `api/CLAUDE.md`.
+
+## Leave the library better than you found it
+
+Verification work is not only about the part in front of you. **Every pass is
+also a survey of what keeps going wrong**, and noticing that is part of the job,
+not a distraction from it.
+
+**When the same finding shows up on a third part, stop and generalise it.** One
+occurrence is a defect, two is a coincidence, three is a missing default. Ask
+whether it belongs in one of these places, and say so in your report:
+
+| Where it belongs | What goes there |
+|---|---|
+| A **checklist item** (component / symbol / footprint) | A check a human or agent should run on EVERY part of that kind, that the current checklist has no key for. Until then, record it as `custom:<slug>` with a `text` — those accumulate on the parts you touch and are the evidence for promoting it. |
+| A **validator rule** | A check that is purely mechanical and could be machine-decided on publish, so no one has to remember it. |
+| A **skill document** | A convention, a decision rule, or a trap that changed how you worked. Publish it with `propose_skill_update` — it is live for every later run. |
+| **These CLAUDE.md files** | A fact about how the repo, platform or process works, rather than about component data. |
+
+Recurring findings already established this way, so you do not have to rediscover
+them: symbol field defaults carrying `easyeda2kicad:` footprint references and
+HTML datasheet URLs; pins left electrical type `unspecified` after an EasyEDA
+import; exposed pads named `GND` and typed `power_in` where the datasheet says
+the pad is not a ground pin; empty symbol `Description` / missing `ki_keywords` /
+missing `ki_fp_filters`; `ki_fp_filters` naming a package the part is not made
+in; and a rating copied from a sibling variant's table into `ki_description`
+(single-channel where the part is dual, peak where the part is continuous).
+
+**Also flag process friction, not just data defects.** If the validator silently
+skipped its machine items, if a version bump dropped verification that should
+have carried, if a tool's argument names differ from its documentation — that is
+worth a line in your report even though it is nobody's component. The platform is
+ours to fix too.
+
+Do not let this become scope creep: finish the task you were given first, then
+report the generalisation. Proposing a checklist item is a suggestion to the
+user, not something to implement mid-task.
