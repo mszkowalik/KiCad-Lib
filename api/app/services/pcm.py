@@ -43,6 +43,7 @@ import hashlib
 import json
 import logging
 import threading
+import time
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -221,6 +222,44 @@ def _build_plugin_zip(path: Path) -> int:
         for arcname, data in _plugin_files():
             size += _zip_add(zf, arcname, data)
     return size
+
+
+
+# How long a superseded artifact stays downloadable. PCM caches `packages.json`
+# and only refreshes the repository when it is asked to, so a user can hold a
+# record naming a tag the mirror has already moved past — and every component
+# publish moves the mirror. Deleting the old zip immediately turned that stale
+# record into a 404, whose 80-byte JSON error body KiCad hashes like any other
+# download and reports as "Downloaded archive hash does not match repository
+# entry" — an install failure that reads as corruption and is nothing of the
+# kind (reported 2026-08-25 on library-fb1c4c239d2fr10.zip).
+#
+# Keeping the superseded bytes means a stale client downloads exactly what its
+# record advertised, so the hash matches and the install succeeds. It is the
+# same reasoning that already keeps this revision's personal plugin zips.
+# `_GRACE_GENERATIONS` bounds the cost: the library zip is ~0.5 MB but the 3D
+# models zip is ~260 MB, so "keep everything recent" is not safe on its own.
+_GRACE_DAYS = 14
+_GRACE_GENERATIONS = 2
+
+
+def _within_grace(f: Path) -> bool:
+    """True for a superseded artifact still worth serving: recent enough that a
+    client may still be holding its record, and among the newest few of its own
+    package so a burst of rebuilds cannot fill the disk."""
+    try:
+        age = time.time() - f.stat().st_mtime
+    except OSError:
+        return False
+    if age > _GRACE_DAYS * 86400:
+        return False
+    prefix = f.name.split("-")[0]
+    siblings = sorted(
+        (p for p in f.parent.glob(f"{prefix}-*") if p.is_file()),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return f in siblings[:_GRACE_GENERATIONS]
 
 
 # Per-token plugin zips. Named apart from the shared artifacts so `ensure_built`
@@ -466,8 +505,9 @@ def ensure_built() -> dict | None:
         # different bytes and a different sha256 for an already-advertised URL.
         personal = f"{PERSONAL_PREFIX}{packages_meta['plugin']['subtree'][:12]}r{BUILDER_REV}-"
         for f in out.iterdir():
-            if f.name not in keep and not f.name.startswith(personal):
-                f.unlink(missing_ok=True)
+            if f.name in keep or f.name.startswith(personal) or _within_grace(f):
+                continue
+            f.unlink(missing_ok=True)
         sizes = {k: f"{(out / p['zip']).stat().st_size >> 20} MB" for k, p in packages_meta.items()}
         log.info(f"PCM: packages ready {sizes}")
         return meta

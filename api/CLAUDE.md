@@ -1067,6 +1067,33 @@ version rows, 23509 property rows).
   written before 2026-08-25 keep saying "user"; that history is not
   recoverable.
 
+## A superseded PCM artifact stays downloadable (the "hash does not match" trap)
+
+`ZIP_EPOCH` already handles half of this failure: the same content must always
+produce the same bytes. The other half is retention. PCM caches `packages.json`
+and refreshes the repository only when asked, so a user can hold a record
+naming a build tag the mirror has already moved past — and **every component
+publish moves the mirror**. Deleting the superseded zip immediately turned that
+stale record into a 404, and KiCad hashes the 80-byte JSON error body like any
+other download and reports:
+
+    Downloaded archive hash for package 7Sigma Library does not match
+    repository entry.
+
+which reads as corruption and is nothing of the kind (reported 2026-08-25 on
+`library-fb1c4c239d2fr10.zip`; the chain served at that moment was perfectly
+self-consistent). `ensure_built`'s prune therefore keeps, besides the current
+build and this revision's personal plugin zips, any artifact that is
+`_within_grace` — under `_GRACE_DAYS` old AND among the `_GRACE_GENERATIONS`
+newest of its own package prefix. The generation cap is what makes it safe:
+the library zip is ~0.5 MB, but the 3D models zip is ~260 MB, so "keep
+everything recent" is not a policy on its own.
+
+**Diagnosing this class of report**: fetch `repository.json`, then
+`packages.json`, then the zip, and compare the advertised `download_sha256`
+against the served bytes. A 404 body, not a hash difference, is the usual
+answer — and it means the client is stale, not that the package is broken.
+
 ## Conventions
 
 - **Never run a script inside the api container as a *file*.** The image does
