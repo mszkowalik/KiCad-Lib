@@ -16,6 +16,7 @@ import {
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
 import { fmtBytes, fmtWhen, shortSha } from "./common";
+import DataTable, { type Column } from "../DataTable";
 
 export default function DeviceFilesPanel({ projectId }: { projectId: number }) {
   const dialog = useDialog();
@@ -122,6 +123,55 @@ export default function DeviceFilesPanel({ projectId }: { projectId: number }) {
     }
   };
 
+  const liveOf = (f: DeviceFileRow) => f.versions.find((v) => v.id === f.current_version_id);
+
+  const cols: Column<DeviceFileRow>[] = [
+    {
+      key: "filename",
+      label: "File",
+      width: 30,
+      className: "mono",
+      get: (f) => f.filename,
+      render: (f) => (
+        <>
+          <span className="ledger-caret">{open === f.id ? "▾" : "▸"}</span>
+          {f.filename}
+        </>
+      ),
+    },
+    {
+      key: "live",
+      label: "Live",
+      width: 18,
+      get: (f) => {
+        const live = liveOf(f);
+        return live ? `v${live.version_no} (${fmtBytes(live.size_bytes)})` : "—";
+      },
+    },
+    { key: "versions", label: "Versions", width: 10, numeric: true, get: (f) => f.versions.length },
+    { key: "description", label: "Description", width: 28, get: (f) => f.description || "—" },
+    {
+      key: "actions",
+      label: "",
+      width: 14,
+      interactive: false,
+      className: "ctr",
+      get: () => "",
+      render: (f) => (
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            void openEditor(f);
+          }}
+        >
+          New version
+        </button>
+      ),
+    },
+  ];
+
   return (
     <div className="card pad">
       <div className="toolbar">
@@ -147,45 +197,16 @@ export default function DeviceFilesPanel({ projectId }: { projectId: number }) {
         <p className="muted">No device files yet.</p>
       ) : (
         <div className="table-wrap">
-          <table className="data data-fixed device-files-table">
-            <thead>
-              <tr>
-                <th>File</th>
-                <th>Live</th>
-                <th>Versions</th>
-                <th>Description</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {files.map((f) => {
-                const live = f.versions.find((v) => v.id === f.current_version_id);
-                return (
-                  <tr key={f.id} className="ledger-row" onClick={() => setOpen(open === f.id ? null : f.id)}>
-                    <td className="mono" title={f.filename}>
-                      <span className="ledger-caret">{open === f.id ? "▾" : "▸"}</span>
-                      {f.filename}
-                    </td>
-                    <td>{live ? `v${live.version_no} (${fmtBytes(live.size_bytes)})` : "—"}</td>
-                    <td className="num">{f.versions.length}</td>
-                    <td title={f.description}>{f.description || "—"}</td>
-                    <td className="ctr">
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void openEditor(f);
-                        }}
-                      >
-                        New version
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <DataTable
+            columns={cols}
+            rows={files}
+            rowKey={(f) => f.id}
+            persistKey="device-files"
+            rowClass={() => "ledger-row"}
+            openKey={open}
+            onOpenChange={(k) => setOpen(k === null ? null : Number(k))}
+            empty="No device files yet."
+          />
         </div>
       )}
       {expanded && open !== null && files ? (
