@@ -993,6 +993,80 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   `ProjectNote.sha`/`ref_name` and `ProductionRun.snapshot_id` only record
   the commit context they were created against.
 
+## The change feed (`services/changes.py`, `routers/changes.py`)
+
+"What moved in the library lately, and who moved it" — one time-ordered stream
+over six sources: component, symbol, footprint and skill versions, 3D model
+uploads, and the lifecycle/review lane of the audit log.
+
+- **The list is cheap; the diff is not.** A feed row carries only what one
+  printed line needs. Every diff — the property table, the before/after
+  renders, the text diff — is a SECOND call to `GET /api/changes/{kind}/{id}`,
+  made when a row is expanded. There are ~18k events in this database and
+  rendering a symbol costs a kicad-cli invocation, so a feed that computed
+  diffs eagerly is not a slower feed, it is an unusable one.
+- **Pagination is KEYSET, never offset.** The cursor is the last row's
+  `(ts, src, row_id)` triple, which is exactly the sort key. The feed is
+  append-mostly and is read while new versions land, so `OFFSET 100` silently
+  repeats rows. An unparseable cursor means "start at the top", never a 500.
+- **`EVENT_PREFIXES` deliberately excludes `publish` / `proposal.*`.** Those
+  audit rows describe the very version rows the other five lanes already
+  report, and report them WITH a diff. Including both doubles every publish.
+- **3D models join the audit log for their actor.** `models3d` has no
+  `created_by`; the uploader is only in the `model3d.create` row. The ~4.7k
+  rows the retired YAML import created legitimately have nobody and read as
+  "import". Never select `Model3D.data` in the feed — it is a `LargeBinary`
+  and would drag every mesh through Postgres to print a filename.
+
+### `GET /api/{kind}/{id}/versions/{n}/preview.svg` SELECTS; `?v=` does not
+
+Two preview endpoints per template, and the difference is load-bearing.
+`/{kind}/{id}/preview.svg?v=` always renders the CURRENT drawing (`v` is a
+cache key — see `_preview`). The version-addressed route renders THAT version,
+which is what a before/after pane needs and what "history lives under
+`/versions/...`" already promised. Version rows are immutable, so unlike
+`_preview` it can always answer `immutable`. `preview.glb` follows the same
+pair, so a footprint template page can show the 3D board view that previously
+hung only off a component version.
+
+## List surfaces — the two traps that cost a second each
+
+Both were measured on 2026-08-24 against production data (421 components, 2296
+version rows, 23509 property rows).
+
+- **`routers/util.components_with_current(db)` is the list loader.**
+  `selectinload(Component.versions).selectinload(ComponentVersion.properties)`
+  is the obvious way to load a list and the wrong one: it pulls the entire
+  HISTORY to print one version each. It also eager-loads `footprint_version`
+  with `source_text`/`parsed`/`models` DEFERRED, because `props_dict` reads
+  `Footprint_Name` through that relationship and otherwise lazy-loads a whole
+  `.kicad_mod` per component — the same trap `kicad_http.library_versions`
+  documents. Callers MUST use the returned `{component_id: version}` map:
+  `current_version(comp)` reads `comp.versions`, which is unloaded here and
+  would lazy-load the history back one component at a time. Pass the map to
+  `review.states_for_components(..., cvs=live)` for the same reason.
+  `GET /api/components` 1.22s -> 0.21s; `/api/reviews/queue` 1.36s -> 0.22s.
+- **The identity map holds WEAK references.** `db.get(ChecklistVersion, id)`
+  looked free — the repeat should come from the identity map — but
+  `_checklist_items_of` keeps no reference to the object, so it is collected
+  and every one of the 857 pre-snapshot review records re-queried. 299 of the
+  review queue's 318 SQL round trips were the same three rows. Checklist
+  VERSIONS are immutable, so `review._CHECKLIST_ITEMS` memoises them for the
+  life of the process. Any other hot `db.get` on an immutable row is suspect
+  for the same reason.
+- **`GET /api/flasher/devices` pages in SQL** — 5502 rows are 1.98 MB and 2.5s,
+  which no rendering trick improves. It returns `{items, total, offset, limit,
+  has_more}`, and its filtering and sorting are SERVER-side (`_DEVICE_SORTS`,
+  `_DEVICE_FILTERS`, both allow-lists because the column name arrives in a
+  query string): a client holding one page cannot honestly answer "no rows
+  match". 2.50s / 1.98 MB -> 0.11s / 38 kB.
+- **`POST /api/components/{id}/versions` records the real actor.** It hardcoded
+  `created_by="user"` (and `actor`/`approved_by`), so every component edit made
+  in the browser was anonymous in its own history and in the change feed, while
+  symbol and footprint publishes had always passed the signed-in name. Rows
+  written before 2026-08-25 keep saying "user"; that history is not
+  recoverable.
+
 ## Conventions
 
 - **Never run a script inside the api container as a *file*.** The image does

@@ -12,6 +12,7 @@ from .routers import (
     agent,
     auth as auth_router,
     categories,
+    changes,
     comments,
     components,
     datasheets,
@@ -77,6 +78,7 @@ app.include_router(agent.router)
 app.include_router(comments.router)
 app.include_router(signoffs.router)
 app.include_router(reviews.router)
+app.include_router(changes.router)
 app.include_router(skills.router)
 app.include_router(settings_router.router)
 app.include_router(kicad_sync.router)

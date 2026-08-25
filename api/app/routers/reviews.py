@@ -21,7 +21,7 @@ from ..services import review as review_svc
 from ..services import signoff
 from ..services import validator
 from ..services.mirror import HIDDEN_LIFECYCLE, top_level_of, update_mirror_symbols
-from .util import actor_of, audit, category_path
+from .util import actor_of, audit, category_path, components_with_current
 
 router = APIRouter(prefix="/api", tags=["reviews"])
 
@@ -614,9 +614,9 @@ def review_queue(snapshot_id: int | None = None, db: Session = Depends(get_db)):
     narrow to that BOM, and the template tabs narrow to the drawings those
     components pin, so "review this batch" is a finite list with an end.
     """
-    comps = db.query(M.Component).options(
-        selectinload(M.Component.versions).selectinload(M.ComponentVersion.properties)
-    ).all()
+    # Live versions only. Loading every component's whole history here cost as
+    # much as it did on the browse list — see `components_with_current`.
+    comps, live = components_with_current(db)
 
     scope_note = None
     if snapshot_id is not None:
@@ -631,7 +631,7 @@ def review_queue(snapshot_id: int | None = None, db: Session = Depends(get_db)):
         scope_note = {"snapshot_id": snapshot_id, "sha": snap.sha[:10],
                       "project": proj.name if proj else "?", "components": len(comps)}
 
-    review_states = review_svc.states_for_components(db, comps)
+    review_states = review_svc.states_for_components(db, comps, cvs=live)
     signoff_states = signoff.states_for(db, comps, detail=False)
     used = used_in_projects(db)
 
@@ -643,7 +643,7 @@ def review_queue(snapshot_id: int | None = None, db: Session = Depends(get_db)):
     fp_users: dict[int, int] = {}
     fp_parent_of = dict(db.query(M.FootprintVersion.id, M.FootprintVersion.footprint_id))
     for c in comps:
-        cv = next((v for v in c.versions if v.id == c.current_version_id), None)
+        cv = live.get(c.id)
         if cv is None:
             continue
         if cv.base_component:
@@ -654,7 +654,7 @@ def review_queue(snapshot_id: int | None = None, db: Session = Depends(get_db)):
 
     comp_rows = []
     for c in comps:
-        cv = next((v for v in c.versions if v.id == c.current_version_id), None)
+        cv = live.get(c.id)
         rs = review_states[c.id]
         comp_rows.append({
             "id": c.id, "name": c.name,
@@ -713,10 +713,8 @@ def review_queue(snapshot_id: int | None = None, db: Session = Depends(get_db)):
 @router.get("/reviews/health")
 def review_health(db: Session = Depends(get_db)):
     """The library-health numbers: state counts, chronic skips, risky usage."""
-    comps = db.query(M.Component).options(
-        selectinload(M.Component.versions).selectinload(M.ComponentVersion.properties)
-    ).all()
-    review_states = review_svc.states_for_components(db, comps)
+    comps, live = components_with_current(db)
+    review_states = review_svc.states_for_components(db, comps, cvs=live)
     signoff_states = signoff.states_for(db, comps, detail=False)
     used = used_in_projects(db)
 

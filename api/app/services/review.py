@@ -148,8 +148,26 @@ def _checklist_items_of(db: Session, record: M.ReviewRecord | None) -> list[dict
         return list(record.checklist_items)
     if record.checklist_version_id is None:
         return None
-    cv = db.get(M.ChecklistVersion, record.checklist_version_id)
-    return list(cv.items or []) if cv else None
+    return list(_checklist_version_items(db, record.checklist_version_id))
+
+
+# Checklist VERSIONS are immutable — a save publishes a new row rather than
+# editing one — so their item lists can be memoised for the life of the
+# process. This is not a micro-optimisation: `db.get` looked free because the
+# identity map should serve the repeat, but that map holds WEAK references and
+# `_checklist_items_of` keeps no reference to the object, so every one of the
+# 857 pre-snapshot records re-queried. Measured 2026-08-24 on the review queue:
+# 299 of its 318 SQL round trips were the same three rows.
+_CHECKLIST_ITEMS: dict[int, list[dict]] = {}
+
+
+def _checklist_version_items(db: Session, version_id: int) -> list[dict]:
+    cached = _CHECKLIST_ITEMS.get(version_id)
+    if cached is None:
+        cv = db.get(M.ChecklistVersion, version_id)
+        cached = list(cv.items or []) if cv else []
+        _CHECKLIST_ITEMS[version_id] = cached
+    return cached
 
 
 def version_state(db: Session, kind: str, subject_id: int, version_id: int | None,
@@ -191,14 +209,22 @@ def component_effective(db: Session, comp: M.Component,
     return {"state": worst["state"], "provenance": prov, "parts": parts, "blockers": blockers}
 
 
-def states_for_components(db: Session, comps: list[M.Component]) -> dict[int, dict]:
+def states_for_components(db: Session, comps: list[M.Component],
+                          cvs: dict[int, M.ComponentVersion | None] | None = None) -> dict[int, dict]:
     """`component_effective` over many components with bulk queries.
 
     List surfaces (browse, queue, project review) call this; per-row loops of
     `db.get` would repeat the kicad_http chooser mistake.
+
+    Pass `cvs` — a `{component_id: live version}` map — when the caller already
+    loaded the live versions (`routers/util.components_with_current` returns
+    exactly that). Without it this walks `c.versions`, which on a component
+    loaded WITHOUT its history lazy-loads the whole history back, one component
+    at a time, undoing that loader's entire point.
     """
-    cvs = {c.id: next((v for v in c.versions if v.id == c.current_version_id), None)
-           for c in comps}
+    if cvs is None:
+        cvs = {c.id: next((v for v in c.versions if v.id == c.current_version_id), None)
+               for c in comps}
     sym_ver_ids = {cv.symbol_version_id for cv in cvs.values() if cv and cv.symbol_version_id}
     fp_ver_ids = {cv.footprint_version_id for cv in cvs.values() if cv and cv.footprint_version_id}
 

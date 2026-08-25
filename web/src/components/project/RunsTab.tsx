@@ -16,6 +16,7 @@ import {
 } from "../../api";
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
+import DataTable, { type Column } from "../DataTable";
 
 interface Props {
   project: ProjectInfo;
@@ -107,6 +108,69 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
     }
   };
 
+  const cols: Column<RunInfo>[] = [
+    {
+      key: "label",
+      label: "Batch",
+      width: 24,
+      get: (r) => r.label,
+      render: (r) => (
+        <Link className="comp-link" to={`/runs/${r.id}`} onClick={(e) => e.stopPropagation()}>
+          {r.label}
+        </Link>
+      ),
+    },
+    { key: "qty", label: "Qty", width: 7, numeric: true, get: (r) => r.qty },
+    {
+      key: "status",
+      label: "Status",
+      width: 11,
+      get: (r) => r.status,
+      render: (r) => <StatusPill status={r.status} />,
+    },
+    { key: "date", label: "Date", width: 11, className: "muted", get: (r) => r.run_date || "—" },
+    {
+      key: "snapshot",
+      label: "Snapshot",
+      width: 20,
+      className: "mono",
+      get: (r) =>
+        (snapshots.find((s) => s.id === r.snapshot_id)?.ref_name ?? "—") +
+        (r.board ? ` / ${r.board}` : ""),
+    },
+    { key: "files", label: "Files", width: 7, numeric: true, get: (r) => r.attachment_count },
+    { key: "serials", label: "Serials", width: 7, numeric: true, get: (r) => r.device_count },
+    {
+      key: "actions",
+      label: "",
+      width: 13,
+      interactive: false,
+      className: "nowrap",
+      get: () => "",
+      render: (r) => (
+        <>
+          <Link className="btn btn-sm" to={`/runs/${r.id}`} onClick={(e) => e.stopPropagation()}>
+            Open
+          </Link>{" "}
+          <button
+            className="btn btn-sm btn-danger"
+            onClick={async (e) => {
+              e.stopPropagation();
+              const confirmed = await dialog.confirm(
+                `Delete batch "${r.label}" and its attachments?`,
+                { title: "Delete production batch", confirmLabel: "Delete", tone: "danger" },
+              );
+              if (!confirmed) return;
+              deleteRun(r.id).then(() => load());
+            }}
+          >
+            Delete
+          </button>
+        </>
+      ),
+    },
+  ];
+
   return (
     <div>
       {error ? <ErrorBanner message={error} /> : null}
@@ -150,60 +214,15 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
       {runs === null && !error ? <Spinner label="Loading runs" /> : null}
       {runs && runs.length > 0 ? (
         <div className="card table-wrap">
-          <table className="data">
-            <thead>
-              <tr>
-                <th>Batch</th>
-                <th className="num">Qty</th>
-                <th>Status</th>
-                <th>Date</th>
-                <th>Snapshot</th>
-                <th className="num">Files</th>
-                <th className="num">Serials</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((r) => (
-                <tr
-                  key={r.id}
-                  className="ledger-row"
-                  title={`Open ${r.label}`}
-                  onClick={() => navigate(`/runs/${r.id}`)}
-                >
-                  <td>
-                    <Link className="comp-link" to={`/runs/${r.id}`}>
-                      {r.label}
-                    </Link>
-                  </td>
-                  <td className="num">{r.qty}</td>
-                  <td><StatusPill status={r.status} /></td>
-                  <td className="muted">{r.run_date || "—"}</td>
-                  <td className="mono">
-                    {snapshots.find((s) => s.id === r.snapshot_id)?.ref_name ?? "—"}
-                    {r.board ? ` / ${r.board}` : ""}
-                  </td>
-                  <td className="num">{r.attachment_count}</td>
-                  <td className="num">{r.device_count}</td>
-                  <td className="nowrap">
-                    <Link className="btn btn-sm" to={`/runs/${r.id}`}>Open</Link>{" "}
-                    <button className="btn btn-sm btn-danger"
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        const confirmed = await dialog.confirm(
-                          `Delete batch "${r.label}" and its attachments?`,
-                          { title: "Delete production batch", confirmLabel: "Delete", tone: "danger" },
-                        );
-                        if (!confirmed) return;
-                        deleteRun(r.id).then(() => load());
-                      }}>
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            columns={cols}
+            rows={runs}
+            rowKey={(r) => r.id}
+            persistKey="project-runs"
+            rowClass={() => "ledger-row"}
+            onRowClick={(r) => navigate(`/runs/${r.id}`)}
+            empty="No production batches yet."
+          />
         </div>
       ) : null}
       {runs && runs.length === 0 && !showNew ? (

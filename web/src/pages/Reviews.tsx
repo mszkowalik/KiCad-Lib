@@ -14,7 +14,9 @@ import {
   type ReviewQueueTemplate,
   type ReviewState,
 } from "../api";
+import DataTable, { type Column } from "../components/DataTable";
 import { useDialog } from "../components/Dialog";
+import ChangesFeed from "../components/ChangesFeed";
 import { ComponentWorkbench, TemplateWorkbench } from "../components/ReviewWorkbench";
 import { ErrorBanner, LifecyclePill, ReviewPill, SignoffPill, Spinner } from "../components/Ui";
 
@@ -26,9 +28,10 @@ import { ErrorBanner, LifecyclePill, ReviewPill, SignoffPill, Spinner } from "..
 
 const STATE_RANK: Record<string, number> = { failed: 0, unreviewed: 1, partial: 2, checked: 3 };
 
-const TABS = ["components", "symbols", "footprints", "flagged", "health"] as const;
+const TABS = ["changes", "components", "symbols", "footprints", "flagged", "health"] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABEL: Record<Tab, string> = {
+  changes: "Recent changes",
   components: "Components",
   symbols: "Symbols",
   footprints: "Footprints",
@@ -171,7 +174,10 @@ export default function Reviews() {
             {notice}
           </div>
         ) : null}
-        {!queue ? (
+        {tab === "changes" ? (
+          // Its own data, its own paging — it must not wait on the queue.
+          <ChangesFeed />
+        ) : !queue ? (
           <Spinner label="Loading review states" />
         ) : tab === "components" ? (
           <ComponentsTab rows={queue.components} onChanged={() => load()} />
@@ -244,33 +250,83 @@ function ComponentsTab({
   const [openId, setOpenId] = useState<number | null>(null);
   const agent = useAgentQueue(onChanged);
 
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return rows
-      .filter((r) =>
-        state === "all"
-          ? true
-          : state === "attention"
-            ? r.review_state !== "checked" || r.signoff_state !== "signed"
-            : r.review_state === state,
-      )
-      .filter((r) => (usedOnly ? r.used_in.length > 0 : true))
-      .filter((r) => (needle ? r.name.toLowerCase().includes(needle) : true))
-      .sort(
-        (a, b) =>
-          // used-in-a-project + unsigned first: those bite at production time
-          Number(b.used_in.length > 0 && b.signoff_state !== "signed") -
-            Number(a.used_in.length > 0 && a.signoff_state !== "signed") ||
-          STATE_RANK[a.review_state] - STATE_RANK[b.review_state] ||
-          a.name.localeCompare(b.name),
-      );
-  }, [rows, state, usedOnly, q]);
+  // The state select, the used-only toggle and the name box stay in the
+  // toolbar — they are the queue's own vocabulary. Column sorting, per-column
+  // filtering and chunked rendering come from DataTable, so this table behaves
+  // like every other list in the platform.
+  const [visible, setVisible] = useState<ReviewQueueComponent[]>([]);
+  const preFiltered = useMemo(
+    () =>
+      rows
+        .filter((r) =>
+          state === "all"
+            ? true
+            : state === "attention"
+              ? r.review_state !== "checked" || r.signoff_state !== "signed"
+              : r.review_state === state,
+        )
+        .filter((r) => (usedOnly ? r.used_in.length > 0 : true))
+        .filter((r) => (q.trim() ? r.name.toLowerCase().includes(q.trim().toLowerCase()) : true)),
+    [rows, state, usedOnly, q],
+  );
 
-  const openIndex = filtered.findIndex((r) => r.id === openId);
+  const openIndex = visible.findIndex((r) => r.id === openId);
   const step = (by: number) => {
-    const next = filtered[openIndex + by];
+    const next = visible[openIndex + by];
     if (next) setOpenId(next.id);
   };
+
+  const cols: Column<ReviewQueueComponent>[] = [
+    {
+      key: "name",
+      label: "Component",
+      width: 26,
+      get: (r) => r.name,
+      render: (r) => (
+        <>
+          <Link
+            className="comp-link"
+            to={`/library/components/${r.id}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {r.name}
+          </Link>{" "}
+          {r.version_no ? <span className="muted mono">v{r.version_no}</span> : null}
+          {r.agent_requested ? (
+            <span className="badge" title="queued for agent verification">
+              → agent
+            </span>
+          ) : null}
+        </>
+      ),
+    },
+    { key: "category", label: "Category", width: 18, className: "cell-cat", get: (r) => r.category_path },
+    {
+      key: "review",
+      label: "Review",
+      width: 10,
+      // Worst first — sorting this column means "what still needs looking at".
+      get: (r) => r.review_state,
+      sortValue: (r) => STATE_RANK[r.review_state] ?? 9,
+      render: (r) => <ReviewPill state={r.review_state} provenance={r.provenance} />,
+    },
+    { key: "why", label: "Why", width: 20, get: (r) => r.blockers.join("; ") },
+    {
+      key: "signoff",
+      label: "Sign-off",
+      width: 9,
+      get: (r) => r.signoff_state,
+      render: (r) => <SignoffPill state={r.signoff_state} />,
+    },
+    {
+      key: "lifecycle",
+      label: "Lifecycle",
+      width: 8,
+      get: (r) => r.lifecycle,
+      render: (r) => <LifecyclePill state={r.lifecycle} />,
+    },
+    { key: "used_in", label: "Used in", width: 9, get: (r) => r.used_in.join(", ") },
+  ];
 
   return (
     <div className="card pad">
@@ -287,15 +343,15 @@ function ComponentsTab({
           projects only
         </label>
         <input className="search" placeholder="Filter by name…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <span className="toolbar-total muted">{filtered.length} shown</span>
+        <span className="toolbar-total muted">{visible.length} shown</span>
         <button
           type="button"
           className="btn btn-sm"
-          disabled={agent.busy || filtered.length === 0}
+          disabled={agent.busy || visible.length === 0}
           title="Queue every shown, not-yet-checked row for the agent to verify"
           onClick={() =>
             void agent.queueItems(
-              filtered
+              visible
                 .filter((r) => r.review_state !== "checked" && !r.agent_requested)
                 .map((r) => ({ kind: "component" as const, id: r.id })),
             )
@@ -306,74 +362,29 @@ function ComponentsTab({
       </div>
       {agent.message ? <p className="muted">{agent.message}</p> : null}
       <div className="table-wrap">
-        <table className="data data-fixed reviews-table">
-          <thead>
-            <tr>
-              <th>Component</th>
-              <th>Category</th>
-              <th>Review</th>
-              <th>Why</th>
-              <th>Sign-off</th>
-              <th>Lifecycle</th>
-              <th>Used in</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((r) => (
-              <WorkbenchRow
-                key={r.id}
-                colSpan={7}
-                open={openId === r.id}
-                onToggle={() => setOpenId(openId === r.id ? null : r.id)}
-                bench={
-                  <BenchFrame
-                    onPrev={openIndex > 0 ? () => step(-1) : undefined}
-                    onNext={openIndex >= 0 && openIndex < filtered.length - 1 ? () => step(1) : undefined}
-                    onClose={() => setOpenId(null)}
-                  >
-                    <ComponentWorkbench compId={r.id} onChanged={onChanged} />
-                  </BenchFrame>
-                }
-                cells={
-                  <>
-                    <td title={r.name}>
-                      <Link className="comp-link" to={`/library/components/${r.id}`} onClick={(e) => e.stopPropagation()}>
-                        {r.name}
-                      </Link>{" "}
-                      {r.version_no ? <span className="muted mono">v{r.version_no}</span> : null}
-                      {r.agent_requested ? (
-                        <span className="badge" title="queued for agent verification">
-                          → agent
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="cell-cat" title={r.category_path}>
-                      {r.category_path}
-                    </td>
-                    <td>
-                      <ReviewPill state={r.review_state} provenance={r.provenance} />
-                    </td>
-                    <td title={r.blockers.join("; ")}>{r.blockers.join("; ")}</td>
-                    <td>
-                      <SignoffPill state={r.signoff_state} />
-                    </td>
-                    <td>
-                      <LifecyclePill state={r.lifecycle} />
-                    </td>
-                    <td title={r.used_in.join(", ")}>{r.used_in.join(", ")}</td>
-                  </>
-                }
-              />
-            ))}
-            {filtered.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="empty">
-                  Nothing matches — the library is in good shape here.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
+        <DataTable
+          columns={cols}
+          rows={preFiltered}
+          rowKey={(r) => r.id}
+          persistKey="review-components"
+          defaultSort={{ key: "review", dir: "asc" }}
+          // Used in a project AND unsigned sorts above everything: those are
+          // the ones that bite at production time.
+          group={(r) => (r.used_in.length > 0 && r.signoff_state !== "signed" ? 0 : 1)}
+          onVisibleChange={setVisible}
+          openKey={openId}
+          onOpenChange={(k) => setOpenId(k === null ? null : Number(k))}
+          expand={(r) => (
+            <BenchFrame
+              onPrev={openIndex > 0 ? () => step(-1) : undefined}
+              onNext={openIndex >= 0 && openIndex < visible.length - 1 ? () => step(1) : undefined}
+              onClose={() => setOpenId(null)}
+            >
+              <ComponentWorkbench compId={r.id} onChanged={onChanged} />
+            </BenchFrame>
+          )}
+          empty="Nothing matches — the library is in good shape here."
+        />
       </div>
     </div>
   );
@@ -394,30 +405,73 @@ function TemplatesTab({
   const agent = useAgentQueue(onChanged);
   const oneKind: ReviewKind = kind === "symbols" ? "symbol" : "footprint";
 
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return rows
-      .filter((r) =>
-        state === "all" ? true : state === "attention" ? r.review_state !== "checked" : r.review_state === state,
-      )
-      .filter((r) => (needle ? r.name.toLowerCase().includes(needle) : true))
-      .sort(
-        (a, b) =>
-          // leverage first: a failed drawing pinning 30 parts is the job
-          STATE_RANK[a.review_state] - STATE_RANK[b.review_state] ||
-          b.used_by - a.used_by ||
-          a.name.localeCompare(b.name),
-      );
-  }, [rows, state, q]);
+  const [visible, setVisible] = useState<ReviewQueueTemplate[]>([]);
+  const preFiltered = useMemo(
+    () =>
+      rows
+        .filter((r) =>
+          state === "all"
+            ? true
+            : state === "attention"
+              ? r.review_state !== "checked"
+              : r.review_state === state,
+        )
+        .filter((r) => (q.trim() ? r.name.toLowerCase().includes(q.trim().toLowerCase()) : true)),
+    [rows, state, q],
+  );
 
-  const unblocked = filtered
+  const unblocked = visible
     .filter((r) => r.review_state !== "checked")
     .reduce((n, r) => n + r.used_by, 0);
-  const openIndex = filtered.findIndex((r) => r.id === openId);
+  const openIndex = visible.findIndex((r) => r.id === openId);
   const step = (by: number) => {
-    const next = filtered[openIndex + by];
+    const next = visible[openIndex + by];
     if (next) setOpenId(next.id);
   };
+
+  const cols: Column<ReviewQueueTemplate>[] = [
+    {
+      key: "name",
+      label: "Name",
+      width: 46,
+      get: (r) => r.name,
+      render: (r) => (
+        <>
+          <Link
+            className="comp-link"
+            to={`/library/templates/${kind}/${r.id}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {r.name}
+          </Link>
+          {r.agent_requested ? (
+            <span className="badge" title="queued for agent verification">
+              → agent
+            </span>
+          ) : null}
+        </>
+      ),
+    },
+    {
+      key: "review",
+      label: "Review",
+      width: 14,
+      get: (r) => r.review_state,
+      sortValue: (r) => STATE_RANK[r.review_state] ?? 9,
+      render: (r) => <ReviewPill state={r.review_state} provenance={r.provenance} />,
+    },
+    {
+      key: "used_by",
+      label: "Unblocks",
+      width: 10,
+      numeric: true,
+      get: (r) => r.used_by || "",
+      title: () => "Live components pinning this drawing — what checking it unblocks",
+    },
+    { key: "failed", label: "Failing", width: 10, numeric: true, get: (r) => r.failed || "" },
+    { key: "skipped", label: "Skipped", width: 10, numeric: true, get: (r) => r.skipped || "" },
+    { key: "unanswered", label: "Open items", width: 10, numeric: true, get: (r) => r.unanswered || "" },
+  ];
 
   return (
     <div className="card pad">
@@ -431,16 +485,16 @@ function TemplatesTab({
         </select>
         <input className="search" placeholder="Filter by name…" value={q} onChange={(e) => setQ(e.target.value)} />
         <span className="toolbar-total muted">
-          {filtered.length} shown{unblocked ? ` — checking them unblocks ${unblocked} component pin(s)` : ""}
+          {visible.length} shown{unblocked ? ` — checking them unblocks ${unblocked} component pin(s)` : ""}
         </span>
         <button
           type="button"
           className="btn btn-sm"
-          disabled={agent.busy || filtered.length === 0}
+          disabled={agent.busy || visible.length === 0}
           title="Queue every shown, not-yet-checked row for the agent to verify"
           onClick={() =>
             void agent.queueItems(
-              filtered
+              visible
                 .filter((r) => r.review_state !== "checked" && !r.agent_requested)
                 .map((r) => ({ kind: oneKind, id: r.id })),
             )
@@ -451,98 +505,36 @@ function TemplatesTab({
       </div>
       {agent.message ? <p className="muted">{agent.message}</p> : null}
       <div className="table-wrap">
-        <table className="data data-fixed reviews-template-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Review</th>
-              <th title="Live components pinning this drawing — what checking it unblocks">Unblocks</th>
-              <th>Failing</th>
-              <th>Skipped</th>
-              <th>Open items</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((r) => (
-              <WorkbenchRow
-                key={r.id}
-                colSpan={6}
-                open={openId === r.id}
-                onToggle={() => setOpenId(openId === r.id ? null : r.id)}
-                bench={
-                  <BenchFrame
-                    onPrev={openIndex > 0 ? () => step(-1) : undefined}
-                    onNext={openIndex >= 0 && openIndex < filtered.length - 1 ? () => step(1) : undefined}
-                    onClose={() => setOpenId(null)}
-                  >
-                    <TemplateWorkbench kind={oneKind} id={r.id} name={r.name} versionId={r.version_id} onChanged={onChanged} />
-                  </BenchFrame>
-                }
-                cells={
-                  <>
-                    <td title={r.name}>
-                      <Link className="comp-link" to={`/library/templates/${kind}/${r.id}`} onClick={(e) => e.stopPropagation()}>
-                        {r.name}
-                      </Link>
-                      {r.agent_requested ? (
-                        <span className="badge" title="queued for agent verification">
-                          → agent
-                        </span>
-                      ) : null}
-                    </td>
-                    <td>
-                      <ReviewPill state={r.review_state} provenance={r.provenance} />
-                    </td>
-                    <td className="num">{r.used_by || ""}</td>
-                    <td className="num">{r.failed || ""}</td>
-                    <td className="num">{r.skipped || ""}</td>
-                    <td className="num">{r.unanswered || ""}</td>
-                  </>
-                }
+        <DataTable
+          columns={cols}
+          rows={preFiltered}
+          rowKey={(r) => r.id}
+          persistKey={`review-${kind}`}
+          // Leverage first: a failed drawing pinning 30 parts IS the job.
+          defaultSort={{ key: "used_by", dir: "desc" }}
+          group={(r) => STATE_RANK[r.review_state] ?? 9}
+          onVisibleChange={setVisible}
+          openKey={openId}
+          onOpenChange={(k) => setOpenId(k === null ? null : Number(k))}
+          expand={(r) => (
+            <BenchFrame
+              onPrev={openIndex > 0 ? () => step(-1) : undefined}
+              onNext={openIndex >= 0 && openIndex < visible.length - 1 ? () => step(1) : undefined}
+              onClose={() => setOpenId(null)}
+            >
+              <TemplateWorkbench
+                kind={oneKind}
+                id={r.id}
+                name={r.name}
+                versionId={r.version_id}
+                onChanged={onChanged}
               />
-            ))}
-            {filtered.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="empty">
-                  Nothing matches.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
+            </BenchFrame>
+          )}
+          empty="Nothing matches."
+        />
       </div>
     </div>
-  );
-}
-
-/** A queue row that expands into the workbench. The row itself toggles; links
- *  inside it stopPropagation so navigation still works. */
-function WorkbenchRow({
-  cells,
-  bench,
-  open,
-  onToggle,
-  colSpan,
-}: {
-  cells: React.ReactNode;
-  bench: React.ReactNode;
-  open: boolean;
-  onToggle: () => void;
-  colSpan: number;
-}) {
-  return (
-    <>
-      <tr className={"bench-row" + (open ? " open" : "")} onClick={onToggle}>
-        {cells}
-      </tr>
-      {open ? (
-        <tr className="bench-detail">
-          <td colSpan={colSpan} className="bench-cell">
-            {bench}
-          </td>
-        </tr>
-      ) : null}
-    </>
   );
 }
 

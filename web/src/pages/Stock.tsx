@@ -26,7 +26,7 @@
  *  the "Does the stock account close?" card on Invoices), which fetched the
  *  same endpoint three times between them.
  */
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   deleteStockAdjustment,
@@ -43,6 +43,7 @@ import {
   type StockAdjustment,
 } from "../api";
 import { useDialog } from "../components/Dialog";
+import DataTable, { type Column } from "../components/DataTable";
 import PartLedgerPanel from "../components/PartLedgerPanel";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { plain } from "../format";
@@ -74,38 +75,6 @@ const COL_LABELS: Record<ColKey, string> = {
   delta_value_usd: "Δ value",
 };
 
-const NUMERIC: ReadonlySet<ColKey> = new Set<ColKey>([
-  "bought", "drawn", "lost", "remaining_qty", "held_qty", "delta_qty",
-  "paid_unit_usd", "market_unit_usd", "paid_value_usd", "delta_value_usd",
-]);
-
-function colValue(r: PartsStockRow, col: ColKey): string {
-  const v = r[col];
-  return v == null ? "" : String(v);
-}
-
-function sortRows(rows: PartsStockRow[], sort: { col: ColKey; dir: "asc" | "desc" }) {
-  const mul = sort.dir === "asc" ? 1 : -1;
-  const out = [...rows];
-  if (NUMERIC.has(sort.col)) {
-    const col = sort.col;
-    out.sort((a, b) => {
-      const av = a[col] as number | null;
-      const bv = b[col] as number | null;
-      // missing values last regardless of direction
-      if (av == null && bv == null) return 0;
-      if (av == null) return 1;
-      if (bv == null) return -1;
-      return (av - bv) * mul;
-    });
-  } else {
-    const col = sort.col;
-    out.sort((a, b) =>
-      colValue(a, col).toLowerCase().localeCompare(colValue(b, col).toLowerCase()) * mul);
-  }
-  return out;
-}
-
 /** "disagree" is the working view: only the rows the verdict is about. */
 type StateFilter = "disagree" | "all" | "both" | "pool_only" | "jlc_only";
 
@@ -129,10 +98,6 @@ export default function Stock() {
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [filter, setFilter] = useStickyState("stock:filter", "");
   const [stateFilter, setStateFilter] = useStickyState<StateFilter>("stock:state", "disagree");
-  const [sort, setSort] = useStickyState<{ col: ColKey; dir: "asc" | "desc" } | null>(
-    "stock:sort", null);
-  const [colFilters, setColFilters] = useStickyState<Partial<Record<ColKey, string>>>(
-    "stock:colFilters", {});
   const [showAdjs, setShowAdjs] = useState(false);
   const [adjBusy, setAdjBusy] = useState<number | null>(null);
   // stock-over-time drill-down: which row's ledger is open (not sticky — a
@@ -212,9 +177,7 @@ export default function Stock() {
     }
   }
 
-  const anyFilter =
-    filter.trim() !== "" || stateFilter !== "disagree" ||
-    Object.values(colFilters).some((v) => v !== undefined && v.trim() !== "");
+  const anyFilter = filter.trim() !== "" || stateFilter !== "disagree";
 
   const rows = useMemo(() => {
     let out = stock?.parts ?? [];
@@ -228,19 +191,12 @@ export default function Stock() {
         r.description.toLowerCase().includes(needle) ||
         (r.component_name ?? "").toLowerCase().includes(needle));
     }
-    const active = (Object.entries(colFilters) as Array<[ColKey, string]>)
-      .filter(([, v]) => v.trim() !== "");
-    if (active.length) {
-      out = out.filter((r) => active.every(([col, v]) =>
-        colValue(r, col).toLowerCase().includes(v.trim().toLowerCase())));
-    }
-    if (sort) out = sortRows(out, sort);
-    else if (stateFilter === "disagree") {
+    if (stateFilter === "disagree") {
       out = [...out].sort(
         (a, b) => Math.abs(b.delta_qty ?? 0) - Math.abs(a.delta_qty ?? 0));
     }
     return out;
-  }, [stock, filter, stateFilter, colFilters, sort]);
+  }, [stock, filter, stateFilter]);
 
   const counts = useMemo(() => {
     const c = { both: 0, pool_only: 0, jlc_only: 0, disagree: 0 };
@@ -254,38 +210,87 @@ export default function Stock() {
   const reconciles = counts.disagree === 0;
   const zeroCost = Number(adjTotals?.zero_cost_positive ?? 0);
 
-  const cycleSort = (col: ColKey) =>
-    setSort((prev) =>
-      prev === null || prev.col !== col
-        ? { col, dir: "asc" }
-        : prev.dir === "asc" ? { col, dir: "desc" } : null);
-
-  const sortTh = (col: ColKey) => (
-    <th className={NUMERIC.has(col) ? "num" : undefined}>
-      <button type="button" className="th-sort" onClick={() => cycleSort(col)}
-              title={`Sort by ${COL_LABELS[col]}`}>
-        {COL_LABELS[col]}
-        {sort?.col === col ? (
-          <span className="sort-ind">{sort.dir === "asc" ? "▲" : "▼"}</span>
-        ) : null}
-      </button>
-    </th>
-  );
-
-  const filterTd = (col: ColKey) => (
-    <td>
-      <input type="text" className="text filter-input" placeholder="filter…"
-             value={colFilters[col] ?? ""}
-             onChange={(e) => setColFilters((f) => ({ ...f, [col]: e.target.value }))}
-             aria-label={`Filter ${COL_LABELS[col]}`} />
-    </td>
-  );
-
   const t = stock?.totals;
   const unrealised =
     t && t.comparable_market_usd != null && t.comparable_cost_usd != null
       ? t.comparable_market_usd - t.comparable_cost_usd
       : null;
+
+  // Column defs for the stock table. The toolbar's state chips and search box
+  // pre-filter `rows`; sorting, per-column filtering and chunked rendering are
+  // DataTable's, like every other list.
+  const numCol = (key: ColKey, width: number, fmt: (r: PartsStockRow) => ReactNode): Column<PartsStockRow> => ({
+    key,
+    label: COL_LABELS[key],
+    width,
+    numeric: true,
+    get: (r) => (r[key] as number | null) ?? "",
+    render: fmt,
+  });
+
+  const stockCols: Column<PartsStockRow>[] = [
+    {
+      key: "mpn",
+      label: COL_LABELS.mpn,
+      width: 20,
+      get: (r) => r.mpn || r.lcsc || "—",
+      title: (r) =>
+        (r.mpn || r.lcsc) +
+        " — " +
+        (r.description || "") +
+        (r.state === "jlc_only"
+          ? " — JLC holds this, no purchase recorded"
+          : r.state === "pool_only"
+            ? " — paid for, JLC does not hold it"
+            : ""),
+      render: (r) => (
+        <>
+          <span className="ledger-caret">{openLedger === r.key ? "▾" : "▸"}</span>
+          {r.component_id ? (
+            <Link
+              to={`/library/components/${r.component_id}`}
+              className="mono comp-link"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {r.mpn || r.lcsc || "—"}
+            </Link>
+          ) : (
+            <span className="mono">{r.mpn || r.lcsc || "—"}</span>
+          )}
+          {r.state === "jlc_only" ? <span className="pill warn">no invoice</span> : null}
+        </>
+      ),
+    },
+    { key: "lcsc", label: COL_LABELS.lcsc, width: 9, className: "mono", get: (r) => r.lcsc || "—" },
+    numCol("bought", 7, (r) => <>{qty(r.bought)}</>),
+    numCol("drawn", 7, (r) => <>{qty(r.drawn)}</>),
+    numCol("lost", 7, (r) => (r.lost ? <>{qty(r.lost)}</> : <span className="dim">—</span>)),
+    numCol("remaining_qty", 7, (r) => <>{qty(r.remaining_qty)}</>),
+    numCol("held_qty", 7, (r) => <>{r.state === "pool_only" ? "—" : qty(r.held_qty)}</>),
+    numCol("delta_qty", 8, (r) => <DeltaCell r={r} />),
+    numCol("paid_unit_usd", 7, (r) => <>{unitPrice(r.paid_unit_usd)}</>),
+    numCol("market_unit_usd", 7, (r) => <>{unitPrice(r.market_unit_usd)}</>),
+    numCol("paid_value_usd", 7, (r) => <>{plain(r.paid_value_usd)}</>),
+    {
+      key: "delta_value_usd",
+      label: COL_LABELS.delta_value_usd,
+      width: 7,
+      numeric: true,
+      className: "delta-value",
+      get: (r) => r.delta_value_usd ?? "",
+      title: (r) =>
+        r.remaining_at_market_usd != null
+          ? `remainder at market ${plain(r.remaining_at_market_usd)} USD`
+          : "no market price for this part",
+      render: (r) => (
+        <span className={(r.delta_value_usd ?? 0) < 0 ? "err-text" : undefined}>
+          {r.delta_value_usd == null
+            ? "—"
+            : `${r.delta_value_usd >= 0 ? "+" : ""}${plain(r.delta_value_usd)}`}
+        </span>
+      ),
+    },
+  ];
 
   return (
     <div className="main-solo">
@@ -436,7 +441,7 @@ export default function Stock() {
               </button>
               {anyFilter ? (
                 <button type="button" className="row-del clear-filters"
-                        onClick={() => { setColFilters({}); setFilter(""); setStateFilter("disagree"); }}
+                        onClick={() => { setFilter(""); setStateFilter("disagree"); }}
                         title="Clear filters" aria-label="Clear filters">
                   &#x2715;
                 </button>
@@ -516,99 +521,23 @@ export default function Stock() {
             )}
 
             <div className="card table-wrap">
-              <table className="data data-fixed stock-table">
-                <thead>
-                  <tr>
-                    {sortTh("mpn")}
-                    {sortTh("lcsc")}
-                    {sortTh("bought")}
-                    {sortTh("drawn")}
-                    {sortTh("lost")}
-                    {sortTh("remaining_qty")}
-                    {sortTh("held_qty")}
-                    {sortTh("delta_qty")}
-                    {sortTh("paid_unit_usd")}
-                    {sortTh("market_unit_usd")}
-                    {sortTh("paid_value_usd")}
-                    {sortTh("delta_value_usd")}
-                  </tr>
-                  <tr className="filter-row">
-                    {filterTd("mpn")}
-                    {filterTd("lcsc")}
-                    {filterTd("bought")}
-                    {filterTd("drawn")}
-                    {filterTd("lost")}
-                    {filterTd("remaining_qty")}
-                    {filterTd("held_qty")}
-                    {filterTd("delta_qty")}
-                    {filterTd("paid_unit_usd")}
-                    {filterTd("market_unit_usd")}
-                    {filterTd("paid_value_usd")}
-                    {filterTd("delta_value_usd")}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r) => (
-                    <Fragment key={r.key}>
-                    <tr className="ledger-row"
-                        onClick={() => setOpenLedger(openLedger === r.key ? null : r.key)}
-                        title="Click for the stock-over-time ledger">
-                      <td title={(r.mpn || r.lcsc) + " — " + (r.description || "") + (r.state === "jlc_only"
-                        ? " — JLC holds this, no purchase recorded"
-                        : r.state === "pool_only" ? " — paid for, JLC does not hold it" : "")}>
-                        <span className="ledger-caret">{openLedger === r.key ? "▾" : "▸"}</span>
-                        {r.component_id ? (
-                          <Link to={`/library/components/${r.component_id}`} className="mono comp-link"
-                                onClick={(e) => e.stopPropagation()}>
-                            {r.mpn || r.lcsc || "—"}
-                          </Link>
-                        ) : (
-                          <span className="mono">{r.mpn || r.lcsc || "—"}</span>
-                        )}
-                        {r.state === "jlc_only" ? (
-                          <span className="pill warn">no invoice</span>
-                        ) : null}
-                      </td>
-                      <td className="mono" title={r.lcsc}>{r.lcsc || "—"}</td>
-                      <td className="num">{qty(r.bought)}</td>
-                      <td className="num">{qty(r.drawn)}</td>
-                      <td className="num">{r.lost ? qty(r.lost) : <span className="dim">—</span>}</td>
-                      <td className="num">{qty(r.remaining_qty)}</td>
-                      <td className="num">{r.state === "pool_only" ? "—" : qty(r.held_qty)}</td>
-                      <DeltaCell r={r} />
-                      <td className="num">{unitPrice(r.paid_unit_usd)}</td>
-                      <td className="num">{unitPrice(r.market_unit_usd)}</td>
-                      <td className="num">{plain(r.paid_value_usd)}</td>
-                      <td className={"num" + ((r.delta_value_usd ?? 0) < 0 ? " err-text" : "")}
-                          title={r.remaining_at_market_usd != null
-                            ? `remainder at market ${plain(r.remaining_at_market_usd)} USD`
-                            : "no market price for this part"}>
-                        {r.delta_value_usd == null
-                          ? "—"
-                          : `${r.delta_value_usd >= 0 ? "+" : ""}${plain(r.delta_value_usd)}`}
-                      </td>
-                    </tr>
-                    {openLedger === r.key ? (
-                      <tr>
-                        <td colSpan={12} className="ledger-cell">
-                          <PartLedgerPanel componentId={r.component_id}
-                                           mpn={r.mpn} lcsc={r.lcsc} />
-                        </td>
-                      </tr>
-                    ) : null}
-                    </Fragment>
-                  ))}
-                  {rows.length === 0 ? (
-                    <tr>
-                      <td colSpan={12} className="empty">
-                        {stateFilter === "disagree" && !anyFilter
-                          ? "Every part JLC holds agrees with the platform, piece for piece."
-                          : "No parts match."}
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
+              <DataTable
+                columns={stockCols}
+                rows={rows}
+                rowKey={(r) => r.key}
+                persistKey="stock"
+                rowClass={() => "ledger-row"}
+                openKey={openLedger}
+                onOpenChange={(k) => setOpenLedger(k === null ? null : String(k))}
+                expand={(r) => (
+                  <PartLedgerPanel componentId={r.component_id} mpn={r.mpn} lcsc={r.lcsc} />
+                )}
+                empty={
+                  stateFilter === "disagree" && !anyFilter
+                    ? "Every part JLC holds agrees with the platform, piece for piece."
+                    : "No parts match."
+                }
+              />
             </div>
 
             {usage && usage.length > 0 ? (
@@ -668,13 +597,14 @@ const ZERO_COST_HINT =
 /** The Δ qty cell, with the "adj" marker when `bought − drawn − written off`
  *  equals JLC's count exactly — meaning the WHOLE difference is an adjustment,
  *  which is exactly what the five invented opening balances looked like. */
+/** The cell's CONTENT — DataTable owns the <td>. */
 function DeltaCell({ r }: { r: PartsStockRow }) {
   const d = r.delta_qty;
-  if (d == null) return <td className="num">—</td>;
+  if (d == null) return <>—</>;
   const honest = r.bought - r.drawn - r.lost;
   const honestAgrees = r.state === "both" && Math.abs(honest - r.held_qty) < 0.5;
   return (
-    <td className="num">
+    <>
       <span className={`pill ${Math.abs(d) < 0.5 ? "ok" : d > 0 ? "err" : "warn"}`}>
         {d > 0 ? `+${qty(d)}` : qty(d)}
       </span>
@@ -690,6 +620,6 @@ function DeltaCell({ r }: { r: PartsStockRow }) {
           adj
         </span>
       )}
-    </td>
+    </>
   );
 }

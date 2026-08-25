@@ -40,12 +40,49 @@ component:
   (`<CommentsPanel kind="components|symbols|footprints" id={n} noun="…" />`) —
   it wraps the generic `getComments/addComment/deleteComment(kind, id)` client
   fns; never re-implement the notes list/form.
-- **Data tables use `components/DataTable.tsx`** — sortable header, per-column
-  filter row, fixed column widths with ellipsis (never scrolls horizontally).
-  Every BOM/costs table (BomTab, CostsTab) goes through it; pass `Column[]`
-  defs with `width` (%), `numeric`, `render`, and `interactive: false` for
-  action columns. Don't hand-roll `<table className="data">` headers with
-  sorting/filtering — extend DataTable if something is missing.
+- **EVERY list goes through `components/DataTable.tsx`** — sortable header,
+  per-column filter row, fixed column widths with ellipsis (never scrolls
+  horizontally), optional expandable rows, and chunked rendering. Pass
+  `Column[]` defs with `width` (%), `numeric`, `render`, and
+  `interactive: false` for action columns. Never hand-roll a
+  `<table className="data">` with its own sort buttons and filter inputs —
+  three pages had grown their own near-identical copies (Browse, Stock, the
+  review queue) and they had already drifted. Extend DataTable instead.
+
+  The props that matter, and why each exists:
+
+  | Prop | For |
+  |---|---|
+  | `pageSize` | rows laid out per chunk (default 60); more are added as the reader nears the end. Filtering and sorting still run over the WHOLE `rows` array, so this never narrows what a filter can find |
+  | `defaultSort` | the sort before the user touches a header |
+  | `sortValue` (column) | sort key when it must differ from the printed text — the review and sign-off columns sort worst-first by RANK while their filter matches the visible word |
+  | `expand` / `openKey` / `onOpenChange` | inline detail panel. Uncontrolled by default; pass `openKey` when the PARENT owns it (the review workbench steps Prev/Next from inside the open panel) |
+  | `onRowClick` | click the row to open its page. Links inside must `stopPropagation()` |
+  | `serverFilter` (column) / `serverSort` / `onServerFilters` / `onSortChange` | the table is a WINDOW on server-paged data, so its filter and sort must reach the server — see below |
+  | `persistKey` | remember sort + filters across navigation (`useStickyState`) |
+  | `onVisibleChange` | the filtered rows, for a toolbar acting on "everything shown" (the browser's bulk sign-off selects the FILTERED set) |
+  | `footer` | where a server-paged list puts its own loading sentinel |
+
+- **`onVisibleChange` compares CONTENT, and must keep doing so.** `visible` is
+  a `useMemo` over `columns` and `group`, and every caller builds both inline —
+  so both have a new identity each render, `visible` is a new array each
+  render, and a naive effect calls back every render. The caller stores that
+  array in state, which re-renders, which rebuilds `columns`. React caught it
+  as "Maximum update depth exceeded" on all three review-queue tabs. The fix is
+  the element-wise comparison in DataTable, not memoised columns in 12 callers.
+
+- **Client chunking vs server paging — pick by data size, and be honest about
+  filtering.** `components/useInfiniteScroll.ts` holds the shared trigger (an
+  IntersectionObserver on a sentinel INSIDE the table, so a short list does not
+  load everything at once; `busy` is as load-bearing as `hasMore`, or the
+  observer asks for the same page three times). Two lists genuinely do not fit
+  and page from the server — the change feed (keyset cursor) and the device
+  list (offset) — and both mark their columns `serverFilter` and set
+  `serverSort`, because a browser holding 100 of 5502 rows cannot honestly
+  report "no rows match". Everything else fetches its set and renders it in
+  chunks, which keeps filters instant and exact. A column whose filter cannot
+  reach the server on a paged list must be `interactive: false` rather than
+  offering a box that quietly searches one page.
 
 ### `.kv` names TWO designs — keep both selectors element-qualified
 
@@ -423,3 +460,51 @@ picking a step back-fills the row's kind from the catalog default. The run
 panel's "Where the money goes" table shows per-step plan-vs-billed with
 supplier chips whose data comes from `RunActuals.steps[].sources` — computed
 server-side in `run_actuals`, never re-derived in the browser.
+
+
+### The change feed (`components/ChangesFeed.tsx`, `ChangeDetail.tsx`)
+
+Reviews → "Recent changes": what moved in the library lately and who moved it,
+newest first. Rows are cheap; `ChangeDetail` fetches a row's diff on mount and
+is only mounted while that row is open. Never prefetch it — the feed carries
+~18k events and rendering a symbol costs a kicad-cli invocation.
+
+Each kind answers "what changed" in the terms it is edited in: components as a
+property table, drawings as before/after renders plus their pin or pad rows,
+skills as a text diff, events as their audit detail.
+
+### `GeometryDiff`: flatten each render before blending, or the diff lies
+
+The difference pane draws both versions at ONE shared px-per-mm scale (kicad-cli
+emits SVG sized in millimetres, so identical geometry then lands on identical
+pixels) and blends them with `mix-blend-mode: difference` over black: unchanged
+pixels go black, only movement lights up.
+
+- **Each render is flattened against opaque black in its own `.diff-layer`
+  first.** SVG strokes are anti-aliased, so their edge pixels carry partial
+  alpha, and a partly transparent pixel differenced against the backdrop leaves
+  `(1-a)·backdrop` behind instead of zero. Every outline and every glyph then
+  glows on a comparison of a drawing with ITSELF. Verified 2026-08-25 by
+  overlaying one version on itself: it must come out pure black, and without
+  the flattening step it did not.
+- **The layers are centred explicitly, not by the parent's flexbox.** An
+  absolutely positioned flex child with `auto` offsets takes its static
+  position, which laid the two layers side by side instead of stacking them.
+- **The viewBox origin is the bounding box, not the footprint origin.** When an
+  edit changes the bounding box the two renders are anchored differently and
+  the overlay reports more than moved. The pane SAYS so rather than hiding it;
+  it does not arise for the common cases (a pad resize inside an unchanged
+  courtyard, a silkscreen width, a text move).
+
+### `components/Viewer3D.tsx` takes a URL, not an entity
+
+The GLB board view is reachable two ways — through a component version, and
+directly from a footprint template — so the viewer knows about neither. It
+fetches the GLB itself rather than handing `<model-viewer>` a URL, which is
+what gives a clean 404 ("nothing pinned") and a spinner during the slow first
+server render instead of a silently empty canvas.
+
+**`.preview-fill` is `flex: 1`, so it only has a height when its parent gives
+it one.** The component page's preview panel does; a plain card does not, and
+the viewer collapsed to nothing on the template page. Pass a `className` with a
+height (the template page passes `template-preview`).

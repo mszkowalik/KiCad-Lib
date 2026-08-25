@@ -934,6 +934,14 @@ export function footprintSvgUrl(id: number, versionNo: number): string {
 
 /** Binary GLB board view: footprint with copper/mask/silk on a board slab
  *  plus the placed 3D model. 404 = no pinned footprint. */
+/** The 3D board view of a FOOTPRINT TEMPLATE, addressed by the drawing rather
+ *  than by a component version that pins it — what the template page's 3D tab
+ *  shows. Version-addressed, so the URL moves when the drawing does and the
+ *  server can answer `immutable`. */
+export function footprintTemplateGlbUrl(id: number, versionNo: number): string {
+  return `${API_URL}/api/footprints/${id}/versions/${versionNo}/preview.glb`;
+}
+
 export function footprintGlbUrl(id: number, versionNo: number): string {
   return `${API_URL}/api/components/${id}/versions/${versionNo}/footprint.glb`;
 }
@@ -4251,15 +4259,46 @@ export function getFlasherMeta(signal?: AbortSignal): Promise<FlasherMeta> {
   return request("/api/flasher/meta", { signal });
 }
 
+/** The device list is the one list that pages on the SERVER — 5502 rows are
+ *  1.98 MB and no rendering trick makes that arrive faster. Filtering and
+ *  sorting therefore go to the server too: a client holding one page cannot
+ *  honestly filter the rest. */
+export interface DeviceListPage {
+  items: DeviceListRow[];
+  total: number;
+  offset: number;
+  limit: number;
+  has_more: boolean;
+}
+
 export function listDevices(
-  filters: { project_id?: number; production_run_id?: number; status?: string; q?: string },
+  filters: {
+    project_id?: number;
+    production_run_id?: number;
+    status?: string;
+    q?: string;
+    limit?: number;
+    offset?: number;
+    sort?: string;
+    dir?: "asc" | "desc";
+    /** Per-column substring filters, `{column: text}` — sent as repeated
+     *  `f=column:text` pairs and applied in SQL. */
+    columns?: Record<string, string>;
+  },
   signal?: AbortSignal,
-): Promise<DeviceListRow[]> {
+): Promise<DeviceListPage> {
   const params = new URLSearchParams();
   if (filters.project_id) params.set("project_id", String(filters.project_id));
   if (filters.production_run_id) params.set("production_run_id", String(filters.production_run_id));
   if (filters.status) params.set("status", filters.status);
   if (filters.q) params.set("q", filters.q);
+  if (filters.limit) params.set("limit", String(filters.limit));
+  if (filters.offset) params.set("offset", String(filters.offset));
+  if (filters.sort) params.set("sort", filters.sort);
+  if (filters.dir) params.set("dir", filters.dir);
+  for (const [col, text] of Object.entries(filters.columns ?? {})) {
+    if (text.trim()) params.append("f", `${col}:${text.trim()}`);
+  }
   const qs = params.toString();
   return request(`/api/flasher/devices${qs ? `?${qs}` : ""}`, { signal });
 }
@@ -4784,4 +4823,146 @@ export function completeProjectReview(projectId: number, sha: string, note?: str
     headers: JSON_HEADERS,
     body: JSON.stringify({ sha, note: note ?? null }),
   });
+}
+
+// ─── The change feed ───────────────────────────────────────────────────────
+// What moved in the library lately, and who moved it. The list is a page of
+// one-line rows; a row's diff is a SECOND request, made when it is expanded.
+// Nothing here fetches a diff eagerly — there are ~18k events and rendering a
+// symbol costs a kicad-cli invocation.
+
+export type ChangeKind = "component" | "symbol" | "footprint" | "skill" | "model3d" | "event";
+
+export interface ChangeRow {
+  /** `kind:id` — stable across pages, used as the table's row key. */
+  key: string;
+  kind: ChangeKind;
+  id: number;
+  entity_id: string;
+  name: string;
+  action: string;
+  action_label: string | null;
+  actor: string;
+  ts: string;
+  version_no: number | null;
+  comment: string | null;
+  /** False for 3D uploads and audit events: there is no predecessor to diff. */
+  diffable: boolean;
+}
+
+export interface ChangePage {
+  items: ChangeRow[];
+  /** Pass back as `cursor`; null means the feed is exhausted. */
+  next_cursor: string | null;
+  has_more: boolean;
+}
+
+export interface ChangeFieldDiff {
+  label: string;
+  before: string;
+  after: string;
+}
+
+export interface ChangePropDiff {
+  key: string;
+  before?: string;
+  after?: string;
+}
+
+export interface ChangeRowDiff {
+  /** "Pins" for a symbol, "Pads" for a footprint. */
+  label: string;
+  added: { id: string; after: Record<string, string> }[];
+  removed: { id: string; before: Record<string, string> }[];
+  changed: { id: string; before: Record<string, string>; after: Record<string, string> }[];
+  unchanged: number;
+}
+
+export interface ChangeDetailPayload {
+  kind: ChangeKind;
+  id: number;
+  name: string;
+  created_at: string;
+  created_by?: string;
+  comment?: string | null;
+  version_no?: number;
+  version_id?: number;
+  prev_version_no?: number | null;
+  prev_version_id?: number | null;
+  first_version?: boolean;
+  // component
+  fields?: ChangeFieldDiff[];
+  properties?: {
+    added: ChangePropDiff[];
+    removed: ChangePropDiff[];
+    changed: ChangePropDiff[];
+    unchanged: number;
+  };
+  // symbol / footprint
+  before_svg?: string | null;
+  after_svg?: string;
+  rows?: ChangeRowDiff;
+  material_changed?: boolean;
+  recheck_required?: boolean | null;
+  // skill
+  diff?: string[];
+  diff_truncated?: boolean;
+  added_lines?: number;
+  removed_lines?: number;
+  // model3d
+  sha256?: string;
+  size_bytes?: number;
+  // event
+  action?: string;
+  actor?: string;
+  entity_type?: string;
+  entity_id?: string | null;
+  details?: { key: string; value: unknown }[];
+}
+
+export function listChanges(
+  opts: { cursor?: string | null; limit?: number; kinds?: ChangeKind[]; actor?: string; q?: string },
+  signal?: AbortSignal,
+): Promise<ChangePage> {
+  const params = new URLSearchParams();
+  if (opts.cursor) params.set("cursor", opts.cursor);
+  if (opts.limit) params.set("limit", String(opts.limit));
+  // Repeated `kind` params — FastAPI reads them as a list.
+  (opts.kinds ?? []).forEach((k) => params.append("kind", k));
+  if (opts.actor) params.set("actor", opts.actor);
+  if (opts.q) params.set("q", opts.q);
+  const qs = params.toString();
+  return request(`/api/changes${qs ? `?${qs}` : ""}`, { signal });
+}
+
+export function getChangeDetail(
+  kind: ChangeKind,
+  id: number,
+  signal?: AbortSignal,
+): Promise<ChangeDetailPayload> {
+  return request(`/api/changes/${kind}/${id}`, { signal });
+}
+
+/** A specific VERSION of a template, rendered. Unlike `templatePreviewUrl`,
+ *  whose `v` is only a cache key, the version here genuinely selects what is
+ *  drawn — which is what a before/after pane needs. Version rows are immutable,
+ *  so the server answers `immutable` and the browser holds it for a year. */
+export function templateVersionPreviewUrl(
+  kind: "symbol" | "footprint",
+  id: number,
+  versionNo: number,
+): string {
+  return `${API_URL}/api/${kind}s/${id}/versions/${versionNo}/preview.svg`;
+}
+
+/** Fetch a same-origin SVG as TEXT.
+ *
+ *  The before/after panes need the render's own `width`/`height`, which
+ *  kicad-cli emits in MILLIMETRES — that is what lets both versions be drawn
+ *  at one shared scale so a difference overlay lines up. An `<img>` would show
+ *  the picture but never tell the page how big the drawing is. */
+export async function fetchSvgText(path: string, signal?: AbortSignal): Promise<string> {
+  const res = await fetch(`${API_URL}${path}`, { credentials: "include", signal });
+  if (!res.ok) throw new ApiError(res.status, `render failed (${res.status})`);
+  return res.text();
 }

@@ -3814,3 +3814,210 @@ a.check-cell:hover {
   gap: 6px;
   margin: 4px 0 10px;
 }
+
+/* ── DataTable: expandable rows + progressive rendering ──────────────────── */
+
+.data tr.row-expandable {
+  cursor: pointer;
+}
+
+.data tr.row-open > td {
+  background: var(--accent-soft);
+}
+
+/* The expansion cell must opt OUT of the single-line clamp every other cell
+   carries, or the panel inside it is clipped to one line and looks empty.
+   Opting the one cell out beats relaxing the table (see the users table). */
+.data tr.row-expansion > td,
+.data tr.row-sentinel > td {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  padding: 0;
+}
+
+.data tr.row-expansion > td {
+  background: var(--surface-2);
+  padding: 14px 12px;
+}
+
+.data tr.row-expansion:hover > td,
+.data tr.row-sentinel:hover > td {
+  background: var(--surface-2);
+}
+
+.scroll-sentinel {
+  display: flex;
+  justify-content: center;
+  padding: 14px 0;
+  color: var(--muted);
+}
+
+/* ── The change feed ─────────────────────────────────────────────────────── */
+
+.change-kind {
+  display: inline-block;
+  min-width: 74px;
+  padding: 1px 7px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  font-size: 0.78rem;
+  text-align: center;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.change-kind.component {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.change-kind.symbol {
+  border-color: var(--ok);
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+
+.change-kind.footprint {
+  border-color: var(--copper);
+  color: var(--copper);
+  background: var(--copper-soft);
+}
+
+.change-kind.skill {
+  border-color: var(--warn);
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.change-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.change-comment {
+  white-space: pre-wrap;
+  color: var(--muted);
+  border-left: 2px solid var(--line);
+  padding-left: 10px;
+}
+
+.change-section-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* ── Before / after renders ──────────────────────────────────────────────── */
+
+.diff-panes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.diff-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.diff-pane-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* Both renders are stacked here at ONE shared mm scale, so identical geometry
+   lands on identical pixels. `difference` then paints every unchanged pixel
+   black and lights up only what moved — the negative-difference view. The
+   backdrop must be black for that to read: any other colour would make the
+   "unchanged" result a colour rather than nothing. */
+.diff-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The three panes share one px-per-mm scale, so they must share a box too —
+     a picture that is bigger only because its pane is wider would read as a
+     size change that never happened. */
+  min-height: 210px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.diff-stage.negative {
+  background: #000;
+}
+
+.diff-stage img {
+  display: block;
+  max-width: 100%;
+}
+
+/* Each render is flattened against opaque black in its OWN layer before the
+   two are blended. Without that step the blend is wrong in a way that looks
+   convincing: an SVG's strokes are anti-aliased, so their edge pixels carry
+   partial alpha, and a partially transparent pixel differenced against the
+   backdrop leaves `(1-a)·backdrop` behind instead of zero. Every outline and
+   every glyph then glows on a comparison of a drawing with ITSELF — verified
+   2026-08-25 by overlaying one version on itself, which must come out pure
+   black and did not. Flattened first, every pixel is opaque, identical
+   geometry cancels exactly, and only real movement lights up. */
+.diff-layer {
+  /* Centred explicitly, NOT by the parent's flexbox. An absolutely positioned
+     flex child with `auto` offsets takes its static position, which laid the
+     two layers out side by side instead of stacking them. */
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: #000;
+  isolation: isolate;
+  line-height: 0;
+}
+
+.diff-layer.after {
+  mix-blend-mode: difference;
+}
+
+.diff-note {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* ── Unified text diff (skills) ──────────────────────────────────────────── */
+
+.text-diff {
+  margin: 0;
+  padding: 10px;
+  max-height: 460px;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.text-diff .add {
+  background: var(--ok-soft);
+  color: var(--ok);
+  display: block;
+}
+
+.text-diff .del {
+  background: var(--err-soft);
+  color: var(--err);
+  display: block;
+}
+
+.text-diff .hunk {
+  color: var(--accent);
+  display: block;
+}

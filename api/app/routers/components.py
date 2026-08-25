@@ -2,7 +2,7 @@
 SVG previews, and save-as-new-version."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, selectinload
 
@@ -23,7 +23,16 @@ from ..services.generator import (
 from ..services import signoff
 from ..services.mirror import top_level_of, update_mirror_symbols
 from ..services.render import render_svg
-from .util import audit, category_and_descendant_ids, category_path, current_version, props_dict, resolved_value
+from .util import (
+    actor_of,
+    audit,
+    category_and_descendant_ids,
+    category_path,
+    components_with_current,
+    current_version,
+    props_dict,
+    resolved_value,
+)
 
 router = APIRouter(prefix="/api/components", tags=["components"])
 
@@ -77,16 +86,6 @@ def _datasheets_json(rows: list[M.Datasheet]) -> list[dict]:
     return out
 
 
-def _load_components(db: Session) -> list[M.Component]:
-    return (
-        db.query(M.Component)
-        .options(
-            selectinload(M.Component.versions).selectinload(M.ComponentVersion.properties),
-            selectinload(M.Component.versions).selectinload(M.ComponentVersion.category),
-        )
-        .order_by(M.Component.name)
-        .all()
-    )
 
 
 @router.get("")
@@ -97,7 +96,9 @@ def list_components(
     page_size: int = Query(1000, ge=1, le=5000),
     db: Session = Depends(get_db),
 ):
-    comps = _load_components(db)
+    # Live versions only — see `components_with_current` for why the history
+    # must not be loaded here.
+    comps, live = components_with_current(db)
     cat_ids = category_and_descendant_ids(db, category_id) if category_id else None
     price_map = {p.component_id: (p.price_bulk, p.bulk_qty) for p in db.query(M.ComponentPrice)}
     ds_map: dict[int, str] = {}
@@ -112,12 +113,12 @@ def list_components(
     signoff_states = signoff.states_for(db, comps, detail=False)
     from ..services import review as review_svc
 
-    review_states = review_svc.states_for_components(db, comps)
+    review_states = review_svc.states_for_components(db, comps, cvs=live)
 
     items = []
     needle = q.lower() if q else None
     for comp in comps:
-        cv = current_version(comp)
+        cv = live.get(comp.id)
         if cv is None:
             continue
         if cat_ids is not None and cv.category_id not in cat_ids:
@@ -340,11 +341,17 @@ class VersionCreate(BaseModel):
 
 
 @router.post("/{comp_id}/versions")
-def create_version(comp_id: int, body: VersionCreate, db: Session = Depends(get_db)):
+def create_version(comp_id: int, body: VersionCreate, request: Request,
+                   db: Session = Depends(get_db)):
     """Save an edit as a NEW published version (the user saving IS the
     approval). The previous version stays forever; the current pointer
     advances; only the affected mirror libraries are regenerated."""
     comp = _get_component(db, comp_id)
+    # Who is saving. Symbol and footprint publishes have always recorded the
+    # real name (geometry_proposals passes `actor`); this path hardcoded
+    # "user", so every component edit made in the browser was anonymous in its
+    # own history and in the change feed.
+    actor = actor_of(request)
 
     category = db.get(M.Category, body.category_id)
     if category is None:
@@ -395,7 +402,7 @@ def create_version(comp_id: int, body: VersionCreate, db: Session = Depends(get_
         category_id=body.category_id,
         removed_properties=body.removed_properties or None,
         status="draft",  # published just below via the shared publish path
-        created_by="user",
+        created_by=actor,
         comment=body.comment,
     )
     db.add(cv)
@@ -440,14 +447,14 @@ def create_version(comp_id: int, body: VersionCreate, db: Session = Depends(get_
 
     db.flush()
     audit(db, "component.edit", "component", comp.id,
-          {"version_no": new_no, "comment": body.comment})
+          {"version_no": new_no, "comment": body.comment}, actor=actor)
     # This route publishes directly (the user saving IS the approval). The
     # shared publish path pins the datasheets and runs the sign-off carry, the
     # review-record carry and the machine validation — same function, same
     # rules, same transaction as every other publish door.
     from ..services.publish import publish_component_version, refresh_mirror_for_component
 
-    res = publish_component_version(db, comp, cv, actor="user", approved_by="user")
+    res = publish_component_version(db, comp, cv, actor=actor, approved_by=actor)
     carried = res["signoff"]
     db.commit()
 

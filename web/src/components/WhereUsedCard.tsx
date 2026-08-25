@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getWhereUsed, isAbortError, type WhereUsedRow } from "../api";
+import DataTable, { type Column } from "./DataTable";
 
 export default function WhereUsedCard({ compId, name }: { compId: number; name: string }) {
   const [rows, setRows] = useState<WhereUsedRow[] | null>(null);
@@ -19,6 +20,49 @@ export default function WhereUsedCard({ compId, name }: { compId: number; name: 
     return () => ac.abort();
   }, [compId]);
 
+  // One row per (project, usage): the nested shape reads well but cannot be
+  // sorted or filtered, and this is a list like any other.
+  const flat = (rows ?? []).flatMap((r) =>
+    r.usages.map((u, i) => ({
+      key: `${r.project_id}-${i}`,
+      project_id: r.project_id,
+      project_name: r.project_name,
+      ref: r.ref,
+      first: i === 0,
+      ...u,
+    })),
+  );
+
+  const cols: Column<(typeof flat)[number]>[] = [
+    {
+      key: "project",
+      label: "Project",
+      width: 30,
+      get: (u) => u.project_name,
+      render: (u) => (
+        <Link className="comp-link" to={`/projects/${u.project_id}`} title={u.ref}>
+          {u.project_name}
+        </Link>
+      ),
+    },
+    {
+      key: "board",
+      label: "Board",
+      width: 26,
+      className: "muted",
+      get: (u) => `${u.board}${u.variant ? ` (${u.variant})` : ""}${u.dnp ? " DNP" : ""}`,
+      render: (u) => (
+        <>
+          {u.board}
+          {u.variant ? ` (${u.variant})` : ""}
+          {u.dnp ? <span className="pill neutral">DNP</span> : null}
+        </>
+      ),
+    },
+    { key: "refs", label: "Refs", width: 30, className: "mono", get: (u) => u.refs },
+    { key: "qty", label: "Qty / device", width: 14, numeric: true, get: (u) => u.qty },
+  ];
+
   return (
     <section className="card pad">
       <h2 className="card-title">Where used</h2>
@@ -28,42 +72,13 @@ export default function WhereUsedCard({ compId, name }: { compId: number; name: 
         <p className="muted">No tracked project uses this part in its latest snapshot.</p>
       ) : (
         <div className="table-wrap">
-          <table className="data">
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th>Board</th>
-                <th>Refs</th>
-                <th className="num">Qty / device</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.flatMap((r) =>
-                r.usages.map((u, i) => (
-                  <tr key={`${r.project_id}-${i}`}>
-                    <td>
-                      {i === 0 ? (
-                        <Link className="comp-link" to={`/projects/${r.project_id}`} title={r.ref}>
-                          {r.project_name}
-                        </Link>
-                      ) : (
-                        ""
-                      )}
-                    </td>
-                    <td className="muted">
-                      {u.board}
-                      {u.variant ? ` (${u.variant})` : ""}
-                      {u.dnp ? <span className="pill neutral">DNP</span> : null}
-                    </td>
-                    <td className="mono cell-fp" title={u.refs}>
-                      {u.refs}
-                    </td>
-                    <td className="num">{u.qty}</td>
-                  </tr>
-                )),
-              )}
-            </tbody>
-          </table>
+          <DataTable
+            columns={cols}
+            rows={flat}
+            rowKey={(u) => u.key}
+            persistKey={`where-used:${compId}`}
+            empty="No usages."
+          />
         </div>
       )}
       <p className="muted dim">

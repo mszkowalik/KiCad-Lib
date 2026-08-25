@@ -7,6 +7,7 @@ import {
   isAbortError,
   type ProjectInfo,
 } from "../api";
+import DataTable, { type Column } from "../components/DataTable";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 
 function fmtDate(iso: string | null): string {
@@ -68,6 +69,58 @@ export default function Projects() {
         setCreating(false);
       });
   };
+
+  const cols: Column<ProjectInfo>[] = [
+    {
+      key: "name",
+      label: "Project",
+      width: 18,
+      get: (p) => p.name,
+      render: (p) => (
+        <Link className="comp-link" to={`/projects/${p.id}`}>
+          {p.name}
+        </Link>
+      ),
+    },
+    { key: "git_url", label: "Repository", width: 26, className: "mono", get: (p) => p.git_url },
+    {
+      key: "snapshot",
+      label: "Latest snapshot",
+      width: 18,
+      get: (p) =>
+        p.latest_snapshot
+          ? `${p.latest_snapshot.ref_name} ${p.latest_snapshot.status}`
+          : p.has_mirror
+            ? "not ingested"
+            : "not fetched",
+      render: (p) =>
+        p.latest_snapshot ? (
+          <>
+            <span className="mono">{p.latest_snapshot.ref_name}</span>{" "}
+            <StatusPill status={p.latest_snapshot.status} />
+          </>
+        ) : (
+          <span className="muted">{p.has_mirror ? "not ingested" : "not fetched"}</span>
+        ),
+    },
+    {
+      key: "boards",
+      label: "Boards",
+      width: 16,
+      get: (p) =>
+        p.latest_snapshot ? p.latest_snapshot.boards.map((b) => b.name).join(", ") || "—" : "—",
+    },
+    { key: "runs", label: "Batches", width: 7, numeric: true, get: (p) => p.run_count },
+    { key: "currency", label: "Currency", width: 7, get: (p) => p.effective_currency },
+    {
+      key: "created",
+      label: "Created",
+      width: 8,
+      className: "muted",
+      get: (p) => p.created_at,
+      render: (p) => <>{fmtDate(p.created_at)}</>,
+    },
+  ];
 
   return (
     <div className="main-solo">
@@ -138,54 +191,15 @@ export default function Projects() {
 
         {list !== null && list.length > 0 ? (
           <div className="card table-wrap">
-            <table className="data">
-              <thead>
-                <tr>
-                  <th>Project</th>
-                  <th>Repository</th>
-                  <th>Latest snapshot</th>
-                  <th>Boards</th>
-                  <th className="num">Batches</th>
-                  <th>Currency</th>
-                  <th>Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((p) => (
-                  <tr
-                    key={p.id}
-                    className="ledger-row"
-                    title={`Open ${p.name}`}
-                    onClick={() => navigate(`/projects/${p.id}`)}
-                  >
-                    <td>
-                      <Link className="comp-link" to={`/projects/${p.id}`}>
-                        {p.name}
-                      </Link>
-                    </td>
-                    <td className="mono cell-desc">{p.git_url}</td>
-                    <td>
-                      {p.latest_snapshot ? (
-                        <>
-                          <span className="mono">{p.latest_snapshot.ref_name}</span>{" "}
-                          <StatusPill status={p.latest_snapshot.status} />
-                        </>
-                      ) : (
-                        <span className="muted">{p.has_mirror ? "not ingested" : "not fetched"}</span>
-                      )}
-                    </td>
-                    <td>
-                      {p.latest_snapshot
-                        ? p.latest_snapshot.boards.map((b) => b.name).join(", ") || "—"
-                        : "—"}
-                    </td>
-                    <td className="num">{p.run_count}</td>
-                    <td>{p.effective_currency}</td>
-                    <td className="muted">{fmtDate(p.created_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable
+              columns={cols}
+              rows={list}
+              rowKey={(p) => p.id}
+              persistKey="projects"
+              rowClass={() => "ledger-row"}
+              onRowClick={(p) => navigate(`/projects/${p.id}`)}
+              empty="No projects yet."
+            />
           </div>
         ) : null}
       </div>

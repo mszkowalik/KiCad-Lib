@@ -14,6 +14,7 @@ import {
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner } from "../Ui";
 import { fmtWhen } from "./common";
+import DataTable, { type Column } from "../DataTable";
 
 interface Editing {
   name: string;
@@ -103,6 +104,43 @@ export default function ParamSetsPanel({ projectId }: { projectId: number }) {
     }
   };
 
+  const cols: Column<ParamSetRow>[] = [
+    { key: "name", label: "Name", width: 26, className: "mono", get: (ps) => ps.name },
+    {
+      key: "keys",
+      label: "Keys",
+      width: 44,
+      className: "dim",
+      get: (ps) => ps.keys.join(", ") || "—",
+    },
+    {
+      key: "updated",
+      label: "Updated",
+      width: 18,
+      className: "muted",
+      get: (ps) => ps.updated_at ?? "",
+      render: (ps) => <>{fmtWhen(ps.updated_at)}</>,
+    },
+    {
+      key: "actions",
+      label: "",
+      width: 12,
+      interactive: false,
+      className: "ctr",
+      get: () => "",
+      render: (ps) => (
+        <span className="btn-row">
+          <button type="button" className="btn btn-sm" onClick={() => openEditor(ps)}>
+            Edit
+          </button>
+          <button type="button" className="btn btn-sm row-del" onClick={() => remove(ps)}>
+            ×
+          </button>
+        </span>
+      ),
+    },
+  ];
+
   return (
     <div className="card pad">
       <div className="toolbar">
@@ -123,35 +161,13 @@ export default function ParamSetsPanel({ projectId }: { projectId: number }) {
         <p className="muted">No param sets yet.</p>
       ) : (
         <div className="table-wrap">
-          <table className="data data-fixed param-sets-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Keys</th>
-                <th>Updated</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {sets.map((ps) => (
-                <tr key={ps.id}>
-                  <td className="mono">{ps.name}</td>
-                  <td className="dim" title={ps.keys.join(", ")}>{ps.keys.join(", ") || "—"}</td>
-                  <td className="muted">{fmtWhen(ps.updated_at)}</td>
-                  <td className="ctr">
-                    <span className="btn-row">
-                      <button type="button" className="btn btn-sm" onClick={() => openEditor(ps)}>
-                        Edit
-                      </button>
-                      <button type="button" className="btn btn-sm row-del" onClick={() => remove(ps)}>
-                        ×
-                      </button>
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            columns={cols}
+            rows={sets}
+            rowKey={(ps) => ps.id}
+            persistKey="flasher-param-sets"
+            empty="No param sets yet."
+          />
         </div>
       )}
 

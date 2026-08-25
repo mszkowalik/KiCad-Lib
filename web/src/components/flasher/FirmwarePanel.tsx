@@ -19,6 +19,7 @@ import {
   type FlasherMeta,
 } from "../../api";
 import { useDialog } from "../Dialog";
+import DataTable, { type Column } from "../DataTable";
 import { ErrorBanner, Spinner } from "../Ui";
 import { fmtBytes, fmtWhen, shortSha } from "./common";
 
@@ -131,6 +132,78 @@ export default function FirmwarePanel({
     }
   };
 
+  const cols: Column<FirmwareAssetRow>[] = [
+    {
+      key: "filename",
+      label: "Image",
+      width: 30,
+      className: "mono",
+      get: (a) => a.filename,
+      title: (a) =>
+        `${a.filename}\nsha256 ${a.sha256}\n${a.build_label || "no build label"}` +
+        (a.notes ? `\n${a.notes}` : "") +
+        `\nuploaded ${fmtWhen(a.uploaded_at)}`,
+      render: (a) => (
+        <>
+          {a.flashable === false ? (
+            <span className="pill err" title="not a writable ESP image">
+              ✗
+            </span>
+          ) : null}{" "}
+          <a className="comp-link" href={firmwareBinPath(a.id)}>
+            {a.filename}
+          </a>
+        </>
+      ),
+    },
+    { key: "kind", label: "Kind", width: 12, get: (a) => a.kind },
+    { key: "chip", label: "Chip", width: 10, className: "mono", get: (a) => a.chip || "—" },
+    {
+      key: "offset",
+      label: "Offset",
+      width: 11,
+      className: "mono dim",
+      get: (a) => a.default_address || "—",
+    },
+    {
+      key: "size",
+      label: "Size",
+      width: 9,
+      numeric: true,
+      get: (a) => a.size_bytes,
+      render: (a) => <>{fmtBytes(a.size_bytes)}</>,
+    },
+    {
+      key: "used_by",
+      label: "Used by",
+      width: 14,
+      get: (a) => (a.used_by ? `${a.used_by} version${a.used_by === 1 ? "" : "s"}` : "unused"),
+    },
+    {
+      key: "actions",
+      label: "",
+      width: 14,
+      interactive: false,
+      className: "ctr",
+      get: () => "",
+      render: (a) => (
+        <span className="btn-row">
+          <button type="button" className="btn btn-sm" onClick={() => setEditing({ ...a })}>
+            Edit
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm row-del"
+            title={a.used_by ? "pinned by a version — will be refused" : "delete"}
+            onClick={() => remove(a)}
+          >
+            ×
+          </button>
+        </span>
+      ),
+    },
+  ];
+
   return (
     <div className="fw-layout">
       {/* ---------------- upload ---------------- */}
@@ -227,58 +300,14 @@ export default function FirmwarePanel({
           <p className="muted">Nothing uploaded yet.</p>
         ) : (
           <div className="table-wrap">
-            <table className="data data-fixed fw-table">
-              <thead>
-                <tr>
-                  <th>Image</th>
-                  <th>Kind</th>
-                  <th>Chip</th>
-                  <th>Offset</th>
-                  <th className="num">Size</th>
-                  <th>Used by</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((a) => (
-                  <tr key={a.id} className={a.flashable === false ? "dim" : ""}>
-                    <td
-                      className="mono"
-                      title={`${a.filename}\nsha256 ${a.sha256}\n${a.build_label || "no build label"}` +
-                        (a.notes ? `\n${a.notes}` : "") +
-                        `\nuploaded ${fmtWhen(a.uploaded_at)}`}
-                    >
-                      {a.flashable === false ? (
-                        <span className="pill err" title="not a writable ESP image">✗</span>
-                      ) : null}{" "}
-                      <a className="comp-link" href={firmwareBinPath(a.id)}>{a.filename}</a>
-                    </td>
-                    <td>{a.kind}</td>
-                    <td className="mono">{a.chip || "—"}</td>
-                    <td className="mono dim">{a.default_address || "—"}</td>
-                    <td className="num">{fmtBytes(a.size_bytes)}</td>
-                    <td className={a.used_by ? "" : "muted"}>
-                      {a.used_by ? `${a.used_by} version${a.used_by === 1 ? "" : "s"}` : "unused"}
-                    </td>
-                    <td className="ctr">
-                      <span className="btn-row">
-                        <button type="button" className="btn btn-sm" onClick={() => setEditing({ ...a })}>
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm row-del"
-                          title={a.used_by ? "pinned by a version — will be refused" : "delete"}
-                          onClick={() => remove(a)}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable
+              columns={cols}
+              rows={rows}
+              rowKey={(a) => a.id}
+              persistKey="flasher-firmware"
+              rowClass={(a) => (a.flashable === false ? "dim" : "")}
+              empty="Nothing uploaded yet."
+            />
           </div>
         )}
         <p className="muted dim">

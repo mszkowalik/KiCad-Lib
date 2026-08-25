@@ -23,6 +23,7 @@ import {
 } from "../api";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { plain, usd } from "../format";
+import DataTable, { type Column } from "../components/DataTable";
 
 interface Issue {
   text: string;
@@ -164,8 +165,118 @@ export default function ProductionOverview() {
     return out;
   }, [reg, rows, stock]);
 
+  const runCols: Column<(typeof rows)[number]>[] = [
+  {
+    key: "label",
+    label: "Batch",
+    width: 16,
+    get: (r) => r.label,
+    render: (r) => (
+      <Link className="comp-link" to={`/runs/${r.rid}`} onClick={(e) => e.stopPropagation()}>
+        {r.label}
+      </Link>
+    ),
+  },
+  { key: "project", label: "Project", width: 12, className: "muted", get: (r) => r.project },
+  { key: "qty", label: "Units", width: 6, numeric: true, get: (r) => r.qty },
+  {
+    key: "cost",
+    label: "Cost USD",
+    width: 8,
+    numeric: true,
+    get: (r) => r.cost,
+    title: (r) => `direct ${plain(r.direct)} + components ${plain(r.components)}`,
+    render: (r) => <>{plain(r.cost)}</>,
+  },
+  {
+    key: "cost_dev",
+    label: "Cost/dev",
+    width: 7,
+    numeric: true,
+    get: (r) => (r.qty ? r.cost / r.qty : ""),
+    render: (r) => <>{r.qty ? plain(r.cost / r.qty) : "—"}</>,
+  },
+  {
+    key: "sale",
+    label: "Sale",
+    width: 9,
+    numeric: true,
+    interactive: false,
+    get: (r) => r.salePrice ?? "",
+    render: (r) => (
+      <Link
+        className="btn btn-sm"
+        to={`/runs/${r.rid}`}
+        title="The sale is edited on the batch's own page"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {r.salePrice != null ? `${r.salePrice} ${r.saleCurrency || ""}`.trim() : "set price"}
+      </Link>
+    ),
+  },
+  {
+    key: "revenue",
+    label: "Revenue USD",
+    width: 9,
+    numeric: true,
+    get: (r) => r.revenue ?? "",
+    render: (r) => <>{plain(r.revenue)}</>,
+  },
+  {
+    key: "rev_dev",
+    label: "Rev/dev",
+    width: 7,
+    numeric: true,
+    get: (r) => (r.revenue != null && r.qty ? r.revenue / r.qty : ""),
+    title: () => "revenue over the devices built in this batch",
+    render: (r) => <>{r.revenue != null && r.qty ? plain(r.revenue / r.qty) : "—"}</>,
+  },
+  {
+    key: "margin",
+    label: "Margin USD",
+    width: 8,
+    numeric: true,
+    get: (r) => r.margin ?? "",
+    render: (r) => (
+      <span className={(r.margin ?? 0) < 0 ? "err-text" : undefined}>{plain(r.margin)}</span>
+    ),
+  },
+  {
+    key: "margin_pct",
+    label: "Margin %",
+    width: 7,
+    numeric: true,
+    get: (r) => r.marginPct ?? "",
+    title: (r) =>
+      r.customer || r.orderRef
+        ? `${r.customer}${r.orderRef ? ` · ${r.orderRef}` : ""}`
+        : "no customer recorded",
+    render: (r) => (
+      <span className={(r.marginPct ?? 0) < 0 ? "err-text" : undefined}>
+        {r.marginPct == null ? "—" : `${r.marginPct.toFixed(1)}%`}
+      </span>
+    ),
+  },
+  {
+    key: "bar",
+    label: "cost → revenue",
+    width: 11,
+    interactive: false,
+    get: () => "",
+    title: (r) =>
+      `wide bar = revenue ${usd(r.revenue ?? 0, 0)} · narrow bar = cost ${usd(r.cost, 0)} — both drawn on one scale shared by every batch, so bar lengths compare across rows`,
+    render: (r) => (
+      <span className="dash-bar-track">
+        <span className="dash-bar rev" style={{ width: `${(100 * (r.revenue ?? 0)) / scale}%` }} />
+        <span className="dash-bar cost" style={{ width: `${(100 * r.cost) / scale}%` }} />
+      </span>
+    ),
+  },
+];
+
+
   if (error && !reg) {
-    return (
+  return (
       <div className="main-solo">
         <div className="page">
           <ErrorBanner message={error} />
@@ -263,98 +374,15 @@ export default function ProductionOverview() {
             time). Every batch links to its own page — click anywhere on its row.
           </p>
           <div className="table-wrap">
-            <table className="data data-fixed prod-runs-table">
-              <thead>
-                <tr>
-                  <th>Batch</th>
-                  <th>Project</th>
-                  <th className="num">Units</th>
-                  <th className="num">Cost USD</th>
-                  <th className="num">Cost/dev</th>
-                  <th className="num">Sale</th>
-                  <th className="num">Revenue USD</th>
-                  <th className="num">Rev/dev</th>
-                  <th className="num">Margin USD</th>
-                  <th className="num">Margin %</th>
-                  <th>cost → revenue</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length === 0 ? (
-                  <tr>
-                    <td className="empty" colSpan={11}>
-                      No batch has been charged yet.
-                    </td>
-                  </tr>
-                ) : null}
-                {rows.map((r) => (
-                  <tr
-                    key={r.rid}
-                    className="ledger-row"
-                    onClick={() => navigate(`/runs/${r.rid}`)}
-                  >
-                    <td title={r.label}>
-                      <Link className="comp-link" to={`/runs/${r.rid}`}>
-                        {r.label}
-                      </Link>
-                    </td>
-                    <td className="muted" title={r.project}>
-                      {r.project}
-                    </td>
-                    <td className="num">{r.qty}</td>
-                    <td
-                      className="num"
-                      title={`direct ${plain(r.direct)} + components ${plain(r.components)}`}
-                    >
-                      {plain(r.cost)}
-                    </td>
-                    <td className="num">{r.qty ? plain(r.cost / r.qty) : "—"}</td>
-                    <td className="num">
-                      <Link
-                        className="btn btn-sm"
-                        to={`/runs/${r.rid}`}
-                        title="The sale is edited on the batch's own page"
-                      >
-                        {r.salePrice != null
-                          ? `${r.salePrice} ${r.saleCurrency || ""}`.trim()
-                          : "set price"}
-                      </Link>
-                    </td>
-                    <td className="num">{plain(r.revenue)}</td>
-                    <td className="num" title="revenue over the devices built in this batch">
-                      {r.revenue != null && r.qty ? plain(r.revenue / r.qty) : "—"}
-                    </td>
-                    <td className={"num" + ((r.margin ?? 0) < 0 ? " err-text" : "")}>
-                      {plain(r.margin)}
-                    </td>
-                    <td
-                      className={"num" + ((r.marginPct ?? 0) < 0 ? " err-text" : "")}
-                      title={
-                        r.customer || r.orderRef
-                          ? `${r.customer}${r.orderRef ? ` · ${r.orderRef}` : ""}`
-                          : "no customer recorded"
-                      }
-                    >
-                      {r.marginPct == null ? "—" : `${r.marginPct.toFixed(1)}%`}
-                    </td>
-                    <td
-                      title={`wide bar = revenue ${usd(r.revenue ?? 0, 0)} · narrow bar = cost ${usd(r.cost, 0)} — both drawn on one scale shared by every batch, so bar lengths compare across rows`}
-                    >
-                      <span className="dash-bar-track">
-                        <span
-                          className="dash-bar rev"
-                          style={{ width: `${(100 * (r.revenue ?? 0)) / scale}%` }}
-                        />
-                        <span
-                          className="dash-bar cost"
-                          style={{ width: `${(100 * r.cost) / scale}%` }}
-                        />
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable
+              columns={runCols}
+              rows={rows}
+              rowKey={(r) => r.rid}
+              persistKey="production-runs"
+              rowClass={() => "ledger-row"}
+              onRowClick={(r) => navigate(`/runs/${r.rid}`)}
+              empty="No batch has been charged yet."
+            />
           </div>
         </div>
 

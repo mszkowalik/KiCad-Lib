@@ -19,7 +19,7 @@ import struct
 from datetime import datetime, timezone
 
 from fastapi import (
-    APIRouter, Depends, File, Form, HTTPException, UploadFile, WebSocket,
+    APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, WebSocket,
     WebSocketDisconnect,
 )
 from fastapi.responses import Response
@@ -1195,15 +1195,58 @@ def _run_summary_json(r: M.ProgrammingRun, db: Session) -> dict:
     }
 
 
+# Columns the device list may be sorted by. An allow-list, not a getattr:
+# `sort` comes from a query string and must never be able to name an arbitrary
+# column.
+_DEVICE_SORTS = {
+    "last_seen": M.DeviceUnit.last_seen,
+    "first_seen": M.DeviceUnit.first_seen,
+    "mac": M.DeviceUnit.mac,
+    "serial": M.DeviceUnit.serial,
+    "chip": M.DeviceUnit.chip,
+    "tasmota_id": M.DeviceUnit.tasmota_id,
+    "imei": M.DeviceUnit.imei,
+    "iccid": M.DeviceUnit.iccid,
+    "last_status": M.DeviceUnit.last_status,
+}
+
+# Per-column substring filters. The list is server-PAGED, so the table's filter
+# row has to reach the server or it would search one page and then report "no
+# rows match" about 5400 devices it never loaded. Same allow-list reasoning as
+# the sort map: a column name arrives in a query string.
+_DEVICE_FILTERS = {
+    "serial": M.DeviceUnit.serial,
+    "mac": M.DeviceUnit.mac,
+    "tasmota_id": M.DeviceUnit.tasmota_id,
+    "chip": M.DeviceUnit.chip,
+    "imei": M.DeviceUnit.imei,
+    "iccid": M.DeviceUnit.iccid,
+    "last_status": M.DeviceUnit.last_status,
+}
+
+
 @router.get("/devices")
 def list_devices(
     project_id: int | None = None,
     production_run_id: int | None = None,
     status: str | None = None,
     q: str | None = None,
-    limit: int = 10000,
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    sort: str = "last_seen",
+    dir: str = "desc",
+    f: list[str] = Query([]),
     db: Session = Depends(get_db),
 ):
+    """One PAGE of devices, newest-seen first by default.
+
+    This is the one list in the platform that pages in SQL rather than being
+    rendered progressively in the browser: 5502 rows serialise to 1.98 MB and
+    took 2.5 s on production (measured 2026-08-24), and no amount of clever
+    rendering makes two megabytes arrive faster. Filtering and sorting are
+    therefore SERVER-side here — a client that only holds one page cannot
+    honestly filter the rest.
+    """
     query = db.query(M.DeviceUnit)
     if project_id:
         query = query.filter(M.DeviceUnit.project_id == project_id)
@@ -1226,7 +1269,19 @@ def list_devices(
             | M.DeviceUnit.imei.ilike(like)
             | M.DeviceUnit.iccid.ilike(like)
         )
-    devices = query.order_by(M.DeviceUnit.last_seen.desc()).limit(min(limit, 10000)).all()
+    # `f` carries repeated `column:text` pairs — one per filled filter box.
+    for pair in f:
+        name, _, text = pair.partition(":")
+        column = _DEVICE_FILTERS.get(name)
+        if column is not None and text.strip():
+            query = query.filter(column.ilike(f"%{text.strip()}%"))
+
+    col = _DEVICE_SORTS.get(sort, M.DeviceUnit.last_seen)
+    # NULLS LAST in both directions: a device that was never seen is the least
+    # informative row on the page and must never head it.
+    order = col.desc().nullslast() if dir == "desc" else col.asc().nullslast()
+    total = query.order_by(None).count()
+    devices = query.order_by(order, M.DeviceUnit.id.desc()).offset(offset).limit(limit).all()
     ids = [d.id for d in devices]
     latest: dict[int, M.ProgrammingRun] = {}
     counts: dict[int, int] = {}
@@ -1239,11 +1294,17 @@ def list_devices(
             counts[r.device_unit_id] = counts.get(r.device_unit_id, 0) + 1
             latest.setdefault(r.device_unit_id, r)
     projects = {p.id: p.name for p in db.query(M.Project)}
+    # One query for the batches this page references — `db.get` per device is
+    # only free while the identity map still holds the object, and it holds
+    # weak references.
+    run_ids = {r.production_run_id for r in latest.values() if r.production_run_id}
+    prod_runs = {r.id: r for r in db.query(M.ProductionRun)
+                 .filter(M.ProductionRun.id.in_(run_ids))} if run_ids else {}
     tally = checks_svc.counts_for_devices(db, ids)
     out = []
     for d in devices:
         last = latest.get(d.id)
-        prod = db.get(M.ProductionRun, last.production_run_id) if last else None
+        prod = prod_runs.get(last.production_run_id) if last else None
         # NOT `counts` — that name holds the run count per device.
         checked = tally.get(d.id, {})
         out.append({
@@ -1258,7 +1319,8 @@ def list_devices(
             "first_seen": _iso(d.first_seen), "last_seen": _iso(d.last_seen),
             "notes": d.notes,
         })
-    return out
+    return {"items": out, "total": total, "offset": offset, "limit": limit,
+            "has_more": offset + len(out) < total}
 
 
 @router.get("/devices/{device_id}")

@@ -1,12 +1,4 @@
-import {
-  lazy,
-  Suspense,
-  useEffect,
-  useRef,
-  useState,
-  type ChangeEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import {
   addComponentFile,
@@ -60,8 +52,7 @@ import { useStickyState } from "../useStickyState";
 
 const FP_DATALIST_ID = "fp-options";
 
-/** Lazy: pulls in the model-viewer/three.js chunk only when 3D is opened. */
-const ModelViewer = lazy(() => import("../components/ModelViewer"));
+import Viewer3D from "../components/Viewer3D";
 
 /** Renders http(s) values as links (new tab), plain text otherwise. */
 function LinkifyValue({ text }: { text: string }) {
@@ -369,90 +360,6 @@ function PreviewFill({ url, missingText }: { url: string | null; missingText: st
   return <div className="preview-fill">{body}</div>;
 }
 
-// -------------------------------------------------------------- 3D viewer
-
-type Viewer3DState =
-  | { kind: "loading" }
-  | { kind: "ready"; src: string }
-  | { kind: "missing"; message: string }
-  | { kind: "error"; message: string };
-
-/** GLB board view via Google's <model-viewer>: the API renders the footprint
- *  with copper/mask/silk on a board slab plus the placed 3D model
- *  (kicad-cli). model-viewer's neutral studio lighting is bright and it
- *  auto-frames the model with managed near/far planes (no orbit clipping).
- *  First server render takes a few seconds; it is cached after. */
-function Viewer3D({ compId, versionNo }: { compId: number; versionNo: number }) {
-  const [state, setState] = useState<Viewer3DState>({ kind: "loading" });
-
-  useEffect(() => {
-    let objectUrl: string | null = null;
-    const ctrl = new AbortController();
-    setState({ kind: "loading" });
-
-    (async () => {
-      try {
-        // Fetch the GLB ourselves: gives clean 404 handling (no pinned
-        // footprint) and a spinner during the slow first server render.
-        const res = await fetch(footprintGlbUrl(compId, versionNo), { signal: ctrl.signal });
-        if (res.status === 404) {
-          let detail = "";
-          try {
-            const body = (await res.json()) as { detail?: unknown };
-            if (typeof body.detail === "string") detail = body.detail;
-          } catch {
-            // ignore non-JSON body
-          }
-          setState({ kind: "missing", message: detail || "No pinned footprint" });
-          return;
-        }
-        if (!res.ok) {
-          setState({ kind: "error", message: `Board view failed (HTTP ${res.status})` });
-          return;
-        }
-        const blob = await res.blob();
-        objectUrl = URL.createObjectURL(blob);
-        setState({ kind: "ready", src: objectUrl });
-      } catch (err) {
-        if (!isAbortError(err)) {
-          setState({ kind: "error", message: errorMessage(err) });
-        }
-      }
-    })();
-
-    return () => {
-      ctrl.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [compId, versionNo]);
-
-  return (
-    <div className="preview-fill viewer3d-wrap">
-      {state.kind === "ready" ? (
-        <Suspense
-          fallback={
-            <div className="viewer3d-overlay">
-              <Spinner label="Loading viewer…" />
-            </div>
-          }
-        >
-          <ModelViewer src={state.src} />
-        </Suspense>
-      ) : (
-        <div className="viewer3d-overlay">
-          {state.kind === "loading" ? <Spinner label="Rendering board…" /> : null}
-          {state.kind === "missing" ? (
-            <span className="placeholder">{state.message}</span>
-          ) : null}
-          {state.kind === "error" ? (
-            <span className="placeholder err-text">{state.message}</span>
-          ) : null}
-        </div>
-      )}
-    </div>
-  );
-}
-
 /** Raw 3D model files behind the pinned footprint (STEP/WRL from the file
  *  mirror), linked through the /view page — STEP opens with a subelement
  *  tree, WRL with a mesh view. */
@@ -546,7 +453,7 @@ function FootprintPanel({
         <PreviewFill url={svgUrl} missingText="No pinned footprint" />
       ) : (
         <>
-          <Viewer3D compId={compId} versionNo={versionNo} />
+          <Viewer3D src={footprintGlbUrl(compId, versionNo)} missingText="No pinned footprint" />
           <ModelFilesRow compId={compId} versionNo={versionNo} />
         </>
       )}

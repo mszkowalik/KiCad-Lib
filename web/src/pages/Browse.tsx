@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   bulkSignoff,
@@ -11,6 +11,7 @@ import {
   type ComponentListResponse,
 } from "../api";
 import CategoryTree from "../components/CategoryTree";
+import DataTable, { type Column } from "../components/DataTable";
 import { useDialog } from "../components/Dialog";
 import { ErrorBanner, LifecyclePill, ReviewPill, SignoffPill, Spinner } from "../components/Ui";
 import { useStickyState } from "../useStickyState";
@@ -76,16 +77,6 @@ const REVIEW_TEXT: Record<string, string> = {
   unreviewed: "unreviewed",
 };
 
-function colValue(c: ComponentListItem, col: ColKey): string {
-  if (col === "category") return c.category_path;
-  if (col === "signoff") return SIGNOFF_TEXT[c.signoff] ?? c.signoff;
-  if (col === "review") {
-    const life = c.lifecycle === "deprecated" || c.lifecycle === "obsolete" ? ` ${c.lifecycle}` : "";
-    return (REVIEW_TEXT[c.review] ?? c.review) + life;
-  }
-  return c[col];
-}
-
 /** Sign-off states worst-first: what needs attention sorts to the top. */
 const SIGNOFF_ORDER: Record<string, number> = {
   revoked: 0,
@@ -100,44 +91,6 @@ const REVIEW_ORDER: Record<string, number> = {
   partial: 2,
   checked: 3,
 };
-
-function sortRows(
-  rows: ComponentListItem[],
-  sort: { col: ColKey; dir: "asc" | "desc" },
-): ComponentListItem[] {
-  const mul = sort.dir === "asc" ? 1 : -1;
-  const out = [...rows];
-  if (sort.col === "signoff") {
-    // Rank order, not alphabetical: sorting by this column means "show me what
-    // still needs looking at", and "revoked" before "signed" is that answer.
-    out.sort(
-      (a, b) => ((SIGNOFF_ORDER[a.signoff] ?? 9) - (SIGNOFF_ORDER[b.signoff] ?? 9)) * mul,
-    );
-  } else if (sort.col === "review") {
-    // Same worst-first rank ordering as the sign-off column.
-    out.sort(
-      (a, b) => ((REVIEW_ORDER[a.review] ?? 9) - (REVIEW_ORDER[b.review] ?? 9)) * mul,
-    );
-  } else if (sort.col === "price_bulk") {
-    // numeric; empty/unparsable always last regardless of direction
-    out.sort((a, b) => {
-      const av = parseFloat(a.price_bulk);
-      const bv = parseFloat(b.price_bulk);
-      const an = Number.isNaN(av);
-      const bn = Number.isNaN(bv);
-      if (an && bn) return 0;
-      if (an) return 1;
-      if (bn) return -1;
-      return (av - bv) * mul;
-    });
-  } else {
-    const col = sort.col;
-    out.sort(
-      (a, b) => colValue(a, col).toLowerCase().localeCompare(colValue(b, col).toLowerCase()) * mul,
-    );
-  }
-  return out;
-}
 
 export default function Browse() {
   const [params, setParams] = useSearchParams();
@@ -242,72 +195,10 @@ export default function Browse() {
       return next;
     });
 
-  // Column sort + per-column filters — client-side, remembered across navigation.
-  const [sort, setSort] = useStickyState<{ col: ColKey; dir: "asc" | "desc" } | null>(
-    "browse:sort",
-    null,
-  );
-  const [filters, setFilters] = useStickyState<Partial<Record<ColKey, string>>>("browse:filters", {});
-
-  const anyFilter = Object.values(filters).some((v) => v !== undefined && v.trim() !== "");
-
-  const visible = useMemo(() => {
-    if (data === null) return [];
-    let rows = data.items;
-    const active = (Object.entries(filters) as Array<[ColKey, string]>).filter(
-      ([, v]) => v.trim() !== "",
-    );
-    if (active.length > 0) {
-      rows = rows.filter((c) =>
-        active.every(([col, v]) =>
-          colValue(c, col).toLowerCase().includes(v.trim().toLowerCase()),
-        ),
-      );
-    }
-    if (sort !== null) rows = sortRows(rows, sort);
-    return rows;
-  }, [data, filters, sort]);
-
-  const cycleSort = (col: ColKey) =>
-    setSort((prev) =>
-      prev === null || prev.col !== col
-        ? { col, dir: "asc" }
-        : prev.dir === "asc"
-          ? { col, dir: "desc" }
-          : null,
-    );
-
-  const setFilter = (col: ColKey, v: string) => setFilters((f) => ({ ...f, [col]: v }));
-
-  const sortTh = (col: ColKey, className?: string) => (
-    <th className={className}>
-      <button
-        type="button"
-        className="th-sort"
-        onClick={() => cycleSort(col)}
-        title={`Sort by ${COL_LABELS[col]}`}
-      >
-        {COL_LABELS[col]}
-        {sort?.col === col ? (
-          <span className="sort-ind">{sort.dir === "asc" ? "▲" : "▼"}</span>
-        ) : null}
-      </button>
-    </th>
-  );
-
-  const filterTd = (col: ColKey) => (
-    <td>
-      <input
-        type="text"
-        className="text filter-input"
-        placeholder="filter…"
-        value={filters[col] ?? ""}
-        onChange={(e) => setFilter(col, e.target.value)}
-        aria-label={`Filter ${COL_LABELS[col]}`}
-      />
-    </td>
-  );
-
+  // Sorting, filtering and chunked rendering all live in DataTable now — the
+  // same behaviour every other list in the platform gets, from one place.
+  // `visible` comes back from it so "select all" still means the FILTERED set.
+  const [visible, setVisible] = useState<ComponentListItem[]>([]);
   const total = data?.total ?? 0;
 
   // ---- bulk production sign-off -------------------------------------------
@@ -361,6 +252,116 @@ export default function Browse() {
     }
   };
 
+  const cols: Column<ComponentListItem>[] = [
+    {
+      key: "select",
+      label: (
+        <input
+          type="checkbox"
+          checked={allSelected}
+          disabled={signing || selectable.length === 0}
+          onChange={toggleAll}
+          aria-label="Select every unsigned component shown"
+        />
+      ),
+      width: 3,
+      interactive: false,
+      className: "ctr",
+      get: () => "",
+      render: (c) => (
+        <input
+          type="checkbox"
+          checked={selected.has(c.id)}
+          disabled={signing || c.signoff === "signed"}
+          onChange={() => toggleOne(c.id)}
+          aria-label={`Select ${c.name} for sign-off`}
+          title={c.signoff === "signed" ? "already signed off" : `Select ${c.name} for sign-off`}
+        />
+      ),
+    },
+    {
+      key: "mfg_pn",
+      label: COL_LABELS.mfg_pn,
+      width: 12,
+      get: (c) => c.mfg_pn,
+      render: (c) => (
+        <Link
+          to={`/library/components/${c.id}`}
+          state={{ backTo: `/${params.toString() ? `?${params.toString()}` : ""}` }}
+          className="mono comp-link"
+        >
+          {c.mfg_pn || <span className="muted">—</span>}
+        </Link>
+      ),
+    },
+    { key: "manufacturer", label: COL_LABELS.manufacturer, width: 10, get: (c) => c.manufacturer },
+    { key: "value", label: COL_LABELS.value, width: 8, className: "mono", get: (c) => c.value },
+    { key: "description", label: COL_LABELS.description, width: 20, get: (c) => c.description },
+    { key: "footprint", label: COL_LABELS.footprint, width: 12, className: "mono", get: (c) => c.footprint },
+    { key: "lcsc", label: COL_LABELS.lcsc, width: 7, className: "mono", get: (c) => c.lcsc },
+    {
+      key: "datasheet",
+      label: "DS",
+      width: 3,
+      interactive: false,
+      className: "ctr",
+      get: () => "",
+      render: (c) =>
+        c.datasheet ? (
+          <a
+            href={c.datasheet}
+            target="_blank"
+            rel="noreferrer"
+            className="ds-link"
+            title={c.datasheet}
+            aria-label={`Datasheet for ${c.name}`}
+          >
+            <ExternalLinkIcon />
+          </a>
+        ) : null,
+    },
+    {
+      key: "price_bulk",
+      label: COL_LABELS.price_bulk,
+      width: 7,
+      numeric: true,
+      get: (c) => c.price_bulk,
+      title: (c) => (c.bulk_qty ? `Unit price at qty ${c.bulk_qty}` : undefined),
+    },
+    { key: "category", label: COL_LABELS.category, width: 10, get: (c) => c.category_path },
+    {
+      key: "signoff",
+      label: COL_LABELS.signoff,
+      width: 4,
+      className: "ctr",
+      // Filter on the PRINTED word (typing "re-check" finds the stale rows);
+      // sort on rank, worst first.
+      get: (c) => SIGNOFF_TEXT[c.signoff] ?? c.signoff,
+      sortValue: (c) => SIGNOFF_ORDER[c.signoff] ?? 9,
+      render: (c) => <SignoffPill state={c.signoff} />,
+    },
+    {
+      key: "review",
+      label: COL_LABELS.review,
+      width: 4,
+      className: "ctr",
+      get: (c) => {
+        const life =
+          c.lifecycle === "deprecated" || c.lifecycle === "obsolete" ? ` ${c.lifecycle}` : "";
+        return (REVIEW_TEXT[c.review] ?? c.review) + life;
+      },
+      sortValue: (c) => REVIEW_ORDER[c.review] ?? 9,
+      render: (c) => (
+        <>
+          <ReviewPill state={c.review} provenance={c.review_provenance} />
+          {c.lifecycle === "deprecated" || c.lifecycle === "obsolete" ? (
+            <LifecyclePill state={c.lifecycle} title="Hidden from KiCad" />
+          ) : null}
+        </>
+      ),
+    },
+  ];
+
   return (
     <div className="browse">
       <aside className="sidebar">
@@ -392,12 +393,11 @@ export default function Browse() {
           />
           {loading && data !== null ? <Spinner /> : null}
           <span className="toolbar-total">
-            {data !== null
-              ? anyFilter
-                ? `${visible.length} of ${total} components`
-                : `${total} component${total === 1 ? "" : "s"}` +
-                  (data.items.length < total ? ` (showing first ${data.items.length})` : "")
-              : ""}
+            {data === null
+              ? ""
+              : visible.length === total
+                ? `${total} component${total === 1 ? "" : "s"}`
+                : `${visible.length} of ${total} components`}
           </span>
           <button
             type="button"
@@ -425,137 +425,14 @@ export default function Browse() {
           </div>
         ) : data !== null ? (
           <div className={"card table-wrap" + (loading ? " is-loading" : "")}>
-            <table className="data browse-table">
-              <thead>
-                <tr>
-                  <th className="ctr">
-                    <input
-                      type="checkbox"
-                      checked={allSelected}
-                      disabled={signing || selectable.length === 0}
-                      onChange={toggleAll}
-                      aria-label="Select every unsigned component shown"
-                    />
-                  </th>
-                  {sortTh("mfg_pn")}
-                  {sortTh("manufacturer")}
-                  {sortTh("value")}
-                  {sortTh("description")}
-                  {sortTh("footprint")}
-                  {sortTh("lcsc")}
-                  <th className="ctr" aria-label="Datasheet">
-                    DS
-                  </th>
-                  {sortTh("price_bulk", "num")}
-                  {sortTh("category")}
-                  {sortTh("signoff", "ctr")}
-                  {sortTh("review", "ctr")}
-                </tr>
-                <tr className="filter-row">
-                  <td className="ctr" />
-                  {filterTd("mfg_pn")}
-                  {filterTd("manufacturer")}
-                  {filterTd("value")}
-                  {filterTd("description")}
-                  {filterTd("footprint")}
-                  {filterTd("lcsc")}
-                  <td className="ctr">
-                    {anyFilter ? (
-                      <button
-                        type="button"
-                        className="row-del clear-filters"
-                        onClick={() => setFilters({})}
-                        title="Clear filters"
-                        aria-label="Clear filters"
-                      >
-                        &#x2715;
-                      </button>
-                    ) : null}
-                  </td>
-                  {filterTd("price_bulk")}
-                  {filterTd("category")}
-                  {filterTd("signoff")}
-                  {filterTd("review")}
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((c) => (
-                  <tr key={c.id}>
-                    <td className="ctr">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(c.id)}
-                        disabled={signing || c.signoff === "signed"}
-                        onChange={() => toggleOne(c.id)}
-                        aria-label={`Select ${c.name} for sign-off`}
-                        title={
-                          c.signoff === "signed"
-                            ? "already signed off"
-                            : `Select ${c.name} for sign-off`
-                        }
-                      />
-                    </td>
-                    <td title={c.mfg_pn}>
-                      <Link
-                        to={`/library/components/${c.id}`}
-                        state={{ backTo: `/${params.toString() ? `?${params.toString()}` : ""}` }}
-                        className="mono comp-link"
-                      >
-                        {c.mfg_pn || <span className="muted">—</span>}
-                      </Link>
-                    </td>
-                    <td title={c.manufacturer}>{c.manufacturer}</td>
-                    <td className="mono" title={c.value}>
-                      {c.value}
-                    </td>
-                    <td title={c.description}>{c.description}</td>
-                    <td className="mono" title={c.footprint}>
-                      {c.footprint}
-                    </td>
-                    <td className="mono" title={c.lcsc}>
-                      {c.lcsc}
-                    </td>
-                    <td className="ctr">
-                      {c.datasheet ? (
-                        <a
-                          href={c.datasheet}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="ds-link"
-                          title={c.datasheet}
-                          aria-label={`Datasheet for ${c.name}`}
-                        >
-                          <ExternalLinkIcon />
-                        </a>
-                      ) : null}
-                    </td>
-                    <td
-                      className="num"
-                      title={c.bulk_qty ? `Unit price at qty ${c.bulk_qty}` : undefined}
-                    >
-                      {c.price_bulk}
-                    </td>
-                    <td title={c.category_path}>{c.category_path}</td>
-                    <td className="ctr">
-                      <SignoffPill state={c.signoff} />
-                    </td>
-                    <td className="ctr">
-                      <ReviewPill state={c.review} provenance={c.review_provenance} />
-                      {c.lifecycle === "deprecated" || c.lifecycle === "obsolete" ? (
-                        <LifecyclePill state={c.lifecycle} title="Hidden from KiCad" />
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-                {visible.length === 0 ? (
-                  <tr>
-                    <td colSpan={12} className="empty">
-                      No components match.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
+            <DataTable
+              columns={cols}
+              rows={data.items}
+              rowKey={(c) => c.id}
+              persistKey="browse"
+              onVisibleChange={setVisible}
+              empty="No components match."
+            />
           </div>
         ) : null}
       </main>

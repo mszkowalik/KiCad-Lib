@@ -9,7 +9,7 @@
  * are the whole client-setup flow — the user pastes one URL into KiCad and the
  * sync plugin arrives with their token already inside it.
  */
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   addUserToken,
@@ -26,6 +26,7 @@ import {
 } from "../api";
 import { useDialog } from "./Dialog";
 import { ErrorBanner, Spinner } from "./Ui";
+import DataTable, { type Column } from "./DataTable";
 
 function CopyRow({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
@@ -246,6 +247,66 @@ export default function UsersCard() {
 
   if (users === null) return <Spinner label="Loading users…" />;
 
+  const cols: Column<(typeof users)[number]>[] = [
+    {
+      key: "username",
+      label: "Username",
+      width: 22,
+      get: (u) => u.username,
+      render: (u) => (
+        <>
+          <span className="ledger-caret">{openId === u.id ? "▾" : "▸"}</span> {u.username}
+        </>
+      ),
+    },
+    { key: "display_name", label: "Name", width: 24, get: (u) => u.display_name },
+    { key: "role", label: "Role", width: 12, get: (u) => u.role },
+    {
+      key: "active",
+      label: "Active",
+      width: 10,
+      className: "ctr",
+      get: (u) => (u.active ? "yes" : "no"),
+    },
+    {
+      key: "last_login",
+      label: "Last sign-in",
+      width: 20,
+      className: "muted dim",
+      get: (u) => u.last_login_at?.slice(0, 16) ?? "never",
+    },
+    {
+      key: "delete",
+      label: "Delete",
+      width: 12,
+      interactive: false,
+      className: "ctr",
+      get: () => "",
+      render: (u) => (
+        <button
+          className="btn btn-sm btn-danger"
+          onClick={async (e) => {
+            e.stopPropagation();
+            const ok = await dialog.confirm(
+              `Delete ${u.username}? Their sessions and API tokens go with them, and any KiCad install using one stops working.`,
+              { title: "Delete user", confirmLabel: "Delete", tone: "danger" },
+            );
+            if (!ok) return;
+            try {
+              await deleteUser(u.id);
+              setOpenId(null);
+              load();
+            } catch (err) {
+              setError(errorMessage(err));
+            }
+          }}
+        >
+          Delete
+        </button>
+      ),
+    },
+  ];
+
   return (
     <div className="card pad">
       <h2>Users</h2>
@@ -257,72 +318,28 @@ export default function UsersCard() {
       <ErrorBanner message={error} />
 
       <div className="table-wrap">
-        <table className="data data-fixed users-table">
-          <thead>
-            <tr>
-              <th>Username</th>
-              <th>Name</th>
-              <th>Role</th>
-              <th className="ctr">Active</th>
-              <th>Last sign-in</th>
-              <th className="ctr">Delete</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((u) => (
-              <Fragment key={u.id}>
-                <tr>
-                  <td>
-                    <button
-                      className="btn btn-sm"
-                      onClick={() => setOpenId(openId === u.id ? null : u.id)}
-                    >
-                      {openId === u.id ? "▾" : "▸"} {u.username}
-                    </button>
-                  </td>
-                  <td title={u.display_name}>{u.display_name}</td>
-                  <td>{u.role}</td>
-                  <td className="ctr">{u.active ? "yes" : "no"}</td>
-                  <td className="muted dim">{u.last_login_at?.slice(0, 16) ?? "never"}</td>
-                  <td className="ctr">
-                    <button
-                      className="btn btn-sm btn-danger"
-                      onClick={async () => {
-                        const ok = await dialog.confirm(
-                          `Delete ${u.username}? Their sessions and API tokens go with them, and any KiCad install using one stops working.`,
-                          { title: "Delete user", confirmLabel: "Delete", tone: "danger" },
-                        );
-                        if (!ok) return;
-                        try {
-                          await deleteUser(u.id);
-                          setOpenId(null);
-                          load();
-                        } catch (err) {
-                          setError(errorMessage(err));
-                        }
-                      }}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-                {openId === u.id && detail !== null ? (
-                  <tr>
-                    <td colSpan={6} className="user-detail-cell">
-                      <UserDetail
-                        user={detail}
-                        onChanged={(next) => {
-                          setDetail(next);
-                          load();
-                        }}
-                      />
-                    </td>
-                  </tr>
-                ) : null}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          columns={cols}
+          rows={users}
+          rowKey={(u) => u.id}
+          persistKey="users"
+          openKey={openId}
+          onOpenChange={(k) => setOpenId(k === null ? null : Number(k))}
+          expand={() =>
+            detail !== null ? (
+              <UserDetail
+                user={detail}
+                onChanged={(next) => {
+                  setDetail(next);
+                  load();
+                }}
+              />
+            ) : (
+              <Spinner label="Loading user" />
+            )
+          }
+          empty="No users."
+        />
       </div>
 
       <h3 className="users-add-heading">Add a user</h3>

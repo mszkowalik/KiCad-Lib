@@ -445,3 +445,87 @@ def footprint_preview(fp_id: int, v: int | None = None, db: Session = Depends(ge
     if f is None:
         raise HTTPException(404, "footprint not found")
     return _preview("footprint", f, db, v)
+
+
+# ------------------------------------------------- a NAMED version, rendered
+def _version_preview(kind: str, parent, version_no: int, db: Session) -> Response:
+    """What this template looked like at version N.
+
+    The sibling above is deliberately not this: there `v` is a cache key and
+    the CURRENT drawing is always what comes back. Here the version number is
+    a genuine SELECTOR, which is what the change feed's before/after panes
+    need — "what did this look like before the edit" has no other answer.
+
+    Version rows are immutable, so unlike `_preview` this can always promise
+    `immutable`: the bytes for a given (template, version) can never change.
+    """
+    model = M.SymbolVersion if kind == "symbol" else M.FootprintVersion
+    owner_col = model.symbol_id if kind == "symbol" else model.footprint_id
+    ver = (db.query(model)
+           .filter(owner_col == parent.id, model.version_no == version_no)
+           .first())
+    if ver is None:
+        raise HTTPException(404, f"{kind} has no version {version_no}")
+    try:
+        svg = render_svg(kind, parent.name, ver.source_text)
+    except Exception as e:  # noqa: BLE001 — surface render failures to the UI
+        raise HTTPException(502, f"render failed: {e}") from e
+    return Response(content=svg, media_type="image/svg+xml",
+                    headers={"Cache-Control": "public, max-age=31536000, immutable",
+                             "X-Version-Id": str(ver.id)})
+
+
+# The 3D board view of a footprint, on its own. `components` has had one since
+# the component page grew a 2D/3D switch, but it hangs off a COMPONENT version
+# and a template page has no component — so the footprint page could only ever
+# show the flat render. Same renderer, same GLB, addressed by the drawing
+# itself.
+def _footprint_glb(fp: M.Footprint, ver: M.FootprintVersion, immutable: bool) -> Response:
+    try:
+        data = render_svg("footprint3d", fp.name, ver.source_text)
+    except Exception as e:  # noqa: BLE001 — surface render failures to the UI
+        raise HTTPException(502, f"render failed: {e}") from e
+    cache = ("public, max-age=31536000, immutable" if immutable else "max-age=300")
+    return Response(content=data, media_type="model/gltf-binary",
+                    headers={"Cache-Control": cache})
+
+
+@router.get("/footprints/{fp_id}/preview.glb")
+def footprint_glb(fp_id: int, db: Session = Depends(get_db)):
+    f = db.get(M.Footprint, fp_id)
+    if f is None:
+        raise HTTPException(404, "footprint not found")
+    cur = _current(f)
+    if cur is None:
+        raise HTTPException(404, "no published version to preview")
+    return _footprint_glb(f, cur, immutable=False)
+
+
+@router.get("/footprints/{fp_id}/versions/{version_no}/preview.glb")
+def footprint_version_glb(fp_id: int, version_no: int, db: Session = Depends(get_db)):
+    f = db.get(M.Footprint, fp_id)
+    if f is None:
+        raise HTTPException(404, "footprint not found")
+    ver = (db.query(M.FootprintVersion)
+           .filter(M.FootprintVersion.footprint_id == fp_id,
+                   M.FootprintVersion.version_no == version_no)
+           .first())
+    if ver is None:
+        raise HTTPException(404, f"footprint has no version {version_no}")
+    return _footprint_glb(f, ver, immutable=True)
+
+
+@router.get("/symbols/{sym_id}/versions/{version_no}/preview.svg")
+def symbol_version_preview(sym_id: int, version_no: int, db: Session = Depends(get_db)):
+    s = db.get(M.Symbol, sym_id)
+    if s is None:
+        raise HTTPException(404, "symbol not found")
+    return _version_preview("symbol", s, version_no, db)
+
+
+@router.get("/footprints/{fp_id}/versions/{version_no}/preview.svg")
+def footprint_version_preview(fp_id: int, version_no: int, db: Session = Depends(get_db)):
+    f = db.get(M.Footprint, fp_id)
+    if f is None:
+        raise HTTPException(404, "footprint not found")
+    return _version_preview("footprint", f, version_no, db)

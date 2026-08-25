@@ -1,7 +1,7 @@
 """Shared helpers for routers."""
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .. import models as M
 from ..services.templates import has_template, resolve_templates
@@ -32,6 +32,61 @@ def category_and_descendant_ids(db: Session, root_id: int) -> set[int]:
 
 def current_version(comp: M.Component) -> M.ComponentVersion | None:
     return next((v for v in comp.versions if v.id == comp.current_version_id), None)
+
+
+def components_with_current(db: Session) -> tuple[list[M.Component], dict[int, M.ComponentVersion]]:
+    """Every component, and ONLY its live version — the list-surface loader.
+
+    `selectinload(Component.versions).selectinload(ComponentVersion.properties)`
+    is the obvious way to write this and it is the wrong one: it loads the
+    entire HISTORY to print a list that shows one version each. Measured on
+    2026-08-24 against production data — 421 components, 2296 version rows,
+    23509 property rows — that pattern was most of a 1.2 s response on
+    `GET /api/components` and `GET /api/reviews/queue` alike.
+
+    Three loads happen here, each for a reason:
+
+    - the live versions, filtered by `current_version_id`, with their
+      properties and category;
+    - `footprint_version` -> `footprint`, with the heavy columns DEFERRED.
+      `props_dict` reads `cv.footprint_version.footprint.display_name` to fill
+      `{Footprint_Name}`, which lazy-loads a whole `.kicad_mod` body per
+      component otherwise — the same trap `kicad_http.library_versions`
+      documents;
+    - every category, so `category_path`'s walk up `parent` is served from the
+      identity map instead of one SELECT per level per row.
+
+    Returns the components and a `{component_id: live version}` map. Callers
+    MUST use the map: `current_version(comp)` reads `comp.versions`, which is
+    unloaded here and would lazy-load the history back one component at a time.
+    """
+    comps = db.query(M.Component).order_by(M.Component.name).all()
+    live_ids = [c.current_version_id for c in comps if c.current_version_id]
+    by_comp: dict[int, M.ComponentVersion] = {}
+    if live_ids:
+        rows = (
+            db.query(M.ComponentVersion)
+            .options(
+                selectinload(M.ComponentVersion.properties),
+                joinedload(M.ComponentVersion.category),
+                joinedload(M.ComponentVersion.footprint_version)
+                .joinedload(M.FootprintVersion.footprint),
+                joinedload(M.ComponentVersion.footprint_version).defer(
+                    M.FootprintVersion.source_text
+                ),
+                joinedload(M.ComponentVersion.footprint_version).defer(
+                    M.FootprintVersion.parsed
+                ),
+                joinedload(M.ComponentVersion.footprint_version).defer(
+                    M.FootprintVersion.models
+                ),
+            )
+            .filter(M.ComponentVersion.id.in_(live_ids))
+            .all()
+        )
+        by_comp = {cv.component_id: cv for cv in rows}
+    db.query(M.Category).all()  # warm the identity map for category_path
+    return comps, by_comp
 
 
 def props_dict(cv: M.ComponentVersion) -> dict[str, str | None]:
