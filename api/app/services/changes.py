@@ -26,7 +26,7 @@ import difflib
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import String, and_, cast, literal, or_, select, tuple_, union_all
+from sqlalchemy import String, and_, cast, func, literal, or_, select, tuple_, union_all
 from sqlalchemy.orm import Session, aliased
 
 from .. import models as M
@@ -86,6 +86,7 @@ def _legs():
             cv.id.label("row_id"),
             cast(M.Component.id, String).label("entity_id"),
             M.Component.name.label("name"),
+            literal("published").label("action"),
             cv.created_by.label("actor"),
             cv.version_no.label("version_no"),
             cv.comment.label("comment"),
@@ -93,19 +94,19 @@ def _legs():
 
         select(
             sv.created_at, literal("symbol"), sv.id,
-            cast(M.Symbol.id, String), M.Symbol.name, sv.created_by,
+            cast(M.Symbol.id, String), M.Symbol.name, literal("published"), sv.created_by,
             sv.version_no, sv.comment,
         ).join(M.Symbol, M.Symbol.id == sv.symbol_id),
 
         select(
             fv.created_at, literal("footprint"), fv.id,
-            cast(M.Footprint.id, String), M.Footprint.name, fv.created_by,
+            cast(M.Footprint.id, String), M.Footprint.name, literal("published"), fv.created_by,
             fv.version_no, fv.comment,
         ).join(M.Footprint, M.Footprint.id == fv.footprint_id),
 
         select(
             kv.created_at, literal("skill"), kv.id,
-            cast(M.Skill.id, String), M.Skill.name, kv.created_by,
+            cast(M.Skill.id, String), M.Skill.name, literal("published"), kv.created_by,
             kv.version_no, kv.comment,
         ).join(M.Skill, M.Skill.id == kv.skill_id),
 
@@ -113,15 +114,28 @@ def _legs():
         # would drag every mesh through Postgres to print a filename.
         select(
             m.created_at, literal("model3d"), m.id,
-            cast(m.id, String), m.rel_path,
+            cast(m.id, String), m.rel_path, literal("added"),
             ma.actor, literal(None), literal(None),
         ).outerjoin(ma, and_(ma.entity_type == "model3d",
                              ma.action == "model3d.create",
                              ma.entity_id == cast(m.id, String))),
 
+        # `name` must be the SUBJECT here, not the action — the name filter is
+        # how a reader asks "what happened to THIS part lately", and projecting
+        # the action into that slot made the filter silently drop every event
+        # for the part they searched for. `details` is free-form JSONB written
+        # by ~40 call sites, so this coalesces the keys they actually use and
+        # falls back to the entity type. The exact-subject resolution still
+        # happens in Python at hydration; this only has to be good enough to
+        # filter on.
         select(
             a.ts, literal("event"), a.id,
-            a.entity_id, a.action, a.actor,
+            a.entity_id,
+            func.coalesce(a.details["subject"].astext,
+                          a.details["component"].astext,
+                          a.details["name"].astext,
+                          a.entity_type),
+            a.action, a.actor,
             literal(None), literal(None),
         ).where(
             or_(*[a.action.startswith(p) for p in EVENT_PREFIXES]),
@@ -184,10 +198,10 @@ def _row_json(db: Session, r) -> dict:
         "kind": r.src,
         "id": r.row_id,
         "entity_id": r.entity_id,
-        # For an event the union's `name` slot carries the action; the printed
-        # name is the subject the action touched.
-        "name": subject if r.src == "event" else r.name,
-        "action": r.name if r.src == "event" else ("added" if r.src == "model3d" else "published"),
+        # The union already carries a filterable subject for events; prefer the
+        # exact one resolved here when the audit row let us find it.
+        "name": (subject or r.name) if r.src == "event" else r.name,
+        "action": r.action,
         "action_label": label,
         "actor": r.actor or ("import" if r.src == "model3d" else "unknown"),
         "ts": r.ts.isoformat(),
@@ -206,7 +220,7 @@ def _event_label(db: Session, r) -> tuple[str, str]:
     Falling back to the raw action and the entity type is always truthful,
     just terse.
     """
-    action = r.name
+    action = r.action
     label = action.replace(".", " ").replace("_", " ")
     row = db.get(M.AuditLog, r.row_id)
     details = (row.details if row else None) or {}
