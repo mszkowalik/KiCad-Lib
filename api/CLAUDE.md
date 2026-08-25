@@ -1084,10 +1084,24 @@ which reads as corruption and is nothing of the kind (reported 2026-08-25 on
 `library-fb1c4c239d2fr10.zip`; the chain served at that moment was perfectly
 self-consistent). `ensure_built`'s prune therefore keeps, besides the current
 build and this revision's personal plugin zips, any artifact that is
-`_within_grace` — under `_GRACE_DAYS` old AND among the `_GRACE_GENERATIONS`
-newest of its own package prefix. The generation cap is what makes it safe:
-the library zip is ~0.5 MB, but the 3D models zip is ~260 MB, so "keep
-everything recent" is not a policy on its own.
+`_within_grace` — under `_GRACE_DAYS` old AND inside its package's
+`_GRACE_BYTES` budget, where newer siblings claim the budget first.
+
+**The budget is in bytes, not generations, and the difference matters.** A
+generation cap looks equivalent and is not: the library package rebuilds on
+every component publish, so "keep the last two" is minutes of cover on a busy
+day, while the retention has to span however long a user leaves a pending
+update sitting in PCM. Sized per package, the same 14 days buys ~400 library
+zips (0.5 MB each) or one extra 3D models zip (260 MB).
+
+**A pending update is pinned in the CLIENT, and no server retention reaches
+back past it.** `installed_packages.json` records the download URL and sha of
+each version PCM has seen, and an update uses that record rather than
+re-reading `packages.json` — so refreshing the repository does not rewrite it.
+A user whose recorded version has aged out of the grace window has to uninstall
+and reinstall the package. That is also why the library package's version
+string moving on every publish (it is date+time derived) is worth remembering
+when this is reported.
 
 **Diagnosing this class of report**: fetch `repository.json`, then
 `packages.json`, then the zip, and compare the advertised `download_sha256`

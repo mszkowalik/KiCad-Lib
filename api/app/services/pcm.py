@@ -237,16 +237,20 @@ def _build_plugin_zip(path: Path) -> int:
 # Keeping the superseded bytes means a stale client downloads exactly what its
 # record advertised, so the hash matches and the install succeeds. It is the
 # same reasoning that already keeps this revision's personal plugin zips.
-# `_GRACE_GENERATIONS` bounds the cost: the library zip is ~0.5 MB but the 3D
-# models zip is ~260 MB, so "keep everything recent" is not safe on its own.
+# The budget is in BYTES, not generations. A generation cap looks equivalent and
+# is not: the library package rebuilds on every component publish, so "keep the
+# last two" is minutes of cover on a busy day, while the retention has to span
+# however long a user leaves a pending update sitting in PCM. Sized per package
+# instead, the same 14 days costs ~400 library zips (0.5 MB each) or one extra
+# 3D models zip (260 MB) — the small artifact gets the deep history it needs and
+# the big one cannot fill the disk.
 _GRACE_DAYS = 14
-_GRACE_GENERATIONS = 2
+_GRACE_BYTES = 400 * 1024 * 1024
 
 
 def _within_grace(f: Path) -> bool:
     """True for a superseded artifact still worth serving: recent enough that a
-    client may still be holding its record, and among the newest few of its own
-    package so a burst of rebuilds cannot fill the disk."""
+    client may still hold its record, and inside its package's size budget."""
     try:
         age = time.time() - f.stat().st_mtime
     except OSError:
@@ -254,12 +258,17 @@ def _within_grace(f: Path) -> bool:
     if age > _GRACE_DAYS * 86400:
         return False
     prefix = f.name.split("-")[0]
-    siblings = sorted(
-        (p for p in f.parent.glob(f"{prefix}-*") if p.is_file()),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    return f in siblings[:_GRACE_GENERATIONS]
+    newer_bytes = 0
+    for sib in f.parent.glob(f"{prefix}-*"):
+        try:
+            st = sib.stat()
+        except OSError:
+            continue
+        # Newer siblings claim the budget first, so retention drops the OLDEST
+        # of a package once the budget is spent.
+        if sib.is_file() and st.st_mtime > f.stat().st_mtime:
+            newer_bytes += st.st_size
+    return newer_bytes < _GRACE_BYTES
 
 
 # Per-token plugin zips. Named apart from the shared artifacts so `ensure_built`
