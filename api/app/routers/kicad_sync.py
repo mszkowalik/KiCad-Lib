@@ -156,11 +156,18 @@ def pcm_artifact(filename: str, request: Request, db: Session = Depends(get_db))
     if meta is None:
         raise HTTPException(503, "file mirror not built yet — run an import first")
     token = pcm_token_or_empty(request, db)
-    if filename == meta["packages_file"] and token:
+    # The index is served from MEMORY, and from the build the REQUESTED TAG
+    # names — not always the current one. PCM re-reads an index whose repository
+    # record it may have cached for days, and that record published the hash of
+    # the old document; answering with the current one fails the check, and
+    # falling through to the shared file on disk hands KiCad download URLs with
+    # no token on them.
+    index_meta = meta if filename == meta["packages_file"] else pcm.meta_for_packages_file(filename)
+    if index_meta is not None and token:
         # Per-user body under a shared URL — a cache between here and KiCad
         # must never hand one user's index to another, or reuse it after a
         # rebuild changed the hashes it publishes.
-        return Response(content=pcm.personal_packages(meta, token),
+        return Response(content=pcm.personal_packages(index_meta, token),
                         media_type="application/json",
                         headers={"Cache-Control": "no-store"})
     path = pcm.artifact_path(filename)

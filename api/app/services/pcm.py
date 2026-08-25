@@ -344,19 +344,31 @@ def _prev_packages(out: Path, current_meta: Path) -> dict:
 
 
 def _resolve_package(out: Path, prev: dict, key: str, subtree: str, version: str,
-                     zip_prefix: str, builder) -> dict:
-    """Reuse the previous zip + version when the package's content hash is
-    unchanged; build a fresh zip (named by content hash) otherwise.
+                     zip_prefix: str, builder, pinned_version: bool = False) -> dict:
+    """Reuse the previous zip when the package's content hash is unchanged;
+    build a fresh zip (named by content hash) otherwise.
 
-    The VERSION is part of the reuse test, not just the content hash. PCM
-    decides "update available" from the version string alone, so a bump with
-    unchanged sources has to reach the repository — keying only on `subtree`
-    kept serving the cached entry and the bump silently did nothing.
+    The ZIP and the VERSION are decided separately, and conflating them cost
+    the deployment real money twice:
+
+    * Reusing the zip but keeping the old version made a manual PLUGIN_VERSION
+      bump a silent no-op — PCM decides "update available" from the version
+      string alone, so the bump has to reach the repository even though the
+      plugin sources did not move. Hence `pinned_version`: the plugin's version
+      is authored by hand and always wins.
+    * Making the version part of the REUSE TEST re-encoded the 260 MB models
+      package on EVERY mirror regeneration, because a content package's version
+      comes from the mirror timestamp and that moves on every component publish.
+      Same bytes, same URL, minutes of CPU — and, worse, PCM saw a new version
+      string and offered every user a 260 MB update for an unchanged tree.
+
+    So: a content package (`pinned_version=False`) whose subtree is unchanged
+    carries its PREVIOUS version forward, which is what the module docstring
+    promised all along — each package versioned from its own content.
     """
     p = prev.get(key)
-    if (p and p.get("subtree") == subtree and p.get("version") == version
-            and (out / p.get("zip", "")).exists()):
-        return p
+    if p and p.get("subtree") == subtree and (out / p.get("zip", "")).exists():
+        return {**p, "version": version} if pinned_version else p
     # The builder revision is part of the NAME, not just the meta tag: the zip
     # bytes for one content hash are fixed (ZIP_EPOCH), but a change to the
     # builder itself legitimately re-encodes them, and re-encoding under the old
@@ -480,6 +492,7 @@ def ensure_built() -> dict | None:
             ),
             "plugin": _resolve_package(
                 out, prev, "plugin", plugin_hash, PLUGIN_VERSION, "sync", _build_plugin_zip,
+                pinned_version=True,
             ),
         }
         packages = _packages_document(packages_meta)
@@ -520,6 +533,33 @@ def ensure_built() -> dict | None:
         sizes = {k: f"{(out / p['zip']).stat().st_size >> 20} MB" for k, p in packages_meta.items()}
         log.info(f"PCM: packages ready {sizes}")
         return meta
+
+
+def meta_for_packages_file(filename: str) -> dict | None:
+    """The build a `packages-<tag>.json` request belongs to — including a tag
+    the mirror has already moved past.
+
+    PCM caches `repository.json` and only re-reads it when asked, so a client
+    can come back for an index whose tag is several publishes old. Serving that
+    request from the CURRENT build is wrong twice over: the hash the client's
+    repository record published belongs to the old document, and the on-disk
+    shared copy carries no token on its download URLs, so every zip fetch that
+    follows is unauthenticated. Rebuilding the old document from its own meta
+    keeps a stale record working end to end — the retention grace keeps the
+    zips it names, and the personal plugin zip it names, on disk.
+    """
+    if not (filename.startswith("packages-") and filename.endswith(".json")):
+        return None
+    tag = filename[len("packages-"):-len(".json")]
+    if "/" in tag or "." in tag:
+        return None
+    meta_file = _pcm_dir() / f"meta-{tag}.json"
+    if not meta_file.is_file():
+        return None
+    try:
+        return json.loads(meta_file.read_text())
+    except (ValueError, OSError):
+        return None
 
 
 def artifact_path(filename: str) -> Path | None:
