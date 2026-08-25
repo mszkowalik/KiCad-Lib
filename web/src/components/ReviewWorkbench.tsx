@@ -15,6 +15,7 @@ import {
 } from "../api";
 import ReviewCard from "./ReviewCard";
 import { ErrorBanner, Spinner } from "./Ui";
+import PdfFrame from "./PdfFrame";
 
 /**
  * The verification workbench — everything a check needs, in one expansion row.
@@ -137,7 +138,7 @@ export function ComponentWorkbench({
                 ))}
               </div>
             ) : null}
-            <iframe
+            <PdfFrame
               className="workbench-datasheet"
               src={datasheetFileUrl(sheet.id)}
               title={sheet.label || "datasheet"}

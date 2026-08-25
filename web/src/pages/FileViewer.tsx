@@ -6,7 +6,7 @@
  *    dxf        → dxf-viewer          (layer panel w/ toggles)
  *    dwg        → server dwg2dxf (LibreDWG) → dxf-viewer; graceful fallback
  *    glb/gltf   → <model-viewer>
- *    image      → <img>; pdf → <iframe> (normally PDFs link directly)
+ *    image      → <img>; pdf → <PdfFrame> (a blob-framed iframe — see there)
  *    anything else → download card
  */
 import { lazy, Suspense, useEffect, useState } from "react";
@@ -19,6 +19,7 @@ import {
 } from "../api";
 import { Spinner } from "../components/Ui";
 import { absoluteFileUrl, viewKindOf } from "../viewkind";
+import PdfFrame from "../components/PdfFrame";
 
 const MeshView = lazy(() => import("../components/MeshView"));
 const DxfView = lazy(() => import("../components/DxfView"));
@@ -82,7 +83,7 @@ export default function FileViewer() {
   } else if (kind === "image") {
     body = <img className="viewer-img" src={fullUrl} alt={name} />;
   } else if (kind === "pdf") {
-    body = <iframe className="viewer-pdf" src={fullUrl} title={name} />;
+    body = <PdfFrame className="viewer-pdf" src={fullUrl} title={name} />;
   } else {
     body = (
       <div className="viewer-note">

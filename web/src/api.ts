@@ -4839,6 +4839,11 @@ export interface ChangeRow {
   kind: ChangeKind;
   id: number;
   entity_id: string;
+  /** What the row POINTS AT — the thing with a page. Resolved server-side
+   *  because an audit row's `entity_id` names a VERSION, not the parent.
+   *  `null` means there is nothing to link (a 3D upload, a deleted subject). */
+  subject_kind: "component" | "symbol" | "footprint" | "skill" | null;
+  subject_id: number | null;
   name: string;
   action: string;
   action_label: string | null;

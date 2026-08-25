@@ -163,11 +163,21 @@ p {
   color: var(--accent);
 }
 
+/* Used for BOTH a NavLink and a <button> (the Reviews tabs, the change feed's
+   kind filters). Without the button reset the browser's own chrome came
+   through — every tab rendered as a grey bevelled box with its own border, in
+   the system font, and the accent pill for the active one was invisible
+   underneath it. Anchors are unaffected by the reset. */
 .topbar-link {
+  font: inherit;
   font-size: 13px;
   color: var(--muted);
   padding: 5px 12px;
+  border: 0;
   border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .topbar-link:hover {
@@ -4034,4 +4044,15 @@ a.check-cell:hover {
   min-width: 0;
   padding: 0 5px;
   font-size: 0.72rem;
+}
+
+
+/* The change feed's kind filters. A plain row of the same chips as the tabs
+   above — NOT a second `.subnav`, which paints a surface bar and a bottom
+   border and made a filter row read as a second level of navigation. */
+.chip-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
 }

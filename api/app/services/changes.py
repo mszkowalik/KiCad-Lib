@@ -192,12 +192,26 @@ def feed(db: Session, *, limit: int = 50, cursor: str | None = None,
 
 
 def _row_json(db: Session, r) -> dict:
-    label, subject = _event_label(db, r) if r.src == "event" else (None, None)
+    label, subject, ev_kind, ev_id = (
+        _event_label(db, r) if r.src == "event" else (None, None, None, None)
+    )
+    # What the row POINTS AT — the thing with a page. For a version row that is
+    # the row's own parent; for an event it has to be resolved out of the audit
+    # entry, because its entity_id names a version. `None` means "nothing to
+    # link", which is every 3D upload and any event whose subject is gone.
+    if r.src == "event":
+        subject_kind, subject_id = ev_kind, ev_id
+    elif r.src == "model3d":
+        subject_kind, subject_id = None, None
+    else:
+        subject_kind, subject_id = r.src, int(r.entity_id)
     return {
         "key": f"{r.src}:{r.row_id}",
         "kind": r.src,
         "id": r.row_id,
         "entity_id": r.entity_id,
+        "subject_kind": subject_kind,
+        "subject_id": subject_id,
         # The union already carries a filterable subject for events; prefer the
         # exact one resolved here when the audit row let us find it.
         "name": (subject or r.name) if r.src == "event" else r.name,
@@ -213,51 +227,59 @@ def _row_json(db: Session, r) -> dict:
     }
 
 
-def _event_label(db: Session, r) -> tuple[str, str]:
-    """A human action and subject for an audit row.
+def _event_label(db: Session, r) -> tuple[str, str, str | None, int | None]:
+    """A human action, subject name, and what the subject IS, for an audit row.
 
-    Both are best-effort: `details` is free-form and 40 call sites write it.
-    Falling back to the raw action and the entity type is always truthful,
-    just terse.
+    All best-effort: `details` is free-form and 40 call sites write it. Falling
+    back to the raw action and the entity type is always truthful, just terse.
+
+    The kind/id pair is what lets the feed LINK a row. An audit row's
+    `entity_id` names a VERSION, not the thing that has a page, so a client
+    cannot derive the link itself — resolving it here is the only place the
+    join is cheap.
     """
     action = r.action
     label = action.replace(".", " ").replace("_", " ")
     row = db.get(M.AuditLog, r.row_id)
-    details = (row.details if row else None) or {}
+    if row is None:
+        return label, "", None, None
+    details = row.details or {}
     subject = ""
     for key in _SUBJECT_KEYS:
         val = details.get(key)
         if isinstance(val, str) and val.strip():
             subject = val.strip()
             break
-    if not subject and row is not None:
-        subject = _subject_from_entity(db, row)
-    return label, subject or (row.entity_type if row else "")
+    name, kind, oid = _subject_of(db, row)
+    return label, subject or name or row.entity_type, kind, oid
 
 
-def _subject_from_entity(db: Session, row: M.AuditLog) -> str:
-    """Resolve `entity_type`/`entity_id` to a name. Version entity types point
-    at a version row, whose parent carries the name."""
+def _subject_of(db: Session, row: M.AuditLog) -> tuple[str, str | None, int | None]:
+    """`(name, kind, id)` for an audit row's subject — the parent that has a
+    page, not the version the row names. `(…, None, None)` when nothing links."""
     try:
         eid = int(row.entity_id or "")
     except (TypeError, ValueError):
-        return ""
+        return "", None, None
     kind = row.entity_type.removesuffix("_version")
     if row.entity_type.endswith("_version"):
         ver = db.get(_VERSION_OF.get(kind, M.ComponentVersion), eid)
-        parent = _PARENT_OF.get(kind)
+        parent = _PARENT_OF.get(kind) or (M.Skill if kind == "skill" else None)
         if ver is None or parent is None:
-            return ""
-        owner = db.get(parent, getattr(ver, f"{kind}_id", 0))
-        return owner.name if owner else ""
+            return "", None, None
+        owner_id = getattr(ver, f"{kind}_id", 0)
+        owner = db.get(parent, owner_id)
+        return (owner.name if owner else ""), (kind if owner else None), (owner_id if owner else None)
     model = _PARENT_OF.get(row.entity_type) or {"skill": M.Skill, "model3d": M.Model3D,
                                                 "category": M.Category}.get(row.entity_type)
     if model is None:
-        return ""
+        return "", None, None
     obj = db.get(model, eid)
     if obj is None:
-        return ""
-    return getattr(obj, "name", None) or getattr(obj, "rel_path", "") or ""
+        return "", None, None
+    name = getattr(obj, "name", None) or getattr(obj, "rel_path", "") or ""
+    linkable = row.entity_type if row.entity_type in ("component", "symbol", "footprint", "skill") else None
+    return name, linkable, (eid if linkable else None)
 
 
 # ------------------------------------------------------------------- detail
@@ -490,7 +512,7 @@ def _event_detail(db: Session, audit_id: int) -> dict | None:
     return {
         "kind": "event",
         "id": row.id,
-        "name": _subject_from_entity(db, row) or row.entity_type,
+        "name": _subject_of(db, row)[0] or row.entity_type,
         "action": row.action,
         "actor": row.actor,
         "created_at": row.ts.isoformat(),

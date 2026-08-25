@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 
 import {
   errorMessage,
@@ -67,6 +68,9 @@ interface FeedGroup {
   kind: ChangeKind;
   actors: string[];
   ts: string;
+  /** Where the name links. Taken from whichever member resolved one — an
+   *  event knows its parent even when the group's lead row does not. */
+  href: string | null;
 }
 
 /** A version publish outranks an event: it is the change that has a diff, and
@@ -101,8 +105,17 @@ function groupRows(rows: ChangeRow[]): FeedGroup[] {
       kind: lead.kind,
       actors: [...new Set(members.map((m) => m.actor))],
       ts: members[0].ts,
+      href: subjectHref(members.find((m) => m.subject_kind !== null) ?? null),
     };
   });
+}
+
+/** The page a change is about. Every kind but a 3D upload has one. */
+export function subjectHref(r: ChangeRow | null): string | null {
+  if (r === null || r.subject_kind === null || r.subject_id === null) return null;
+  if (r.subject_kind === "component") return `/library/components/${r.subject_id}`;
+  if (r.subject_kind === "skill") return `/library/skills/${r.subject_id}`;
+  return `/library/templates/${r.subject_kind}s/${r.subject_id}`;
 }
 
 /** The member a group opens on: the change that carries a diff, else newest. */
@@ -229,6 +242,15 @@ export default function ChangesFeed() {
       serverFilter: true,
       get: (g) => g.name,
       className: "mono",
+      render: (g) =>
+        g.href === null ? (
+          <>{g.name}</>
+        ) : (
+          // stopPropagation: the row itself is the unfold toggle.
+          <Link className="comp-link" to={g.href} onClick={(e) => e.stopPropagation()}>
+            {g.name}
+          </Link>
+        ),
     },
     {
       key: "action",
@@ -276,7 +298,7 @@ export default function ChangesFeed() {
   return (
     <div className="page">
       <div className="toolbar">
-        <nav className="subnav">
+        <nav className="chip-row" aria-label="Filter by kind">
           {KINDS.map((k) => (
             <button
               key={k.key}

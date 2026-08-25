@@ -520,3 +520,23 @@ server render instead of a silently empty canvas.
 it one.** The component page's preview panel does; a plain card does not, and
 the viewer collapsed to nothing on the template page. Pass a `className` with a
 height (the template page passes `template-preview`).
+
+
+### A PDF is framed from a BLOB, never from its URL (`components/PdfFrame.tsx`)
+
+The shared nginx in front of this deployment sends `X-Frame-Options: DENY` for
+every route it serves, and DENY forbids framing even by the same origin — so
+`<iframe src="/api/datasheets/30/file">` rendered as the browser's
+broken-document icon. Every PDF preview in the app was dead in production
+(reported 2026-08-25 on the review workbench, where comparing the part against
+its documentation IS the task). It worked on a bare dev server, which is
+exactly why it went unnoticed.
+
+`PdfFrame` fetches the bytes and frames a `blob:` URL instead: a blob the page
+created carries no HTTP headers, so there is no `X-Frame-Options` to honour,
+and same-origin credentials still apply to the fetch so the file stays behind
+the auth gate. Both call sites go through it (`ReviewWorkbench`, `FileViewer`).
+Never "simplify" one back to a plain `src`. The alternative fix — scoping the
+header to SAMEORIGIN for `/lib/` — means editing an nginx config shared with
+unrelated services, and nginx's `add_header` in a nested block replaces every
+inherited one, so it would silently drop the other two security headers.
