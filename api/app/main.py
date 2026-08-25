@@ -243,6 +243,19 @@ _PHASE1_DDL = (
     # rather than being given an opinion nobody recorded.
     ("review_records.checklist_items",
      "ALTER TABLE review_records ADD COLUMN IF NOT EXISTS checklist_items jsonb"),
+    # Which archived datasheets are searchable PDFs and which are pure scans.
+    # A scan is invisible to text search AND unreadable by the agent's
+    # read_datasheet — it returns blank pages and the verification silently
+    # rests on the rendered images alone. Making the distinction visible is
+    # what lets the library be swept and the scans replaced.
+    # "" means "not classified yet" and is what the startup backfill claims.
+    ("datasheet_versions.text_layer",
+     "ALTER TABLE datasheet_versions ADD COLUMN IF NOT EXISTS "
+     "text_layer varchar(10) NOT NULL DEFAULT ''"),
+    ("datasheet_versions.page_count",
+     "ALTER TABLE datasheet_versions ADD COLUMN IF NOT EXISTS page_count integer"),
+    ("datasheet_versions.text_pages",
+     "ALTER TABLE datasheet_versions ADD COLUMN IF NOT EXISTS text_pages integer"),
 )
 
 # name -> "ok" | "failed: ..."; served by GET /api/health/schema.
@@ -736,6 +749,19 @@ def startup() -> None:
         from .services.datasheet_store import start_nightly_recheck
 
         start_nightly_recheck(settings.datasheet_recheck_hour)
+
+    # Tag documents archived before the classifier existed as searchable or
+    # scanned. Unconditional and self-limiting: it only touches rows with
+    # text_layer = '', so on every boot after the first sweep it finds nothing
+    # and exits. Delayed, because it competes with the startup fetch for I/O.
+    try:
+        import threading as _t
+
+        from .services.datasheet_store import start_text_layer_classify
+
+        _t.Timer(30.0, lambda: start_text_layer_classify("missing")).start()
+    except Exception as e:  # noqa: BLE001 — a cosmetic tag must never block startup
+        log.warning(f"could not arm the datasheet text-layer backfill: {e}")
     if settings.fx_autofetch:
         from .services.fx import start_auto_refresh
 

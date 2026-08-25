@@ -455,7 +455,15 @@ def read_datasheet(component: str, pages: str = "", datasheet_label: str = "") -
                     {"error": f"datasheet {ds.label!r} has no local copy and no source URL"})}]
             from .datasheet_store import fetch_datasheet
             try:
-                fetch_datasheet(db, ds)
+                r = fetch_datasheet(db, ds)
+                if r.get("result") == "rejected":
+                    return [{"type": "text", "text": json.dumps(
+                        {"error": f"the datasheet at {ds.label!r} could not be archived: "
+                                  f"{r['reason']}",
+                         "source_url": ds.source_url,
+                         "hint": "the supplier is not serving a readable PDF — "
+                                 "try web_fetch on the source URL, or find the "
+                                 "manufacturer's own datasheet"})}]
             except Exception as e:
                 return [{"type": "text", "text": json.dumps(
                     {"error": f"no local copy and fetching failed: {e}",

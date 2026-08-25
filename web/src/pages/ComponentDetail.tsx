@@ -27,6 +27,7 @@ import {
   type PinnedRef,
   type PropertyRow,
   type ReviewPart,
+  type TextLayer,
   type VersionDetail,
 } from "../api";
 import { fileHref } from "../viewkind";
@@ -51,6 +52,75 @@ import WhereUsedCard from "../components/WhereUsedCard";
 import { useStickyState } from "../useStickyState";
 
 const FP_DATALIST_ID = "fp-options";
+
+function DocumentIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true">
+      <path
+        d="M3.5 1.5h4.2L11 4.8v7.7H3.5zM7.6 1.6v3.3h3.3M5.3 7.6h4M5.3 9.8h4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Can this document be searched, or are its pages only images?
+ *
+ *  A scan is not a cosmetic problem. Text search misses it, and the agent's
+ *  `read_datasheet` hands back empty pages for it — so a verification that
+ *  looks like it read the datasheet actually rested on the page images alone.
+ *  The tag exists so the scans can be found and replaced, which is why the
+ *  non-searchable classes are loud and the searchable one is quiet.
+ *
+ *  `none` (a DXF, a STEP file, an archived web page) is NOT a defect and gets
+ *  no tag — there is nothing to be searchable. Nor does `""`, which only means
+ *  the backfill has not reached this document yet. */
+function TextLayerTag({
+  layer,
+  pages,
+  textPages,
+}: {
+  layer: TextLayer;
+  pages: number | null;
+  textPages: number | null;
+}) {
+  if (layer === "" || layer === "none") return null;
+  const counts =
+    pages != null && textPages != null ? ` — ${textPages} of ${pages} pages carry text` : "";
+  // "no text" rather than "scan": some of these are vector drawings exported
+  // without a text layer, not raster scans. Unsearchable either way, and the
+  // wrong word in a tag people act on is worse than a longer one.
+  const spec: Record<string, { tone: string; text: string; title: string }> = {
+    text: { tone: "ok", text: "OK", title: `Searchable PDF${counts}` },
+    mixed: {
+      tone: "warn",
+      text: "partial",
+      title: `Only part of this PDF is searchable${counts}. The rest are page images — often the package-drawing pages, which is exactly where a footprint check looks.`,
+    },
+    scan: {
+      tone: "warn",
+      text: "no text",
+      title: `Not searchable: no page carries a text layer${
+        pages != null ? ` (${pages} pages)` : ""
+      }. Search misses it and the agent reads it as blank. Replace it with a text PDF.`,
+    },
+    error: {
+      tone: "err",
+      text: "unreadable",
+      title: "This file would not open as a PDF — it is empty, damaged, or password-locked.",
+    },
+  };
+  const s = spec[layer];
+  if (!s) return null;
+  return (
+    <span className={`pill ${s.tone} ds-search`} title={s.title}>
+      {s.text}
+    </span>
+  );
+}
 
 import Viewer3D from "../components/Viewer3D";
 
@@ -1580,68 +1650,74 @@ export default function ComponentDetail() {
                           {d.label}
                           {i === 0 ? <span className="tag-hidden">primary</span> : null}
                         </span>
+                        {d.has_file ? (
+                          <a
+                            className="ds-file"
+                            href={fileHref(`/api/datasheets/${d.id}/file`, d.filename ?? d.label)}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={`Open our archived copy${
+                              d.size_bytes != null
+                                ? ` — ${Math.round(d.size_bytes / 1024)} kB`
+                                : ""
+                            }${d.pdf_version_no !== null ? `, stored version ${d.pdf_version_no}` : ""}`}
+                          >
+                            <DocumentIcon />
+                            <span className="ds-file-name mono">{d.filename ?? d.label}</span>
+                            {d.pdf_version_no !== null ? (
+                              <span className="ds-file-ver">v{d.pdf_version_no}</span>
+                            ) : null}
+                          </a>
+                        ) : (
+                          <span className="null ds-nofile">no local copy</span>
+                        )}
+                        <TextLayerTag
+                          layer={d.text_layer}
+                          pages={d.page_count}
+                          textPages={d.text_pages}
+                        />
+                        {d.versions.length > 1 ? (
+                          <details className="ds-history">
+                            <summary>history ({d.versions.length})</summary>
+                            <ul>
+                              {[...d.versions].reverse().map((v) => (
+                                <li key={v.version_no} className="mono">
+                                  <a
+                                    href={fileHref(
+                                      `/api/datasheets/${d.id}/versions/${v.version_no}/file`,
+                                      d.filename ?? d.label,
+                                    )}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    v{v.version_no}
+                                  </a>{" "}
+                                  · {new Date(v.fetched_at).toLocaleDateString()} ·{" "}
+                                  {Math.round(v.size_bytes / 1024)} kB{" "}
+                                  <TextLayerTag
+                                    layer={v.text_layer}
+                                    pages={v.page_count}
+                                    textPages={v.text_pages}
+                                  />
+                                </li>
+                              ))}
+                            </ul>
+                          </details>
+                        ) : null}
+                        <span className="ds-gap" />
                         {d.source_url ? (
                           <a
-                            className="ds-url mono"
+                            className="ds-origin"
                             href={d.source_url}
                             target="_blank"
                             rel="noreferrer"
                             title={d.source_url}
                           >
-                            {d.source_url}
+                            original
                           </a>
                         ) : (
-                          <span className="null ds-url">no URL</span>
+                          <span className="null ds-origin">no URL</span>
                         )}
-                        {d.has_file ? (
-                          <>
-                            <a
-                              className="ds-local"
-                              href={fileHref(`/api/datasheets/${d.id}/file`, d.filename ?? d.label)}
-                              target="_blank"
-                              rel="noreferrer"
-                              title={
-                                d.filename
-                                  ? `${d.filename}${
-                                      d.size_bytes != null
-                                        ? ` (${Math.round(d.size_bytes / 1024)} kB)`
-                                        : ""
-                                    }`
-                                  : "stored copy"
-                              }
-                            >
-                              local copy
-                            </a>
-                            {d.pdf_version_no !== null ? (
-                              <span className="tag-hidden pdf-ver" title="Current stored version">
-                                PDF v{d.pdf_version_no}
-                              </span>
-                            ) : null}
-                            {d.versions.length > 1 ? (
-                              <details className="ds-history">
-                                <summary>history ({d.versions.length})</summary>
-                                <ul>
-                                  {[...d.versions].reverse().map((v) => (
-                                    <li key={v.version_no} className="mono">
-                                      <a
-                                        href={fileHref(
-                                          `/api/datasheets/${d.id}/versions/${v.version_no}/file`,
-                                          d.filename ?? d.label,
-                                        )}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                      >
-                                        v{v.version_no}
-                                      </a>{" "}
-                                      · {new Date(v.fetched_at).toLocaleDateString()} ·{" "}
-                                      {Math.round(v.size_bytes / 1024)} kB
-                                    </li>
-                                  ))}
-                                </ul>
-                              </details>
-                            ) : null}
-                          </>
-                        ) : null}
                         <button
                           type="button"
                           className="btn btn-sm"

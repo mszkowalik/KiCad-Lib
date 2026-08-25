@@ -48,7 +48,7 @@ MACHINE_KEYS: dict[str, tuple[str, ...]] = {
     "symbol": ("sym.parse", "sym.fields", "sym.pins_grid"),
     "component": (
         "cmp.required_props", "cmp.footprint_ref", "cmp.lcsc_format",
-        "cmp.manufacturer", "cmp.templates",
+        "cmp.manufacturer", "cmp.templates", "cmp.datasheet_text",
     ),
 }
 
@@ -375,6 +375,48 @@ def validate_component(db: Session, cv: M.ComponentVersion, comp: M.Component) -
             items.append(_item("cmp.manufacturer", "na", "manufacturer fields explicitly null"))
         else:
             items.append(_item("cmp.manufacturer", "failed", "no manufacturer information"))
+
+    # Is the archived datasheet searchable? A document with no text layer is
+    # not a cosmetic problem: text search misses it, and the agent's
+    # `read_datasheet` hands back EMPTY text for every page of it — so a
+    # verification that looks like it read the datasheet in fact rested on the
+    # rendered page images alone. Classified once at store time, so this check
+    # is a column read (see services/datasheet_store.classify_text_layer).
+    unsearchable: list[str] = []
+    partial: list[str] = []
+    searchable = 0
+    unclassified = False
+    for d in (db.query(M.Datasheet)
+              .filter_by(component_id=comp.id, archived=False)
+              .order_by(M.Datasheet.position).all()):
+        cur = next((v for v in d.versions if v.id == d.current_version_id), None)
+        if cur is None:
+            continue
+        layer = cur.text_layer or ""
+        if layer == "none":
+            continue  # a DXF, a STEP file or an archived web page: nothing to search
+        if layer == "":
+            unclassified = True
+        elif layer == "error":
+            unsearchable.append(f"{d.label!r} does not open as a PDF")
+        elif layer == "scan":
+            unsearchable.append(
+                f"{d.label!r} has no text layer ({cur.page_count or '?'} pages)")
+        else:
+            searchable += 1
+            # `mixed` still passes — a TI datasheet whose last pages are image
+            # plates is searchable. The note says which pages are not.
+            if layer == "mixed":
+                partial.append(f"{d.label!r} {cur.text_pages}/{cur.page_count} pages")
+    if unsearchable:
+        items.append(_item("cmp.datasheet_text", "failed", "; ".join(unsearchable)))
+    elif searchable:
+        items.append(_item("cmp.datasheet_text", "checked",
+                           "part scan: " + "; ".join(partial) if partial else ""))
+    elif unclassified:
+        items.append(_item("cmp.datasheet_text", "na", "not classified yet"))
+    else:
+        items.append(_item("cmp.datasheet_text", "na", "no archived PDF"))
 
     # {Key} templates must resolve against the final property set. The
     # generator injects Footprint_Name from the footprint row, so it counts

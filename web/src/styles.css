@@ -1153,16 +1153,77 @@ dl.kv {
   font-size: 13px;
 }
 
-.ds-url {
-  flex: 1;
+/* Our archived copy is the thing you actually want to open, so it is the one
+   element in the row shaped like a button. The supplier URL used to hold this
+   space as a full-width link and buried it. */
+.ds-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   min-width: 0;
+  max-width: 60%;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.ds-file:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.ds-file svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.ds-file:hover svg {
+  color: var(--accent);
+}
+
+.ds-file-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
 }
 
-.ds-local {
+.ds-file-ver {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.ds-file:hover .ds-file-ver {
+  color: var(--accent);
+}
+
+.ds-nofile {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ds-search {
+  flex-shrink: 0;
+}
+
+/* Pushes the supplier link and the actions to the right edge, so the file
+   button and its searchability tag read as one unit on the left. */
+.ds-gap {
+  flex: 1;
+  min-width: 8px;
+}
+
+/* Where the archived copy came from — provenance, not the working link.
+   Deliberately just the word: the URLs are supplier junk 200 characters long
+   and the full address is one hover away in the title. */
+.ds-origin {
   flex-shrink: 0;
   font-size: 12px;
   white-space: nowrap;
@@ -2260,8 +2321,7 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
 .kicad-ds-stat { margin: 4px 0 8px; }
 
 /* ------------------------------------------------ datasheet PDF versions */
-.pdf-ver { margin-left: 4px; }
-.ds-history { font-size: 0.75rem; }
+.ds-history { flex-shrink: 0; font-size: 0.75rem; }
 .ds-history summary { cursor: pointer; color: var(--ink-3, #697280); }
 .ds-history ul { margin: 4px 0 2px; padding-left: 14px; list-style: none; }
 .ds-history li { margin: 2px 0; }

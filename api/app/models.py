@@ -310,6 +310,16 @@ class DatasheetVersion(Base):
     # (Added by startup migration; NULL on rows fetched before it landed.)
     etag: Mapped[str | None] = mapped_column(String(300), nullable=True)
     last_modified: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Is this document searchable, or are its pages only images? Classified
+    # ONCE, at store time, because deciding it means opening the PDF and
+    # walking every page — far too expensive to redo on each list render.
+    # "" = not classified yet (what the startup backfill looks for), then
+    # "text" | "mixed" | "scan" | "none" (not a PDF) | "error".
+    # See services/datasheet_store.classify_text_layer.
+    # (Added by startup migration; "" on rows stored before it landed.)
+    text_layer: Mapped[str] = mapped_column(String(10), default="", server_default="")
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    text_pages: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     datasheet: Mapped[Datasheet] = relationship(back_populates="versions")
 

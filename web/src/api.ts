@@ -162,7 +162,22 @@ export interface DatasheetVersionInfo {
   fetched_at: string;
   size_bytes: number;
   sha256: string;
+  text_layer: TextLayer;
+  page_count: number | null;
+  text_pages: number | null;
 }
+
+/** Can this document be searched and read, or are its pages only images?
+ *  Decided once at store time by the API — see
+ *  api/app/services/datasheet_store.classify_text_layer for the rules.
+ *
+ *  `text`  searchable — (nearly) every page carries a text layer
+ *  `mixed` some pages are text, the rest are images
+ *  `scan`  no text at all: unsearchable, and the agent reads blank pages
+ *  `none`  not a PDF (an archived web page, a DXF, a STEP file…)
+ *  `error` a PDF that would not open, or one locked with a password
+ *  `""`    not classified yet (the backfill has not reached it) */
+export type TextLayer = "text" | "mixed" | "scan" | "none" | "error" | "";
 
 /** Datasheet row, component-scoped. Position 0 is the KiCad-native one. */
 export interface DatasheetRow {
@@ -177,6 +192,10 @@ export interface DatasheetRow {
   content_type: string | null;
   size_bytes: number | null;
   fetched_at: string | null;
+  /** Searchability of the CURRENT stored copy. */
+  text_layer: TextLayer;
+  page_count: number | null;
+  text_pages: number | null;
   versions: DatasheetVersionInfo[];
 }
 

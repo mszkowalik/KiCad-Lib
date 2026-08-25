@@ -117,6 +117,78 @@ section first.
   to the store path. Manual re-fetch (`POST /api/datasheets/{id}/fetch`)
   deliberately passes `conditional=False` — a supplier can swap file content
   without touching its validators, and clicking re-fetch means "actually look".
+- **Every stored document is classified searchable or not, ONCE, at store
+  time** (`datasheet_store.classify_text_layer` → the `text_layer`,
+  `page_count`, `text_pages` columns on `DatasheetVersion`). It opens the PDF
+  with PyMuPDF and counts pages whose extracted text clears
+  `_TEXT_MIN_CHARS` (24, above a scanner's stamped page number); ≥
+  `_TEXT_RATIO_OK` (0.9) of pages is `text`, none is `scan`, between is
+  `mixed`, a non-PDF is `none` and an unopenable file is `error`. Three rules:
+  - **Never classify on read.** The corpus is ~900 MB of PDF bytes and single
+    documents pass 30 MB. Walking one on every list render is not an option,
+    which is the whole reason these are columns and not a computed property.
+  - **The classifier never raises.** It runs inside the download path, and a
+    document that stores fine must still store when the classifier chokes on
+    it. Failures land as `text_layer = "error"`, which is itself a useful
+    signal — it caught a 0-byte "PDF" Infineon served as `text/html`.
+  - **`""` means "not classified yet"**, and is what
+    `start_text_layer_classify("missing")` claims. It is armed unconditionally
+    30 s after startup, so it costs nothing on every boot after the first
+    sweep. `_classify_worker` loads ONE row at a time and expunges it —
+    a `query(DatasheetVersion).all()` here pulls the whole library into
+    memory. `POST /api/datasheets/classify` re-runs it (`mode: "all"` after a
+    threshold change); `GET /api/datasheets/classify-status` and
+    `/fetch-status` both report the per-class counts.
+
+  `mixed` is not noise: a TI datasheet whose last six pages are image plates
+  reads 24/30, and those plates are the package-drawing pages a footprint
+  check goes looking for. Note the consequence for the agent — `scan` means
+  `read_datasheet` returns EMPTY text for every page, so a verification that
+  looks like it read the datasheet actually rested on the rendered images.
+- **A file nothing can open is refused at the door, on every path.**
+  `inspect_document` returns the classification AND the reason to refuse, from
+  the same single PDF open; `store_or_raise` turns the reason into
+  `BadDocument`. The gate sits in the SERVICE functions (`fetch_datasheet`,
+  `store_upload`, `add_component_file`), not in the routers, so the UI upload,
+  `POST /api/datasheets/{id}/upload`, the component file-add and the nightly
+  fetch are all covered by one rule. Refused: empty files, files that do not
+  open as a PDF, password-locked PDFs, and PDFs with zero pages.
+  - **A `scan` is NOT refused.** It opens and it is a real document — it is
+    only unsearchable. Refusing it would leave the part with nothing at all;
+    the tag and `cmp.datasheet_text` exist to get it replaced instead.
+  - **`fetch_datasheet` returns `{"result": "rejected", "reason": ...}` rather
+    than raising**, so the nightly sweep counts it (`FETCH_STATE["rejected"]`)
+    instead of dying. Any copy already held survives untouched — and the gate
+    runs BEFORE the sha comparison, so a supplier that starts serving an error
+    page reads as "rejected", not as "unchanged".
+- **`GET`/`DELETE /api/datasheets/broken`** list and remove documents that were
+  archived before the gate existed. `purge_broken` does three things in order,
+  and all three are load-bearing: NULL the `ComponentVersionDatasheet` pins (a
+  real FK — the delete raises otherwise, and NULL already means "no local copy
+  existed"), repoint `Datasheet.current_version_id` to the newest survivor or
+  NULL (a dangling pointer makes `has_file` true and every download 404), then
+  refresh the mirror for the affected categories (`injected_props` emits the
+  LOCAL url whenever a current version exists, so a row falling back to NULL
+  must go back to emitting the supplier URL). Run 2026-08-25: removed 2 — a
+  truncated 300 kB LCSC PDF whose xref cannot resolve object 1
+  (`FPC-05F-24PH20`, still served broken today, so that part now has no local
+  copy at all) and a 0-byte `text/html` file Infineon served under a `.pdf`
+  name (`BTT60501ERAXUMA1`, history only).
+- **`cmp.datasheet_text` is a machine checklist item** answered by
+  `validate_component` from the `text_layer` column, so it costs a column read.
+  `scan` and `error` fail it; `mixed` passes with the page counts in the note;
+  a non-PDF or an unclassified row is `na`. Two things to know before touching
+  the machine tier:
+  - **Adding a machine key does NOT re-open settled reviews.**
+    `state_from_record` measures against the record's OWN pinned checklist
+    snapshot (`_checklist_items_of`), so a checklist edit never flips history.
+    Verified after publishing component checklist v2: 128 components stayed
+    `checked` with zero records carrying the new key.
+  - **There is deliberately no bulk re-validate**, and do not add one casually.
+    `effective_record` is "newest non-revoked record on this version",
+    regardless of actor — so writing a fresh machine record across the library
+    would SUPERSEDE every human confirmation it lands on. A new rule therefore
+    applies from each component's next publish onward.
 - **Project manual cost data is commit-versioned** (`services/cost_state.py`).
   `ProjectCostItem` + `ProjectExtraBomItem` rows belong to an immutable
   `ProjectCostRevision` anchored at the git commit (snapshot) where it was

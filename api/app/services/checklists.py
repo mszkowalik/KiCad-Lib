@@ -71,6 +71,10 @@ SEED_ITEMS: dict[str, list[dict]] = {
         {"key": "cmp.lcsc_format", "text": "LCSC Part matches C<number>", "machine": True},
         {"key": "cmp.manufacturer", "text": "Manufacturer information is filled in", "machine": True},
         {"key": "cmp.templates", "text": "Every {Key} template reference resolves", "machine": True},
+        {"key": "cmp.datasheet_text",
+         "text": "The archived datasheet is a searchable PDF, not a scan", "machine": True,
+         "hint": "A document with no text layer cannot be searched, and read_datasheet "
+                 "returns empty pages for it. Replace it with the manufacturer's text PDF."},
         {"key": "cmp.mpn", "text": "MPN and manufacturer match the datasheet / product page",
          "hint": "EasyEDA and distributor data are leads, not facts — confirm in the datasheet."},
         {"key": "cmp.electrical", "text": "Electrical property values match the datasheet"},

@@ -3,7 +3,7 @@ background fetch-all worker. See services/datasheet_store.py for semantics."""
 from __future__ import annotations
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -12,13 +12,20 @@ from .. import models as M
 from ..config import settings
 from ..db import get_db
 from ..services.datasheet_store import (
+    CLASSIFY_STATE,
+    BadDocument,
     FETCH_STATE,
+    classify_counts,
     current_version,
     fetch_datasheet,
+    find_broken,
+    purge_broken,
     start_fetch_all,
+    start_text_layer_classify,
     store_upload,
 )
 from ..services.mirror import top_level_of, update_mirror_symbols
+from .util import actor_of
 
 router = APIRouter(prefix="/api/datasheets", tags=["datasheets"])
 
@@ -42,7 +49,43 @@ def fetch_status(db: Session = Depends(get_db)):
                                          M.Datasheet.source_url.isnot(None)).count()
     with_copy = db.query(M.Datasheet).filter(M.Datasheet.archived.is_(False),
                                              M.Datasheet.current_version_id.isnot(None)).count()
-    return {**FETCH_STATE, "datasheets_total": total, "datasheets_with_local_copy": with_copy}
+    return {**FETCH_STATE, "datasheets_total": total, "datasheets_with_local_copy": with_copy,
+            "text_layer_counts": classify_counts(db)}
+
+
+class ClassifyBody(BaseModel):
+    mode: str = "missing"  # "missing" | "all"
+
+
+@router.post("/classify")
+def classify(body: ClassifyBody):
+    """Re-run searchable-PDF detection. 'missing' picks up documents stored
+    before the classifier existed (the startup sweep does this by itself);
+    'all' re-reads every document, for when the thresholds change."""
+    if body.mode not in ("missing", "all"):
+        raise HTTPException(422, "mode must be 'missing' or 'all'")
+    if not start_text_layer_classify(body.mode):
+        raise HTTPException(409, "a classification run is already in progress")
+    return {"status": "started", "mode": body.mode}
+
+
+@router.get("/classify-status")
+def classify_status(db: Session = Depends(get_db)):
+    return {**CLASSIFY_STATE, "counts": classify_counts(db)}
+
+
+@router.get("/broken")
+def broken(db: Session = Depends(get_db)):
+    """Every stored document nothing can open — empty files and PDFs that will
+    not parse. A dry run: this is exactly what `DELETE /broken` would remove,
+    with what each row falls back to afterwards."""
+    return {"items": find_broken(db)}
+
+
+@router.delete("/broken")
+def purge(request: Request, db: Session = Depends(get_db)):
+    """Remove every document `GET /broken` lists. Audited per row."""
+    return purge_broken(db, actor=actor_of(request))
 
 
 @router.post("/{ds_id}/fetch")
@@ -58,6 +101,8 @@ def fetch(ds_id: int, db: Session = Depends(get_db)):
         result = fetch_datasheet(db, ds, conditional=False)
     except httpx.HTTPError as e:
         raise HTTPException(502, f"download failed: {e}") from e
+    if result.get("result") == "rejected":
+        raise HTTPException(422, f"the downloaded file was refused: {result['reason']}")
 
     # First local copy switches the generated library link from the internet
     # URL to the local file — refresh the affected mirror library.
@@ -89,7 +134,10 @@ async def upload(ds_id: int, file: UploadFile = File(...), db: Session = Depends
     data = await file.read()
     if not data:
         raise HTTPException(422, "uploaded file is empty")
-    result = store_upload(db, ds, data, file.filename, file.content_type)
+    try:
+        result = store_upload(db, ds, data, file.filename, file.content_type)
+    except BadDocument as e:
+        raise HTTPException(422, f"this file cannot be stored: {e}") from e
 
     # First local copy switches the generated library link to the local file.
     if result.get("result") == "new_version" and result.get("version_no") == 1:

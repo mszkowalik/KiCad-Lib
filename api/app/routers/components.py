@@ -77,9 +77,16 @@ def _datasheets_json(rows: list[M.Datasheet]) -> list[dict]:
             "content_type": cur.content_type if cur else None,
             "size_bytes": cur.size_bytes if cur else None,
             "fetched_at": cur.fetched_at.isoformat() if cur else None,
+            # Searchable PDF, or pages that are only images? See
+            # services/datasheet_store.classify_text_layer for the classes.
+            "text_layer": (cur.text_layer or "") if cur else "",
+            "page_count": cur.page_count if cur else None,
+            "text_pages": cur.text_pages if cur else None,
             "versions": [
                 {"version_no": v.version_no, "fetched_at": v.fetched_at.isoformat(),
-                 "size_bytes": v.size_bytes, "sha256": v.sha256[:12]}
+                 "size_bytes": v.size_bytes, "sha256": v.sha256[:12],
+                 "text_layer": v.text_layer or "", "page_count": v.page_count,
+                 "text_pages": v.text_pages}
                 for v in d.versions
             ],
         })
@@ -595,7 +602,7 @@ async def add_file(
     """Attach an uploaded file (drawing, STEP, extra doc, …) to a component as
     a new datasheet-style row; bumps the component version so the file is
     pinned from this version on."""
-    from ..services.datasheet_store import add_component_file
+    from ..services.datasheet_store import BadDocument, add_component_file
 
     comp = _get_component(db, comp_id)
     data = await file.read()
@@ -604,7 +611,10 @@ async def add_file(
     label = label.strip()
     if not label:
         raise HTTPException(422, "label must not be empty")
-    result = add_component_file(db, comp, label, data, file.filename, file.content_type)
+    try:
+        result = add_component_file(db, comp, label, data, file.filename, file.content_type)
+    except BadDocument as e:
+        raise HTTPException(422, f"this file cannot be stored: {e}") from e
 
     # New row appears in the generated symbol ("Datasheet N" field) — refresh.
     # expire_all first: the session does not expire on commit and the bump adds

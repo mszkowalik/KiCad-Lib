@@ -289,6 +289,21 @@ sign-off states to `STATUS_TONES`.
   tabs sort by `used_by` (leverage) before name; keep that ordering, it is
   the point of the column. "Queue shown → agent" files review requests;
   "Confirm agent checks" is the bulk human confirmation.
+- **In "Datasheets & files", OUR archived copy is the button and the supplier
+  URL is a word.** The row used to give the supplier URL a `flex: 1` lane and
+  the local copy a small "local copy" link, which put the visual weight on the
+  link you should almost never click — supplier URLs rot, and the archived PDF
+  is the one KiCad itself is pointed at. So: `.ds-file` carries the icon,
+  the filename and the stored version; `.ds-origin` is the word "original"
+  with the full URL only in its `title`, pushed right by `.ds-gap`.
+- **`TextLayerTag` (in `ComponentDetail.tsx`) reads `text_layer` — never
+  computes it.** Green `OK` is a searchable PDF, amber `partial` / `no text`
+  are not, red `unreadable` is a file that would not open. `none` (a DXF, a
+  STEP file, an archived web page) and `""` (the backfill has not reached it)
+  render NOTHING — a file with nothing to search is not a defect, and an
+  unclassified one is not an answer. The label says "no text" rather than
+  "scan" on purpose: some are vector drawings exported without a text layer,
+  not raster scans, and a tag people act on must not name the wrong cause.
 - **A preview URL must carry the version: `templatePreviewUrl(kind, id, versionId)`.**
   Without it the URL is the same for every version of a template, so a browser
   — or an `<img>` already mounted — has no reason to refetch and a freshly
