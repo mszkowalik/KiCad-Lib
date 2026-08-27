@@ -671,6 +671,37 @@ validation. Audit actions in use: `publish`, `review.check`, `review.revoke`,
   footprint/symbol node at all is refused by name ("this is not a whole
   footprint"), because a canvas-only selection otherwise parses fine and then
   fails the header check with a confusing message.
+- **The same drawing, spelled differently, is NOT a new version**
+  (`geometry_proposals._unchanged`, 2026-08-27). KiCad rewrites the WHOLE
+  library file it saves: opening `7Sigma_Base.kicad_sym` in KiCad 10 and
+  saving added `(show_name no)` 1284 times and `(do_not_autoplace no)` 1274
+  times, re-sorted the pins of 21 symbols and moved custom properties ahead of
+  the `ki_*` ones — across 197 symbols, 183 of which nobody had touched. Every
+  call to `propose_*_version` bumps `version_no` and `_publish_geometry`
+  repoints every component onto the new row, so pushing that file once would
+  have written 197 symbol versions, published a component version for each of
+  ~420 components, and buried the 14 real edits among them. Both propose
+  functions therefore compare the incoming payload against the LIVE version
+  first and return `{"ok": true, "unchanged": true, …}` without writing
+  anything when they are the same drawing.
+  - **It reuses `services/pcm_plugin/kicad_canon.py`, and must keep doing so.**
+    That module already answers this exact question for the sync and push
+    plugins, which meet the same wall from the client side; a second dialect
+    that disagreed with them about what "edited" means would be worse than no
+    guard. Measured on the real library: `kicad_canon` absorbs 169 of 197
+    entries, and the 28 it still reports are real — 14 edits made on purpose
+    and 14 where KiCad genuinely moved a hidden property field to `(at 0 0 0)`.
+  - **Do NOT use `material.material_sha` for this.** It answers "does the
+    production sign-off still hold" and deliberately ignores the symbol body
+    outline, field text and field positions, so it reads a full redraw as no
+    change. The two hashes measure different things on purpose.
+  - **Never write the canonical form into a library file.** It sorts the
+    children of `(symbol …)`, which reorders graphics and so decides which
+    fill sits on top. It is a comparison key, exactly as its own docstring
+    says. The stored `source_text` stays the author's bytes.
+  - `cli/symdiff.py` is the client-side half: it reports which entries of a
+    `.kicad_sym` really changed and `--extract`s them as single-symbol
+    libraries ready to push. Run it before pushing a file KiCad has re-saved.
 - **A clipboard copy has NO name, and the name is rewritten, not enforced.**
   KiCad names a copied item after the pseudo-library it invents for the
   clipboard — `(footprint "clipboard:11d1f418-7567-4c54-…")`. Refusing on a

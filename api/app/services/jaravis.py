@@ -1313,7 +1313,7 @@ def propose_component_edit(
 
 @beta_tool
 def propose_symbol_edit(name: str, source_text: str, comment: str,
-                        minor_change: bool = False) -> str:
+                        minor_change: bool = False, force: bool = False) -> str:
     """Create a new version of a base symbol — or a brand-new base symbol.
     It PUBLISHES IMMEDIATELY (auto-publish): the mirror and KiCad libraries
     update at once, a machine validation record is written, affected
@@ -1332,14 +1332,21 @@ def propose_symbol_edit(name: str, source_text: str, comment: str,
             re-verification (cosmetic cleanup) — it carries verifications and
             production sign-offs across the changed drawing, with your name
             on the waiver. When unsure, leave False.
+        force: Publish even when the payload is the SAME DRAWING as the live
+            version. Leave False. The default no-op is what stops a KiCad
+            re-save — which rewrites every entry in the library file —
+            from writing a version per symbol and repointing every
+            component. Force only to re-run the machine validation on
+            geometry that has not changed.
     """
     from .geometry_proposals import propose_symbol_version
 
     db = SessionLocal()
     try:
         res = propose_symbol_version(db, name, source_text, comment, actor="jaravis",
-                                     minor_change=True if minor_change else None)
-        if "error" not in res:
+                                     minor_change=True if minor_change else None,
+                                     force=force)
+        if "error" not in res and not res.get("unchanged"):
             _record_proposal({"proposal_id": res["proposal_id"], "component": res["symbol"],
                               "kind": "symbol", "version_no": res["version_no"]})
         return json.dumps(res)
@@ -1349,7 +1356,7 @@ def propose_symbol_edit(name: str, source_text: str, comment: str,
 
 @beta_tool
 def propose_footprint_edit(name: str, source_text: str, comment: str,
-                           minor_change: bool = False) -> str:
+                           minor_change: bool = False, force: bool = False) -> str:
     """Create a new version of a footprint — or a brand-new footprint.
     It PUBLISHES IMMEDIATELY (auto-publish): the mirror and KiCad libraries
     update at once, a machine validation record is written (courtyard, fab,
@@ -1369,14 +1376,21 @@ def propose_footprint_edit(name: str, source_text: str, comment: str,
         minor_change: True ONLY for a change that genuinely needs no
             re-verification — it carries verifications and production
             sign-offs across the changed drawing. When unsure, leave False.
+        force: Publish even when the payload is the SAME DRAWING as the live
+            version. Leave False. The default no-op is what stops a KiCad
+            re-save — which rewrites every entry in the library file — from
+            writing a version per footprint and repointing every component.
+            Force only to re-run the machine validation on geometry that has
+            not changed.
     """
     from .geometry_proposals import propose_footprint_version
 
     db = SessionLocal()
     try:
         res = propose_footprint_version(db, name, source_text, comment, actor="jaravis",
-                                        minor_change=True if minor_change else None)
-        if "error" not in res:
+                                        minor_change=True if minor_change else None,
+                                        force=force)
+        if "error" not in res and not res.get("unchanged"):
             _record_proposal({"proposal_id": res["proposal_id"], "component": res["footprint"],
                               "kind": "footprint", "version_no": res["version_no"]})
         return json.dumps(res)

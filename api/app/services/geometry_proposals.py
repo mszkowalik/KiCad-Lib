@@ -201,12 +201,66 @@ def derive_symbol_name(source_text: str, allow_placeholder: bool = False) -> str
 
 
 # --------------------------------------------------------------------------
+# "the same drawing, spelled differently" is NOT a new version
+
+
+def _unchanged(kind: str, parent, source_text: str) -> dict | None:
+    """The live version's answer when `source_text` is the same drawing.
+
+    KiCad rewrites the WHOLE library file it saves, in whatever spelling that
+    release prefers. Opening `7Sigma_Base.kicad_sym` in KiCad 10 and saving
+    added `(show_name no)` 1284 times and `(do_not_autoplace no)` 1274 times,
+    re-sorted the pins of 21 symbols and reordered properties — across 197
+    symbols, of which 183 had not been touched.
+
+    Nothing downstream treats that as free. Every call here bumps
+    `version_no`, `_publish_geometry` repoints every component onto the new
+    row, and a repoint carries the verification only when the material
+    fingerprint matches. So pushing a re-saved library once would have written
+    197 versions, published a component version for each of ~420 components,
+    and buried the real edit among them.
+
+    `kicad_canon` already answers exactly this question for the sync and push
+    plugins, which hit the same wall from the other side — it drops
+    default-valued tokens and uuids, normalises numbers and sorts the children
+    whose order carries no meaning. Reuse it rather than growing a second
+    dialect: a guard that disagrees with the plugin about what "edited" means
+    is worse than no guard.
+
+    `force=True` on the caller skips this. It exists because re-publishing
+    identical source was a usable escape hatch: `machine_check_on_publish` is
+    the ONLY caller of the validator, so republishing was the one way to
+    re-run it after a checklist gained a machine item (see the note in
+    api/CLAUDE.md about checklist v2 un-answering all 418 components). Keep
+    the no-op the default and the force explicit.
+
+    Returns the no-op payload, or None when this really is a new drawing.
+    """
+    from .pcm_plugin.kicad_canon import canon_hash
+
+    cur = next((v for v in parent.versions if v.id == parent.current_version_id), None)
+    if cur is None or not cur.source_text:
+        return None
+    if canon_hash(source_text) != canon_hash(cur.source_text):
+        return None
+    return {
+        "ok": True, "unchanged": True, kind: parent.name,
+        "version_no": cur.version_no, "proposal_id": cur.id,
+        f"is_new_{kind}": False,
+        "status": "unchanged — same drawing, no new version created",
+        "detail": "The payload differs from the live version only in formatting "
+                  "(KiCad default tokens, uuids, number spelling or node order).",
+        "warnings": [],
+    }
+
+
+# --------------------------------------------------------------------------
 # footprints
 
 
 def propose_footprint_version(
     db: Session, name: str, source_text: str, comment: str, actor: str = "jaravis",
-    publish: bool = True, minor_change: bool | None = None,
+    publish: bool = True, minor_change: bool | None = None, force: bool = False,
 ) -> dict:
     """Create — and by default PUBLISH — a `FootprintVersion`.
 
@@ -276,6 +330,9 @@ def propose_footprint_version(
         db.add(fp)
         db.flush()
     else:
+        noop = None if force else _unchanged("footprint", fp, source_text)
+        if noop is not None:
+            return noop
         cur = next((v for v in fp.versions if v.id == fp.current_version_id), None)
         old_pads = (cur.parsed or {}).get("pad_count") if cur else None
     pads = parsed.get("pad_count")
@@ -315,7 +372,7 @@ def propose_footprint_version(
 
 def propose_symbol_version(
     db: Session, name: str, source_text: str, comment: str, actor: str = "jaravis",
-    publish: bool = True, minor_change: bool | None = None,
+    publish: bool = True, minor_change: bool | None = None, force: bool = False,
 ) -> dict:
     """Create — and by default PUBLISH — a `SymbolVersion`. Same contract as
     the footprint side (see `propose_footprint_version` on auto-publish and
@@ -371,6 +428,9 @@ def propose_symbol_version(
         db.add(sym)
         db.flush()
     else:
+        noop = None if force else _unchanged("symbol", sym, source_text)
+        if noop is not None:
+            return noop
         cur = next((v for v in sym.versions if v.id == sym.current_version_id), None)
         old_pins = (cur.parsed or {}).get("pin_count") if cur else None
     pins = parsed.get("pin_count")

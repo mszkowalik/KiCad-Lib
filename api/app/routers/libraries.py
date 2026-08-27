@@ -162,6 +162,11 @@ class GeometryProposal(BaseModel):
     #: True = "small change, no re-verification needed": carries verifications
     #: and production sign-offs across the changed drawing (recheck waiver)
     minor_change: bool | None = None
+    #: True = publish even when the payload is the same drawing as the live
+    #: version. The default no-op is what stops a KiCad re-save writing a
+    #: version for every entry in the library; force it only to re-run the
+    #: machine validation on unchanged geometry.
+    force: bool = False
 
 
 @router.post("/footprints/{fp_id}/propose")
@@ -176,7 +181,7 @@ def propose_footprint(fp_id: int, body: GeometryProposal, db: Session = Depends(
     if f is None:
         raise HTTPException(404, "footprint not found")
     res = propose_footprint_version(db, f.name, body.source_text, body.comment, actor="user",
-                                    minor_change=body.minor_change)
+                                    minor_change=body.minor_change, force=body.force)
     if "error" in res:
         raise HTTPException(400, detail=res)
     return res
@@ -189,7 +194,7 @@ def propose_symbol(sym_id: int, body: GeometryProposal, db: Session = Depends(ge
     if s is None:
         raise HTTPException(404, "symbol not found")
     res = propose_symbol_version(db, s.name, body.source_text, body.comment, actor="user",
-                                 minor_change=body.minor_change)
+                                 minor_change=body.minor_change, force=body.force)
     if "error" in res:
         raise HTTPException(400, detail=res)
     return res
