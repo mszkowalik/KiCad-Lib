@@ -1664,6 +1664,23 @@ check both failure modes before believing the fix.
   base drawings (`symbolIdStr = HTTPLIB_SYMBOL_LIB:<base_component>`), so
   adding components must never bump the library package. 3D model updates
   flow as LZMA deltas (`POST /api/kicad/pcm/models-delta`).
+- **The sync plugin sweeps the install directory on EVERY run, before it
+  fetches anything** (`_sweep_strays` + `_repair_lib_tables` in
+  `pcm_plugin/sync.py.tmpl`). The KiCad user directory usually sits in iCloud
+  Drive (`~/Documents/KiCad/<ver>`), and the file provider uniquifies a
+  colliding folder name: the PCM extracts `7Sigma.pretty` over a copy iCloud
+  still holds and an EMPTY `7Sigma 2.pretty` appears beside it. KiCad's PCM
+  registers every `*.pretty` in a package, empty or not, so the user gets a
+  second, broken footprint library row. Two rules follow. The sweep cannot live
+  in the apply path — the install that creates a stray also records the package
+  as current, so apply is the one path that never runs again (seen 2026-08-25:
+  the prune at the end of `_apply_package` had been there all along and the
+  stray survived it). And deleting the folder is only half the repair: the row
+  the PCM already wrote into the global `fp-lib-table` must go too, or KiCad
+  reports a missing library forever. The table edit is deliberately narrow — a
+  row goes only when its URI resolves inside a `com_sevensigma*` install
+  directory AND that path is gone — and it asks for a KiCad restart, because
+  KiCad holds the tables in memory and can write them back on exit.
 - **Comments are one generic table** (`M.Comment`: `target_type` ∈
   {`component`,`symbol`,`footprint`} + `target_id`), NOT per-entity. Component,
   symbol and footprint notes all flow through `routers/comments.py`

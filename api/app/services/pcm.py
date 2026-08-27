@@ -65,7 +65,7 @@ PLUGIN_VERSION = "1.4.0"  # bump when the plugin source changes — PCM update d
 MODELS_INSTALL_DIR = MODELS_ID.replace(".", "_")
 PCM_FP_PREFIX = "PCM_"  # KiCad's hardcoded auto-registration nickname prefix
 SCHEMA = "https://go.kicad.org/pcm/schemas/v1"
-BUILDER_REV = 10  # bump when the package builder output changes for the same mirror
+BUILDER_REV = 11  # bump when the package builder output changes for the same mirror
 # ^ AND whenever anything in THIS FILE changes what a package advertises —
 # PLUGIN_VERSION, a package name/description, a manifest field. `tag` hashes the
 # mirror digest and the plugin FILE contents only, so a pcm.py-only edit leaves
