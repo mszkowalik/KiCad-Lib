@@ -2,24 +2,26 @@
 name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints, and the naming standard: the KLC tier rule (Tier 0 stock names are frozen), the twelve-slot field order, decided spellings (_HandSoldering, vendor tokens, no rotation in names), the 7Sigma: namespace, validator-enforced pad/silk/fab/courtyard style, the 0.1mm grid, NPTH mechanical holes, thermal vias, non-electrical parts, and why connector pad numbering always follows the datasheet. Use when naming, picking or authoring any footprint."
 ---
-
-<!-- platform-skill: conventions-footprints v24 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v25 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 Footprints live in the `7Sigma:` namespace and are always referenced as
 `7Sigma:<name>`. You can both *choose* an existing footprint and *author* a new
 or revised one: `propose_footprint_edit(name, source_text, comment)` takes a
-complete `.kicad_mod` text and files it as a draft (existing name = edit, new
-name = creation), reviewed with a visual before/after in the Proposals view.
+complete `.kicad_mod` text and **publishes it immediately** (existing name =
+edit, new name = creation). There is no draft gate and no Proposals view: the
+mirror and the KiCad libraries update on the call, a machine validation record
+is written, and the version starts UNREVIEWED on the review axis. Render it and
+check it BEFORE you call, not after.
 
 Never hand-write a footprint from scratch when something close exists: call
 `get_footprint` first, take its `source`, and edit that.
 
-**Approving a footprint version also files the component repoints.** A component
-pins the footprint *version* it was drawn against, so the platform opens a draft
-component version for every name in `used_by_components`, pinned to the new
-drawing with properties unchanged. Approve those drafts too — the footprint
-change is not finished until they land. See [[platform-workflow]].
+**Publishing a footprint version also repoints every component on it.** A
+component pins the footprint *version* it was drawn against, so the platform
+publishes a new component version for every name in `used_by_components`, pinned
+to the new drawing with properties unchanged. That happens automatically — the
+response's `repointed` block lists what moved. See [[platform-workflow]].
 
 ## 1. Choosing a footprint
 
@@ -322,9 +324,26 @@ pad centre, a different EP. Direction never is.
 ## 3. The package name (`{Footprint_Name}`)
 
 Every footprint carries a short human package name — `0402`, `SOT-23-6`,
-`VQFN-14-EP 3.5x3.5mm` — edited on the footprint's page in the Templates
-browser. Component `ki_description` templates reference it as
-`{Footprint_Name}`, and the generator injects it at build time.
+`VQFN-HR-9` — which the generator injects at build time wherever a component's
+`ki_description` references `{Footprint_Name}`.
+
+**A brand-new footprint has none, so NAME IT IN THE SAME BREATH as publishing
+it.** Skip that step and the first component to reference the footprint
+publishes with an `unresolved template {Footprint_Name}` mirror warning and a
+description with a hole in it. Two doors write the same field:
+
+- `set_footprint_package_name(name, package_name)` — the agent's door, over
+  MCP. `name` is the footprint name WITHOUT the `7Sigma:` prefix. Added
+  2026-08-27; it reaches an agent only once the api image carrying it is
+  deployed, so if the tool is not in your catalog yet, use the HTTP door below.
+- `PATCH /api/footprints/<id>` with `{"display_name": "<package name>"}` — the
+  raw door, for a script or for an agent whose catalog predates the tool. Get
+  the id from `GET /api/footprints`.
+- The footprint's page in the Templates browser — the human's door.
+
+Either way it is **unversioned**: no footprint version is minted and the
+`.kicad_mod` is untouched, but the symbol libraries of every affected category
+rebuild at once.
 
 It belongs to the **footprint**, not to the components that use it: never add a
 `Footprint_Name` property to a component ([[add-component]]). Set it once and
@@ -391,13 +410,20 @@ Plus the conventions the validator can't check:
   0.05 mm steps. This document said 0.05 mm until 2026-08-27, and
   `R_Shunt_WalterElectronic_MSH2512_6332Metric` v1 was published with a
   courtyard at ±3.95 × ±2.05 and failed validation for exactly that reason.
-- **How much clearance is an open question — do not treat 0.5 mm as settled.**
-  This document has long said 0.5 mm, and NO footprint in the library uses it:
-  `HVSSOP-10-1EP_3x3mm_P0.5mm_EP1.57x1.88mm_ThermalVias` clears its outermost
-  pad by 0.225 mm, `R_1206_3216Metric` by 0.29 mm, and KiCad stock uses 0.25 mm
-  for this density. New footprints have been matching the library at 0.25–0.30 mm
-  rather than doubling the courtyard of a part's neighbours. Raised 2026-08-27;
-  needs a maintainer decision, then one pass to make the text and the library agree.
+- **Clearance is 0.25 mm** from the outermost pad or body feature, then snapped
+  outward to the 0.1 mm grid. Decided by Mateusz Kowalik on 2026-08-27, closing
+  the question this section raised the same day. It matches KLC F5.3 and it
+  matches the library, which has never used the 0.5 mm this document used to
+  claim: every QFN measures 0.25 mm, `HVSSOP-10-1EP_3x3mm_P0.5mm_EP1.57x1.88mm_ThermalVias`
+  0.225 mm and `R_1206_3216Metric` 0.29 mm. **0.5 mm was never real** — do not
+  re-derive it, and do not "correct" an existing 0.25 mm courtyard toward it.
+  On a 2 mm part the difference is not cosmetic: 0.5 mm draws a 3.6 × 3.5 mm
+  keep-out around a package chosen for its solution size.
+
+  A LARGER courtyard is still legitimate when the part needs one — a tall
+  component beside a connector, a hand-soldering variant, a documented
+  clearance like the lightpipes in §8. Say why in the proposal comment; the
+  0.25 mm figure is the default, not a ceiling.
 - Global dimension floors: pad ≥ 0.6 mm, drill ≥ 0.3 mm, via ≥ 0.3 mm.
 
 **Fix every validator warning by default** — including ones that were already
@@ -677,11 +703,14 @@ proposing:
 - [ ] Pads `oval`/`rect` → `roundrect` with `(roundrect_rratio 0.25)`
 - [ ] Pad names have no `.0` suffix
 - [ ] `F.Fab` body outline present at 0.1 mm
-- [ ] `F.CrtYd` closed courtyard present at 0.05 mm
+- [ ] `F.CrtYd` closed courtyard present, line width 0.05 mm, coordinates on
+      the 0.1 mm grid (two different figures — the width is 0.05, the grid is
+      0.1; reading the width as the grid is what failed `fp.courtyard_grid` on
+      two footprints in 2026-08)
 - [ ] Mechanical holes converted to `np_thru_hole` (§6)
 - [ ] 3D model offset/rotation verified, not taken on trust — imported offsets
       are frequently wrong. Check that the mesh's pin/lead centres land on the
       pad coordinates rather than keeping whatever offset the exporter emitted.
 
 See [[add-component]] for where footprint choice fits in the full part-creation
-procedure, and [[platform-workflow]] for what happens after approval.
+procedure, and [[platform-workflow]] for what a publish sets in motion.

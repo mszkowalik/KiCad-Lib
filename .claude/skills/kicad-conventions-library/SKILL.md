@@ -2,9 +2,7 @@
 name: kicad-conventions-library
 description: "House style for component data: canonical manufacturer names (with the full raw-to-canonical lookup table), ki_description {Key} templating per category, the Value field rule, and category-placement rules. Read before proposing a new component or editing an existing one's properties."
 ---
-
-<!-- platform-skill: conventions-library v23 — source of truth is the platform; check with list_skills, refresh with get_skill -->
-
+<!-- platform-skill: conventions-library v24 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Library conventions
 
 This is the house style for component **data**: manufacturer naming,
@@ -229,6 +227,15 @@ alphabetically by canonical value.)
   Only a weak, unquotable claim links it to "Taiwan Dijia Electronics Co.,
   Ltd."; no authoritative primary source found. Ask the user or research
   further before normalizing components using this code.
+- **`Milliohm`** (seen on `HoYH0805-3/4W-50mR-1%`, LCSC C42389461) — Shenzhen
+  毫欧电子, whose datasheet and whose own site (moolee.com.cn) name the company
+  ONLY in Chinese: 深圳市毫欧电子有限公司 / 深圳市毫欧电子科技有限公司, brand mark
+  毫欧 / `HoYH`. No English brand form exists in any of the company's own
+  material, so the KEMET/OSRAM test cannot be applied at all. `Milliohm` is
+  LCSC's brand-page form and a literal reading of 毫欧, and is what the
+  component carries — but it is distributor-sourced, same evidence class as
+  `TOGNJING`. Recorded 2026-08-27. Re-check if a manufacturer-published English
+  name turns up; the footprint vendor token would be `Milliohm`.
 - `TECH PUBLIC` (seen on PESD5V0S1BA) — consistently ALL-CAPS across
   LCSC/JLCPCB/HQonline, possibly = Taizhou Electronics Co., Ltd., but no
   official company homepage was found to confirm the brand's own

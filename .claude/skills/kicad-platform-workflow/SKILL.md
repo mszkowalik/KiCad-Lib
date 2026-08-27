@@ -1,8 +1,8 @@
 ---
 name: kicad-platform-workflow
-description: "How changes become library: every write is a draft proposal, approval automatically regenerates the KiCad libraries and file mirror (there is no manual build), what mirror warnings mean, where the retired YAML pipeline went, and who handles platform setup. Use when asked how to publish, rebuild or regenerate."
+description: "How changes become library: every write publishes immediately (no draft gate, no Proposals view), a publish regenerates the KiCad libraries and file mirror with no manual build, geometry publishes repoint the components on them, which changes carry a verification across a new version and which strip it, what mirror warnings mean, where the retired YAML pipeline went, and who handles platform setup. Use when asked how to publish, rebuild or regenerate."
 ---
-<!-- platform-skill: platform-workflow v7 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: platform-workflow v9 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Platform workflow — how changes become library
 
 Postgres is the source of truth. Every symbol, footprint, component and skill is
@@ -70,6 +70,27 @@ answered.
 (`minor_change=true` on the geometry tools — use it ONLY for genuinely cosmetic
 cleanups), inherits the previous verification and sign-off. Anything else
 starts unreviewed again, on purpose.
+
+**The fingerprint is computed for you, so do not reach for `minor_change`
+first.** The platform hashes the subset of a drawing a fab or a netlist acts on
+and compares it with the previous version. Redraw only decoration and the
+verification carries by itself, with no waiver and nobody's name on one.
+
+| | Included — changing it strips the review | Excluded — changing it carries |
+|---|---|---|
+| Footprint | every pad's number, type, shape, position, rotation, size, drill, layer set, margin overrides and custom primitives; the courtyard outline; the `attr` flags | `F.SilkS` / `B.SilkS`, `F.Fab` / `B.Fab`, `*.User` graphics and text; `descr`, `tags` and the footprint's `property` fields; the `model` line; every `uuid` |
+| Symbol | the pin set — number, name, electrical type, graphic style (`line` vs `inverted`), position, rotation, length, hidden flag, alternates, unit | the body outline, field text and field positions; every `uuid` |
+
+Two consequences worth holding on to. Removing a pin-1 circle, moving a
+reference designator or swapping a 3D model carries the verification
+automatically — observed on `LMR43620R5` v2, 2026-08-27, published with
+`minor_change=False` and still `checked`. And a pin turning from `line` to
+`inverted` does NOT carry, because it changes what the schematic claims about
+the part.
+
+`minor_change=true` exists for the case the fingerprint cannot judge — a
+material change you are asserting is not worth a re-check. It is a waiver with
+your name on it, not a shortcut.
 
 **Lifecycle:** each component carries `in_design` / `released` / `deprecated` /
 `obsolete`. Deprecated and obsolete parts stay fully visible on the platform
@@ -147,8 +168,27 @@ There are two places it runs, and they are not interchangeable:
 
 | | Address | What it is |
 |---|---|---|
-| **Deployed** | `http://192.168.200.28/lib` | The instance to use. Always on, served under the `/lib` path prefix by a shared nginx, reachable from the local network only. |
+| **Deployed** | `https://disfunction.cc/lib` | The instance to use. Always on, **on the public internet**, served under the `/lib` path prefix by a shared nginx. |
+| ↳ same box, LAN route | `http://192.168.200.28/lib` | The SAME deployment reached over the local network. Not a second instance. |
 | Dev | `http://localhost:5173` (API on `:8020`) | A working copy on a developer's machine, sources live-mounted so edits hot-reload. |
+
+**The two deployed addresses are one server, and only the first one counts.**
+Verified 2026-08-27: both answer, both return the same seven skills at the same
+versions and the same component rows. But `PUBLIC_BASE_URL` is
+`https://disfunction.cc/lib`, and every URL the platform *generates* is built
+from it no matter which route you arrived by — fetching
+`/api/kicad/pcm/repository.json` over `192.168.200.28` still hands back a
+packages URL on `disfunction.cc`. So a personal KiCad URL, a PCM link or a
+datasheet link is always the internet one. Quote `https://disfunction.cc/lib`
+to users; treat the LAN address as a convenience for browsing from that network,
+never as the address to hand out.
+
+**It is on the internet, so the access rules are not optional.** This document
+said "reachable from the local network only" until 2026-08-27, which was wrong
+and is the sort of wrong that changes how someone reasons about exposure. The
+API is default-deny: a browser needs a session and every machine client needs a
+personal API token. Accounts are created by an admin on the Setup page — there
+is no sign-up and no password recovery.
 
 The deployed instance is **not** built from a checkout. Container images are
 built by CI on every push and it pulls them, so `docker compose up --build` is

@@ -2,8 +2,7 @@
 name: kicad-production-run-from-invoices
 description: "How to recreate what a production batch really cost from supplier invoices: the cost-pool model, shared vs run documents, splitting one invoice position across runs and into a supplier's own sub-fees, NBP FX at the invoice date, OCR import of JLC component invoices, MPN->component resolution, BOM draws, attrition, and the invoice register that proves no money is unassigned. Use when creating or backfilling a production run, or entering or splitting any supplier invoice."
 ---
-<!-- platform-skill: production-run-from-invoices v5 — source of truth is the platform; check with list_skills, refresh with get_skill -->
-
+<!-- platform-skill: production-run-from-invoices v6 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Creating a production run from supplier invoices
 
 Procedure for recreating what a production batch really cost, from the invoices
@@ -382,4 +381,3 @@ Run all of it before calling a batch done:
   reads too low.
 - **Deleting a run with financial rows** — it is refused (409) by design; remove
   or reassign the documents, draws and adjustments first.
-

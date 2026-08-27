@@ -3,7 +3,6 @@ name: kicad-conventions-symbols
 description: "Choosing AND authoring base symbols: pin-type directionality from the component's own viewpoint, V.24 UART and SPI role policy, functional pin grouping, box/pitch geometry formulas, and stacked (shorted) pins. Use when picking a base symbol or writing a propose_symbol_edit."
 ---
 <!-- platform-skill: conventions-symbols v8 — source of truth is the platform; check with list_skills, refresh with get_skill -->
-
 # Symbol conventions
 
 Every component is built on a **base symbol** — a graphical template with pins.

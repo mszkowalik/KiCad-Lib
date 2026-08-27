@@ -1,9 +1,8 @@
 ---
 name: kicad-add-component
-description: "Full procedure for adding a part to the 7Sigma library: duplicate check, LCSC metadata lookup, category/base-symbol/footprint selection, property construction, and the per-category validation rules a draft must satisfy. Use when adding, drafting, editing or proposing any component."
+description: "Full procedure for adding a part to the 7Sigma library: duplicate check, LCSC metadata lookup, category/base-symbol/footprint selection, property construction, the per-category rules a version must satisfy BEFORE you publish it (nothing gates a bad one), and what still has to be done by hand afterwards. Use when adding, editing or publishing any component."
 ---
-<!-- platform-skill: add-component v10 — source of truth is the platform; check with list_skills, refresh with get_skill -->
-
+<!-- platform-skill: add-component v13 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Add a component
 
 End-to-end procedure for adding a part to the 7Sigma library. Every write
@@ -35,6 +34,16 @@ part number + datasheet URL.
    source for new geometry — these boards are assembled by JLCPCB, so JLC's land
    is the one their process is built around. Always `--output ./easyeda_tmp`;
    `easyeda_tmp.*` is the git ignore rule.
+
+   **`easyeda_tmp.*` is one fixed path in the repo root, so it is SHARED.** A
+   second agent session running the same command overwrites your files with its
+   part's, and `easyeda_tmp.kicad_sym` accumulates every symbol any session has
+   pulled. Observed 2026-08-27: a `.step` read successfully at one moment was
+   gone minutes later, replaced by two unrelated parts. Two habits make this
+   harmless — **check the file you are about to use is still the part you
+   downloaded** (the footprint name and the LCSC id are both in it), and
+   **re-run the export rather than trusting a file you read earlier**. If you
+   must hold the files across a long task, copy them somewhere private first.
 
 3. **Pick the category.** Match where similar parts already live (chip resistors
    → `Resistor`, MLCC → `Capacitor`, TVS → `Circuit_Protection` or `Diodes` per
@@ -107,29 +116,70 @@ part number + datasheet URL.
 7. **Never set**: any `Price` key (prices are auto-managed — refreshed from the
    JLCPCB assembly ladder, with LCSC retail as fallback for parts JLC doesn't
    carry), or `Datasheet` as a property. Pass `datasheet_url` to the proposal
-   tool instead; archived copies are linked into the library automatically
-   ([[verify-datasheets]]).
+   tool instead ([[verify-datasheets]]).
 
-8. **Propose.** `propose_new_component(name, category, base_component,
+   **Check that the PDF actually archived — and READ THE `text_layer`.**
+   `propose_new_component` downloads the URL and reports a `datasheet_archive`
+   block. `archived: true` is not the whole answer; the field that decides
+   whether the document is usable is `text_layer`:
+
+   | `text_layer` | What you got | What to do |
+   |---|---|---|
+   | `text` | a searchable PDF, every page | nothing — this is the good case |
+   | `mixed` | some pages text, the rest images | usable, but `search_datasheets` silently misses the image pages — read those with `read_datasheet` page images |
+   | `scan` | a PDF with no text layer at all | search finds nothing and `read_datasheet` returns empty text — replace it |
+   | `none` | **not a PDF.** A web page, a DXF, a STEP | replace it: nothing can read this as a datasheet |
+
+   `archived: false` means the download failed or was refused outright. **A
+   supplier serving HTML is NOT refused** — it is stored, `archived: true`,
+   with `text_layer: "none"`, which is exactly the case that looks fine at a
+   glance and is worthless. Verified 2026-08-27.
+
+   Either way, fix it before you verify anything: `read_datasheet` retries the
+   download on demand, and `POST /api/datasheets/<ds_id>/fetch` forces a full
+   re-fetch once the URL is right. **Prefer the manufacturer's URL over the
+   distributor's copy** in the first place: LCSC and JLC rehost datasheets that
+   can be older revisions, or a different part in the same family.
+
+   Until a real PDF is stored, `search_datasheets` cannot see the part and
+   `read_datasheet` has nothing to open.
+
+8. **Publish.** `propose_new_component(name, category, base_component,
    properties_json, datasheet_url, comment)`. The component name is the
-   manufacturer part number and must be globally unique. It is created as a
-   DRAFT for review in the Proposals view.
+   manufacturer part number and must be globally unique.
 
-   A component draft can reference only **approved** geometry: the tool rejects
-   a `base_component` or `Footprint` that exists only as a draft. When new
-   geometry was authored for the part (§4, §5), file those proposals first, let
-   the user approve them, then file the component proposal. (Verified
-   2026-08-12 on STM32H573IIT3Q: `propose_new_component` returned "base
-   component not found" while the new symbol was still a draft.)
+   **It publishes immediately.** There is no draft, no Proposals view and no
+   approval queue — the library, the mirror and the KiCad catalog update on the
+   call, a machine validation record is written, and the version starts
+   UNREVIEWED on the review axis. Get it right before you call, then verify it
+   (§9).
+
+   **Order still matters, for a different reason.** A component references
+   geometry by name, so the symbol and the footprint must already EXIST when
+   you call: publish new geometry first (§4, §5), then the component. What no
+   longer applies is waiting for anyone to approve them.
+
+9. **Verify what you published, and name the new footprint.** Two things are
+   only done by hand:
+
+   - **Set the package name on any footprint you created**, or this component's
+     `{Footprint_Name}` will not resolve — see [[conventions-footprints]] §3.
+   - **Record the verification**: `get_review_checklist` then
+     `record_verification`, for the component AND for each piece of geometry you
+     authored. The machine items answer themselves on publish; the judgment
+     items are yours, and "checked" means you actually compared it with the
+     datasheet ([[verify-datasheets]]).
 
 For an existing part, `propose_component_edit` follows the same property rules.
 Before editing a part that may already be placed on a board, check
 `component_where_used` to confirm the change is property-only and safe.
 
-## Draft so validation passes
+## Get these right BEFORE you publish
 
-Validation runs server-side against the platform's rule set; you don't run it,
-but a draft that breaks these rules comes back with warnings.
+Validation runs server-side against the platform's rule set; you don't run it.
+Since 2026-08-23 there is nothing to fail: a write that breaks these rules
+**publishes anyway** and hands back warnings on a version that is already live.
+So this is not a gate you can lean on — it is a list to satisfy first.
 
 - **Required, non-empty properties** — per category. Globally: `Footprint` and
   `ki_description`. Resistors additionally: `Value`, `Power`, `Tolerance`.
@@ -146,9 +196,12 @@ but a draft that breaks these rules comes back with warnings.
 - **Template expressions** — every `{Key}` inside a value (typically in
   `ki_description`) must resolve to another property **on the same component**.
   Resolution is order-independent: a `{Key}` may reference a property defined
-  anywhere in the list. An unresolved `{Key}` surfaces as a mirror warning at
-  approval time and means the property genuinely isn't there — add it, or for
-  `{Footprint_Name}` give the footprint a package name.
+  anywhere in the list. An unresolved `{Key}` comes back as a mirror warning on
+  publish and means the property genuinely isn't there — add it, or for
+  `{Footprint_Name}` give the footprint a package name
+  ([[conventions-footprints]] §3). A footprint you created yourself has no
+  package name until you set one, so this warning is the DEFAULT outcome of
+  pairing a new component with a new footprint, not a rare mistake.
 
 When unsure what a category needs, copy the shape from an existing component in
 it — never invent a property key.
@@ -158,4 +211,4 @@ it — never invent a property key.
 [[conventions-library]] — naming, descriptions, category placement.
 [[conventions-symbols]] / [[conventions-footprints]] — choosing and authoring geometry.
 [[verify-datasheets]] — checking the part against its documentation.
-[[platform-workflow]] — what approval does.
+[[platform-workflow]] — what a publish sets in motion.
