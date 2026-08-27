@@ -1038,8 +1038,12 @@ class Property:
         return sexp_to_string(raw_expr)
 
     def _to_sexpr_raw(self):
+        # LOCAL PATCH (7Sigma): upstream also listed "Sim.Library" here, which
+        # rewrote `${SEVENSIGMA_DIR}/Symbols/7Sigma_sim.sp` into a
+        # backslash-escaped Windows path KiCad cannot resolve. KiCad itself
+        # uses forward slashes for Sim.Library on every platform.
         if (
-            self.key in ["Datasheet", "Sim.Library"]
+            self.key in ["Datasheet"]
             and len(self.value) > 0
             and self.value not in [".", "~"]
             and not is_url(self.value)

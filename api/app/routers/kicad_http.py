@@ -21,8 +21,9 @@ from sqlalchemy.orm import Query, Session, contains_eager, defer, joinedload, se
 from .. import models as M
 from ..config import settings
 from ..db import get_db
-from ..services.generator import base_hidden_maps, injected_props, schematic_field_visibility, version_prop
-from ..services.mirror import HIDDEN_LIFECYCLE
+from ..services.generator import base_hidden_maps, injected_props, schematic_field_visibility, sim_props, version_prop
+from ..services.mirror import HIDDEN_LIFECYCLE, resolve_sim_links
+from ..services.pcm import SIM_LIB_INSTALLED
 from .util import category_path, props_dict, resolved_value
 
 router = APIRouter(prefix="/kicad/v1", tags=["kicad-http-library"])
@@ -127,7 +128,7 @@ def datasheets_by_component(db: Session, comp_ids) -> dict[int, list[M.Datasheet
     return out
 
 
-def part_payload(cv, sheets: list[M.Datasheet], visible: dict[str, bool]) -> dict:
+def part_payload(cv, sheets: list[M.Datasheet], visible: dict[str, bool], sim_link: dict | None = None) -> dict:
     """One part in KiCad's part shape — the SAME body for the per-part endpoint
     and for each entry of a category listing.
 
@@ -139,8 +140,16 @@ def part_payload(cv, sheets: list[M.Datasheet], visible: dict[str, bool]) -> dic
     minutes of waiting to open the dialog. Keep the two shapes identical.
     """
     props = props_dict(cv)
+    # Link-derived Sim.* fields FIRST, so a component's own rows overwrite
+    # them in the fields dict below — same override order as the generated
+    # mirror symbols. Sim.Library is rewritten from the mirror-canonical
+    # value to the PCM-installed path, the only one the client can resolve.
+    entries = [
+        (d["key"], SIM_LIB_INSTALLED if d["key"] == "Sim.Library" else d["value"])
+        for d in sim_props(sim_link)
+    ]
     # user properties + injected datasheet links (prices stay on the platform)
-    entries = [(p.key, resolved_value(None if p.is_null else p.value, props)) for p in cv.properties]
+    entries += [(p.key, resolved_value(None if p.is_null else p.value, props)) for p in cv.properties]
     # Emit the footprint-derived name too, unless the component has its own row.
     if not any(p.key == "Footprint_Name" for p in cv.properties) and props.get("Footprint_Name"):
         entries.append(("Footprint_Name", props["Footprint_Name"]))
@@ -197,11 +206,13 @@ def part_payloads(db: Session, versions: list) -> list[dict]:
     # (injected datasheet links, the derived Footprint_Name) are hidden, the
     # same default `apply_properties` gives a key the base symbol lacks.
     bases = base_hidden_maps(db, {cv.base_component for cv in versions})
+    sim_links = resolve_sim_links(db, [])  # warnings surface on mirror writes, not here
     return [
         part_payload(
             cv,
             sheets.get(cv.component_id, []),
             schematic_field_visibility(db, cv, bases.get(cv.base_component) or {}),
+            sim_links.get(cv.symbol_version.symbol_id) if cv.symbol_version else None,
         )
         for cv in versions
     ]

@@ -30,8 +30,11 @@ from .generator import (
     injected_props,
     load_symbol_lib_from_text,
     property_row_to_dict,
+    sim_props,
     version_prop,
 )
+from . import material
+from .simmodel import SIM_LIB_FILE, link_material_sha, model_material_sha, sim_pins_value
 
 # Lifecycle states hidden from every KiCad-facing surface (generated symbol
 # libraries and the HTTP catalog): the part stays fully visible on the
@@ -122,6 +125,7 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
     fp_ver_no = dict(db.execute(
         select(M.FootprintVersion.id, M.FootprintVersion.version_no)
     ).all())
+    sim_links = resolve_sim_links(db, warnings)
     symbols_dir = settings.mirror_dir / "Symbols"
     symbols_dir.mkdir(parents=True, exist_ok=True)
     for top_name in sorted(by_top):
@@ -138,8 +142,11 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
                 own = [property_row_to_dict(p) for p in cv.properties]
                 fp_ref = next((p.value for p in cv.properties if p.key == "Footprint"), "")
                 # Footprint_Name first — see footprint_name_props() on why order matters.
+                # sim_props also prepends: a component's own Sim.* rows come
+                # later in the list and therefore win (per-part override).
                 props = (
                     footprint_name_props(fp_ref, fp_display)
+                    + sim_props(sim_links.get(sv.symbol_id))
                     + own
                     + injected_props(sheets.get(comp.id))
                     + version_prop(cv.version_no, sv.version_no,
@@ -190,8 +197,111 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
         # Only trust the fingerprint once the file is safely on disk.
         _BASE_LIB_STATE = (fingerprint, base_symbol_count)
 
+    sim_model_count = write_sim_lib(db, settings)
+
     return {"symbol_libs": symbol_lib_count, "components_in_libs": component_count,
-            "base_symbols": base_symbol_count, "warnings": warnings}
+            "base_symbols": base_symbol_count, "sim_models": sim_model_count,
+            "warnings": warnings}
+
+
+# (link id, symbol version id, model version id, stored shas, pin_map) ->
+# resolved entry. In-process and advisory like the caches above: the key pins
+# every input the resolution reads — the version rows AND the link's own
+# stored fields, hashed directly rather than via updated_at, so even a direct
+# DB write that skips the service layer cannot produce a stale hit. Exists
+# because the HTTP catalog also resolves links, once per chooser request, and
+# re-parsing sixty symbol sources per request is waste.
+_SIM_LINK_CACHE: dict[tuple, dict] = {}
+
+
+def resolve_sim_links(db: Session, warnings: list[str]) -> dict[int, dict]:
+    """`{symbol_id: {"model", "sim_pins", "stale"}}` for every SymbolSimLink.
+    `stale` is "" for a healthy link, else the joined reasons (truthy).
+
+    Staleness is decided here, once per mirror write, by recomputing both
+    narrow fingerprints and comparing them with the ones stamped on the link
+    when its map was authored. A stale link still resolves (the UI needs to
+    show it) but `sim_props` emits nothing for it — a map whose symbol pins
+    or model ports moved since authoring must not reach a netlist. Each stale
+    link costs one warning, so it surfaces on every publish until fixed.
+    """
+    out: dict[int, dict] = {}
+    live_keys: set[tuple] = set()
+    links = db.execute(
+        select(M.SymbolSimLink).options(
+            selectinload(M.SymbolSimLink.symbol).selectinload(M.Symbol.versions),
+            selectinload(M.SymbolSimLink.sim_model).selectinload(M.SimModel.versions),
+        )
+    ).scalars().all()
+    for link in links:
+        sym = link.symbol
+        model = link.sim_model
+        sv = next((v for v in sym.versions if v.id == sym.current_version_id), None)
+        mv = next((v for v in model.versions if v.id == model.current_version_id), None)
+        if sv is None or mv is None or mv.status != "published":
+            continue
+        key = (link.id, sv.id, mv.id, link.symbol_material_sha,
+               link.model_material_sha, json.dumps(link.pin_map, sort_keys=True))
+        live_keys.add(key)
+        cached = _SIM_LINK_CACHE.get(key)
+        if cached is not None:
+            out[sym.id] = cached
+            if cached["stale"]:
+                warnings.append(f"sim link {sym.name} -> {model.name}: {cached['stale']} — Sim fields withheld")
+            continue
+        stale_reasons = []
+        try:
+            pins = material.symbol_material(sv.source_text)["pins"]
+            if link_material_sha(pins) != link.symbol_material_sha:
+                stale_reasons.append("symbol pins changed since the map was authored")
+        except Exception:  # noqa: BLE001 — unparseable symbol == cannot vouch for the map
+            stale_reasons.append("symbol source is unparseable")
+        if model_material_sha(mv.source_text) != link.model_material_sha:
+            stale_reasons.append("model ports changed since the map was authored")
+        if stale_reasons:
+            warnings.append(f"sim link {sym.name} -> {model.name}: {'; '.join(stale_reasons)} — Sim fields withheld")
+        entry = {
+            "model": model.name,
+            "sim_pins": sim_pins_value(link.pin_map),
+            # the joined reasons, so a cache hit can re-emit the warning
+            "stale": "; ".join(stale_reasons),
+        }
+        _SIM_LINK_CACHE[key] = entry
+        out[sym.id] = entry
+    for gone in _SIM_LINK_CACHE.keys() - live_keys:
+        del _SIM_LINK_CACHE[gone]
+    return out
+
+
+def write_sim_lib(db: Session, settings: Settings) -> int:
+    """Emit Symbols/7Sigma_sim.sp — every published model in one file.
+
+    Primitives first, then part wrappers, each group sorted by name, so the
+    output is byte-stable for an unchanged model set (the manifest and the
+    PCM tag both hash it). SPICE does not require definition-before-use, so
+    no dependency ordering is needed. The file is small (tens of models, a
+    few KB) — regenerating it on every mirror write costs nothing worth a
+    cache.
+    """
+    rows = db.execute(select(M.SimModel).options(selectinload(M.SimModel.versions))).scalars().all()
+    chunks: list[str] = [
+        "* 7Sigma simulation library — GENERATED from the platform, do not edit.",
+        "* Simplified functional models: logic, rail and pin behaviour only.",
+        "* NOT electrically accurate. Parameters come from each component's",
+        "* Sim.Params field; defaults below are placeholder-grade.",
+    ]
+    count = 0
+    for model in sorted(rows, key=lambda m: (m.kind != "primitive", m.name)):
+        mv = next((v for v in model.versions if v.id == model.current_version_id), None)
+        if mv is None or mv.status != "published":
+            continue
+        chunks.append("")
+        chunks.append(mv.source_text.strip())
+        count += 1
+    symbols_dir = settings.mirror_dir / "Symbols"
+    symbols_dir.mkdir(parents=True, exist_ok=True)
+    (symbols_dir / SIM_LIB_FILE).write_text("\n".join(chunks) + "\n", encoding="utf-8")
+    return count
 
 
 def write_manifest(settings: Settings) -> int:

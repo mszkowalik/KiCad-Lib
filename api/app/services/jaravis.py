@@ -1674,6 +1674,116 @@ def list_reviews(state: str = "") -> str:
         db.close()
 
 
+@beta_tool
+def list_sim_models() -> str:
+    """List every simulation model with its kind, port list, declared
+    parameters and version number — no source bodies. Primitives are the
+    shared building blocks (sigma_opamp, sigma_switch, ...); part models are
+    what a base symbol links to and may instantiate primitives."""
+    db = SessionLocal()
+    try:
+        out = []
+        for m in db.query(M.SimModel).order_by(M.SimModel.kind, M.SimModel.name).all():
+            mv = next((v for v in m.versions if v.id == m.current_version_id), None)
+            if mv is None:
+                continue
+            parsed = mv.parsed or {}
+            out.append({"name": m.name, "kind": m.kind, "version_no": mv.version_no,
+                        "ports": parsed.get("ports", []),
+                        "params": parsed.get("params", {}),
+                        "instantiates": parsed.get("instantiates", [])})
+        return json.dumps({"count": len(out), "models": out})
+    finally:
+        db.close()
+
+
+@beta_tool
+def get_sim_model(name: str) -> str:
+    """Full detail of one simulation model: the .subckt source text, ports,
+    parameters with defaults, which symbols link to it, and version history.
+
+    Args:
+        name: Exact model name (find it with list_sim_models).
+    """
+    db = SessionLocal()
+    try:
+        m = db.query(M.SimModel).filter_by(name=name.strip()).first()
+        if m is None:
+            return json.dumps({"error": f"sim model {name!r} not found"})
+        mv = next((v for v in m.versions if v.id == m.current_version_id), None)
+        links = db.query(M.SymbolSimLink).filter_by(sim_model_id=m.id).all()
+        return json.dumps({
+            "name": m.name, "kind": m.kind,
+            "current_version_no": mv.version_no if mv else None,
+            "parsed": (mv.parsed if mv else None),
+            "linked_symbols": [l.symbol.name for l in links],
+            "versions": [{"version_no": v.version_no, "created_by": v.created_by,
+                          "comment": v.comment} for v in m.versions],
+            "source": mv.source_text if mv else "",
+        })
+    finally:
+        db.close()
+
+
+@beta_tool
+def propose_sim_model_edit(name: str, source_text: str, comment: str, kind: str = "") -> str:
+    """Create a new version of a simulation model — or a brand-new model
+    (new name = creation). PUBLISHES IMMEDIATELY: the generated SPICE library
+    and every affected component symbol regenerate at once. source_text must
+    be a complete `.subckt <name> ... .ends` block whose subckt name equals
+    `name` (sigma_ prefix required — SPICE names are global). Changing the
+    PORT LIST of a linked model flags every link on it stale: its Sim fields
+    are withheld from KiCad until each pin map is re-confirmed with
+    set_symbol_sim_link, and the mirror warns until then. Follow the
+    conventions-simulation skill: parameters are datasheet symbols (V_BR at
+    the stated test current, never V_RWM), placeholder values are marked as
+    such in a comment.
+
+    Args:
+        name: Model name, e.g. "sigma_opamp". Existing name = edit.
+        source_text: The complete .subckt block.
+        comment: What changed and why (recorded on the published version).
+        kind: "primitive" or "part"; empty keeps the current kind
+            (new models default to "part").
+    """
+    from .sim_store import propose_sim_model_version
+
+    db = SessionLocal()
+    try:
+        return json.dumps(propose_sim_model_version(
+            db, name, source_text, comment, actor="jaravis", kind=kind or None))
+    finally:
+        db.close()
+
+
+@beta_tool
+def set_symbol_sim_link(symbol_name: str, model_name: str, pin_map_json: str) -> str:
+    """Link a base symbol to a simulation model with an explicit pin map —
+    or remove the link (empty model_name). PUBLISHES IMMEDIATELY. The map is
+    `{"<pin number>": "<subckt port>"}` covering EVERY pin number once; use
+    "-" for a pin deliberately not modelled (NC pins, hidden stacked
+    duplicates). Structural errors are rejected; heuristic warnings (a
+    signal pin on a rail port or the reverse) are returned for judgement —
+    read them, they exist because KiCad never checks any of this.
+
+    Args:
+        symbol_name: Exact base symbol name.
+        model_name: Exact sim model name, or "" to remove the link.
+        pin_map_json: JSON object mapping pin numbers to port names.
+    """
+    from .sim_store import set_symbol_sim_link as _set_link
+
+    db = SessionLocal()
+    try:
+        try:
+            pin_map = json.loads(pin_map_json) if pin_map_json.strip() else {}
+        except json.JSONDecodeError as e:
+            return json.dumps({"error": f"pin_map_json is not valid JSON: {e}"})
+        return json.dumps(_set_link(db, symbol_name, model_name, pin_map, actor="jaravis"))
+    finally:
+        db.close()
+
+
 TOOLS = [
     # library reads
     search_components, get_component, list_categories, list_base_symbols,
@@ -1692,6 +1802,8 @@ TOOLS = [
     propose_new_component, propose_component_edit,
     propose_symbol_edit, propose_footprint_edit, propose_skill_update,
     set_footprint_package_name,
+    # simulation
+    list_sim_models, get_sim_model, propose_sim_model_edit, set_symbol_sim_link,
 ]
 
 # Anthropic-hosted server tools — executed on the API side, no local dispatch.

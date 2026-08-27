@@ -158,6 +158,109 @@ class Model3D(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+# ---------------------------------------------------------------- simulation
+class SimModel(Base):
+    """A SPICE subcircuit and its version history.
+
+    Mirrors `Symbol`: an identity plus immutable versions. `name` IS the
+    `.subckt` name the generated library emits, so it lives in SPICE's flat
+    global namespace — hence the `sigma_` prefix the validator enforces.
+
+    `kind` separates the two populations in one table:
+      - `primitive`: a building block (`sigma_opamp`, `sigma_switch`). Nothing
+        links to it directly; part models instantiate it by name.
+      - `part`: what a base symbol links to. May instantiate primitives.
+    Both are emitted into the same generated `.sp`, so name resolution is by
+    plain SPICE lookup and the file is self-contained.
+    """
+
+    __tablename__ = "sim_models"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), unique=True)
+    kind: Mapped[str] = mapped_column(String(20), default="part", server_default="part")
+    current_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    versions: Mapped[list["SimModelVersion"]] = relationship(
+        back_populates="sim_model", order_by="SimModelVersion.version_no"
+    )
+
+
+class SimModelVersion(Base):
+    __tablename__ = "sim_model_versions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sim_model_id: Mapped[int] = mapped_column(ForeignKey("sim_models.id"))
+    version_no: Mapped[int] = mapped_column(Integer)
+    # Canonical artifact: the full `.subckt ... .ends` text of this model.
+    source_text: Mapped[str] = mapped_column(Text)
+    # Derived cache: {"ports": [...], "params": {name: default}, "instantiates": [...]}
+    parsed: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="published")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(100), default="agent")
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # See SymbolVersion. Here the fingerprint covers the PORT LIST only — the
+    # one thing a stored pin map depends on. Changing a parameter default or
+    # the internal topology leaves every link valid; adding, removing or
+    # reordering a port does not.
+    material_sha: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    recheck_required: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+    sim_model: Mapped[SimModel] = relationship(back_populates="versions")
+
+    __table_args__ = (UniqueConstraint("sim_model_id", "version_no", name="uq_sim_model_version"),)
+
+
+class SymbolSimLink(Base):
+    """Which sim model a base symbol uses, and how its pins map to that
+    model's subcircuit ports.
+
+    Keyed on the SYMBOL, not on a symbol version, for the same reason
+    `Footprint.display_name` is unversioned: it describes the symbol, not a
+    revision of its geometry. Versioning it would mean a new symbol version
+    per link — sixty of them to seed the library — and a version bump can
+    strip verification.
+
+    `pin_map` is `{symbol pin number: subcircuit port name}` and is REQUIRED
+    stored state, not something the generator can derive. Name matching fails
+    on real symbols: SN74HC21's ten gate pins carry no names at all, BTS723GW
+    repeats `Vbb` on four pins, and D_TVS_Dual_AAC's `common` would not match
+    a port called `com`. A pin may also map to the sentinel `-` meaning
+    "deliberately not connected to the model" — correct for NC pins and for
+    hidden stacked duplicates, both of which KiCad nets together anyway.
+
+    `symbol_material_sha` / `model_material_sha` stamp the two fingerprints
+    this map was authored against. Either one moving means the map may no
+    longer mean what its author intended, which the validator reports rather
+    than silently emitting a plausible but mis-wired netlist. The symbol side
+    uses `simmodel.link_material_sha` (pin numbers + electrical types only),
+    NOT the geometry `material_sha` — a cosmetic pin-length edit must not
+    flag every link on the symbol as stale.
+    """
+
+    __tablename__ = "symbol_sim_links"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    symbol_id: Mapped[int] = mapped_column(ForeignKey("symbols.id"), unique=True)
+    sim_model_id: Mapped[int] = mapped_column(ForeignKey("sim_models.id"))
+    pin_map: Mapped[dict] = mapped_column(JSONB)
+    symbol_material_sha: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    model_material_sha: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(100), default="agent")
+
+    symbol: Mapped[Symbol] = relationship()
+    sim_model: Mapped[SimModel] = relationship()
+
+
+# A per-COMPONENT model override (two parts sharing one symbol but needing
+# different topology) is deliberately not built yet. The case the library has
+# today is the opposite: SM712 and PESD1CAN share D_TVS_Dual_AAC and differ
+# only in Sim.Params, which the symbol-level link already handles. Add it when
+# a symbol genuinely needs two topologies, not before.
+
+
 # ---------------------------------------------------------------- components
 class Component(Base):
     __tablename__ = "components"

@@ -49,6 +49,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..config import settings
+from .simmodel import SIM_LIB_FILE
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +64,14 @@ PLUGIN_VERSION = "1.4.0"  # bump when the plugin source changes — PCM update d
 # download changes, and every installed copy stays on the old code. Shipping
 # plugin source without bumping this is a silent no-op — it happened twice.
 MODELS_INSTALL_DIR = MODELS_ID.replace(".", "_")
+LIB_INSTALL_DIR = LIB_ID.replace(".", "_")
 PCM_FP_PREFIX = "PCM_"  # KiCad's hardcoded auto-registration nickname prefix
+
+# Where the generated SPICE library lands once the library package is
+# installed. This is what every served/shipped `Sim.Library` field must say —
+# the mirror's canonical `${SEVENSIGMA_DIR}/Symbols/...` value only resolves
+# server-side. Same deliberate KiCad-10 pin as THIRD_PARTY_VAR above.
+SIM_LIB_INSTALLED = f"${{{THIRD_PARTY_VAR}}}/symbols/{LIB_INSTALL_DIR}/{SIM_LIB_FILE}"
 SCHEMA = "https://go.kicad.org/pcm/schemas/v1"
 BUILDER_REV = 11  # bump when the package builder output changes for the same mirror
 # ^ AND whenever anything in THIS FILE changes what a package advertises —
@@ -150,6 +158,9 @@ def _build_library_zip(path: Path) -> int:
         text = base.read_text(encoding="utf-8")
         text = text.replace(f'"{SOURCE_NICKNAME}:', f'"{PCM_FP_PREFIX}{SOURCE_NICKNAME}:')
         size += _zip_add(zf, f"symbols/{base.name}", text.encode("utf-8"))
+        sim_lib = settings.mirror_dir / "Symbols" / SIM_LIB_FILE
+        if sim_lib.exists():
+            size += _zip_add(zf, f"symbols/{sim_lib.name}", sim_lib.read_bytes())
         pretty = settings.mirror_dir / "Footprints" / f"{SOURCE_NICKNAME}.pretty"
         for f in sorted(pretty.glob("*.kicad_mod")):
             text = f.read_text(encoding="utf-8")
@@ -482,7 +493,7 @@ def ensure_built() -> dict | None:
                 out, prev, "library",
                 # ONLY the base lib + footprints — per-component symbol libs
                 # deliberately excluded so new components don't bump this
-                _subtree_hash(entries, (f"Symbols/{BASE_LIB_FILE}", "Footprints/")),
+                _subtree_hash(entries, (f"Symbols/{BASE_LIB_FILE}", f"Symbols/{SIM_LIB_FILE}", "Footprints/")),
                 version, "library", _build_library_zip,
             ),
             "models": _resolve_package(

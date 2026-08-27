@@ -1386,6 +1386,51 @@ The module docstring has promised per-content versioning since it was written;
 until 2026-08-25 the code did not do it. When the reuse rule changes again,
 check both failure modes before believing the fix.
 
+## Simulation models (`services/simmodel.py`, `sim_store.py`, `routers/sim_models.py`)
+
+Versioned SPICE subcircuits (`SimModel`/`SimModelVersion`, auto-publish like
+everything else) plus ONE link per base symbol (`SymbolSimLink`: model +
+`{pin number: port}` map). The mirror emits every model into
+`Symbols/7Sigma_sim.sp` and turns each link into four `Sim.*` property rows on
+every component of that symbol. Facts that are not obvious from the code:
+
+- **`Sim.*` rows land on COMPONENT instances, never only in `lib_symbols`** —
+  KiCad's netlister ignores library-level sim properties. `Sim.Pins` is
+  mandatory: without it KiCad falls back to raw pin order, counts hidden
+  stacked pins and silently mis-wires.
+- **The link is keyed on the Symbol, unversioned** (like
+  `Footprint.display_name`), so linking sixty symbols does not bump sixty
+  symbol versions. Staleness is two fingerprints: the symbol side hashes pin
+  numbers + electrical types ONLY (`simmodel.link_material_sha` — a cosmetic
+  pin-length edit must not flag links), the model side hashes the PORT LIST
+  only (param/topology edits carry links untouched). A stale link's Sim fields
+  are WITHHELD from the mirror, with a warning, until re-confirmed —
+  re-saving the map in the UI or via `set_symbol_sim_link` is the confirm.
+- **Path rewrite at egress**: the mirror writes the canonical
+  `${SEVENSIGMA_DIR}/Symbols/7Sigma_sim.sp`; `kicad_http.part_payload` and the
+  PCM library zip substitute the installed path
+  (`pcm.SIM_LIB_INSTALLED`, under `${KICAD10_3RD_PARTY}`). The `.sp` file is
+  part of the library package's subtree hash — dropping it from that tuple
+  makes model edits a silent PCM no-op.
+- **A component's own `Sim.Params` row rides on top**: link-derived rows are
+  prepended in the generator, so a per-component property with the same key
+  wins. Datasheet numbers (GAIN, V_BR at test current, TPD…) belong on
+  components as `Sim.Params`; topology belongs in the model.
+- **Model names are the namespace**: `sigma_` prefix enforced
+  (`sim_store.NAME_RE`), row name must equal the `.subckt` name, and per-model
+  `kind` separates `part` (linkable) from `primitive` (building block —
+  hidden from the link picker, instantiated by name from other models).
+- Validator machine items: `sym.sim_link` (map errors / stale / heuristic
+  rail-swap warnings) and `cmp.sim_params` (keys must be declared by the
+  linked model). Deliberately NOT checklist-seeded — seeding un-answers every
+  existing subject (the `cmp.datasheet_text` incident); the user decides.
+- **`kiutils` is patched locally**: upstream ran `Sim.Library` values through
+  `PureWindowsPath`, turning `/` into `\\` (`api/kiutils/items/common.py`,
+  marked with a comment). Keep the patch when vendoring a newer kiutils.
+- The UI lives on Templates → "Sim models" (list + new-model paste,
+  `pages/SimModelDetail.tsx`) and on each symbol template page
+  (`components/SimLinkCard.tsx` — picker + pin-map editor).
+
 ## Conventions
 
 - **Never run a script inside the api container as a *file*.** The image does

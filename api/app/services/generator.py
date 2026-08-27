@@ -313,6 +313,40 @@ def footprint_name_props(footprint_ref: str | None, display_names: dict[str, str
     return [{"key": "Footprint_Name", "value": display}]
 
 
+# Canonical Sim.Library value in mirror files. Server-side only (the render
+# containers define SEVENSIGMA_DIR); the two egress points rewrite it to the
+# PCM-installed path the user's KiCad can resolve — kicad_http.py at serve
+# time, pcm.py at package time — exactly as both already rewrite 3D model
+# paths. Emitting the installed path here instead would bake a version-pinned
+# KICAD10_3RD_PARTY into the mirror, which server-side tooling cannot resolve.
+SIM_LIB_MIRROR_PATH = "${SEVENSIGMA_DIR}/Symbols/7Sigma_sim.sp"
+
+
+def sim_props(link: dict | None) -> list[dict]:
+    """The four link-derived `Sim.*` fields for one component symbol.
+
+    `link` is mirror.py's resolved view of the symbol's `SymbolSimLink`:
+    `{"model": subckt name, "sim_pins": "1=out 2=vee ...", "stale": bool}`,
+    or None when the symbol has no link. A stale link (either fingerprint
+    moved since the map was authored) emits NOTHING — a possibly mis-wired
+    map must not reach a netlist, and the mirror warns about it instead.
+
+    `Sim.Params` is deliberately not emitted: datasheet numbers are the
+    component's own property row, and a component without one simply gets
+    the subcircuit's declared defaults. Like `footprint_name_props`, this is
+    prepended, so a component carrying its own `Sim.*` rows (the per-part
+    override, and today's hand-written pilot) still wins.
+    """
+    if not link or link.get("stale") or not link.get("model"):
+        return []
+    return [
+        {"key": "Sim.Device", "value": "SUBCKT"},
+        {"key": "Sim.Name", "value": link["model"]},
+        {"key": "Sim.Library", "value": SIM_LIB_MIRROR_PATH},
+        {"key": "Sim.Pins", "value": link["sim_pins"]},
+    ]
+
+
 def injected_props(datasheets) -> list[dict]:
     """Datasheets live in their own table, but are injected back into
     generated symbols (and the KiCad HTTP library). First datasheet ->

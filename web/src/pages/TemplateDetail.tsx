@@ -15,6 +15,7 @@ import CommentsPanel from "../components/CommentsPanel";
 import ReviewCard from "../components/ReviewCard";
 import { useDialog } from "../components/Dialog";
 import GeometryPaste from "../components/GeometryPaste";
+import SimLinkCard from "../components/SimLinkCard";
 import { BackLink, ErrorBanner, Spinner } from "../components/Ui";
 import Viewer3D from "../components/Viewer3D";
 import { useStickyState } from "../useStickyState";
@@ -314,6 +315,8 @@ export default function TemplateDetail() {
             <pre className="code-block">{data.source_text}</pre>
           </details>
         ) : null}
+
+        {kind === "symbols" ? <SimLinkCard symbolId={id} /> : null}
 
         <ReviewCard kind={noun === "footprint" ? "footprint" : "symbol"} id={id} />
 

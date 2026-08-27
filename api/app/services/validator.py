@@ -45,12 +45,18 @@ MACHINE_KEYS: dict[str, tuple[str, ...]] = {
         "fp.fab_width", "fp.silk_width", "fp.smd_pad_shape", "fp.min_drill",
         "fp.min_th_pad", "fp.via_dims", "fp.model3d",
     ),
-    "symbol": ("sym.parse", "sym.fields", "sym.pins_grid"),
+    "symbol": ("sym.parse", "sym.fields", "sym.pins_grid", "sym.sim_link"),
     "component": (
         "cmp.required_props", "cmp.footprint_ref", "cmp.lcsc_format",
         "cmp.manufacturer", "cmp.templates", "cmp.datasheet_text",
+        "cmp.sim_params",
     ),
 }
+# NOTE on the two sim keys: they are answered on every publish (na when no
+# link / no Sim.Params), but they are deliberately NOT seeded into the base
+# checklists yet. Adding a machine item to a live base checklist un-answers it
+# on every existing subject with no backfill (see the cmp.datasheet_text
+# incident, 2026-08-25) — that call belongs to the user, not to this change.
 
 
 def _item(key: str, result: str, note: str = "") -> dict:
@@ -301,7 +307,54 @@ def validate_symbol(db: Session, version: M.SymbolVersion) -> list[dict]:
                            f"{len(off_grid)} pin(s) off the {PIN_GRID} mm grid, e.g. at {off_grid[0]}"))
     else:
         items.append(_item("sym.pins_grid", "checked"))
+
+    items.append(_sim_link_item(db, version))
     return items
+
+
+def _sim_link_item(db: Session, version: M.SymbolVersion) -> dict:
+    """`sym.sim_link` — is the symbol's sim link still valid against THIS
+    version's pins?
+
+    Every failure here was a SILENT wrong answer in the simulation spike:
+    KiCad emits whatever `Sim.Pins` says, so a swapped pair once tied an
+    op-amp's in+ to ground with no diagnostic anywhere. The mirror already
+    withholds Sim fields from a stale link; this item is the reviewer-facing
+    twin, so the publish that broke a map fails validation instead of only
+    warning in the mirror log. Pin types matter too: `power_in` rails are
+    what lets ERC catch an unconnected supply (the floating-vcc case that
+    silently clamped an output at half scale), so the rail/signal heuristic
+    findings are reported here as well.
+    """
+    from . import material
+    from .simmodel import link_material_sha, validate_pin_map
+
+    sym = db.get(M.Symbol, version.symbol_id)
+    link = db.query(M.SymbolSimLink).filter_by(symbol_id=version.symbol_id).first() if sym else None
+    if link is None:
+        return _item("sym.sim_link", "na", "no sim model linked")
+    model = link.sim_model
+    mv = next((v for v in model.versions if v.id == model.current_version_id), None)
+    if mv is None:
+        return _item("sym.sim_link", "failed", f"linked model {model.name!r} has no published version")
+    try:
+        pins = material.symbol_material(version.source_text)["pins"]
+    except Exception as e:  # noqa: BLE001
+        return _item("sym.sim_link", "failed", f"cannot read pins to check the map: {e}")
+    findings = validate_pin_map(link.pin_map, pins, (mv.parsed or {}).get("ports", []))
+    errors = [f["text"] for f in findings if f["severity"] == "error"]
+    warns = [f["text"] for f in findings if f["severity"] == "warning"]
+    if errors:
+        return _item("sym.sim_link", "failed",
+                     f"pin map to {model.name} no longer fits: " + "; ".join(errors))
+    if link_material_sha(pins) != link.symbol_material_sha:
+        return _item("sym.sim_link", "failed",
+                     f"pins changed since the map to {model.name} was authored — "
+                     "re-confirm the map (set_symbol_sim_link) to publish Sim fields again")
+    if warns:
+        return _item("sym.sim_link", "failed",
+                     f"map to {model.name} looks miswired: " + "; ".join(warns))
+    return _item("sym.sim_link", "checked", f"mapped to {model.name}")
 
 
 # ------------------------------------------------------------------ component
@@ -436,7 +489,42 @@ def validate_component(db: Session, cv: M.ComponentVersion, comp: M.Component) -
             items.append(_item("cmp.templates", "checked"))
     else:
         items.append(_item("cmp.templates", "na", "no templates used"))
+
+    items.append(_sim_params_item(db, cv, props))
     return items
+
+
+def _sim_params_item(db: Session, cv: M.ComponentVersion, props: dict) -> dict:
+    """`cmp.sim_params` — do the component's Sim.Params keys exist on the
+    linked model?
+
+    Purely mechanical, and exists because the failure is silent twice over:
+    ngspice rejects an undeclared parameter at parse time (the user sees a
+    cryptic simulator error, not a library one), and a TYPO'd key means the
+    intended datasheet value silently never applies — the model runs on its
+    placeholder default instead. The values themselves are datasheet numbers
+    and stay a human review item, not a machine one.
+    """
+    raw = props.get("Sim.Params") or ""
+    sv = cv.symbol_version
+    link = (db.query(M.SymbolSimLink).filter_by(symbol_id=sv.symbol_id).first()
+            if sv is not None else None)
+    if not raw.strip():
+        return _item("cmp.sim_params", "na",
+                     "no Sim.Params" + ("" if link is None else " — model defaults apply"))
+    if link is None:
+        return _item("cmp.sim_params", "failed",
+                     "component carries Sim.Params but its symbol has no sim model link")
+    model = link.sim_model
+    mv = next((v for v in model.versions if v.id == model.current_version_id), None)
+    declared = set(((mv.parsed or {}).get("params") or {})) if mv else set()
+    given = re.findall(r"([A-Za-z_][\w]*)\s*=", raw)
+    unknown = sorted(set(given) - declared)
+    if unknown:
+        return _item("cmp.sim_params", "failed",
+                     f"{model.name} does not declare: " + ", ".join(unknown)
+                     + " (declares: " + ", ".join(sorted(declared)) + ")")
+    return _item("cmp.sim_params", "checked", f"{len(given)} parameter(s) against {model.name}")
 
 
 def validate(db: Session, kind: str, version, comp: M.Component | None = None) -> list[dict]:

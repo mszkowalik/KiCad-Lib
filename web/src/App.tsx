@@ -34,6 +34,7 @@ import Setup from "./pages/Setup";
 import Skills from "./pages/Skills";
 import Templates from "./pages/Templates";
 import TemplateDetail from "./pages/TemplateDetail";
+import SimModelDetail from "./pages/SimModelDetail";
 
 function NotFound() {
   return (
@@ -164,6 +165,8 @@ function Shell() {
             <Route path="/library/components/new" element={<NewComponent />} />
             <Route path="/library/components/:id" element={<ComponentDetail />} />
             <Route path="/library/templates" element={<Templates />} />
+            {/* Static segment outranks :kind/:id in v6 route ranking. */}
+            <Route path="/library/templates/sim/:id" element={<SimModelDetail />} />
             <Route path="/library/templates/:kind/:id" element={<TemplateDetail />} />
             <Route path="/library/skills/:id?" element={<Skills />} />
           </Route>

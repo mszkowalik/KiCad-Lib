@@ -10,11 +10,15 @@ from __future__ import annotations
 
 import re
 
-TEMPLATE_RE = re.compile(r"\{([^{}]+)\}")
+# `(?<!\$)` — `${VAR}` is KiCad path-variable syntax (Sim.Library carries
+# `${SEVENSIGMA_DIR}/...`), a different namespace resolved by KiCad, never a
+# property template. Without the guard every such value warned "unresolved
+# template {SEVENSIGMA_DIR}" on every mirror write.
+TEMPLATE_RE = re.compile(r"(?<!\$)\{([^{}]+)\}")
 
 
 def has_template(value: str | None) -> bool:
-    return isinstance(value, str) and "{" in value and "}" in value
+    return isinstance(value, str) and TEMPLATE_RE.search(value) is not None
 
 
 def resolve_templates(

@@ -660,6 +660,139 @@ export function proposeNewTemplate(
   });
 }
 
+// -------------------------------------------------------- simulation models
+
+export interface SimModelListItem {
+  id: number;
+  name: string;
+  kind: "primitive" | "part";
+  version_no: number | null;
+  ports: string[];
+  params: Record<string, string>;
+  linked_symbols: number;
+}
+
+export interface SimModelDetail extends Omit<SimModelListItem, "linked_symbols"> {
+  created_at: string | null;
+  created_by: string | null;
+  comment: string | null;
+  instantiates: string[];
+  source_text: string | null;
+  linked_symbols: TemplateUse[];
+  versions: {
+    version_no: number;
+    created_at: string;
+    created_by: string;
+    comment: string | null;
+  }[];
+}
+
+export interface SimModelProposalResult {
+  ok: true;
+  model: string;
+  version_no: number;
+  is_new_model?: boolean;
+  kind: string;
+  ports: string[];
+  params: Record<string, string>;
+  status: string;
+  mirror_warnings: string[];
+}
+
+export function getSimModels(signal?: AbortSignal): Promise<SimModelListItem[]> {
+  return request("/api/sim-models", { signal });
+}
+
+export function getSimModel(id: number, signal?: AbortSignal): Promise<SimModelDetail> {
+  return request(`/api/sim-models/${id}`, { signal });
+}
+
+/** PUBLISH a brand-new sim model. The name is read out of the `.subckt` line
+ *  by the server — there is no name field, same contract as proposeNewTemplate. */
+export function proposeNewSimModel(
+  source_text: string,
+  comment: string,
+  kind: "primitive" | "part" | null = null,
+): Promise<SimModelProposalResult> {
+  return request("/api/sim-models/propose", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_text, comment, kind }),
+  });
+}
+
+/** PUBLISH a new version of an existing sim model. A paste that renames the
+ *  .subckt is rejected — the name is the reference every link resolves. */
+export function proposeSimModelEdit(
+  id: number,
+  source_text: string,
+  comment: string,
+): Promise<SimModelProposalResult> {
+  return request(`/api/sim-models/${id}/propose`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_text, comment }),
+  });
+}
+
+// A symbol's sim link: everything the editor needs in one round trip.
+export interface SymbolSimPin {
+  number: string;
+  name: string;
+  type: string;
+  hide: boolean;
+}
+
+export interface SymbolSimLinkInfo {
+  symbol: { id: number; name: string };
+  pins: SymbolSimPin[];
+  link: {
+    model_id: number;
+    model_name: string;
+    pin_map: Record<string, string>;
+    updated_at: string | null;
+    updated_by: string;
+    /** Human-readable reasons the stored map may no longer mean what its
+     *  author intended. Non-empty = the mirror WITHHOLDS the Sim fields. */
+    stale: string[];
+  } | null;
+  models: { id: number; name: string; ports: string[] }[];
+  /** The not-connected sentinel a pin can map to ("-"). */
+  nc: string;
+}
+
+export interface SimLinkSaveResult {
+  ok: true;
+  symbol: string;
+  model?: string;
+  pin_map?: Record<string, string>;
+  heuristic_warnings?: string[];
+  status: string;
+  mirror_warnings: string[];
+}
+
+export function getSymbolSimLink(id: number, signal?: AbortSignal): Promise<SymbolSimLinkInfo> {
+  return request(`/api/symbols/${id}/sim-link`, { signal });
+}
+
+/** PUBLISHES the link and rebuilds the mirror — Sim fields appear on every
+ *  component of the symbol immediately. */
+export function saveSymbolSimLink(
+  id: number,
+  model_name: string,
+  pin_map: Record<string, string>,
+): Promise<SimLinkSaveResult> {
+  return request(`/api/symbols/${id}/sim-link`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model_name, pin_map }),
+  });
+}
+
+export function removeSymbolSimLink(id: number): Promise<SimLinkSaveResult> {
+  return request(`/api/symbols/${id}/sim-link`, { method: "DELETE" });
+}
+
 /** Render UNSAVED geometry so the paste box can show it before filing.
  *  Returns an object URL the caller must revoke. Writes nothing. */
 export async function renderTemplateSource(
