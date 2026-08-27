@@ -3,7 +3,7 @@ name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints, and the naming standard: the KLC tier rule (Tier 0 stock names are frozen), the twelve-slot field order, decided spellings (_HandSoldering, vendor tokens, no rotation in names), the 7Sigma: namespace, validator-enforced pad/silk/fab/courtyard style, the 0.1mm grid, NPTH mechanical holes, thermal vias, non-electrical parts, and why connector pad numbering always follows the datasheet. Use when naming, picking or authoring any footprint."
 ---
 
-<!-- platform-skill: conventions-footprints v22 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v24 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 Footprints live in the `7Sigma:` namespace and are always referenced as
@@ -385,8 +385,19 @@ Plus the conventions the validator can't check:
   centre, on the 0.1 mm grid — for everything else. It complements the
   `F.Fab` and `F.SilkS` indicators, never replaces them, and it must stay
   within 2 mm of the pad-1 centre so verification sweeps can find it.
-- Courtyard clears the outermost pad/body feature by **0.5 mm**, snapped to the
-  0.05 mm grid.
+- Courtyard clears the outermost pad/body feature, snapped to the **0.1 mm
+  grid**. The grid figure is not a preference: the machine item
+  `fp.courtyard_grid` FAILS a footprint whose `F.CrtYd` coordinates sit on
+  0.05 mm steps. This document said 0.05 mm until 2026-08-27, and
+  `R_Shunt_WalterElectronic_MSH2512_6332Metric` v1 was published with a
+  courtyard at ±3.95 × ±2.05 and failed validation for exactly that reason.
+- **How much clearance is an open question — do not treat 0.5 mm as settled.**
+  This document has long said 0.5 mm, and NO footprint in the library uses it:
+  `HVSSOP-10-1EP_3x3mm_P0.5mm_EP1.57x1.88mm_ThermalVias` clears its outermost
+  pad by 0.225 mm, `R_1206_3216Metric` by 0.29 mm, and KiCad stock uses 0.25 mm
+  for this density. New footprints have been matching the library at 0.25–0.30 mm
+  rather than doubling the courtyard of a part's neighbours. Raised 2026-08-27;
+  needs a maintainer decision, then one pass to make the text and the library agree.
 - Global dimension floors: pad ≥ 0.6 mm, drill ≥ 0.3 mm, via ≥ 0.3 mm.
 
 **Fix every validator warning by default** — including ones that were already

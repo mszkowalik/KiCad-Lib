@@ -2,15 +2,16 @@
 name: kicad-conventions-symbols
 description: "Choosing AND authoring base symbols: pin-type directionality from the component's own viewpoint, V.24 UART and SPI role policy, functional pin grouping, box/pitch geometry formulas, and stacked (shorted) pins. Use when picking a base symbol or writing a propose_symbol_edit."
 ---
-<!-- platform-skill: conventions-symbols v7 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-symbols v8 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Symbol conventions
 
 Every component is built on a **base symbol** — a graphical template with pins.
 You can both *choose* an existing one and *author* a new or revised one:
 `propose_symbol_edit(name, source_text, comment)` takes a complete `.kicad_sym`
-library text and files it as a draft (existing name = edit, new name = creation),
-reviewed with a visual before/after in the Proposals view.
+library text and **publishes it immediately** (existing name = edit, new name =
+creation). There is no draft gate and no Proposals view. Get it right before you
+call it.
 
 Never hand-write a symbol from scratch when a similar one exists: call
 `get_symbol` first, take its `source`, and edit that.
@@ -121,6 +122,14 @@ to reach that symbol. A GND pin in the bottom slot drops straight into it.
 This is a house rule from the library owner, recorded 2026-08-24. It changes
 placement only. GND stays `power_in` (§2).
 
+### Nothing electrical on the top edge
+
+Do not put power pins or signal pins on the **top edge** of a rectangular body.
+Keep them on the left and the right. The one exception is §5.6 — basic digital
+parts, where the top and bottom edges carry the asynchronous controls.
+
+House rule from the library owner, recorded 2026-08-27.
+
 ### Two-sided bus parts: logic left, bus right
 
 A differential bus transceiver has two distinct faces, the host logic side and
@@ -138,9 +147,9 @@ Precedent in this library: `SP3485` (RO, RE, DE, DI left; A, B right) and
 ## 4. Box and layout geometry
 
 - **Pin pitch**: 2.54 mm
-- **Pin stub length**: 2.54 mm (100 mil) by default. This matches KiCad's own
-  native default, and every base symbol in the library uses it except the one
-  exception below.
+- **Pin stub length**: 2.54 mm (100 mil). Use it everywhere. The drawing
+  families in §5 make it mandatory: the pin must end exactly on the body
+  outline, with no stub inside the body and no gap outside it.
 - **Exception — very high pin count**: 5.08 mm (200 mil) is permitted only when
   the pin count is large enough that pin-name labels need the extra room to
   stay legible without crowding. Verified precedent: `STM32H573IITxQ` (176
@@ -154,8 +163,11 @@ Precedent in this library: `SP3485` (RO, RE, DE, DI left; A, B right) and
 - **Box margin**: 1.27 mm above the topmost pin and below the bottommost pin
 - **Reference label**: 1.27 mm above the box top edge
 - **Value label**: 1.27 mm below the box bottom edge
-- **Pin-1 indicator**: 0.38 mm radius circle at the pin-1 corner inside the box
-  (typically near VBATT/VCC, top of the left side)
+- **Pin-1 indicator**: 0.38 mm radius circle at the pin-1 corner inside the box.
+  Draw it **only when pin 1 really sits at that corner**. On many parts the
+  numbering does not start at the top left, and a marker on the wrong corner is
+  worse than no marker. `SN74LVC1G74` (pin 1 is `CLK`, mid left) and
+  `SN74LVC1G123` (pin 1 is `A`) carry no indicator for this reason.
 - **Box width**: wide enough that pin labels never overlap — ±15.24 mm is the
   house standard for multi-peripheral modules
 
@@ -167,7 +179,177 @@ box_half_height = ceil(n_slots / 2) x 2.54 + 1.27   # margin
 first_pin_y     = box_half_height - 1.27
 ```
 
-## 5. Stacked (shorted) pins
+### The grid law
+
+**Every pin connection point must be a multiple of 2.54 mm in BOTH axes**, and
+the pin tip must land exactly on the body outline. A pin off that grid cannot
+be wired on a default sheet.
+
+The two rules fight each other, and the geometry decides the winner. Work the
+arithmetic **before** you choose a body size, not after. §5.5 lists the
+constraints this produces for each family.
+
+## 5. Drawing families
+
+Three families, decided by the library owner on 2026-08-27 and applied across
+the library. Follow the family, not your own taste.
+
+### 5.1 Comparators and amplifiers — the 15.24 mm triangle
+
+Body: a triangle through `(-7.62, 7.62)`, `(7.62, 0)`, `(-7.62, -7.62)`,
+stroke 0.254, fill `background`.
+
+| Pin | Position |
+|---|---|
+| Inverting input | `(-10.16, 2.54, 0)` |
+| Non-inverting input | `(-10.16, -2.54, 0)` |
+| Output | `(10.16, 0, 180)` |
+| Positive rail | `(-2.54, 7.62, 270)` |
+| Negative rail | `(-2.54, -7.62, 90)` |
+| Spare pin (NC, SHDN) | `(2.54, ±5.08)` |
+
+**The inverting input goes on top.** This is the house rule. It is arbitrary in
+the abstract, but a library that mixes the two orders is a wiring error waiting
+to happen. `LTC6268xS8-10` was the one part drawn the other way and was
+corrected.
+
+Precedent: `TLV7022` (dual, two units), `TLV3201`, `TLV9061XDBV`,
+`OPA991XDBV`, `OPA354AXDBV`, `LTC6268xS8-10`.
+
+### 5.2 Logic gates — the 10.16 mm triangle
+
+Body: a triangle through `(-5.08, 5.08)`, `(5.08, 0)`, `(-5.08, -5.08)`.
+
+| Pin | Position |
+|---|---|
+| Input | `(-7.62, 0, 0)` |
+| Output | `(7.62, 0, 180)` |
+| Positive rail | `(0, 5.08, 270)` |
+| Negative rail | `(0, -5.08, 90)` |
+
+The smaller body keeps gates visually distinct from analog parts.
+
+Precedent: `74LVC1G14`, `74LVC1G17`, `74LVC1G125`, `74LVC2G34`.
+
+### 5.3 Hidden pin names and orange markers
+
+On **both** triangle families, set `(pin_names (hide yes))` on the symbol. Mark
+the pins with bold graphic text instead:
+
+- Inverting input `-` at `(-6.35, 2.54)`, non-inverting `+` at `(-6.35, -2.54)`
+  — analog family only.
+- **Rail polarity on every symbol that has rails.** Put `+` beside the positive
+  rail and `-` beside the negative rail, **outside** the body, offset 1.27 mm to
+  the right of the rail pin and level with the middle of its stub. On the
+  15.24 body that is `(-1.27, ±6.35)`; on the 10.16 body, `(1.27, ±3.81)`.
+- Use `-` on the negative rail **even when the pin is a ground**. The reader
+  needs to know which rail is which, not what it is called.
+
+Text style: `(size 1.27 1.27) (thickness 0.254) (bold yes) (color 200 130 75 1)`.
+
+Two hard-won facts about this:
+
+- **KiCad cannot hide a pin name individually.** `(hide yes)` inside a pin's
+  name effects is silently dropped on save and the name still draws. Visibility
+  is all-or-nothing per symbol. So any pin whose name carries real information
+  needs a graphic text of its own — `LTC6268xS8-10` keeps a visible `SHDN`
+  label, `74LVC1G125` keeps `OE`. `NC` pins need none; they carry no net.
+- **Text colour must go inside the `font` node**:
+  `(effects (font (size ...) (color 200 130 75 1)))`. Putting `(color ...)` as a
+  sibling of `(font ...)` makes the whole library fail to load. The value is the
+  `pin_name` colour of the owner's `Skyline-7S` theme, so the markers match the
+  pin names. It is baked into the symbol and does not follow a theme change.
+
+### 5.4 The comparator glyph
+
+A **comparator** carries a small step glyph on the triangle centroid, points
+`(-4.445, -1.27) (-2.54, -1.27) (-2.54, 1.27) (-0.635, 1.27)`, stroke 0.254.
+It reads as the transfer characteristic: the output slams to a rail at the
+threshold.
+
+An **amplifier carries nothing.** A plain triangle is already the universal
+amplifier symbol, so absence is the marking. An earlier draft gave amplifiers a
+ramp glyph; it was removed because it was an invented code nobody could read
+without being told.
+
+Keep vendor qualifying glyphs that already mean something: the Schmitt
+hysteresis marking and the IEC `&`. Draw the Schmitt glyph in the **rising**
+form — low on the left, step up, high on the right — on inverting and
+non-inverting parts alike. Inversion belongs on the output bubble, not in a
+mirrored glyph. `74LVC1G14` and `74LVC1G17` were mirror images of each other
+until this was fixed.
+
+### 5.5 Grid constraints you cannot argue with
+
+A vertical pin on a sloped edge must satisfy the grid law (§4) **and** land on
+the edge. Only some body sizes allow it at all:
+
+| Triangle body | Legal x for a vertical rail |
+|---|---|
+| 15.24 mm | −7.62, **−2.54**, +2.54, +7.62 |
+| 10.16 mm | −5.08, **0**, +5.08 |
+| 12.70 mm | **none — do not use this size** |
+
+The two families therefore share **no** common rail position. Do not try to
+standardise one across both; it is arithmetically impossible while the bodies
+differ in size.
+
+For a rectangular body: **the half-height must itself be a multiple of 2.54**,
+or every pin on the top and bottom edges lands off-grid. A half-height of
+6.35 mm puts them on 8.89 mm, which looks plausible and is wrong.
+
+For a gate with **four inputs symmetric about the output axis**: a 2.54 mm
+pitch forces them onto ±1.27 and ±3.81, all off-grid. A **5.08 mm pitch** puts
+them on ±2.54 and ±7.62, on-grid and still symmetric, but needs a 20.32 mm tall
+body. `SN74HC21` keeps its compact off-grid drawing by an explicit decision of
+the library owner on 2026-08-27, who judged the taller symbol worse. Record the
+same choice explicitly if you meet it again.
+
+### 5.6 Digital blocks — flip-flops, registers, gate arrays
+
+These stay **rectangles with visible pin names**. Do not hide names and do not
+put `±` markers on them; name the power pins `VCC` and `GND`.
+
+They are the **one exception** to "nothing electrical on the top edge" (§3): a
+flip-flop puts its asynchronous controls on the top and bottom edges, because
+that is the drawing everyone recognises.
+
+The canonical D flip-flop, which is what makes the function readable at a
+glance:
+
+- `D` upper left, `CLK` lower left with the KiCad `clock` pin style — the wedge
+  is what separates an edge-triggered flip-flop from a level-sensitive latch.
+- `Q` upper right, `Q̅` directly below it, so the complementary pair reads as a
+  pair.
+- `PRE` on the top edge, `CLR` on the bottom edge.
+- Supplies on the **left**, ground at the bottom of the left side (§3).
+
+**Draw every active-low pin with the `inverted` pin style.** An overbar in the
+name disappears at normal sheet zoom; a bubble does not. `SN74LVC1G74` had
+`PRE`, `CLR` and `Q̅` on plain `line` style and read as fully active-high until
+you zoomed in.
+
+A part that is not a flip-flop does not get the exception. `SN74LVC1G123` is a
+monostable, so it keeps everything on the left and right, with the `Rext/Cext`
+timing pair together on the right, away from the logic.
+
+Precedent: `SN74LVC1G74`, `74LVC1G175GW,125`, `SN74LVC1G123`.
+
+### 5.7 The angled-leader slot
+
+When a spare control pin (`OE`, `NC`) has nowhere on-grid to enter a small
+triangle, put it below the output and join it to the sloped edge with a graphic
+polyline. KiCad pins snap to 0/90/180/270, so a genuinely angled pin does not
+exist; the leader is how you fake one.
+
+On the 10.16 body: pin at `(5.08, -5.08, 90)`, leader from `(5.08, -2.54)` to
+`(3.81, -0.635)`, which is exactly on the lower edge. The connection point
+lands under the output pin and stays on-grid.
+
+Precedent: `74LVC1G125` (`OE`), `74LVC1G17` (`NC`). Both are SC-70-5, so pin 1
+sits in the same place on both drawings.
+
+## 6. Stacked (shorted) pins
 
 KiCad shorts pads **inside the symbol** by stacking pins: two or more pins at
 the *identical* `(at x y angle)` with the *same name* form one electrical node.
@@ -197,19 +379,36 @@ Rules for a stacked pin:
   that gets shorted stops being `no_connect` and becomes whatever the net is.
 - `(hide yes)` on every pin except the one visible one.
 
-**Approving a symbol version also files the component repoints.** A component
-pins the symbol *version* it was drawn against, so the platform opens a draft
+Two coincident pins with **neither** hidden overprint their numbers. Known open
+case: `LTC6268xS8-10` pads 1 and 4.
+
+**Publishing a symbol version also files the component repoints.** A component
+pins the symbol *version* it was drawn against, so the platform opens a new
 component version for every part using this base symbol, pinned to the new
-drawing with properties unchanged. Approve those drafts too — the symbol change
-is not finished until they land. See [[platform-workflow]].
+drawing with properties unchanged. See [[platform-workflow]].
 
-## 6. Before you propose
+**`minor_change` is a waiver, not a convenience.** It carries verifications and
+production sign-offs across the changed drawing with your name on it. A moved
+pin, a changed unit count and a changed electrical type are all material — pass
+`False`. Reserve `True` for cosmetic cleanup that could not alter what a
+reviewer checked.
 
-- `get_symbol` → edit its `source` → `propose_symbol_edit`. The proposal renders
-  a visual before/after; check that the drawing is what you intended.
+## 7. Before you propose
+
+- `get_symbol` → edit its `source` → `propose_symbol_edit`. It publishes at
+  once, so check the drawing first.
+- Render it before you believe it. `kicad-cli sym export svg -s <name> -o <dir>
+  <lib>` draws exactly what KiCad will draw, and `kicad-cli sym upgrade` proves
+  the file parses. Both caught real defects that reading the s-expression
+  did not.
 - Pin count still matches the footprint's pad count ([[conventions-footprints]]).
 - Every pin has the most specific correct type from §2 — no lazy `passive`.
-- Groups follow §3 and the geometry follows §4.
+- Every connection point is on the 2.54 grid in both axes, and every pin tip
+  lands on the body outline (§4).
+- Groups follow §3, geometry follows §4, and the drawing follows its family
+  in §5.
+- **Never change a pin number.** The number is the netlist. Pin names and types
+  are fixable toward the datasheet; numbers, count and unit assignment are not.
 
 See [[add-component]] for where symbol choice fits in the full part-creation
-procedure, and [[platform-workflow]] for what happens after approval.
+procedure, and [[platform-workflow]] for what happens after publishing.

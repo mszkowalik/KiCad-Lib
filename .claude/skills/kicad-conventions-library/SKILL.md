@@ -3,7 +3,8 @@ name: kicad-conventions-library
 description: "House style for component data: canonical manufacturer names (with the full raw-to-canonical lookup table), ki_description {Key} templating per category, the Value field rule, and category-placement rules. Read before proposing a new component or editing an existing one's properties."
 ---
 
-<!-- platform-skill: conventions-library v22 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-library v23 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+
 # Library conventions
 
 This is the house style for component **data**: manufacturer naming,
@@ -209,6 +210,7 @@ alphabetically by canonical value.)
 | UNI-ROYAL(Uniroyal Elec) | Uni-Royal, UNI-ROYAL, UNIROYAL |
 | Vishay | VISHAY, Vishay Intertechnology |
 | Vishay Semiconductors | (none — distinct business-unit brand from plain "Vishay", used for Vishay's optoelectronics/photodiode parts; don't collapse to plain "Vishay") |
+| Walter Electronic | WALTER ELECTRONIC (the company's own datasheet letterhead and its legal text, e.g. "WALTER ELECTRONIC CO., LTD." on page 8 of the MSH2512 specification), Walter Elec (LCSC's truncated feed form), WalterFuse (the company's fuse brand and domain, not its name). **NOT an all-caps exception**: its own site prints "(C)2023 Suzhou Walter Electronic Co" in running body text, so the KEMET/OSRAM test fails and normal Title Case applies. Taiwanese fuse and current-sense-resistor maker, founded 1968; footprint vendor token `WalterElectronic` |
 | WCH(Jiangsu Qin Heng) | WCH |
 | Winbond | WINBOND |
 | Worldsemi | WORLDSEMI, WorldSemi, World Semi |
@@ -341,6 +343,7 @@ across every affected sibling at once, not piecemeal.
 | ICs / Analog switches — multiplexers (TMUX1208 family) | `{Channels} Analog Multiplexer {Footprint_Name}` |
 | ICs / Voltage-level translators (TI TXSxxxxE) | `{Bit Width} Bidirectional Level Translator {VCCA Range}/{VCCB Range} {Footprint_Name}` |
 | ICs / Winbond serial NOR flash memory (W25Qxx) | `{Capacity} {Voltage Range} {Max Frequency} SPI {Footprint_Name}` |
+| ICs / Current and power monitor (TI INA2xx digital monitors) | `{ADC Resolution} {Interface} Current and Power Monitor {Common Mode Range} {Footprint_Name}` — written 2026-08-27 for `INA238AQDGSRQ1` (I2C) and `INA239AQDGSRQ1` (SPI), which are the same die and the same VSSOP-10 package and differ ONLY in the serial interface, so `Interface` is the discriminator a reader needs on the sheet. `Common Mode Range` and the supply come from the datasheet's **Recommended Operating Conditions**, never from Absolute Maximum Ratings — for these two parts the common-mode figure happens to be −0.3V~85V in both tables while the supply is 2.7V~5.5V recommended against 6V absolute, so taking the abs-max column would have shipped a wrong supply range. Add `Supply Voltage` as a property even though the template does not print it |
 
 ### Deliberately left as free text (documented — don't re-litigate)
 
@@ -464,15 +467,10 @@ A full-library `Value` audit was run **2026-07-25**: 317 components checked,
 component already had a non-empty, on-rule `Value`. Known follow-ups left
 open deliberately:
 
-- `BLM18EG101TN1D` (ferrite bead) — RESOLVED 2026-08-25. `Value` was `68nH`
-  while `Impedance` read `100Ω@100MHz`; fixed so `Value` now reads
-  `100Ω@100MHz`, matching the rule above. The earlier "68nH is also a real
-  published spec" excuse for leaving it did not hold up: the attached Murata
-  reference spec (JENF243A-0021N-01, 8 pages) never publishes an inductance
-  figure for this part at all — only impedance (100MHz/1GHz), rated current
-  and DC resistance. Re-check any other Ferrite Bead component whose `Value`
-  reads as an inductance rather than `<Z>@<f>` before assuming the number is
-  real; verify it is actually in the attached datasheet first.
+- `BLM18EG101TN1D` (ferrite bead) still has `Value = 68nH` while its
+  `Impedance` property reads `100Ω@100MHz`. Per the table above a ferrite
+  bead's `Value` should be the impedance — flagged for a maintainer decision
+  rather than changed, because 68nH is also a real published spec for the part.
 - `Pin_0.7mm_Soldering_Pin` carried **duplicate empty** `Manufacturer 1` and
   `Manufacturer Part Number 1` rows. The duplicates were dropped in its
   backfill draft. If duplicate keys show up elsewhere, drop them the same way —
