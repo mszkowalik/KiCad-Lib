@@ -1133,6 +1133,36 @@ def _parse_properties(properties_json: str) -> tuple[list[dict] | None, str | No
     return props, None
 
 
+def _archive_datasheet(db, ds) -> dict:
+    """Download and store a datasheet row's PDF, best effort.
+
+    Returns a small dict the write tools put in their response, so the agent
+    learns straight away whether the document is actually readable rather than
+    finding out later when search_datasheets comes back empty. Never raises:
+    the component write is the caller's real work.
+    """
+    from .datasheet_store import current_version, fetch_datasheet
+    try:
+        r = fetch_datasheet(db, ds)
+    except Exception as e:  # network, DNS, timeout, malformed response
+        return {"archived": False, "reason": f"download failed: {e}",
+                "source_url": ds.source_url,
+                "hint": "retry with read_datasheet, which fetches on demand, or "
+                        "attach the manufacturer's own PDF URL"}
+    if r.get("result") == "rejected":
+        return {"archived": False, "reason": r.get("reason", "refused"),
+                "source_url": ds.source_url,
+                "hint": "the supplier served something that is not a readable PDF — "
+                        "find the manufacturer's own datasheet"}
+    db.refresh(ds)
+    dv = current_version(ds)
+    if dv is None:
+        return {"archived": False, "reason": "nothing stored", "source_url": ds.source_url}
+    return {"archived": True, "filename": dv.filename, "size_bytes": dv.size_bytes,
+            "page_count": dv.page_count, "text_pages": dv.text_pages,
+            "text_layer": dv.text_layer}
+
+
 @beta_tool
 def propose_new_component(
     name: str,
@@ -1199,15 +1229,32 @@ def propose_new_component(
                 component_version_id=cv.id, position=pos, key=str(p["key"]).strip(),
                 value=None if raw is None else str(raw), is_null=raw is None,
             ))
+        archive = None
         if datasheet_url.strip():
-            db.add(M.Datasheet(component_id=comp.id, position=0, label="Datasheet",
-                               source_url=datasheet_url.strip()))
+            ds = M.Datasheet(component_id=comp.id, position=0, label="Datasheet",
+                             source_url=datasheet_url.strip())
+            db.add(ds)
+            db.flush()
+            # Archive BEFORE publishing, not after and not lazily on the first
+            # read_datasheet. Two things depend on the PDF already being there:
+            # pin_datasheets() records WHICH pdf version this component version
+            # used, and the cmp.datasheet_text machine item asks whether the
+            # archived document is searchable — it used to answer "na — no
+            # archived PDF" on every new part, which reads like the question
+            # does not apply rather than like the file is simply missing.
+            # Best effort: a supplier that is down or serving HTML must not
+            # cost the caller the whole component write. Note fetch_datasheet
+            # commits, so the draft version is persisted before _publish_component
+            # runs — harmless because every row it needs is already built above.
+            archive = _archive_datasheet(db, ds)
         db.add(M.AuditLog(actor="jaravis", action="proposal.create", entity_type="component_version",
                           entity_id=str(cv.id), details={"component": comp.name, "new": True}))
         result = _publish_component(db, comp, cv)
         _record_proposal({"proposal_id": cv.id, "component": comp.name, "kind": "new"})
-        return json.dumps({"ok": True, "proposal_id": cv.id, "component": comp.name,
-                           **result})
+        out = {"ok": True, "proposal_id": cv.id, "component": comp.name, **result}
+        if archive is not None:
+            out["datasheet_archive"] = archive
+        return json.dumps(out)
     finally:
         db.close()
 
@@ -1394,6 +1441,39 @@ def propose_footprint_edit(name: str, source_text: str, comment: str,
             _record_proposal({"proposal_id": res["proposal_id"], "component": res["footprint"],
                               "kind": "footprint", "version_no": res["version_no"]})
         return json.dumps(res)
+    finally:
+        db.close()
+
+
+@beta_tool
+def set_footprint_package_name(name: str, package_name: str) -> str:
+    """Set a footprint's SHORT package name — what `{Footprint_Name}` resolves to
+    in a component's ki_description (e.g. "0402", "SOT-23-6", "VQFN-HR-9").
+
+    Call this straight after publishing a BRAND-NEW footprint. A new footprint
+    starts with no package name, so the first component that references it
+    publishes with an unresolved `{Footprint_Name}` mirror warning. The name
+    belongs to the footprint, not to each component using it — never add a
+    `Footprint_Name` property to a component to work around a missing one.
+
+    Unversioned: this mints NO footprint version and does not touch the
+    .kicad_mod, but it is baked into every generated ki_description that
+    references it, so the affected symbol libraries rebuild immediately.
+
+    Args:
+        name: Exact footprint name, WITHOUT the 7Sigma: prefix.
+        package_name: The short package name. Empty string clears it.
+    """
+    from ..config import settings
+    from .publish import set_footprint_package_name as _set
+    db = SessionLocal()
+    try:
+        fp = db.query(M.Footprint).filter_by(name=name.strip()).first()
+        if fp is None:
+            return json.dumps({"error": f"footprint {name!r} not found",
+                               "hint": "list_footprints() shows the exact names; "
+                                       "do not include the 7Sigma: prefix"})
+        return json.dumps({"ok": True, **_set(db, settings, fp, package_name, actor="jaravis")})
     finally:
         db.close()
 
@@ -1611,6 +1691,7 @@ TOOLS = [
     # writes — every one of these auto-publishes (skills included, 2026-08-24)
     propose_new_component, propose_component_edit,
     propose_symbol_edit, propose_footprint_edit, propose_skill_update,
+    set_footprint_package_name,
 ]
 
 # Anthropic-hosted server tools — executed on the API side, no local dispatch.
@@ -1710,6 +1791,11 @@ Write (every one of these PUBLISHES IMMEDIATELY — the propose_* names are hist
   (or a new footprint). Call get_footprint first and edit its returned source.
 - propose_skill_update(skill_name, content, comment) — a new version of one of your own
   skill documents (call get_skill first; content replaces the whole document)
+- set_footprint_package_name(name, package_name) — the footprint's SHORT package name
+  ("0402", "SOT-23-6", "VQFN-HR-9"), which is what {{Footprint_Name}} resolves to in a
+  ki_description. Unversioned: it mints no footprint version. Call it right after
+  publishing a BRAND-NEW footprint — a new one has no package name, so the first
+  component referencing it publishes with an unresolved {{Footprint_Name}} mirror warning.
 
 ## What you cannot do
 - You have no shell, no Python interpreter, and no filesystem. The previous file-based

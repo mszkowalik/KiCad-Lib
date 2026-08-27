@@ -167,3 +167,45 @@ def refresh_mirror_for_geometry(db: Session, settings: Settings, kind: str, pare
                       "warnings": mirror["warnings"] + sym["warnings"]}
         return mirror
     return update_mirror_symbols(db, settings, tops)
+
+
+def set_footprint_package_name(db: Session, settings: Settings, fp: M.Footprint,
+                               display_name: str, actor: str = "user") -> dict:
+    """Set the short package name that `{Footprint_Name}` templates resolve to.
+
+    Unversioned, so this mints no footprint version and the `.kicad_mod` is
+    untouched — but it IS baked into every generated `ki_description` that
+    references `{Footprint_Name}`, so the symbol libraries of the affected
+    categories are rebuilt straight away.
+
+    A brand-new footprint starts with no package name, and the first component
+    that uses it then publishes with an unresolved `{Footprint_Name}` mirror
+    warning. Naming the footprint is the fix; patching the component is not.
+    """
+    # `display_name` is unversioned, so the audit row is the ONLY revert path:
+    # record the previous value as well as the new one. Without `previous`,
+    # undoing a bulk rename pass would mean restoring a whole database dump.
+    previous = fp.display_name or ""
+    fp.display_name = (display_name or "").strip()[:200]
+    if fp.display_name == previous:
+        return {"id": fp.id, "name": fp.name, "display_name": fp.display_name,
+                "previous": previous, "unchanged": True,
+                "rebuilt_libraries": [], "mirror_warnings": []}
+    db.add(M.AuditLog(actor=actor, action="footprint.describe", entity_type="footprint",
+                      entity_id=str(fp.id),
+                      details={"name": fp.name, "display_name": fp.display_name,
+                               "previous": previous}))
+    db.commit()
+
+    tops: set[str] = set()
+    for comp in db.query(M.Component).all():
+        cv = next((v for v in comp.versions if v.id == comp.current_version_id), None)
+        if cv is None or cv.category is None:
+            continue
+        if any(p.key == "Footprint" and p.value == f"7Sigma:{fp.name}" for p in cv.properties):
+            tops.add(top_level_of(cv.category).name)
+    mirror = update_mirror_symbols(db, settings, tops) if tops else {"warnings": []}
+    return {"id": fp.id, "name": fp.name, "display_name": fp.display_name,
+            "previous": previous, "unchanged": False,
+            "rebuilt_libraries": sorted(tops),
+            "mirror_warnings": mirror.get("warnings", [])}

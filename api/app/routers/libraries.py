@@ -22,7 +22,8 @@ from ..services.geometry_proposals import (
     set_footprint_header,
     set_symbol_entry_name,
 )
-from ..services.mirror import top_level_of, update_mirror_symbols, write_manifest
+from ..services.mirror import write_manifest
+from ..services.publish import set_footprint_package_name
 from ..services.render import render_svg
 from .util import audit
 
@@ -306,38 +307,12 @@ class FootprintMeta(BaseModel):
 def set_footprint_display_name(fp_id: int, body: FootprintMeta, db: Session = Depends(get_db)):
     """Set the short package name that `{Footprint_Name}` templates resolve to.
 
-    Unversioned, so this mints no footprint version — but it does change every
-    generated `ki_description` that references it, so the affected symbol
-    libraries are rebuilt straight away."""
+    The Templates-browser door onto the same write the `set_footprint_package_name`
+    agent tool uses; the shared body lives in `services/publish.py`."""
     f = db.get(M.Footprint, fp_id)
     if f is None:
         raise HTTPException(404, "footprint not found")
-    # `display_name` is unversioned, so the audit row is the ONLY revert path:
-    # record the previous value as well as the new one. Without `previous`, undoing
-    # a bulk rename pass would mean restoring a whole database dump.
-    previous = f.display_name or ""
-    f.display_name = body.display_name.strip()[:200]
-    if f.display_name == previous:
-        return {"id": f.id, "name": f.name, "display_name": f.display_name,
-                "unchanged": True, "rebuilt_libraries": [], "mirror_warnings": []}
-    audit(db, "footprint.describe", "footprint", f.id,
-          {"name": f.name, "display_name": f.display_name, "previous": previous})
-    db.commit()
-
-    # The name is baked into every generated ki_description that references
-    # {Footprint_Name}, so rebuild the symbol libraries of the categories whose
-    # components use this footprint — the .kicad_mod itself is unaffected.
-    tops: set[str] = set()
-    for comp in db.query(M.Component).options(selectinload(M.Component.versions)).all():
-        cv = _current(comp)
-        if cv is None or cv.category is None:
-            continue
-        if any(p.key == "Footprint" and p.value == f"7Sigma:{f.name}" for p in cv.properties):
-            tops.add(top_level_of(cv.category).name)
-    mirror = update_mirror_symbols(db, settings, tops) if tops else {"warnings": []}
-    return {"id": f.id, "name": f.name, "display_name": f.display_name,
-            "rebuilt_libraries": sorted(tops),
-            "mirror_warnings": mirror.get("warnings", [])}
+    return set_footprint_package_name(db, settings, f, body.display_name)
 
 
 @router.delete("/footprints/{fp_id}")

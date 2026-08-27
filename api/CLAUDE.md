@@ -105,6 +105,24 @@ section first.
   emission paths (generated mirror symbols and the KiCad HTTP catalog), so
   `public_base_url` must be the API address as KiCad clients see it, not
   `localhost`, on any non-local deployment.
+- **A new component archives its datasheet AT PUBLISH TIME, before the version
+  lands.** `jaravis.propose_new_component` adds the `Datasheet` row, flushes,
+  then calls `_archive_datasheet` (a best-effort wrapper on `fetch_datasheet`)
+  BEFORE `_publish_component`. Order matters both ways: `pin_datasheets` then
+  records which PDF version this component version used, and the
+  `cmp.datasheet_text` machine item sees a real document instead of answering
+  `na — no archived PDF`, which reads as "question does not apply" rather than
+  "the file is missing". Before 2026-08-27 the row held only a URL and the PDF
+  was fetched lazily on the first `read_datasheet`, so every freshly published
+  part was invisible to `search_datasheets`.
+
+  Two things to keep in mind if you touch this. `fetch_datasheet` **commits**,
+  so the draft `ComponentVersion` is persisted before the publish — harmless
+  only because every row it needs is already built by then. And the wrapper
+  never raises: a supplier that is down must not cost the caller a component
+  write. It returns `{"archived": ..., "text_layer": ...}` into the tool's
+  response, and `text_layer` is the field that matters — an HTML page is
+  **stored, not refused**, as `archived: true` with `text_layer: "none"`.
 - **Datasheets are re-checked nightly** (`datasheet_store.start_nightly_recheck`,
   armed from `main.py` startup at `settings.datasheet_recheck_hour`, server
   local time — containers are UTC unless `TZ` is set). It runs the existing
@@ -1388,12 +1406,23 @@ check both failure modes before believing the fix.
   `[tool.setuptools.package-data]` in `pyproject.toml` so they ship in the
   non-editable Docker install.
 - **`Footprint_Name` belongs to the footprint, not the component.**
-  `Footprint.display_name` (unversioned, `PATCH /api/footprints/{id}`) holds the
-  short package name; `generator.footprint_name_props()` injects it **ahead of**
-  the component's own properties, so a component that still carries its own row
-  overrides it. Never re-add it as a per-component property. Because the name is
-  baked into generated `ki_description` values, changing it rebuilds the symbol
-  libraries of every category using that footprint — not the `.kicad_mod`.
+  `Footprint.display_name` (unversioned) holds the short package name;
+  `generator.footprint_name_props()` injects it **ahead of** the component's own
+  properties, so a component that still carries its own row overrides it. Never
+  re-add it as a per-component property. Because the name is baked into generated
+  `ki_description` values, changing it rebuilds the symbol libraries of every
+  category using that footprint — not the `.kicad_mod`.
+
+  Three doors, one body in `services/publish.py::set_footprint_package_name`:
+  `PATCH /api/footprints/{id}` (Templates browser), the
+  `set_footprint_package_name` agent tool, and the Templates UI itself. Keep them
+  going through the service — the audit row records `previous` as well as the new
+  value, and it is the ONLY revert path for an unversioned field.
+
+  **A brand-new footprint has no `display_name`**, so the first component to
+  reference it publishes with an `unresolved template {Footprint_Name}` mirror
+  warning. That is the default outcome of pairing a new component with a new
+  footprint, not an edge case — which is why the agent tool exists.
 - **The KiCad HTTP catalog is on the symbol chooser's critical path — never
   load the whole library per request.** `EnumerateSymbolLib` walks every
   category and calls `parts/category/{id}.json` once each, so one slow handler
@@ -1813,7 +1842,7 @@ user pastes once and never types a credential.
 ## Agent tool surface + MCP server (Claude Code)
 
 The library agent is reachable two ways over the **same** tool set
-(`services/jaravis.py::TOOLS` — 26 client tools):
+(`services/jaravis.py::TOOLS` — one list; `GET /api/agent/tools` is the live count):
 
 1. **In-app Jaravis** — the Anthropic tool-runner chat (`services/jaravis.py`,
    `routers/jaravis.py`). Burns Anthropic API tokens; has the web chat UI.
