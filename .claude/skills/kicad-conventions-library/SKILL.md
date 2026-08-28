@@ -2,7 +2,7 @@
 name: kicad-conventions-library
 description: "House style for component data: canonical manufacturer names (with the full raw-to-canonical lookup table), ki_description {Key} templating per category, the Value field rule, and category-placement rules. Read before proposing a new component or editing an existing one's properties."
 ---
-<!-- platform-skill: conventions-library v24 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-library v25 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Library conventions
 
 This is the house style for component **data**: manufacturer naming,
@@ -351,6 +351,44 @@ across every affected sibling at once, not piecemeal.
 | ICs / Voltage-level translators (TI TXSxxxxE) | `{Bit Width} Bidirectional Level Translator {VCCA Range}/{VCCB Range} {Footprint_Name}` |
 | ICs / Winbond serial NOR flash memory (W25Qxx) | `{Capacity} {Voltage Range} {Max Frequency} SPI {Footprint_Name}` |
 | ICs / Current and power monitor (TI INA2xx digital monitors) | `{ADC Resolution} {Interface} Current and Power Monitor {Common Mode Range} {Footprint_Name}` — written 2026-08-27 for `INA238AQDGSRQ1` (I2C) and `INA239AQDGSRQ1` (SPI), which are the same die and the same VSSOP-10 package and differ ONLY in the serial interface, so `Interface` is the discriminator a reader needs on the sheet. `Common Mode Range` and the supply come from the datasheet's **Recommended Operating Conditions**, never from Absolute Maximum Ratings — for these two parts the common-mode figure happens to be −0.3V~85V in both tables while the supply is 2.7V~5.5V recommended against 6V absolute, so taking the abs-max column would have shipped a wrong supply range. Add `Supply Voltage` as a property even though the template does not print it |
+
+### Power ratings (`Power`) — one spelling per rating
+
+`Power` is a filterable property and it fills the `{Power}` slot in every
+resistor template, so a rating spelled two ways splits the family: a BOM
+filter or a parametric search finds half the parts. **One rating, one
+string.**
+
+> **1/16 W is always `63mW`.** Never `62.5mW`, never `0.0625W`.
+
+Decided by Mateusz Kowalik on 2026-08-28, after `RC0402FR-0749K9L` was
+published as `62.5mW` beside sixty `63mW` siblings sitting on the same 0402
+land. The three parts that carried the decimal form (`RC0402FR-0749K9L`,
+`RT0402BRB071KL`, `RT0402BRD079K09L`) were normalized to `63mW` in the same
+pass, so the category now reads one way throughout.
+
+**This deliberately overrides the datasheet's own wording.** Yageo's RC_L
+ordering example on p.2 spells the rating "RC0402 0.0625W", and the RT-series
+power table says 1/16 W; both mean 62.5 mW, and the house form rounds it. Do
+not "correct" a `63mW` back to a datasheet-exact decimal — put the exact
+figure in the verification note, which is where the evidence belongs.
+
+The general rule behind it: **a fractional wattage is written as its value in
+whole milliwatts.** Most ratings are already integers and raise no question —
+1/20 W = `50mW`, 1/10 W = `100mW`, 1/8 W = `125mW`, 1/4 W = `250mW`,
+3/4 W = `750mW`, 1 W = `1W`, 2 W = `2W`. 1/16 W is the one that does not
+divide evenly, and `63mW` is its decided form.
+
+1/32 W (31.25 mW) is the other non-integer case. **No library part carries it
+yet and no spelling has been decided — ask rather than inventing one.**
+
+**Not every sub-63 mW figure is a rounded 1/16 W.** `PTFR0402B1K21N9` is
+correctly `60mW`: the RESI PTFR datasheet's electrical table (p.2) rates the
+PTFR0402 at 0.03 W low / **0.06 W standard** / 0.13 W high, which are the
+manufacturer's own power grades, not a rounding of 1/16 W. Confirm the rating
+in the datasheet before normalizing anything to `63mW` — this rule fixes how
+1/16 W is spelled, it is not a licence to round every nearby number up to it.
+
 
 ### Deliberately left as free text (documented — don't re-litigate)
 

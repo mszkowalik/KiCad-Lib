@@ -2,7 +2,7 @@
 name: kicad-add-component
 description: "Full procedure for adding a part to the 7Sigma library: duplicate check, LCSC metadata lookup, category/base-symbol/footprint selection, property construction, the per-category rules a version must satisfy BEFORE you publish it (nothing gates a bad one), and what still has to be done by hand afterwards. Use when adding, editing or publishing any component."
 ---
-<!-- platform-skill: add-component v13 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: add-component v16 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Add a component
 
 End-to-end procedure for adding a part to the 7Sigma library. Every write
@@ -12,6 +12,67 @@ what you publish and record it.
 
 **Inputs.** Preferred: an LCSC part number (`Cxxxxx`). Otherwise: manufacturer
 part number + datasheet URL.
+
+## Ask before you publish — a question is cheap, a published version is not
+
+**If the part raises a question you cannot answer from the datasheet, the
+library, or these skills, STOP AND ASK. Do not publish your best guess.**
+Asking two or three extra questions is always the better trade. This is the
+default, not an escape hatch for hard cases.
+
+The costs are not symmetric:
+
+| Asking | Publishing something half-baked |
+|---|---|
+| One message. The user answers in a sentence. | A version exists in history forever and cannot be withdrawn. |
+| Nothing changes until you have the answer. | The KiCad catalog, the mirror and every project BOM see it immediately. |
+| You publish once, correctly. | Fixing it means another version, which **drops the verification** and may repoint every component on the geometry. |
+| — | A wrong `Value`, `Power` or land can be bought and assembled before anyone reads the version comment. |
+
+There is no draft gate and no approval queue: `propose_*` is a publish, not a
+proposal, whatever the name suggests. Nothing downstream will catch a bad
+part for you. **Writing "UNVERIFIED — please check" into a version comment is
+not a substitute for asking** — it publishes the part anyway and moves the
+problem to somebody who may never read the comment.
+
+### Stop and ask when
+
+- **The part is not the one that was asked for.** Any substitution — different
+  package, different manufacturer, different tolerance or power grade, a
+  near-equivalent because the exact part is out of stock. The user chooses the
+  part; you do not.
+- **Existing geometry does not fit and no house land matches.** Especially a
+  pad-count, pad-numbering, pitch, exposed-pad or body-orientation difference
+  (§5 already says escalate, never quietly re-cut a land other components sit
+  on).
+- **Your change would touch parts other than the one you were asked to add** —
+  editing a shared symbol or footprint, renaming a property key, restating a
+  family template.
+- **The convention does not exist yet.** A new property key, a new
+  `ki_description` template for a family, a unit or spelling nobody has
+  decided (see the 1/32 W entry in [[conventions-library]] — that is exactly
+  this case, recorded rather than guessed).
+- **Two sources disagree and neither is clearly authoritative** — the
+  datasheet against the LCSC feed, two canonical manufacturer forms already in
+  the library, an ambiguous part-number decode.
+- **No usable datasheet exists**, or the only one you can find is for a
+  sibling part rather than this exact MPN.
+- **Category placement is genuinely unclear** after checking LCSC's own
+  category and where the siblings sit.
+
+### Decide it yourself when
+
+Routine judgment calls are yours — that is what these skills are for. Do not
+ask about: `Value` formatting for a category with a documented rule, a
+manufacturer name already in the canonical table, which existing footprint to
+use when one plainly matches the package, a `ki_description` template that
+already has a row, or which base symbol a 2-pin passive takes. Asking about
+settled things is its own kind of noise.
+
+**When you do ask, ask well.** Say what you found, what the options are, and
+which one you would pick and why — a question with a recommendation is
+answered in one word. Do the parts of the task that do not depend on the
+answer first, so nothing is idle while you wait.
 
 ## Procedure
 
@@ -148,6 +209,10 @@ part number + datasheet URL.
    properties_json, datasheet_url, comment)`. The component name is the
    manufacturer part number and must be globally unique.
 
+   **Last check before you call: is anything here still a guess?** If yes,
+   ask now — see "Ask before you publish" above. This call is the point of no
+   return.
+
    **It publishes immediately.** There is no draft, no Proposals view and no
    approval queue — the library, the mirror and the KiCad catalog update on the
    call, a machine validation record is written, and the version starts
@@ -159,17 +224,69 @@ part number + datasheet URL.
    you call: publish new geometry first (§4, §5), then the component. What no
    longer applies is waiting for anyone to approve them.
 
-9. **Verify what you published, and name the new footprint.** Two things are
-   only done by hand:
+9. **Verify all three: the component, its symbol, and its footprint.** Two
+   things are only done by hand:
 
    - **Set the package name on any footprint you created**, or this component's
      `{Footprint_Name}` will not resolve — see [[conventions-footprints]] §3.
    - **Record the verification**: `get_review_checklist` then
-     `record_verification`, for the component AND for each piece of geometry you
-     authored. The machine items answer themselves on publish; the judgment
-     items are yours, and "checked" means you actually compared it with the
-     datasheet ([[verify-datasheets]]).
+     `record_verification`. The machine items answer themselves on publish; the
+     judgment items are yours, and "checked" means you actually compared it
+     with the datasheet ([[verify-datasheets]]).
 
+   **Verify the geometry you REUSED, not only the geometry you authored.**
+   Adding a part to an existing symbol or an existing land is the normal case,
+   and it is exactly where unanswered judgment items hide — nobody has ever
+   been prompted to close them, because every session that touched the land
+   was "only reusing" it. Default to verifying all three every time the user
+   asks for a component, unless they say otherwise.
+
+   Two reasons this is not busywork:
+
+   - **A component's review state is a roll-up over its geometry.** The
+     component's own checklist can read `checked` while the component still
+     shows `partial`, because the land it sits on has never had its six
+     judgment items answered. One unverified shared land holds every component
+     on it at `partial` — 21 parts on `C_0402_1005Metric`, 65 on
+     `R_0402_1005Metric`. Verifying the land once clears all of them.
+   - **It is nearly free when the geometry is already done.**
+     `get_review_checklist` is one call and shows you what is already answered
+     and by whom. If every judgment item is answered, say so and move on; you
+     cannot overwrite a human's answer anyway.
+
+   What the geometry checklists actually want, and how to answer honestly:
+
+   - **`fp.land_pattern` often has no document to check against.** Chip
+     passives are the common case: MLCC and chip-resistor makers publish body
+     dimensions and leave the land to the assembler, so there is no
+     "recommended land pattern" page to compare with. Search the datasheet
+     before deciding — if nothing is published, answer `skipped` and say so,
+     naming the terms you searched. Do not answer `checked` against IPC when
+     the item asks for the datasheet, and do not answer `checked` against a
+     drawing you did not open.
+   - **`fp.model_fit` can be measured, not guessed.** Fetch the referenced
+     `.step` and compute its bounding box from the `CARTESIAN_POINT`
+     coordinates, then compare it with the datasheet body dimensions and the
+     `F.Fab` outline. Check where the mesh sits in Z as well as how big it is:
+     a model resting on `z = 0` is correct with `(offset 0 0 0)`, while a
+     z-centred mesh with the same offset is buried half-way into the board.
+   - **`fp.body_outline`** compares `F.Fab` with the datasheet body table.
+     Expect small disagreements — a KiCad stock land draws its body from
+     IPC-SM-782, which differs from an individual manufacturer's table by a
+     hundredth of a millimetre. Record the numbers and the source rather than
+     smoothing it over.
+   - **`fp.naming`** on a KLC Tier 0 stock name (`C_0402_1005Metric`,
+     `R_0805_2012Metric`, `SOT-23-5`) is `checked` by definition — those names
+     are frozen and must not be pushed into the twelve-slot house form.
+   - **`sym.*` items** follow the same rule: verify the base symbol you picked
+     even though you did not draw it. Pin numbers, positions and count are not
+     yours to change ([[conventions-symbols]]), but confirming they match the
+     datasheet pinout is the point of the check.
+
+   If verifying reused geometry turns up something genuinely wrong, do not fix
+   it inside an add-component task — `flagged` it with the exact discrepancy,
+   finish the part you were asked for, and report it. Re-cutting a land that
+   65 components sit on is its own change with its own blast radius.
 For an existing part, `propose_component_edit` follows the same property rules.
 Before editing a part that may already be placed on a board, check
 `component_where_used` to confirm the change is property-only and safe.
