@@ -1416,8 +1416,14 @@ every component of that symbol. Facts that are not obvious from the code:
   prepended in the generator, so a per-component property with the same key
   wins. Datasheet numbers (GAIN, V_BR at test current, TPD…) belong on
   components as `Sim.Params`; topology belongs in the model.
-- **`exclude_from_sim` is DERIVED, never authored** (`generator.set_exclude_from_sim`,
-  applied to both the base library and the per-category libs). A generated symbol
+- **`exclude_from_sim` is DERIVED, never authored** — emitted in THREE places, and
+  the HTTP one is the only one an existing schematic ever sees:
+  `generator.set_exclude_from_sim` for the base library and the per-category libs,
+  and `kicad_http.part_payload` for the catalog record. KiCad places parts by their
+  HTTP `lib_id`, and **`Update Symbols from Library` rewrites the instance from the
+  HTTP record, not from the base `.kicad_sym`** — with an ABSENT flag read as "not
+  excluded", so the payload must state it explicitly. Patching only the `.kicad_sym`
+  looks right in the package and changes nothing in anyone's schematic. A generated symbol
   stays simulatable when it has a link, or when its reference prefix is `R`, `C`,
   `L` or `#PWR` — SPICE builds those from the Value field with no model at all
   (`R116 … 100k` is a complete element), and power symbols are net names, not

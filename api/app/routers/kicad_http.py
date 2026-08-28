@@ -21,7 +21,15 @@ from sqlalchemy.orm import Query, Session, contains_eager, defer, joinedload, se
 from .. import models as M
 from ..config import settings
 from ..db import get_db
-from ..services.generator import base_hidden_maps, injected_props, schematic_field_visibility, sim_props, version_prop
+from ..services.generator import (
+    base_hidden_maps,
+    base_reference_prefixes,
+    injected_props,
+    schematic_field_visibility,
+    sim_excluded,
+    sim_props,
+    version_prop,
+)
 from ..services.mirror import HIDDEN_LIFECYCLE, resolve_sim_links
 from ..services.pcm import SIM_LIB_INSTALLED
 from .util import category_path, props_dict, resolved_value
@@ -128,7 +136,8 @@ def datasheets_by_component(db: Session, comp_ids) -> dict[int, list[M.Datasheet
     return out
 
 
-def part_payload(cv, sheets: list[M.Datasheet], visible: dict[str, bool], sim_link: dict | None = None) -> dict:
+def part_payload(cv, sheets: list[M.Datasheet], visible: dict[str, bool], sim_link: dict | None = None,
+                 reference_prefix: str = "") -> dict:
     """One part in KiCad's part shape — the SAME body for the per-part endpoint
     and for each entry of a category listing.
 
@@ -194,6 +203,13 @@ def part_payload(cv, sheets: list[M.Datasheet], visible: dict[str, bool], sim_li
         "symbolIdStr": f"{settings.httplib_symbol_lib}:{cv.base_component}",
         "description": description,
         "keywords": keywords,
+        # Derived exactly like the mirror's symbol attribute, and it MUST be
+        # stated: KiCad reads an absent flag as "not excluded", and `Update
+        # Symbols from Library` rewrites the schematic instance from THIS
+        # record, not from the base .kicad_sym. Leaving it out is what let a
+        # part with no model keep re-entering the netlist as `U47 __U47`
+        # after every symbol update.
+        "exclude_from_sim": "true" if sim_excluded(reference_prefix, sim_link is not None) else "false",
         "fields": fields,
     }
 
@@ -207,12 +223,14 @@ def part_payloads(db: Session, versions: list) -> list[dict]:
     # same default `apply_properties` gives a key the base symbol lacks.
     bases = base_hidden_maps(db, {cv.base_component for cv in versions})
     sim_links = resolve_sim_links(db, [])  # warnings surface on mirror writes, not here
+    refs = base_reference_prefixes(db, {cv.base_component for cv in versions})
     return [
         part_payload(
             cv,
             sheets.get(cv.component_id, []),
             schematic_field_visibility(db, cv, bases.get(cv.base_component) or {}),
             sim_links.get(cv.symbol_version.symbol_id) if cv.symbol_version else None,
+            refs.get(cv.base_component, ""),
         )
         for cv in versions
     ]

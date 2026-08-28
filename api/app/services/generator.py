@@ -9,6 +9,7 @@ instead of raw f-string eval().
 from __future__ import annotations
 
 import copy
+import re
 import tempfile
 from pathlib import Path
 
@@ -377,7 +378,55 @@ def set_exclude_from_sim(symbol, linked: bool) -> None:
       raise.
     """
     ref = next((p.value for p in (symbol.properties or []) if p.key == "Reference"), "")
-    symbol.exclude_from_sim = not (linked or ref in SIM_NATIVE_PREFIXES)
+    symbol.exclude_from_sim = sim_excluded(ref, linked)
+
+
+def sim_excluded(reference_prefix: str, linked: bool) -> bool:
+    """The same rule for callers holding a prefix string, not a kiutils Symbol.
+
+    The HTTP library is the one that matters for an existing schematic: KiCad
+    places parts by their HTTP `lib_id`, and `Update Symbols from Library`
+    rewrites the instance from THAT record, not from the base .kicad_sym. The
+    HTTP part record carries its own `exclude_from_sim` and KiCad treats an
+    ABSENT flag as "not excluded", so the payload must state it explicitly or
+    every symbol update silently re-includes parts that have no model.
+    """
+    return not (linked or reference_prefix in SIM_NATIVE_PREFIXES)
+
+
+_BASE_REF_BY_SYMBOL_VERSION: dict[int, str] = {}
+
+
+def base_reference_prefixes(db, names) -> dict[str, str]:
+    """`{base_component: reference prefix}` for many templates at once.
+
+    Same batching contract as `base_hidden_maps` — the symbol chooser asks for
+    a whole category in one response, so a per-row Symbol lookup here would sit
+    on that critical path."""
+    from .. import models as M
+
+    names = {n for n in names if n}
+    if not names:
+        return {}
+    by_name = {
+        name: svid
+        for name, svid in db.query(M.Symbol.name, M.Symbol.current_version_id)
+        .filter(M.Symbol.name.in_(names))
+        .all()
+        if svid
+    }
+    missing = {svid for svid in by_name.values() if svid not in _BASE_REF_BY_SYMBOL_VERSION}
+    if missing:
+        for svid, text in (
+            db.query(M.SymbolVersion.id, M.SymbolVersion.source_text)
+            .filter(M.SymbolVersion.id.in_(missing))
+            .all()
+        ):
+            m = re.search(r'\(property\s+"Reference"\s+"([^"]*)"', text or "")
+            _BASE_REF_BY_SYMBOL_VERSION[svid] = m.group(1) if m else ""
+        for svid in missing:
+            _BASE_REF_BY_SYMBOL_VERSION.setdefault(svid, "")
+    return {name: _BASE_REF_BY_SYMBOL_VERSION[svid] for name, svid in by_name.items()}
 
 
 def injected_props(datasheets) -> list[dict]:
