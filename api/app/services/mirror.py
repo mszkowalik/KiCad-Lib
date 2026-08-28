@@ -33,7 +33,7 @@ from .generator import (
     sim_props,
     version_prop,
 )
-from . import material
+from . import material, memory
 from .simmodel import SIM_LIB_FILE, link_material_sha, model_material_sha, sim_pins_value
 
 # Lifecycle states hidden from every KiCad-facing surface (generated symbol
@@ -318,6 +318,21 @@ def write_sim_lib(db: Session, settings: Settings) -> int:
     return count
 
 
+def _sha256_file(path) -> str:
+    """SHA-256 of a file, read in 1 MB blocks.
+
+    NOT `read_bytes()`. The mirror is 4977 files and 1.4 GB, the largest 13.7
+    MB, and on a cold cache write_manifest hashes all of them in one pass —
+    that is 1.4 GB pushed through the allocator in multi-MB chunks, which is
+    what leaves 64 MB malloc heaps behind (see services/memory.py). Blocked
+    reads keep the peak at one buffer and reuse it."""
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
 def write_manifest(settings: Settings) -> int:
     """Rewrite manifest.json — the hash index the PCM builder and sync clients
     key off. Hashing is memoised on (mtime_ns, size): a component approval
@@ -336,7 +351,7 @@ def write_manifest(settings: Settings) -> int:
         if cached is not None and cached[:2] == stamp:
             digest = cached[2]
         else:
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            digest = _sha256_file(path)
             _MANIFEST_HASHES[rel] = (*stamp, digest)
         seen.add(rel)
         files.append({"path": rel, "sha256": digest, "size": st.st_size})
@@ -350,6 +365,7 @@ def write_manifest(settings: Settings) -> int:
         "files": files,
     }
     (mirror / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
+    memory.trim()
     return len(files)
 
 

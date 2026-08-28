@@ -40,6 +40,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as M
 from ..db import SessionLocal
+from . import memory
 from .datasheet_store import _TEXT_MIN_CHARS
 
 log = logging.getLogger(__name__)
@@ -91,6 +92,22 @@ def _strip_picture_text(md: str) -> str:
         if j < 0:
             return "".join(out)
         rest = rest[j + len(_PIC_CLOSE):]
+
+
+def _drop_surrogates(md: str) -> str:
+    """Text Postgres can actually store.
+
+    pymupdf4llm returns lone UTF-16 surrogates for some malformed CID fonts
+    (mathematical alphanumerics, U+D835 and friends). Python holds them
+    happily, psycopg
+    cannot encode them, and the error lands on the flush at the END of a
+    25-page batch — outside `extract_version`'s per-document guard, so
+    `pages_indexed_at` never gets stamped and the document is re-extracted on
+    every boot for ever. Versions 367 and 368 did exactly that. A lone
+    surrogate carries no text either way, so dropping it loses nothing."""
+    if not md.isascii() and any("\ud800" <= c <= "\udfff" for c in md):
+        return "".join(c for c in md if not "\ud800" <= c <= "\udfff")
+    return md
 
 
 def _classify_page(md: str, doc_layer: str) -> str:
@@ -168,7 +185,7 @@ def extract_version(db: Session, dv: M.DatasheetVersion) -> dict:
                 chunks = [{"text": doc[i].get_text("text"), "toc_items": []} for i in idxs]
                 kind_of = "fallback_text"
             for i, chunk in zip(idxs, chunks):
-                md = chunk.get("text") or ""
+                md = _drop_surrogates(chunk.get("text") or "")
                 kind = kind_of or _classify_page(md, dv.text_layer)
                 section = feed(chunk.get("toc_items"))
                 db.add(M.DatasheetPage(
@@ -223,20 +240,37 @@ def start_index(mode: str = "missing", version_id: int | None = None) -> bool:
     return True
 
 
+# One extraction at a time, process-wide. `index_one` is fire-and-forget per
+# STORED version, so a bulk fetch — the nightly `start_fetch_all("all")` walks
+# all 678 datasheets — used to spawn one unbounded thread per changed document.
+# A single pymupdf4llm extraction was measured at 400-450 MB peak even on a
+# 10-page, 1.6 MB PDF, so a dozen at once is ~6 GB: the API was OOM-killed four
+# times in August on a 8 GB host, each time at 6.9-7.5 GB anon-rss, and because
+# no container carried a memory limit the kernel picked its victim host-wide.
+# Serialising costs nothing on a 2-core box: extraction is CPU-bound, so the
+# threads were never really running in parallel, only holding memory at once.
+_EXTRACT_SLOT = threading.BoundedSemaphore(1)
+
+
 def index_one(version_id: int) -> None:
     """Index a single version in a daemon thread. Called after a document is
     stored: a 642-page document is minutes of work and must never sit inside
-    the upload request."""
+    the upload request.
+
+    The thread waits its turn on `_EXTRACT_SLOT`, so a bulk fetch queues
+    instead of running every document at once."""
     def run() -> None:
-        db = SessionLocal()
-        try:
-            dv = db.get(M.DatasheetVersion, version_id)
-            if dv is not None:
-                extract_version(db, dv)
-        except Exception as e:  # noqa: BLE001 — indexing must never break a store
-            log.warning(f"page indexing of version {version_id} failed: {e}")
-        finally:
-            db.close()
+        with _EXTRACT_SLOT:
+            db = SessionLocal()
+            try:
+                dv = db.get(M.DatasheetVersion, version_id)
+                if dv is not None:
+                    extract_version(db, dv)
+            except Exception as e:  # noqa: BLE001 — indexing must never break a store
+                log.warning(f"page indexing of version {version_id} failed: {e}")
+            finally:
+                db.close()
+                memory.trim()
 
     threading.Thread(target=run, daemon=True).start()
 
@@ -274,7 +308,8 @@ def _index_worker(mode: str, version_id: int | None) -> None:
                     db.expunge(dv)
                     continue
                 if dv is not None:
-                    res = extract_version(db, dv)
+                    with _EXTRACT_SLOT:
+                        res = extract_version(db, dv)
                     INDEX_STATE["pages"] += res["pages"]
                     if res.get("error"):
                         INDEX_STATE["errors"] += 1
@@ -286,6 +321,9 @@ def _index_worker(mode: str, version_id: int | None) -> None:
                 INDEX_STATE["last_error"] = f"version {dv_id}: {e}"
                 log.warning(f"page indexing of version {dv_id} failed: {e}")
             INDEX_STATE["done"] += 1
+            # A 31 MB PDF plus its pymupdf render buffers has just been freed
+            # into this thread's arena, where it would stay. See services/memory.
+            memory.trim()
             time.sleep(0.02)  # leave the API responsive during the backfill
     finally:
         db.close()

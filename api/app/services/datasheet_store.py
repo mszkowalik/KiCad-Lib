@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as M
 from ..db import SessionLocal
+from . import memory
 
 log = logging.getLogger(__name__)
 
@@ -552,6 +553,7 @@ def _fetch_all_worker(mode: str) -> None:
                 FETCH_STATE["errors"] += 1
                 FETCH_STATE["last_error"] = f"datasheet {ds_id}: {e}"
             FETCH_STATE["done"] += 1
+            memory.trim()  # a downloaded document was just freed — see services/memory
             time.sleep(0.3)  # be polite to supplier servers
         # Newly local PDF copies change the generated Datasheet links —
         # refresh all mirror symbol libraries once at the end of the run.
@@ -637,6 +639,7 @@ def _classify_worker(mode: str) -> None:
                 CLASSIFY_STATE["last_error"] = f"datasheet version {dv_id}: {e}"
                 log.warning(f"text-layer classification of version {dv_id} failed: {e}")
             CLASSIFY_STATE["done"] += 1
+            memory.trim()  # give the freed blob back to the OS, not to the arena
             time.sleep(0.02)  # leave the API responsive during the startup sweep
     finally:
         db.close()

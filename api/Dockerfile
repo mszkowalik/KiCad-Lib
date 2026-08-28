@@ -30,5 +30,12 @@ COPY cli ./cli
 COPY kiutils ./kiutils
 RUN pip install --no-cache-dir .
 
+# Cap glibc malloc arenas. The datasheet sweeps and read_datasheet run in
+# daemon threads over ~1 GB of PDF blobs, and glibc hands every thread its own
+# arena that grows in 64 MB heaps and never shrinks. Unset, this container was
+# observed holding 67 heaps -- 4.2 GB of arena for ~48 MB of live objects.
+# The trim half of the fix is services/memory.py; both are needed.
+ENV MALLOC_ARENA_MAX=2
+
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -22,6 +22,7 @@ from .. import models as M
 from ..config import settings
 from ..db import SessionLocal
 from ..routers.util import category_path, current_version, props_dict, resolved_value
+from ..services import memory
 from ..services.generator import PRICE_KEY_TO_COL
 from ..services.lcsc import fetch_metadata
 
@@ -505,6 +506,10 @@ def read_datasheet(component: str, pages: str = "", datasheet_label: str = "") -
             return blocks
         finally:
             doc.close()
+            # read_datasheet is the agents' hottest path and each call frees a
+            # whole PDF plus 2x-scale pixmaps. Without this the arena keeps
+            # every one of them (see services/memory).
+            memory.trim()
     finally:
         db.close()
 
