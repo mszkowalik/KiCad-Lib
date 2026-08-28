@@ -44,6 +44,19 @@ def _refresh_mirror(db: Session) -> list[str]:
     return result.get("warnings", [])
 
 
+def _versions(db: Session, model: M.SimModel) -> list[M.SimModelVersion]:
+    """Query the version rows instead of reading `model.versions`.
+
+    The session runs `expire_on_commit=False` and a version added here is not
+    appended to an already-loaded relationship, so `model.versions` goes stale
+    the moment this module adds one. Reading it made `write_sim_lib` — which
+    runs in THIS session after the commit — look for `current_version_id` in a
+    collection that did not hold it, so the mirror silently omitted whichever
+    model was published last. Same trap as `services/repoint.py`.
+    """
+    return db.query(M.SimModelVersion).filter_by(sim_model_id=model.id).all()
+
+
 def propose_sim_model_version(
     db: Session, name: str, source_text: str, comment: str, actor: str = "jaravis",
     kind: str | None = None, refresh: bool = True,
@@ -77,12 +90,13 @@ def propose_sim_model_version(
     elif kind and kind != model.kind:
         model.kind = kind
 
-    cur = next((v for v in model.versions if v.id == model.current_version_id), None)
+    existing = _versions(db, model)
+    cur = next((v for v in existing if v.id == model.current_version_id), None)
     if cur is not None and cur.source_text == source_text:
         return {"ok": True, "model": name, "version_no": cur.version_no,
                 "status": "unchanged — identical to the published version"}
 
-    new_no = max((v.version_no for v in model.versions), default=0) + 1
+    new_no = max((v.version_no for v in existing), default=0) + 1
     mv = M.SimModelVersion(
         sim_model_id=model.id, version_no=new_no, source_text=source_text,
         parsed=parsed, status="published", created_by=actor, comment=comment or None,

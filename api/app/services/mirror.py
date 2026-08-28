@@ -283,7 +283,21 @@ def write_sim_lib(db: Session, settings: Settings) -> int:
     few KB) — regenerating it on every mirror write costs nothing worth a
     cache.
     """
-    rows = db.execute(select(M.SimModel).options(selectinload(M.SimModel.versions))).scalars().all()
+    # populate_existing: the mirror states what the DATABASE holds, so it must
+    # not read a stale collection left in the identity map by a writer earlier
+    # in the same session. Without it a just-published version is invisible
+    # here, because expire_on_commit is False and selectinload will not
+    # overwrite a relationship that is already loaded on an identity-mapped
+    # object.
+    rows = (
+        db.execute(
+            select(M.SimModel)
+            .options(selectinload(M.SimModel.versions))
+            .execution_options(populate_existing=True)
+        )
+        .scalars()
+        .all()
+    )
     chunks: list[str] = [
         "* 7Sigma simulation library — GENERATED from the platform, do not edit.",
         "* Simplified functional models: logic, rail and pin behaviour only.",
