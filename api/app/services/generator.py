@@ -347,6 +347,39 @@ def sim_props(link: dict | None) -> list[dict]:
     ]
 
 
+# SPICE's own primitive letters. A symbol whose reference prefix is one of
+# these needs NO model: `R116 /SAFETY/SI1 Net-_D15-C_ 100k` is complete SPICE,
+# built by KiCad from the reference prefix and the Value field. `#PWR` items
+# are not devices at all — they are how GND and 3V3 get their net names.
+# Every OTHER symbol with no sim link emits `U47 __U47`, an element with an
+# undefined model, and ngspice stops the run.
+SIM_NATIVE_PREFIXES = {"R", "C", "L", "#PWR"}
+
+
+def set_exclude_from_sim(symbol, linked: bool) -> None:
+    """Force `exclude_from_sim` from the link set. DERIVED state, not authored.
+
+    Forced in both directions on purpose: a symbol that gains a model must stop
+    being excluded, or it would stay silently absent from every netlist.
+
+    What this must NOT exclude, and why:
+
+    - Native primitives and power symbols (above). Excluding a resistor deletes
+      94 of the 132 elements in the SAFETY deck.
+    - Two-pin SERIES parts — fuse, polyfuse, ferrite bead, NTC. Those are
+      modelled (`sigma_fuse`, `sigma_ferrite`, `sigma_ntc`) rather than
+      excluded, because dropping a series element turns a live rail into an
+      open circuit with NO error, which is worse than the loud failure a
+      missing model gives.
+    - A STALE link, which still counts as linked here. Its `Sim.*` fields are
+      withheld by `sim_props`, so the netlist fails loudly — excluding the part
+      instead would mute exactly the alarm the staleness warning exists to
+      raise.
+    """
+    ref = next((p.value for p in (symbol.properties or []) if p.key == "Reference"), "")
+    symbol.exclude_from_sim = not (linked or ref in SIM_NATIVE_PREFIXES)
+
+
 def injected_props(datasheets) -> list[dict]:
     """Datasheets live in their own table, but are injected back into
     generated symbols (and the KiCad HTTP library). First datasheet ->

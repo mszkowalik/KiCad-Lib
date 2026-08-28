@@ -2,7 +2,7 @@
 name: kicad-conventions-simulation
 description: "Authoring simulation models and symbol links: the sigma_ namespace, parameter naming from datasheet symbols (V_BR at test current, never V_RWM), mandatory pin maps and the NC sentinel, per-component Sim.Params, switch drive modes (static / alter / PWL), scenario .control blocks, and the ngspice convergence traps. Use when writing a sim model, linking a symbol, or setting Sim.Params."
 ---
-<!-- platform-skill: conventions-simulation v1 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-simulation v2 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Simulation model conventions
 
 Simulation models are versioned library objects, like symbols and footprints.
@@ -21,6 +21,23 @@ fine. Referencing their file is not — KiCad 10 ships models that point at
 `${KICAD9_SYMBOL_DIR}`, which is already broken. Our path
 (`${SEVENSIGMA_DIR}/…`, rewritten to the PCM install path at serve time) is
 under our control.
+
+## Ask before you model — and always fill the params
+
+Simulation is not automatic and must not be added silently.
+
+1. **Creating a component, creating a symbol, or editing a symbol, where the
+   base symbol has NO sim link** — ask the user whether to add simulation
+   capability, and say in one line what a model would cover. Do not add one
+   unasked, and do not skip the question because the part looks boring.
+2. **The base symbol ALREADY has a link** — do not ask again. Instead do the
+   per-component half of the job: read the datasheet and write `Sim.Params`
+   for this part. A component with no row silently runs on the model's
+   defaults, which belong to whichever part the model was authored against.
+   That is how a 3 V Schottky ends up simulated as a 0.9 V silicon diode.
+3. **Editing a symbol's pins** — the link goes stale and the Sim fields stop
+   being emitted. Re-save the link to confirm the map still means what its
+   author intended. Do not "fix" staleness by deleting the link.
 
 ## Authoring a model
 
@@ -99,6 +116,121 @@ One primitive, three drive modes — pick per scenario, not per model:
 - KiCad nets are named with a leading slash: probe `v(/sig)`, not `v(sig)`.
 - The pulse-source width parameter is `tw` in KiCad, not `pw`. A `pw` is
   silently dropped.
+
+## Every number is read, never inferred
+
+- Take each figure from the part's own datasheet. A sibling variant's row is
+  not evidence: the table that says "peak" for one suffix says "continuous"
+  for another, and a dual-channel row is not a single-channel rating.
+- **Show the arithmetic in the version comment** when a parameter is derived
+  rather than quoted. A later reader must be able to redo it.
+- Anything you could not confirm carries the word **placeholder** in the
+  comment AND names what would confirm it. A default nobody has checked is
+  fine; a default nobody knows is unchecked is not.
+- State the condition with the value. `TON=55u` is meaningless without
+  "max, from the BTS723GW switching table".
+
+## Say what the model does NOT do
+
+The header comment must name every behaviour left out, and why. This is not
+politeness — it is the only thing standing between a reader and a confident
+wrong answer. Write it for the person who will trust the plot.
+
+Rank what you leave out by how quietly it lies:
+
+| Left out | Consequence |
+|---|---|
+| A series element deleted | The net silently opens. **Never acceptable** — model it. |
+| A current limit | A fault sim reports a current the part cannot deliver. |
+| A protection or enable pin | A shutdown the design relies on does nothing. |
+| Frequency-dependent behaviour | An EMI or ripple result is meaningless. |
+| Self-heating, tolerance, ageing | Usually fine; say so anyway. |
+
+## Prefer a loud failure to a quiet wrong answer
+
+- **Never exclude a two-pin part that sits in series with a net.** Fuses,
+  polyfuses, ferrite beads and NTCs are modelled (`sigma_fuse`,
+  `sigma_ferrite`, `sigma_ntc`) precisely because excluding one opens a live
+  rail with no error at all. A missing model fails loudly; a missing
+  connection does not.
+- **Do not model a pin whose polarity you cannot confirm.** Guessing an
+  enable's sense inverts a shutdown silently. Map it to `-`, and say in the
+  header that the pin is not modelled and what would settle it.
+- **Do not model current limiting by feeding output current back into the
+  source.** That is combinational feedback and the transient aborts. Leave
+  the limit out and say so.
+
+## exclude_from_sim is DERIVED — never hand-edit it
+
+The mirror sets `exclude_from_sim` on every generated symbol from the link
+set. A symbol is left simulatable when it has a link, or when its reference
+prefix is `R`, `C`, `L` or `#PWR` — SPICE builds those from the Value field
+with no model, and power symbols are net names, not devices. Everything else
+with no link is excluded, because it would otherwise emit `U47 __U47` and
+stop the run.
+
+Consequences you must know:
+
+- **Setting the flag by hand in a schematic does not last.** `Update Symbols
+  from Library` restores what the library says. Fix it by linking a model.
+- A **stale** link still counts as linked, on purpose: its Sim fields are
+  withheld, so the netlist fails loudly instead of quietly dropping a part
+  that should have been there.
+
+## Comment character: `;`, never `$`
+
+KiCad runs its embedded ngspice with `ngbehavior=ps lt a`. In that mode `$`
+is NOT a comment: numparam feeds the text to the expression parser and the
+model fails to load with `Undefined parameter [t]` from something as
+innocent as `$ V_IN(T+) 1.2..2.2 V`. `;` parses in every mode. Own-line `*`
+comments are always safe.
+
+Test a new model BOTH ways before publishing. Put `set ngbehavior=pslta` in
+`<dir>/scripts/spinit` and run `SPICE_LIB_DIR=<dir> ngspice -b model.cir` —
+that reproduces KiCad's parser without opening KiCad.
+
+## Power modules (DC/DC bricks)
+
+An ideal voltage source is the wrong model for a brick and hides the failure
+these parts actually cause. Decide first which kind it is; the datasheet says
+so in words.
+
+**Unregulated** (YLPTEC `A_S-2W`, `A_S-1WR3`, `B_S-1WR3` — "isolated
+unregulated output"). The output is a winding and a rectifier, so it RISES at
+light load and follows the input ratio. Model it as an open-circuit voltage
+behind a series resistance, both derived from the load-regulation row:
+
+```
+ROUT = VNOM * REGL / (0.9 * IOMAX)      VOC = VNOM * (1 + REGL / 0.9)
+```
+
+`REGL` is the 10%-to-100% load regulation, `VNOM` the rated output at full
+load, `IOMAX` the rated current PER RAIL. That reproduces the datasheet at
+both ends by construction. `KLINE` is the line-regulation slope — fractional
+output change per fractional input change — and for an unregulated brick it
+is near 1, because the output is the input times a turns ratio.
+
+**Below the stated minimum load the output keeps climbing.** That is real,
+and simulating it is the main reason to model the part at all.
+
+**Regulated** (MEAN WELL `NID65`). A stiff source with a small series
+resistance from the load-regulation figure, plus the input range as a soft
+cutoff.
+
+For every brick, model as well:
+
+- **Input current from the output power**, not a constant:
+  `Iin = Pout/EFF/Vin + INL`, with `INL` the no-load input current. Check it
+  against the datasheet's own full-load input current row — if the two do not
+  agree, one of your numbers is wrong.
+- **Isolation** as a large resistance and the stated isolation capacitance
+  between input return and output return. Without a path the matrix is
+  singular.
+- A **soft** input cutoff (`tanh`), so the operating point has no step.
+
+Verify against the datasheet at three points before publishing: full load,
+10% load, and open circuit — plus the input current at full load and no load.
+Put those measured numbers in the version comment.
 
 ## Convergence rules that cost us hours
 

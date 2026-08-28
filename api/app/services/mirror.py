@@ -30,6 +30,7 @@ from .generator import (
     injected_props,
     load_symbol_lib_from_text,
     property_row_to_dict,
+    set_exclude_from_sim,
     sim_props,
     version_prop,
 )
@@ -71,7 +72,14 @@ def _base_symbol_fingerprint(db: Session) -> str:
     rows = db.execute(
         select(M.Symbol.id, M.Symbol.current_version_id).order_by(M.Symbol.id)
     ).all()
-    return hashlib.sha256(repr(rows).encode()).hexdigest()
+    # The base library also carries exclude_from_sim, which set_exclude_from_sim
+    # DERIVES from the link set — so adding or removing a link changes this file
+    # even when no symbol version moved. Without the links in the fingerprint the
+    # flag lags until some unrelated symbol happens to be edited.
+    links = db.execute(
+        select(M.SymbolSimLink.symbol_id).order_by(M.SymbolSimLink.symbol_id)
+    ).all()
+    return hashlib.sha256(repr((rows, links)).encode()).hexdigest()
 
 
 def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | None = None) -> dict:
@@ -152,9 +160,11 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
                     + version_prop(cv.version_no, sv.version_no,
                                    fp_ver_no.get(cv.footprint_version_id))
                 )
-                syms.append(
-                    build_component_symbol(template, comp.name, props, cv.removed_properties, warnings)
+                built = build_component_symbol(
+                    template, comp.name, props, cv.removed_properties, warnings
                 )
+                set_exclude_from_sim(built, sv.symbol_id in sim_links)
+                syms.append(built)
                 component_count += 1
             except Exception as e:
                 warnings.append(f"{comp.name}: generation failed — {e}")
@@ -189,6 +199,7 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
                 if entry is None and lib.symbols:
                     entry = lib.symbols[0]
                 if entry is not None:
+                    set_exclude_from_sim(entry, sym.id in sim_links)
                     base_syms.append(entry)
             except Exception as e:
                 warnings.append(f"base symbol {sym.name}: mirror generation failed — {e}")

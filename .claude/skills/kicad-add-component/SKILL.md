@@ -2,7 +2,7 @@
 name: kicad-add-component
 description: "Full procedure for adding a part to the 7Sigma library: duplicate check, LCSC metadata lookup, category/base-symbol/footprint selection, property construction, the per-category rules a version must satisfy BEFORE you publish it (nothing gates a bad one), and what still has to be done by hand afterwards. Use when adding, editing or publishing any component."
 ---
-<!-- platform-skill: add-component v16 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: add-component v17 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Add a component
 
 End-to-end procedure for adding a part to the 7Sigma library. Every write
@@ -323,9 +323,32 @@ So this is not a gate you can lean on — it is a list to satisfy first.
 When unsure what a category needs, copy the shape from an existing component in
 it — never invent a property key.
 
+## Simulation: ask once, then fill the params
+
+Every part you add or edit falls into one of two cases. Check with
+`list_sim_models` / `get_symbol` which one, and never skip the step.
+
+**The base symbol has NO sim link.** Ask the user whether they want
+simulation capability for it, and say in one line what a model would cover
+(for a DC/DC brick: the light-load rise and the input current; for a
+comparator: the window and the open-drain output). Do not add one unasked,
+and do not decide on their behalf that the part is too dull to model. If they
+say yes, follow [[conventions-simulation]] — that document owns the standard.
+
+**The base symbol ALREADY has a link.** Do not ask. Do the per-component half
+instead: read the datasheet and write this part's own `Sim.Params` row. A
+component with no row runs on the model's defaults, which belong to whichever
+part the model was authored against — that is how a Schottky gets simulated
+with a silicon forward drop, and nothing warns you. Every key must be one the
+linked model declares, or the validator rejects the version.
+
+This applies to editing too. Adding `Sim.Params` to an existing part is
+usually the highest-value edit you can make to it.
+
 ## Related
 
 [[conventions-library]] — naming, descriptions, category placement.
 [[conventions-symbols]] / [[conventions-footprints]] — choosing and authoring geometry.
 [[verify-datasheets]] — checking the part against its documentation.
+[[conventions-simulation]] — models, symbol links and Sim.Params.
 [[platform-workflow]] — what a publish sets in motion.

@@ -2,7 +2,7 @@
 name: kicad-conventions-symbols
 description: "Choosing AND authoring base symbols: pin-type directionality from the component's own viewpoint, V.24 UART and SPI role policy, functional pin grouping, box/pitch geometry formulas, and stacked (shorted) pins. Use when picking a base symbol or writing a propose_symbol_edit."
 ---
-<!-- platform-skill: conventions-symbols v8 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-symbols v9 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Symbol conventions
 
 Every component is built on a **base symbol** — a graphical template with pins.
@@ -411,3 +411,21 @@ reviewer checked.
 
 See [[add-component]] for where symbol choice fits in the full part-creation
 procedure, and [[platform-workflow]] for what happens after publishing.
+
+## 8. Simulation
+
+A symbol is what a simulation model attaches to — the link is keyed on the
+symbol, not on the component, so one link covers every part built from this
+drawing.
+
+- **Creating a symbol, or editing one that has no link:** ask the user
+  whether to add simulation capability. Do not add one unasked.
+- **Editing the PINS of a symbol that has a link:** the link goes stale, and
+  the mirror withholds the Sim fields from every component using it until
+  someone re-confirms the map. Re-save the link in the same session; do not
+  leave it stale and do not delete it to silence the warning.
+- Pin ELECTRICAL TYPES are part of the link fingerprint too, not just numbers
+  and positions. Changing `passive` to `power_in` flags the link.
+
+The standard for the model itself lives in [[conventions-simulation]].
+

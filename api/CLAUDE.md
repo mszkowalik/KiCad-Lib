@@ -1416,6 +1416,32 @@ every component of that symbol. Facts that are not obvious from the code:
   prepended in the generator, so a per-component property with the same key
   wins. Datasheet numbers (GAIN, V_BR at test current, TPD…) belong on
   components as `Sim.Params`; topology belongs in the model.
+- **`exclude_from_sim` is DERIVED, never authored** (`generator.set_exclude_from_sim`,
+  applied to both the base library and the per-category libs). A generated symbol
+  stays simulatable when it has a link, or when its reference prefix is `R`, `C`,
+  `L` or `#PWR` — SPICE builds those from the Value field with no model at all
+  (`R116 … 100k` is a complete element), and power symbols are net names, not
+  devices. Everything else with no link is excluded, because it would otherwise
+  emit `U47 __U47` and stop the run. Three consequences:
+  - **`_base_symbol_fingerprint` hashes the LINK SET as well as symbol versions.**
+    Without that the base library is skipped when only a link moved, and the flag
+    lags until some unrelated symbol is edited.
+  - **A stale link still counts as linked.** Its Sim fields are withheld, so the
+    netlist fails loudly rather than quietly dropping a part that belongs there.
+  - **Never exclude a two-pin part in series with a net.** A fuse, polyfuse,
+    ferrite bead or NTC that is excluded opens a live rail with NO error, which is
+    worse than the loud failure a missing model gives — hence `sigma_fuse`,
+    `sigma_ferrite` and `sigma_ntc`, which are one resistor each and exist purely
+    to keep the net connected.
+- **KiCad's embedded ngspice runs `ngbehavior=ps lt a`** (Compatibility mode
+  "PSpice and LTSpice", `schematic.ngspice.model_mode` 4 in the `.kicad_pro`; 0 is
+  "User configuration" and applies no flags). In that mode `$` is NOT a comment —
+  numparam feeds the text to the expression parser and the model fails to load —
+  and an XSPICE `.model … adc_bridge` inside a subcircuit does not resolve. Use
+  `;` for in-line comments, and reproduce that parser without KiCad by putting
+  `set ngbehavior=pslta` in `<dir>/scripts/spinit` and running
+  `SPICE_LIB_DIR=<dir> ngspice -b …`. KiCad's bundled ngspice is 45.2, not
+  whatever is on PATH.
 - **Model names are the namespace**: `sigma_` prefix enforced
   (`sim_store.NAME_RE`), row name must equal the `.subckt` name, and per-model
   `kind` separates `part` (linkable) from `primitive` (building block —
