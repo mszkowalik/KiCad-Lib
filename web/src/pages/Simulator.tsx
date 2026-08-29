@@ -505,7 +505,12 @@ export default function Simulator() {
             ) : null}
             <span className="pill neutral">{plot.name}</span>
             <span className="muted">
-              {plot.scale.length} points · {eng(duration, plot.scaleType === "time" ? "s" : "Hz")}
+              {plot.scale.length === 1
+                ? "a single solution"
+                : `${plot.scale.length} points · ${eng(
+                    duration,
+                    plot.scaleType === "time" ? "s" : "Hz",
+                  )}`}
               {plot.decimated ? " · decimated to a min/max envelope" : ""}
             </span>
           </>

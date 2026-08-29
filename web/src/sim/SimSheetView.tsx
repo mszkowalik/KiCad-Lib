@@ -265,9 +265,14 @@ export default function SimSheetView({
       </div>
       {reader ? (
         <p className="muted sim-caption">
+          {/* An operating point has no sweep axis at all: its "scale" is
+              whichever vector ngspice listed first, so printing a position
+              for one invents a frequency out of a node voltage. */}
           {reader.scaleType === "time"
             ? `t = ${eng(reader.position, "s")}`
-            : `f = ${eng(reader.position, "Hz")}`}
+            : reader.scaleType === "frequency"
+              ? `f = ${eng(reader.position, "Hz")}`
+              : "one operating point"}
           {" · click a wire to plot it"}
         </p>
       ) : null}
