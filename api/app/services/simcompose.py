@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import re
 
-from .simmodel import NC, _POWER_PIN_TYPES, _RAIL_PORTS
+from .simmodel import NC, _POWER_PIN_TYPES, is_rail_port
 
 # Reserved name space for generated wrappers. A hand-written model may not use
 # it, so `sigma_sym_*` in the mirror always means "nobody typed this".
@@ -319,12 +319,12 @@ def validate_composition(composition: dict, symbol_pins: list[dict], catalog: di
                 continue
             ptype = pins.get(node, {}).get("type", "")
             low = str(port).lower()
-            if low in _RAIL_PORTS and ptype not in _POWER_PIN_TYPES:
+            # One half only, and see validate_pin_map for why the other went:
+            # it flagged a flip-flop's `pren` tied to VCC, which is how you
+            # build a flip-flop with no preset.
+            if is_rail_port(low) and ptype not in _POWER_PIN_TYPES:
                 warn(f"block {ref}: rail port {low!r} is fed by pin {node}, which is "
                      f"{ptype or 'untyped'}")
-            elif low not in _RAIL_PORTS and ptype == "power_in":
-                warn(f"block {ref}: signal port {low!r} is fed by pin {node}, which is "
-                     "power_in")
 
     _, param_problems = wrapper_params(composition, catalog)
     problems += param_problems
