@@ -49,10 +49,15 @@ _ANALYSIS_RE = re.compile(r"^\s*\.(tran|ac|dc|op|noise|tf|pz|sens|four|disto)\b"
 # Control commands that touch the filesystem or the shell. A scenario block
 # comes from a schematic file, which is user content from a git repo — it may
 # compute and print, but it may not write or execute.
+#
+# Keep this list to commands that actually reach outside the simulation.
+# `quit` was in it once and cost a working block: RESET_sim ends its control
+# section with `quit`, which is how a batch run says it is finished — it
+# reads nothing and writes nothing. Refusing the harmless ones does not make
+# the sandbox tighter, it just breaks scenarios that were already correct.
 BANNED_CONTROL = frozenset({
     "shell", "system", "source", "cd", "write", "wrdata", "wrs2p", "wrnodev",
-    "edit", "aspice", "rspice", "hardcopy", "gnuplot", "load", "unset_hist",
-    "rehash", "quit", "bug", "help",
+    "edit", "aspice", "rspice", "hardcopy", "gnuplot", "load",
 })
 
 

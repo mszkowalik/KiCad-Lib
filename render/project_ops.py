@@ -240,17 +240,21 @@ def run_op(
 
     if op == "sim_run":
         netlist_text, _ = run_op(kicad_cli, "sch_spice", src, out_dir, variant=variant, env=env)
-        prepared, info = sim_spice.prepare_netlist(
-            netlist_text.decode("utf-8", "replace"), control=control, analysis=analysis,
-        )
-        with tempfile.TemporaryDirectory() as sim_dir:
-            try:
+        try:
+            # prepare_netlist refuses a control block that reaches outside the
+            # simulation, and that refusal is a message for the user — it has
+            # to travel as an OpError like every other failure here, or the
+            # render service answers a bare 500 with nothing in it.
+            prepared, info = sim_spice.prepare_netlist(
+                netlist_text.decode("utf-8", "replace"), control=control, analysis=analysis,
+            )
+            with tempfile.TemporaryDirectory() as sim_dir:
                 raw, log = sim_spice.run_ngspice(
                     prepared, sim_dir, ngspice=ngspice, timeout=timeout, env=env,
                 )
                 plots = sim_spice.parse_raw(raw)
-            except sim_spice.SimError as e:
-                raise OpError(str(e)) from e
+        except sim_spice.SimError as e:
+            raise OpError(str(e)) from e
         return sim_spice.encode_payload(plots, info=info, log=log), MEDIA[op]
 
     raise OpError(f"unknown op: {op}")
