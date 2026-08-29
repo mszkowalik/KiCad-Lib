@@ -114,11 +114,24 @@ def model_material_sha(source_text: str) -> str:
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
-# Port names that mean "this is a supply rail". A rail port should be claimed
-# by a power pin and vice versa — the one cheap semantic check available,
-# since a swapped pair is otherwise a perfectly valid permutation.
-_RAIL_PORTS = {"vcc", "vdd", "vee", "vss", "gnd", "vbb", "spu", "agnd", "dgnd", "vbat", "vin"}
+# Port names that mean "this is a supply rail". A rail port claimed by a
+# SIGNAL pin is the one cheap semantic check available, since a swapped pair is
+# otherwise a perfectly valid permutation.
+#
+# Matched by shape, not by a flat list: a rail stem plus an optional channel
+# number or polarity letter. A list missed `vdd1`, `gnd2`, `vcc1`, `vinp`,
+# `vinn` and `vs`, which are as plainly rails as the stems themselves.
+_RAIL_STEMS = (
+    "vcc", "vdd", "vee", "vss", "vbb", "vbat", "vin", "vout", "vs", "spu",
+    "avdd", "dvdd", "avcc", "dvcc", "gnd", "agnd", "dgnd", "pgnd",
+)
+_RAIL_RE = re.compile(rf"^(?:{'|'.join(_RAIL_STEMS)})(?:[0-9]+|[pn])?$")
 _POWER_PIN_TYPES = {"power_in", "power_out"}
+
+
+def is_rail_port(port: str) -> bool:
+    """Does this port name mean a supply rail?"""
+    return bool(_RAIL_RE.match(str(port).strip().lower()))
 
 
 def link_material_sha(symbol_pins: list[dict]) -> str:
@@ -205,13 +218,20 @@ def validate_pin_map(pin_map: dict, symbol_pins: list[dict], ports: list[str]) -
         if port == NC:
             continue
         ptype = types.get(num, "")
-        if port in _RAIL_PORTS and ptype not in _POWER_PIN_TYPES:
+        if is_rail_port(port) and ptype not in _POWER_PIN_TYPES:
             warn(f"pin {num} is {ptype or 'untyped'} but maps to rail port {port!r}")
-        elif port not in _RAIL_PORTS and ptype == "power_in":
-            # `power_out` on a signal port is NOT suspicious: a regulator or a
-            # high-side switch output really is a power output on a port
-            # called `out`. Only a supply INPUT landing on a signal port is.
-            warn(f"pin {num} is power_in but maps to signal port {port!r}")
+    # The mirror check — "a power_in pin on a port that is not rail-shaped" —
+    # USED TO LIVE HERE and is gone. It cannot tell an LDO's `in` from an
+    # op-amp's `in+`, because the difference is in the model and not in the
+    # name, so no widening of the rail set could fix it. It reported sixteen
+    # correctly wired links across this library and, in that time, not one
+    # real fault: an LDO's `in`/`out`, a flip-flop's `pren` tied high, a
+    # brick's `vinp`/`vinn`.
+    #
+    # Nothing is lost. Each port takes exactly ONE pin, so a supply pin landing
+    # on a signal port displaces some other pin onto the real rail port — and
+    # that pin is not a power pin, which is what the surviving check above is
+    # for. The swap is still caught, from the side that can be judged by name.
     return problems
 
 
