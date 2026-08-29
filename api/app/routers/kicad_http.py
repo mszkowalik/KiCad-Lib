@@ -24,6 +24,7 @@ from ..db import get_db
 from ..services.generator import (
     base_hidden_maps,
     base_reference_prefixes,
+    build_excluded,
     injected_props,
     schematic_field_visibility,
     sim_excluded,
@@ -32,6 +33,7 @@ from ..services.generator import (
 )
 from ..services.mirror import HIDDEN_LIFECYCLE, resolve_sim_links
 from ..services.pcm import SIM_LIB_INSTALLED
+from ..services.mirror import top_level_of
 from .util import category_path, props_dict, resolved_value
 
 router = APIRouter(prefix="/kicad/v1", tags=["kicad-http-library"])
@@ -137,7 +139,7 @@ def datasheets_by_component(db: Session, comp_ids) -> dict[int, list[M.Datasheet
 
 
 def part_payload(cv, sheets: list[M.Datasheet], visible: dict[str, bool], sim_link: dict | None = None,
-                 reference_prefix: str = "") -> dict:
+                 reference_prefix: str = "", top_category: str = "") -> dict:
     """One part in KiCad's part shape — the SAME body for the per-part endpoint
     and for each entry of a category listing.
 
@@ -210,6 +212,11 @@ def part_payload(cv, sheets: list[M.Datasheet], visible: dict[str, bool], sim_li
         # part with no model keep re-entering the netlist as `U47 __U47`
         # after every symbol update.
         "exclude_from_sim": "true" if sim_excluded(reference_prefix, sim_link is not None) else "false",
+        # Simulation-only parts, by the same must-be-stated argument: a harness
+        # sheet lives in the same project as the board, so a stimulus part that
+        # does not say it is off the BOM lands in the purchase order.
+        "exclude_from_bom": "true" if build_excluded(top_category) else "false",
+        "exclude_from_board": "true" if build_excluded(top_category) else "false",
         "fields": fields,
     }
 
@@ -231,6 +238,7 @@ def part_payloads(db: Session, versions: list) -> list[dict]:
             schematic_field_visibility(db, cv, bases.get(cv.base_component) or {}),
             sim_links.get(cv.symbol_version.symbol_id) if cv.symbol_version else None,
             refs.get(cv.base_component, ""),
+            top_level_of(cv.category).name if cv.category else "",
         )
         for cv in versions
     ]

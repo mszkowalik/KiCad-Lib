@@ -394,6 +394,38 @@ def sim_excluded(reference_prefix: str, linked: bool) -> bool:
     return not (linked or reference_prefix in SIM_NATIVE_PREFIXES)
 
 
+# A top-level category whose parts exist ONLY to drive a simulation: a sensor
+# stimulus, a vehicle emulator, a load. They are placed on a `*_sim` harness
+# sheet beside the real sheets, so they must never reach a bill of materials
+# or a board. Same shape as the sim rule above — DERIVED from where the part
+# lives, never authored per component, so nobody has to remember it.
+SIM_ONLY_CATEGORY = "Simulation"
+
+
+def build_excluded(top_category: str) -> bool:
+    """True for a part that must stay off the BOM and off the board."""
+    return top_category == SIM_ONLY_CATEGORY
+
+
+def set_build_exclusions(symbol, top_category: str) -> None:
+    """Force `in_bom` and `on_board` from the top-level category.
+
+    Forced in both directions, like `set_exclude_from_sim`: moving a part OUT
+    of Simulation must put it back on the board, or it would stay silently
+    absent from every export.
+
+    Stated explicitly rather than left absent, for the same reason the sim flag
+    is: KiCad reads an absent attribute as "included", and `Update Symbols from
+    Library` rewrites the schematic instance from the library record. A
+    simulation-only part would otherwise reappear in the BOM after every
+    symbol update, and the harness sheets are included in the same project as
+    the board.
+    """
+    excluded = build_excluded(top_category)
+    symbol.inBom = not excluded
+    symbol.onBoard = not excluded
+
+
 _BASE_REF_BY_SYMBOL_VERSION: dict[int, str] = {}
 
 

@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session, selectinload
 from .. import models as M
 from ..config import Settings
 from .generator import (
+    SIM_ONLY_CATEGORY,
     BaseSymbolProvider,
     build_component_symbol,
     build_library_text,
@@ -30,6 +31,7 @@ from .generator import (
     injected_props,
     load_symbol_lib_from_text,
     property_row_to_dict,
+    set_build_exclusions,
     set_exclude_from_sim,
     sim_props,
     version_prop,
@@ -79,7 +81,15 @@ def _base_symbol_fingerprint(db: Session) -> str:
     links = db.execute(
         select(M.SymbolSimLink.symbol_id).order_by(M.SymbolSimLink.symbol_id)
     ).all()
-    return hashlib.sha256(repr((rows, links)).encode()).hexdigest()
+    # It also carries in_bom / on_board, which set_build_exclusions DERIVES from
+    # which categories a base symbol's components sit in. Moving the last
+    # component out of Simulation changes this file with no symbol version
+    # touched, so the category of every published component belongs here too.
+    cats = db.execute(
+        select(M.ComponentVersion.id, M.ComponentVersion.category_id)
+        .order_by(M.ComponentVersion.id)
+    ).all()
+    return hashlib.sha256(repr((rows, links, cats)).encode()).hexdigest()
 
 
 def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | None = None) -> dict:
@@ -134,6 +144,19 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
         select(M.FootprintVersion.id, M.FootprintVersion.version_no)
     ).all())
     sim_links = resolve_sim_links(db, warnings)
+    # Base symbols drawn ONLY by simulation-only components. A template
+    # shared with a real part stays on the board — the per-component
+    # category libraries and the HTTP record carry the exact answer, and
+    # this file is only the fallback drawing.
+    tops_by_symbol: dict[int, set[str]] = {}
+    for comp, cv in [pair for pairs in by_top.values() for pair in pairs]:
+        if cv.symbol_version is not None:
+            tops_by_symbol.setdefault(cv.symbol_version.symbol_id, set()).add(
+                top_level_of(cv.category).name
+            )
+    sim_only_symbols = {
+        sid for sid, tops in tops_by_symbol.items() if tops == {SIM_ONLY_CATEGORY}
+    }
     symbols_dir = settings.mirror_dir / "Symbols"
     symbols_dir.mkdir(parents=True, exist_ok=True)
     for top_name in sorted(by_top):
@@ -164,6 +187,7 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
                     template, comp.name, props, cv.removed_properties, warnings
                 )
                 set_exclude_from_sim(built, sv.symbol_id in sim_links)
+                set_build_exclusions(built, top_name)
                 syms.append(built)
                 component_count += 1
             except Exception as e:
@@ -200,6 +224,10 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
                     entry = lib.symbols[0]
                 if entry is not None:
                     set_exclude_from_sim(entry, sym.id in sim_links)
+                    set_build_exclusions(
+                        entry,
+                        SIM_ONLY_CATEGORY if sym.id in sim_only_symbols else "",
+                    )
                     base_syms.append(entry)
             except Exception as e:
                 warnings.append(f"base symbol {sym.name}: mirror generation failed — {e}")

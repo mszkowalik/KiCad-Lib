@@ -1439,6 +1439,24 @@ every component of that symbol. Facts that are not obvious from the code:
     worse than the loud failure a missing model gives — hence `sigma_fuse`,
     `sigma_ferrite` and `sigma_ntc`, which are one resistor each and exist purely
     to keep the net connected.
+- **`in_bom` and `on_board` are DERIVED the same way, from the top-level
+  category `Simulation`** — `generator.set_build_exclusions`, applied in
+  `mirror.write_symbol_libs` (both the per-category libs and the base lib) and in
+  `kicad_http.part_payload`. That category holds parts that exist ONLY to drive a
+  simulation: a PT1000 stimulus, a vehicle emulator, a load. A harness sheet lives
+  in the same project as the board, so a stimulus part that does not say it is off
+  the BOM lands in the purchase order and on the layout. Same must-be-stated
+  argument as `exclude_from_sim`: KiCad reads an absent attribute as "included".
+  Two details that are easy to miss:
+  - **A base symbol has no category.** `set_build_exclusions` is given
+    `Simulation` for a template only when EVERY component drawn from it is a
+    simulation part. A template shared with a real part stays on the board — the
+    per-category library and the HTTP record carry the exact per-component answer,
+    and `7Sigma_Base.kicad_sym` is only the fallback drawing.
+  - **`_base_symbol_fingerprint` therefore hashes every published component's
+    category too**, next to the symbol versions and the link set. Moving the last
+    component out of `Simulation` changes the base library with no symbol version
+    touched, and without the categories in the hash the flag lags.
 - **KiCad's embedded ngspice runs `ngbehavior=ps lt a`** (Compatibility mode
   "PSpice and LTSpice", `schematic.ngspice.model_mode` 4 in the `.kicad_pro`; 0 is
   "User configuration" and applies no flags). In that mode `$` is NOT a comment —
