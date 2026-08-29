@@ -33,6 +33,7 @@ from .routers import (
     run_costs,
     settings as settings_router,
     sim_models,
+    sim_runs,
     signoffs,
     skills,
     users,
@@ -73,6 +74,7 @@ app.include_router(categories.router)
 app.include_router(components.router)
 app.include_router(libraries.router)
 app.include_router(sim_models.router)
+app.include_router(sim_runs.router)
 app.include_router(models3d.router)
 app.include_router(datasheets.router)
 app.include_router(jaravis.router)

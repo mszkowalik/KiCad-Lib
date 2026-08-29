@@ -14,13 +14,25 @@ Ops (src = .kicad_pcb or .kicad_sch inside a materialized checkout):
     erc              sch  -> JSON report
     drc              pcb  -> JSON report
     fab              pcb  -> zip: gerbers + drill + position files
+    sch_spice        sch  -> SPICE netlist text (flattened, Sim.* resolved)
+    sch_kicadxml     sch  -> KiCad XML netlist (nets with their member pins)
+    sim_run          sch  -> ngspice run of that netlist, as a 7SIM payload
 """
 from __future__ import annotations
 
 import io
 import subprocess
+import tempfile
 import zipfile
 from pathlib import Path
+
+# The render container runs these as flat modules in /srv; the API imports
+# them as a package. Both copies of this file must stay byte-identical, so
+# the import has to work either way.
+try:
+    from . import sim_spice
+except ImportError:  # pragma: no cover - render container
+    import sim_spice
 
 
 class OpError(RuntimeError):
@@ -52,11 +64,15 @@ MEDIA = {
     "drc": "application/json",
     "fab": "application/zip",
     "gerber_svg": "image/svg+xml",
+    "sch_spice": "text/plain",
+    "sch_kicadxml": "application/xml",
+    "sim_run": "application/octet-stream",
 }
 
 
-def _run(cmd: list[str], timeout: int = 600, env: dict | None = None) -> None:
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
+def _run(cmd: list[str], timeout: int = 600, env: dict | None = None,
+         cwd: str | Path | None = None) -> None:
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env, cwd=cwd)
     if proc.returncode != 0:
         raise OpError(proc.stderr.strip() or proc.stdout.strip() or "kicad-cli failed")
 
@@ -81,9 +97,15 @@ def run_op(
     theme: str = "",
     files: list | None = None,
     env: dict | None = None,
+    control: str | None = None,
+    analysis: str = "",
+    ngspice: str = "ngspice",
+    timeout: int = 60,
 ) -> tuple[bytes, str]:
     """Returns (bytes, media_type). out_dir must be a writable temp dir.
-    gerber_svg: src is a DIRECTORY; files = [{file, color}] selects layers."""
+    gerber_svg: src is a DIRECTORY; files = [{file, color}] selects layers.
+    sim_run: control/analysis override the schematic's own directives (see
+    sim_spice.prepare_netlist), ngspice is the binary, timeout is its cap."""
     src = Path(src)
     out = Path(out_dir)
     if not src.exists():
@@ -196,5 +218,39 @@ def run_op(
             env=env,
         )
         return _zip_dir(fabdir), MEDIA[op]
+
+    if op in ("sch_spice", "sch_kicadxml"):
+        # kicad-cli flattens the hierarchy, resolves ${SEVENSIGMA_DIR} in
+        # Sim.Library from the environment (verified — docs/simulator/design.md
+        # §2.1), and copies the schematic's directive text items verbatim.
+        fmt = "spice" if op == "sch_spice" else "kicadxml"
+        dest = out / ("netlist.cir" if fmt == "spice" else "netlist.xml")
+        # cwd = the schematic's own directory. A relative Sim.Library (a
+        # model file the design keeps next to its sheets) otherwise resolves
+        # against whatever directory the server happens to be in — measured,
+        # not assumed. Absolute and ${SEVENSIGMA_DIR} paths are unaffected.
+        _run(
+            [kicad_cli, "sch", "export", "netlist", "--format", fmt, *var_args,
+             "-o", str(dest), str(src.resolve())],
+            env=env, cwd=src.resolve().parent,
+        )
+        if not dest.exists():
+            raise OpError("netlist export produced no file")
+        return dest.read_bytes(), MEDIA[op]
+
+    if op == "sim_run":
+        netlist_text, _ = run_op(kicad_cli, "sch_spice", src, out_dir, variant=variant, env=env)
+        prepared, info = sim_spice.prepare_netlist(
+            netlist_text.decode("utf-8", "replace"), control=control, analysis=analysis,
+        )
+        with tempfile.TemporaryDirectory() as sim_dir:
+            try:
+                raw, log = sim_spice.run_ngspice(
+                    prepared, sim_dir, ngspice=ngspice, timeout=timeout, env=env,
+                )
+                plots = sim_spice.parse_raw(raw)
+            except sim_spice.SimError as e:
+                raise OpError(str(e)) from e
+        return sim_spice.encode_payload(plots, info=info, log=log), MEDIA[op]
 
     raise OpError(f"unknown op: {op}")

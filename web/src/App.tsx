@@ -31,6 +31,7 @@ import Projects from "./pages/Projects";
 import Reviews from "./pages/Reviews";
 import RunDetail from "./pages/RunDetail";
 import Setup from "./pages/Setup";
+import Simulator from "./pages/Simulator";
 import Skills from "./pages/Skills";
 import Templates from "./pages/Templates";
 import TemplateDetail from "./pages/TemplateDetail";
@@ -175,6 +176,10 @@ function Shell() {
           <Route path="/projects" element={<Projects />} />
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/runs/:id" element={<RunDetail />} />
+
+          {/* Simulator — reached from a project's schematic tab, or on its
+              own with an uploaded sheet set. */}
+          <Route path="/sim" element={<Simulator />} />
 
           {/* Production */}
           <Route element={<SectionNav links={PRODUCTION_LINKS} />}>

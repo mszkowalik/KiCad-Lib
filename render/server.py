@@ -4,7 +4,10 @@ Runs inside the official KiCad Docker image so previews are pixel-exact
 KiCad output.
 POST /render {kind: symbol|footprint|footprint3d, name, source_text, theme}
   -> SVG (symbol/footprint) or binary GLB board view (footprint3d).
-footprint3d needs SEVENSIGMA_DIR pointing at the mounted mirror (3D models).
+POST /render-project {op, path, ...} -> any project_ops op on a file under
+  the shared /data volume, simulation included (op sim_run runs ngspice).
+footprint3d needs SEVENSIGMA_DIR pointing at the mounted mirror (3D models);
+so does a netlist whose Sim.Library is ${SEVENSIGMA_DIR}/Symbols/7Sigma_sim.sp.
 """
 import os
 import re
@@ -18,6 +21,7 @@ from project_ops import OpError, run_op
 from pydantic import BaseModel
 
 KICAD_CLI = os.environ.get("KICAD_CLI", "kicad-cli")
+NGSPICE = os.environ.get("NGSPICE", "ngspice")
 BOARD_TEMPLATE = Path(__file__).parent / "board_template.kicad_pcb"
 # Project checkouts arrive on the shared (read-only) api data volume.
 DATA_ROOT = Path(os.environ.get("DATA_ROOT", "/data"))
@@ -108,6 +112,12 @@ class ProjectRenderRequest(BaseModel):
     layer: str = ""
     theme: str = ""
     files: list[dict] | None = None
+    # sim_run only: control=None keeps the schematic's own .control block,
+    # "" drops it, anything else replaces it; analysis replaces the
+    # schematic's own .tran/.ac/... directives.
+    control: str | None = None
+    analysis: str = ""
+    timeout: int = 60
 
 
 @app.post("/render-project")
@@ -120,6 +130,8 @@ def render_project(req: ProjectRenderRequest):
             data, media = run_op(
                 KICAD_CLI, req.op, src, td,
                 variant=req.variant, layer=req.layer, theme=req.theme, files=req.files,
+                control=req.control, analysis=req.analysis,
+                ngspice=NGSPICE, timeout=max(5, min(req.timeout, 300)),
             )
         except OpError as e:
             raise HTTPException(500, str(e)) from e

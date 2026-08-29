@@ -29,19 +29,27 @@ def _lock_for(key: str) -> threading.Lock:
 
 
 def run_project_op(op: str, rel_src: str, *, variant: str = "", layer: str = "", theme: str = "",
-                   files: list | None = None) -> tuple[bytes, str]:
-    """rel_src is relative to DATA_DIR (== /data in the containers)."""
+                   files: list | None = None, control: str | None = None, analysis: str = "",
+                   timeout: int = 60) -> tuple[bytes, str]:
+    """rel_src is relative to DATA_DIR (== /data in the containers).
+    control/analysis/timeout only mean anything to the sim_run op."""
     if settings.render_mode == "local":
         with tempfile.TemporaryDirectory() as td:
             env = {**os.environ, "SEVENSIGMA_DIR": str(settings.mirror_dir.resolve())}
+            if settings.spice_lib_dir:
+                # A Homebrew ngspice does not find its own spinit, and without
+                # it every XSPICE (poly) model in a subcircuit fails to load.
+                env["SPICE_LIB_DIR"] = settings.spice_lib_dir
             return run_op(
                 settings.kicad_cli, op, settings.data_dir / rel_src, td,
                 variant=variant, layer=layer, theme=theme, files=files, env=env,
+                control=control, analysis=analysis, ngspice=settings.ngspice_bin,
+                timeout=timeout,
             )
     resp = httpx.post(
         f"{settings.render_url}/render-project",
         json={"op": op, "path": rel_src, "variant": variant, "layer": layer, "theme": theme,
-              "files": files},
+              "files": files, "control": control, "analysis": analysis, "timeout": timeout},
         timeout=900,
     )
     if resp.status_code != 200:

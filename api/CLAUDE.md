@@ -1096,8 +1096,23 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   schematic parse — KiCad resolves hierarchy, DNP, and variants. Matching:
   `${SYMBOL_NAME}` == `Component.name` first, then `LCSC Part`. Variant list
   comes from `.kicad_pro` → `schematic.variants` (KiCad 10; absent on 9).
-- **`project_ops.py` exists twice** — `api/app/services/` and `render/`
-  must stay byte-identical (same pattern as `render.py`/`server.py`).
+- **Simulation runs as an OP, not as its own service** (`docs/simulator/design.md`).
+  `project_ops.sim_run` netlists a sheet with kicad-cli and runs ngspice on the
+  result, so it rides the existing render dispatch: `RENDER_MODE=local`
+  simulates on a developer Mac with no container, and MinIO caching came free.
+  `services/sim_geom.py` extracts the overlay geometry and takes net NAMES from
+  the kicadxml netlist rather than deriving them — KiCad's naming rules
+  (hierarchy prefixes, power symbols, `Net-(R1-Pad2)` fallbacks) are its own
+  business, and an overlay that guessed them would quietly disagree with the
+  simulation. Two facts that cost an afternoon each: `kicad-cli` DOES expand
+  `${SEVENSIGMA_DIR}` in `Sim.Library` from the environment, and a symbol's
+  stored rotation must be NEGATED once library y-up coordinates are flipped
+  into sheet y-down (`sim_geom._place`) or a 270-degree part swaps its pins.
+- **`project_ops.py` and `sim_spice.py` exist twice** — `api/app/services/`
+  and `render/` must stay byte-identical (same pattern as
+  `render.py`/`server.py`). `project_ops.py` imports `sim_spice` through a
+  `try: from . import … except ImportError: import …` pair, because the API
+  loads it as a package and the render container as a flat module in `/srv`.
 - **NUL is illegal in argv**: git `--format` separators use `\x1f`, never `\x00`.
 - **Price ladders — JLCPCB first, LCSC fallback** (user decision 2026-07-21):
   `component_price_points` rows with a source in `ladder.AUTO_SOURCES`

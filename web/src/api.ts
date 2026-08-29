@@ -5137,3 +5137,175 @@ export async function fetchSvgText(path: string, signal?: AbortSignal): Promise<
   if (!res.ok) throw new ApiError(res.status, `render failed (${res.status})`);
   return res.text();
 }
+
+// --------------------------------------------------------------- simulation
+
+/** A simulation source: a board's schematic at an ingested commit, or a sheet
+ *  set the user dropped in the browser. Both feed the same pipeline. */
+export type SimSourceRef =
+  | { kind: "snapshot"; snapshotId: number; board: string }
+  | { kind: "upload"; uploadId: string };
+
+function simBase(src: SimSourceRef): string {
+  return src.kind === "snapshot"
+    ? `/api/sim/snapshot/${src.snapshotId}/${encodeURIComponent(src.board)}`
+    : `/api/sim/upload/${encodeURIComponent(src.uploadId)}`;
+}
+
+/** One sheet INSTANCE. A sheet file placed twice appears twice, with
+ *  different paths and different net names. */
+export interface SimSheet {
+  name: string;
+  /** Instance path — the identifier every other call takes. */
+  path: string;
+  page: string;
+  depth: number;
+  rel: string;
+  error?: string;
+}
+
+export interface SimSheetList {
+  source: { kind: string; label: string };
+  sheets: SimSheet[];
+}
+
+export interface SimWire {
+  id: string;
+  pts: number[][];
+  net: string | null;
+}
+
+export interface SimPin {
+  ref: string;
+  pin: string;
+  name: string;
+  type: string;
+  /** Connection point (where the wire meets the pin). */
+  at: number[];
+  /** Body end of the pin stub — the direction a current arrow runs. */
+  root: number[];
+  power: boolean;
+  net: string | null;
+  group: string;
+}
+
+export interface SimSymbol {
+  ref: string;
+  value: string;
+  lib_id: string;
+  at: number[];
+  angle: number;
+  bbox: number[] | null;
+  power: boolean;
+  sim: Record<string, string>;
+}
+
+export interface SimGroup {
+  id: string;
+  pins: { ref: string; pin: string }[];
+  labels: string[];
+  wires: string[];
+  net: string | null;
+  /** Vector name in the run payload (`v(<spice>)` without the wrapper). */
+  spice?: string;
+  /** ngspice aliases ground to node 0 and emits no vector for it. */
+  ground?: boolean;
+  /** Named from a label rather than from the netlist — not a simulated node. */
+  derived?: boolean;
+}
+
+export interface SimGeometry {
+  size: number[];
+  instance_path: string;
+  wires: (SimWire & { group: string })[];
+  junctions: { at: number[]; net: string | null; group: string }[];
+  labels: { id: string; text: string; kind: string; at: number[]; net: string | null }[];
+  pins: SimPin[];
+  symbols: SimSymbol[];
+  subsheets: { name: string; file: string; at: number[]; size: number[] }[];
+  texts: { at: number[]; text: string; directive: boolean }[];
+  groups: SimGroup[];
+  warnings: string[];
+  sheet: { name: string; path: string; depth: number };
+  source: { kind: string; label: string };
+}
+
+export interface SimNet {
+  name: string;
+  code: string;
+  pins: { ref: string; pin: string }[];
+  spice: string;
+  ground: boolean;
+}
+
+export async function uploadSimSheets(
+  files: File[],
+  root = "",
+  signal?: AbortSignal,
+): Promise<{ id: string; root: string; files: string[] }> {
+  const form = new FormData();
+  for (const f of files) form.append("files", f);
+  if (root) form.append("root", root);
+  return request("/api/sim/uploads", { method: "POST", body: form, signal });
+}
+
+export async function getSimSheets(src: SimSourceRef, signal?: AbortSignal): Promise<SimSheetList> {
+  return request(`${simBase(src)}/sheets`, { signal });
+}
+
+export async function getSimGeometry(
+  src: SimSourceRef,
+  sheet: string,
+  signal?: AbortSignal,
+): Promise<SimGeometry> {
+  const qs = sheet ? `?sheet=${encodeURIComponent(sheet)}` : "";
+  return request(`${simBase(src)}/geometry${qs}`, { signal });
+}
+
+export async function getSimNetlist(
+  src: SimSourceRef,
+  signal?: AbortSignal,
+): Promise<{ spice: string; nets: SimNet[] }> {
+  return request(`${simBase(src)}/netlist`, { signal });
+}
+
+/** URL of the sheet drawing — kicad-cli's own render, whose viewBox is in
+ *  millimetres and shares the geometry's coordinate space. */
+export function simSheetSvgUrl(src: SimSourceRef, sheet: string): string {
+  const qs = sheet ? `?sheet=${encodeURIComponent(sheet)}` : "";
+  return `${API_URL}${simBase(src)}/sheet.svg${qs}`;
+}
+
+/** Run one scenario. The answer is the binary 7SIM payload, not JSON —
+ *  thousands of points across a dozen vectors are float arrays, and that is
+ *  what the plotter wants. Decode it with `decodeSimPayload`. */
+export async function runSimulation(
+  src: SimSourceRef,
+  body: { sheet?: string; control?: string | null; analysis?: string; timeout?: number },
+  signal?: AbortSignal,
+): Promise<ArrayBuffer> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${simBase(src)}/run`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err) {
+    if (isAbortError(err)) throw err;
+    throw new ApiError(0, `Cannot reach API at ${apiOrigin()} (${errorMessage(err)})`);
+  }
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const b = (await res.json()) as { detail?: unknown };
+      if (typeof b.detail === "string") detail = b.detail;
+    } catch {
+      // a non-JSON error body — fall through to the status line
+    }
+    throw new ApiError(res.status, detail || `${res.status} ${res.statusText}`);
+  }
+  return res.arrayBuffer();
+}

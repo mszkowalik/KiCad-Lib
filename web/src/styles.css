@@ -27,6 +27,19 @@
   --warn: #96690a;
   --warn-soft: rgba(150, 105, 10, 0.12);
 
+  /* simulator overlay: node potential runs cold -> zero -> hot, and the
+     charge dots need to read against both the drawing and the tint */
+  --sim-hot: #c0392f;
+  --sim-cold: #1f63d6;
+  --sim-zero: #5c6a7b;
+  --sim-current: #b26a34;
+  --sim-trace-0: #1f63d6;
+  --sim-trace-1: #c0392f;
+  --sim-trace-2: #1d7f4f;
+  --sim-trace-3: #b26a34;
+  --sim-trace-4: #7b4fc0;
+  --sim-trace-5: #0f8a9b;
+
   /* modal dialogs */
   --scrim: rgba(27, 36, 48, 0.35);
   --modal-shadow: 0 12px 40px rgba(27, 36, 48, 0.18);
@@ -57,6 +70,17 @@
     --err-soft: rgba(224, 101, 91, 0.12);
     --warn: #d7a52f;
     --warn-soft: rgba(215, 165, 47, 0.14);
+
+    --sim-hot: #e0655b;
+    --sim-cold: #5b93f5;
+    --sim-zero: #8d9db0;
+    --sim-current: #e8c15c;
+    --sim-trace-0: #5b93f5;
+    --sim-trace-1: #e0655b;
+    --sim-trace-2: #46b57f;
+    --sim-trace-3: #d69a62;
+    --sim-trace-4: #ad8bf0;
+    --sim-trace-5: #4fc4d6;
 
     --scrim: rgba(0, 0, 0, 0.55);
     --modal-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
@@ -4148,4 +4172,159 @@ a.check-cell:hover {
 .superseded {
   margin-top: 2px;
   font-size: 0.8rem;
+}
+
+/* ============================================================== simulator */
+
+/* Every layer shares the sheet's own millimetre box, so nothing is scaled or
+   offset — the SVG render, the tint and the charge sit on the same grid. */
+/* The crop window. The stage inside is blown up and slid so only the drawn
+   part of the sheet shows — a KiCad page is mostly empty paper. */
+.sim-frame {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+}
+
+.sim-stage {
+  line-height: 0;
+  position: absolute;
+}
+
+.sim-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.sim-wire {
+  fill: none;
+  stroke-width: 0.75;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+.sim-junction {
+  opacity: 0.9;
+}
+
+.sim-charge {
+  mix-blend-mode: normal;
+}
+
+.sim-pick {
+  pointer-events: none;
+}
+
+.sim-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 2;
+  stroke-linecap: round;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.sim-hit:hover {
+  stroke: var(--accent-soft);
+}
+
+.sim-hit.on {
+  stroke: var(--accent);
+  opacity: 0.35;
+}
+
+.sim-pin {
+  fill: var(--sim-current);
+  opacity: 0.55;
+  pointer-events: all;
+  cursor: help;
+}
+
+.sim-caption {
+  padding: 0 0.6rem 0.4rem;
+  line-height: 1.4;
+}
+
+.sim-scrub {
+  width: 100%;
+}
+
+.sim-scope-plot {
+  width: 100%;
+  height: 160px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: crosshair;
+}
+
+.sim-scope-axis {
+  stroke: var(--line);
+  stroke-width: 2;
+}
+
+.sim-playhead {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.sim-trace {
+  fill: none;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.sim-trace-0 { stroke: var(--sim-trace-0); color: var(--sim-trace-0); }
+.sim-trace-1 { stroke: var(--sim-trace-1); color: var(--sim-trace-1); }
+.sim-trace-2 { stroke: var(--sim-trace-2); color: var(--sim-trace-2); }
+.sim-trace-3 { stroke: var(--sim-trace-3); color: var(--sim-trace-3); }
+.sim-trace-4 { stroke: var(--sim-trace-4); color: var(--sim-trace-4); }
+.sim-trace-5 { stroke: var(--sim-trace-5); color: var(--sim-trace-5); }
+
+.sim-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+/* Net names are DATA: `/lowpass` is not `/LOWPASS`, and the pill's uppercase
+   also turns the SI micro prefix into a capital M. Both readouts opt out. */
+.sim-legend-item,
+.sim-nets .pill {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.sim-legend-item {
+  cursor: pointer;
+  border-color: currentColor;
+}
+
+.sim-nets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.6rem;
+}
+
+.sim-nets button {
+  cursor: pointer;
+}
+
+.sim-nets button:disabled {
+  cursor: default;
+}
+
+.sim-netlist {
+  max-height: 40vh;
+  overflow: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.6rem;
 }

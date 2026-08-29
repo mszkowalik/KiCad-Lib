@@ -555,3 +555,42 @@ Never "simplify" one back to a plain `src`. The alternative fix — scoping the
 header to SAMEORIGIN for `/lib/` — means editing an nginx config shared with
 unrelated services, and nginx's `add_header` in a nested block replaces every
 inherited one, so it would silently drop the other two security headers.
+
+## The simulator overlay (`src/sim/`, `pages/Simulator.tsx`)
+
+Three layers share ONE coordinate space — millimetres, exactly as the
+`.kicad_sch` stores them — because `kicad-cli sch export svg` writes its
+viewBox in millimetres too. Nothing here converts, scales or offsets a
+coordinate, and nothing should start: the moment a transform appears, the
+current dots stop sitting on the wires.
+
+1. `<img>` — the sheet, rendered by kicad-cli (`/api/sim/…/sheet.svg`)
+2. `<svg class="sim-layer">` — wires tinted by node voltage, and the invisible
+   thick click targets (`.sim-hit`, `pointer-events: stroke`)
+3. `<canvas class="sim-charge">` — the moving charge
+
+**The charge is on a canvas on purpose.** A sheet with a few hundred wires
+carries thousands of dots, and re-creating that many DOM nodes sixty times a
+second is exactly what makes a page like this stutter. The canvas is redrawn
+imperatively from a `clock` prop; React never re-renders for an animation
+frame.
+
+**Colours come from `color-mix`, not from arithmetic.** `--sim-hot`,
+`--sim-cold` and `--sim-zero` are palette variables like everything else, and
+a wire's tint is `color-mix(in oklab, var(--sim-hot) N%, var(--sim-zero))`.
+That keeps the overlay theme-aware without a hex code in a component.
+
+**`.pill` uppercases its text, and net names are data.** `/lowpass` is not
+`/LOWPASS`, and the transform also turns the SI micro prefix into a capital M
+(`204 µV` became `204 ΜV`). Any readout showing a net name or a measured value
+opts out with `text-transform: none` — `.sim-legend-item` and `.sim-nets .pill`
+already do.
+
+**Crop to the drawing, not the page.** A KiCad sheet is mostly empty paper, so
+`SimSheetView` measures what the sheet actually uses and blows the stage up to
+fit it, in percentages so no pixel maths is involved. "Whole sheet" turns it
+off.
+
+**An AC run is complex.** The payload stores real/imaginary in pairs and
+`decodeSimPayload` folds them to magnitude — the thing a scope shows and the
+thing that can colour a wire. A transient is real and passes straight through.

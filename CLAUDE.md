@@ -89,9 +89,10 @@ every push to `main` (pull requests build without pushing);
   reintroduce an absolute default (see `web/CLAUDE.md`).
 - **`compose.yaml` must ask for `target: dev`** on the web service, or dev
   gets the nginx image instead of the Vite server.
-- **`render/` carries copies of two files from `api/app/services/`**
-  (`project_ops.py`, `board_template.kicad_pcb`). The workflow's `guard` job
-  fails the build when they are not byte-identical, so edit both together.
+- **`render/` carries copies of three files from `api/app/services/`**
+  (`project_ops.py`, `sim_spice.py`, `board_template.kicad_pcb`). The
+  workflow's `guard` job fails the build when they are not byte-identical, so
+  edit both together.
 
 `linux/amd64` only, on purpose: the render image's `kicad/kicad` base is
 published amd64-only, and the api image compiles LibreDWG from source, which
@@ -122,6 +123,24 @@ personal API token. Full rules in `api/CLAUDE.md` (backend) and `web/CLAUDE.md`
 - **`PUBLIC_BASE_URL`, `APP_BASE` and the shared nginx `/lib/` route still move
   together** — the personal URLs are built from `PUBLIC_BASE_URL`, so a mismatch
   hands users a link that resolves nowhere.
+
+## Decisions and open work
+
+Two registers track the platform itself — not component data, which stays in
+the skill documents (see "Skills" above).
+
+| Register | Holds |
+|---|---|
+| [docs/decisions/](docs/decisions/) | Architecture and process decisions that are expensive to reverse: deployment, access control, backend/frontend architecture. MADR format, `NNNN-title.md`. Never edit an accepted record — write a new one and mark the old `superseded by NNNN`. |
+| [docs/todo.md](docs/todo.md) | Work found but not done. Ask before adding a row, unless the user asked for that item first. Delete a row when it lands and record the result in its real home — a decision record, a skill update, or `CHANGELOG.md`. |
+
+Route a new fact the same way "Leave the library better than you found it"
+(below) routes a component finding: a decision that is expensive to reverse
+goes to `docs/decisions/`; a release or a correction goes to `CHANGELOG.md`;
+work found but not agreed yet goes to `docs/todo.md`, after the user agrees.
+
+A register holds open rows only. When a `docs/todo.md` row is answered, write
+the answer into its home, then delete the row — do not strike it through.
 
 ## Conventions
 

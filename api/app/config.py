@@ -24,6 +24,20 @@ class Settings(BaseSettings):
     render_url: str = "http://localhost:8100"
     kicad_cli: str = "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"
 
+    # Circuit simulation (docs/simulator/design.md). Only RENDER_MODE=local
+    # uses these — in http mode ngspice runs in the render container, which
+    # carries its own binary and its own spinit.
+    ngspice_bin: str = "ngspice"
+    # Directory holding scripts/spinit. A Homebrew ngspice cannot find its own
+    # (/opt/homebrew/share/ngspice), and without it any subcircuit using an
+    # XSPICE poly source fails to load. Empty = let ngspice decide.
+    spice_lib_dir: str = ""
+    # Wall-clock cap on one batch run, seconds. A scenario's .control block is
+    # user content and may loop.
+    sim_timeout_s: int = 60
+    # How long an uploaded schematic stays simulatable, hours.
+    sim_upload_ttl_h: int = 24
+
     # kicad-cli color themes for SVG previews. Theme names as shown in the
     # KiCad editors; the JSON files must exist where the renderer runs
     # (mac: ~/Library/Preferences/kicad/10.0/colors/, container: baked in

@@ -3,6 +3,7 @@
  *  (info + library link) and sub-sheet frames navigate between pages —
  *  hotspots come from the snapshot's click-map (mm coords over the SVG). */
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   errorMessage,
   getBoardMap,
@@ -92,6 +93,15 @@ export default function SchematicTab({ snapshot, board, variant }: Props) {
               ))}
             </div>
             {variant ? <span className="pill neutral">variant: {variant}</span> : null}
+            {/* The simulator reads the same checkout as these renders, so it
+                needs nothing but the snapshot and the board. */}
+            <Link
+              className="btn"
+              to={`/sim?snapshot=${snapshot.id}&board=${encodeURIComponent(board.name)}`}
+              title="Open this schematic in the simulator"
+            >
+              Simulate
+            </Link>
             {sheet ? (
               <span className="muted">
                 {sheet.symbols.length} clickable parts
