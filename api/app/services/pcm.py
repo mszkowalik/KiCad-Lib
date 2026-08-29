@@ -96,21 +96,30 @@ SERVER_PCM_ROOT = "pcmroot"
 def server_pcm_root() -> Path:
     """DATA_DIR/pcmroot, laid out so `${KICAD10_3RD_PARTY}` resolves here.
 
-    `symbols/<install dir>` is a RELATIVE symlink to the mirror's Symbols
-    folder, so it stays correct in every container that mounts the volume and
-    can never go stale against a regenerated library. Idempotent.
+    ONLY the SPICE model file is exposed, as a relative symlink, so it stays
+    current against a regenerated library. Do NOT link the mirror's Symbols
+    FOLDER instead: that brings `7Sigma_Base.kicad_sym` along, and kicad-cli
+    10.0.5 SEGFAULTS (rc 139, no message) when a `.kicad_sym` sits in the
+    directory a PCM symbol library resolves to. Measured 2026-08-29 — the
+    same schematic exports in 512 lines with the model file alone beside it,
+    and dies the moment the symbol library is copied in next to it.
+
+    Idempotent, and it repairs the folder-symlink layout an earlier build
+    left behind.
     """
     root = settings.data_dir / SERVER_PCM_ROOT
-    link = root / "symbols" / LIB_INSTALL_DIR
-    target = Path("..") / ".." / "mirror" / "Symbols"
+    lib_dir = root / "symbols" / LIB_INSTALL_DIR
+    link = lib_dir / SIM_LIB_FILE
+    target = Path("..") / ".." / ".." / "mirror" / "Symbols" / SIM_LIB_FILE
     try:
-        link.parent.mkdir(parents=True, exist_ok=True)
-        if link.is_symlink():
-            if Path(os.readlink(link)) != target:
-                link.unlink()
-                link.symlink_to(target, target_is_directory=True)
-        elif not link.exists():
-            link.symlink_to(target, target_is_directory=True)
+        if lib_dir.is_symlink():  # the folder-wide link this replaced
+            lib_dir.unlink()
+        lib_dir.mkdir(parents=True, exist_ok=True)
+        if link.is_symlink() and Path(os.readlink(link)) == target:
+            return root
+        if link.is_symlink() or link.exists():
+            link.unlink()
+        link.symlink_to(target)
     except OSError as e:  # a read-only volume, or a directory in the way
         log.warning("cannot prepare the server PCM root at %s: %s", link, e)
     return root

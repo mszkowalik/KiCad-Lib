@@ -253,12 +253,21 @@ the two egress points. The mirror's own spelling,
 server saw a variable it did not define and every real project failed to
 netlist with `could not find base model 'sigma_diode'`.
 
-`pcm.server_pcm_root()` lays out `DATA_DIR/pcmroot/symbols/<install dir>` as a
-RELATIVE symlink to the mirror's `Symbols` folder, and both netlist paths
-export `KICAD10_3RD_PARTY` pointing at it. Both spellings then reach the same
-file, nothing is rewritten, and a regenerated library is picked up with no
-extra step. `kicad-cli sch export netlist` has no `--define-var`, so the
-environment is the only way in.
+`pcm.server_pcm_root()` lays out `DATA_DIR/pcmroot/symbols/<install dir>/` and
+puts a RELATIVE symlink to the mirror's `7Sigma_sim.sp` inside it, and both
+netlist paths export `KICAD10_3RD_PARTY` pointing at the root. Both spellings
+then reach the same file, nothing is rewritten, and a regenerated library is
+picked up with no extra step. `kicad-cli sch export netlist` has no
+`--define-var`, so the environment is the only way in.
+
+**Only the model file goes in that directory.** Linking the mirror's `Symbols`
+FOLDER is the obvious shortcut and it makes kicad-cli 10.0.5 segfault — rc
+139, stdout and stderr both empty, so the API could only report "kicad-cli
+failed". The trigger is a `.kicad_sym` in the directory a PCM symbol library
+resolves to; `7Sigma_Base.kicad_sym` lives beside the model file in the
+mirror. Bisected on 2026-08-29: the same schematic exports 512 lines with the
+`.sp` alone in the folder, and dies the moment the `.kicad_sym` is copied in
+next to it. Worth reporting upstream.
 
 ### 3.3 Where a schematic comes from
 

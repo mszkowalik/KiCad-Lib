@@ -1109,7 +1109,12 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   so every real project failed to netlist until `pcm.server_pcm_root()` laid
   out a PCM-shaped directory that symlinks to the mirror and both netlist
   paths exported `KICAD10_3RD_PARTY`. `sch export netlist` has no
-  `--define-var`; the environment is the only way in.
+  `--define-var`; the environment is the only way in. **Expose the model FILE
+  there, never the mirror's `Symbols` folder**: kicad-cli 10.0.5 segfaults
+  (rc 139, no message at all) when a `.kicad_sym` sits in the directory a PCM
+  symbol library resolves to. Measured — the same schematic exports 512 lines
+  with `7Sigma_sim.sp` alone beside it and dies the moment
+  `7Sigma_Base.kicad_sym` is copied in next to it.
 - **Simulation runs as an OP, not as its own service** (`docs/simulator/design.md`).
   `project_ops.sim_run` netlists a sheet with kicad-cli and runs ngspice on the
   result, so it rides the existing render dispatch: `RENDER_MODE=local`
