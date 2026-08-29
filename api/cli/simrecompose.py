@@ -16,6 +16,7 @@ by diffing the declared interface of the old and new text.
     docker compose exec api python -m cli.simrecompose plan
     docker compose exec api python -m cli.simrecompose apply --verify
     docker compose exec api python -m cli.simrecompose prune
+    docker compose exec api python -m cli.simrecompose refresh
     docker compose exec api python -m cli.simrecompose orphans
 
 `plan` writes nothing. `apply` composes and publishes. `prune` deletes the
@@ -281,6 +282,37 @@ def cmd_prune(db, args) -> int:
     return 0
 
 
+def cmd_refresh(db, args) -> int:
+    """Re-save every composed link, republishing any wrapper whose generated
+    text has moved.
+
+    Needed after a change to the GENERATOR rather than to a block model — a
+    block publish already regenerates its dependents, but a fix to
+    `simcompose` itself reaches nothing until each design is composed again.
+    Republishes only where the text actually differs.
+    """
+    changed = failed = 0
+    links = db.query(M.SymbolSimLink).filter(M.SymbolSimLink.mode == COMPOSED_KIND).all()
+    for link in links:
+        sym = db.get(M.Symbol, link.symbol_id)
+        if sym is None:
+            continue
+        res = set_symbol_sim_composition(
+            db, sym.name, link.composition or {}, actor="rework",
+            comment="Regenerated after a change to the composer itself.")
+        if "error" in res:
+            print(f"FAIL  {sym.name}: {res['error']}")
+            for pr in res.get("problems", []):
+                print(f"        ! {pr}")
+            failed += 1
+            continue
+        moved = res["model_status"] == "published"
+        changed += moved
+        print(f"{'republished' if moved else 'unchanged   '} {sym.name:24} {res['model']}")
+    print(f"-- {len(links)} composed links, {changed} republished, {failed} failed")
+    return 1 if failed else 0
+
+
 def cmd_orphans(db, args) -> int:
     """Building blocks no symbol can reach. A report, never a deletion."""
     used: set[str] = set()
@@ -312,6 +344,7 @@ def main() -> int:
     p.set_defaults(fn=cmd_apply)
     p = sub.add_parser("prune"); p.add_argument("--dry-run", action="store_true")
     p.set_defaults(fn=cmd_prune)
+    p = sub.add_parser("refresh"); p.set_defaults(fn=cmd_refresh)
     p = sub.add_parser("orphans"); p.set_defaults(fn=cmd_orphans)
     args = ap.parse_args()
     with SessionLocal() as db:
