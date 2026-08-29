@@ -329,6 +329,7 @@ def _sim_link_item(db: Session, version: M.SymbolVersion) -> dict:
     findings are reported here as well.
     """
     from . import material
+    from .simcompose import COMPOSED_KIND, validate_composition
     from .simmodel import link_material_sha, validate_pin_map
 
     sym = db.get(M.Symbol, version.symbol_id)
@@ -343,6 +344,29 @@ def _sim_link_item(db: Session, version: M.SymbolVersion) -> dict:
         pins = material.symbol_material(version.source_text)["pins"]
     except Exception as e:  # noqa: BLE001
         return _item("sym.sim_link", "failed", f"cannot read pins to check the map: {e}")
+    if link.mode == COMPOSED_KIND:
+        # The composed twin of everything below. The design is checked against
+        # THIS version's pins, which is the whole point of the item: a symbol
+        # publish that renumbers a pin must fail here, not surface later as a
+        # netlist wired to a pin that no longer exists.
+        from .sim_store import block_catalog, composed_stale_reasons
+        catalog = block_catalog(db)
+        broken = composed_stale_reasons(sym.name, link.composition or {}, pins,
+                                        mv.source_text, catalog)
+        if broken:
+            return _item("sym.sim_link", "failed",
+                         f"composed model {model.name} does not build against this "
+                         "version: " + "; ".join(broken))
+        soft = [f["text"] for f in
+                validate_composition(link.composition or {}, pins, catalog)
+                if f["severity"] == "warning"]
+        if soft:
+            return _item("sym.sim_link", "failed",
+                         f"{model.name} looks miswired: " + "; ".join(soft))
+        blocks = len((link.composition or {}).get("blocks") or [])
+        return _item("sym.sim_link", "checked",
+                     f"composed as {model.name} from {blocks} block(s)")
+
     findings = validate_pin_map(link.pin_map, pins, (mv.parsed or {}).get("ports", []))
     errors = [f["text"] for f in findings if f["severity"] == "error"]
     warns = [f["text"] for f in findings if f["severity"] == "warning"]

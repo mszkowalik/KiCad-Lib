@@ -606,6 +606,18 @@ def startup() -> None:
             conn.execute(text(
                 "ALTER TABLE footprints ADD COLUMN IF NOT EXISTS display_name varchar(200) NOT NULL DEFAULT ''"
             ))
+            # Composed simulation models (2026-08-29): a symbol's wrapper
+            # subcircuit is built from library blocks instead of typed out, so
+            # the link stores the block design and DERIVES the pin map. Every
+            # pre-existing link is `model` mode with a NULL composition, which
+            # is exactly what the default gives them.
+            conn.execute(text(
+                "ALTER TABLE symbol_sim_links ADD COLUMN IF NOT EXISTS "
+                "mode varchar(20) NOT NULL DEFAULT 'model'"
+            ))
+            conn.execute(text(
+                "ALTER TABLE symbol_sim_links ADD COLUMN IF NOT EXISTS composition jsonb"
+            ))
             # Usage-fitness lifecycle (in_design | released | deprecated |
             # obsolete) — see models.Component.lifecycle_state.
             conn.execute(text(

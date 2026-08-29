@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
+  deleteSimModel,
   errorMessage,
   getSimModel,
   isAbortError,
   proposeSimModelEdit,
   type SimModelDetail as SimModelDetailT,
 } from "../api";
+import { useDialog } from "../components/Dialog";
 import { BackLink, ErrorBanner, Spinner } from "../components/Ui";
 
 /** A sim model: the .subckt source, its interface, who links to it, and the
@@ -21,6 +23,9 @@ export default function SimModelDetail() {
   const [comment, setComment] = useState("");
   const [filing, setFiling] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const dialog = useDialog();
+  const navigate = useNavigate();
+  const generated = data?.kind === "composed";
 
   useEffect(() => {
     if (!Number.isFinite(id)) {
@@ -41,6 +46,25 @@ export default function SimModelDetail() {
       });
     return () => ctrl.abort();
   }, [id]);
+
+  const remove = async () => {
+    if (!data || filing) return;
+    const ok = await dialog.confirm(
+      `Delete ${data.name}? The .subckt disappears from the generated SPICE library.`,
+      { title: "Delete sim model", confirmLabel: "Delete", tone: "danger" },
+    );
+    if (!ok) return;
+    setFiling(true);
+    setNotice(null);
+    try {
+      await deleteSimModel(id);
+      navigate("/library/templates?tab=sim");
+    } catch (err) {
+      setNotice(errorMessage(err));
+    } finally {
+      setFiling(false);
+    }
+  };
 
   const file = async () => {
     if (!data || filing) return;
@@ -98,7 +122,13 @@ export default function SimModelDetail() {
         </BackLink>
         <div className="toolbar">
           <h1 className="mono">{data.name}</h1>
-          <span className="pill neutral">{data.kind === "primitive" ? "primitive" : "sim model"}</span>
+          <span className="pill neutral">
+            {data.kind === "primitive"
+              ? "primitive"
+              : data.kind === "composed"
+                ? "generated"
+                : "sim model"}
+          </span>
           {data.version_no !== null ? (
             <span className="toolbar-total">v{data.version_no}</span>
           ) : null}
@@ -107,6 +137,14 @@ export default function SimModelDetail() {
           <p className="muted">
             A building block. Other models instantiate it by name, and a symbol whose part
             IS the primitive (a diode, a switch) can link to it directly.
+          </p>
+        ) : null}
+        {generated ? (
+          <p className="muted">
+            Built from library blocks, not typed. It belongs to the symbol below and is
+            rebuilt whenever that composition is saved or one of its blocks publishes a
+            new version — so edit it on the symbol's Simulation card, where the block
+            design lives. Text pasted here would be overwritten.
           </p>
         ) : null}
 
@@ -186,6 +224,26 @@ export default function SimModelDetail() {
           </div>
         ) : null}
 
+        {data.linked_symbols.length === 0 ? (
+          <div className="card pad">
+            <h2 className="card-title">Delete</h2>
+            <p className="muted">
+              Nothing links to this model. Deleting is refused while another model still
+              instantiates it, so a building block in use cannot be removed by accident.
+            </p>
+            <button
+              type="button"
+              className="btn btn-danger"
+              disabled={filing}
+              onClick={() => void remove()}
+            >
+              Delete model
+            </button>
+            {notice ? <p className="muted">{notice}</p> : null}
+          </div>
+        ) : null}
+
+        {generated ? null : (
         <details className="card pad">
           <summary>Propose an edit</summary>
           <p className="muted">
@@ -220,6 +278,7 @@ export default function SimModelDetail() {
           </div>
           {notice ? <p className="muted">{notice}</p> : null}
         </details>
+        )}
 
         {data.versions.length > 1 ? (
           <details className="card pad">

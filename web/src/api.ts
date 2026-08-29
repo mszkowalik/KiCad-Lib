@@ -665,7 +665,7 @@ export function proposeNewTemplate(
 export interface SimModelListItem {
   id: number;
   name: string;
-  kind: "primitive" | "part";
+  kind: "primitive" | "part" | "composed";
   version_no: number | null;
   ports: string[];
   params: Record<string, string>;
@@ -743,6 +743,46 @@ export interface SymbolSimPin {
   hide: boolean;
 }
 
+/** One instance inside a composed model. `nodes` is {model port: node},
+ *  where a node is a symbol PIN NUMBER or an internal net written "@name".
+ *  `params` is {model param: binding} — see SimBinding. */
+export interface SimBlock {
+  ref: string;
+  model: string;
+  nodes: Record<string, string>;
+  params?: Record<string, string>;
+}
+
+/** A tie inside a composed model: package copper, or a termination. Two
+ *  symbol pins joined by real resistance, never by sharing one port —
+ *  the schematic may put them on different nets. */
+export interface SimTie {
+  ref: string;
+  a: string;
+  b: string;
+  value: string;
+}
+
+export interface SimComposition {
+  blocks: SimBlock[];
+  resistors: SimTie[];
+  /** Pins left out ON PURPOSE. The composed form of the "-" sentinel: a pin
+   *  that is neither wired nor listed here is an error, not an omission. */
+  unmodelled: string[];
+  /** Wrapper parameter defaults that differ from the block model's own. */
+  defaults: Record<string, string>;
+}
+
+export const SIM_SHARED = "$shared";
+export const SIM_OWN = "$own";
+
+export interface SimBlockSpec {
+  name: string;
+  kind: string;
+  ports: string[];
+  params: Record<string, string>;
+}
+
 export interface SymbolSimLinkInfo {
   symbol: { id: number; name: string };
   pins: SymbolSimPin[];
@@ -750,15 +790,37 @@ export interface SymbolSimLinkInfo {
     model_id: number;
     model_name: string;
     pin_map: Record<string, string>;
+    /** "model" links one hand-written subcircuit; "composed" builds it from
+     *  blocks and derives the pin map. */
+    mode: string;
+    composition: SimComposition | null;
     updated_at: string | null;
     updated_by: string;
     /** Human-readable reasons the stored map may no longer mean what its
-     *  author intended. Non-empty = the mirror WITHHOLDS the Sim fields. */
+     *  author intended. Non-empty = the mirror WITHHOLDS the Sim fields.
+     *  In composed mode these are the reasons the design no longer builds. */
     stale: string[];
   } | null;
-  models: { id: number; name: string; ports: string[] }[];
+  models: { id: number; name: string; kind: string; ports: string[];
+            params: Record<string, string> }[];
+  /** What a composition may use as a block — every model except the generated
+   *  wrappers, which belong to one symbol each. */
+  blocks: SimBlockSpec[];
+  /** The name the generated wrapper takes for this symbol. */
+  wrapper_name: string;
   /** The not-connected sentinel a pin can map to ("-"). */
   nc: string;
+}
+
+export interface SimCompositionPreview {
+  name: string;
+  params: Record<string, string>;
+  source_text: string;
+  ports: string[];
+  pin_map: Record<string, string>;
+  sim_pins: string;
+  errors: string[];
+  warnings: string[];
 }
 
 export interface SimLinkSaveResult {
@@ -791,6 +853,41 @@ export function saveSymbolSimLink(
 
 export function removeSymbolSimLink(id: number): Promise<SimLinkSaveResult> {
   return request(`/api/symbols/${id}/sim-link`, { method: "DELETE" });
+}
+
+/** The .subckt a composition WOULD publish. Writes nothing — the editor shows
+ *  it live, because a generated netlist nobody reads is one nobody checks. */
+export function previewSimComposition(
+  id: number,
+  composition: SimComposition,
+  signal?: AbortSignal,
+): Promise<SimCompositionPreview> {
+  return request(`/api/symbols/${id}/sim-composition/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(composition),
+    signal,
+  });
+}
+
+/** PUBLISH the composition: generates the wrapper, versions it, links it and
+ *  rebuilds the mirror. */
+export function saveSimComposition(
+  id: number,
+  composition: SimComposition,
+  comment = "",
+): Promise<SimLinkSaveResult & { source_text: string; version_no: number }> {
+  return request(`/api/symbols/${id}/sim-composition`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...composition, comment }),
+  });
+}
+
+/** Remove a sim model outright. Refused while any symbol links it or any
+ *  other model instantiates it. */
+export function deleteSimModel(id: number): Promise<{ ok: true; model: string }> {
+  return request(`/api/sim-models/${id}`, { method: "DELETE" });
 }
 
 /** Render UNSAVED geometry so the paste box can show it before filing.
