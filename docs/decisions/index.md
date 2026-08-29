@@ -29,6 +29,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 
 | # | Decision | Area |
 |---|---|---|
+| [0001](0001-generate-package-sim-wrappers-from-blocks.md) | Generate a package simulation wrapper from blocks, instead of writing it | Backend, simulation |
 
 ## Proposed
 

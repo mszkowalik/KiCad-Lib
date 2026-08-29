@@ -5,6 +5,67 @@ This file starts on 2026-08-28. For earlier work, read the git history.
 Each entry says what changed and why. Put a note here when a change alters how
 the platform behaves in production, not for every commit.
 
+## 2026-08-29
+
+### Added
+
+- **A package simulation wrapper is now built from blocks, not written.** KiCad
+  netlists one element per reference designator, so the subcircuit `Sim.Name`
+  points at is always package-level. Those wrappers were typed by hand, one per
+  part, and nine of the sixty-five models in the library held no behaviour at
+  all — two instance lines and a parameter pass-through. Two of them,
+  `sigma_74hc21` and `sigma_buf2`, were written, linked to nothing, and never
+  noticed. A symbol's link now stores a block design and the platform generates
+  the `.subckt` from it. See
+  [decision 0001](docs/decisions/0001-generate-package-sim-wrappers-from-blocks.md).
+
+  The rule that shapes it is one wrapper port per unique symbol pin, never
+  fewer. Two pins are never merged onto one port, because the schematic may put
+  them on different nets and one port carries one node. The result is that the
+  port list is `p1 p2 p4 …` by construction, so **`Sim.Pins` is derived and can
+  no longer be mis-authored** — the swapped pair that `validate_pin_map` admits
+  it cannot catch is not expressible in this mode.
+
+### Changed
+
+- **Eleven symbols moved to composed models and thirteen hand-written wrappers
+  were deleted.** The conversion preserved every wrapper's interface, so no
+  component's `Sim.Params` row moved: `cli/simrecompose.py apply --verify`
+  reported 0 lost parameters and 0 moved defaults. Checked under ngspice
+  against the deployed library, the composed wrapper beside the hand-written
+  one on the same stimulus: `v(y1) = v(o1) = 3.283582 V`, `v(y2) = v(o2) = 0 V`.
+
+- **Nine superseded simulation primitives were deleted**: `sigma_and4`,
+  `sigma_buf`, `sigma_buf_3st`, `sigma_dff`, `sigma_dff_r`, `sigma_dff_sr`,
+  `sigma_inv`, `sigma_monostable` and `sigma_iso7721`. Each has a
+  `sigma_rail_*` equivalent that reads its own supply pins at run time, and
+  every one of those is in use. The library holds 54 models, from 65.
+
+### Fixed
+
+- **The rail check no longer reports correctly wired supplies as miswired.** It
+  failed sixteen links, and all sixteen were right. Its list of rail port names
+  held eleven entries, so `vdd1`, `gnd2`, `vcc1`, `vinp`, `vinn` and `vs` were
+  not rails as far as it knew; rail ports are matched by shape now.
+
+  The second half of the check is deleted rather than widened. "A `power_in`
+  pin on a port that is not rail-shaped" cannot tell an LDO's `in` from an
+  op-amp's `in+`, because the difference lives in the model and not in the
+  name. It reported ten LDOs, three DC/DC bricks, an isolator, a high-side
+  switch and a flip-flop whose `pren` is tied high because it has no preset —
+  and not one real fault. Nothing is lost: each port takes exactly one pin, so
+  a supply pin landing on a signal port displaces another pin onto the real
+  rail port, and that pin is not a power pin, which is what the surviving half
+  tests. All 62 simulation links now validate clean.
+
+- **Generated text is emitted in a fixed order.** `SimModelVersion.parsed` and
+  `SymbolSimLink.composition` are JSONB, and Postgres reorders an object's
+  keys, so a dict iterated in the session that wrote it gives one order and the
+  same dict read back gives another. A wrapper therefore differed from itself
+  across a round trip, and the mirror withheld the `Sim.*` fields of
+  `74LVC1G175GW,125` over a moved word in a comment. Any list the composer
+  derives from a dict is now ordered explicitly.
+
 ## 2026-08-28
 
 ### Fixed

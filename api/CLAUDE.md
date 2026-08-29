@@ -1554,9 +1554,21 @@ mirror emits it like any model, `generator.sim_props` points `Sim.Name` at it,
   moves. `--verify` proves it by diffing the declared interface. `orphans`
   reports building blocks no symbol can reach and never deletes: an unused
   primitive is library surface someone put there on purpose.
-- Validator machine items: `sym.sim_link` (map errors / stale / heuristic
-  rail-swap warnings) and `cmp.sim_params` (keys must be declared by the
-  linked model). Deliberately NOT checklist-seeded — seeding un-answers every
+- **The rail heuristic has ONE half, and the other was deleted, not widened.**
+  What survives is "a rail-shaped port claimed by a pin that is not a power
+  pin" (`simmodel.is_rail_port` — a rail stem plus an optional channel number
+  or polarity letter, so `vdd1`, `gnd2`, `vinp` and `vs` count, which a flat
+  list of eleven names did not). What went was the mirror check, "a `power_in`
+  pin on a port that is not rail-shaped": it cannot tell an LDO's `in` from an
+  op-amp's `in+`, because the difference lives in the model and not in the
+  name, so no widening could fix it. It reported sixteen correctly wired links
+  in this library and not one real fault. Nothing is lost — each port takes
+  exactly ONE pin, so a supply pin landing on a signal port displaces another
+  pin onto the real rail port, and that pin is not a power pin, which is what
+  the surviving half tests.
+- Validator machine items: `sym.sim_link` (map errors / stale / composition
+  errors / the rail warning above) and `cmp.sim_params` (keys must be declared
+  by the linked model). Deliberately NOT checklist-seeded — seeding un-answers every
   existing subject (the `cmp.datasheet_text` incident); the user decides.
 - **`kiutils` is patched locally**: upstream ran `Sim.Library` values through
   `PureWindowsPath`, turning `/` into `\\` (`api/kiutils/items/common.py`,
