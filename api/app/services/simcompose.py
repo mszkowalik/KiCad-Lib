@@ -175,9 +175,14 @@ def wrapper_params(composition: dict, catalog: dict) -> tuple[dict[str, str], li
                 continue
             where = f"{block['ref']}.{param}"
             if name in declared and declared[name] != str(default):
-                problems.append({"severity": "warning", "text":
-                    f"{where} shares wrapper parameter {name} with {origin[name]}, which "
-                    f"defaults to {declared[name]} — keeping that, not {default}"})
+                # Silent when `defaults` settles it: sharing two block
+                # parameters under one name is a deliberate act (a symmetric
+                # TVS binds VBR_POS and VBR_NEG to one VBR), and the override
+                # states the answer, so the warning would only be wrong.
+                if name not in overrides:
+                    problems.append({"severity": "warning", "text":
+                        f"{where} shares wrapper parameter {name} with {origin[name]}, "
+                        f"which defaults to {declared[name]} — keeping that, not {default}"})
                 continue
             declared.setdefault(name, str(default))
             origin.setdefault(name, where)
@@ -380,6 +385,14 @@ def compose(symbol_name: str, composition: dict, symbol_pins: list[dict],
             node = str(res.get(side) or "")
             if node and not is_net(node):
                 feeds.setdefault(node, []).append(str(res.get("ref")))
+    # SORTED, for the same reason the parameters are: `composition` is stored
+    # as JSONB and Postgres reorders an object's keys, so iterating `nodes`
+    # gave "x1.pren x1.vcc" in the session that wrote it and "x1.vcc x1.pren"
+    # after a round trip. Only the comment moved, and that was enough to make
+    # every mirror write call the wrapper behind its own design. ANY list this
+    # function derives from a dict has to be ordered explicitly.
+    for hits in feeds.values():
+        hits.sort()
 
     out: list[str] = [
         f"* GENERATED for symbol {symbol_name} — composed from library blocks.",

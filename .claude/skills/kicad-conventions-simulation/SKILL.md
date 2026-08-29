@@ -2,12 +2,22 @@
 name: kicad-conventions-simulation
 description: "Authoring simulation models and symbol links: the sigma_ namespace, parameter naming from datasheet symbols (V_BR at test current, never V_RWM), mandatory pin maps and the NC sentinel, per-component Sim.Params, switch drive modes (static / alter / PWL), scenario .control blocks, and the ngspice convergence traps. Use when writing a sim model, linking a symbol, or setting Sim.Params."
 ---
-<!-- platform-skill: conventions-simulation v2 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-simulation v3 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Simulation model conventions
 
 Simulation models are versioned library objects, like symbols and footprints.
 A model is one SPICE `.subckt`. A base symbol carries at most ONE link to a
-model, with an explicit pin map. The mirror emits every model into
+model.
+
+A link has two modes, and the choice is not a preference:
+
+| Mode | You author | The platform derives |
+|---|---|---|
+| **composed** | which block sits on which pin | the `.subckt`, its ports, and the pin map |
+| **model** | the `.subckt` text and the pin map | nothing |
+
+**Compose by default.** Type a `.subckt` only for behaviour no existing block
+gives you. The mirror emits every model into
 `Symbols/7Sigma_sim.sp` and turns each link into `Sim.Device` / `Sim.Name` /
 `Sim.Library` / `Sim.Pins` rows on every component of that symbol. Tools:
 `list_sim_models`, `get_sim_model`, `propose_sim_model_edit`,
@@ -35,9 +45,11 @@ Simulation is not automatic and must not be added silently.
    for this part. A component with no row silently runs on the model's
    defaults, which belong to whichever part the model was authored against.
    That is how a 3 V Schottky ends up simulated as a 0.9 V silicon diode.
-3. **Editing a symbol's pins** — the link goes stale and the Sim fields stop
-   being emitted. Re-save the link to confirm the map still means what its
-   author intended. Do not "fix" staleness by deleting the link.
+3. **Editing a symbol's pins** — a hand-written link goes stale and the Sim
+   fields stop being emitted. Re-save the link to confirm the map still means
+   what its author intended. Do not "fix" staleness by deleting the link. A
+   composed link is rebuilt against the new pins instead, and only fails when
+   a pin the design uses has gone.
 
 ## Authoring a model
 
@@ -45,16 +57,67 @@ Simulation is not automatic and must not be added silently.
   match `^sigma_[a-z0-9_]+$` — SPICE names share one flat global namespace
   with every other library the user loads, so the prefix is our namespace.
 - `kind: primitive` is a building block (`sigma_opamp`, `sigma_switch`,
-  `sigma_diode`). `kind: part` is a wrapper for a specific device
-  (`sigma_bts723gw`, `sigma_74hc21`). A symbol may link to either. A part
-  model may instantiate primitives by name — everything is emitted into the
-  same `.sp` file, so plain SPICE lookup resolves it.
+  `sigma_diode`). `kind: part` is a hand-written model for a specific device
+  (`sigma_hss`, `sigma_amc1311`). `kind: composed` is GENERATED and is never
+  written by hand — see the next section. A symbol may link to a primitive or
+  a part alike: a diode, a switch or a 5-pin op-amp IS the primitive. Any
+  model may instantiate another by name, because everything is emitted into
+  the same `.sp` file and plain SPICE lookup resolves it.
 - Declare every adjustable number in `params:` with a safe default. The
   validator checks component `Sim.Params` keys against this declaration.
 - Write the datasheet source of each number in the version comment. Mark
   every number you could NOT verify with the word "placeholder" in the
   comment, and name what confirms it (example: sigma_hss ILIM/TON/status
   polarity await the BTS723GW truth table).
+
+## Compose the wrapper, do not type it
+
+KiCad netlists one element per reference designator, so the thing `Sim.Name`
+points at is always package-level: a 74HC21 cannot be two AND gates in a
+schematic, it has to be one subcircuit carrying all twelve pins. That wrapper
+is GENERATED. You give the blocks and say which symbol pin each block port
+sits on, and the platform writes the `.subckt`, names it
+`sigma_sym_<symbol>`, and derives the pin map.
+
+Do this on the symbol page, in the Simulation card, Composed mode. Thirteen
+hand-written wrappers were retired this way, two of which had been sitting in
+the library linked to nothing at all.
+
+**Compose when the part is wiring around existing blocks.** Two gates in one
+package, four legs of a TVS array, a MOSFET die behind five package pins, a
+flip-flop with its unused preset tied high. **Write a model by hand only for
+new behaviour** — a behavioural source, a `.model` card, an equation.
+
+Rules that follow from how it works:
+
+- **One wrapper port per unique symbol pin, never fewer.** It is tempting to
+  put a power MOSFET's three source pins on one port and drop the ties. It is
+  wrong: the schematic may put those pins on three different nets, and one
+  port carries one node. Join pins with a **tie** — a real resistor, package
+  copper being 0.2 mΩ or so — which is also the only form that lets you
+  see the tie current.
+- **Every pin is answered.** Wire it, or tick it as not modelled. A pin left
+  blank blocks the save. This is the composed form of the `-` sentinel, and
+  it exists so that a forgotten pin cannot pass as a deliberate one.
+- **Read the coverage panel before you save, not the block list.** The block
+  list says where a port sits; coverage says what each PIN feeds. A crossed
+  rail is visible in one and not the other.
+- **Read the generated netlist before you publish.** It is shown under the
+  editor. Generation nobody reads is generation nobody checks.
+- **Parameters are shared by default**, because both halves of a dual gate
+  are one die and take one number. Use `per block` when they genuinely differ
+  (a dual TVS with different breakdown per channel). Use `fixed value` to
+  bury a number nobody should tune.
+- **Set a wrapper default that differs from the block's.** `sigma_tvs_bi`
+  declared `VBR=26.7` while its `sigma_tvs_leg` block defaults to 13.3, and a
+  component with no `Sim.Params` row runs on whichever the wrapper states.
+  Getting this wrong halves a clamping voltage silently.
+- **Never hand-edit a generated model.** The model page refuses, and the next
+  regeneration would overwrite it anyway. Change the block design instead.
+- **A block model's new version rebuilds every wrapper that uses it.** Where a
+  hand-written wrapper goes stale and waits for a person, a composition is
+  simply rebuilt — and where it cannot be, the failure names the port that
+  lost its node.
 
 ## Parameter naming — datasheet symbols, datasheet conditions
 
@@ -71,6 +134,10 @@ Use the symbol the datasheet uses, at the condition the datasheet states:
 - Diodes / LEDs: `IS`, `N`, `RS`, `CJ`; LEDs add the per-colour `VF`.
 
 ## Pin maps
+
+**In composed mode there is no pin map to author.** The port list is one port
+per pin by construction, so `Sim.Pins` is derived and cannot be mis-written.
+The whole of this section is about hand-written models.
 
 - `Sim.Pins` is MANDATORY. Without it KiCad falls back to raw pin order,
   counts hidden stacked pins, and mis-wires silently.
@@ -244,8 +311,14 @@ Put those measured numbers in the version comment.
 
 ## Staleness
 
-The link stamps two fingerprints: the symbol's pin numbers + electrical
-types, and the model's PORT LIST. Either moving withholds the Sim fields
-from the mirror (with a warning) until someone re-confirms the map —
-re-saving the link is the confirmation. Editing a model's params or
+**A hand-written link stamps two fingerprints**: the symbol's pin numbers
+plus electrical types, and the model's PORT LIST. Either moving withholds the
+Sim fields from the mirror (with a warning) until someone re-confirms the map
+— re-saving the link is the confirmation. Editing a model's params or
 internals does not flag links. Adding, removing or reordering ports does.
+
+**A composed link stamps nothing.** It is unusable only when the block design
+no longer builds against today's blocks, or when the published wrapper is not
+what the design builds. Both self-heal: fix the block model and the wrapper
+rebuilds itself. That is the point of composing — a fingerprint can only say
+"ports changed", where this names the port that lost its node.
