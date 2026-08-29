@@ -263,6 +263,11 @@ def run_op(
                 plots = sim_spice.parse_raw(raw)
         except sim_spice.SimError as e:
             raise OpError(str(e)) from e
-        return sim_spice.encode_payload(plots, info=info, log=log), MEDIA[op]
+        return (
+            sim_spice.encode_payload(
+                plots, nets=sim_spice.top_level_nodes(prepared), info=info, log=log,
+            ),
+            MEDIA[op],
+        )
 
     raise OpError(f"unknown op: {op}")

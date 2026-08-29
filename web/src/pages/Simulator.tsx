@@ -494,9 +494,11 @@ export default function Simulator() {
         ) : null}
         {!live && plot ? (
           <>
-            <button type="button" onClick={() => setPlaying((p) => !p)}>
-              {playing ? "Pause" : "Play"}
-            </button>
+            {plot.scale.length > 1 ? (
+              <button type="button" onClick={() => setPlaying((p) => !p)}>
+                {playing ? "Pause" : "Play"}
+              </button>
+            ) : null}
             <span className="pill neutral">{plot.name}</span>
             <span className="muted">
               {plot.scale.length} points · {eng(duration, plot.scaleType === "time" ? "s" : "Hz")}
@@ -546,18 +548,20 @@ export default function Simulator() {
 
           {!live && plot ? (
             <div className="card pad">
-              <input
-                type="range"
-                min={0}
-                max={Math.max(0, plot.scale.length - 1)}
-                value={sample}
-                onChange={(e) => {
-                  setPlaying(false);
-                  setSample(Number(e.target.value));
-                }}
-                aria-label="Position in the run"
-                className="sim-scrub"
-              />
+              {plot.scale.length > 1 ? (
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(0, plot.scale.length - 1)}
+                  value={sample}
+                  onChange={(e) => {
+                    setPlaying(false);
+                    setSample(Number(e.target.value));
+                  }}
+                  aria-label="Position in the run"
+                  className="sim-scrub"
+                />
+              ) : null}
               <Scope
                 plot={plot}
                 traces={traces}

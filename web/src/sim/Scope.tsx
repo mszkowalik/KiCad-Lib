@@ -46,6 +46,31 @@ export default function Scope({ plot, traces, sample, onScrub, onRemove }: Props
   }
 
   const n = plot.scale.length;
+  // An operating point is ONE solution. There is no waveform to draw, and an
+  // empty plot box reads as a broken simulation rather than as the answer.
+  if (n <= 1) {
+    return (
+      <div className="sim-scope">
+        <p className="muted">
+          {plot.name || "Operating point"} — one solution, not a waveform. To watch these
+          values move, switch to Live and turn a knob.
+        </p>
+        <div className="sim-legend">
+          {series.map((s, index) => (
+            <button
+              key={s.trace.name}
+              type="button"
+              className={`pill neutral sim-legend-item sim-trace-${index % 6}`}
+              onClick={() => onRemove(s.trace.name)}
+              title="Remove this reading"
+            >
+              {s.trace.label} = {eng(at(s.data, 0), s.trace.unit)}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
   const x = (i: number) => (n <= 1 ? 0 : (i / (n - 1)) * W);
   const y = (v: number) => H - PAD - ((v - range.min) / (range.max - range.min)) * (H - 2 * PAD);
 

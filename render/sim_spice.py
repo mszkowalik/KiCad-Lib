@@ -284,9 +284,12 @@ def classify(name: str, nets: set[str] | None) -> dict | None:
     low = name.strip().lower()
     if m := _V_RE.match(low):
         net = m.group(1)
-        if "." in net:  # xu1.53 — inside a subcircuit
-            return None
-        if nets is not None and net not in nets:
+        if nets is not None:
+            # The netlist itself says which nodes are real. Ask it rather than
+            # guessing from the spelling — see the dot rule below for what
+            # guessing cost.
+            return {"kind": "v", "key": net} if net in nets else None
+        if "." in net:
             return None
         return {"kind": "v", "key": net}
     if m := _I_DEV_RE.match(low):
@@ -294,6 +297,43 @@ def classify(name: str, nets: set[str] | None) -> dict | None:
     if m := _I_SRC_RE.match(low):
         return {"kind": "i", "key": m.group(1)}
     return None
+
+
+# Every node of the flat circuit appears as a token on an element line. That
+# is the whole of the top-level node set, exactly, and it costs one pass over
+# text we already hold — no second netlist export, and no rule about how a
+# name is spelled.
+#
+# The spelling rule this replaced dropped any `v(x)` whose x contained a dot,
+# on the reasoning that `xu1.53` is inside a subcircuit. A KiCad label may
+# contain a dot: EVSE_20_CTRL's temperature block names nets `AT1.ADC`,
+# `AT1.OK`, `AT2.WIN` and six more, and every one of them vanished from its
+# own simulation with nothing said.
+_ELEMENT_SKIP = ("*", ".", "+")
+
+
+def top_level_nodes(netlist: str) -> set[str]:
+    """Node names the flat netlist actually connects, lower case."""
+    nodes: set[str] = set()
+    in_control = False
+    for raw in netlist.splitlines():
+        line = raw.strip()
+        low = line.lower()
+        if low.startswith(".control"):
+            in_control = True
+            continue
+        if low.startswith(".endc"):
+            in_control = False
+            continue
+        if in_control or not line or line[0] in _ELEMENT_SKIP:
+            continue
+        # Everything after the reference designator, minus what cannot be a
+        # node: a keyword, an assignment, a bracketed expression.
+        for token in low.split()[1:]:
+            if "=" in token or token.startswith(("(", "{")):
+                continue
+            nodes.add(token)
+    return nodes
 
 
 def _decimate(scale: list[float], series: list[list[float]], limit: int
