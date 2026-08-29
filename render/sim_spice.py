@@ -164,8 +164,34 @@ def run_ngspice(netlist: str, work_dir: str | Path, *, ngspice: str = "ngspice",
         raise SimError(f"ngspice did not finish within {timeout}s") from e
     log = (proc.stdout or "") + (proc.stderr or "")
     if not raw.exists() or raw.stat().st_size == 0:
-        raise SimError(f"ngspice produced no data (rc={proc.returncode}): {log.strip()[-800:]}")
+        raise SimError(
+            f"ngspice produced no data (rc={proc.returncode}). {complaints(log)}"
+        )
     return raw.read_bytes(), log
+
+
+# ngspice repeats one complaint for every failed timestep — 48 copies of the
+# same singular node is normal — so the tail of the log is usually the same
+# line over and over while the sentence that explains the run is far above it.
+_COMPLAINT_RE = re.compile(
+    r"^\s*(?:error|warning|ppperror|pperror)\b.*|^.*\bsingular matrix\b.*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def complaints(log: str, limit: int = 6) -> str:
+    """The distinct things ngspice objected to, first ones first."""
+    seen: list[str] = []
+    for line in _COMPLAINT_RE.findall(log):
+        text = line.strip()
+        if text and text not in seen:
+            seen.append(text)
+        if len(seen) >= limit:
+            break
+    if not seen:
+        return log.strip()[-500:] or "ngspice said nothing at all."
+    more = " …" if len(_COMPLAINT_RE.findall(log)) > len(seen) else ""
+    return " | ".join(seen) + more
 
 
 # ---------------------------------------------------------------- rawfile
