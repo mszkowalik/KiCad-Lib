@@ -19,6 +19,8 @@ import re
 from sqlalchemy.orm import Session
 
 from .. import models as M
+from .generator import build_excluded
+from .mirror import top_level_of
 from .templates import TEMPLATE_RE
 
 MIN_DRILL = 0.3
@@ -374,10 +376,26 @@ def validate_component(db: Session, cv: M.ComponentVersion, comp: M.Component) -
         props[p.key] = None if p.is_null else p.value
     items: list[dict] = []
 
+    # A part in the Simulation category is never placed on a board, so it has
+    # no footprint to name and none to check — the same reasoning the BOM-only
+    # branch already uses. Everything else about it IS checked: it still needs
+    # a description, and it still goes through the review axis.
+    sim_only = build_excluded(top_level_of(cv.category).name) if cv.category else False
+
     if not comp.in_library:
         # BOM-only part: no symbol, no footprint, no KiCad emission.
         items.append(_item("cmp.required_props", "na", "BOM-only part"))
         items.append(_item("cmp.footprint_ref", "na", "BOM-only part"))
+    elif sim_only:
+        required = [k for k in rules.get("required_properties", ["Footprint", "ki_description"])
+                    if k != "Footprint"]
+        missing = [k for k in required if k not in props]
+        if missing:
+            items.append(_item("cmp.required_props", "failed", "missing: " + ", ".join(missing)))
+        else:
+            items.append(_item("cmp.required_props", "checked"))
+        items.append(_item("cmp.footprint_ref", "na",
+                           "simulation-only part — excluded from the board"))
     else:
         required = rules.get("required_properties", ["Footprint", "ki_description"])
         missing = [k for k in required if k not in props]
