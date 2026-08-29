@@ -2,7 +2,7 @@
 name: kicad-conventions-simulation
 description: "Authoring simulation models and symbol links: the sigma_ namespace, parameter naming from datasheet symbols (V_BR at test current, never V_RWM), mandatory pin maps and the NC sentinel, per-component Sim.Params, switch drive modes (static / alter / PWL), scenario .control blocks, and the ngspice convergence traps. Use when writing a sim model, linking a symbol, or setting Sim.Params."
 ---
-<!-- platform-skill: conventions-simulation v3 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-simulation v4 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Simulation model conventions
 
 Simulation models are versioned library objects, like symbols and footprints.
@@ -108,8 +108,9 @@ Rules that follow from how it works:
   are one die and take one number. Use `per block` when they genuinely differ
   (a dual TVS with different breakdown per channel). Use `fixed value` to
   bury a number nobody should tune.
-- **Set a wrapper default that differs from the block's.** `sigma_tvs_bi`
-  declared `VBR=26.7` while its `sigma_tvs_leg` block defaults to 13.3, and a
+- **Set a wrapper default that differs from the block's.** The retired
+  `sigma_tvs_bi` wrapper declared `VBR=26.7` while the `sigma_tvs_leg` block
+  it wrapped defaults to 13.3, and a
   component with no `Sim.Params` row runs on whichever the wrapper states.
   Getting this wrong halves a clamping voltage silently.
 - **Never hand-edit a generated model.** The model page refuses, and the next
@@ -149,9 +150,13 @@ The whole of this section is about hand-written models.
   not to model). Every declared port must be claimed by exactly one pin.
 - The validator catches structure only. It CANNOT catch a swap — swapping
   in+ and in− is still a valid permutation. A human (or you, against the
-  datasheet pinout) reviews the map. The rail heuristic flags a `power_in`
-  pin on a signal port. `power_out` on a signal port is deliberately allowed
-  (high-side switch outputs).
+  datasheet pinout) reviews the map. The one semantic check is the rail
+  heuristic: a rail-shaped port (`vcc`, `vdd1`, `gnd2`, `vinp`, `vs` — a rail
+  stem plus an optional channel number or polarity letter) claimed by a pin
+  that is not a power pin. It does NOT flag a power pin on a port with a
+  generic name: an LDO's `in`, a regulator's `out` and a flip-flop's `pren`
+  tied high are all correct, and no name-based rule can tell them from an
+  op-amp's `in+`.
 
 ## Sim.Params on components
 
