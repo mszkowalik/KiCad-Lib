@@ -16,8 +16,27 @@ from sqlalchemy.orm import Session, selectinload
 from .. import models as M
 from ..db import get_db
 from ..services import material
-from ..services.simmodel import NC, link_material_sha, model_material_sha, parse_subckt
-from ..services.sim_store import propose_sim_model_version, set_symbol_sim_link
+from ..services.simcompose import (
+    COMPOSED_KIND,
+    compose,
+    wrapper_name,
+    wrapper_params,
+)
+from ..services.simmodel import (
+    NC,
+    link_material_sha,
+    model_material_sha,
+    parse_subckt,
+    sim_pins_value,
+)
+from ..services.sim_store import (
+    block_catalog,
+    composed_stale_reasons,
+    delete_sim_model,
+    propose_sim_model_version,
+    set_symbol_sim_composition,
+    set_symbol_sim_link,
+)
 
 router = APIRouter(prefix="/api", tags=["sim-models"])
 
@@ -135,14 +154,20 @@ def propose_sim_model_edit(model_id: int, body: SimModelProposal, db: Session = 
 
 
 # ---------------------------------------------------------------- symbol link
-def _stale_reasons(link: M.SymbolSimLink, pins: list[dict],
+def _stale_reasons(db: Session, link: M.SymbolSimLink, pins: list[dict],
                    mv: M.SimModelVersion | None) -> list[str]:
+    if mv is None:
+        return ["the model has no published version"]
+    if link.mode == COMPOSED_KIND:
+        # Derived, so there is no stamp to compare — the question is whether
+        # the design still builds. Same call the mirror makes, so the editor
+        # and the library can never disagree about whether a link is usable.
+        return composed_stale_reasons(link.symbol.name, link.composition or {}, pins,
+                                      mv.source_text, block_catalog(db))
     reasons = []
     if link.symbol_material_sha != link_material_sha(pins):
         reasons.append("the symbol's pins changed since this map was authored")
-    if mv is None:
-        reasons.append("the model has no published version")
-    elif link.model_material_sha != model_material_sha(mv.source_text):
+    if link.model_material_sha != model_material_sha(mv.source_text):
         reasons.append("the model's port list changed since this map was authored")
     return reasons
 
@@ -169,9 +194,11 @@ def get_symbol_sim_link(sym_id: int, db: Session = Depends(get_db)):
             "model_id": link.sim_model.id,
             "model_name": link.sim_model.name,
             "pin_map": link.pin_map,
+            "mode": link.mode,
+            "composition": link.composition,
             "updated_at": link.updated_at.isoformat() if link.updated_at else None,
             "updated_by": link.updated_by,
-            "stale": _stale_reasons(link, pins, mv),
+            "stale": _stale_reasons(db, link, pins, mv),
         }
     # ALL models, primitives included: a symbol whose part IS the primitive
     # (a diode, a switch, an opamp in a 5-pin package) links to it directly —
@@ -189,10 +216,20 @@ def get_symbol_sim_link(sym_id: int, db: Session = Depends(get_db)):
                   "type": p.get("type"), "hide": bool(p.get("hide"))} for p in pins],
         "link": link_out,
         "models": [
-            {"id": m.id, "name": m.name,
-             "ports": ((_current(m).parsed or {}).get("ports") if _current(m) else None) or []}
+            {"id": m.id, "name": m.name, "kind": m.kind,
+             "ports": ((_current(m).parsed or {}).get("ports") if _current(m) else None) or [],
+             "params": ((_current(m).parsed or {}).get("params") if _current(m) else None) or {}}
             for m in models
         ],
+        # What a composition may use as a block. Narrower than `models`: a
+        # generated wrapper is package-shaped and belongs to one symbol, so it
+        # is never a building block for another.
+        "blocks": [
+            {"name": name, "kind": spec["kind"], "ports": spec["ports"],
+             "params": spec["params"]}
+            for name, spec in sorted(block_catalog(db).items())
+        ],
+        "wrapper_name": wrapper_name(s.name),
         "nc": NC,
     }
 
@@ -226,6 +263,97 @@ def delete_symbol_sim_link(sym_id: int, db: Session = Depends(get_db)):
     if s is None:
         raise HTTPException(404, "symbol not found")
     res = set_symbol_sim_link(db, s.name, "", {}, actor="user")
+    if "error" in res:
+        raise HTTPException(400, detail=res)
+    return res
+
+
+# ---------------------------------------------------------------- composition
+class CompositionBody(BaseModel):
+    """The authored half of a composed link.
+
+    `blocks[].nodes` is `{model port: node}`, where a node is a symbol PIN
+    NUMBER or an internal net written `@name`. `blocks[].params` is
+    `{model param: binding}` — `$shared` (the default, and what every
+    hand-written dual-gate wrapper in this library already does), `$shared:NAME`
+    to share under another name, `$own` for one wrapper parameter per block, or
+    a literal SPICE value. `unmodelled` is the composed form of the `-`
+    sentinel: pins left out ON PURPOSE, stated rather than forgotten.
+    """
+    blocks: list[dict] = []
+    resistors: list[dict] = []
+    unmodelled: list[str] = []
+    # Wrapper parameter defaults that differ from the block model's own. A
+    # component with no Sim.Params row runs on these, so they are part of the
+    # part's behaviour, not decoration.
+    defaults: dict[str, str] = {}
+    comment: str = ""
+
+    def as_composition(self) -> dict:
+        return {"blocks": self.blocks, "resistors": self.resistors,
+                "unmodelled": self.unmodelled, "defaults": self.defaults}
+
+
+def _symbol_pins(db: Session, sym_id: int):
+    s = db.get(M.Symbol, sym_id)
+    if s is None:
+        raise HTTPException(404, "symbol not found")
+    sv = next((v for v in s.versions if v.id == s.current_version_id), None)
+    if sv is None:
+        raise HTTPException(400, detail={"error": "symbol has no published version"})
+    try:
+        return s, material.symbol_material(sv.source_text)["pins"]
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, detail={"error": f"symbol source does not parse: {e}"})
+
+
+@router.post("/symbols/{sym_id}/sim-composition/preview")
+def preview_sim_composition(sym_id: int, body: CompositionBody, db: Session = Depends(get_db)):
+    """The `.subckt` this composition would publish, without publishing it.
+
+    Generation without a visible artifact is the whole risk of composing, so
+    the editor shows the text live and the reviewer reads what will actually
+    run — not a description of it.
+    """
+    s, pins = _symbol_pins(db, sym_id)
+    catalog = block_catalog(db)
+    composition = body.as_composition()
+    built = compose(s.name, composition, pins, catalog)
+    declared, _ = wrapper_params(composition, catalog)
+    return {
+        "name": wrapper_name(s.name),
+        # The wrapper's own parameter list, so the editor can offer a default
+        # for each without parsing the generated text back out.
+        "params": declared,
+        "source_text": built["source_text"],
+        "ports": built["ports"],
+        "pin_map": built["pin_map"],
+        "sim_pins": sim_pins_value(built["pin_map"]),
+        "errors": [p["text"] for p in built["problems"] if p["severity"] == "error"],
+        "warnings": [p["text"] for p in built["problems"] if p["severity"] == "warning"],
+    }
+
+
+@router.put("/symbols/{sym_id}/sim-composition")
+def put_sim_composition(sym_id: int, body: CompositionBody, db: Session = Depends(get_db)):
+    s = db.get(M.Symbol, sym_id)
+    if s is None:
+        raise HTTPException(404, "symbol not found")
+    res = set_symbol_sim_composition(db, s.name, body.as_composition(),
+                                     actor="user", comment=body.comment)
+    if "error" in res:
+        if res.get("problems"):
+            res = {**res, "error": f"{res['error']}: {'; '.join(res['problems'])}"}
+        raise HTTPException(400, detail=res)
+    return res
+
+
+@router.delete("/sim-models/{model_id}")
+def remove_sim_model(model_id: int, db: Session = Depends(get_db)):
+    m = db.get(M.SimModel, model_id)
+    if m is None:
+        raise HTTPException(404, "sim model not found")
+    res = delete_sim_model(db, m.name, actor="user")
     if "error" in res:
         raise HTTPException(400, detail=res)
     return res

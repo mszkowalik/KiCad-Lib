@@ -264,8 +264,12 @@ def resolve_sim_links(db: Session, warnings: list[str]) -> dict[int, dict]:
     or model ports moved since authoring must not reach a netlist. Each stale
     link costs one warning, so it surfaces on every publish until fixed.
     """
+    from .simcompose import COMPOSED_KIND
+    from .sim_store import block_catalog, composed_stale_reasons
+
     out: dict[int, dict] = {}
     live_keys: set[tuple] = set()
+    catalog: dict | None = None
     links = db.execute(
         select(M.SymbolSimLink).options(
             selectinload(M.SymbolSimLink.symbol).selectinload(M.Symbol.versions),
@@ -279,8 +283,24 @@ def resolve_sim_links(db: Session, warnings: list[str]) -> dict[int, dict]:
         mv = next((v for v in model.versions if v.id == model.current_version_id), None)
         if sv is None or mv is None or mv.status != "published":
             continue
+        composed = link.mode == COMPOSED_KIND
+        composition = link.composition or {}
+        # A composed wrapper is derived, so its health depends on the CURRENT
+        # version of every block it uses — none of which appears in the fields
+        # a hand-written link is keyed on. Without this the cache would answer
+        # "healthy" for a design a block model has since broken.
+        if composed:
+            if catalog is None:
+                catalog = block_catalog(db)
+            blocks_key = tuple(sorted(
+                (str(b.get("model") or ""),
+                 (catalog.get(str(b.get("model") or "")) or {}).get("version_id"))
+                for b in (composition.get("blocks") or [])))
+        else:
+            blocks_key = ()
         key = (link.id, sv.id, mv.id, link.symbol_material_sha,
-               link.model_material_sha, json.dumps(link.pin_map, sort_keys=True))
+               link.model_material_sha, json.dumps(link.pin_map, sort_keys=True),
+               blocks_key)
         live_keys.add(key)
         cached = _SIM_LINK_CACHE.get(key)
         if cached is not None:
@@ -289,14 +309,23 @@ def resolve_sim_links(db: Session, warnings: list[str]) -> dict[int, dict]:
                 warnings.append(f"sim link {sym.name} -> {model.name}: {cached['stale']} — Sim fields withheld")
             continue
         stale_reasons = []
+        pins = None
         try:
             pins = material.symbol_material(sv.source_text)["pins"]
-            if link_material_sha(pins) != link.symbol_material_sha:
-                stale_reasons.append("symbol pins changed since the map was authored")
         except Exception:  # noqa: BLE001 — unparseable symbol == cannot vouch for the map
             stale_reasons.append("symbol source is unparseable")
-        if model_material_sha(mv.source_text) != link.model_material_sha:
-            stale_reasons.append("model ports changed since the map was authored")
+        if composed:
+            # Derived state needs no fingerprint. The question is simply
+            # whether the block design still builds against today's blocks,
+            # and if it does, whether the published wrapper is that build.
+            if pins is not None:
+                stale_reasons += composed_stale_reasons(
+                    sym.name, composition, pins, mv.source_text, catalog or {})
+        else:
+            if pins is not None and link_material_sha(pins) != link.symbol_material_sha:
+                stale_reasons.append("symbol pins changed since the map was authored")
+            if model_material_sha(mv.source_text) != link.model_material_sha:
+                stale_reasons.append("model ports changed since the map was authored")
         if stale_reasons:
             warnings.append(f"sim link {sym.name} -> {model.name}: {'; '.join(stale_reasons)} — Sim fields withheld")
         entry = {
@@ -344,7 +373,10 @@ def write_sim_lib(db: Session, settings: Settings) -> int:
         "* Sim.Params field; defaults below are placeholder-grade.",
     ]
     count = 0
-    for model in sorted(rows, key=lambda m: (m.kind != "primitive", m.name)):
+    # primitives, then hand-written part wrappers, then generated ones. SPICE
+    # needs no ordering at all; this is so the file reads bottom-up.
+    _kind_order = {"primitive": 0, "part": 1}
+    for model in sorted(rows, key=lambda m: (_kind_order.get(m.kind, 2), m.name)):
         mv = next((v for v in model.versions if v.id == model.current_version_id), None)
         if mv is None or mv.status != "published":
             continue

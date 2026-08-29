@@ -166,12 +166,17 @@ class SimModel(Base):
     `.subckt` name the generated library emits, so it lives in SPICE's flat
     global namespace — hence the `sigma_` prefix the validator enforces.
 
-    `kind` separates the two populations in one table:
-      - `primitive`: a building block (`sigma_opamp`, `sigma_switch`). Nothing
-        links to it directly; part models instantiate it by name.
-      - `part`: what a base symbol links to. May instantiate primitives.
-    Both are emitted into the same generated `.sp`, so name resolution is by
-    plain SPICE lookup and the file is self-contained.
+    `kind` labels three populations in one table:
+      - `primitive`: a building block (`sigma_opamp`, `sigma_switch`).
+      - `part`: a hand-written wrapper for one device.
+      - `composed`: GENERATED from a symbol's block design
+        (`services/simcompose.py`), named `sigma_sym_<symbol>`, and owned by
+        the link that built it — it is deleted when that link is.
+    A symbol may link to a primitive or a part alike: a diode, a switch or a
+    5-pin op-amp IS the primitive. The label is otherwise cosmetic, ordering
+    the generated `.sp` and nothing else. All three are emitted into that one
+    file, so name resolution is plain SPICE lookup and the file is
+    self-contained.
     """
 
     __tablename__ = "sim_models"
@@ -245,6 +250,16 @@ class SymbolSimLink(Base):
     symbol_id: Mapped[int] = mapped_column(ForeignKey("symbols.id"), unique=True)
     sim_model_id: Mapped[int] = mapped_column(ForeignKey("sim_models.id"))
     pin_map: Mapped[dict] = mapped_column(JSONB)
+    # `model` links one hand-written subcircuit and stores the map its author
+    # typed. `composed` builds the subcircuit out of library blocks
+    # (services/simcompose.py) and DERIVES the map, so the map cannot be
+    # mis-authored — the failure mode validate_pin_map admits it cannot catch.
+    # The generated wrapper is a real SimModel row with kind="composed", which
+    # is why the mirror, the generator and the validator needed no change.
+    mode: Mapped[str] = mapped_column(String(20), default="model", server_default="model")
+    # The authored state in composed mode: blocks, their nodes, tie resistors
+    # and the pins deliberately left out. NULL in `model` mode.
+    composition: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     symbol_material_sha: Mapped[str] = mapped_column(String(64), default="", server_default="")
     model_material_sha: Mapped[str] = mapped_column(String(64), default="", server_default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

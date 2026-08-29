@@ -2017,6 +2017,127 @@ table.kv.sim-map-table select {
   min-width: 13em;
 }
 
+/* --- composed sim models -------------------------------------------------
+   Two columns on a wide screen: the block editor on the left, and the pin
+   coverage beside it. Coverage is the INVERSE of the editor — the editor says
+   "this port sits on that pin", coverage says "this pin feeds those ports" —
+   and it is where a missed pin or a crossed rail is visible. The generated
+   netlist sits under both, because generation nobody reads is generation
+   nobody checks. */
+.sim-mode-row {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.seg-toggle {
+  display: inline-flex;
+  gap: 0;
+}
+
+.seg-toggle .btn:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.seg-toggle .btn:last-child {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  margin-left: -1px;
+}
+
+.sim-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(16em, 1fr);
+  gap: 18px;
+  margin-top: 12px;
+}
+
+.sim-compose > .sim-preview {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+  .sim-compose {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.sim-blocks {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sim-block {
+  border: 1px solid var(--line, #d8dde5);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--surface-2, transparent);
+}
+
+.sim-block-head {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sim-tie .sim-block-head {
+  margin: 0;
+}
+
+.sim-ref {
+  width: 6em;
+  min-width: 6em;
+}
+
+/* The node picker and, when the node is an internal net, the name beside it. */
+.sim-node-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sim-net-name {
+  width: 9em;
+  min-width: 9em;
+}
+
+.sim-params {
+  margin-top: 8px;
+}
+
+.sim-params > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.sim-coverage {
+  min-width: 0;
+}
+
+/* A pin that is neither wired nor ticked. The composition will not publish
+   until every one of these is answered, so the row has to draw the eye. */
+.sim-loose td {
+  background: var(--warn-bg, rgba(200, 130, 75, 0.12));
+}
+
+.sim-unmodelled {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 0.92em;
+  white-space: nowrap;
+}
+
+.sim-preview .skill-textarea.sim-src {
+  width: 100%;
+  min-height: 14em;
+}
+
 .skill-textarea[readonly] {
   background: var(--surface-2);
   color: var(--muted);

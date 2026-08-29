@@ -1407,7 +1407,17 @@ Versioned SPICE subcircuits (`SimModel`/`SimModelVersion`, auto-publish like
 everything else) plus ONE link per base symbol (`SymbolSimLink`: model +
 `{pin number: port}` map). The mirror emits every model into
 `Symbols/7Sigma_sim.sp` and turns each link into four `Sim.*` property rows on
-every component of that symbol. Facts that are not obvious from the code:
+every component of that symbol.
+
+A link has **two modes**, and the switch is permanent rather than a migration
+aid:
+
+| `SymbolSimLink.mode` | Authored | Derived |
+|---|---|---|
+| `model` | the subcircuit text, and the `{pin: port}` map | nothing |
+| `composed` | `composition`: blocks, their nodes, ties, unmodelled pins | the `.subckt`, its port list, and the pin map |
+
+Facts that are not obvious from the code:
 
 - **`Sim.*` rows land on COMPONENT instances, never only in `lib_symbols`** —
   KiCad's netlister ignores library-level sim properties. `Sim.Pins` is
@@ -1482,9 +1492,68 @@ every component of that symbol. Facts that are not obvious from the code:
   `SPICE_LIB_DIR=<dir> ngspice -b …`. KiCad's bundled ngspice is 45.2, not
   whatever is on PATH.
 - **Model names are the namespace**: `sigma_` prefix enforced
-  (`sim_store.NAME_RE`), row name must equal the `.subckt` name, and per-model
-  `kind` separates `part` (linkable) from `primitive` (building block —
-  hidden from the link picker, instantiated by name from other models).
+  (`sim_store.NAME_RE`), and the row name must equal the `.subckt` name.
+  `kind` is `primitive` (a building block), `part` (a hand-written wrapper for
+  one device) or `composed` (generated — see below). A symbol may link to ANY
+  of the first two: a diode, a switch or a 5-pin op-amp IS the primitive, and
+  a picker that filtered primitives out would hide most working links from
+  their own editor (`routers/sim_models.get_symbol_sim_link`). `kind` is
+  otherwise cosmetic — it orders `write_sim_lib`'s output and nothing else.
+
+### Composed models (`services/simcompose.py`)
+
+A wrapper whose whole body is instance lines and tie resistors holds no
+behaviour, so it is generated rather than typed. `simcompose.compose()` turns a
+block design into a `.subckt`; `sim_store.set_symbol_sim_composition` publishes
+it as a normal `SimModel` row with `kind="composed"` and name
+`sigma_sym_<symbol slug>`. Everything downstream was therefore untouched — the
+mirror emits it like any model, `generator.sim_props` points `Sim.Name` at it,
+`Sim.Pins` comes off the same derived map.
+
+- **One wrapper port per unique symbol pin, never fewer.** It is tempting to
+  alias a power MOSFET's three source pins onto one port and drop the ties. It
+  is wrong: the schematic may put those pins on three different nets, and one
+  port carries one node. Ties are real resistors inside the subcircuit, which
+  is also what `sigma_nmos_pwr8` did by hand. The payoff is that the port list
+  is `p1 p2 p4 …` by construction, so **`Sim.Pins` is derived and cannot be
+  mis-authored** — the swap `validate_pin_map` openly cannot catch stops being
+  possible in this mode.
+- **Staleness is computed, not stamped** (`sim_store.composed_stale_reasons`,
+  one implementation, three callers: mirror, link editor, validator). A
+  composed link is unusable when its design no longer builds against today's
+  block models, or when the published wrapper is not what the design builds.
+  Both self-heal; a stamped fingerprint never does.
+- **A block model's publish REGENERATES its dependents**
+  (`sim_store.recompose_dependents`, called from `propose_sim_model_version`
+  and guarded on `kind != composed` so a wrapper's own publish cannot recurse).
+  Where a hand-written wrapper would go stale and wait for a person, a
+  composition is rebuilt — and when it cannot be, the failure names the port
+  that lost its node.
+- **Generated text must be byte-stable, so parameters are emitted SORTED.**
+  `SimModelVersion.parsed` is a JSONB cache and Postgres reorders a jsonb
+  object's keys (shortest first, then bytewise), so the same model yields one
+  key order in the session that parsed it and another after a round trip.
+  Emitting in dict order made every mirror write report the wrapper as behind
+  its own design.
+- **The wrapper is owned by its link.** Removing the link, or switching back to
+  `model` mode, deletes it (`sim_store._drop_generated`). Hand-written wrappers
+  had no such owner, which is how `sigma_74hc21` and `sigma_buf2` sat in the
+  library linked to nothing.
+- **Parameter bindings** are per block: `$shared` (default — every dual-gate
+  package here passes one value to both halves, because both halves are one
+  die), `$shared:NAME` to share under another name, `$own` for one wrapper
+  parameter per block (`G1_TPD`), or a literal. `composition.defaults`
+  overrides a wrapper default where it differs from the block model's own —
+  `sigma_tvs_bi` declared `VBR=26.7` while its `sigma_tvs_leg` block defaults
+  to 13.3, and a component with no `Sim.Params` row runs on whichever the
+  wrapper states.
+- **`cli/simrecompose.py`** converts the hand-written wrappers, then prunes
+  them: `plan`, `apply --verify`, `prune`, `orphans`. The conversion is
+  interface-preserving by construction (`$shared:NAME` keeps every parameter
+  name, `defaults` keeps every default), so no component's `Sim.Params` row
+  moves. `--verify` proves it by diffing the declared interface. `orphans`
+  reports building blocks no symbol can reach and never deletes: an unused
+  primitive is library surface someone put there on purpose.
 - Validator machine items: `sym.sim_link` (map errors / stale / heuristic
   rail-swap warnings) and `cmp.sim_params` (keys must be declared by the
   linked model). Deliberately NOT checklist-seeded — seeding un-answers every
@@ -1493,8 +1562,16 @@ every component of that symbol. Facts that are not obvious from the code:
   `PureWindowsPath`, turning `/` into `\\` (`api/kiutils/items/common.py`,
   marked with a comment). Keep the patch when vendoring a newer kiutils.
 - The UI lives on Templates → "Sim models" (list + new-model paste,
-  `pages/SimModelDetail.tsx`) and on each symbol template page
-  (`components/SimLinkCard.tsx` — picker + pin-map editor).
+  `pages/SimModelDetail.tsx` — which refuses to hand-edit a generated model and
+  offers deletion only while nothing links it) and on each symbol template page
+  (`components/SimLinkCard.tsx`). That card carries both modes. The composed
+  editor assigns **port → node**, not pin → port: a block has a short list of
+  named ports (`a b c d y vcc vee`) while the symbol has twelve unnamed pins,
+  and "gate 1 input A comes from pin 1" is the only direction that survives
+  past one block. Beside it sits the **pin coverage** panel, the inverse view,
+  which is where a missed pin or a crossed rail is visible — and under both,
+  the generated netlist itself, because generation nobody reads is generation
+  nobody checks.
 
 ## Conventions
 
