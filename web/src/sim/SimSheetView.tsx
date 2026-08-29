@@ -15,15 +15,15 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { SimGeometry } from "../api";
 import { solveSegmentCurrents } from "./currents";
-import { at, eng, netVoltage, type Range, type SimPlot } from "./payload";
+import { eng, type Range, type SampleReader } from "./payload";
 
 interface Props {
   geometry: SimGeometry;
   /** Crop to the drawing instead of showing the whole (mostly empty) page. */
   fit: boolean;
   svgUrl: string;
-  plot: SimPlot | null;
-  sample: number;
+  /** Where the values come from — a finished run, or a live frame. */
+  reader: SampleReader | null;
   /** Seconds of wall clock since the run started playing; drives the dots. */
   clock: number;
   running: boolean;
@@ -43,8 +43,7 @@ export default function SimSheetView({
   geometry,
   fit,
   svgUrl,
-  plot,
-  sample,
+  reader,
   clock,
   running,
   voltageRange,
@@ -115,8 +114,8 @@ export default function SimSheetView({
   );
 
   const solved = useMemo(
-    () => (plot ? solveSegmentCurrents(geometry, plot, sample) : null),
-    [geometry, plot, sample],
+    () => (reader ? solveSegmentCurrents(geometry, reader) : null),
+    [geometry, reader],
   );
 
   useEffect(() => {
@@ -127,9 +126,9 @@ export default function SimSheetView({
    *  color-mix keeps the two ends as CSS variables, so the overlay follows
    *  the theme instead of carrying its own hex codes. */
   const tint = (group: string): string | null => {
-    if (!plot) return null;
+    if (!reader) return null;
     const g = groupsById.get(group);
-    const v = netVoltage(plot, g?.spice, g?.ground, sample);
+    const v = reader.voltage(g?.spice, g?.ground);
     if (v === null) return null;
     const span = Math.max(Math.abs(voltageRange.min), Math.abs(voltageRange.max)) || 1;
     const share = Math.min(100, Math.round((Math.abs(v) / span) * 100));
@@ -138,9 +137,9 @@ export default function SimSheetView({
   };
 
   const readout = (net: string | null, group: string): string => {
-    if (!plot || !net) return net ?? "";
+    if (!reader || !net) return net ?? "";
     const g = groupsById.get(group);
-    const v = netVoltage(plot, g?.spice, g?.ground, sample);
+    const v = reader.voltage(g?.spice, g?.ground);
     return v === null ? `${net} — not simulated` : `${net} = ${eng(v, "V")}`;
   };
 
@@ -160,7 +159,7 @@ export default function SimSheetView({
     const scale = (canvas.width / width) || 1;
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
     ctx.clearRect(0, 0, width, height);
-    if (!plot || !solved || currentPeak <= 0) return;
+    if (!reader || !solved || currentPeak <= 0) return;
 
     const style = getComputedStyle(canvas);
     ctx.fillStyle = style.getPropertyValue("--sim-current").trim() || "currentColor";
@@ -191,7 +190,7 @@ export default function SimSheetView({
         }
       }
     }
-  }, [geometry, plot, solved, clock, currentPeak, width, height, running]);
+  }, [geometry, reader, solved, clock, currentPeak, width, height, running]);
 
   return (
     <div className="card schview">
@@ -260,11 +259,11 @@ export default function SimSheetView({
         </svg>
         </div>
       </div>
-      {plot ? (
+      {reader ? (
         <p className="muted sim-caption">
-          {plot.scaleType === "time"
-            ? `t = ${eng(at(plot.scale, sample), "s")}`
-            : `f = ${eng(at(plot.scale, sample), "Hz")}`}
+          {reader.scaleType === "time"
+            ? `t = ${eng(reader.position, "s")}`
+            : `f = ${eng(reader.position, "Hz")}`}
           {" · click a wire to plot it"}
         </p>
       ) : null}

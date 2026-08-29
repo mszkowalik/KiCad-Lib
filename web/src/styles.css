@@ -4450,6 +4450,28 @@ a.check-cell:hover {
   max-width: 22ch;
 }
 
+.sim-knobs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.7rem;
+}
+
+.sim-knob {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.sim-knob input {
+  width: 9ch;
+}
+
+.sim-alter {
+  min-width: 32ch;
+}
+
 .sim-nets {
   display: flex;
   flex-wrap: wrap;

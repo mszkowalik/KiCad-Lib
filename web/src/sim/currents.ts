@@ -15,7 +15,7 @@
  *     cannot be separated, and that net is left unanimated.
  */
 import type { SimGeometry, SimPin } from "../api";
-import type { SimPlot } from "./payload";
+import type { SampleReader } from "./payload";
 
 export interface NetCurrents {
   /** Wire id -> signed current per segment, along pts[i] -> pts[i+1]. */
@@ -41,22 +41,17 @@ interface Edge {
  *  second — so pin 1 drains the wire and pin 2 feeds it. */
 function pinInjection(
   pin: SimPin,
-  plot: SimPlot,
+  reader: SampleReader,
   pinsOfRef: Map<string, SimPin[]>,
 ): number | null {
-  const data = plot.currents.get(pin.ref.toLowerCase());
-  if (!data) return null;
+  if (reader.current(pin.ref) === null) return null;
   const siblings = pinsOfRef.get(pin.ref) ?? [];
   if (siblings.length !== 2) return null; // no per-terminal current for these
   if (pin.pin !== "1" && pin.pin !== "2") return null;
   return pin.pin === "1" ? 1 : -1;
 }
 
-export function solveSegmentCurrents(
-  geom: SimGeometry,
-  plot: SimPlot,
-  sample: number,
-): NetCurrents {
+export function solveSegmentCurrents(geom: SimGeometry, reader: SampleReader): NetCurrents {
   const pinsOfRef = new Map<string, SimPin[]>();
   for (const pin of geom.pins) {
     const list = pinsOfRef.get(pin.ref);
@@ -103,14 +98,12 @@ export function solveSegmentCurrents(
       if (pin.group !== group.id) continue;
       const node = key(pin.at[0], pin.at[1]);
       addNode(node);
-      const sign = pinInjection(pin, plot, pinsOfRef);
+      const sign = pinInjection(pin, reader, pinsOfRef);
       if (sign === null) {
         unknownNodes.push(node);
         continue;
       }
-      const data = plot.currents.get(pin.ref.toLowerCase());
-      const value = data ? data[Math.min(data.length - 1, Math.max(0, sample))] : 0;
-      const intoDevice = sign * value;
+      const intoDevice = sign * (reader.current(pin.ref) ?? 0);
       pins.set(`${pin.ref}.${pin.pin}`, intoDevice);
       inject.set(node, (inject.get(node) ?? 0) - intoDevice);
       known -= intoDevice;

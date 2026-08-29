@@ -22,7 +22,7 @@ import uuid as uuidlib
 from pathlib import Path
 
 from ..config import settings
-from . import gitrepo, project_render, sim_geom
+from . import gitrepo, pcm, project_render, sim_geom
 
 UPLOAD_ROOT = "sim_uploads"
 # What an upload may contain. Schematics and the model files a design keeps
@@ -348,6 +348,17 @@ def geometry(src: SimSource, instance_path: str = "") -> dict:
     geom["sheet"] = {k: entry[k] for k in ("name", "path", "depth", "page") if k in entry}
     geom["source"] = {"kind": src.kind, "label": src.label}
     return geom
+
+
+# --------------------------------------------------------------------- live
+
+def live_target(src: SimSource) -> str:
+    """DATA_DIR-relative root sheet, which is what a live session simulates.
+
+    Same rule as a batch run: the whole project, harness included. A live
+    session differs only in never ending."""
+    pcm.server_pcm_root()  # the netlist inside the render container needs it
+    return src.root_rel
 
 
 # ---------------------------------------------------------------------- run

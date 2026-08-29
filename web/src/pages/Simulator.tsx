@@ -32,11 +32,14 @@ import {
 import { ErrorBanner, Spinner } from "../components/Ui";
 import Scope, { type Trace } from "../sim/Scope";
 import SimSheetView from "../sim/SimSheetView";
+import { LiveSession, liveControls, type LiveControl, type LiveState } from "../sim/live";
 import {
   decodeSimPayload,
   eng,
+  liveReader,
   liveliest,
   peakMagnitude,
+  plotReader,
   vectorRange,
   type SimPlot,
   type SimRun,
@@ -85,7 +88,40 @@ export default function Simulator() {
   const [playing, setPlaying] = useState(false);
   const [clock, setClock] = useState(0);
 
+  // Live mode: an endless run, streamed, that you change while it runs.
+  const [live, setLive] = useState(false);
+  const [liveState, setLiveState] = useState<LiveState | null>(null);
+  const [liveSpeed, setLiveSpeed] = useState(1e-3);
+  const session = useRef<LiveSession | null>(null);
+  const [alterText, setAlterText] = useState("");
+  const [alterLog, setAlterLog] = useState<string[]>([]);
+
   const plot: SimPlot | null = run?.plots[0] ?? null;
+
+  /** Vector names the live overlay needs: every net drawn on this sheet, plus
+   *  a device current per part on it. Capped — a frame carries one float per
+   *  entry, thirty times a second. */
+  const liveVectors = useMemo(() => {
+    if (!geometry) return [] as string[];
+    const names: string[] = [];
+    for (const g of geometry.groups) {
+      if (g.spice && !g.ground && !g.derived) names.push(`v(${g.spice})`);
+    }
+    for (const sym of geometry.symbols) {
+      if (!sym.power && sym.ref) names.push(`i(@${sym.ref.toLowerCase()}[i])`);
+    }
+    return names.slice(0, 400);
+  }, [geometry]);
+
+  const liveIndex = useMemo(
+    () => new Map(liveVectors.map((name, i) => [name, i])),
+    [liveVectors],
+  );
+
+  const controls: LiveControl[] = useMemo(
+    () => (netlist ? liveControls(netlist) : []),
+    [netlist],
+  );
 
   // ------------------------------------------------------------- loading
 
@@ -170,6 +206,34 @@ export default function Simulator() {
     return () => cancelAnimationFrame(frame.current);
   }, [playing, scale]);
 
+  // Open and close the live session. Changing sheet or project tears it down:
+  // the overlay it feeds belongs to one drawing.
+  useEffect(() => {
+    if (!live || !source || !geometry || !liveVectors.length) return;
+    const target =
+      source.kind === "snapshot"
+        ? { kind: "snapshot", snapshot_id: source.snapshotId, board: source.board }
+        : { kind: "upload", upload_id: source.uploadId };
+    const s = new LiveSession(
+      { target, overlay: liveVectors, scopes: [], speed: liveSpeed, tstep: 1e-5 },
+      setLiveState,
+    );
+    session.current = s;
+    s.start();
+    return () => {
+      s.stop();
+      session.current = null;
+      setLiveState(null);
+    };
+    // liveSpeed is steered through the session, not by reconnecting.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, source, geometry, liveVectors]);
+
+  const alter = useCallback((command: string) => {
+    session.current?.alter(command);
+    setAlterLog((l) => [command, ...l].slice(0, 8));
+  }, []);
+
   // ------------------------------------------------------------- actions
 
   const doRun = useCallback(async () => {
@@ -235,11 +299,23 @@ export default function Simulator() {
     [geometry, addTrace],
   );
 
+  const reader = useMemo(() => {
+    if (live) {
+      return liveState && liveState.status !== "connecting"
+        ? liveReader(liveState.simTime, liveState.values, liveIndex)
+        : null;
+    }
+    return plot ? plotReader(plot, sample) : null;
+  }, [live, liveState, liveIndex, plot, sample]);
+
   const voltageRange = useMemo(
-    () => (plot ? vectorRange(plot.voltages.values()) : { min: -1, max: 1 }),
+    () => (plot ? vectorRange(plot.voltages.values()) : { min: -24, max: 24 }),
     [plot],
   );
-  const currentPeak = useMemo(() => (plot ? peakMagnitude(plot.currents.values()) : 0), [plot]);
+  const currentPeak = useMemo(
+    () => (plot ? peakMagnitude(plot.currents.values()) : 1e-3),
+    [plot],
+  );
 
   // ------------------------------------------------------------------ ui
 
@@ -318,6 +394,25 @@ export default function Simulator() {
             </select>
           </label>
         ) : null}
+        <div className="seg" role="group" aria-label="Mode">
+          <button
+            type="button"
+            className={!live ? "on" : ""}
+            onClick={() => setLive(false)}
+            title="Run the scenario once and replay it"
+          >
+            Scenario
+          </button>
+          <button
+            type="button"
+            className={live ? "on" : ""}
+            onClick={() => setLive(true)}
+            title="Run without end and change the circuit while it runs"
+          >
+            Live
+          </button>
+        </div>
+        {live ? null : (
         <div className="seg" role="group" aria-label="Scenario">
           <button
             type="button"
@@ -335,7 +430,8 @@ export default function Simulator() {
             Transient
           </button>
         </div>
-        {!useOwnScenario ? (
+        )}
+        {!live && !useOwnScenario ? (
           <input
             className="row-input"
             value={analysis}
@@ -343,9 +439,11 @@ export default function Simulator() {
             aria-label="Analysis directive"
           />
         ) : null}
-        <button type="button" className="primary" onClick={() => void doRun()} disabled={busy}>
-          {busy ? "Running…" : "Run"}
-        </button>
+        {live ? null : (
+          <button type="button" className="primary" onClick={() => void doRun()} disabled={busy}>
+            {busy ? "Running…" : "Run"}
+          </button>
+        )}
         <div className="seg" role="group" aria-label="View">
           <button type="button" className={fit ? "on" : ""} onClick={() => setFit(true)}>
             Fit circuit
@@ -354,7 +452,47 @@ export default function Simulator() {
             Whole sheet
           </button>
         </div>
-        {plot ? (
+        {live ? (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                if (liveState?.status === "halted") session.current?.resume();
+                else session.current?.halt();
+              }}
+              disabled={!liveState || liveState.status === "connecting"}
+            >
+              {liveState?.status === "halted" ? "Resume" : "Hold"}
+            </button>
+            <label className="sim-pick-group">
+              <span>Speed</span>
+              <select
+                className="text"
+                value={String(liveSpeed)}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setLiveSpeed(v);
+                  session.current?.setSpeed(v);
+                }}
+              >
+                {[1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1].map((v) => (
+                  <option key={v} value={String(v)}>
+                    {eng(v, "s")} per second
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="pill neutral">
+              {liveState?.status ?? "connecting"}
+            </span>
+            {liveState ? (
+              <span className="muted">
+                t = {eng(liveState.simTime, "s")} · {liveState.pointsPerSecond} points/s
+              </span>
+            ) : null}
+          </>
+        ) : null}
+        {!live && plot ? (
           <>
             <button type="button" onClick={() => setPlaying((p) => !p)}>
               {playing ? "Pause" : "Play"}
@@ -385,10 +523,9 @@ export default function Simulator() {
             geometry={geometry}
             fit={fit}
             svgUrl={simSheetSvgUrl(source, sheetPath)}
-            plot={plot}
-            sample={sample}
+            reader={reader}
             clock={clock}
-            running={playing}
+            running={playing || live}
             voltageRange={voltageRange}
             currentPeak={currentPeak}
             selectedNet={selectedNet}
@@ -396,7 +533,18 @@ export default function Simulator() {
             onUnresolved={setUnresolved}
           />
 
-          {plot ? (
+          {live ? (
+            <LiveControls
+              state={liveState}
+              controls={controls}
+              onAlter={alter}
+              log={alterLog}
+              text={alterText}
+              onText={setAlterText}
+            />
+          ) : null}
+
+          {!live && plot ? (
             <div className="card pad">
               <input
                 type="range"
@@ -465,6 +613,147 @@ export default function Simulator() {
             </div>
           ) : null}
         </>
+      ) : null}
+    </div>
+  );
+}
+
+/** The knobs a live run answers to.
+ *
+ *  Every one of these is an ngspice `alter` on the running circuit, which is
+ *  how a switch is thrown here. A switch modelled with a control node is
+ *  driven by a source, so toggling a contact and changing a supply are the
+ *  same operation — which is why sources come first and are not separated
+ *  from "switches" by any guesswork about what a part represents.
+ */
+function LiveControls({
+  state,
+  controls,
+  onAlter,
+  log,
+  text,
+  onText,
+}: {
+  state: LiveState | null;
+  controls: LiveControl[];
+  onAlter: (command: string) => void;
+  log: string[];
+  text: string;
+  onText: (value: string) => void;
+}) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const sources = controls.filter((c) => c.kind === "source");
+  const passives = controls.filter((c) => c.kind === "passive");
+  const scripted = controls.filter((c) => c.kind === "scripted");
+  const busy = !state || state.status === "connecting" || state.status === "error";
+
+  const apply = (c: LiveControl, raw: string) => {
+    setValues((v) => ({ ...v, [c.ref]: raw }));
+    if (raw.trim()) onAlter(`alter ${c.ref} = ${raw.trim()}`);
+  };
+
+  return (
+    <div className="card pad">
+      <div className="card-title">Change it while it runs</div>
+      {state?.message ? <p className="muted">{state.message}</p> : null}
+      {sources.length ? (
+        <>
+          <p className="muted">
+            Sources. A switch driven by a control node is a source too, so this is where a
+            contact is thrown.
+          </p>
+          <div className="sim-knobs">
+            {sources.map((c) => (
+              <label key={c.ref} className="sim-knob">
+                <span className="mono">{c.ref}</span>
+                <input
+                  className="text"
+                  value={values[c.ref] ?? c.value}
+                  disabled={busy}
+                  onChange={(e) => setValues((v) => ({ ...v, [c.ref]: e.target.value }))}
+                  onBlur={(e) => apply(c, e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") apply(c, (e.target as HTMLInputElement).value);
+                  }}
+                />
+                <span className="muted">{c.unit}</span>
+                <button type="button" disabled={busy} onClick={() => apply(c, "0")}>
+                  0
+                </button>
+              </label>
+            ))}
+          </div>
+        </>
+      ) : null}
+      {passives.length ? (
+        <>
+          <p className="muted">
+            Passives. Opening a contact is a big resistance and closing it is a small one —
+            `1e9` and `1m` are the two ends.
+          </p>
+          <div className="sim-knobs">
+            {passives.slice(0, 40).map((c) => (
+              <label key={c.ref} className="sim-knob">
+                <span className="mono">{c.ref}</span>
+                <input
+                  className="text"
+                  value={values[c.ref] ?? c.value}
+                  disabled={busy}
+                  onChange={(e) => setValues((v) => ({ ...v, [c.ref]: e.target.value }))}
+                  onBlur={(e) => apply(c, e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") apply(c, (e.target as HTMLInputElement).value);
+                  }}
+                />
+                <span className="muted">{c.unit}</span>
+              </label>
+            ))}
+            {passives.length > 40 ? (
+              <span className="muted">and {passives.length - 40} more — use the box below</span>
+            ) : null}
+          </div>
+        </>
+      ) : null}
+      {scripted.length ? (
+        <p className="muted">
+          Driven by the harness, and not steerable while the run continues:{" "}
+          <span className="mono">{scripted.map((c) => c.ref).join(", ")}</span>. ngspice keeps
+          a source's waveform whatever you alter it to. To take one over, raise the series
+          resistor the harness put in its path — that is what it is for — and drive the node
+          from a source of your own.
+        </p>
+      ) : null}
+      <p className="muted">
+        Anything else, in ngspice's own words. A pole inside a subcircuit takes the
+        hierarchical form: <span className="mono">alter @r.xu28.rs1[resistance] = 1e9</span>.
+      </p>
+      <div className="sim-knobs">
+        <input
+          className="text sim-alter"
+          value={text}
+          disabled={busy}
+          placeholder="alter v3v3 = 3.3"
+          onChange={(e) => onText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && text.trim()) {
+              onAlter(text.trim());
+              onText("");
+            }
+          }}
+        />
+        <button
+          type="button"
+          disabled={busy || !text.trim()}
+          onClick={() => {
+            onAlter(text.trim());
+            onText("");
+          }}
+        >
+          Apply
+        </button>
+      </div>
+      {log.length ? (
+        <p className="muted mono">{log.join("  ·  ")}</p>
       ) : null}
     </div>
   );

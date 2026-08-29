@@ -188,7 +188,35 @@ two refusals (shell command in a `.control` block, upload with no schematic):
 4. Edits to the `.control` text in the UI re-run and keep the previous run for
    comparison. Editing does not write to the schematic file in v1.
 
-### 3.2 Live mode (endless)
+### 3.2 Live mode (endless) — BUILT
+
+Measured, and the one thing that decides whether this mode can exist at all:
+
+**`alter` on a RUNNING background transient is accepted and does nothing.**
+The command returns success, the points keep flowing, and every value stays
+exactly as it was. An earlier note in this document claimed the opposite,
+on the evidence that points kept flowing — which proves only that the run did
+not stop. The values were never checked. They should have been.
+
+What does work, and what the worker therefore does for every knob:
+
+    bg_halt  ->  wait for ngSpice_running() to go false  ->  alter  ->  bg_resume
+
+`bg_resume` continues the SAME transient rather than restarting it, so the
+state the circuit had reached survives the edit. Verified on a divider:
+`alter v1 = 4` moved the mid-node from 5 V to 2 V and `alter r2 = 3k` moved it
+to 3 V, both while the run carried on from where it was. At any speed a person
+would watch, the pause is shorter than a frame.
+
+**A source with a waveform cannot be steered at all.** `alter vsi1 dc = 0` and
+`alter @vsi1[pwl] = [0 0]` are both accepted and both ignored: a PWL source
+keeps its script. A harness that wants an input to be live-controllable should
+drive it from a plain DC source, or from a control node — which is what the
+`conventions-simulation` skill already says, for the same reason. The
+harnesses in EVSE_20_CTRL put a 1 ohm resistor in series with every drive so a
+scenario can float it, and raising that resistor IS steerable.
+
+
 
 1. One worker process per session holds `libngspice`, loads the same netlist
    with the analysis line replaced by `.tran <tstep> 1e9` plus

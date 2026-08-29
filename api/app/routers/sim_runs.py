@@ -12,13 +12,26 @@ floats, and float32 arrays are what the plotter wants anyway.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+import asyncio
+import json
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .. import models as M
-from ..db import get_db
+from ..config import settings
+from ..db import SessionLocal, get_db
 from ..services import gitrepo, sim_run
 from ..services.project_ops import OpError
 from ..services.sim_run import SimSource, SimSourceError
@@ -178,6 +191,87 @@ def _netlist(src: SimSource) -> dict:
     except (OpError, RuntimeError) as e:
         raise HTTPException(502, f"netlist failed: {e}") from e
     return {"spice": spice, "nets": nets["nets"]}
+
+
+# --------------------------------------------------------------------- live
+
+@router.websocket("/live")
+async def sim_live(ws: WebSocket):
+    """Relay to the render container's live session.
+
+    The API owns the gate and the source lookup; the render container owns the
+    solver. Nothing here reads the simulation — it moves frames, so a change
+    to what a frame carries needs no edit on this side.
+
+    The first message names the source the way the REST calls do
+    (`{"kind":"snapshot","snapshot_id":13,"board":"SAFETY_sim", …}`); it is
+    replaced with a server-resolved path before it reaches the render service,
+    so a client can never point a session at an arbitrary file.
+    """
+    await ws.accept()
+    try:
+        start = json.loads(await ws.receive_text())
+    except (ValueError, WebSocketDisconnect):
+        await ws.close(code=1003)
+        return
+
+    db = SessionLocal()
+    try:
+        if start.get("kind") == "upload":
+            src = sim_run.upload_source(str(start.get("upload_id", "")))
+        else:
+            snap = db.get(M.ProjectSnapshot, int(start.get("snapshot_id", 0)))
+            board = next(
+                (b for b in (snap.boards or []) if b.get("name") == start.get("board")),
+                None,
+            ) if snap else None
+            if board is None:
+                raise SimSourceError("no such snapshot or board")
+            src = sim_run.snapshot_source(snap, board)
+        path = sim_run.live_target(src)
+    except (SimSourceError, ValueError, TypeError) as e:
+        await ws.send_text(json.dumps({"ev": "error", "message": str(e)}))
+        await ws.close()
+        return
+    finally:
+        db.close()
+
+    url = settings.render_url.replace("http://", "ws://").replace("https://", "wss://")
+    try:
+        import websockets  # noqa: PLC0415 - only this route needs it
+
+        async with websockets.connect(f"{url}/sim/live", max_size=None) as upstream:
+            await upstream.send(json.dumps({**start, "path": path}))
+
+            async def down() -> None:
+                async for frame in upstream:
+                    if isinstance(frame, bytes):
+                        await ws.send_bytes(frame)
+                    else:
+                        await ws.send_text(frame)
+
+            async def up() -> None:
+                while True:
+                    await upstream.send(await ws.receive_text())
+
+            done, pending = await asyncio.wait(
+                [asyncio.create_task(down()), asyncio.create_task(up())],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:  # noqa: BLE001 - the socket must close cleanly whatever happens
+        try:
+            await ws.send_text(json.dumps({"ev": "error", "message": f"{type(e).__name__}: {e}"}))
+        except RuntimeError:
+            pass
+    finally:
+        try:
+            await ws.close()
+        except RuntimeError:
+            pass
 
 
 # ---------------------------------------------------------------------- run

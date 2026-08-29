@@ -134,6 +134,51 @@ export function netVoltage(
   return data ? at(data, index) : null;
 }
 
+// ------------------------------------------------------------------ reading
+
+/** What the overlay needs from a run, whichever kind of run it is.
+ *
+ *  A finished scenario is an array you index; a live session is the latest
+ *  frame off a socket. The overlay should not care, so both are read through
+ *  this and the drawing code was never written twice. */
+export interface SampleReader {
+  /** Seconds (transient) or hertz (AC sweep) at the point being shown. */
+  position: number;
+  scaleType: string;
+  voltage(spice: string | undefined, ground: boolean | undefined): number | null;
+  current(ref: string): number | null;
+}
+
+export function plotReader(plot: SimPlot, sample: number): SampleReader {
+  return {
+    position: at(plot.scale, sample),
+    scaleType: plot.scaleType,
+    voltage: (spice, ground) => netVoltage(plot, spice, ground, sample),
+    current: (ref) => {
+      const data = plot.currents.get(ref.toLowerCase());
+      return data ? at(data, sample) : null;
+    },
+  };
+}
+
+/** A live frame. `index` maps a vector name to its slot in the frame. */
+export function liveReader(
+  position: number,
+  values: Float32Array,
+  index: Map<string, number>,
+): SampleReader {
+  const read = (name: string): number | null => {
+    const i = index.get(name);
+    return i === undefined ? null : values[i];
+  };
+  return {
+    position,
+    scaleType: "time",
+    voltage: (spice, ground) => (ground ? 0 : spice ? read(`v(${spice})`) : null),
+    current: (ref) => read(`i(@${ref.toLowerCase()}[i])`),
+  };
+}
+
 // ------------------------------------------------------------------- ranges
 
 export interface Range {

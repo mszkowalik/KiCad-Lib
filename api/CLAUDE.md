@@ -1096,6 +1096,13 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   schematic parse — KiCad resolves hierarchy, DNP, and variants. Matching:
   `${SYMBOL_NAME}` == `Component.name` first, then `LCSC Part`. Variant list
   comes from `.kicad_pro` → `schematic.variants` (KiCad 10; absent on 9).
+- **`alter` does nothing to a RUNNING ngspice transient.** It returns success
+  and changes not one value; the live worker therefore wraps every knob in
+  `bg_halt` → wait for `ngSpice_running()` → `alter` → `bg_resume`, which does
+  take and continues the same transient instead of restarting it
+  (`render/sim_worker.py`, measured 2026-08-30). A source with a WAVEFORM
+  (PWL, PULSE, SIN) cannot be steered by any spelling of alter — a harness
+  that wants a live input drives it from a plain DC source or a control node.
 - **A simulation is a PROJECT, not a sheet.** A design repository keeps one
   `_sim` KiCad project per block it exercises (`EVSE_20_CTRL` has six); the
   root sheet includes the real block sheet and adds the harness — supplies,

@@ -9,13 +9,19 @@ POST /render-project {op, path, ...} -> any project_ops op on a file under
 footprint3d needs SEVENSIGMA_DIR pointing at the mounted mirror (3D models);
 so does a netlist whose Sim.Library is ${SEVENSIGMA_DIR}/Symbols/7Sigma_sim.sp.
 """
+import asyncio
+import json
 import os
 import re
+import struct
 import subprocess
+import sys
 import tempfile
+import threading
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+import sim_spice
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from project_ops import OpError, run_op
 from pydantic import BaseModel
@@ -32,6 +38,17 @@ DATA_ROOT = Path(os.environ.get("DATA_ROOT", "/data"))
 os.environ.setdefault("KICAD10_3RD_PARTY", str(DATA_ROOT / "pcmroot"))
 
 app = FastAPI(title="kicad-render")
+
+WORKER = Path(__file__).parent / "sim_worker.py"
+# One live session is one process holding one circuit, so the cap is a real
+# resource limit, not a policy. A halted session still owns its memory.
+MAX_LIVE_SESSIONS = int(os.environ.get("SIM_MAX_LIVE_SESSIONS", "4"))
+# An endless run left by a closed laptop would otherwise solve for ever.
+LIVE_IDLE_TIMEOUT_S = float(os.environ.get("SIM_LIVE_IDLE_S", "900"))
+# Simulated seconds a live run may reach before it ends on its own.
+LIVE_TSTOP_S = float(os.environ.get("SIM_LIVE_TSTOP_S", "1000"))
+_live_lock = threading.Lock()
+_live_count = 0
 
 _COORD_RE = re.compile(r"\((?:at|start|end|xy|center|mid)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)")
 _FOOTPRINT_HEADER_RE = re.compile(r'^(\(footprint\s+"[^"]+")')
@@ -104,6 +121,168 @@ def render(req: RenderRequest):
             )
         media = "model/gltf-binary" if req.kind == "footprint3d" else "image/svg+xml"
         return Response(content=outputs[0].read_bytes(), media_type=media)
+
+
+# ------------------------------------------------------------- live session
+
+def _claim_session() -> bool:
+    global _live_count
+    with _live_lock:
+        if _live_count >= MAX_LIVE_SESSIONS:
+            return False
+        _live_count += 1
+        return True
+
+
+def _release_session() -> None:
+    global _live_count
+    with _live_lock:
+        _live_count = max(0, _live_count - 1)
+
+
+@app.websocket("/sim/live")
+async def sim_live(ws: WebSocket):
+    """An endless transient you can watch and poke at.
+
+    The first message names the schematic and what to stream; everything after
+    it steers the run. Frames come back exactly as the worker wrote them —
+    this endpoint moves bytes and owns the process, and does not decode the
+    simulation at all.
+    """
+    await ws.accept()
+    try:
+        start = json.loads(await ws.receive_text())
+    except (ValueError, WebSocketDisconnect):
+        await ws.close(code=1003)
+        return
+
+    src = (DATA_ROOT / str(start.get("path", ""))).resolve()
+    if not str(src).startswith(str(DATA_ROOT.resolve())) or not src.exists():
+        await ws.send_text(json.dumps({"ev": "error", "message": "no such schematic"}))
+        await ws.close()
+        return
+    if not _claim_session():
+        await ws.send_text(json.dumps({
+            "ev": "error",
+            "message": f"this server already runs {MAX_LIVE_SESSIONS} live simulations",
+        }))
+        await ws.close()
+        return
+
+    proc = None
+    try:
+        tstep = float(start.get("tstep", 1e-5)) or 1e-5
+        with tempfile.TemporaryDirectory() as td:
+            netlist_bytes, _ = run_op(KICAD_CLI, "sch_spice", src, td, variant=start.get("variant", ""))
+        # The schematic's own directives describe a FINITE run; live mode wants
+        # one that never ends and reports every device current.
+        # A large stop time, not an absurd one. `1e9` produced a run that
+        # reported its vectors and then never emitted a single point; 1000 s
+        # is what was measured working, and at any speed a person would watch
+        # it is days of wall clock — endless in every sense that matters.
+        prepared, info = sim_spice.prepare_netlist(
+            netlist_bytes.decode("utf-8", "replace"),
+            control="", analysis=f".tran {tstep:g} {LIVE_TSTOP_S:g}",
+        )
+        await ws.send_text(json.dumps({"ev": "netlist", "unmodelled": info["unmodelled"]}))
+
+        proc = subprocess.Popen(
+            [sys.executable, str(WORKER)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        _write_frame(proc, {
+            "op": "start", "netlist": prepared,
+            "speed": start.get("speed", 1e-3),
+            "overlay": start.get("overlay", []),
+            "scopes": start.get("scopes", []),
+        })
+
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=240)
+        threading.Thread(target=_pump_worker, args=(proc, loop, queue), daemon=True).start()
+        # A worker that dies says why on stderr. Without this the session just
+        # goes quiet, which is how an endless run that never started looks.
+        threading.Thread(target=_pump_stderr, args=(proc, loop, queue), daemon=True).start()
+
+        async def to_client() -> None:
+            while True:
+                frame = await queue.get()
+                if frame is None:
+                    return
+                if frame[:1] == b"{":
+                    await ws.send_text(frame.decode("utf-8", "replace"))
+                else:
+                    await ws.send_bytes(frame)
+
+        async def from_client() -> None:
+            while True:
+                text = await asyncio.wait_for(ws.receive_text(), timeout=LIVE_IDLE_TIMEOUT_S)
+                try:
+                    _write_frame(proc, json.loads(text))
+                except (ValueError, OSError):
+                    return
+
+        done, pending = await asyncio.wait(
+            [asyncio.create_task(to_client()), asyncio.create_task(from_client())],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+    except (OpError, sim_spice.SimError) as e:
+        await ws.send_text(json.dumps({"ev": "error", "message": str(e)}))
+    except (WebSocketDisconnect, asyncio.TimeoutError, asyncio.CancelledError):
+        pass
+    except Exception as e:  # noqa: BLE001 - a live session may never take the server with it
+        await ws.send_text(json.dumps({"ev": "error", "message": f"{type(e).__name__}: {e}"}))
+    finally:
+        if proc and proc.poll() is None:
+            try:
+                _write_frame(proc, {"op": "stop"})
+                proc.wait(timeout=3)
+            except Exception:  # noqa: BLE001
+                proc.kill()
+        _release_session()
+        try:
+            await ws.close()
+        except RuntimeError:
+            pass
+
+
+def _write_frame(proc, obj: dict) -> None:
+    body = json.dumps(obj, separators=(",", ":")).encode("utf-8")
+    proc.stdin.write(struct.pack("<I", len(body)) + body)
+    proc.stdin.flush()
+
+
+def _pump_stderr(proc, loop, queue: asyncio.Queue) -> None:
+    for raw in iter(proc.stderr.readline, b""):
+        line = raw.decode("utf-8", "replace").rstrip()
+        if not line:
+            continue
+        print(f"sim_worker: {line}", flush=True)
+        asyncio.run_coroutine_threadsafe(
+            queue.put(json.dumps({"ev": "log", "message": line[:400]}).encode()), loop
+        )
+
+
+def _pump_worker(proc, loop, queue: asyncio.Queue) -> None:
+    """Worker stdout -> the event loop. Blocking reads belong on a thread."""
+    try:
+        while True:
+            head = proc.stdout.read(4)
+            if len(head) < 4:
+                break
+            (length,) = struct.unpack("<I", head)
+            body = proc.stdout.read(length)
+            if len(body) < length:
+                break
+            # Drop a frame rather than stall the simulation when a slow client
+            # cannot keep up: the next one carries the same state anyway.
+            if queue.full() and body[:1] != b"{":
+                continue
+            asyncio.run_coroutine_threadsafe(queue.put(body), loop)
+    finally:
+        asyncio.run_coroutine_threadsafe(queue.put(None), loop)
 
 
 class ProjectRenderRequest(BaseModel):
