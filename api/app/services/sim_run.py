@@ -255,6 +255,22 @@ def sheets(src: SimSource) -> list[dict]:
     return out
 
 
+def _net_prefix(src: SimSource, entry: dict) -> str:
+    """What KiCad puts in front of a local label on this sheet instance.
+
+    The chain of sheet NAMES from the root down to this instance: the TEMP
+    sub-sheet gives `/TEMP`, and a sheet inside it `/TEMP/<its name>`. Empty
+    at the root, where a label is already the whole net name.
+    """
+    if entry.get("depth", 0) == 0:
+        return ""
+    chain = [
+        other["name"] for other in sorted(sheets(src), key=lambda e: e["depth"])
+        if other["depth"] > 0 and _is_ancestor_or_self(other["path"], entry["path"])
+    ]
+    return "".join(f"/{name}" for name in chain)
+
+
 def _find_sheet(src: SimSource, instance_path: str = "") -> dict:
     tree = sheets(src)
     if not instance_path:
@@ -300,11 +316,15 @@ def sheet_svg(src: SimSource, instance_path: str = "") -> bytes:
     tree = sheets(src)
     entry = _find_sheet(src, instance_path)
     rel = src.root_rel
+    # The SAME theme the project's schematic tab uses. A drawing that changes
+    # colour depending on which page of the platform it is on reads as two
+    # different drawings; the theme belongs to the schematic, not to the view.
+    theme = settings.symbol_theme
     if src.cache_prefix:
-        key = f"{src.cache_prefix}/{Path(rel).name}.pages-plain.zip"
-        data, _ = project_render.cached_op(key, "sch_svg_plain", rel)
+        key = f"{src.cache_prefix}/{Path(rel).name}.{theme or 'default'}.pages-plain.zip"
+        data, _ = project_render.cached_op(key, "sch_svg_plain", rel, theme=theme)
     else:
-        data, _ = project_render.run_project_op("sch_svg_plain", rel)
+        data, _ = project_render.run_project_op("sch_svg_plain", rel, theme=theme)
 
     stem = Path(rel).stem
     chain = [
@@ -343,7 +363,9 @@ def geometry(src: SimSource, instance_path: str = "") -> dict:
     if entry.get("error"):
         raise SimSourceError(entry["error"])
     path = (settings.data_dir / entry["rel"]).resolve()
-    geom = sim_geom.sheet_geometry(path.read_text(encoding="utf-8"), entry["path"])
+    geom = sim_geom.sheet_geometry(
+        path.read_text(encoding="utf-8"), entry["path"], net_prefix=_net_prefix(src, entry),
+    )
     geom = sim_geom.assign_nets(geom, netlist_xml(src))
     geom["sheet"] = {k: entry[k] for k in ("name", "path", "depth", "page") if k in entry}
     geom["source"] = {"kind": src.kind, "label": src.label}

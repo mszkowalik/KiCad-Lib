@@ -294,7 +294,11 @@ export default function Simulator() {
       setSelectedNet(net);
       if (!net || !geometry) return;
       const group = geometry.groups.find((g) => g.net === net);
-      if (group?.spice && !group.ground) addTrace(`v(${group.spice})`, net, "V");
+      // A derived name is a label the netlist does not know — adding it as a
+      // trace would put a row on the scope that can never draw anything.
+      if (group?.spice && !group.ground && !group.derived) {
+        addTrace(`v(${group.spice})`, net, "V");
+      }
     },
     [geometry, addTrace],
   );

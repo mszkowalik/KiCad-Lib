@@ -270,8 +270,13 @@ def sheet_tree(root_file: str | Path) -> list[dict]:
 
 # ---------------------------------------------------------------- geometry
 
-def sheet_geometry(text: str, instance_path: str = "") -> dict:
+def sheet_geometry(text: str, instance_path: str = "", net_prefix: str = "") -> dict:
     """One sheet file, one instance -> the overlay's geometry.
+
+    `net_prefix` is what KiCad puts in front of a LOCAL label on this sheet —
+    `/TEMP` for the TEMP sub-sheet, empty at the root. A label is not a net
+    name on its own below the root, and a group named from one would never
+    match the run.
 
     `groups` is the connectivity result: each group lists the pins on it and
     the ids of the wires and labels that belong to it. Net names arrive later
@@ -452,6 +457,7 @@ def sheet_geometry(text: str, instance_path: str = "") -> dict:
 
     return {
         "size": _paper_size(root), "instance_path": instance_path,
+        "net_prefix": net_prefix,
         "wires": wires, "junctions": junctions, "labels": labels, "pins": pins_out,
         "symbols": symbols, "subsheets": subsheets, "no_connects": no_connects,
         "texts": texts, "groups": list(groups.values()), "warnings": warnings,
@@ -531,11 +537,15 @@ def assign_nets(geom: dict, xml_nets: dict) -> dict:
     """Fill in `net` on every group, wire, pin, label and junction.
 
     A group takes the net of the pins on it. A group with no pin (a stub into
-    a sheet pin, a label with nothing attached yet) falls back to its label
-    text, which is what the user sees on the drawing — flagged as `derived` so
-    the UI never plots it as if it were a simulated node.
+    a sheet pin, a label with nothing attached yet) is named from its label —
+    but a label is not a net name below the root sheet, so the sheet's own
+    prefix is tried first and the answer is CHECKED against the netlist. Only
+    a name the netlist does not know is flagged `derived`, and the UI must not
+    plot one of those as if it were a simulated node.
     """
     by_pin: dict[tuple[str, str], str] = xml_nets.get("by_pin", {})
+    known: dict[str, str] = {n["name"].lower(): n["name"] for n in xml_nets.get("nets", [])}
+    prefix = geom.get("net_prefix", "")
     unnamed: list[str] = []
     for group in geom["groups"]:
         names = {by_pin[(p["ref"], p["pin"])] for p in group["pins"] if (p["ref"], p["pin"]) in by_pin}
@@ -549,8 +559,17 @@ def assign_nets(geom: dict, xml_nets: dict) -> dict:
                 "the overlay's connectivity disagrees with the netlist here"
             )
         elif group["labels"]:
-            group["net"] = group["labels"][0]
-            group["derived"] = True
+            label = group["labels"][0]
+            # A local label on `/TEMP` netlists as `/TEMP/<label>`; a global
+            # label and a power net carry no prefix. Take whichever spelling
+            # the netlist actually has.
+            for candidate in (f"{prefix}/{label}" if prefix else "", f"/{label}", label):
+                if candidate and candidate.lower() in known:
+                    group["net"] = known[candidate.lower()]
+                    break
+            else:
+                group["net"] = label
+                group["derived"] = True
         else:
             unnamed.append(group["id"])
     lookup = {g["id"]: g for g in geom["groups"]}

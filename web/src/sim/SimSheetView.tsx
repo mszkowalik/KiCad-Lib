@@ -137,10 +137,14 @@ export default function SimSheetView({
   };
 
   const readout = (net: string | null, group: string): string => {
-    if (!reader || !net) return net ?? "";
+    if (!net) return "";
     const g = groupsById.get(group);
+    if (g?.derived) {
+      return `${net} — a label the netlist does not carry, so nothing simulates it`;
+    }
+    if (!reader) return net;
     const v = reader.voltage(g?.spice, g?.ground);
-    return v === null ? `${net} — not simulated` : `${net} = ${eng(v, "V")}`;
+    return v === null ? `${net} — not in this run` : `${net} = ${eng(v, "V")}`;
   };
 
   // The dots. An imperative loop keyed on `clock` so React never re-renders
