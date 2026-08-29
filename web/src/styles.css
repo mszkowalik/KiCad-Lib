@@ -591,6 +591,11 @@ table.data {
   align-items: center;
   gap: 12px;
   margin-bottom: 14px;
+  /* Wrap rather than push the page sideways. A toolbar that grows with the
+     data — a project with seven simulation blocks, a hierarchy with nine
+     sheets — used to run off the right edge and put a horizontal scrollbar
+     under the whole app. */
+  flex-wrap: wrap;
 }
 
 .toolbar-total {
@@ -4426,11 +4431,33 @@ a.check-cell:hover {
   border-color: currentColor;
 }
 
+/* One label plus its control, so a toolbar row reads as pairs when it wraps */
+.sim-pick-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sim-pick-group > span {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sim-pick-group select {
+  max-width: 22ch;
+}
+
 .sim-nets {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
   margin-bottom: 0.6rem;
+  /* A real board has hundreds of nets; the list is a picker, not the page. */
+  max-height: 30vh;
+  overflow-y: auto;
 }
 
 .sim-nets button {

@@ -10,6 +10,7 @@ Ops (src = .kicad_pcb or .kicad_sch inside a materialized checkout):
     board_glb        pcb  -> binary GLB (web 3D viewer)
     board_step       pcb  -> STEP (CAD download)
     sch_svg          sch  -> zip of per-page SVGs (variant-aware)
+    sch_svg_plain    sch  -> the same, without the drawing sheet frame
     bom_csv          sch  -> grouped BOM CSV (variant-aware)
     erc              sch  -> JSON report
     drc              pcb  -> JSON report
@@ -59,6 +60,7 @@ MEDIA = {
     "board_glb": "model/gltf-binary",
     "board_step": "application/step",
     "sch_svg": "application/zip",
+    "sch_svg_plain": "application/zip",
     "bom_csv": "text/csv",
     "erc": "application/json",
     "drc": "application/json",
@@ -167,11 +169,17 @@ def run_op(
         )
         return dest.read_bytes(), MEDIA[op]
 
-    if op == "sch_svg":
+    if op in ("sch_svg", "sch_svg_plain"):
+        # The border and title block are the drawing's paperwork. Worth having
+        # when the reader is looking at the schematic; noise under an overlay
+        # that is cropped to the circuit, where the frame's corner is the only
+        # thing left in an empty quarter of the view.
+        plain = ["--exclude-drawing-sheet"] if op == "sch_svg_plain" else []
         pages = out / "pages"
         pages.mkdir()
         _run(
-            [kicad_cli, "sch", "export", "svg", *theme_args, *var_args, "-o", str(pages), str(src)],
+            [kicad_cli, "sch", "export", "svg", *theme_args, *var_args, *plain,
+             "-o", str(pages), str(src)],
             env=env,
         )
         if not any(pages.glob("*.svg")):

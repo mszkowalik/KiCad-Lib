@@ -156,6 +156,28 @@ export function vectorRange(vectors: Iterable<Float32Array>): Range {
   return { min, max };
 }
 
+/** The vector that MOVES the most, by peak-to-peak swing.
+ *
+ *  The first vector in a run is whichever node ngspice happened to number
+ *  first — on a real board that is usually a supply rail, and a scope opening
+ *  on a flat 24 V line looks like the simulation did nothing. */
+export function liveliest(plot: SimPlot, kind: "v" | "i" = "v"): SimVector | null {
+  let best: SimVector | null = null;
+  let bestSwing = -1;
+  for (const vec of plot.vectors) {
+    if (vec.kind !== kind) continue;
+    const data = plot.byName.get(vec.name);
+    if (!data || data.length === 0) continue;
+    const { min, max } = vectorRange([data]);
+    const swing = max - min;
+    if (swing > bestSwing) {
+      bestSwing = swing;
+      best = vec;
+    }
+  }
+  return best;
+}
+
 /** Largest absolute value across the currents, for scaling the animation. */
 export function peakMagnitude(vectors: Iterable<Float32Array>): number {
   let peak = 0;

@@ -35,6 +35,7 @@ import SimSheetView from "../sim/SimSheetView";
 import {
   decodeSimPayload,
   eng,
+  liveliest,
   peakMagnitude,
   vectorRange,
   type SimPlot,
@@ -43,6 +44,11 @@ import {
 
 /** How long one replay of a whole run takes, in seconds of wall clock. */
 const REPLAY_SECONDS = 5;
+
+/** KiCad's name for a pin nobody wired. They are real nets to the netlister
+ *  and noise to a reader — a board sheet can carry more of them than it has
+ *  circuit nets. */
+const isUnconnected = (n: SimNet): boolean => n.name.startsWith("unconnected-");
 
 export default function Simulator() {
   const [params, setParams] = useSearchParams();
@@ -73,6 +79,7 @@ export default function Simulator() {
   const [traces, setTraces] = useState<Trace[]>([]);
   const [selectedNet, setSelectedNet] = useState<string | null>(null);
   const [fit, setFit] = useState(true);
+  const [showUnconnected, setShowUnconnected] = useState(false);
 
   const [sample, setSample] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -180,8 +187,10 @@ export default function Simulator() {
       setClock(0);
       setPlaying(true);
       // Something must be on the scope, or the first run looks like nothing
-      // happened. The first non-ground node voltage is a fair guess.
-      const first = decoded.plots[0]?.vectors.find((v) => v.kind === "v");
+      // happened — and it has to be a node that MOVES. The first vector of a
+      // real board is usually a supply rail, which plots as a flat line.
+      const plot0 = decoded.plots[0];
+      const first = plot0 ? liveliest(plot0) : null;
       if (first) {
         // Label it the way the drawing spells it — the vector's own key is the
         // lower-cased SPICE node, which is not what the sheet says.
@@ -269,45 +278,45 @@ export default function Simulator() {
       {error ? <ErrorBanner message={error} /> : null}
 
       <div className="toolbar">
+        {/* A dropdown, not a row of buttons: a repository has as many
+            simulation blocks as it likes, and a toolbar that grows with the
+            data pushes the page sideways. */}
         {projects && projects.length > 1 ? (
-          <div className="seg" role="group" aria-label="Simulation projects">
-            {projects
-              .filter((x) => x.has_schematic)
-              .map((x) => (
-                <button
-                  key={x.board}
-                  type="button"
-                  className={x.board === board ? "on" : ""}
-                  onClick={() =>
-                    setParams({ snapshot: String(snapshotId), board: x.board })
-                  }
-                  title={
-                    x.simulation
-                      ? "A simulation project — its root sheet carries the harness"
-                      : "No simulation directives on this project's root sheet"
-                  }
-                >
-                  {x.board}
-                  {x.simulation ? " ·" : ""}
-                </button>
-              ))}
-          </div>
+          <label className="sim-pick-group">
+            <span>Simulation</span>
+            <select
+              className="text"
+              value={board}
+              onChange={(e) => setParams({ snapshot: String(snapshotId), board: e.target.value })}
+            >
+              {projects
+                .filter((x) => x.has_schematic)
+                .map((x) => (
+                  <option key={x.board} value={x.board}>
+                    {x.board}
+                    {x.simulation ? " · harness" : ""}
+                  </option>
+                ))}
+            </select>
+          </label>
         ) : null}
         {sheets && sheets.length > 1 ? (
-          <div className="seg" role="group" aria-label="Sheets">
-            {sheets.map((s) => (
-              <button
-                key={s.path}
-                type="button"
-                className={s.path === sheetPath ? "on" : ""}
-                onClick={() => setSheetPath(s.path)}
-                title={`Show this sheet — the run always covers the whole project (${s.symbols} parts)`}
-              >
-                {"· ".repeat(s.depth)}
-                {s.name}
-              </button>
-            ))}
-          </div>
+          <label className="sim-pick-group">
+            <span>Sheet</span>
+            <select
+              className="text"
+              value={sheetPath}
+              onChange={(e) => setSheetPath(e.target.value)}
+              title="What to LOOK at. A run always covers the whole project."
+            >
+              {sheets.map((s) => (
+                <option key={s.path} value={s.path}>
+                  {"\u00a0\u00a0".repeat(s.depth)}
+                  {s.name} · {s.symbols} parts
+                </option>
+              ))}
+            </select>
+          </label>
         ) : null}
         <div className="seg" role="group" aria-label="Scenario">
           <button
@@ -424,8 +433,19 @@ export default function Simulator() {
           {nets ? (
             <div className="card pad">
               <div className="card-title">Nets</div>
+              {/* `unconnected-(U47-A0-Pad2)` is KiCad naming a pin nobody
+                  wired. On a real board they outnumber the real nets and
+                  bury them. */}
+              {nets.some(isUnconnected) ? (
+                <p className="muted">
+                  <button type="button" onClick={() => setShowUnconnected((v) => !v)}>
+                    {showUnconnected ? "Hide" : "Show"} {nets.filter(isUnconnected).length}{" "}
+                    unconnected pins
+                  </button>
+                </p>
+              ) : null}
               <div className="sim-nets">
-                {nets.map((n) => (
+                {nets.filter((n) => showUnconnected || !isUnconnected(n)).map((n) => (
                   <button
                     key={n.code || n.name}
                     type="button"
@@ -473,11 +493,16 @@ function SimNotices({
           left out of the circuit entirely. Everything around them ran without them.
         </p>
       ) : null}
-      {unresolved.map((u) => (
-        <p key={u.net} className="muted">
-          No charge is drawn on <strong>{u.net}</strong>: {u.reason}.
+      {unresolved.length ? (
+        <p className="muted">
+          No charge is drawn on {unresolved.length === 1 ? "one net" : `${unresolved.length} nets`}
+          {" — "}
+          {unresolved.slice(0, 6).map((u) => u.net).join(", ")}
+          {unresolved.length > 6 ? `, and ${unresolved.length - 6} more` : ""}. A net needs all
+          but one of its terminal currents to be known before the split between its wires can
+          be worked out, and a subcircuit does not report the current at its pins.
         </p>
-      ))}
+      ) : null}
       {geometry.warnings.map((w) => (
         <p key={w} className="muted">
           {sheetName}: {w}

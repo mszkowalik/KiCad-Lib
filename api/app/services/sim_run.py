@@ -301,10 +301,10 @@ def sheet_svg(src: SimSource, instance_path: str = "") -> bytes:
     entry = _find_sheet(src, instance_path)
     rel = src.root_rel
     if src.cache_prefix:
-        key = f"{src.cache_prefix}/{Path(rel).name}.pages.zip"
-        data, _ = project_render.cached_op(key, "sch_svg", rel)
+        key = f"{src.cache_prefix}/{Path(rel).name}.pages-plain.zip"
+        data, _ = project_render.cached_op(key, "sch_svg_plain", rel)
     else:
-        data, _ = project_render.run_project_op("sch_svg", rel)
+        data, _ = project_render.run_project_op("sch_svg_plain", rel)
 
     stem = Path(rel).stem
     chain = [

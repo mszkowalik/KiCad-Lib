@@ -2,7 +2,7 @@
 name: kicad-conventions-simulation
 description: "Authoring simulation models and symbol links: the sigma_ namespace, parameter naming from datasheet symbols (V_BR at test current, never V_RWM), mandatory pin maps and the NC sentinel, per-component Sim.Params, switch drive modes (static / alter / PWL), scenario .control blocks, and the ngspice convergence traps. Use when writing a sim model, linking a symbol, or setting Sim.Params."
 ---
-<!-- platform-skill: conventions-simulation v4 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-simulation v5 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Simulation model conventions
 
 Simulation models are versioned library objects, like symbols and footprints.
@@ -303,6 +303,68 @@ For every brick, model as well:
 Verify against the datasheet at three points before publishing: full load,
 10% load, and open circuit — plus the input current at full load and no load.
 Put those measured numbers in the version comment.
+
+## Draw the stimulus. Do not hide it in a text block.
+
+**Every instantiation of a `sigma_` model on a harness is a PLACED SYMBOL.**
+Not an `X` line in a `.control` or stimulus text block. This is a rule, not a
+preference, and it was set on 2026-08-30 after a pilot harness was found
+building a whole vehicle out of hidden text while the component for it already
+existed and sat unused.
+
+A hidden `X` line reaches into the design by hierarchical SPICE name —
+`XRTD /TEMP/AT1 0 sigma_rtd_ct` — which works in the netlist and is invisible
+on the drawing. Nobody can see what is connected where without reading
+ngspice, and a reviewer cannot tell a deliberate connection from a typo.
+
+| What it is | Where it goes |
+|---|---|
+| Anything that instantiates a `sigma_` model | a symbol on the sheet |
+| A device the board would really connect to — a vehicle, a sensor, a coil, a field contact | a **Simulation category** part |
+| A device that lives on ANOTHER sheet of the same board, rebuilt because that sheet will not converge | the **real catalogue part**, not a stand-in |
+| A plain SPICE source — `V`, `I`, a PWL, a PULSE | the stimulus text block |
+| A plain passive that is bench wiring, not a modelled device | the stimulus text block |
+
+A source stays text because it is excitation, not a model. It still has to be
+legible: give the node a NAME, put a label of that name on the sheet, and the
+reader can follow it.
+
+### How a harness reaches a design net
+
+A wire cannot reach a net inside a child sheet. Add a **sheet pin** to the
+harness's sheet symbol for every design net the stimulus touches, then join
+sheet pin and part pin with matching **local labels**. Local is right: they
+connect within the harness root and cannot leak into the design.
+
+Two consequences that bite:
+
+- **A net pulled out to the root is RENAMED.** `/TEMP/AT1` becomes `/AT1`.
+  Every probe in the checks has to follow.
+- **A root label netlists with a LEADING SLASH.** A source in the text block
+  must write `/NTEMP`, not `NTEMP`, or it drives a second floating node and
+  the operating point will not solve. Power nets are the exception: `3V3` is
+  global and carries no slash.
+
+### When the net is not exposed
+
+Some nets have no hierarchical pin — the poles of a disable bank, an internal
+`Net-_xx_`. Do not add pins to the board's schematic to serve a harness.
+Two honest ways out, in order:
+
+1. **Give the model a control node.** `sigma_dip8` gained global `SIM_DIP1..8`
+   so its poles can be driven without new ports and without touching the
+   board. A `.global` inside a `.subckt` parses and works.
+2. **Leave it in the text block and SAY SO on the sheet.** A named exception a
+   reader can find beats a silent one.
+
+### The control pin is the point
+
+A model whose state is a parse-time PARAMETER forces one simulation run per
+value, and a GUI plot keeps only the last. A model whose state arrives on a
+CONTROL NODE walks every value inside one transient. That is why
+`sigma_rtd_ct`, `sigma_ev_vehicle_st` and `SIM_SWITCH` exist beside the
+parameter versions. Prefer the control-node part in a harness; the parameter
+part is for a harness that only ever wants one value.
 
 ## Convergence rules that cost us hours
 
