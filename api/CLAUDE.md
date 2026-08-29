@@ -1096,6 +1096,20 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   schematic parse — KiCad resolves hierarchy, DNP, and variants. Matching:
   `${SYMBOL_NAME}` == `Component.name` first, then `LCSC Part`. Variant list
   comes from `.kicad_pro` → `schematic.variants` (KiCad 10; absent on 9).
+- **A simulation is a PROJECT, not a sheet.** A design repository keeps one
+  `_sim` KiCad project per block it exercises (`EVSE_20_CTRL` has six); the
+  root sheet includes the real block sheet and adds the harness — supplies,
+  PWL stimulus, loads, a `.control` verdict block — as SPICE text. So
+  `sim_run.run` ALWAYS netlists the source root, whatever sheet the viewer is
+  showing: netlisting the block alone drops the harness and ngspice answers
+  `incomplete or empty netlist`.
+- **Server-side, `Sim.Library` arrives spelled the INSTALLED way.** A project
+  schematic stores `${KICAD10_3RD_PARTY}/symbols/com_sevensigma_library/…`
+  (`pcm.SIM_LIB_INSTALLED`), not the mirror's `${SEVENSIGMA_DIR}/Symbols/…`,
+  so every real project failed to netlist until `pcm.server_pcm_root()` laid
+  out a PCM-shaped directory that symlinks to the mirror and both netlist
+  paths exported `KICAD10_3RD_PARTY`. `sch export netlist` has no
+  `--define-var`; the environment is the only way in.
 - **Simulation runs as an OP, not as its own service** (`docs/simulator/design.md`).
   `project_ops.sim_run` netlists a sheet with kicad-cli and runs ngspice on the
   result, so it rides the existing render dispatch: `RENDER_MODE=local`

@@ -27,6 +27,7 @@ copy is current). Never commit without an explicit request.
 | Rendering | kicad-cli SVG (already used by `SchematicTab`), overlay drawn on top | SVG viewBox is in mm, 1:1 with schematic coordinates (§2.3). A native renderer is only needed for editing, which is out of scope. |
 | Where it runs | Server side, in the render container | The render container is the existing boundary for running untrusted KiCad files and already has kicad-cli and `SEVENSIGMA_DIR`. A browser/WASM engine is a later option; the API is shaped so the UI does not change if it moves (§4). |
 | Scenario source of truth | The `.control` text item in the sheet, per the simulation skill | Scenarios travel with the schematic through git. No separate scenario store in v1. |
+| What a run covers | ALWAYS the whole project, from its root sheet | A simulation is a PROJECT, not a sheet — see §3.4. |
 | Two modes | **Live** (endless, streamed) and **Scenario** (finite, replayed) | §3 and §4. Same netlist, geometry and overlay; only the data source differs. |
 
 ## 2. What was verified, and how
@@ -207,6 +208,57 @@ two refusals (shell command in a `.control` block, upload with no schematic):
 6. Lifecycle: spawn on connect, kill on disconnect, idle timeout (default 10
    min), hard cap on concurrent sessions per container (default 4), CPU
    watchdog. Session state is never persisted.
+
+### 3.4 A simulation is a project, not a sheet
+
+The repositories already work this way, and the platform now follows them.
+`EVSE_20_CTRL` keeps six harnesses beside the board — `CP_sim`, `DIN_sim`,
+`DOUT_sim`, `RESET_sim`, `SAFETY_sim`, `TEMP_sim`. Each is a real
+`.kicad_pro` whose root sheet:
+
+- **includes** the block under test (`SAFETY_sim.kicad_sch` places the real
+  `SAFETY.kicad_sch` as a sub-sheet — included, not copied, so the harness
+  never drifts from the design), and
+- carries the harness as SPICE **text items** beside it: supplies, PWL
+  stimulus, coil loads, a `.tran`, and a `.control` block that prints a
+  verdict table.
+
+Nothing in the block is edited to make it simulate, and nothing about the
+design's own sheet instances moves — which is the point of a separate project.
+
+Two rules follow, and both were learned the hard way (2026-08-29):
+
+1. **A run netlists the project ROOT, never the sheet on screen.** Netlisting
+   `SAFETY.kicad_sch` alone drops every source and load, and ngspice answers
+   `incomplete or empty netlist`. Simulating a block in isolation is not a
+   mode; it is a reason to make a `_sim` project for it. The viewer still
+   picks any sheet — that choice is about what to LOOK at.
+2. **Open the sheet that is drawn on.** A harness root is a page of SPICE text
+   around one sheet box (0 parts, 3 directives), and the leaves are single
+   channels (15 parts each). Neither "the first sheet" nor "the deepest sheet"
+   finds the circuit under test — `SAFETY`, with 87. `sheets()` returns a part
+   count per sheet and the page opens the richest one.
+
+`GET /api/sim/snapshot/{id}/projects` lists a commit's KiCad projects and
+marks which are harnesses (a root sheet carrying SPICE directives), so the
+page can offer the blocks instead of the board.
+
+### 3.5 The library path a project actually stores
+
+A schematic drawn against the installed library stores
+`${KICAD10_3RD_PARTY}/symbols/com_sevensigma_library/7Sigma_sim.sp`, because
+that is what the user's KiCad resolves — `pcm.SIM_LIB_INSTALLED`, written by
+the two egress points. The mirror's own spelling,
+`${SEVENSIGMA_DIR}/Symbols/…`, appears only in server-side files. So the
+server saw a variable it did not define and every real project failed to
+netlist with `could not find base model 'sigma_diode'`.
+
+`pcm.server_pcm_root()` lays out `DATA_DIR/pcmroot/symbols/<install dir>` as a
+RELATIVE symlink to the mirror's `Symbols` folder, and both netlist paths
+export `KICAD10_3RD_PARTY` pointing at it. Both spellings then reach the same
+file, nothing is rewritten, and a regenerated library is picked up with no
+extra step. `kicad-cli sch export netlist` has no `--define-var`, so the
+environment is the only way in.
 
 ### 3.3 Where a schematic comes from
 

@@ -25,6 +25,11 @@ NGSPICE = os.environ.get("NGSPICE", "ngspice")
 BOARD_TEMPLATE = Path(__file__).parent / "board_template.kicad_pcb"
 # Project checkouts arrive on the shared (read-only) api data volume.
 DATA_ROOT = Path(os.environ.get("DATA_ROOT", "/data"))
+# A project schematic stores Sim.Library the way the user's KiCad resolves it,
+# `${KICAD10_3RD_PARTY}/symbols/…`. The api lays that directory out on the
+# shared volume (services/pcm.py: server_pcm_root); kicad-cli reads the
+# variable from the environment, exactly as it reads SEVENSIGMA_DIR.
+os.environ.setdefault("KICAD10_3RD_PARTY", str(DATA_ROOT / "pcmroot"))
 
 app = FastAPI(title="kicad-render")
 

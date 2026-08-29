@@ -42,6 +42,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import threading
 import time
 import zipfile
@@ -81,6 +82,39 @@ BUILDER_REV = 11  # bump when the package builder output changes for the same mi
 # cached meta without ever reaching _resolve_package. A PLUGIN_VERSION bump on
 # its own therefore reaches nobody: verified 2026-07-31, the repository kept
 # advertising 1.0.4 through two deploys.
+
+# A schematic drawn against the installed library stores the INSTALLED
+# Sim.Library path — `${KICAD10_3RD_PARTY}/symbols/…` — because that is what
+# the user's KiCad resolves. Server-side that variable does not exist, so
+# every real project failed to netlist ("could not find base model
+# 'sigma_diode'"). This gives the servers a directory shaped like a PCM
+# install whose library folder IS the mirror, so both spellings of the path
+# reach the same file and neither has to be rewritten.
+SERVER_PCM_ROOT = "pcmroot"
+
+
+def server_pcm_root() -> Path:
+    """DATA_DIR/pcmroot, laid out so `${KICAD10_3RD_PARTY}` resolves here.
+
+    `symbols/<install dir>` is a RELATIVE symlink to the mirror's Symbols
+    folder, so it stays correct in every container that mounts the volume and
+    can never go stale against a regenerated library. Idempotent.
+    """
+    root = settings.data_dir / SERVER_PCM_ROOT
+    link = root / "symbols" / LIB_INSTALL_DIR
+    target = Path("..") / ".." / "mirror" / "Symbols"
+    try:
+        link.parent.mkdir(parents=True, exist_ok=True)
+        if link.is_symlink():
+            if Path(os.readlink(link)) != target:
+                link.unlink()
+                link.symlink_to(target, target_is_directory=True)
+        elif not link.exists():
+            link.symlink_to(target, target_is_directory=True)
+    except OSError as e:  # a read-only volume, or a directory in the way
+        log.warning("cannot prepare the server PCM root at %s: %s", link, e)
+    return root
+
 
 _PLUGIN_SRC = Path(__file__).parent / "pcm_plugin"
 

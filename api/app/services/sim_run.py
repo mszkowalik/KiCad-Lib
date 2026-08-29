@@ -187,12 +187,52 @@ def prune_uploads() -> int:
     return removed
 
 
+def snapshot_projects(snapshot) -> list[dict]:
+    """The snapshot's KiCad projects, marked for whether they simulate.
+
+    A repository holds the design AND a simulation project per block it
+    exercises — EVSE_20_CTRL carries CP_sim, DIN_sim, DOUT_sim, RESET_sim,
+    SAFETY_sim and TEMP_sim beside the board. Each is a real `.kicad_pro`, so
+    the ingest already discovers them as boards; what it cannot say is which
+    of them is a harness. A root sheet carrying SPICE directive text is.
+    """
+    out: list[dict] = []
+    for board in snapshot.boards or []:
+        entry = {"board": board.get("name", ""), "simulation": False, "directives": 0,
+                 "has_schematic": bool(board.get("sch"))}
+        if board.get("sch"):
+            try:
+                rel = project_render.rel_checkout(snapshot.project_id, snapshot.sha, board["sch"])
+                text = (settings.data_dir / rel).read_text(encoding="utf-8")
+                entry["directives"] = len(_DIRECTIVE_RE.findall(text))
+                entry["simulation"] = entry["directives"] > 0
+            except OSError:
+                # The checkout is not materialised yet; the name still hints.
+                entry["simulation"] = entry["board"].lower().endswith("_sim")
+        out.append(entry)
+    return out
+
+
 # ------------------------------------------------------------------- sheets
+
+# Counted rather than parsed: picking a default sheet must not cost a full
+# geometry pass over every sheet in a hierarchy.
+_PLACED_RE = re.compile(r"\(lib_id ")
+_WIRE_RE = re.compile(r"\(wire\b")
+_DIRECTIVE_RE = re.compile(r'\(text\s+"\\?\.(tran|ac|dc|op|noise|control|param|include|lib|four)\b',
+                           re.IGNORECASE)
+
 
 def sheets(src: SimSource) -> list[dict]:
     """Every sheet INSTANCE in the hierarchy, root first. `file` is replaced
     by a DATA_DIR-relative path — an absolute server path is nothing the
-    browser should ever see."""
+    browser should ever see.
+
+    Each entry carries how much is DRAWN on it. The root of a simulation
+    project is usually a page of SPICE text with one sub-sheet box on it, so
+    "the first sheet" and "the deepest sheet" both pick the wrong thing to
+    show; the counts let the client open the sheet under test.
+    """
     out = []
     for entry in sim_geom.sheet_tree(src.root_abs):
         item = dict(entry)
@@ -201,6 +241,15 @@ def sheets(src: SimSource) -> list[dict]:
         except SimSourceError:
             item["rel"] = ""
             item["error"] = "sub-sheet lies outside the source folder"
+        text = ""
+        if item["rel"]:
+            try:
+                text = (settings.data_dir / item["rel"]).read_text(encoding="utf-8")
+            except OSError as e:
+                item["error"] = f"cannot read the sheet: {e}"
+        item["symbols"] = len(_PLACED_RE.findall(text))
+        item["wires"] = len(_WIRE_RE.findall(text))
+        item["directives"] = len(_DIRECTIVE_RE.findall(text))
         item.pop("file", None)
         out.append(item)
     return out
@@ -303,20 +352,21 @@ def geometry(src: SimSource, instance_path: str = "") -> dict:
 
 # ---------------------------------------------------------------------- run
 
-def run(src: SimSource, *, instance_path: str = "", control: str | None = None,
-        analysis: str = "", timeout: int = 0) -> bytes:
+def run(src: SimSource, *, control: str | None = None, analysis: str = "",
+        timeout: int = 0) -> bytes:
     """One batch scenario run -> the 7SIM payload the browser plots.
 
-    `instance_path` picks which sheet is the top of the simulated circuit: the
-    default is the source's root sheet, and any other sheet is netlisted as if
-    it were a design of its own (which is what "simulate this sub-sheet" has
-    to mean — its parent's sources are not in it).
+    ALWAYS the source's root sheet, whatever sheet the viewer is looking at.
+    A simulation is a PROJECT: `SAFETY_sim.kicad_pro` holds a root sheet that
+    includes the real `SAFETY.kicad_sch` and adds the harness — supplies,
+    stimulus, loads, the `.control` verdict block — as SPICE text beside it.
+    Netlisting the sheet under test on its own drops all of that and ngspice
+    answers "incomplete or empty netlist", which is exactly what it did
+    before this rule existed. Simulating a block in isolation is not a mode:
+    it is a reason to make a `_sim` project for it.
     """
-    entry = _find_sheet(src, instance_path)
-    if entry.get("error"):
-        raise SimSourceError(entry["error"])
     data, _ = project_render.run_project_op(
-        "sim_run", entry["rel"], control=control, analysis=analysis,
+        "sim_run", src.root_rel, control=control, analysis=analysis,
         timeout=timeout or settings.sim_timeout_s,
     )
     return data

@@ -5258,7 +5258,28 @@ export interface SimSheet {
   page: string;
   depth: number;
   rel: string;
+  /** How much is DRAWN here. A harness root is SPICE text and one sheet box,
+   *  so these decide which sheet is worth opening. */
+  symbols: number;
+  wires: number;
+  directives: number;
   error?: string;
+}
+
+/** A KiCad project inside one commit, and whether it is a simulation
+ *  harness — a design repository keeps one `_sim` project per block. */
+export interface SimProject {
+  board: string;
+  simulation: boolean;
+  directives: number;
+  has_schematic: boolean;
+}
+
+export async function getSimProjects(
+  snapshotId: number,
+  signal?: AbortSignal,
+): Promise<{ projects: SimProject[] }> {
+  return request(`/api/sim/snapshot/${snapshotId}/projects`, { signal });
 }
 
 export interface SimSheetList {
@@ -5375,10 +5396,13 @@ export function simSheetSvgUrl(src: SimSourceRef, sheet: string): string {
 
 /** Run one scenario. The answer is the binary 7SIM payload, not JSON —
  *  thousands of points across a dozen vectors are float arrays, and that is
- *  what the plotter wants. Decode it with `decodeSimPayload`. */
+ *  what the plotter wants. Decode it with `decodeSimPayload`.
+ *
+ *  A run has no sheet: it is always the whole project from its root, so the
+ *  harness that a `_sim` project wraps around a block goes with it. */
 export async function runSimulation(
   src: SimSourceRef,
-  body: { sheet?: string; control?: string | null; analysis?: string; timeout?: number },
+  body: { control?: string | null; analysis?: string; timeout?: number },
   signal?: AbortSignal,
 ): Promise<ArrayBuffer> {
   let res: Response;

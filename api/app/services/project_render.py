@@ -16,7 +16,7 @@ import threading
 import httpx
 
 from ..config import settings
-from . import storage
+from . import pcm, storage
 from .project_ops import MEDIA, run_op
 
 _locks: dict[str, threading.Lock] = {}
@@ -33,9 +33,18 @@ def run_project_op(op: str, rel_src: str, *, variant: str = "", layer: str = "",
                    timeout: int = 60) -> tuple[bytes, str]:
     """rel_src is relative to DATA_DIR (== /data in the containers).
     control/analysis/timeout only mean anything to the sim_run op."""
+    # Cheap and idempotent, and it must happen on THIS side: in http mode the
+    # render container reads the volume read-only and cannot create it.
+    pcm.server_pcm_root()
     if settings.render_mode == "local":
         with tempfile.TemporaryDirectory() as td:
-            env = {**os.environ, "SEVENSIGMA_DIR": str(settings.mirror_dir.resolve())}
+            env = {
+                **os.environ,
+                "SEVENSIGMA_DIR": str(settings.mirror_dir.resolve()),
+                # Schematics drawn against the PCM install spell Sim.Library
+                # the installed way; see pcm.server_pcm_root.
+                "KICAD10_3RD_PARTY": str((settings.data_dir / pcm.SERVER_PCM_ROOT).resolve()),
+            }
             if settings.spice_lib_dir:
                 # A Homebrew ngspice does not find its own spinit, and without
                 # it every XSPICE (poly) model in a subcircuit fails to load.

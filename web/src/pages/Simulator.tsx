@@ -17,6 +17,7 @@ import {
   errorMessage,
   getSimGeometry,
   getSimNetlist,
+  getSimProjects,
   getSimSheets,
   isAbortError,
   runSimulation,
@@ -24,6 +25,7 @@ import {
   uploadSimSheets,
   type SimGeometry,
   type SimNet,
+  type SimProject,
   type SimSheet,
   type SimSourceRef,
 } from "../api";
@@ -54,6 +56,7 @@ export default function Simulator() {
     return null;
   }, [snapshotId, board, uploadId]);
 
+  const [projects, setProjects] = useState<SimProject[] | null>(null);
   const [sheets, setSheets] = useState<SimSheet[] | null>(null);
   const [sheetPath, setSheetPath] = useState<string>("");
   const [geometry, setGeometry] = useState<SimGeometry | null>(null);
@@ -79,6 +82,23 @@ export default function Simulator() {
 
   // ------------------------------------------------------------- loading
 
+  // A design repository keeps one simulation project per block — CP_sim,
+  // SAFETY_sim, TEMP_sim beside the board itself. Offer them, and open one
+  // rather than the board, which carries no harness and cannot simulate.
+  useEffect(() => {
+    if (!snapshotId) return;
+    const ctrl = new AbortController();
+    getSimProjects(snapshotId, ctrl.signal)
+      .then((r) => {
+        setProjects(r.projects);
+        if (board) return;
+        const pick = r.projects.find((x) => x.simulation) ?? r.projects[0];
+        if (pick) setParams({ snapshot: String(snapshotId), board: pick.board }, { replace: true });
+      })
+      .catch(() => setProjects(null));
+    return () => ctrl.abort();
+  }, [snapshotId, board, setParams]);
+
   useEffect(() => {
     if (!source) return;
     const ctrl = new AbortController();
@@ -89,9 +109,10 @@ export default function Simulator() {
     getSimSheets(source, ctrl.signal)
       .then((r) => {
         setSheets(r.sheets);
-        // The deepest sheet is the one with a circuit on it; a root that only
-        // holds sub-sheet boxes has nothing to draw.
-        const drawn = [...r.sheets].sort((a, b) => b.depth - a.depth)[0];
+        // Open the sheet with the most on it. A harness root is a page of
+        // SPICE text around one sheet box, and the leaves are single channels
+        // — so neither "first" nor "deepest" finds the circuit under test.
+        const drawn = [...r.sheets].sort((a, b) => b.symbols - a.symbols)[0];
         setSheetPath(drawn?.path ?? "");
       })
       .catch((err) => {
@@ -150,7 +171,6 @@ export default function Simulator() {
     setError(null);
     try {
       const buffer = await runSimulation(source, {
-        sheet: sheetPath,
         control: useOwnScenario ? null : "",
         analysis: useOwnScenario ? "" : analysis,
       });
@@ -174,7 +194,7 @@ export default function Simulator() {
     } finally {
       setBusy(false);
     }
-  }, [source, sheetPath, useOwnScenario, analysis, geometry]);
+  }, [source, useOwnScenario, analysis, geometry]);
 
   const onUpload = async (files: FileList | null) => {
     if (!files || !files.length) return;
@@ -249,6 +269,30 @@ export default function Simulator() {
       {error ? <ErrorBanner message={error} /> : null}
 
       <div className="toolbar">
+        {projects && projects.length > 1 ? (
+          <div className="seg" role="group" aria-label="Simulation projects">
+            {projects
+              .filter((x) => x.has_schematic)
+              .map((x) => (
+                <button
+                  key={x.board}
+                  type="button"
+                  className={x.board === board ? "on" : ""}
+                  onClick={() =>
+                    setParams({ snapshot: String(snapshotId), board: x.board })
+                  }
+                  title={
+                    x.simulation
+                      ? "A simulation project — its root sheet carries the harness"
+                      : "No simulation directives on this project's root sheet"
+                  }
+                >
+                  {x.board}
+                  {x.simulation ? " ·" : ""}
+                </button>
+              ))}
+          </div>
+        ) : null}
         {sheets && sheets.length > 1 ? (
           <div className="seg" role="group" aria-label="Sheets">
             {sheets.map((s) => (
@@ -257,7 +301,7 @@ export default function Simulator() {
                 type="button"
                 className={s.path === sheetPath ? "on" : ""}
                 onClick={() => setSheetPath(s.path)}
-                title={s.path}
+                title={`Show this sheet — the run always covers the whole project (${s.symbols} parts)`}
               >
                 {"· ".repeat(s.depth)}
                 {s.name}
@@ -314,6 +358,15 @@ export default function Simulator() {
           </>
         ) : null}
       </div>
+
+      {projects && board && !projects.find((x) => x.board === board)?.simulation
+        && projects.some((x) => x.simulation) ? (
+        <p className="muted">
+          {board} carries no simulation directives — it is the design, not a harness.
+          The projects marked · above are the simulation blocks:{" "}
+          {projects.filter((x) => x.simulation).map((x) => x.board).join(", ")}.
+        </p>
+      ) : null}
 
       {busy && !geometry ? <Spinner label="Reading the schematic" /> : null}
 

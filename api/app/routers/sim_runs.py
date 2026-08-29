@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as M
 from ..db import get_db
-from ..services import sim_run
+from ..services import gitrepo, sim_run
 from ..services.project_ops import OpError
 from ..services.sim_run import SimSource, SimSourceError
 
@@ -47,8 +47,9 @@ def _upload_source(upload_id: str) -> SimSource:
 
 
 class RunRequest(BaseModel):
-    # Which sheet is the top of the simulated circuit ("" = the source root).
-    sheet: str = ""
+    """A run has no sheet: it is always the whole simulation project, from its
+    root, harness included. See sim_run.run."""
+
     # None keeps the schematic's own .control block, "" drops it, and any
     # other string replaces it — the scenario editor sends the third form.
     control: str | None = None
@@ -69,6 +70,23 @@ async def create_upload(files: list[UploadFile] = File(...), root: str = Form(""
     except SimSourceError as e:
         raise HTTPException(422, str(e)) from e
     return {"id": meta["id"], "root": meta["root"], "files": meta["files"]}
+
+
+# ------------------------------------------------------------------ projects
+
+@router.get("/snapshot/{snapshot_id}/projects")
+def snapshot_projects(snapshot_id: int, db: Session = Depends(get_db)):
+    """Which KiCad projects this commit holds, and which of them are
+    simulation harnesses. A design repository keeps one `_sim` project per
+    block it exercises, so this is the list a simulator page opens with."""
+    snap = db.get(M.ProjectSnapshot, snapshot_id)
+    if snap is None:
+        raise HTTPException(404, "snapshot not found")
+    try:
+        gitrepo.materialize(snap.project_id, snap.sha)
+    except (OSError, gitrepo.GitError):
+        pass  # the name-based hint still works without a checkout
+    return {"projects": sim_run.snapshot_projects(snap)}
 
 
 # ------------------------------------------------------------------- sheets
@@ -177,8 +195,7 @@ def upload_run(upload_id: str, body: RunRequest):
 def _run(src: SimSource, body: RunRequest) -> Response:
     try:
         data = sim_run.run(
-            src, instance_path=body.sheet, control=body.control,
-            analysis=body.analysis, timeout=body.timeout,
+            src, control=body.control, analysis=body.analysis, timeout=body.timeout,
         )
     except SimSourceError as e:
         raise HTTPException(422, str(e)) from e
