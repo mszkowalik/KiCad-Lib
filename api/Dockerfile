@@ -28,7 +28,24 @@ COPY app ./app
 COPY cli ./cli
 # Vendored, KiCad-10-patched kiutils (see pyproject comment)
 COPY kiutils ./kiutils
-RUN pip install --no-cache-dir .
+# The field solver's mesher publishes no manylinux aarch64 wheel, so an arm64
+# build compiles it from the upstream git tag instead -- see the two `triangle`
+# requirements in pyproject.toml. gcc is needed for that build and for nothing
+# else, so install it, build, and remove it inside one layer. amd64 takes the
+# wheel and never installs a compiler.
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    if [ "$arch" != "amd64" ]; then \
+        apt-get update; \
+        # libc6-dev is a Recommends of gcc, so --no-install-recommends drops it
+        # and the compile fails on a missing stdio.h. Name it.
+        apt-get install -y --no-install-recommends gcc libc6-dev; \
+    fi; \
+    pip install --no-cache-dir .; \
+    if [ "$arch" != "amd64" ]; then \
+        apt-get purge -y --auto-remove gcc libc6-dev; \
+    fi; \
+    rm -rf /var/lib/apt/lists/*
 
 # Cap glibc malloc arenas. The datasheet sweeps and read_datasheet run in
 # daemon threads over ~1 GB of PDF blobs, and glibc hands every thread its own

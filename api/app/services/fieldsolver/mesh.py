@@ -15,16 +15,18 @@ from .geometry import Geometry
 def _tr():
     """Import the mesher on first use.
 
-    `triangle` ships an amd64 wheel and nothing that builds on an arm64 dev box, so
-    importing it at module scope would stop the whole API from starting there. The
-    router turns this error into a 503 for solver calls only.
+    The images install `triangle` for every architecture — amd64 from the wheel,
+    arm64 from source (see api/Dockerfile). Importing it at module scope would
+    still make a machine without it fail to start the whole API, so the import
+    waits until a solve asks for it and the router answers 503 instead.
     """
     try:
         import triangle
     except ImportError as e:                                    # pragma: no cover
         raise RuntimeError(
-            "the field solver needs the `triangle` mesher, which is published for "
-            "linux/amd64 only — the deployed images have it"
+            "the field solver needs the `triangle` mesher and it is not installed. "
+            "Rebuild the api image (`docker compose build api`), which installs it "
+            "for this architecture."
         ) from e
     return triangle
 

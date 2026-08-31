@@ -29,16 +29,22 @@ dependencies = [
     # personal and research use but NOT for commercial distribution. It is fine
     # for this in-house platform; swap the mesher before any commercial release.
     #
-    # It is also amd64-only in practice: the current release publishes a
-    # manylinux x86_64 wheel and no source distribution that compiles on
-    # Python 3.12 (the last sdist still includes longintrepr.h, dropped in
-    # 3.12). The images are linux/amd64 anyway, so the marker keeps the
-    # dependency install working on an arm64 dev machine; `mesh.py` imports it
-    # lazily and the API answers 503 for solver calls when it is missing.
+    # TWO REQUIREMENTS, ONE PACKAGE. Release 20250106 publishes wheels for
+    # manylinux x86_64, Windows and macOS arm64, but NOT for manylinux aarch64,
+    # and it publishes no source distribution at all. The last sdist (20200424)
+    # cannot compile on Python 3.12, because it includes longintrepr.h, which
+    # CPython 3.12 removed. So the images, which are linux/amd64, take the
+    # wheel, and an arm64 container builds the same version from the upstream
+    # git tag instead. That build needs a C compiler; api/Dockerfile installs
+    # gcc for it and drops it again in the same layer.
+    #
+    # `mesh.py` still imports the mesher lazily, so a machine without it starts
+    # the API normally and fails only on a solver call.
     "numpy>=1.26",
     "scipy>=1.11",
     "shapely>=2.0",
     "triangle>=20250106; platform_machine == 'x86_64'",
+    "triangle @ git+https://github.com/drufat/triangle.git@v20250106 ; platform_machine != 'x86_64'",
     # kiutils is VENDORED at platform/api/kiutils/ — it is the Wittmann-MEE fork
     # plus the manual KiCad-10 patch from the root CLAUDE.md (in_pos_files +
     # _unknown_fields catch-all). The upstream fork cannot parse KiCad-10-saved

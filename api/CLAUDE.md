@@ -1732,11 +1732,14 @@ record: `docs/decisions/0002-field-solver-in-the-platform.md`.
 
 - **Its dependencies are new and one of them is licence-constrained.** numpy,
   scipy, shapely and `triangle`; Triangle is free for personal and research use
-  but NOT for commercial distribution, and it publishes an amd64 wheel with no
-  sdist that builds on Python 3.12. Hence the `platform_machine == 'x86_64'`
-  marker in `pyproject.toml` and the LAZY import in `mesh.py::_tr()` — an arm64
-  dev box runs the whole platform and answers 503 for solver calls alone. The
-  images are linux/amd64, so production has it.
+  but NOT for commercial distribution. It also needs TWO requirements for one
+  package, both in `pyproject.toml`: release 20250106 publishes a manylinux
+  x86_64 wheel but no manylinux aarch64 wheel and no sdist, and the last sdist
+  cannot compile on Python 3.12. So amd64 installs the wheel and arm64 builds
+  tag `v20250106` from upstream git, for which `api/Dockerfile` adds gcc and
+  removes it in the same layer. The import in `mesh.py::_tr()` stays LAZY, so a
+  machine that somehow lacks the mesher still starts and answers 503 for solver
+  calls alone.
 - **User-defined stackups and rule sets live in Postgres** (`FieldStackup`,
   `FieldRuleSet`), never in JSON beside the code. The solver keeps them in
   module state because it is a pure library, so every request that reads or

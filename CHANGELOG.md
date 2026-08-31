@@ -19,6 +19,10 @@ against closed forms (microstrip Hammerstad-Jensen 0.6 %, stripline Wheeler
   describing a real board.
 - `triangle`, the mesher, is licensed for personal and research use only and
   must be replaced before any commercial release.
+- The solver runs on both architectures. amd64 installs the mesher's wheel;
+  arm64 has no wheel published, so the image builds the same version from the
+  upstream git tag. The two builds agree on Z0 to 0.0013 % and produce meshes
+  that differ by about 3 % in node count.
 
 This file starts on 2026-08-28. For earlier work, read the git history.
 

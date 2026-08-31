@@ -61,10 +61,12 @@ person and the next review.
 - `numpy`, `scipy`, `shapely` and `triangle` become API dependencies.
   **`triangle` is licensed for personal and research use, not for commercial
   distribution** — fine for this in-house platform, but the mesher has to be
-  replaced before any commercial release. It is also amd64-only in practice
-  (no sdist that builds on Python 3.12), so it carries a platform marker and
-  `mesh.py` imports it lazily; an arm64 dev box runs the whole platform and
-  answers 503 for solver calls alone.
+  replaced before any commercial release. Its packaging needs two requirements
+  for one package (2026-08-31): release 20250106 publishes no manylinux aarch64
+  wheel and no sdist at all, and the last sdist cannot compile on Python 3.12,
+  so amd64 takes the wheel and arm64 builds the same tag from upstream git.
+  `mesh.py` still imports it lazily, so a machine without the mesher starts the
+  API normally and answers 503 for solver calls alone.
 - A solve is a background job with progress, cancellation, and a reaper that
   cancels a job whose browser stopped polling — a solve holds a core and
   hundreds of megabytes. The search pool is capped at four workers for the same
