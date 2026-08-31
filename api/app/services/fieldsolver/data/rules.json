@@ -1,0 +1,106 @@
+{
+  "_note": "Fab design rules used for defaults and warnings. Every number carries its source. mm unless stated.",
+  "rules": [
+    {
+      "id": "jlcpcb_standard",
+      "manufacturer": "JLCPCB",
+      "name": "JLCPCB standard PCB",
+      "source": "https://jlcpcb.com/capabilities/pcb-capabilities (read 2026-08-30) unless stated otherwise",
+      "trace": {
+        "outer_1oz_2layer": {
+          "min_width": 0.1,
+          "min_space": 0.1,
+          "source": "capabilities: 1 oz, 1-2 layer: 0.10/0.10 mm (4/4 mil)"
+        },
+        "outer_1oz_multilayer": {
+          "min_width": 0.09,
+          "min_space": 0.09,
+          "source": "capabilities: 1 oz, multilayer: 0.09/0.09 mm (3.5/3.5 mil)"
+        },
+        "outer_2oz_2layer": {
+          "min_width": 0.16,
+          "min_space": 0.16,
+          "source": "capabilities: 2 oz, 2 layer: 0.16/0.16 mm"
+        },
+        "outer_2oz_multilayer": {
+          "min_width": 0.15,
+          "min_space": 0.15,
+          "source": "capabilities: 2 oz, multilayer: 0.15/0.15 mm"
+        }
+      },
+      "via": {
+        "min_hole": 0.15,
+        "min_hole_source": "capabilities: minimum via hole size 0.15 mm (2+ layers)",
+        "min_diameter": 0.25,
+        "min_diameter_source": "capabilities: minimum via diameter 0.25 mm",
+        "hole_tolerance_plus": 0.13,
+        "hole_tolerance_minus": 0.08,
+        "hole_tolerance_source": "capabilities: via hole tolerance +0.13/-0.08 mm",
+        "plating_um": 18,
+        "plating_source": "JLCPCB support, reported on the EasyEDA forum: hole wall copper 18 um average. IPC-6012 class 2 asks 20 um; treat 18-20 um as the range.",
+        "drill_oversize": 0.1,
+        "drill_oversize_source": "JLCPCB blog (pcb-plating-thickness): the factory drills about 0.1 mm larger than the specified finished hole to compensate for plating.",
+        "drill_to_copper_inner": 0.2,
+        "drill_to_copper_source": "capabilities: inner-layer via hole to copper 0.2 mm",
+        "covering_options": [
+          "untented",
+          "tented",
+          "plugged (solder mask)",
+          "epoxy filled & capped",
+          "copper paste filled & capped"
+        ],
+        "covering_source": "capabilities + JLCPCB blog 'five via finishes'. Standard vias are hollow plated barrels; copper-paste fill is an ordered option for via-in-pad (0.15-0.55 mm holes).",
+        "default_hole": 0.3,
+        "default_pad": 0.6,
+        "default_source": "user default (Mateusz, 2026-08-30): 0.3 mm hole, 0.6 mm copper diameter",
+        "sizes": [
+          {
+            "name": "0.3 / 0.6 (user default)",
+            "hole": 0.3,
+            "pad": 0.6
+          },
+          {
+            "name": "0.15 / 0.25 (fab minimum)",
+            "hole": 0.15,
+            "pad": 0.25
+          }
+        ],
+        "sizes_source": "first entry: user default (Mateusz 2026-08-30); second: JLCPCB capabilities minimums"
+      },
+      "copper": {
+        "outer_1oz_finished_mm": 0.035,
+        "inner_default_oz": 0.5,
+        "inner_default_mm": 0.0152,
+        "source": "stackup page: outer 0.035 mm, inner 0.0152 mm; capabilities: inner 0.5 oz default. The JLCPCB impedance calculator itself assumes 1.6 mil (0.041 mm) outer, 1.2 mil (0.030 mm) inner."
+      },
+      "soldermask": {
+        "min_thickness_um": 10,
+        "source": "capabilities: solder mask thickness >= 10 um; impedance page model: 1.2 mil over substrate, 0.6 mil over trace, Dk 3.8"
+      },
+      "impedance_tolerance_pct": 10,
+      "impedance_tolerance_source": "capabilities: impedance tolerance +/-10 %, +/-5 % on request",
+      "etch": {
+        "undercut_outer_um": 12.5,
+        "undercut_inner_um": 6.5,
+        "assumed": true,
+        "source": "JLCPCB publishes no undercut. JLCPCB blog 'how-etch-factor-controls-pcb-trace-width': production etch factor 2.5-4.0, example 1 oz at EF 3.5 = 10 um/side. Z-zero 'Etch effects explained': average suppliers ~0.5 mil (12.7 um)/side for 1 oz, ~0.25 mil (6.4 um) for 0.5 oz; 0.5 mil etchback shifts 50 ohm by ~1.25 ohm. Values here are industry-typical, mark as assumed."
+      },
+      "mask": {
+        "dk": 3.8,
+        "tand": 0.02,
+        "tand_assumed": true,
+        "above_substrate_mm": 0.0305,
+        "above_trace_mm": 0.0152,
+        "source": "https://jlcpcb.com/impedance: C1 1.2 mil over substrate, C2 0.6 mil over trace, CEr 3.8. tand not published, 0.02 assumed.",
+        "expansion_mm": 0.05,
+        "expansion_source": "mask opening beyond the exposed copper; 0.05 mm is a common default (assumed, JLCPCB does not publish a fixed value for custom openings)"
+      },
+      "finish": {
+        "type": "HASL (lead-free)",
+        "thickness_um": 10,
+        "assumed": true,
+        "source": "JLCPCB default finish lead-free HASL; thickness 1-50 um per JLCPCB blog, 10 um assumed. ENIG: Ni 3-6 um + Au 0.025-0.05 um."
+      }
+    }
+  ]
+}

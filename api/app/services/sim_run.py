@@ -12,17 +12,15 @@ hierarchy and ngspice runs it, both inside project_ops.
 """
 from __future__ import annotations
 
-import io
 import json
 import re
 import shutil
 import time
-import zipfile
 import uuid as uuidlib
 from pathlib import Path
 
 from ..config import settings
-from . import gitrepo, pcm, project_render, sim_geom
+from . import gitrepo, pcm, project_render, sch_write, sim_geom, sim_scenario
 
 UPLOAD_ROOT = "sim_uploads"
 # What an upload may contain. Schematics and the model files a design keeps
@@ -30,7 +28,57 @@ UPLOAD_ROOT = "sim_uploads"
 UPLOAD_SUFFIXES = frozenset({".kicad_sch", ".kicad_pro", ".lib", ".sp", ".cir", ".mod", ".sub", ".txt"})
 MAX_UPLOAD_FILES = 60
 MAX_UPLOAD_BYTES = 32 * 1024 * 1024
+# The editor document kept beside a saved sketch, so it can be reopened.
+SKETCH_FILE = "sketch.json"
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9._][A-Za-z0-9._ +-]*$")
+
+# The colour theme kicad-cli renders with. `render/themes/` carries the same
+# file byte-identical (the workflow's guard job checks it) because the browser
+# draws schematics itself now, and a second palette would put the simulator
+# and the project's schematic tab back into two colour schemes.
+THEME_DIR = Path(__file__).with_name("themes")
+
+# KiCad names a few colours only in the theme it inherits from. These are the
+# stock values, used when a theme leaves a key out.
+_THEME_FALLBACK = {
+    "background": "rgb(255, 255, 255)", "wire": "rgb(0, 150, 0)",
+    "bus": "rgb(0, 0, 132)", "junction": "rgb(0, 150, 0)",
+    "component_outline": "rgb(132, 0, 0)", "component_body": "rgb(255, 255, 194)",
+    "pin": "rgb(132, 0, 0)", "pin_name": "rgb(0, 100, 100)",
+    "pin_number": "rgb(169, 0, 0)", "reference": "rgb(0, 100, 100)",
+    "value": "rgb(0, 100, 100)", "fields": "rgb(132, 0, 132)",
+    "label_local": "rgb(0, 0, 0)", "label_global": "rgb(132, 0, 0)",
+    "label_hier": "rgb(132, 0, 132)", "no_connect": "rgb(0, 0, 132)",
+    "note": "rgb(0, 0, 194)", "sheet": "rgb(132, 0, 0)",
+    "sheet_background": "rgba(255, 255, 255, 0.0)", "sheet_name": "rgb(0, 100, 100)",
+    "sheet_filename": "rgb(132, 0, 132)", "sheet_label": "rgb(0, 100, 100)",
+    "sheet_fields": "rgb(132, 0, 132)", "dnp_marker": "rgb(220, 9, 13)",
+    "excluded_from_sim": "rgb(194, 194, 194)", "hidden": "rgb(94, 194, 194)",
+    "erc_warning": "rgb(255, 208, 66)", "erc_error": "rgb(230, 9, 13)",
+}
+
+
+def schematic_theme() -> dict:
+    """The palette the browser's schematic renderer draws with.
+
+    Every colour is already a CSS `rgb()`/`rgba()` string in the theme file,
+    so nothing is converted here — a value that reaches the browser unchanged
+    cannot be rounded differently from the one kicad-cli used.
+    """
+    name = settings.symbol_theme or "Skyline-7S"
+    colours = dict(_THEME_FALLBACK)
+    path = THEME_DIR / f"{name}.json"
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            data = {}
+        for key, value in (data.get("schematic") or {}).items():
+            if isinstance(value, str):
+                colours[key] = value
+    else:
+        name = ""
+    return {"name": name, "schematic": colours}
 
 
 class SimSourceError(RuntimeError):
@@ -148,6 +196,64 @@ def store_upload(files: list[tuple[str, bytes]], root_name: str = "") -> dict:
             "label": root, "created": time.time()}
     (folder / "source.json").write_text(json.dumps(meta), encoding="utf-8")
     return meta
+
+
+def store_sketch(doc: dict, upload_id: str = "") -> dict:
+    """Save a schematic drawn in the browser, and make it runnable.
+
+    It becomes an ordinary upload — the same source kind a `.kicad_sch` dropped
+    from KiCad becomes — so drawing a circuit and simulating it need no second
+    pipeline. The document is kept beside the file so the editor can reopen
+    what it drew; the FILE stays the artefact, because that is the thing KiCad
+    opens.
+
+    `upload_id` rewrites a sketch IN PLACE. The editor saves on every pause in
+    typing, and a new directory per keystroke would fill the disk and change
+    the address bar under the user. Safe because an upload is not cached:
+    `upload_source` sets no cache prefix, so the next netlist reads the file
+    that is there now.
+    """
+    name = re.sub(r"[^A-Za-z0-9._+-]+", "_", str(doc.get("name") or "sketch")).strip("._-")
+    name = name[:48] or "sketch"
+    doc = {**doc, "name": name}
+    try:
+        sch = sch_write.document_to_sch(doc)
+        pro = sch_write.document_to_pro(doc)
+    except sch_write.WriteError as e:
+        raise SimSourceError(str(e)) from e
+
+    folder = settings.data_dir / UPLOAD_ROOT / Path(upload_id).name if upload_id else None
+    if folder is not None and (folder / SKETCH_FILE).is_file():
+        # Only ever a sketch: rewriting an upload that came from KiCad would
+        # replace a file the user gave us with one we generated.
+        for stale in list(folder.glob("*.kicad_sch")) + list(folder.glob("*.kicad_pro")):
+            stale.unlink()
+        (folder / f"{name}.kicad_sch").write_text(sch, encoding="utf-8")
+        (folder / f"{name}.kicad_pro").write_text(pro, encoding="utf-8")
+        meta = {"id": folder.name, "root": f"{name}.kicad_sch",
+                "files": [f"{name}.kicad_sch", f"{name}.kicad_pro"],
+                "label": f"{name}.kicad_sch", "created": time.time()}
+        (folder / "source.json").write_text(json.dumps(meta), encoding="utf-8")
+    else:
+        meta = store_upload(
+            [(f"{name}.kicad_sch", sch.encode()), (f"{name}.kicad_pro", pro.encode())],
+            root_name=f"{name}.kicad_sch",
+        )
+        folder = settings.data_dir / UPLOAD_ROOT / meta["id"]
+    (folder / SKETCH_FILE).write_text(json.dumps(doc), encoding="utf-8")
+    return {**meta, "sch": sch}
+
+
+def read_sketch(upload_id: str) -> dict | None:
+    """The document a sketch was drawn from, if this upload is one."""
+    folder = settings.data_dir / UPLOAD_ROOT / Path(upload_id).name
+    path = folder / SKETCH_FILE
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
 
 
 def _guess_root(files: list[tuple[str, bytes]], sheets: list[str]) -> str:
@@ -281,6 +387,24 @@ def _find_sheet(src: SimSource, instance_path: str = "") -> dict:
     raise SimSourceError(f"no such sheet instance: {instance_path}")
 
 
+def scenarios(src: SimSource) -> dict:
+    """What the ROOT sheet offers to run.
+
+    The root, not the sheet on screen: a simulation is a project, and the
+    harness that drives it lives on the root beside the block it exercises
+    (`docs/simulator/design.md` §3.4). Netlisting anything else drops the
+    harness.
+    """
+    entry = _find_sheet(src, "")
+    if entry.get("error"):
+        raise SimSourceError(entry["error"])
+    path = (settings.data_dir / entry["rel"]).resolve()
+    geom = sim_geom.sheet_geometry(path.read_text(encoding="utf-8"))
+    out = sim_scenario.classify(geom["texts"])
+    out["analysis_forms"] = sim_scenario.ANALYSIS_FORMS
+    return out
+
+
 # ------------------------------------------------------------------ netlist
 
 def netlist_xml(src: SimSource, root_rel: str = "") -> dict:
@@ -299,54 +423,6 @@ def netlist_spice(src: SimSource, root_rel: str = "") -> str:
     rel = root_rel or src.root_rel
     data, _ = project_render.run_project_op("sch_spice", rel)
     return data.decode("utf-8", "replace")
-
-
-# --------------------------------------------------------------------- svg
-
-def sheet_svg(src: SimSource, instance_path: str = "") -> bytes:
-    """The rendered page for one sheet instance.
-
-    kicad-cli exports every page of the hierarchy in one call, naming them
-    `<root stem>.svg` for the root and `<root stem>-<sheet name>.svg` below it
-    (a deeper sheet chains the names). The instance path carries the same
-    chain, so the file is found by rebuilding that name — with a suffix match
-    behind it, because two sheets may share a name and KiCad then decides the
-    spelling on its own.
-    """
-    tree = sheets(src)
-    entry = _find_sheet(src, instance_path)
-    rel = src.root_rel
-    # The SAME theme the project's schematic tab uses. A drawing that changes
-    # colour depending on which page of the platform it is on reads as two
-    # different drawings; the theme belongs to the schematic, not to the view.
-    theme = settings.symbol_theme
-    if src.cache_prefix:
-        key = f"{src.cache_prefix}/{Path(rel).name}.{theme or 'default'}.pages-plain.zip"
-        data, _ = project_render.cached_op(key, "sch_svg_plain", rel, theme=theme)
-    else:
-        data, _ = project_render.run_project_op("sch_svg_plain", rel, theme=theme)
-
-    stem = Path(rel).stem
-    chain = [
-        other["name"] for other in sorted(tree, key=lambda e: e["depth"])
-        if other["depth"] > 0 and _is_ancestor_or_self(other["path"], entry["path"])
-    ]
-    candidates = [f"{stem}.svg"] if not chain else [
-        f"{stem}-{'-'.join(chain)}.svg", f"{stem}-{chain[-1]}.svg",
-    ]
-    with zipfile.ZipFile(io.BytesIO(data)) as z:
-        names = [n for n in z.namelist() if n.lower().endswith(".svg")]
-        for want in candidates:
-            if want in names:
-                return z.read(want)
-        for name in names:  # KiCad renamed it — fall back to the tail
-            if chain and name.endswith(f"-{chain[-1]}.svg"):
-                return z.read(name)
-        if len(names) == 1:
-            return z.read(names[0])
-    raise SimSourceError(
-        f"no rendered page matches sheet '{entry['name']}' (looked for "
-        + ", ".join(candidates) + ")")
 
 
 def _is_ancestor_or_self(candidate: str, path: str) -> bool:

@@ -1,0 +1,362 @@
+{
+  "_note": "Layers listed top to bottom. thickness_mm. copper layers carry 'name'. Source per stackup. JLCPCB's impedance calculator itself assumes external 1 oz copper = 1.6 mil (0.0406 mm, plated) and internal 1 oz = 1.2 mil (0.0305 mm) (User Guide to the JLCPCB Impedance Calculator); the stackup page lists 0.035 mm outer and 0.0152 mm inner. The stackup-page values are used here.",
+  "stackups": [
+    {
+      "id": "jlc_2l_1p6",
+      "manufacturer": "JLCPCB",
+      "name": "2 layer, 1.6 mm (FR-4 7628, Dk 4.5)",
+      "verified": false,
+      "source": "https://jlcpcb.com/capabilities/pcb-capabilities: 1.6 mm +/-10%, Dk 4.5 (2-layer). JLCPCB offers impedance control on 4+ layers only (verified 2026-08-30); there is no official 2-layer impedance stackup code. Core = 1.6 - 2 x 0.035 mm, derived.",
+      "soldermask": "jlc_soldermask",
+      "layers": [
+        {
+          "type": "copper",
+          "name": "L1",
+          "thickness_mm": 0.035
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_fr4_2layer",
+          "thickness_mm": 1.53,
+          "label": "core 7628"
+        },
+        {
+          "type": "copper",
+          "name": "L2",
+          "thickness_mm": 0.035
+        }
+      ],
+      "finish": {
+        "type": "HASL (lead-free)",
+        "thickness_um": 10,
+        "assumed": true,
+        "source": "JLCPCB default finish is lead-free HASL. Thickness not published as a single value: JLCPCB blog gives 1-50 um for HASL; 10 um assumed. ENIG at JLCPCB: Ni 3-6 um + Au 0.025-0.05 um (jlcpcb.com/help/article/jlcpcb-surface-finish)."
+      }
+    },
+    {
+      "id": "jlc_2l_1p0",
+      "manufacturer": "JLCPCB",
+      "name": "2 layer, 1.0 mm (FR-4 7628, Dk 4.5)",
+      "verified": false,
+      "source": "As jlc_2l_1p6 (no official 2-layer impedance stackup at JLCPCB). Core thickness derived: 1.0 - 2 x 0.035 mm.",
+      "soldermask": "jlc_soldermask",
+      "layers": [
+        {
+          "type": "copper",
+          "name": "L1",
+          "thickness_mm": 0.035
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_fr4_2layer",
+          "thickness_mm": 0.93,
+          "label": "core 7628"
+        },
+        {
+          "type": "copper",
+          "name": "L2",
+          "thickness_mm": 0.035
+        }
+      ],
+      "finish": {
+        "type": "HASL (lead-free)",
+        "thickness_um": 10,
+        "assumed": true,
+        "source": "JLCPCB default finish is lead-free HASL. Thickness not published as a single value: JLCPCB blog gives 1-50 um for HASL; 10 um assumed. ENIG at JLCPCB: Ni 3-6 um + Au 0.025-0.05 um (jlcpcb.com/help/article/jlcpcb-surface-finish)."
+      }
+    },
+    {
+      "id": "JLC04161H-7628",
+      "manufacturer": "JLCPCB",
+      "name": "JLC04161H-7628 (4 layer, 1.6 mm)",
+      "verified": true,
+      "source": "https://jlcpcb.com/impedance",
+      "soldermask": "jlc_soldermask",
+      "layers": [
+        {
+          "type": "copper",
+          "name": "L1",
+          "thickness_mm": 0.035
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_pp_7628",
+          "thickness_mm": 0.2104,
+          "label": "prepreg 7628 x1"
+        },
+        {
+          "type": "copper",
+          "name": "L2",
+          "thickness_mm": 0.0152
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_core",
+          "thickness_mm": 1.065,
+          "label": "core"
+        },
+        {
+          "type": "copper",
+          "name": "L3",
+          "thickness_mm": 0.0152
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_pp_7628",
+          "thickness_mm": 0.2104,
+          "label": "prepreg 7628 x1"
+        },
+        {
+          "type": "copper",
+          "name": "L4",
+          "thickness_mm": 0.035
+        }
+      ],
+      "finish": {
+        "type": "HASL (lead-free)",
+        "thickness_um": 10,
+        "assumed": true,
+        "source": "JLCPCB default finish is lead-free HASL. Thickness not published as a single value: JLCPCB blog gives 1-50 um for HASL; 10 um assumed. ENIG at JLCPCB: Ni 3-6 um + Au 0.025-0.05 um (jlcpcb.com/help/article/jlcpcb-surface-finish)."
+      }
+    },
+    {
+      "id": "JLC04161H-3313",
+      "manufacturer": "JLCPCB",
+      "name": "JLC04161H-3313 (4 layer, 1.6 mm)",
+      "verified": true,
+      "source": "https://jlcpcb.com/impedance",
+      "soldermask": "jlc_soldermask",
+      "layers": [
+        {
+          "type": "copper",
+          "name": "L1",
+          "thickness_mm": 0.035
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_pp_3313",
+          "thickness_mm": 0.0994,
+          "label": "prepreg 3313 x1"
+        },
+        {
+          "type": "copper",
+          "name": "L2",
+          "thickness_mm": 0.0152
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_core",
+          "thickness_mm": 1.265,
+          "label": "core"
+        },
+        {
+          "type": "copper",
+          "name": "L3",
+          "thickness_mm": 0.0152
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_pp_3313",
+          "thickness_mm": 0.0994,
+          "label": "prepreg 3313 x1"
+        },
+        {
+          "type": "copper",
+          "name": "L4",
+          "thickness_mm": 0.035
+        }
+      ],
+      "finish": {
+        "type": "HASL (lead-free)",
+        "thickness_um": 10,
+        "assumed": true,
+        "source": "JLCPCB default finish is lead-free HASL. Thickness not published as a single value: JLCPCB blog gives 1-50 um for HASL; 10 um assumed. ENIG at JLCPCB: Ni 3-6 um + Au 0.025-0.05 um (jlcpcb.com/help/article/jlcpcb-surface-finish)."
+      }
+    },
+    {
+      "id": "JLC06161H-3313",
+      "manufacturer": "JLCPCB",
+      "name": "JLC06161H-3313 (6 layer, 1.6 mm)",
+      "verified": true,
+      "source": "https://jlcpcb.com/impedance",
+      "soldermask": "jlc_soldermask",
+      "layers": [
+        {
+          "type": "copper",
+          "name": "L1",
+          "thickness_mm": 0.035
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_pp_3313",
+          "thickness_mm": 0.0994,
+          "label": "prepreg 3313 x1"
+        },
+        {
+          "type": "copper",
+          "name": "L2",
+          "thickness_mm": 0.0152
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_core",
+          "thickness_mm": 0.55,
+          "label": "core"
+        },
+        {
+          "type": "copper",
+          "name": "L3",
+          "thickness_mm": 0.0152
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_pp_2116",
+          "thickness_mm": 0.1088,
+          "label": "prepreg 2116 x1"
+        },
+        {
+          "type": "copper",
+          "name": "L4",
+          "thickness_mm": 0.0152
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_core",
+          "thickness_mm": 0.55,
+          "label": "core"
+        },
+        {
+          "type": "copper",
+          "name": "L5",
+          "thickness_mm": 0.0152
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_pp_3313",
+          "thickness_mm": 0.0994,
+          "label": "prepreg 3313 x1"
+        },
+        {
+          "type": "copper",
+          "name": "L6",
+          "thickness_mm": 0.035
+        }
+      ],
+      "finish": {
+        "type": "HASL (lead-free)",
+        "thickness_um": 10,
+        "assumed": true,
+        "source": "JLCPCB default finish is lead-free HASL. Thickness not published as a single value: JLCPCB blog gives 1-50 um for HASL; 10 um assumed. ENIG at JLCPCB: Ni 3-6 um + Au 0.025-0.05 um (jlcpcb.com/help/article/jlcpcb-surface-finish)."
+      }
+    },
+    {
+      "id": "JLC06161H-7628",
+      "manufacturer": "JLCPCB",
+      "name": "JLC06161H-7628 (6 layer, 1.6 mm)",
+      "verified": true,
+      "source": "https://jlcpcb.com/impedance",
+      "soldermask": "jlc_soldermask",
+      "layers": [
+        {
+          "type": "copper",
+          "name": "L1",
+          "thickness_mm": 0.035
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_pp_7628",
+          "thickness_mm": 0.21,
+          "label": "prepreg 7628 x1"
+        },
+        {
+          "type": "copper",
+          "name": "L2",
+          "thickness_mm": 0.0152
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_core",
+          "thickness_mm": 0.4,
+          "label": "core"
+        },
+        {
+          "type": "copper",
+          "name": "L3",
+          "thickness_mm": 0.0152
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_pp_7628",
+          "thickness_mm": 0.203,
+          "label": "prepreg 7628 x1"
+        },
+        {
+          "type": "copper",
+          "name": "L4",
+          "thickness_mm": 0.0152
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_core",
+          "thickness_mm": 0.4,
+          "label": "core"
+        },
+        {
+          "type": "copper",
+          "name": "L5",
+          "thickness_mm": 0.0152
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_pp_7628",
+          "thickness_mm": 0.21,
+          "label": "prepreg 7628 x1"
+        },
+        {
+          "type": "copper",
+          "name": "L6",
+          "thickness_mm": 0.035
+        }
+      ],
+      "finish": {
+        "type": "HASL (lead-free)",
+        "thickness_um": 10,
+        "assumed": true,
+        "source": "JLCPCB default finish is lead-free HASL. Thickness not published as a single value: JLCPCB blog gives 1-50 um for HASL; 10 um assumed. ENIG at JLCPCB: Ni 3-6 um + Au 0.025-0.05 um (jlcpcb.com/help/article/jlcpcb-surface-finish)."
+      }
+    }
+  ],
+  "soldermask_geometry": {
+    "source": "https://jlcpcb.com/impedance: C1 above substrate 1.2 mil, C2 above trace 0.6 mil, C3 between traces 1.2 mil, CEr 3.8",
+    "above_substrate_mm": 0.0305,
+    "above_trace_mm": 0.0152,
+    "between_traces_mm": 0.0305
+  },
+  "finish_presets": [
+    {
+      "type": "none / OSP",
+      "thickness_um": 0,
+      "source": "OSP is an organic coating, not a conductor"
+    },
+    {
+      "type": "ENIG (1U″ Au)",
+      "thickness_um": 4.53,
+      "source": "JLCPCB surface-finish article (verified 2026-08-30): Ni 3-6 um (4.5 um typical assumed) + Au 1 uinch = 0.025 um"
+    },
+    {
+      "type": "ENIG (2U″ Au)",
+      "thickness_um": 4.55,
+      "source": "JLCPCB surface-finish article (verified 2026-08-30): Ni 3-6 um (4.5 um typical assumed) + Au 2 uinch = 0.051 um"
+    },
+    {
+      "type": "Immersion tin",
+      "thickness_um": 1,
+      "source": "typical 0.8-1.2 um, industry value, assumed"
+    },
+    {
+      "type": "HASL (lead-free)",
+      "thickness_um": 10,
+      "source": "JLCPCB blog: 1-50 um; 10 um assumed"
+    }
+  ]
+}

@@ -5,8 +5,7 @@ Key layout (single bucket, settings.minio_bucket):
     projects/{project_id}/snapshots/{sha}/source.tar.gz
     projects/{project_id}/renders/{sha}/{board}/layers/{layer}.svg
     projects/{project_id}/renders/{sha}/{board}/board.glb | board.step
-    projects/{project_id}/renders/{sha}/{board}/sch/{variant|_default}/{page}.svg
-    projects/{project_id}/renders/{sha}/{board}/sch/{variant|_default}/index.json
+    projects/{project_id}/renders/{sha}/{board}/sim/... (netlists)
     projects/{project_id}/renders/{sha}/{board}/erc.json | drc.json
     projects/{project_id}/renders/{sha}/{board}/fab.zip
     projects/{project_id}/runs/{run_id}/{uuid}-{filename}
@@ -79,6 +78,29 @@ def list_keys(prefix: str) -> list[str]:
         o.object_name
         for o in client().list_objects(settings.minio_bucket, prefix=prefix, recursive=True)
     ]
+
+
+def drop_schematic_renders() -> int:
+    """Delete the cached schematic page images. Returns how many went.
+
+    The browser draws schematics from the file now (`services/sch_draw.py`),
+    so nothing reads these — one zip of page SVGs per board per commit, a few
+    megabytes each, kept for good because a commit is immutable. There is no
+    invalidation path for a render nobody asks for any more, so this is it.
+    """
+    doomed = [
+        key for key in list_keys("projects/")
+        if "/renders/" in key
+        and ("/sch/" in key or key.endswith(("pages.zip", "pages-plain.zip")))
+    ]
+    if not doomed:
+        return 0
+    errors = client().remove_objects(
+        settings.minio_bucket, [DeleteObject(k) for k in doomed]
+    )
+    for _ in errors:
+        pass
+    return len(doomed)
 
 
 def delete_prefix(prefix: str) -> int:

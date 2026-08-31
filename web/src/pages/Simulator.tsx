@@ -17,21 +17,31 @@ import {
   errorMessage,
   getSimGeometry,
   getSimNetlist,
+  getSimPalette,
   getSimProjects,
+  getSimScenarios,
   getSimSheets,
+  getSimTheme,
+  getSketch,
   isAbortError,
   runSimulation,
-  simSheetSvgUrl,
+  saveSketch,
+  openSimExample,
   uploadSimSheets,
   type SimGeometry,
   type SimNet,
   type SimProject,
+  type SimScenarios,
   type SimSheet,
   type SimSourceRef,
 } from "../api";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import Scope, { type Trace } from "../sim/Scope";
-import SimSheetView from "../sim/SimSheetView";
+import SimulatorView from "../sim/SimulatorView";
+import FieldSolver from "../sim/field/FieldSolver";
+import ScenarioPanel from "../sim/ScenarioPanel";
+import { FALLBACK_THEME, type LibSymbol, type SchTheme } from "../sim/draw/types";
+import { emptyDoc, type PaletteEntry, type SchDoc } from "../sim/edit/doc";
 import { LiveSession, liveControls, type LiveControl, type LiveState } from "../sim/live";
 import {
   decodeSimPayload,
@@ -58,6 +68,9 @@ export default function Simulator() {
   const snapshotId = Number(params.get("snapshot") || 0);
   const board = params.get("board") || "";
   const uploadId = params.get("upload") || "";
+  // Two things live under Simulator: the circuit simulation, and the field solver
+  // that sizes controlled-impedance traces. ?tab= keeps each one linkable.
+  const tab = params.get("tab") === "field" ? "field" : "circuit";
 
   const source: SimSourceRef | null = useMemo(() => {
     if (snapshotId && board) return { kind: "snapshot", snapshotId, board };
@@ -77,8 +90,12 @@ export default function Simulator() {
   const [error, setError] = useState<string | null>(null);
   const [unresolved, setUnresolved] = useState<{ net: string; reason: string }[]>([]);
 
-  const [useOwnScenario, setUseOwnScenario] = useState(true);
-  const [analysis, setAnalysis] = useState(".tran 10u 5m");
+  /** The `.control` block to run. Empty means the sheet's own, whatever the
+   *  harness does by default. */
+  const [control, setControl] = useState("");
+  /** The analysis directive to force. Empty leaves the sheet's alone. */
+  const [analysis, setAnalysis] = useState("");
+  const [scenarios, setScenarios] = useState<SimScenarios | null>(null);
   const [traces, setTraces] = useState<Trace[]>([]);
   const [selectedNet, setSelectedNet] = useState<string | null>(null);
   const [fit, setFit] = useState(true);
@@ -95,6 +112,194 @@ export default function Simulator() {
   const session = useRef<LiveSession | null>(null);
   const [alterText, setAlterText] = useState("");
   const [alterLog, setAlterLog] = useState<string[]>([]);
+  /** Contacts the user has flipped this session, by SPICE instance name. The
+   *  netlist's own value is the starting position. */
+  const [switchState, setSwitchState] = useState<Record<string, boolean>>({});
+  /** The part the knob panel is pointed at, picked on the drawing. */
+  const [knob, setKnob] = useState<string | null>(null);
+  /** Values altered this session, by SPICE instance name. Held here, not in
+   *  the knob panel, because a switch flipped on the DRAWING changes the same
+   *  value — and a panel showing the netlist's original figure beside a
+   *  circuit that no longer has it is a contradiction the user has to
+   *  resolve. */
+  const [knobValues, setKnobValues] = useState<Record<string, string>>({});
+
+  // The schematic palette. The same theme file kicad-cli renders the
+  // project's schematic tab with, so one circuit never has two colour
+  // schemes; the fallback is that theme's own values, not a second palette.
+  // Drawing a schematic in the browser. The document is the editor's whole
+  // state; `past`/`future` are the undo stack, kept here because leaving the
+  // editor and coming back should not lose it.
+  const [editing, setEditing] = useState(false);
+  /** Bumped when a sketch is saved, so the geometry and the netlist are read
+   *  again. The drawing does not wait for it — an editor draws from its own
+   *  document — but the READINGS do, and they must never be a save behind. */
+  const [revision, setRevision] = useState(0);
+  const [sketch, setSketch] = useState<{ past: SchDoc[]; now: SchDoc; future: SchDoc[] } | null>(null);
+  const [palette, setPalette] = useState<{
+    parts: PaletteEntry[];
+    libs: Record<string, LibSymbol>;
+    switch: { open: string; closed: string; open_r: string; closed_r: string };
+  } | null>(null);
+  const [editable, setEditable] = useState(false);
+
+  const [theme, setTheme] = useState<SchTheme>(FALLBACK_THEME);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    getSimTheme(ctrl.signal)
+      .then((r) => setTheme({ ...FALLBACK_THEME, ...r.schematic }))
+      .catch(() => undefined);
+    return () => ctrl.abort();
+  }, []);
+
+  // The palette is the parts an empty sheet starts with. Fetched once, and
+  // only when the editor is actually wanted.
+  useEffect(() => {
+    if (!(editing || live) || palette) return;
+    const ctrl = new AbortController();
+    getSimPalette(ctrl.signal).then(setPalette).catch((e) => {
+      if (!isAbortError(e)) setError(errorMessage(e));
+    });
+    return () => ctrl.abort();
+  }, [editing, live, palette]);
+
+  // A source this editor drew can be reopened in it. One that came from KiCad
+  // cannot: that file carries tokens the editor does not model, and writing it
+  // back from the document would drop them without saying so.
+  useEffect(() => {
+    setEditable(false);
+    if (!uploadId) return;
+    const ctrl = new AbortController();
+    getSketch(uploadId, ctrl.signal)
+      .then((doc) => {
+        setEditable(true);
+        setSketch((s) => {
+          if (s) return s;
+          savedDoc.current = JSON.stringify(doc);
+          return { past: [], now: doc, future: [] };
+        });
+      })
+      .catch(() => undefined);
+    return () => ctrl.abort();
+  }, [uploadId]);
+
+  /** One edit. `coalesce` folds a drag or a keystroke into the previous step,
+   *  so undo goes back a move rather than a millimetre. */
+  const editDoc = useCallback((next: SchDoc, coalesce = false) => {
+    setSketch((s) => {
+      const now = s?.now ?? emptyDoc();
+      const past = coalesce ? (s?.past ?? []) : [...(s?.past ?? []), now].slice(-100);
+      return { past, now: next, future: [] };
+    });
+  }, []);
+
+  const undoDoc = useCallback(() => {
+    setSketch((s) => {
+      if (!s?.past.length) return s;
+      return { past: s.past.slice(0, -1), now: s.past[s.past.length - 1], future: [s.now, ...s.future] };
+    });
+  }, []);
+
+  const redoDoc = useCallback(() => {
+    setSketch((s) => {
+      if (!s?.future.length) return s;
+      return { past: [...s.past, s.now], now: s.future[0], future: s.future.slice(1) };
+    });
+  }, []);
+
+  /** The document as last written to disk. Editing and simulating are one
+   *  view now, so the file has to follow the drawing without being asked —
+   *  but only when it actually changed, or the junction pass alone would
+   *  save in a loop. */
+  const savedDoc = useRef<string>("");
+
+  useEffect(() => {
+    if (!sketch || !editable || !uploadId) return;
+    const json = JSON.stringify(sketch.now);
+    if (json === savedDoc.current) return;
+    // On a pause in typing, not on a keystroke: a save is a netlist and a
+    // parse, and nobody wants one per character.
+    const timer = setTimeout(() => {
+      saveSketch(sketch.now, uploadId)
+        .then(() => {
+          savedDoc.current = json;
+          setRevision((r) => r + 1);
+        })
+        .catch((e) => setError(errorMessage(e)));
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [sketch, editable, uploadId]);
+
+  /** Start a new drawing. It is saved at once, because a sketch IS an upload
+   *  source — that is what gives it nets, a netlist and somewhere to run. */
+  const startSketch = useCallback(async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const doc = emptyDoc();
+      const saved = await saveSketch(doc);
+      savedDoc.current = JSON.stringify(doc);
+      setSketch({ past: [], now: doc, future: [] });
+      setEditing(true);
+      setParams({ upload: saved.id });
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [setParams]);
+
+  /** Open the worked example. It is stored as an ordinary sketch, so it is
+   *  editable and re-runnable the moment it opens — nothing about it is a
+   *  read-only demo. */
+  const openExample = useCallback(async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const saved = await openSimExample();
+      setParams({ upload: saved.id });
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [setParams]);
+
+  const downloadSketch = useCallback(async () => {
+    if (!sketch) return;
+    try {
+      const saved = await saveSketch(sketch.now, uploadId);
+      const blob = new Blob([saved.sch], { type: "application/octet-stream" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = saved.root;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }, [sketch, uploadId]);
+
+  /** Rebuilt only when something in it changed. A fresh object on every
+   *  render re-runs every effect in the editor — thirty times a second while
+   *  a live run streams frames, which is enough to take a field away from
+   *  someone typing in it. */
+  const editProps = useMemo(
+    () => (editable && sketch && palette ? {
+      doc: sketch.now,
+      onChange: editDoc,
+      palette: palette.parts,
+      libs: palette.libs,
+      switchPair: palette.switch,
+      onUndo: undoDoc,
+      onRedo: redoDoc,
+      canUndo: sketch.past.length > 0,
+      canRedo: sketch.future.length > 0,
+      active: editing,
+    } : undefined),
+    [editable, sketch, palette, editDoc, undoDoc, redoDoc, editing],
+  );
 
   const plot: SimPlot | null = run?.plots[0] ?? null;
 
@@ -122,6 +327,70 @@ export default function Simulator() {
     () => (netlist ? liveControls(netlist) : []),
     [netlist],
   );
+
+  const controlByRef = useMemo(
+    () => new Map(controls.map((c) => [c.ref, c])),
+    [controls],
+  );
+
+  /** The knob panel lists what the DRAWING cannot: a harness source that
+   *  lives in a SPICE text block has no symbol to click. A part that does
+   *  have one is set in its own inspector, and listing it twice means two
+   *  boxes for one number — with the second one showing the netlist's
+   *  original value long after the first changed it. */
+  const offSheet = useMemo(() => {
+    const drawn = new Set((geometry?.symbols ?? []).map((s) => s.spice).filter(Boolean));
+    return controls.filter((c) => !drawn.has(c.ref));
+  }, [controls, geometry]);
+
+  /** Is this part a contact rather than a component? A switch drawn in the
+   *  editor netlists as a resistor (`Sim.Device R`), so the netlist alone
+   *  cannot tell one from a real resistor — the reference can. */
+  const isSwitch = (ref: string) => ref.toUpperCase().startsWith("SW");
+  const closedR = palette?.switch.closed_r ?? "10m";
+  const openR = palette?.switch.open_r ?? "1G";
+
+  /** Switches whose live state no longer matches the drawing. The editor's
+   *  sheets embed both blade positions, so this is a swap, not a redraw. */
+  const partSwap = useMemo(() => {
+    const map = new Map<number, string>();
+    if (!live || !geometry || !palette) return map;
+    for (const sym of geometry.symbols) {
+      if (!sym.spice || !isSwitch(sym.ref)) continue;
+      const state = switchState[sym.spice];
+      if (state === undefined) continue;
+      map.set(sym.index, state ? palette.switch.closed : palette.switch.open);
+    }
+    return map;
+  }, [live, geometry, palette, switchState]);
+
+  /** Everything on the drawing a live run can steer. */
+  const liveParts = useMemo(() => {
+    if (!live || !geometry) return undefined;
+    const map = new Map<number, { title: string; kind: string; on?: boolean }>();
+    for (const sym of geometry.symbols) {
+      if (sym.power || !sym.spice) continue;
+      const c = controlByRef.get(sym.spice);
+      if (!c) continue;
+      if (isSwitch(sym.ref)) {
+        const closed = switchState[sym.spice] ?? ((c.numeric ?? 1) < 1e6);
+        map.set(sym.index, {
+          kind: "switch",
+          on: closed,
+          title: `${sym.ref} — ${closed ? "closed" : "open"}. Click to ${closed ? "open" : "close"} it.`,
+        });
+      } else {
+        map.set(sym.index, {
+          kind: c.kind,
+          on: knob === sym.spice,
+          title: c.kind === "scripted"
+            ? `${sym.ref} runs a ${c.value} waveform — ngspice will not let one be steered mid-run`
+            : `${sym.ref} = ${c.value}${c.unit}. Click to put it on the knobs.`,
+        });
+      }
+    }
+    return map;
+  }, [live, geometry, controlByRef, switchState, knob, palette]);
 
   // ------------------------------------------------------------- loading
 
@@ -164,10 +433,27 @@ export default function Simulator() {
     return () => ctrl.abort();
   }, [source]);
 
+  // The harness is text ON the sheet, so an edit changes what there is to run.
+  // Re-read it with the geometry, not once per source.
+  useEffect(() => {
+    if (!source) return;
+    const ctrl = new AbortController();
+    getSimScenarios(source, ctrl.signal).then(setScenarios).catch(() => undefined);
+    return () => ctrl.abort();
+  }, [source, revision]);
+
+  const geometryKey = `${JSON.stringify(source)}|${sheetPath}`;
+  const lastGeometryKey = useRef("");
   useEffect(() => {
     if (!source || !sheetPath) return;
     const ctrl = new AbortController();
-    setGeometry(null);
+    // A different sheet starts blank; a re-read after a save keeps the last
+    // one on screen, because blanking it would flash the overlay off every
+    // time the user stops typing.
+    if (lastGeometryKey.current !== geometryKey) {
+      setGeometry(null);
+      lastGeometryKey.current = geometryKey;
+    }
     getSimGeometry(source, sheetPath, ctrl.signal)
       .then(setGeometry)
       .catch((err) => {
@@ -180,7 +466,7 @@ export default function Simulator() {
       })
       .catch(() => setNets(null)); // the net list is an aid, never a blocker
     return () => ctrl.abort();
-  }, [source, sheetPath]);
+  }, [source, sheetPath, revision, geometryKey]);
 
   // --------------------------------------------------------------- replay
 
@@ -234,6 +520,25 @@ export default function Simulator() {
     setAlterLog((l) => [command, ...l].slice(0, 8));
   }, []);
 
+  /** A click on a part, in live mode. A switch flips there and then, because
+   *  that is what a switch is for; anything else moves onto the knobs, which
+   *  is where a value gets typed. */
+  const pickPart = useCallback((index: number) => {
+    const sym = geometry?.symbols.find((s) => s.index === index);
+    if (!sym) return;
+    const c = controlByRef.get(sym.spice);
+    if (!c) return;
+    if (isSwitch(sym.ref)) {
+      const closed = switchState[sym.spice] ?? ((c.numeric ?? 1) < 1e6);
+      const next = closed ? openR : closedR;
+      setSwitchState((s) => ({ ...s, [sym.spice]: !closed }));
+      setKnobValues((v) => ({ ...v, [sym.spice]: next }));
+      alter(`alter ${sym.spice} = ${next}`);
+    } else {
+      setKnob(sym.spice);
+    }
+  }, [geometry, controlByRef, switchState, alter, openR, closedR]);
+
   // ------------------------------------------------------------- actions
 
   const doRun = useCallback(async () => {
@@ -242,8 +547,10 @@ export default function Simulator() {
     setError(null);
     try {
       const buffer = await runSimulation(source, {
-        control: useOwnScenario ? null : "",
-        analysis: useOwnScenario ? "" : analysis,
+        // `null` keeps the sheet's own block; a string replaces it, and an
+        // empty string is a run with no control block at all.
+        control: control ? control : null,
+        analysis,
       });
       const decoded = decodeSimPayload(buffer);
       setRun(decoded);
@@ -267,7 +574,28 @@ export default function Simulator() {
     } finally {
       setBusy(false);
     }
-  }, [source, useOwnScenario, analysis, geometry]);
+  }, [source, control, analysis, geometry]);
+
+  /** A source the user just opened runs itself, once.
+   *
+   *  Without it the first screen carries no plot, no readout and no scope —
+   *  and clicking a net does nothing VISIBLE, because every measurement reads
+   *  from a run that has not happened. That reads as a broken page rather
+   *  than as "press Run".
+   *
+   *  Uploads only: a sketch, the example or a dropped sheet is small and was
+   *  opened to be simulated. A snapshot board is left alone — those runs are
+   *  long, and a reviewer picks the scenario before spending one. */
+  const autoRan = useRef("");
+  useEffect(() => {
+    if (!source || source.kind !== "upload" || !geometry || busy) return;
+    if (autoRan.current === source.uploadId) return;
+    autoRan.current = source.uploadId;
+    void doRun();
+    // doRun is rebuilt whenever the chosen scenario changes; the guard above
+    // is what keeps this to one run per source, not the dependency list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, geometry, busy]);
 
   const onUpload = async (files: FileList | null) => {
     if (!files || !files.length) return;
@@ -323,10 +651,53 @@ export default function Simulator() {
 
   // ------------------------------------------------------------------ ui
 
+
+  const tabBar = (
+    <div className="seg proj-tabs" role="tablist" aria-label="Simulator tool">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === "circuit"}
+        className={tab === "circuit" ? "on" : ""}
+        onClick={() => {
+          const next = new URLSearchParams(params);
+          next.delete("tab");
+          setParams(next, { replace: true });
+        }}
+      >
+        Circuit
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === "field"}
+        className={tab === "field" ? "on" : ""}
+        onClick={() => {
+          const next = new URLSearchParams(params);
+          next.set("tab", "field");
+          setParams(next, { replace: true });
+        }}
+      >
+        Field solver
+      </button>
+    </div>
+  );
+
+  if (tab === "field") {
+    return (
+      <div className="page page-wide">
+        <h1>Simulator</h1>
+        {tabBar}
+        <FieldSolver />
+      </div>
+    );
+  }
+
   if (!source) {
     return (
-      <div className="page">
+      <div className="page page-wide">
         <h1>Simulator</h1>
+        {tabBar}
         <div className="card pad">
           <p className="muted">
             Drop a schematic to simulate it. Send the sheet you want, every sub-sheet it
@@ -345,6 +716,25 @@ export default function Simulator() {
             A board already on the platform opens from its project — the schematic tab has
             a Simulate button.
           </p>
+          <hr />
+          <p className="muted">
+            Or draw one here. It saves as a real <span className="mono">.kicad_sch</span>,
+            so the circuit you sketch opens in KiCad afterwards.
+          </p>
+          <div className="toolbar">
+            <button type="button" className="primary" onClick={() => void startSketch()} disabled={busy}>
+              {busy ? "Starting…" : "Draw a circuit"}
+            </button>
+            <button type="button" onClick={() => void openExample()} disabled={busy}>
+              Open the example
+            </button>
+          </div>
+          <p className="muted">
+            The example is an amplifier, two inverters wired as a buffer, an AND gate and a
+            D flip-flop dividing the clock by two. It runs as it opens, so there are
+            waveforms to click on straight away — and it is an ordinary drawing, so edit
+            it, add to it and run it again.
+          </p>
         </div>
       </div>
     );
@@ -353,8 +743,9 @@ export default function Simulator() {
   const drawnSheet = sheets?.find((s) => s.path === sheetPath);
 
   return (
-    <div className="page">
+    <div className="page page-wide">
       <h1>Simulator</h1>
+      {tabBar}
       {error ? <ErrorBanner message={error} /> : null}
 
       <div className="toolbar">
@@ -398,6 +789,23 @@ export default function Simulator() {
             </select>
           </label>
         ) : null}
+        {editable ? (
+          <>
+            <button
+              type="button"
+              className={editing ? "on" : ""}
+              onClick={() => setEditing((v) => !v)}
+              title="Change the circuit without leaving the simulation"
+            >
+              Edit
+            </button>
+            {editing ? (
+              <button type="button" onClick={() => void downloadSketch()}>
+                Download .kicad_sch
+              </button>
+            ) : null}
+          </>
+        ) : null}
         <div className="seg" role="group" aria-label="Mode">
           <button
             type="button"
@@ -416,46 +824,20 @@ export default function Simulator() {
             Live
           </button>
         </div>
-        {live ? null : (
-        <div className="seg" role="group" aria-label="Scenario">
-          <button
-            type="button"
-            className={useOwnScenario ? "on" : ""}
-            onClick={() => setUseOwnScenario(true)}
-            title="Run the directives the schematic itself carries"
-          >
-            Sheet scenario
-          </button>
-          <button
-            type="button"
-            className={!useOwnScenario ? "on" : ""}
-            onClick={() => setUseOwnScenario(false)}
-          >
-            Transient
-          </button>
-        </div>
+        {/* What to run, and what it said, live below the drawing in their
+            own panel — a scenario is a menu, not two words on a toolbar. */}
+        {/* A drawing has no page to fit to and no page to show whole: it opens
+            on a working window and the wheel does the rest. */}
+        {editable ? null : (
+          <div className="seg" role="group" aria-label="View">
+            <button type="button" className={fit ? "on" : ""} onClick={() => setFit(true)}>
+              Fit circuit
+            </button>
+            <button type="button" className={!fit ? "on" : ""} onClick={() => setFit(false)}>
+              Whole sheet
+            </button>
+          </div>
         )}
-        {!live && !useOwnScenario ? (
-          <input
-            className="row-input"
-            value={analysis}
-            onChange={(e) => setAnalysis(e.target.value)}
-            aria-label="Analysis directive"
-          />
-        ) : null}
-        {live ? null : (
-          <button type="button" className="primary" onClick={() => void doRun()} disabled={busy}>
-            {busy ? "Running…" : "Run"}
-          </button>
-        )}
-        <div className="seg" role="group" aria-label="View">
-          <button type="button" className={fit ? "on" : ""} onClick={() => setFit(true)}>
-            Fit circuit
-          </button>
-          <button type="button" className={!fit ? "on" : ""} onClick={() => setFit(false)}>
-            Whole sheet
-          </button>
-        </div>
         {live ? (
           <>
             <button
@@ -530,10 +912,10 @@ export default function Simulator() {
 
       {geometry ? (
         <>
-          <SimSheetView
+          <SimulatorView
             geometry={geometry}
+            theme={theme}
             fit={fit}
-            svgUrl={simSheetSvgUrl(source, sheetPath)}
             reader={reader}
             clock={clock}
             running={playing || live}
@@ -541,17 +923,38 @@ export default function Simulator() {
             currentPeak={currentPeak}
             selectedNet={selectedNet}
             onPickNet={pickNet}
+            parts={liveParts}
+            onPickPart={pickPart}
+            partSwap={partSwap}
             onUnresolved={setUnresolved}
+            onAlter={live ? alter : undefined}
+            edit={editProps}
           />
 
           {live ? (
             <LiveControls
               state={liveState}
-              controls={controls}
+              controls={offSheet}
+              focus={knob}
+              values={knobValues}
+              onValues={setKnobValues}
               onAlter={alter}
               log={alterLog}
               text={alterText}
               onText={setAlterText}
+            />
+          ) : null}
+
+          {!live ? (
+            <ScenarioPanel
+              scenarios={scenarios}
+              control={control}
+              onControl={setControl}
+              analysis={analysis}
+              onAnalysis={setAnalysis}
+              log={run?.header.log ?? ""}
+              busy={busy}
+              onRun={() => void doRun()}
             />
           ) : null}
 
@@ -640,21 +1043,43 @@ export default function Simulator() {
  *  from "switches" by any guesswork about what a part represents.
  */
 function LiveControls({
+  focus,
   state,
   controls,
+  values,
+  onValues,
   onAlter,
   log,
   text,
   onText,
 }: {
+  /** The part picked on the drawing. Its knob is highlighted and focused, so
+   *  clicking a resistor in the circuit puts the cursor in its value box. */
+  focus: string | null;
   state: LiveState | null;
   controls: LiveControl[];
+  /** Values altered this session, by ref. Owned by the page — a contact
+   *  flipped on the drawing changes one of these too. */
+  values: Record<string, string>;
+  onValues: (next: (v: Record<string, string>) => Record<string, string>) => void;
   onAlter: (command: string) => void;
   log: string[];
   text: string;
   onText: (value: string) => void;
 }) {
-  const [values, setValues] = useState<Record<string, string>>({});
+  const setValues = onValues;
+  const nothingOffSheet = controls.length === 0;
+  /** Which knob has already been given the cursor. A ref callback runs on
+   *  EVERY render, and a live run renders thirty times a second — focusing
+   *  from one would take the cursor back off whatever the user moved it to,
+   *  continuously. Focus follows a CHANGE of pick, once. */
+  const focusedOnce = useRef<string | null>(null);
+  useEffect(() => { focusedOnce.current = null; }, [focus]);
+  const takeFocus = (el: HTMLInputElement | null, ref: string) => {
+    if (!el || focus !== ref || focusedOnce.current === ref) return;
+    focusedOnce.current = ref;
+    el.focus();
+  };
   const sources = controls.filter((c) => c.kind === "source");
   const passives = controls.filter((c) => c.kind === "passive");
   const scripted = controls.filter((c) => c.kind === "scripted");
@@ -669,6 +1094,13 @@ function LiveControls({
     <div className="card pad">
       <div className="card-title">Change it while it runs</div>
       {state?.message ? <p className="muted">{state.message}</p> : null}
+      {nothingOffSheet ? (
+        <p className="muted">
+          Every part in this circuit is on the drawing — click one to set it there.
+          This panel is for what the drawing cannot show: a source that lives in a
+          SPICE text block has no symbol to click.
+        </p>
+      ) : null}
       {sources.length ? (
         <>
           <p className="muted">
@@ -677,10 +1109,11 @@ function LiveControls({
           </p>
           <div className="sim-knobs">
             {sources.map((c) => (
-              <label key={c.ref} className="sim-knob">
+              <label key={c.ref} className={`sim-knob${focus === c.ref ? " on" : ""}`}>
                 <span className="mono">{c.ref}</span>
                 <input
                   className="text"
+                  ref={(el) => takeFocus(el, c.ref)}
                   value={values[c.ref] ?? c.value}
                   disabled={busy}
                   onChange={(e) => setValues((v) => ({ ...v, [c.ref]: e.target.value }))}
@@ -706,10 +1139,11 @@ function LiveControls({
           </p>
           <div className="sim-knobs">
             {passives.slice(0, 40).map((c) => (
-              <label key={c.ref} className="sim-knob">
+              <label key={c.ref} className={`sim-knob${focus === c.ref ? " on" : ""}`}>
                 <span className="mono">{c.ref}</span>
                 <input
                   className="text"
+                  ref={(el) => takeFocus(el, c.ref)}
                   value={values[c.ref] ?? c.value}
                   disabled={busy}
                   onChange={(e) => setValues((v) => ({ ...v, [c.ref]: e.target.value }))}

@@ -16,6 +16,7 @@ from .routers import (
     comments,
     components,
     datasheets,
+    field_solver,
     flasher,
     import_station,
     jaravis,
@@ -75,6 +76,7 @@ app.include_router(components.router)
 app.include_router(libraries.router)
 app.include_router(sim_models.router)
 app.include_router(sim_runs.router)
+app.include_router(field_solver.router)
 app.include_router(models3d.router)
 app.include_router(datasheets.router)
 app.include_router(jaravis.router)
@@ -745,6 +747,32 @@ def startup() -> None:
             db.close()
     except Exception as e:  # noqa: BLE001 — never block startup
         log.warning(f"auth bootstrap did not run: {type(e).__name__}: {e}")
+    # Drop the cached schematic page images, once, on the first start after
+    # the browser took over drawing schematics. Object storage has no
+    # invalidation path for a render nobody asks for any more, so the deploy
+    # that stops writing them is the deploy that has to remove them. In the
+    # background and behind a marker object: on a big bucket the listing is
+    # the slow part, and a deploy must not wait for it.
+    try:
+        import threading
+
+        from .services import storage
+
+        def _drop_schematic_renders() -> None:
+            marker = "maintenance/schematic-renders-dropped.v1"
+            try:
+                if storage.exists(marker):
+                    return
+                gone = storage.drop_schematic_renders()
+                storage.put_bytes(marker, b"", "text/plain")
+                if gone:
+                    log.info(f"storage: dropped {gone} cached schematic render object(s)")
+            except Exception as e:  # noqa: BLE001 — a cache purge must never block startup
+                log.warning(f"schematic render purge did not run: {type(e).__name__}: {e}")
+
+        threading.Thread(target=_drop_schematic_renders, daemon=True).start()
+    except Exception as e:  # noqa: BLE001 — never block startup
+        log.warning(f"schematic render purge did not start: {type(e).__name__}: {e}")
     # Fill `material_sha` on geometry versions published before the sign-off
     # feature existed. Runs in the background: an empty fingerprint blocks a
     # carry rather than granting one, so nothing is wrong while it works.

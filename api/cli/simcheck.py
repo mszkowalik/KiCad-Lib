@@ -172,6 +172,77 @@ def main() -> int:
               "device currents name symbols that are on this sheet",
               ", ".join(sorted(device_keys - {r.lower() for r in refs})))
 
+        # The drawing the browser renders comes from the same parse as the
+        # nets, so the two must agree about how many parts there are. They
+        # disagreeing is how an overlay ends up on the wrong symbol.
+        draw = geom["draw"]
+        check(len(draw["symbols"]) == len(geom["symbols"]),
+              "the draw document and the geometry agree on the parts",
+              f'{len(draw["symbols"])} vs {len(geom["symbols"])}')
+        check(all(s["lib_id"] in draw["libs"] for s in draw["symbols"]),
+              "every placement has its symbol definition embedded")
+        check(len(draw["wires"]) == len(geom["wires"]),
+              "the draw document and the geometry agree on the wires")
+
+    print("\ndrawn in the browser:")
+    from app.services import sch_lib, sch_write  # noqa: PLC0415 - after the env is set
+
+    # A divider drawn from the editor's own primitives. The point is not that
+    # ngspice can solve a divider — it is that a document written by the
+    # browser becomes a file KiCad reads, and that the answer is right.
+    doc = {
+        "name": "divider", "uuid": ROOT_UUID, "paper": "A4",
+        "symbols": [
+            {"lib_id": "Simulator:V", "at": [80, 100, 0],
+             "fields": {"Reference": "V1", "Value": "DC 5"}},
+            {"lib_id": "Simulator:R", "at": [120, 85, 0],
+             "fields": {"Reference": "R1", "Value": "1k"}},
+            {"lib_id": "Simulator:R", "at": [120, 115, 0],
+             "fields": {"Reference": "R2", "Value": "3k"}},
+            {"lib_id": "Simulator:SW", "at": [100, 76.2, 0], "fields": {"Reference": "SW1"}},
+            {"lib_id": "Simulator:GND", "at": [80, 125, 0], "fields": {"Reference": "#PWR01"}},
+        ],
+        "wires": [
+            {"pts": [[80, 94.92], [80, 76.2], [94.92, 76.2]]},
+            {"pts": [[105.08, 76.2], [120, 76.2], [120, 81.19]]},
+            {"pts": [[120, 88.81], [120, 111.19]]},
+            {"pts": [[120, 118.81], [120, 125], [80, 125]]},
+            {"pts": [[80, 105.08], [80, 125]]},
+        ],
+        "labels": [{"text": "MID", "at": [120, 100, 0], "kind": "local"}],
+        "texts": [{"at": [30, 60, 0], "text": ".op"}],
+        "junctions": [],
+    }
+    meta = sim_run.store_sketch(doc)
+    check(meta["root"].endswith(".kicad_sch"), "the sketch was written as a schematic",
+          meta["root"])
+    src = sim_run.upload_source(meta["id"])
+    sheets = sim_run.sheets(src)
+    check(len(sheets) == 1, "the drawn sheet is a sheet tree of one")
+    netlist = sim_run.netlist_spice(src)
+    # A switch is a resistor with `Sim.Device R`, and KiCad PREFIXES the
+    # reference rather than replacing it. `alter sw1` would be accepted and do
+    # nothing, so the name matters as much as the value.
+    check("rsw1" in netlist.lower(), "the drawn switch netlists as a resistor named RSW1",
+          netlist)
+    geom = sim_run.geometry(src)
+    switch = next((s for s in geom["symbols"] if s["ref"] == "SW1"), None)
+    check(switch is not None and switch["spice"] == "rsw1",
+          "the geometry names the switch the way `alter` must",
+          str(switch and switch["spice"]))
+    check(any(w["net"] == "/MID" for w in geom["wires"]),
+          "the label the editor placed named a net",
+          ", ".join(sorted({str(w["net"]) for w in geom["wires"]})))
+
+    header = sim_spice.decode_header(sim_run.run(src))
+    plot = header["plots"][0] if header["plots"] else {}
+    keys = {v["key"] for v in plot.get("vectors", [])}
+    # An operating point has no sweep axis, so ngspice's first column is an
+    # ordinary node. Dropping it the way an axis is dropped loses a reading.
+    check("/mid" in keys, "the operating point kept every node, first column included",
+          ", ".join(sorted(keys)))
+    check(plot.get("n") == 1, "an operating point is one point", str(plot.get("n")))
+
     print("\nrefusals:")
     src = upload(sim_run, flat, ["sallen_key.kicad_sch", "ad8051.lib"])
     try:
@@ -184,6 +255,15 @@ def main() -> int:
         check(False, "an upload without a schematic is refused")
     except Exception as e:  # noqa: BLE001
         check("kicad_sch" in str(e), "an upload without a schematic is refused", str(e)[:60])
+    try:
+        sch_write.document_to_sch({"symbols": [{"lib_id": "Nope:Thing", "at": [0, 0, 0]}]})
+        check(False, "a sketch naming a part that does not exist is refused")
+    except sch_write.WriteError as e:
+        check("Nope:Thing" in str(e), "a sketch naming a part that does not exist is refused",
+              str(e)[:60])
+    check(sch_lib.SWITCH_OPEN in sch_lib.draw_library()
+          and sch_lib.SWITCH_CLOSED in sch_lib.draw_library(),
+          "both switch states are in the palette library")
 
     if not args.keep:
         shutil.rmtree(work, ignore_errors=True)

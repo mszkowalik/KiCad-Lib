@@ -20,6 +20,7 @@ mounts the repo at `/repo` for exactly that.
 | `web/` | React + Vite frontend | `web/CLAUDE.md` |
 | `mcp/` | Stdio MCP server proxying the agent tools to Claude Code | `api/CLAUDE.md` (agent section) |
 | `render/` | kicad-cli render container (previews, project exports) | — |
+| `api/app/services/fieldsolver/` | 2D quasi-TEM field solver (impedance geometry) | `docs/decisions/0002-field-solver-in-the-platform.md` |
 | `clients/` | Client-side helpers (KiCad sync plugin etc.) | — |
 | `compose.yaml` | Full dev deployment (db, minio, api, render, web) | `README.md` |
 | `compose.prod.yaml` | Server deployment from the published GHCR images | `README.md` |
@@ -89,10 +90,12 @@ every push to `main` (pull requests build without pushing);
   reintroduce an absolute default (see `web/CLAUDE.md`).
 - **`compose.yaml` must ask for `target: dev`** on the web service, or dev
   gets the nginx image instead of the Vite server.
-- **`render/` carries copies of three files from `api/app/services/`**
-  (`project_ops.py`, `sim_spice.py`, `board_template.kicad_pcb`). The
-  workflow's `guard` job fails the build when they are not byte-identical, so
-  edit both together.
+- **`render/` carries copies of four files from `api/app/services/`**
+  (`project_ops.py`, `sim_spice.py`, `board_template.kicad_pcb`,
+  `themes/Skyline-7S.json`). The workflow's `guard` job fails the build when
+  they are not byte-identical, so edit both together. The theme is on that
+  list because kicad-cli renders with it and the browser's own schematic
+  renderer reads the same file through `GET /api/sim/theme`.
 
 `linux/amd64` only, on purpose: the render image's `kicad/kicad` base is
 published amd64-only, and the api image compiles LibreDWG from source, which
@@ -106,6 +109,25 @@ is very slow under emulation.
   offline builds still work. Keep both halves in sync: dropping either the
   `cache-to` line in `images.yml` or a `cache_from` list silently brings the
   ~10-minute cold rebuild back.
+
+## Controlled impedance
+
+The 2D field solver lives at **Simulator → Field solver** (`/sim?tab=field`) and
+its stackups are project data, not scratch data. Three rules that are expensive
+to get wrong (full reasoning in
+[docs/decisions/0002](docs/decisions/0002-field-solver-in-the-platform.md)):
+
+- **Stackups are written by administrators only** — they describe how the fab
+  builds boards and everyone shares them. Anyone may assign one to a board.
+- **A board's stackup and its impedance profiles are commit-versioned**, with the
+  same copy-on-write rule as the cost plan: assigned at a commit, carried forward
+  by later commits until changed, and earlier commits keep what they had.
+- **Changing the stackup keeps every profile and every result** and marks the
+  results outdated. The stored result holds the numbers, never the solved mesh.
+
+The solver is quasi-TEM and floored at **1 MHz**; `triangle`, its mesher, is
+free for personal and research use only and must be replaced before any
+commercial release.
 
 ## Access control
 

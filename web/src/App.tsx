@@ -144,6 +144,9 @@ function Shell() {
             <NavLink to="/projects" className={navClass}>
               Projects
             </NavLink>
+            <NavLink to="/sim" className={navClass}>
+              Simulator
+            </NavLink>
             <NavLink to="/production" className={navClass}>
               Production
             </NavLink>
@@ -177,7 +180,8 @@ function Shell() {
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/runs/:id" element={<RunDetail />} />
 
-          {/* Simulator — reached from a project's schematic tab, or on its
+          {/* Simulator — its own section in the top nav, and also reached
+              from a project's schematic tab, or on its
               own with an uploaded sheet set. */}
           <Route path="/sim" element={<Simulator />} />
 

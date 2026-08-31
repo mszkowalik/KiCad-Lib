@@ -556,18 +556,72 @@ header to SAMEORIGIN for `/lib/` — means editing an nginx config shared with
 unrelated services, and nginx's `add_header` in a nested block replaces every
 inherited one, so it would silently drop the other two security headers.
 
+## ONE schematic renderer, everywhere (`src/sim/draw/`)
+
+**Every view that shows a schematic goes through `SchematicView`** — the
+project's schematic tab, the simulator overlay and the editor. Do not add a
+fourth way to draw a sheet, and do not put a schematic behind an `<img>` again.
+One renderer is why those three pages cannot disagree about where a part is or
+what colour a wire has.
+
+| File | What it is |
+|---|---|
+| `draw/types.ts` | the draw document `api/app/services/sch_draw.py` emits |
+| `draw/geom.ts` | the placement matrix, arcs, text placement, pin geometry |
+| `draw/KicadSheet.tsx` | the sheet as SVG — symbols, wires, labels, sheets, notes |
+| `draw/SchematicView.tsx` | fit box, wheel zoom, drag pan, layer slots |
+
+`SchematicView` owns the viewport and nothing else. Callers add what is theirs:
+SVG `children` are drawn in the sheet's millimetres, `underlay` goes beneath
+the drawing (the editor's grid), and `layers` gets the live viewport for
+anything that cannot live inside an SVG — which is the simulator's charge
+canvas, and only that.
+
+**The viewport resets on `resetKey`, never on a content change.** An editor
+that re-fits the page every time a part is placed moves the circuit out from
+under the pointer between two clicks.
+
+**A live run re-renders this page thirty times a second. Two rules follow.**
+Both were found by a field that could not be typed into while a run streamed:
+
+- **A text field in the inspector is UNCONTROLLED.** React rewrites a
+  controlled input's DOM value on every render, and one of those rewrites
+  lands between the keystroke and the change event — the character appears and
+  is silently taken back. The field owns its text; the outside value reclaims
+  it only when it changes and the field is not focused.
+- **Never call `.focus()` from a ref callback.** A ref callback runs on every
+  render, so a knob that focused itself took the cursor back off whatever the
+  user had moved it to, continuously. Focus follows a CHANGE, once.
+
+**Colours come from `/api/sim/theme`** — the same KiCad theme file kicad-cli
+renders with (`api/app/services/themes/`, mirrored byte-identical into
+`render/themes/`). Never hard-code a schematic colour, and never add a second
+palette for one view. `FALLBACK_THEME` in `draw/types.ts` is that theme's own
+values, so a failed fetch looks the same, not different.
+
+The renderer was checked against `kicad-cli sch export svg` side by side on a
+real 87-part sheet before it replaced it. Three things it had to be told,
+because reasoning about them gave the wrong answer:
+
+- **A field is drawn at its own angle PLUS the symbol's.** R157 (symbol 90,
+  field 90) comes out horizontal and D29 (symbol 90, field 0) vertical.
+- **A label's justification is already the one for the text AS DRAWN.** Do not
+  flip it again for a 180-degree label — that lays every one across its wire.
+- **Body lettering is drawn after the fills.** The `&` inside a gate is a
+  library text item, and the filled body would cover it.
+
 ## The simulator overlay (`src/sim/`, `pages/Simulator.tsx`)
 
-Three layers share ONE coordinate space — millimetres, exactly as the
-`.kicad_sch` stores them — because `kicad-cli sch export svg` writes its
-viewBox in millimetres too. Nothing here converts, scales or offsets a
-coordinate, and nothing should start: the moment a transform appears, the
-current dots stop sitting on the wires.
+Layers share ONE coordinate space — millimetres, exactly as the `.kicad_sch`
+stores them. Nothing here converts, scales or offsets a coordinate, and nothing
+should start: the moment a transform appears, the current dots stop sitting on
+the wires.
 
-1. `<img>` — the sheet, rendered by kicad-cli (`/api/sim/…/sheet.svg`)
-2. `<svg class="sim-layer">` — wires tinted by node voltage, and the invisible
-   thick click targets (`.sim-hit`, `pointer-events: stroke`)
-3. `<canvas class="sim-charge">` — the moving charge
+1. `SchematicView` — the sheet, with wires tinted by node voltage drawn into it
+2. `<canvas class="sim-charge">` — the moving charge
+3. `<svg class="sim-pick">` — the invisible thick click targets
+   (`.sim-hit`, `pointer-events: stroke`) and, in live mode, the steerable
+   parts (`.sim-part`)
 
 **The charge is on a canvas on purpose.** A sheet with a few hundred wires
 carries thousands of dots, and re-creating that many DOM nodes sixty times a
@@ -587,10 +641,147 @@ opts out with `text-transform: none` — `.sim-legend-item` and `.sim-nets .pill
 already do.
 
 **Crop to the drawing, not the page.** A KiCad sheet is mostly empty paper, so
-`SimSheetView` measures what the sheet actually uses and blows the stage up to
-fit it, in percentages so no pixel maths is involved. "Whole sheet" turns it
-off.
+`SchematicView` measures what the sheet actually uses and opens on that.
+"Whole sheet" turns it off. Wheel zooms, drag pans, everywhere.
+
+**In live mode you reach for the thing on the drawing.** A switch clicked on
+the schematic flips there and then; anything else moves onto the knob panel
+with its box focused. That is the point of the mode — a list of SPICE
+instance names beside a circuit is not an interactive circuit.
+
+**A flipped contact changes the drawing, not only the netlist.** `alter`
+changes the run; the file still says what it said. `SimSheetView`'s `partSwap`
+therefore swaps the symbol's `lib_id` AND the Value that goes with it — a
+sheet the editor wrote embeds both blade positions, so the graphics are
+already there. The altered values live on the page, not inside
+`LiveControls`, because the drawing and the panel change the same number.
+
+## An upload runs itself once, a snapshot does not
+
+Every measurement in the simulator reads from a run: the scope, the readout,
+the value beside a probed net. So a source that has not been run shows no
+plot, no scope card and no reading — and clicking a net does nothing VISIBLE,
+because `pickNet` adds a trace to a scope that is not rendered. That reads as
+a broken page, not as "press Run", and it is exactly what the example did
+before this.
+
+`Simulator.tsx` therefore runs an **upload** source once when its geometry
+arrives — a sketch, the worked example, a dropped sheet: all small, and all
+opened in order to be simulated. A **snapshot** board is left alone, because
+those runs are long and a reviewer picks the scenario before spending one.
+The guard is a ref holding the upload id, not the effect's dependency list:
+`doRun` is rebuilt whenever the chosen scenario changes.
+
+## What to run, and what it said (`sim/ScenarioPanel.tsx`)
+
+A harness carries its scenario as SPICE text beside the circuit. Left as text
+it is a wall the user is asked to take on faith before pressing Run, so the
+panel turns it into three things:
+
+- **the runs it offers** — every `.control` block, named by its own first
+  `echo`, with how many PASS/FAIL lines it prints. "The sheet's own" is the
+  default and leaves the harness alone.
+- **the analysis** — Transient / AC / DC / Operating point as a form that
+  builds the directive, or "From the sheet" to use the one it carries. Same
+  `params.ts` machinery the component inspector uses.
+- **the verdicts** — `scenario.ts` reads the PASS/FAIL table out of the run's
+  own log. That convention is already in every harness in `EVSE_20_CTRL`;
+  nothing new is asked of anyone.
+
+**A verdict run has no waveform, and that is not a failure.** It runs its
+analysis inside the `.control` block, so ngspice writes no rawfile. The payload
+comes back with zero plots and a log — render the verdicts, not an error.
+
+**An unlabelled net cannot be probed from a `.control` block.** KiCad names it
+`Net-(R1-Pad2)`, which SPICE reads as an expression with a minus in it. Put a
+label on any net a check measures.
+
+## Editing and simulating are ONE view (`sim/SimulatorView.tsx`)
+
+There is no separate editor screen and there must not be one again. The
+schematic, its readings and its drawing tools are the same surface: `Edit` on
+the toolbar reveals the tools, and the overlay stays underneath them. A user
+asked for this in exactly those words — "all in one place" — after having to
+leave the simulation to change a resistor.
+
+`sim/edit/doc.ts` holds the document and every derivation from it
+(`docToDrawing`, `autoJunctions`, `symbolPins`, `orthoRun`). The document is
+the ONLY state that is mutated — everything drawn comes from `docToDrawing`,
+so there is never a second copy of the circuit to keep in step.
+
+Three things hold it together:
+
+- **A document draws from itself, anything else from the geometry.** A dragged
+  part must follow the pointer, not a round trip. The overlay is matched to
+  the document's wires BY POSITION — which holds because `sch_write` emits one
+  `(wire)` per document wire in order, and because a drawn run is stored as
+  one wire PER SEGMENT, the shape KiCad uses. When the counts disagree (a save
+  has not landed), the overlay is dropped rather than drawn on the wrong wire.
+- **The file follows the drawing without being asked.** An edit saves 700 ms
+  after the last change, in place (`POST /api/sim/sketch?id=…`), then bumps a
+  revision so the geometry and the netlist are read again. A new source per
+  keystroke would fill the disk and move the address bar under the user.
+- **`useSimOverlay` is the overlay, once.** Tint, charge canvas, click targets
+  and live part hotspots. Both the editable and the read-only paths use it, so
+  they cannot disagree about what a wire is worth.
+
+- **Junctions are derived, never placed.** `autoJunctions` puts a dot where
+  three wire ends meet or a wire end lands inside another wire. A dot a user
+  could place by hand would be a short nobody can see.
+- **The keyboard is KiCad's**: `w` wire, `r` rotate, `m` mirror, `l` label,
+  `t` directive, Delete, Escape, Ctrl+Z. The people using this already know
+  that keyboard.
+- **A part's Value IS its SPICE value.** `10k`, `DC 5`, `PULSE(0 5 0 1u 1u 1m
+  2m)`. Nothing translates it, and nothing should start — but nothing asks the
+  user to type it either. `edit/ComponentInspector.tsx` shows a form per shape
+  a part can take and a row per number, and fills the template in
+  (`sch_lib.PARAM_FORMS` declares them, `edit/params.ts` builds and parses).
+  A raw form is always the last option, because a value the fields cannot
+  express is still a value.
+- **A row that a running transient cannot follow says so.** ngspice accepts
+  `alter` on a waveform and silently keeps the old script, and a `.model`
+  parameter cannot be altered at all — those rows are marked "needs a re-run",
+  which the auto-save then does. A knob that does nothing is worse than no
+  knob.
+- **The knob panel lists what the DRAWING cannot.** A harness source in a
+  SPICE text block has no symbol to click. A part that has one is set in its
+  inspector; listing it in both is two boxes for one number, and the second
+  goes stale the moment the first is used.
+- **Saving is `POST /api/sim/sketch`**, which writes a real `.kicad_sch` and
+  returns an upload id — the source kind the simulator already runs. A circuit
+  drawn here goes through exactly the same pipeline as one drawn in KiCad.
+  Pass `?id=` to rewrite one in place; uploads are not cached, so the next
+  netlist reads the file that is there now.
+- **It opens what it drew, not what KiCad wrote.** A KiCad file carries tokens
+  the document does not model, and writing it back would drop them silently.
+  The Edit button appears only when `/upload/{id}/sketch` answers.
 
 **An AC run is complex.** The payload stores real/imaginary in pairs and
 `decodeSimPayload` folds them to magnitude — the thing a scope shows and the
 thing that can colour a wire. A transient is real and passes straight through.
+
+## The field solver (`src/sim/field/`)
+
+Simulator → Field solver (`/sim?tab=field`), a subtab beside Circuit. It sizes
+controlled-impedance traces against a stackup and draws the solved cross-section.
+
+- **The cross-section is a canvas, and every colour is read from the palette.**
+  A solved mesh is 150 000 triangles, which the DOM will not take. `draw.ts`
+  resolves `--sim-hot` / `--sim-cold` / `--fs-signal` / `--fs-mask` and the rest
+  with `getComputedStyle` on every paint — the same trick `useSimOverlay` uses —
+  so the drawing follows the light/dark theme. Never hard-code a colour there.
+  `--fs-signal`, `--fs-reference`, `--fs-mask` and `--fs-finish` are its own
+  palette entries and have a dark variant.
+- **The chart is SVG and takes its colours as `var(...)` strings**, which is why
+  it can stay in the stylesheet while the canvas cannot.
+- **A solve is a job, not a request** (`useSolverJob.ts`): it polls, streams the
+  design-frequency result before the sweep finishes so the field appears early,
+  and cancels — both on the Cancel button and when the component goes away.
+- **The page calls the single-ended line "single"; the solver calls it
+  "microstrip".** `cellParams` maps it. Sending the page's word produced a
+  differential geometry with no error at all.
+- **Two surfaces write the same project data**: the project's Stackup tab
+  (`components/project/StackupTab.tsx`) and the "Save to a project" panel inside
+  the solver (`ProjectPanel.tsx`). Both go through the same endpoints, and both
+  must keep saying that an assignment applies from the chosen commit forward.
+- **Stackup editing is gated on `useAuth().isAdmin`**, matching the API.

@@ -5,6 +5,10 @@ node_modules/
 dist/
 .env
 data/
+# ...but the field solver's material and stackup tables are SOURCE, not runtime
+# data: they ship inside the package and the solver cannot start without them.
+!api/app/services/fieldsolver/data/
+!api/app/services/fieldsolver/data/*.json
 render-cache/
 .DS_Store
 *.bak

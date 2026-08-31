@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..config import settings
 from ..db import SessionLocal, get_db
-from ..services import gitrepo, sim_run
+from ..services import gitrepo, sch_lib, sim_example, sim_run
 from ..services.project_ops import OpError
 from ..services.sim_run import SimSource, SimSourceError
 
@@ -85,6 +85,105 @@ async def create_upload(files: list[UploadFile] = File(...), root: str = Form(""
     return {"id": meta["id"], "root": meta["root"], "files": meta["files"]}
 
 
+# --------------------------------------------------------------- scenarios
+
+@router.get("/snapshot/{snapshot_id}/{board}/scenarios")
+def snapshot_scenarios(snapshot_id: int, board: str, db: Session = Depends(get_db)):
+    return _scenarios(_snapshot_source(db, snapshot_id, board))
+
+
+@router.get("/upload/{upload_id}/scenarios")
+def upload_scenarios(upload_id: str):
+    return _scenarios(_upload_source(upload_id))
+
+
+def _scenarios(src: SimSource) -> dict:
+    """The runs this harness offers, read off its own text items.
+
+    A harness writes its scenario as SPICE text beside the circuit. Listed as
+    a menu it is a set of runs; left as a wall of text it is something the
+    user is asked to take on faith before pressing Run."""
+    try:
+        return sim_run.scenarios(src)
+    except SimSourceError as e:
+        raise HTTPException(422, str(e)) from e
+    except (OSError, OpError) as e:
+        raise HTTPException(502, f"could not read the harness: {e}") from e
+
+
+# ------------------------------------------------------------------ drawing
+
+class SketchRequest(BaseModel):
+    """A schematic drawn in the browser. Deliberately loose: the writer is the
+    thing that decides what is valid, and it says so by name."""
+
+    name: str = "sketch"
+    uuid: str = ""
+    paper: str = "A4"
+    symbols: list[dict] = []
+    wires: list[dict] = []
+    labels: list[dict] = []
+    texts: list[dict] = []
+    junctions: list[list[float]] = []
+
+
+@router.get("/palette")
+def palette():
+    """The parts a schematic drawn from scratch starts with, with the graphics
+    to draw each one. They are real KiCad symbol definitions, so the file the
+    editor saves opens in KiCad."""
+    return sch_lib.palette()
+
+
+@router.post("/sketch")
+def save_sketch(body: SketchRequest, id: str = ""):
+    """Save a drawn schematic as a real `.kicad_sch` and make it runnable.
+
+    The answer is an upload id, which is the source kind the rest of the
+    simulator already understands — so a circuit drawn here runs through
+    exactly the same pipeline as one drawn in KiCad. Pass `id` to rewrite a
+    sketch in place: the editor saves on every pause in typing, and a new
+    source per keystroke would fill the disk."""
+    try:
+        return sim_run.store_sketch(body.model_dump(), upload_id=id)
+    except SimSourceError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/example")
+def save_example():
+    """A worked circuit, saved as a sketch and returned like any other.
+
+    An empty sheet teaches nothing, and the parts that carry a model — the
+    op-amp, the inverters, the gate, the flip-flop — are the ones nobody
+    guesses how to wire. This is that circuit, and it is an ORDINARY sketch:
+    the user edits and re-runs it in place, and nothing downstream knows it
+    came from here."""
+    try:
+        return sim_run.store_sketch(sim_example.document())
+    except SimSourceError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.get("/upload/{upload_id}/sketch")
+def get_sketch(upload_id: str):
+    """The document a sketch was drawn from, for reopening it in the editor."""
+    doc = sim_run.read_sketch(upload_id)
+    if doc is None:
+        raise HTTPException(404, "this source was not drawn in the editor")
+    return doc
+
+
+# -------------------------------------------------------------------- theme
+
+@router.get("/theme")
+def theme():
+    """The schematic palette. The browser draws schematics itself, and this is
+    the same theme file kicad-cli renders the project's schematic tab with, so
+    both views show one colour scheme."""
+    return sim_run.schematic_theme()
+
+
 # ------------------------------------------------------------------ projects
 
 @router.get("/snapshot/{snapshot_id}/projects")
@@ -119,31 +218,6 @@ def _sheets(src: SimSource) -> dict:
         return {"source": {"kind": src.kind, "label": src.label}, "sheets": sim_run.sheets(src)}
     except (SimSourceError, OSError) as e:
         raise HTTPException(422, str(e)) from e
-
-
-# --------------------------------------------------------------------- svg
-
-@router.get("/snapshot/{snapshot_id}/{board}/sheet.svg")
-def snapshot_sheet_svg(snapshot_id: int, board: str, sheet: str = "", db: Session = Depends(get_db)):
-    return _sheet_svg(_snapshot_source(db, snapshot_id, board), sheet)
-
-
-@router.get("/upload/{upload_id}/sheet.svg")
-def upload_sheet_svg(upload_id: str, sheet: str = ""):
-    return _sheet_svg(_upload_source(upload_id), sheet)
-
-
-def _sheet_svg(src: SimSource, sheet: str) -> Response:
-    """The drawing itself — kicad-cli's own render, which the overlay sits on
-    top of. Its viewBox is in millimetres and shares the geometry's coordinate
-    space, so the two line up with no transform."""
-    try:
-        data = sim_run.sheet_svg(src, sheet)
-    except SimSourceError as e:
-        raise HTTPException(422, str(e)) from e
-    except (OpError, RuntimeError) as e:
-        raise HTTPException(502, f"render failed: {e}") from e
-    return Response(content=data, media_type="image/svg+xml")
 
 
 # ----------------------------------------------------------------- geometry

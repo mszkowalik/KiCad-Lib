@@ -106,11 +106,3 @@ def board_layer(project_id: int, sha: str, board: str, rel_pcb: str, layer: str)
     safe = layer.replace("/", "_")
     key = render_key(project_id, sha, board, f"layers/{theme or 'default'}/{safe}.svg")
     return cached_op(key, "board_layer_svg", rel_pcb, layer=layer, theme=theme)
-
-
-def sch_pages_zip(project_id: int, sha: str, board: str, rel_sch: str, variant: str) -> bytes:
-    theme = settings.symbol_theme
-    vdir = variant or "_default"
-    key = render_key(project_id, sha, board, f"sch/{vdir}/{theme or 'default'}/pages.zip")
-    data, _media = cached_op(key, "sch_svg", rel_sch, variant=variant, theme=theme)
-    return data

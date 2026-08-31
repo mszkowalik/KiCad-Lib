@@ -16,13 +16,14 @@ import { useStickyState } from "../useStickyState";
 import BomTab from "../components/project/BomTab";
 import BoardTab from "../components/project/BoardTab";
 import CostsTab from "../components/project/CostsTab";
+import StackupTab from "../components/project/StackupTab";
 import HistoryTab from "../components/project/HistoryTab";
 import NotesTab from "../components/project/NotesTab";
 import RunsTab from "../components/project/RunsTab";
 import ReviewTab from "../components/project/ReviewTab";
 import SchematicTab from "../components/project/SchematicTab";
 
-const TABS = ["BOM", "Board", "Schematic", "History", "Review", "Costs", "Runs", "Notes", "Settings"] as const;
+const TABS = ["BOM", "Board", "Schematic", "Stackup", "History", "Review", "Costs", "Runs", "Notes", "Settings"] as const;
 type Tab = (typeof TABS)[number];
 
 /** Visible labels; the keys stay stable so sticky tab state survives. */
@@ -260,6 +261,9 @@ export default function ProjectDetail() {
             onSelectSnapshot={(sid) => setSnapshotId(sid)}
             onIngested={() => loadSnapshots()}
           />
+        ) : null}
+        {tab === "Stackup" ? (
+          <StackupTab projectId={project.id} snapshot={snapshot} board={board?.name ?? ""} />
         ) : null}
         {tab === "Review" ? <ReviewTab project={project} snapshot={snapshot} /> : null}
         {tab === "Costs" ? <CostsTab projectId={project.id} snapshot={snapshot} /> : null}

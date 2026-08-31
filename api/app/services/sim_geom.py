@@ -25,6 +25,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from ..util.sexpr import find_node, iter_nodes, node_value, parse_sexpr, sanitize_symbol_text, walk_nodes
+from . import sch_draw
 
 # Quantum for point identity, in mm. KiCad writes schematic coordinates on a
 # 0.01 mm grid at worst; 0.001 mm absorbs float formatting without ever
@@ -388,11 +389,14 @@ def sheet_geometry(text: str, instance_path: str = "", net_prefix: str = "") -> 
                 })
         else:
             warnings.append(f"{ref or lib_id}: symbol is not in the file's lib_symbols")
+        sim = _sim_props(sym)
         symbols.append({
             "ref": ref, "value": _property(sym, "Value"), "lib_id": lib_id,
             "at": [at[0], at[1]], "angle": at[2], "mirror": mirror, "unit": unit,
             "bbox": box, "power": is_power, "index": idx,
-            "sim": _sim_props(sym),
+            "sim": sim,
+            # What `alter` has to be given to change this part while it runs.
+            "spice": spice_instance(ref, sim),
         })
 
     texts: list[dict] = []
@@ -458,6 +462,9 @@ def sheet_geometry(text: str, instance_path: str = "", net_prefix: str = "") -> 
     return {
         "size": _paper_size(root), "instance_path": instance_path,
         "net_prefix": net_prefix,
+        # Everything needed to DRAW the sheet in the browser. Same parse, so
+        # `draw.wires[i].id` is the wire `wires[i].id` names.
+        "draw": sch_draw.sheet_drawing(root),
         "wires": wires, "junctions": junctions, "labels": labels, "pins": pins_out,
         "symbols": symbols, "subsheets": subsheets, "no_connects": no_connects,
         "texts": texts, "groups": list(groups.values()), "warnings": warnings,
@@ -490,6 +497,24 @@ def _sim_props(sym) -> dict:
             if key.lower().startswith("sim."):
                 out[key[4:].lower()] = str(prop[2]).strip('"')
     return out
+
+
+def spice_instance(ref: str, sim: dict) -> str:
+    """The name this placement carries in the netlist, lower case.
+
+    Usually the reference itself. But `Sim.Device` overrides the element type,
+    and KiCad then PREFIXES the reference with the device letter rather than
+    replacing it: a switch drawn as `SW1` with `Sim.Device R` netlists as
+    `RSW1`. An `alter` aimed at `sw1` would be accepted and do nothing, which
+    is the worst of the two failures available.
+    """
+    ref = (ref or "").strip()
+    if not ref:
+        return ""
+    device = (sim or {}).get("device", "").strip().upper()
+    if device and len(device) == 1 and not ref.upper().startswith(device):
+        return (device + ref).lower()
+    return ref.lower()
 
 
 # ------------------------------------------------------------- net names

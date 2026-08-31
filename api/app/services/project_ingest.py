@@ -312,8 +312,12 @@ def ingest(project_id: int, ref: str, ref_name: str = "", is_tag: bool = False,
 
 
 def prerender_snapshot(project_id: int, sha: str, boards: list[dict]) -> None:
-    """Warm the MinIO render cache: board GLB + all layer SVGs + schematic
-    SVGs (default variant) + ERC/DRC. Sequential — one kicad-cli at a time."""
+    """Warm the MinIO render cache: board GLB + all layer SVGs + ERC/DRC.
+    Sequential — one kicad-cli at a time.
+
+    Schematics are NOT pre-rendered any more. The browser draws them itself
+    from the file (`services/sch_draw.py`), so a page SVG per board per commit
+    was kicad-cli work and megabytes of MinIO that nothing read."""
     for b in boards:
         name = b["name"]
         if b.get("pcb"):
@@ -327,8 +331,6 @@ def prerender_snapshot(project_id: int, sha: str, boards: list[dict]) -> None:
             _warm(project_render.render_key(project_id, sha, name, "drc.json"), "drc", rel_pcb)
         if b.get("sch"):
             rel_sch = project_render.rel_checkout(project_id, sha, b["sch"])
-            _try(lambda n=name, r=rel_sch: project_render.sch_pages_zip(project_id, sha, n, r, ""),
-                 "schematic")
             _warm(project_render.render_key(project_id, sha, name, "erc.json"), "erc", rel_sch)
 
 

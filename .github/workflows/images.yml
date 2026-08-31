@@ -46,6 +46,15 @@ jobs:
               rc=1
             fi
           done
+          # kicad-cli reads the theme; the browser's own schematic renderer
+          # reads the same colours, so one file cannot be allowed to drift.
+          for f in themes/Skyline-7S.json; do
+            if ! cmp -s "render/$f" "api/app/services/$f"; then
+              echo "::error file=render/$f::render/$f and api/app/services/$f must stay byte-identical (api/CLAUDE.md)"
+              diff -u "api/app/services/$f" "render/$f" || true
+              rc=1
+            fi
+          done
           exit $rc
 
   build:

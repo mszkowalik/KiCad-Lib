@@ -1,21 +1,34 @@
-/** Schematic viewer: server-rendered page SVGs (cached by sha, symbol
- *  preview theme), page picker, variant-aware. Symbols are clickable
- *  (info + library link) and sub-sheet frames navigate between pages —
- *  hotspots come from the snapshot's click-map (mm coords over the SVG). */
-import { useEffect, useState } from "react";
+/** Schematic viewer for a project snapshot.
+ *
+ *  The drawing is `SchematicView` — the same component the simulator and the
+ *  editor use — so this page, a simulation overlay and a circuit being drawn
+ *  are one renderer with one colour theme. Before that they were a
+ *  server-rendered SVG per page plus a click-map of hotspots laid over it, and
+ *  the two could disagree about where a part was.
+ *
+ *  What this page adds on top is its own: parts are clickable for their BOM
+ *  row and library link, and a sub-sheet frame navigates into that sheet.
+ */
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   errorMessage,
   getBoardMap,
-  getSchematicPages,
+  getSimGeometry,
+  getSimSheets,
+  getSimTheme,
   isAbortError,
-  schematicPageUrl,
   type BoardMap,
   type MapSymbol,
+  type SimGeometry,
+  type SimSheet,
+  type SimSourceRef,
   type SnapshotBoard,
   type SnapshotInfo,
 } from "../../api";
 import { ErrorBanner, Spinner } from "../Ui";
+import SchematicView from "../../sim/draw/SchematicView";
+import { FALLBACK_THEME, type SchTheme } from "../../sim/draw/types";
 import PartInfo from "./PartInfo";
 
 interface Props {
@@ -25,76 +38,107 @@ interface Props {
 }
 
 export default function SchematicTab({ snapshot, board, variant }: Props) {
-  const [pages, setPages] = useState<string[] | null>(null);
-  const [page, setPage] = useState<string | null>(null);
+  const [sheets, setSheets] = useState<SimSheet[] | null>(null);
+  const [path, setPath] = useState<string>("");
+  const [geometry, setGeometry] = useState<SimGeometry | null>(null);
   const [map, setMap] = useState<BoardMap | null>(null);
   const [selected, setSelected] = useState<MapSymbol | null>(null);
+  const [theme, setTheme] = useState<SchTheme>(FALLBACK_THEME);
   const [error, setError] = useState<string | null>(null);
+
+  const source: SimSourceRef = useMemo(
+    () => ({ kind: "snapshot", snapshotId: snapshot.id, board: board.name }),
+    [snapshot.id, board.name],
+  );
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    getSimTheme(ctrl.signal)
+      .then((r) => setTheme({ ...FALLBACK_THEME, ...r.schematic }))
+      .catch(() => undefined);
+    return () => ctrl.abort();
+  }, []);
 
   useEffect(() => {
     if (!board.sch) return;
     const ctrl = new AbortController();
-    setPages(null);
-    setPage(null);
+    setSheets(null);
+    setPath("");
+    setGeometry(null);
     setSelected(null);
     setError(null);
-    getSchematicPages(snapshot.id, board.name, variant, ctrl.signal)
+    getSimSheets(source, ctrl.signal)
       .then((r) => {
-        setPages(r.pages);
-        setPage(r.pages[0] ?? null);
+        setSheets(r.sheets);
+        setPath(r.sheets[0]?.path ?? "");
       })
       .catch((err) => {
         if (!isAbortError(err)) setError(errorMessage(err));
       });
-    getBoardMap(snapshot.id, board.name, ctrl.signal)
-      .then(setMap)
-      .catch(() => setMap(null)); // hotspots are an enhancement, never block
+    // The BOM row and the library link behind a part. Hotspots come from the
+    // geometry, so a missing map costs the extra detail, never the drawing.
+    getBoardMap(snapshot.id, board.name, ctrl.signal).then(setMap).catch(() => setMap(null));
     return () => ctrl.abort();
-  }, [snapshot.id, board.name, board.sch, variant]);
+  }, [source, snapshot.id, board.name, board.sch]);
+
+  useEffect(() => {
+    if (!sheets) return;
+    const ctrl = new AbortController();
+    getSimGeometry(source, path, ctrl.signal)
+      .then(setGeometry)
+      .catch((err) => {
+        if (!isAbortError(err)) setError(errorMessage(err));
+      });
+    return () => ctrl.abort();
+  }, [source, path, sheets]);
+
+  /** Every part the click-map knows, by reference — the map is keyed by page,
+   *  and a reference is unique across the board. */
+  const parts = useMemo(() => {
+    const out = new Map<string, MapSymbol>();
+    for (const sheet of Object.values(map?.sheets ?? {})) {
+      for (const sym of sheet.symbols) out.set(sym.ref, sym);
+    }
+    return out;
+  }, [map]);
 
   if (!board.sch) {
     return <p className="muted">This board has no schematic file.</p>;
   }
 
-  const sheet = page && map ? map.sheets[page] : null;
-  const [pageW, pageH] = sheet?.size ?? [297, 210];
-  const pct = (v: number, total: number) => `${(v / total) * 100}%`;
-
-  const resolveTarget = (target: string): string | null => {
-    if (!pages) return null;
-    if (pages.includes(target)) return target;
-    const suffix = target.replace(/^.*?-/, "-");
-    return pages.find((p) => p.endsWith(suffix)) ?? null;
-  };
+  const current = sheets?.find((s) => s.path === path);
 
   return (
     <div>
       {error ? <ErrorBanner message={error} /> : null}
-      {pages === null && !error ? (
-        <Spinner label="Rendering schematic (first view of a snapshot takes a few seconds)" />
-      ) : null}
-      {pages !== null ? (
+      {sheets === null && !error ? <Spinner label="Reading the schematic" /> : null}
+      {sheets !== null ? (
         <>
           <div className="toolbar">
-            <div className="seg" role="group" aria-label="Schematic pages">
-              {pages.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  className={page === p ? "on" : ""}
-                  onClick={() => {
-                    setPage(p);
-                    setSelected(null);
-                  }}
-                  title={p}
-                >
-                  {p.replace(/\.svg$/, "").replace(`${board.name}-`, "") || board.name}
-                </button>
-              ))}
-            </div>
+            {/* A dropdown, not a row of buttons: a board has as many sheets as
+                it likes, and a toolbar that grows with the data pushes the
+                page sideways. */}
+            <label className="sim-pick-group">
+              <span>Sheet</span>
+              <select
+                className="text"
+                value={path}
+                onChange={(e) => {
+                  setPath(e.target.value);
+                  setSelected(null);
+                }}
+              >
+                {sheets.map((s) => (
+                  <option key={s.path} value={s.path}>
+                    {"  ".repeat(s.depth)}
+                    {s.name} · {s.symbols} parts
+                  </option>
+                ))}
+              </select>
+            </label>
             {variant ? <span className="pill neutral">variant: {variant}</span> : null}
-            {/* The simulator reads the same checkout as these renders, so it
-                needs nothing but the snapshot and the board. */}
+            {/* The simulator reads the same checkout as this view, so it needs
+                nothing but the snapshot and the board. */}
             <Link
               className="btn"
               to={`/sim?snapshot=${snapshot.id}&board=${encodeURIComponent(board.name)}`}
@@ -102,64 +146,80 @@ export default function SchematicTab({ snapshot, board, variant }: Props) {
             >
               Simulate
             </Link>
-            {sheet ? (
+            {current ? (
               <span className="muted">
-                {sheet.symbols.length} clickable parts
-                {sheet.subsheets.length ? ` · ${sheet.subsheets.length} sub-sheets` : ""}
+                {current.symbols} parts
+                {current.directives ? ` · ${current.directives} SPICE directives` : ""}
               </span>
             ) : null}
           </div>
           {selected ? <PartInfo part={selected} onClose={() => setSelected(null)} /> : null}
-          {page ? (
+          {geometry ? (
             <div className="card schview">
-              <div className="overlay-wrap">
-                <img
-                  src={schematicPageUrl(snapshot.id, board.name, page, variant)}
-                  alt={`Schematic page ${page}`}
-                />
-                {sheet?.symbols.map((s) => (
-                  <button
-                    key={s.ref}
-                    type="button"
-                    className={`hotspot${selected?.ref === s.ref ? " on" : ""}`}
-                    title={`${s.ref} — ${s.bom?.value || s.value}`}
-                    style={{
-                      left: pct(s.bbox[0], pageW),
-                      top: pct(s.bbox[1], pageH),
-                      width: pct(s.bbox[2] - s.bbox[0], pageW),
-                      height: pct(s.bbox[3] - s.bbox[1], pageH),
-                    }}
-                    onClick={() => setSelected(s)}
-                  />
-                ))}
-                {sheet?.subsheets.map((sub) => {
-                  const target = resolveTarget(sub.target_svg);
-                  return (
-                    <button
-                      key={`${sub.name}-${sub.at[0]}-${sub.at[1]}`}
-                      type="button"
-                      className="hotspot sheet-hotspot"
-                      title={target ? `Open sheet ${sub.name}` : sub.name}
-                      disabled={!target}
-                      style={{
-                        left: pct(sub.at[0], pageW),
-                        top: pct(sub.at[1], pageH),
-                        width: pct(sub.size[0], pageW),
-                        height: pct(sub.size[1], pageH),
-                      }}
-                      onClick={() => {
-                        if (target) {
-                          setPage(target);
-                          setSelected(null);
-                        }
-                      }}
-                    />
-                  );
-                })}
-              </div>
+              <SchematicView
+                drawing={geometry.draw}
+                theme={theme}
+                size={[geometry.size[0], geometry.size[1]]}
+                resetKey={path}
+                extraBounds={geometry.pins.map((p) => [p.at[0], p.at[1]] as [number, number])}
+                layers={(view) => (
+                  <svg
+                    className="sim-layer sim-pick"
+                    viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
+                    preserveAspectRatio="xMidYMid meet"
+                    role="group"
+                    aria-label="Parts"
+                  >
+                    {geometry.subsheets.map((sub) => (
+                      <rect
+                        key={`s${sub.uuid}`}
+                        className="sim-part sheet"
+                        x={sub.at[0]}
+                        y={sub.at[1]}
+                        width={sub.size[0]}
+                        height={sub.size[1]}
+                        onClick={() => {
+                          // A sheet INSTANCE is the parent's path plus this
+                          // placement's uuid — the same file placed twice is
+                          // two instances with different references.
+                          const target = `${geometry.instance_path}/${sub.uuid}`;
+                          if (sheets.some((s) => s.path === target)) {
+                            setPath(target);
+                            setSelected(null);
+                          }
+                        }}
+                      >
+                        <title>{`Open sheet ${sub.name}`}</title>
+                      </rect>
+                    ))}
+                    {geometry.symbols.map((sym) => {
+                      if (!sym.bbox || sym.power || !sym.ref) return null;
+                      const part = parts.get(sym.ref);
+                      return (
+                        <rect
+                          key={`p${sym.index}`}
+                          className={`sim-part${selected?.ref === sym.ref ? " on" : ""}`}
+                          x={sym.bbox[0]}
+                          y={sym.bbox[1]}
+                          width={sym.bbox[2] - sym.bbox[0]}
+                          height={sym.bbox[3] - sym.bbox[1]}
+                          onClick={() => setSelected(
+                            part ?? {
+                              ref: sym.ref, value: sym.value, lib_id: sym.lib_id,
+                              at: sym.at, bbox: sym.bbox ?? [0, 0, 0, 0],
+                            },
+                          )}
+                        >
+                          <title>{`${sym.ref} — ${part?.bom?.value || sym.value}`}</title>
+                        </rect>
+                      );
+                    })}
+                  </svg>
+                )}
+              />
             </div>
           ) : (
-            <p className="muted">No pages.</p>
+            <Spinner label="Drawing the sheet" />
           )}
         </>
       ) : null}

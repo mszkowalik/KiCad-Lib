@@ -9,8 +9,6 @@ Ops (src = .kicad_pcb or .kicad_sch inside a materialized checkout):
     board_layer_svg  pcb  one layer -> SVG (board-area page, aligned stack)
     board_glb        pcb  -> binary GLB (web 3D viewer)
     board_step       pcb  -> STEP (CAD download)
-    sch_svg          sch  -> zip of per-page SVGs (variant-aware)
-    sch_svg_plain    sch  -> the same, without the drawing sheet frame
     bom_csv          sch  -> grouped BOM CSV (variant-aware)
     erc              sch  -> JSON report
     drc              pcb  -> JSON report
@@ -59,8 +57,6 @@ MEDIA = {
     "board_layer_svg": "image/svg+xml",
     "board_glb": "model/gltf-binary",
     "board_step": "application/step",
-    "sch_svg": "application/zip",
-    "sch_svg_plain": "application/zip",
     "bom_csv": "text/csv",
     "erc": "application/json",
     "drc": "application/json",
@@ -169,23 +165,6 @@ def run_op(
         )
         return dest.read_bytes(), MEDIA[op]
 
-    if op in ("sch_svg", "sch_svg_plain"):
-        # The border and title block are the drawing's paperwork. Worth having
-        # when the reader is looking at the schematic; noise under an overlay
-        # that is cropped to the circuit, where the frame's corner is the only
-        # thing left in an empty quarter of the view.
-        plain = ["--exclude-drawing-sheet"] if op == "sch_svg_plain" else []
-        pages = out / "pages"
-        pages.mkdir()
-        _run(
-            [kicad_cli, "sch", "export", "svg", *theme_args, *var_args, *plain,
-             "-o", str(pages), str(src)],
-            env=env,
-        )
-        if not any(pages.glob("*.svg")):
-            raise OpError("schematic export produced no pages")
-        return _zip_dir(pages), MEDIA[op]
-
     if op == "bom_csv":
         dest = out / "bom.csv"
         _run(
@@ -260,7 +239,9 @@ def run_op(
                 raw, log = sim_spice.run_ngspice(
                     prepared, sim_dir, ngspice=ngspice, timeout=timeout, env=env,
                 )
-                plots = sim_spice.parse_raw(raw)
+                # No rawfile means the control block ran the analysis itself
+                # and printed instead. The log IS the result.
+                plots = sim_spice.parse_raw(raw) if raw else []
         except sim_spice.SimError as e:
             raise OpError(str(e)) from e
         return (

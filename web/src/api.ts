@@ -4,6 +4,8 @@
  * (categories.py, components.py, import_station.py).
  */
 import { APP_BASE } from "./appbase";
+import type { LibSymbol, SchTheme, SheetDrawing } from "./sim/draw/types";
+import type { PaletteEntry, SchDoc } from "./sim/edit/doc";
 
 /** Where the API lives, as a prefix for every request path.
  *
@@ -2093,34 +2095,6 @@ export function boardStepUrl(snapshotId: number, board: string): string {
 
 export function fabZipUrl(snapshotId: number, board: string): string {
   return `${API_URL}/api/snapshots/${snapshotId}/boards/${encodeURIComponent(board)}/fab.zip`;
-}
-
-export interface SchematicPages {
-  variant: string;
-  pages: string[];
-}
-
-export function getSchematicPages(
-  snapshotId: number,
-  board: string,
-  variant: string,
-  signal?: AbortSignal,
-): Promise<SchematicPages> {
-  const qs = variant ? `?variant=${encodeURIComponent(variant)}` : "";
-  return request(`/api/snapshots/${snapshotId}/boards/${encodeURIComponent(board)}/schematic${qs}`, {
-    signal,
-  });
-}
-
-export function schematicPageUrl(
-  snapshotId: number,
-  board: string,
-  page: string,
-  variant: string,
-): string {
-  const qs = new URLSearchParams({ page });
-  if (variant) qs.set("variant", variant);
-  return `${API_URL}/api/snapshots/${snapshotId}/boards/${encodeURIComponent(board)}/schematic/page?${qs}`;
 }
 
 export interface CheckViolation {
@@ -5316,6 +5290,11 @@ export interface SimSymbol {
   bbox: number[] | null;
   power: boolean;
   sim: Record<string, string>;
+  /** What `alter` has to be given to change this part while it runs. Usually
+   *  the reference, but `Sim.Device` prefixes it — a switch drawn `SW1` is
+   *  `rsw1` in the netlist. */
+  spice: string;
+  index: number;
 }
 
 export interface SimGroup {
@@ -5335,12 +5314,14 @@ export interface SimGroup {
 export interface SimGeometry {
   size: number[];
   instance_path: string;
+  /** Everything needed to DRAW the sheet, from the same parse as the nets. */
+  draw: SheetDrawing;
   wires: (SimWire & { group: string })[];
   junctions: { at: number[]; net: string | null; group: string }[];
   labels: { id: string; text: string; kind: string; at: number[]; net: string | null }[];
   pins: SimPin[];
   symbols: SimSymbol[];
-  subsheets: { name: string; file: string; at: number[]; size: number[] }[];
+  subsheets: { name: string; file: string; uuid: string; at: number[]; size: number[] }[];
   texts: { at: number[]; text: string; directive: boolean }[];
   groups: SimGroup[];
   warnings: string[];
@@ -5387,11 +5368,80 @@ export async function getSimNetlist(
   return request(`${simBase(src)}/netlist`, { signal });
 }
 
-/** URL of the sheet drawing — kicad-cli's own render, whose viewBox is in
- *  millimetres and shares the geometry's coordinate space. */
-export function simSheetSvgUrl(src: SimSourceRef, sheet: string): string {
-  const qs = sheet ? `?sheet=${encodeURIComponent(sheet)}` : "";
-  return `${API_URL}${simBase(src)}/sheet.svg${qs}`;
+export interface SimTextItem {
+  id: string;
+  kind: "control" | "analysis" | "stimulus" | "note";
+  title: string;
+  text: string;
+  at: number[];
+  /** How many PASS/FAIL lines the block prints, for a `.control`. */
+  checks?: number;
+}
+
+export interface SimScenarios {
+  scenarios: SimTextItem[];
+  analyses: SimTextItem[];
+  stimulus: SimTextItem[];
+  notes: SimTextItem[];
+  analysis_forms: unknown[];
+}
+
+/** What the harness offers to run, read off its own text items. */
+export async function getSimScenarios(
+  src: SimSourceRef,
+  signal?: AbortSignal,
+): Promise<SimScenarios> {
+  return request(`${simBase(src)}/scenarios`, { signal });
+}
+
+/** The parts a schematic drawn in the browser starts with, with the graphics
+ *  to draw each one. */
+export async function getSimPalette(signal?: AbortSignal): Promise<{
+  parts: PaletteEntry[];
+  libs: Record<string, LibSymbol>;
+  switch: { open: string; closed: string; open_r: string; closed_r: string };
+}> {
+  return request("/api/sim/palette", { signal });
+}
+
+/** Save a drawn schematic. It becomes an ordinary upload source, so the
+ *  circuit runs through the same pipeline as one drawn in KiCad — and `sch`
+ *  is the real `.kicad_sch`, which is what the user downloads. */
+export async function saveSketch(
+  doc: SchDoc,
+  /** Rewrite this sketch in place. The editor saves on every pause in typing,
+   *  and a new source per keystroke would fill the disk and move the address
+   *  bar under the user. */
+  id = "",
+  signal?: AbortSignal,
+): Promise<{ id: string; root: string; files: string[]; sch: string }> {
+  return request(`/api/sim/sketch${id ? `?id=${encodeURIComponent(id)}` : ""}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(doc),
+    signal,
+  });
+}
+
+/** The document a sketch was drawn from — 404 when the source came from
+ *  KiCad rather than the editor. */
+/** The worked example, saved as an ordinary sketch. An empty sheet teaches
+ *  nothing, and the parts that carry a model are the ones nobody guesses how
+ *  to wire. */
+export async function openSimExample(
+  signal?: AbortSignal,
+): Promise<{ id: string; root: string; files: string[]; sch: string }> {
+  return request("/api/sim/example", { method: "POST", signal });
+}
+
+export async function getSketch(uploadId: string, signal?: AbortSignal): Promise<SchDoc> {
+  return request(`/api/sim/upload/${encodeURIComponent(uploadId)}/sketch`, { signal });
+}
+
+/** The schematic colours. Read from the same theme file kicad-cli renders
+ *  the project's schematic tab with, so both views agree. */
+export async function getSimTheme(signal?: AbortSignal): Promise<{ name: string; schematic: SchTheme }> {
+  return request("/api/sim/theme", { signal });
 }
 
 /** Run one scenario. The answer is the binary 7SIM payload, not JSON —
@@ -5429,4 +5479,320 @@ export async function runSimulation(
     throw new ApiError(res.status, detail || `${res.status} ${res.statusText}`);
   }
   return res.arrayBuffer();
+}
+
+// ---------------------------------------------------------------- field solver
+// 2D quasi-TEM solver for PCB transmission lines (api/app/routers/field_solver.py).
+
+export interface FsLayer {
+  type: "copper" | "dielectric";
+  name?: string;
+  label?: string;
+  material?: string | null;
+  thickness_mm: number;
+  eps_r?: number;
+  tand?: number;
+}
+
+export interface FsStackup {
+  id: string;
+  name: string;
+  manufacturer: string;
+  source: string;
+  verified: boolean;
+  builtin: boolean;
+  soldermask: { material: string; above_substrate_mm: number; above_trace_mm: number } | null;
+  finish: { type: string; thickness_um: number; assumed?: boolean } | null;
+  layers: FsLayer[];
+  total_mm: number;
+  mask_geom: Record<string, number>;
+}
+
+export interface FsMaterial {
+  id: string;
+  name: string;
+  manufacturer: string;
+  kind: string;
+  source: string;
+  points: { f_hz: number; dk: number; tand: number; tand_assumed?: boolean }[];
+}
+
+export interface FsRuleSet {
+  id: string;
+  name: string;
+  builtin: boolean;
+  manufacturer?: string;
+  source?: string;
+  via_sizes?: { name: string; hole: number; pad: number }[];
+  [key: string]: unknown;
+}
+
+export interface FsFinish {
+  type: string;
+  thickness_um: number;
+  source: string;
+}
+
+/** One conductor or dielectric outline of the solved cross-section, in mm. */
+export interface FsRegion {
+  points: [number, number][];
+  kind: string;
+  name: string;
+  role?: string;
+  eps?: number;
+}
+
+export interface FsGeometry {
+  regions: FsRegion[];
+  overlays?: { points: [number, number][]; kind: string }[];
+  xmin: number;
+  xmax: number;
+  ymin: number;
+  ymax: number;
+  notes: string[];
+}
+
+export interface FsField {
+  nodes: [number, number][];
+  tris: [number, number, number][];
+  phi: number[];
+  phi_air: number[];
+  region_of: number[];
+  conductor_of: number[];
+  i_signal: number;
+}
+
+export interface FsSummary {
+  Z0?: number | null;
+  eps_eff?: number;
+  delay_ps_per_mm?: number;
+  alpha_db_m?: number;
+  alpha_c_db_m?: number;
+  alpha_d_db_m?: number;
+  Zdiff?: number;
+  Zodd?: number;
+  Zeven?: number;
+  Zcomm?: number;
+  Z0_single?: number | null;
+  coupling_k?: number;
+  eps_eff_odd?: number;
+  eps_eff_even?: number;
+  delay_odd_ps_per_mm?: number;
+  alpha_odd_db_m?: number;
+  alpha_odd_c_db_m?: number;
+  alpha_odd_d_db_m?: number;
+}
+
+export interface FsSweepPoint {
+  f: number;
+  modes: {
+    eps_eff: number;
+    alpha_db_m: number;
+    alpha_c_db_m: number;
+    alpha_d_db_m: number;
+    z: Record<string, number | null>;
+    v: number[];
+  }[];
+}
+
+export interface FsResult {
+  design: { C: number[][]; L: number[][] };
+  summary: FsSummary;
+  sweep: FsSweepPoint[];
+  C0: number[][];
+  mesh: { nodes: number; elements: number };
+  notes: string[];
+  geometry: FsGeometry;
+  field?: FsField;
+}
+
+export interface FsFrame {
+  f: number;
+  phi: number[];
+  i_signal: number;
+  z?: number;
+  eps_eff?: number;
+  alpha_db_m?: number;
+}
+
+export interface FsSearchRow {
+  w: number;
+  s: number | null;
+  gap: number | null;
+  fence_distance: number | null;
+  via_rows: number[] | null;
+  soldermask: boolean;
+  dev_pct: number;
+  within: boolean;
+  eps_eff?: number;
+  alpha_db_m?: number;
+  alpha_odd_db_m?: number;
+  Zodd?: number;
+  [key: string]: unknown;
+}
+
+export interface FsSearchResult {
+  key: string;
+  target: number;
+  tolerance_pct: number;
+  step: number | null;
+  rows: FsSearchRow[];
+  note: string;
+}
+
+export interface FsJobStatus {
+  id: string;
+  kind: string;
+  state: "running" | "done" | "error" | "cancelled";
+  message: string;
+  fraction: number;
+  phase?: string;
+  error?: string;
+  partial_no?: number;
+  frames_f?: number[];
+  result?: unknown;
+  frames?: FsFrame[];
+}
+
+const fsJson = (body: unknown): RequestInit => ({
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
+
+export function fsMaterials(signal?: AbortSignal): Promise<FsMaterial[]> {
+  return request("/api/fieldsolver/materials", { signal });
+}
+
+export function fsStackups(signal?: AbortSignal): Promise<FsStackup[]> {
+  return request("/api/fieldsolver/stackups", { signal });
+}
+
+export function fsSaveStackup(body: unknown): Promise<FsStackup> {
+  return request("/api/fieldsolver/stackups", fsJson(body));
+}
+
+export function fsDeleteStackup(id: string): Promise<{ ok: boolean }> {
+  return request(`/api/fieldsolver/stackups/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function fsRules(signal?: AbortSignal): Promise<FsRuleSet[]> {
+  return request("/api/fieldsolver/rules", { signal });
+}
+
+export function fsSaveRules(body: unknown): Promise<FsRuleSet> {
+  return request("/api/fieldsolver/rules", fsJson(body));
+}
+
+export function fsDeleteRules(id: string): Promise<{ ok: boolean }> {
+  return request(`/api/fieldsolver/rules/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function fsFinishes(signal?: AbortSignal): Promise<FsFinish[]> {
+  return request("/api/fieldsolver/finishes", { signal });
+}
+
+export function fsGeometry(params: unknown, signal?: AbortSignal): Promise<FsGeometry> {
+  return request("/api/fieldsolver/geometry", { ...fsJson(params), signal });
+}
+
+export function fsCheck(params: unknown, rule: string, signal?: AbortSignal): Promise<string[]> {
+  return request(`/api/fieldsolver/check?rule=${encodeURIComponent(rule)}`, { ...fsJson(params), signal });
+}
+
+export function fsStartJob(kind: string, payload: unknown): Promise<{ id: string }> {
+  return request("/api/fieldsolver/jobs", fsJson({ kind, payload }));
+}
+
+export function fsJobStatus(id: string, full = true): Promise<FsJobStatus> {
+  return request(`/api/fieldsolver/jobs/${id}?full=${full ? 1 : 0}`);
+}
+
+export function fsJobPartial(id: string): Promise<FsResult> {
+  return request(`/api/fieldsolver/jobs/${id}/partial`);
+}
+
+export function fsJobFrames(id: string, after: number): Promise<{ frames: FsFrame[] }> {
+  return request(`/api/fieldsolver/jobs/${id}/frames?after=${after}`);
+}
+
+export function fsCancelJob(id: string): Promise<unknown> {
+  return request(`/api/fieldsolver/jobs/${id}`, { method: "DELETE" });
+}
+
+/** A board's impedance work at one commit: the stackup it is built on, the
+ *  impedance profiles it carries, and whatever the .kicad_pcb says about itself. */
+export interface FsBoardProfile {
+  id: number;
+  position: number;
+  name: string;
+  config: Record<string, unknown>;
+  result: Record<string, unknown> | null;
+  solved_at: string | null;
+  stackup_key: string;
+  /** The result was computed against a different stackup than the board now uses. */
+  outdated: boolean;
+  created_by: string | null;
+  updated_at: string | null;
+}
+
+export interface FsBoardState {
+  revision: {
+    id: number;
+    board: string;
+    stackup_key: string;
+    anchor_sha: string;
+    anchor_ref: string;
+    anchor_committed_at: string | null;
+  } | null;
+  stackup: FsStackup | null;
+  profiles: FsBoardProfile[];
+  board_file: { copper_layers: number; total_mm: number; layers: { name: string; type: string; thickness_mm: number }[] } | null;
+  /** Plain-language differences between the board file and the assigned stackup. */
+  mismatch: string[];
+}
+
+export function fsBoardState(
+  projectId: number,
+  board: string,
+  snapshotId: number | null,
+  signal?: AbortSignal,
+): Promise<FsBoardState> {
+  const q = new URLSearchParams();
+  if (board) q.set("board", board);
+  if (snapshotId) q.set("snapshot_id", String(snapshotId));
+  return request(`/api/fieldsolver/projects/${projectId}/board?${q}`, { signal });
+}
+
+export function fsAssignStackup(
+  projectId: number,
+  body: { stackup_key: string; board?: string; snapshot_id?: number | null },
+): Promise<FsBoardState> {
+  return request(`/api/fieldsolver/projects/${projectId}/stackup`, fsJson(body));
+}
+
+export function fsSaveProfile(
+  projectId: number,
+  body: {
+    name: string;
+    config: Record<string, unknown>;
+    result?: Record<string, unknown> | null;
+    board?: string;
+    snapshot_id?: number | null;
+    profile_id?: number | null;
+  },
+): Promise<FsBoardState> {
+  return request(`/api/fieldsolver/projects/${projectId}/profiles`, fsJson(body));
+}
+
+export function fsDeleteProfile(
+  projectId: number,
+  profileId: number,
+  board: string,
+  snapshotId: number | null,
+): Promise<FsBoardState> {
+  const q = new URLSearchParams();
+  if (board) q.set("board", board);
+  if (snapshotId) q.set("snapshot_id", String(snapshotId));
+  return request(`/api/fieldsolver/projects/${projectId}/profiles/${profileId}?${q}`, { method: "DELETE" });
 }

@@ -1134,11 +1134,108 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   `${SEVENSIGMA_DIR}` in `Sim.Library` from the environment, and a symbol's
   stored rotation must be NEGATED once library y-up coordinates are flipped
   into sheet y-down (`sim_geom._place`) or a 270-degree part swaps its pins.
-- **`project_ops.py` and `sim_spice.py` exist twice** — `api/app/services/`
-  and `render/` must stay byte-identical (same pattern as
-  `render.py`/`server.py`). `project_ops.py` imports `sim_spice` through a
-  `try: from . import … except ImportError: import …` pair, because the API
-  loads it as a package and the render container as a flat module in `/srv`.
+- **The browser DRAWS the schematic; the server only parses it.**
+  `services/sch_draw.py` turns a `.kicad_sch` into a draw document — library
+  graphics in symbol coordinates plus a placement matrix each — and it is
+  attached to the geometry response (`geom["draw"]`) so the two come from ONE
+  parse and can never disagree about item order. `sch_draw.placement_matrix`
+  must stay identical to `sim_geom._place`: the overlay reads a pin the server
+  positioned and the renderer draws it from the matrix. Consequence worth
+  knowing: the project's schematic tab no longer renders SVGs through
+  kicad-cli, so it needs the CHECKOUT rather than a cached render. A pruned
+  checkout is re-materialised from the git mirror; a server with no mirror at
+  all now fails where a cached render used to answer.
+- **There is no schematic IMAGE any more.** `sch_svg`/`sch_svg_plain`,
+  `project_render.sch_pages_zip`, the `/snapshots/…/schematic` endpoints,
+  `/api/sim/…/sheet.svg` and the ingest pre-render are gone. Component
+  previews (`services/render.py`, symbols and footprints from `.kicad_sym` /
+  `.kicad_mod`, cached on disk by content hash) are a DIFFERENT path and are
+  untouched. Object storage has no invalidation for a render nobody asks for,
+  so the deploy that stopped writing them also removes them:
+  `storage.drop_schematic_renders()`, called once on startup in a background
+  thread behind the marker object `maintenance/schematic-renders-dropped.v1`.
+  Listing the bucket is the slow part — a deploy must not wait for it.
+- **The schematic palette and writer** (`services/sch_lib.py`,
+  `services/sch_write.py`) are how a circuit drawn in the browser becomes a
+  real file. Four things KiCad 10 refuses or mis-reads, all found by it
+  refusing to load and saying only "Failed to load schematic":
+  - a `lib_symbols` entry is named by the FULL library id (`"Simulator:R"`)
+    while its unit sub-symbols keep the bare name (`"R_1_1"`);
+  - a `wire` has exactly TWO points — a drawn run of several segments is
+    several wires;
+  - `junction` and `no_connect` take `(at x y)`, with no angle;
+  - `(power global)`, not `(power)`.
+  Two more that load fine and then lie: a pin name written `"~"` inside a
+  `.kicad_sch` is NOT folded away the way it is in a `.kicad_sym`, so every
+  generated net becomes `Net-(R1-~-Pad1)` — write an empty name; and
+  `Sim.Device R` on a switch makes KiCad PREFIX the reference rather than
+  replace it, so `SW1` netlists as `RSW1` and an `alter sw1` is accepted and
+  does nothing (`sim_geom.spice_instance` is what the UI must use).
+- **The palette's active parts reference the platform's OWN models.** An
+  op-amp, an inverter, an AND gate and a D flip-flop are not built from a
+  Value field the way R, C, L and the sources are: each carries the same four
+  link fields the mirror puts on a catalogue part (`Sim.Device SUBCKT`,
+  `Sim.Name sigma_…`, `Sim.Library`, `Sim.Pins`) pointed at
+  `7Sigma_sim.sp`, as `conventions-simulation` requires — never a KiCad
+  install file. `sch_lib._ic` derives `Sim.Pins` from the pin order it is
+  given, so the map cannot drift from the picture. The path written is
+  `pcm.SIM_LIB_INSTALLED`, not the mirror's `${SEVENSIGMA_DIR}` form: both
+  resolve on the server, and only that one also resolves in the user's own
+  KiCad after they install the library package — which a sheet drawn here is
+  meant to be opened in.
+- **A diode needs `Sim.Device D` and `Sim.Params`.** Without them KiCad emits
+  `D1 __D1` — the reference, a model name, and NO NODES. The part vanishes
+  from the circuit and nothing says so, which is the silent-disconnection
+  failure `conventions-simulation` warns about. With them KiCad writes a real
+  `.model` from the parameters. The same mechanism is what gives a part more
+  than one number to set: `sch_lib.PARAM_FORMS` declares what each primitive
+  is asked for, and the browser fills the template in.
+- **A run that PRINTED is a run that succeeded.** A verdict harness executes
+  its analysis inside the `.control` block and echoes a PASS/FAIL table;
+  ngspice writes the rawfile for the DECK's analysis, so such a run finishes
+  with a result and no vectors. `run_ngspice` used to call that "produced no
+  data" and fail — which made every one of `EVSE_20_CTRL`'s six harnesses
+  unrunnable from the UI. It now returns an empty rawfile when the log holds
+  anything the deck itself printed (`_printed_anything`, which discounts
+  ngspice's own banner), and `sim_run` encodes a payload with no plots.
+- **A harness that wants waveforms too says `run`, and leaves `.tran` on the
+  sheet.** The rule above is about what ngspice DOES, not what a harness must
+  settle for: with the analysis inside the control block ngspice writes no
+  rawfile at all, but with `.tran` as a sheet directive and `run` as the first
+  command in the block, the deck's analysis goes to the rawfile `-r` named AND
+  the block still echoes its PASS/FAIL table. One run, waveforms and verdicts
+  (measured 2026-08-30; `services/sim_example.py` is built this way). `run`
+  also picks up whatever analysis the Scenario panel injects, so the checks
+  survive a user asking for a different sweep.
+- **`services/sim_example.py` is the worked circuit the Simulator offers when
+  there is nothing to open** (`POST /api/sim/example`). It is an ordinary
+  sketch — stored by `store_sketch` like any drawing, so it is editable and
+  re-runnable the moment it opens, and nothing downstream knows where it came
+  from. Every coordinate in it is a multiple of 1.27 mm, because a pin off the
+  grid does not connect and nothing says so.
+- **`services/sim_scenario.py` reads a harness rather than rewriting it.** The
+  text items beside the circuit are classified — `.control` blocks are runs,
+  a lone `.tran`/`.ac`/`.dc`/`.op` is the analysis, the rest is stimulus or
+  prose — and served by `GET /api/sim/…/scenarios`, which also carries the
+  analysis forms the run panel builds a directive from. A `.control` block
+  names itself with its first `echo`. The PASS/FAIL table it prints is parsed
+  in the BROWSER (`web/src/sim/scenario.ts`), from the log the run already
+  carries; a second copy here would be a second thing to keep in step.
+- **An operating point has no sweep axis.** `sim_spice.encode_payload` drops
+  the first vector as the axis for a transient, an AC sweep or a DC sweep —
+  but an `.op` writes an ordinary node voltage first, and dropping it loses a
+  reading the user asked for. The axis test is `len(scale) > 1 or the first
+  vector is time/frequency`.
+- **`project_ops.py`, `sim_spice.py`, `board_template.kicad_pcb` and
+  `themes/Skyline-7S.json` exist twice** — `api/app/services/` and `render/`
+  must stay byte-identical, and the workflow's `guard` job fails the build
+  when they are not (same pattern as `render.py`/`server.py`). The theme is on
+  that list because kicad-cli reads it AND the browser's own renderer reads it
+  through `GET /api/sim/theme`; two copies would put the simulator and the
+  schematic tab back into two colour schemes. `project_ops.py` imports
+  `sim_spice` through a `try: from . import … except ImportError: import …`
+  pair, because the API loads it as a package and the render container as a
+  flat module in `/srv`.
 - **NUL is illegal in argv**: git `--format` separators use `\x1f`, never `\x00`.
 - **Price ladders — JLCPCB first, LCSC fallback** (user decision 2026-07-21):
   `component_price_points` rows with a source in `ladder.AUTO_SOURCES`
@@ -1610,6 +1707,61 @@ mirror emits it like any model, `generator.sim_props` points `Sim.Name` at it,
   which is where a missed pin or a crossed rail is visible — and under both,
   the generated netlist itself, because generation nobody reads is generation
   nobody checks.
+
+## The field solver (`services/fieldsolver/`, `routers/field_solver.py`)
+
+A 2D quasi-TEM FEM solver for controlled-impedance geometry — microstrip,
+stripline, coplanar and differential, with via fences. `services/fieldsolver/` is
+a self-contained package (P1 triangles on a Triangle mesh, scipy sparse solves)
+that imports nothing from the platform; the router is the platform half. Design
+record: `docs/decisions/0002-field-solver-in-the-platform.md`.
+
+- **Its dependencies are new and one of them is licence-constrained.** numpy,
+  scipy, shapely and `triangle`; Triangle is free for personal and research use
+  but NOT for commercial distribution, and it publishes an amd64 wheel with no
+  sdist that builds on Python 3.12. Hence the `platform_machine == 'x86_64'`
+  marker in `pyproject.toml` and the LAZY import in `mesh.py::_tr()` — an arm64
+  dev box runs the whole platform and answers 503 for solver calls alone. The
+  images are linux/amd64, so production has it.
+- **User-defined stackups and rule sets live in Postgres** (`FieldStackup`,
+  `FieldRuleSet`), never in JSON beside the code. The solver keeps them in
+  module state because it is a pure library, so every request that reads or
+  solves calls `_sync_library(db)` first — two small selects. Stackup writes are
+  **admin-only** (`require_admin`), because a stackup is a shared fact about how
+  boards are made.
+- **A board's stackup and profiles are commit-versioned** in
+  `services/field_state.py`, which mirrors `services/cost_state.py` exactly:
+  `revision_for` selects by commit date, `revision_for_edit` copies on write, and
+  the profile COPIES carry their results. Never delete a profile because the
+  stackup changed — `is_outdated` compares the stored `stackup_sha` against the
+  board's current one and the UI says so.
+- **`stackup_sha` hashes layers, coating and finish only.** Renaming a stackup
+  must not invalidate anybody's numbers.
+- **A stored result holds numbers, not fields.** Summary, sweep, C/L, notes and
+  the geometry outline; never the solved mesh (tens of megabytes per frequency
+  frame). That is what makes reopening a profile instant and why the field
+  picture alone needs a re-solve.
+- **Jobs are cancellable and abandoned jobs cancel themselves.** The progress
+  callback raises on a cancel flag; `DELETE /api/fieldsolver/jobs/{id}` sets it,
+  and a reaper cancels any job whose client has not polled for 20 s. A solve
+  holds a core and hundreds of megabytes, so a closed tab must not keep one.
+- **The search pool is capped** (`design.WORKERS`, default 4,
+  `FIELDSOLVER_WORKERS` to override) and `design.kill_stray_workers()` sweeps
+  orphans when nothing is running. An unbounded pool once left 40 GB of workers
+  behind and pushed the machine into swap.
+- **One factorisation per run.** `fem.Solver(mesh, K, pre)` reuses the
+  design-frequency LU as a CG preconditioner for every sweep point, because Dk
+  dispersion moves K by only a few percent: a 31-point sweep on a 78k-node mesh
+  went from 12.1 s to 4.9 s with results identical to 7e-13 %.
+- **The model is floored at 1 MHz** (`F_MIN_HZ`). Below that the
+  perfect-conductor assumption stops describing a board. An eddy-current solver
+  covering DC through the skin-effect transition was written, validated against
+  the analytic DC loop resistance and then removed on purpose — do not
+  reintroduce a current-distribution view without reinstating it.
+- Physics tests live in `api/tests/fieldsolver/` (`python -m pytest
+  tests/fieldsolver -q` from `api/`): a parallel-plate line with exact C, Z0 and
+  eps_eff, its analytic conductor loss, plus `validate.py` for the closed-form
+  comparisons (microstrip Hammerstad-Jensen, stripline Wheeler, CPWG conformal).
 
 ## Conventions
 

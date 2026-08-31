@@ -446,7 +446,7 @@ magnitude); `currents.ts` solves the per-segment currents; `SimSheetView.tsx`
 draws the three layers; `Scope.tsx` plots the picked traces; `Simulator.tsx`
 is the page, at `/sim`, reached from a project's schematic tab or with an
 uploaded sheet set. `GET /api/sim/…/sheet.svg` was added for the drawing
-itself. Conventions and the traps behind them are in `web/CLAUDE.md`.
+itself, and removed again in slice 4 when the browser took the drawing over. Conventions and the traps behind them are in `web/CLAUDE.md`.
 
 Verified in a headless browser against the running stack: geometry renders 27
 click targets, the sheet's own AC scenario plots the Sallen-Key roll-off,
@@ -477,12 +477,163 @@ terminal currents at its pins; compute it server-side in the geometry step
 (topology only) and evaluate it client-side per frame. For a net with a loop,
 animate the whole net with its total terminal current and flag it.
 
-### Slice 4 — later, in this order
+### Slice 4 — the browser draws the schematic — **DONE (2026-08-30)**
 
+kicad-cli's SVG was replaced by a renderer in the browser. Two reasons a
+picture could not answer, and both are the whole point of the next slice: a
+picture cannot show a switch closing, and an editor needs to know where things
+ARE, not what they looked like. It also removes a ~1 s round trip per sheet.
+
+| File | Change |
+|---|---|
+| `api/app/services/sch_draw.py` | **new.** A `.kicad_sch` -> draw document: library graphics in symbol coordinates, one placement matrix per instance, sheet items. Attached to the geometry response, from the SAME parse, so ids line up |
+| `api/app/services/themes/Skyline-7S.json` | the theme kicad-cli renders with, now also served to the browser (`GET /api/sim/theme`) and guarded byte-identical against `render/themes/` |
+| `web/src/sim/draw/{types,geom}.ts`, `KicadSheet.tsx`, `SchematicView.tsx` | **new.** THE schematic renderer — one module for the project tab, the simulator and the editor |
+| `web/src/components/project/SchematicTab.tsx` | rewritten onto it; the per-page SVG render and the click-map hotspots are gone |
+
+**The schematic image cache went with it.** Nothing rendered a page SVG any
+more, so `sch_svg` / `sch_svg_plain`, `project_render.sch_pages_zip`, the two
+`/snapshots/…/schematic` endpoints, `/api/sim/…/sheet.svg` and the ingest
+warm-up were all removed. Measured on the 87-part sheet: kicad-cli took 0.87 s
+and wrote 2.7 MB across 8 files, against 57 ms and 217 kB of JSON for the
+parse the browser reads — and the render ran once per board per commit,
+kept for good, because a commit is immutable and there is no invalidation path
+for a render nobody asks for. `storage.drop_schematic_renders()` deletes what
+was already stored; startup calls it once, in the background, behind a marker
+object.
+
+Verified side by side against `kicad-cli sch export svg` on a real 87-part
+sheet (`SAFETY.kicad_sch`, 10 library symbols, 187 wires, 78 labels). Three
+things the comparison corrected that reasoning had got wrong: a field is drawn
+at its own angle PLUS the symbol's; a label's stored justification is already
+the one for the text as drawn and must not be flipped again for a half-turn;
+and body lettering must be drawn after the fills or a gate's `&` is covered by
+its own body.
+
+### Slice 5 — drawing a circuit in the browser — **DONE (2026-08-30)**
+
+| File | Change |
+|---|---|
+| `api/app/services/sch_lib.py` | **new.** R, C, L, D, V, I, switch, ground, rail as real KiCad symbol definitions — because the file the editor saves has to open in KiCad |
+| `api/app/services/sch_write.py` | **new.** The editor's document -> a `.kicad_sch` |
+| `api/app/routers/sim_runs.py` | `GET /api/sim/palette`, `POST /api/sim/sketch`, `GET /api/sim/upload/{id}/sketch` |
+| `web/src/sim/edit/{doc.ts,SchEditor.tsx}` | **new.** The document, its derivations, and the editing surface |
+| `web/src/pages/Simulator.tsx` | a Draw mode, and part hotspots in live mode |
+
+A saved sketch becomes an ordinary **upload source**, so a circuit drawn in the
+browser runs through exactly the same pipeline as one drawn in KiCad — no
+second engine, no second contract.
+
+**It writes new sheets only.** Opening a sheet KiCad wrote would mean writing
+it back from a document that does not model every token in it, and the drop
+would be silent. The Edit button appears only for a source this editor drew.
+
+**A contact flipped live is flipped on the DRAWING too.** The netlist value
+is what `alter` changes, and the file still says what it said, so the blade
+would otherwise stay open beside a reading that says closed. A sheet written
+by the editor embeds BOTH switch definitions, so this is a swap of `lib_id`
+(and the Value that goes with it), not a redraw. The knob panel's value is
+owned by the page for the same reason — the drawing and the panel change the
+same number.
+
+Verified end to end in a headless browser against the running stack, on
+rebuilt local images: five parts placed, wired, a label and a `.tran` typed,
+saved, netlisted and run. Then in live mode, the switch clicked ON THE
+DRAWING, twice:
+
+| | `/MID` | blade | `rsw1` |
+|---|---|---|---|
+| open | 50 µV | diagonal | 1G |
+| closed | 2.50 V | straight | 10m |
+| open again | 50 µV | diagonal | 1G |
+
+all while the same transient carried on.
+
+`api/cli/simcheck.py` covers the new path: the draw document agreeing with the
+geometry, a sketch written and run, the `.op` keeping its first column, and
+the switch netlisting as `RSW1`.
+
+### Slice 6 — one view — **DONE (2026-08-30)**
+
+Editing was a separate screen. It is now the same view: `sim/SimulatorView.tsx`
+absorbed both `SimSheetView` and `SchEditor`, `Edit` is a toolbar toggle, and
+the overlay stays on the drawing while the tools are out. `useSimOverlay`
+holds the tint, the charge canvas and the click targets so the editable and
+read-only paths share one of each.
+
+An edit saves itself 700 ms after the last change — in place, through
+`POST /api/sim/sketch?id=…` — and bumps a revision that re-reads the geometry
+and the netlist. Verified end to end: a circuit drawn, run (`.op`, switch
+open, 100 µV on the divider top), then the contact closed IN THE EDITOR and
+run again without leaving the page — 5.00 V and 2.50 V, the answer the closed
+circuit has.
+
+### Slice 7 — the scenario, the analysis and the verdict — **DONE (2026-08-30)**
+
+| File | Change |
+|---|---|
+| `api/app/services/sim_scenario.py` | **new.** Classifies a harness's text items into runs, analysis, stimulus and prose, and declares the analysis forms |
+| `api/app/routers/sim_runs.py` | `GET /api/sim/…/scenarios` |
+| `web/src/sim/scenario.ts` | reads the PASS/FAIL table out of a run's log |
+| `web/src/sim/ScenarioPanel.tsx` | **new.** The runs on offer, the analysis form, the verdict table |
+| `sim_spice.run_ngspice` + `project_ops` | a run that PRINTED is a run that succeeded |
+
+The last row is the one that mattered. A verdict harness runs its analysis
+inside the `.control` block and echoes a table; ngspice writes the rawfile for
+the deck's own analysis, so the run finishes with a result and no vectors.
+Calling that "produced no data" made all six of `EVSE_20_CTRL`'s harnesses
+unrunnable from the UI.
+
+Verified: `SAFETY_sim` lists its scenario as **"EVSE_20_CTRL SAFETY chain — 100
+checks"**, and a circuit drawn in the editor with its own `.control` block runs
+and reports `PASS D1 midpoint sits at half the rail` / `FAIL D2 midpoint is the
+whole rail`, grouped under the section the harness printed.
+
+### Slice 8 — parts that need a model, and a worked example — **DONE (2026-08-30)**
+
+| File | Change |
+|---|---|
+| `api/app/services/sch_lib.py` | `_ic`, and four palette parts backed by library models: `OPAMP`, `INV`, `AND`, `DFF` |
+| `api/app/services/sim_example.py` | **new.** The worked circuit, as an editor document |
+| `api/app/routers/sim_runs.py` | `POST /api/sim/example` |
+| `web/src/pages/Simulator.tsx`, `web/src/api.ts` | "Open the example" beside "Draw a circuit" |
+
+The palette used to hold only parts SPICE builds from a Value field. These
+four hold the same four link fields the mirror puts on a catalogue part —
+`Sim.Device SUBCKT`, `Sim.Name sigma_…`, `Sim.Library`, `Sim.Pins` — pointed at
+`7Sigma_sim.sp`, which is where `sigma_opamp`, `sigma_inv`, `sigma_and4` and
+`sigma_dff` already lived. `Sim.Pins` is derived from the pin order given to
+`_ic`, so the map cannot drift from the picture, and the library path written
+is the PCM-installed one, which resolves both on the server and in the user's
+own KiCad.
+
+The example is one A3 sheet: +5 V / -5 V rails, a non-inverting amplifier at a
+gain of 11, a 1 kHz clock through two inverters (which is what a buffer is,
+and drawing them says so), a D flip-flop dividing it by two, and an AND gate
+combining the two with its spare inputs on the rail where a reader can see
+them. No hidden `X` lines — every block is a placed symbol, as
+`conventions-simulation` requires.
+
+**A harness can return waveforms AND verdicts.** Not by relaxing anything: put
+`.tran` on the sheet and make `run` the first command in the `.control` block.
+ngspice then writes the rawfile `-r` named, because the analysis belongs to the
+deck, and the block still echoes its table. With `tran` inside the block it
+writes no rawfile at all (measured). `run` also picks up whatever analysis the
+Scenario panel injects.
+
+Verified end to end over HTTP: 12 nets and no others, no dangling pin, no wire
+through a body, no crossing wires, a 1380-point transient across 17 vectors,
+and four checks passing.
+
+### Slice 9 — later, in this order
+
+- Placing parts from the platform library, with `Sim.*` already attached.
+- Editing a sheet KiCad wrote: patch the parsed tree (`parse_sexpr` lists
+  re-serialised, never kiutils objects) rather than regenerating it.
 - Scenario library UI (pick among several `.control` text items, per-sheet).
-- Editing in the web renderer, writing `.kicad_sch` back (`parse_sexpr` lists
-  re-serialised, never kiutils objects, so unknown nodes survive).
-- Placing parts from the platform library with `Sim.*` already attached.
+- A switch that came from KiCad has only one blade position, so its live
+  state shows in the readout and not on the drawing. It needs the platform's
+  own switch symbol to carry both.
 - Engine in the browser (ngspice WASM) behind the same contracts.
 
 ## 6. Conventions that apply

@@ -164,10 +164,38 @@ def run_ngspice(netlist: str, work_dir: str | Path, *, ngspice: str = "ngspice",
         raise SimError(f"ngspice did not finish within {timeout}s") from e
     log = (proc.stdout or "") + (proc.stderr or "")
     if not raw.exists() or raw.stat().st_size == 0:
+        # A verdict harness runs its analysis INSIDE the control block and
+        # prints a table; ngspice writes the rawfile for the deck's own
+        # analysis, so such a run has a result and no vectors. That is a
+        # successful run, not a failure — `EVSE_20_CTRL` has six of them, and
+        # treating them as failures made every one unrunnable from the UI.
+        # A run that produced neither vectors NOR output really did fail.
+        if _printed_anything(log):
+            return b"", log
         raise SimError(
             f"ngspice produced no data (rc={proc.returncode}). {complaints(log)}"
         )
     return raw.read_bytes(), log
+
+
+def _printed_anything(log: str) -> bool:
+    """Did the run say something a person asked it to say?
+
+    ngspice's own banner and timings are always there, so they cannot count.
+    A line the deck ECHOED is the evidence that the control block ran.
+    """
+    noise = ("note:", "warning", "circuit:", "doing analysis", "using ",
+             "total analysis", "total elapsed", "total dram", "dram currently",
+             "maximum ngspice", "current ngspice", "binary raw file",
+             "no. of data")
+    for line in log.splitlines():
+        text = line.strip()
+        if not text or text.startswith(("*", "---")):
+            continue
+        if any(text.lower().startswith(n) for n in noise):
+            continue
+        return True
+    return False
 
 
 # ngspice repeats one complaint for every failed timestep — 48 copies of the
@@ -385,9 +413,16 @@ def encode_payload(plots: list[dict], *, nets: set[str] | None = None,
         scale_vals = plot["values"][0]
         if plot["complex"]:
             scale_vals = scale_vals[0::2]
+        # The first vector is the sweep axis — time, frequency, the swept
+        # source of a DC sweep. An OPERATING POINT has no axis: ngspice still
+        # writes a first column, but it is an ordinary node voltage, and
+        # dropping it the way an axis is dropped loses a reading the user
+        # asked for. (Seen on a two-resistor divider: the 5 V rail was
+        # reported "not in this run" because it happened to be listed first.)
+        axis = len(scale_vals) > 1 or vecs[0]["type"] in ("time", "frequency")
         keep: list[tuple[dict, dict]] = []
         for idx, vec in enumerate(vecs):
-            if idx == 0:
+            if idx == 0 and axis:
                 continue
             cls = classify(vec["name"], nets)
             if cls:

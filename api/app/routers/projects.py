@@ -405,41 +405,6 @@ def board_step(snapshot_id: int, board: str, db: Session = Depends(get_db)):
     return _render_or_404(key, "board_step", rel)
 
 
-@router.get("/snapshots/{snapshot_id}/boards/{board}/schematic")
-def schematic_pages(snapshot_id: int, board: str, variant: str = "", db: Session = Depends(get_db)):
-    """Renders (cached) and lists the page SVGs for a board's schematic."""
-    import io
-    import zipfile
-
-    s, _, rel = _rel_src(db, snapshot_id, board, "sch")
-    try:
-        data = project_render.sch_pages_zip(s.project_id, s.sha, board, rel, variant)
-    except Exception as e:
-        raise HTTPException(502, f"render failed: {e}") from e
-    with zipfile.ZipFile(io.BytesIO(data)) as z:
-        pages = sorted(n for n in z.namelist() if n.endswith(".svg"))
-    return {"variant": variant, "pages": pages}
-
-
-@router.get("/snapshots/{snapshot_id}/boards/{board}/schematic/page")
-def schematic_page(snapshot_id: int, board: str, page: str, variant: str = "",
-                   db: Session = Depends(get_db)):
-    import io
-    import zipfile
-
-    s, _, rel = _rel_src(db, snapshot_id, board, "sch")
-    try:
-        data = project_render.sch_pages_zip(s.project_id, s.sha, board, rel, variant)
-        with zipfile.ZipFile(io.BytesIO(data)) as z:
-            if page not in z.namelist():
-                raise HTTPException(404, "page not found")
-            return Response(content=z.read(page), media_type="image/svg+xml")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"render failed: {e}") from e
-
-
 @router.get("/snapshots/{snapshot_id}/boards/{board}/map")
 def board_map(snapshot_id: int, board: str, db: Session = Depends(get_db)):
     """Interactive click-map: footprint/symbol hotspots (mm, same coordinate

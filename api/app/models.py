@@ -158,6 +158,95 @@ class Model3D(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+# ------------------------------------------------------------- field solver
+class FieldStackup(Base):
+    """A user-defined PCB stackup for the 2D field solver.
+
+    The built-in fab stackups ship as JSON inside the solver package; anything the
+    user builds in the UI lives here, so it survives a redeploy and is shared by
+    everyone on the platform. `data` holds the same shape as the JSON entries.
+    """
+
+    __tablename__ = "field_stackups"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(120), unique=True)      # the id used by the solver
+    name: Mapped[str] = mapped_column(String(200))
+    data: Mapped[dict] = mapped_column(JSONB)
+    created_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class ProjectFieldRevision(Base):
+    """Immutable revision of a project board's impedance work — which stackup the
+    board is built on and which impedance profiles it carries, versioned together.
+
+    Same commit-anchored rule as ProjectCostRevision: a revision created at commit X
+    applies from X forward, editing at commit Y copies what is visible at Y into a
+    new revision anchored at Y, and earlier commits keep what they had. That is what
+    makes an assignment travel with later commits until somebody changes it."""
+
+    __tablename__ = "project_field_revisions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    # A repository can hold several boards; "" is the project's only/default board.
+    board: Mapped[str] = mapped_column(String(200), default="")
+    effective_sha: Mapped[str] = mapped_column(String(64), default="")
+    effective_ref: Mapped[str] = mapped_column(String(200), default="")
+    effective_committed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # the library stackup this board is built on, by FieldStackup.key or a builtin id
+    stackup_key: Mapped[str] = mapped_column(String(120), default="")
+    created_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (Index("ix_field_rev_project_board", "project_id", "board"),)
+
+
+class ProjectFieldProfile(Base):
+    """One impedance requirement of a board — "100 Ω differential at 2.4 GHz" — with
+    the geometry the solver found for it and, when it has been run, the result.
+
+    `result` deliberately holds the NUMBERS (summary, per-frequency sweep, C/L, notes,
+    geometry outline) and not the solved mesh: a field is tens of megabytes per frame
+    and is cheap to redraw only by re-solving. `stackup_sha` records what the numbers
+    were computed against, which is what makes an outdated result visible instead of
+    silently wrong after the board moves to another stackup."""
+
+    __tablename__ = "project_field_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    revision_id: Mapped[int] = mapped_column(ForeignKey("project_field_revisions.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    name: Mapped[str] = mapped_column(String(120))
+    # the whole profile as the solver page holds it: type, target, tolerance,
+    # design frequency, ranges, per-layer cells
+    config: Mapped[dict] = mapped_column(JSONB)
+    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    solved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stackup_key: Mapped[str] = mapped_column(String(120), default="")
+    stackup_sha: Mapped[str] = mapped_column(String(64), default="")
+    created_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class FieldRuleSet(Base):
+    """A user-defined production rule set (trace/space minima, via sizes, plating,
+    etch undercut, coating defaults) for the field solver."""
+
+    __tablename__ = "field_rulesets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(120), unique=True)
+    name: Mapped[str] = mapped_column(String(200))
+    data: Mapped[dict] = mapped_column(JSONB)
+    created_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 # ---------------------------------------------------------------- simulation
 class SimModel(Base):
     """A SPICE subcircuit and its version history.
