@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-08-31 — Field solver
+
+Controlled-impedance geometry moved from the standalone prototype into the
+platform, as **Simulator → Field solver**. A 2D quasi-TEM FEM solver for
+microstrip, stripline, coplanar and differential lines with via fences, checked
+against closed forms (microstrip Hammerstad-Jensen 0.6 %, stripline Wheeler
+0.1 %, CPWG conformal 2.5 %) and against JLCPCB's own calculator.
+
+- Stackups and production rules are library data in Postgres. Stackups are
+  written by administrators only; anybody may assign one to a board.
+- A board's stackup and its impedance profiles are commit-versioned like the
+  cost plan: assigned at a commit, carried forward until changed. Changing the
+  stackup keeps every profile and result and marks the results outdated.
+- The board file and the assigned stackup may disagree; the difference is
+  reported, nothing is blocked.
+- The sweep is floored at 1 MHz — below that a perfect conductor stops
+  describing a real board.
+- `triangle`, the mesher, is licensed for personal and research use only and
+  must be replaced before any commercial release.
+
 This file starts on 2026-08-28. For earlier work, read the git history.
 
 Each entry says what changed and why. Put a note here when a change alters how
