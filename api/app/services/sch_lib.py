@@ -154,10 +154,17 @@ _RAIL_BODY = (
 #
 # R, C, L, V, I and the diode netlist with nothing behind them. An amplifier
 # or a flip-flop does not: it is a `.subckt`, and the library already holds
-# the ones below (`sigma_opamp`, `sigma_inv`, `sigma_and4`, `sigma_dff` —
-# `conventions-simulation`: reference only OUR models, never a KiCad install
-# file). So these primitives carry the four link fields the mirror puts on a
-# catalogue part, pointed at the same file.
+# the ones below (`sigma_opamp`, `sigma_rail_inv`, `sigma_rail_and4`,
+# `sigma_rail_dff_sr` — `conventions-simulation`: reference only OUR models,
+# never a KiCad install file). So these primitives carry the four link fields
+# the mirror puts on a catalogue part, pointed at the same file.
+#
+# THE RAIL FAMILY TAKES ITS SUPPLY FROM ITS PINS, NOT FROM A PARAMETER. The
+# earlier `sigma_inv` / `sigma_and4` / `sigma_dff` carried a `VDD` parameter
+# and were retired for it: a logic model that is told its rail cannot show
+# what happens when the rail sags. Every name and every parameter here has to
+# track the library, because a deleted model is only discovered when a run
+# fails with "could not find base model".
 #
 # The path is the PCM-INSTALLED one, not the mirror's `${SEVENSIGMA_DIR}`
 # form. Both resolve on the server, but only this one also resolves in the
@@ -186,7 +193,9 @@ def _ic(lib_id: str, ref: str, value: str, body: str, pins: list[tuple],
     name = lib_id.split(":", 1)[1]
     sim_pins = " ".join(f"{n}={p}" for n, p, *_ in pins)
     pin_defs = "".join(
-        _pin("passive" if p in ("vcc", "vee") else "input" if p in ("in", "in+", "in-", "clk", "d", "a", "b", "c") else "output",
+        _pin("passive" if p in ("vcc", "vee")
+             else "input" if p in ("in", "in+", "in-", "clk", "d", "a", "b", "c", "pren", "clrn")
+             else "output",
              x, y, ang, ln, n, p.upper())
         for n, p, x, y, ang, ln in pins
     )
@@ -267,7 +276,7 @@ DEFINITIONS: dict[str, str] = {
          ("2", "out", 7.62, 0, 180, 2.54),
          ("3", "vcc", 0, 6.35, 270, 4.445),
          ("4", "vee", 0, -6.35, 90, 4.445)],
-        model="sigma_inv", params="VDD=5 TPLH=20n TPHL=15n ROUT=50",
+        model="sigma_rail_inv", params="ROUT=50 TT=20n",
         field_x=6.35, field_y=5.08, names_hidden=True),
     "Simulator:AND": _ic(
         "Simulator:AND", "U", "AND4", _GATE_BODY,
@@ -278,16 +287,18 @@ DEFINITIONS: dict[str, str] = {
          ("5", "y", 7.62, 2.54, 180, 2.54),
          ("6", "vcc", 0, 10.16, 270, 2.54),
          ("7", "vee", 0, -10.16, 90, 2.54)],
-        model="sigma_and4", params="VDD=5 TPD=20n ROUT=50", field_x=7.62, field_y=8.89),
+        model="sigma_rail_and4", params="ROUT=50 TT=20n", field_x=7.62, field_y=8.89),
     "Simulator:DFF": _ic(
         "Simulator:DFF", "U", "DFF", _DFF_BODY,
         [("1", "d", -7.62, 2.54, 0, 2.54),
          ("2", "clk", -7.62, -2.54, 0, 2.54),
-         ("3", "q", 7.62, 2.54, 180, 2.54),
-         ("4", "qn", 7.62, -2.54, 180, 2.54),
-         ("5", "vcc", 0, 10.16, 270, 2.54),
-         ("6", "vee", 0, -10.16, 90, 2.54)],
-        model="sigma_dff", params="VDD=5 TPD=25n ROUT=50", field_x=8.89, field_y=8.89),
+         ("3", "pren", -7.62, 5.08, 0, 2.54),
+         ("4", "clrn", -7.62, -5.08, 0, 2.54),
+         ("5", "q", 7.62, 2.54, 180, 2.54),
+         ("6", "qn", 7.62, -2.54, 180, 2.54),
+         ("7", "vcc", 0, 10.16, 270, 2.54),
+         ("8", "vee", 0, -10.16, 90, 2.54)],
+        model="sigma_rail_dff_sr", params="ROUT=50 TT=25n", field_x=8.89, field_y=8.89),
     "Simulator:GND": _power("Simulator:GND", "0", _GND_BODY, 270),
     "Simulator:VRAIL": _power("Simulator:VRAIL", "VCC", _RAIL_BODY, 90),
 }
@@ -424,25 +435,27 @@ PARAM_FORMS: dict[str, list[dict]] = {
     "Simulator:INV": [{
         "id": "model", "label": "Inverter", "target": "params", "template": "",
         "fields": [
-            _f("VDD", "Logic level", "V", "5", scale="linear", lo=1, hi=15, live=False),
-            _f("TPLH", "Delay low to high", "s", "20n", lo=1e-12, hi=1e-3, live=False),
-            _f("TPHL", "Delay high to low", "s", "15n", lo=1e-12, hi=1e-3, live=False),
+            _f("VTP", "Rising threshold", "x rail", "0.5", scale="linear", lo=0.1, hi=0.9, live=False),
+            _f("VTN", "Falling threshold", "x rail", "0.5", scale="linear", lo=0.1, hi=0.9, live=False),
+            _f("TT", "Transition time", "s", "20n", lo=1e-12, hi=1e-3, live=False),
             _f("ROUT", "Output resistance", "\u03a9", "50", lo=1e-3, hi=1e6, live=False),
         ],
     }],
     "Simulator:AND": [{
         "id": "model", "label": "AND gate", "target": "params", "template": "",
         "fields": [
-            _f("VDD", "Logic level", "V", "5", scale="linear", lo=1, hi=15, live=False),
-            _f("TPD", "Propagation delay", "s", "20n", lo=1e-12, hi=1e-3, live=False),
+            _f("VTP", "Rising threshold", "x rail", "0.5", scale="linear", lo=0.1, hi=0.9, live=False),
+            _f("VTN", "Falling threshold", "x rail", "0.5", scale="linear", lo=0.1, hi=0.9, live=False),
+            _f("TT", "Transition time", "s", "20n", lo=1e-12, hi=1e-3, live=False),
             _f("ROUT", "Output resistance", "\u03a9", "50", lo=1e-3, hi=1e6, live=False),
         ],
     }],
     "Simulator:DFF": [{
         "id": "model", "label": "D flip-flop", "target": "params", "template": "",
         "fields": [
-            _f("VDD", "Logic level", "V", "5", scale="linear", lo=1, hi=15, live=False),
-            _f("TPD", "Clock to output", "s", "25n", lo=1e-12, hi=1e-3, live=False),
+            _f("VTP", "Rising threshold", "x rail", "0.5", scale="linear", lo=0.1, hi=0.9, live=False),
+            _f("VTN", "Falling threshold", "x rail", "0.5", scale="linear", lo=0.1, hi=0.9, live=False),
+            _f("TT", "Transition time", "s", "25n", lo=1e-12, hi=1e-3, live=False),
             _f("ROUT", "Output resistance", "\u03a9", "50", lo=1e-3, hi=1e6, live=False),
         ],
     }],

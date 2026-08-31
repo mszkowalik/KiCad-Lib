@@ -1,7 +1,8 @@
 """The circuit the simulator opens when there is nothing to open yet.
 
 An empty sheet is a bad first screen: it teaches nothing, and the parts that
-need a model (`sigma_opamp`, `sigma_inv`, `sigma_and4`, `sigma_dff`) are
+need a model (`sigma_opamp`, `sigma_rail_inv`, `sigma_rail_and4`,
+`sigma_rail_dff_sr`) are
 exactly the ones a person will not guess how to wire. So this builds one
 worked sheet out of the palette, with every block a drawn symbol — no hidden
 `X` lines, as `conventions-simulation` requires of a harness.
@@ -15,12 +16,17 @@ Four blocks, left to right, top to bottom:
 1. Supplies. +5 V and -5 V against ground, as `VCC` and `VEE` rails.
 2. An amplifier. `sigma_opamp` in the non-inverting form, gain 1 + R2/R1 = 11,
    driven by a 100 mV 1 kHz sine.
-3. A clock chain. `sigma_inv` inverts a 1 kHz square wave, a second `sigma_inv`
+3. A clock chain. `sigma_rail_inv` inverts a 1 kHz square wave, a second one
    inverts it back — two inverters in series ARE the buffer, and drawing them
-   says so — and the buffered clock drives a `sigma_dff` wired D from QN, which
-   divides it by two.
-4. A gate. `sigma_and4` ANDs the buffered clock with Q, with its two spare
-   inputs tied to the rail where a reader can see them.
+   says so — and the buffered clock drives a `sigma_rail_dff_sr` wired D from
+   QN, which divides it by two. Its active-low PRESET and CLEAR sit on VCC,
+   drawn rather than assumed, because the model declares them and every port
+   a model declares has to be claimed by a pin.
+4. A gate. `sigma_rail_and4` ANDs the buffered clock with Q, with its two
+   spare inputs tied to the rail where a reader can see them.
+
+The logic here is the RAIL-FOLLOWING family: it takes its supply from its vcc
+and vee pins and has no VDD parameter. That is why the rails are drawn.
 
 Geometry rule: every coordinate is a multiple of 1.27 mm. A pin off the grid
 does not connect, and nothing says so.
@@ -177,6 +183,10 @@ def document() -> dict:
         _sym("Simulator:DFF", 135.89, 121.92, "U4", "DFF"),
         _pwr("Simulator:VRAIL", 135.89, 111.76, value="VCC"),
         _pwr("Simulator:GND", 135.89, 132.08),
+        # PREN and CLRN are ACTIVE LOW, so idle is the rail. They are wired
+        # short and outward, clear of the D-from-QN loop that runs up x=120.65.
+        _pwr("Simulator:VRAIL", 123.19, 116.84, value="VCC"),
+        _pwr("Simulator:VRAIL", 123.19, 127.0, value="VCC", angle=180),
     ]
     wires += [
         _wire((38.1, 132.08), (38.1, 135.89)),
@@ -189,6 +199,8 @@ def document() -> dict:
         # will read as a connection.
         _wire((143.51, 124.46), (160.02, 124.46), (160.02, 104.14),
               (120.65, 104.14), (120.65, 119.38), (128.27, 119.38)),
+        _wire((128.27, 116.84), (123.19, 116.84)),
+        _wire((128.27, 127.0), (123.19, 127.0)),
     ]
     labels += [
         _label("CLK", 46.99, 121.92),
@@ -225,6 +237,7 @@ def document() -> dict:
             "U1 is a non-inverting amplifier: gain = 1 + R2/R1 = 11.\n"
             "U2 and U3 are two inverters in series, which is a buffer.\n"
             "U4 divides the buffered clock by two (D from QN).\n"
+            "Its PRESET and CLEAR are active low and sit on VCC.\n"
             "U5 ANDs the buffered clock with Q. Its spare inputs sit on VCC.\n"
             "Run it, then probe /AMPOUT, /BCLK, /Q and /GATED.",
             25.4, 20.32, excluded=True, h=1.778),
