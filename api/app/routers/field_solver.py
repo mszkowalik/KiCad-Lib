@@ -479,46 +479,49 @@ def _stackup_dict(key: str) -> dict | None:
 
 
 def _board_state(db: Session, project_id: int, board: str, snapshot):
+    """The board's assigned stackup and profiles at this commit, plus whatever the
+    `.kicad_pcb` says about its own stackup.
+
+    One implementation, because two callers read it: the endpoint below and the
+    agent tool `fieldsolver_board`. The board file and the assigned stackup are
+    allowed to disagree — the difference is reported, never enforced.
+    """
     rev, profiles = field_state.state_for(db, project_id, board, snapshot)
     key = rev.stackup_key if rev else ""
     st = _stackup_dict(key) if key else None
     sha = field_state.stackup_sha(st)
-    return {
+    out = {
         "revision": field_state.revision_json(rev),
         "stackup": st,
         "profiles": [
             field_state.profile_json(p, field_state.is_outdated(p, sha, key)) for p in profiles
         ],
+        "board_file": None,
+        "mismatch": [],
     }
+    if snapshot is not None:
+        try:
+            from ..services import gitrepo
+
+            root = gitrepo.materialize(snapshot.project_id, snapshot.sha)
+            name = board or ((snapshot.boards or [{}])[0] or {}).get("name", "")
+            entry = next((b for b in (snapshot.boards or []) if b.get("name") == name), None)
+            pcb = entry.get("pcb") if entry else None
+            if pcb:
+                declared = field_state.board_stackup(root / pcb)
+                out["board_file"] = declared
+                out["mismatch"] = field_state.compare_stackup(declared, st)
+        except Exception:
+            # a pruned checkout or an unreadable board must not break the page
+            out["board_file"] = None
+    return out
 
 
 @router.get("/projects/{project_id}/board")
 def board_state(project_id: int, board: str = "", snapshot_id: int | None = None,
                 db: Session = Depends(get_db)):
-    """The board's assigned stackup and profiles at this commit, plus whatever the
-    `.kicad_pcb` says about its own stackup — the two are allowed to disagree, and
-    the difference is reported rather than enforced."""
     _sync_library(db)
-    snap = _snapshot(db, snapshot_id)
-    out = _board_state(db, project_id, board, snap)
-    out["board_file"] = None
-    out["mismatch"] = []
-    if snap is not None:
-        try:
-            from ..services import gitrepo
-
-            root = gitrepo.materialize(snap.project_id, snap.sha)
-            name = board or ((snap.boards or [{}])[0] or {}).get("name", "")
-            entry = next((b for b in (snap.boards or []) if b.get("name") == name), None)
-            pcb = entry.get("pcb") if entry else None
-            if pcb:
-                declared = field_state.board_stackup(root / pcb)
-                out["board_file"] = declared
-                out["mismatch"] = field_state.compare_stackup(declared, out["stackup"])
-        except Exception:
-            # a pruned checkout or an unreadable board must not break the page
-            out["board_file"] = None
-    return out
+    return _board_state(db, project_id, board, _snapshot(db, snapshot_id))
 
 
 @router.post("/projects/{project_id}/stackup")

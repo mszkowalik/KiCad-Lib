@@ -618,6 +618,20 @@ validation. Audit actions in use: `publish`, `review.check`, `review.revoke`,
 
 ### Jaravis implementation notes (`services/jaravis.py`)
 
+- **Simulation and the field solver are on the tool surface too** (2026-08-31).
+  Running: `sim_projects`, `sim_scenarios`, `sim_netlist`, `sim_run_scenario` —
+  the last one returns the harness's PASS/FAIL verdicts, per-vector min/max/final
+  and the ngspice log tail, never the 7SIM binary (a transient is tens of
+  thousands of points per vector). Impedance: `fieldsolver_stackups`,
+  `fieldsolver_rules`, `fieldsolver_geometry`, `fieldsolver_solve`,
+  `fieldsolver_find_solutions`, `fieldsolver_board`,
+  `fieldsolver_assign_stackup`, `fieldsolver_save_profile`. Two deliberate
+  omissions: **no stackup create/edit tool** — a stackup is admin-only and a tool
+  call carries no signed-in administrator — and **no profile delete**, because
+  overwriting by name is enough and a delete would be the one destructive act on
+  somebody else's board. `fieldsolver_solve` and `fieldsolver_find_solutions` run
+  the FEM inline (seconds to a minute), so they take small sweeps by default; the
+  browser's job queue exists for the long ones.
 - 26 client tools + 2 Anthropic **server tools** (`web_search_20260209`,
   `web_fetch_20260209` — plain dicts appended to the runner's tools list; they
   execute on Anthropic's side, no beta header, `max_uses` caps cost).

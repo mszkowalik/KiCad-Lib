@@ -11,9 +11,14 @@ Auth: the anthropic client resolves credentials from the environment
 from __future__ import annotations
 
 import contextvars
+import dataclasses
 import json
+import math
 import os
+import re
 import threading
+
+from datetime import datetime, timezone
 
 import anthropic
 from anthropic import beta_tool
@@ -23,6 +28,7 @@ from ..config import settings
 from ..db import SessionLocal
 from ..routers.util import category_path, current_version, props_dict, resolved_value
 from ..services import memory
+from ..services.fieldsolver import rules as fs_rules
 from ..services.generator import PRICE_KEY_TO_COL
 from ..services.lcsc import fetch_metadata
 
@@ -1789,6 +1795,461 @@ def set_symbol_sim_link(symbol_name: str, model_name: str, pin_map_json: str) ->
         db.close()
 
 
+# ---------------------------------------------------------------- field solver
+# The 2D quasi-TEM solver behind Simulator -> Field solver. These tools mirror
+# `routers/field_solver.py`, minus the stackup WRITES: a stackup is admin-only
+# (user decision 2026-08-31) and a tool call carries no signed-in administrator,
+# so the agent reads the library and assigns from it, and a person creates one.
+
+
+def _fs_sync(db) -> None:
+    """Load the user-defined stackups and rule sets the way the router does."""
+    from ..services.fieldsolver.stackups import STACKS
+
+    STACKS.load_user({r.key: dict(r.data, id=r.key, name=r.name) for r in db.query(M.FieldStackup).all()})
+    fs_rules.load_user({r.key: dict(r.data, id=r.key, name=r.name) for r in db.query(M.FieldRuleSet).all()})
+
+
+def _fs_params(params: dict) -> object:
+    from ..services.fieldsolver.templates import Params
+
+    d = dict(params)
+    d.setdefault("template", "microstrip")
+    # the page's word for a single-ended line is not the solver's
+    if d["template"] == "single":
+        d["template"] = "microstrip"
+    from_range = d.get("fence_distance", 0.5) is None
+    if from_range:
+        d["fence_distance"] = 0.5
+    known = {f.name for f in dataclasses.fields(Params)}
+    q = Params(**{k: v for k, v in d.items() if k in known})
+    q.fence_from_range = from_range
+    return q
+
+
+@beta_tool
+def fieldsolver_stackups() -> str:
+    """List the PCB stackups the field solver can build against.
+
+    Each entry carries its layers with thicknesses and Dk, the solder mask and
+    surface finish, the total board thickness, and where the numbers came from
+    (`source`) — the fab's published stackup, or a user-defined one (`builtin:
+    false`). Use the `id` as the `stackup` in fieldsolver_solve /
+    fieldsolver_find_solutions and as `stackup_key` in
+    fieldsolver_assign_stackup.
+
+    Creating or editing a stackup is deliberately NOT available here: a stackup
+    is a shared fact about how boards get made and only an administrator writes
+    one, in the web UI.
+    """
+    db = SessionLocal()
+    try:
+        from ..services.fieldsolver.stackups import STACKS
+
+        _fs_sync(db)
+        return json.dumps({"stackups": STACKS.to_list()})
+    finally:
+        db.close()
+
+
+@beta_tool
+def fieldsolver_rules() -> str:
+    """List the production rule sets (trace/space minima, via sizes and plating,
+    etch undercut, coating defaults) the solver checks a geometry against.
+
+    Pass an `id` from here as `rule` to fieldsolver_geometry to get the fab
+    warnings for a configuration.
+    """
+    db = SessionLocal()
+    try:
+        _fs_sync(db)
+        return json.dumps({"rules": [fs_rules.flat(r) for r in fs_rules.RULES.values()]})
+    finally:
+        db.close()
+
+
+@beta_tool
+def fieldsolver_geometry(params: dict, rule: str = "jlcpcb_standard") -> str:
+    """The cross-section a set of parameters describes, WITHOUT solving it, plus
+    the fab warnings for it. Cheap — use it to check a configuration before
+    spending a solve on it.
+
+    `params` is the same object every field-solver tool takes:
+      template: "microstrip" (single-ended) | "cpw" | "diff" | "diff_cpw"
+      stackup: a stackup id from fieldsolver_stackups
+      signal_layer: e.g. "L1";  reference_layers: e.g. ["L2"]
+      w: trace width mm;  s: pair spacing mm;  gap: gap to coplanar ground mm
+      soldermask: true|false;  via_fence: true|false;  fence_distance: mm
+      via_hole / via_pad: mm;  roughness_um: copper RMS roughness
+    Returns the region outlines in millimetres, the solver's own notes (which
+    say what it assumed), and the rule warnings.
+    """
+    db = SessionLocal()
+    try:
+        from ..services.fieldsolver.stackups import STACKS
+        from ..services.fieldsolver.templates import build
+
+        _fs_sync(db)
+        p = _fs_params(params)
+        geo = build(p)
+        st = STACKS.custom(p.custom_stackup) if p.custom_stackup else STACKS.get(p.stackup)
+        warn = fs_rules.check(rule, {**params}, len(st.copper()))
+        return json.dumps({"geometry": geo.to_dict(), "warnings": warn})
+    except RuntimeError as e:
+        return json.dumps({"error": str(e)})
+    except (ValueError, KeyError) as e:
+        return json.dumps({"error": f"{e}"})
+    finally:
+        db.close()
+
+
+@beta_tool
+def fieldsolver_solve(params: dict, f_design: float = 2.4e9, sweep_points: int = 5,
+                      eps_model: str = "djordjevic") -> str:
+    """Solve one cross-section and return its transmission-line parameters.
+
+    Answers "what impedance does THIS geometry give": Z0 (or Zdiff/Zodd/Zeven
+    for a pair), effective permittivity, propagation delay, and the conductor
+    and dielectric loss at the design frequency, plus a short frequency sweep.
+
+    `params` is the object documented on fieldsolver_geometry. `f_design` is in
+    hertz and is always solved exactly; the sweep runs two decades below it to
+    one above, clipped to 1 MHz .. 10 GHz. The model is quasi-TEM and is not
+    meaningful below 1 MHz.
+
+    This runs the FEM solve inline — seconds to a minute. Keep `sweep_points`
+    small unless the loss-against-frequency curve is what you are after.
+    """
+    db = SessionLocal()
+    try:
+        import numpy as _np
+
+        from ..services.fieldsolver.analysis import SolveOptions, solve as _solve
+        from ..services.fieldsolver.templates import build
+
+        _fs_sync(db)
+        f_design = float(f_design)
+        lo = max(1e6, 10 ** (math.floor(math.log10(f_design)) - 2))
+        hi = min(1e10, max(10 ** (math.ceil(math.log10(f_design)) + 1), lo * 10))
+        n = max(2, min(int(sweep_points), 40))
+        fs = list(_np.geomspace(lo, hi, n))
+        if not any(abs(f - f_design) / f_design < 1e-6 for f in fs):
+            fs = sorted(fs + [f_design])
+        geo = build(_fs_params(params))
+        r = _solve(geo, SolveOptions(f_design=f_design, f_sweep=fs, eps_model=eps_model,
+                                     return_field=False))
+        return json.dumps({
+            "summary": r["summary"],
+            "sweep": [
+                {"f": x["f"], "eps_eff": x["modes"][0]["eps_eff"],
+                 "alpha_db_m": x["modes"][0]["alpha_db_m"],
+                 "z": x["modes"][0]["z"]}
+                for x in r["sweep"]
+            ],
+            "C_per_m": r["design"]["C"], "L_per_m": r["design"]["L"],
+            "mesh": r["mesh"], "notes": r["notes"],
+        })
+    except RuntimeError as e:
+        return json.dumps({"error": str(e)})
+    except (ValueError, KeyError) as e:
+        return json.dumps({"error": f"{e}"})
+    finally:
+        db.close()
+
+
+@beta_tool
+def fieldsolver_find_solutions(params: dict, target: float, tolerance_pct: float = 3.0,
+                               f_design: float = 2.4e9, step: float = 0.05,
+                               ranges: dict | None = None, masks: list | None = None) -> str:
+    """Candidate geometries that hit a target impedance — the design-first flow.
+
+    Rather than guessing a width, state the target: every ranged dimension steps
+    through its range on the drawing grid, the trace width is solved for each
+    combination and snapped to that grid, and the candidates come back ranked —
+    inside the tolerance first, then the roundest numbers, then the smallest
+    deviation. A width of 0.30 mm is worth more than 0.3127 mm because somebody
+    has to draw it.
+
+    `ranges` maps a dimension to [min, max] in mm: "w" (always searched), "s",
+    "gap", "fence". `step` is the grid (0.1 / 0.05 / 0.025, or 0 for none).
+    `masks` says whether to try the structure with solder mask, without, or
+    both — default follows the stackup.
+    """
+    db = SessionLocal()
+    try:
+        from ..services.fieldsolver import design as _design
+
+        _fs_sync(db)
+        r = _design.search(_fs_params(params), float(f_design), float(target),
+                           float(tolerance_pct), ranges or {}, step or None,
+                           tuple(masks) if masks else (True, False))
+        return json.dumps(r)
+    except RuntimeError as e:
+        return json.dumps({"error": str(e)})
+    except (ValueError, KeyError) as e:
+        return json.dumps({"error": f"{e}"})
+    finally:
+        db.close()
+
+
+@beta_tool
+def fieldsolver_board(project_id: int, board: str = "", snapshot_id: int = 0) -> str:
+    """A board's impedance work at one commit: the stackup it is built on, the
+    impedance profiles it carries with their stored results, and whether the
+    `.kicad_pcb` disagrees with the assigned stackup.
+
+    `snapshot_id` picks the commit (0 = the current assignment). A profile whose
+    `outdated` flag is true was solved against a different stackup: its numbers
+    are kept for reference and should not be trusted until it is solved again.
+    """
+    db = SessionLocal()
+    try:
+        from ..routers import field_solver as fsr
+
+        fsr._sync_library(db)
+        snap = db.get(M.ProjectSnapshot, snapshot_id) if snapshot_id else None
+        return json.dumps(fsr._board_state(db, project_id, board, snap))
+    finally:
+        db.close()
+
+
+@beta_tool
+def fieldsolver_assign_stackup(project_id: int, stackup_key: str, board: str = "",
+                               snapshot_id: int = 0) -> str:
+    """Assign a stackup to a board, effective at this commit and FORWARD.
+
+    Commit-versioned like the cost plan: earlier commits keep what they had, and
+    later commits inherit this until somebody changes it again. Profiles already
+    on the board are kept with their results; anything solved against a
+    different stackup is reported as outdated rather than deleted.
+    """
+    db = SessionLocal()
+    try:
+        from ..routers import field_solver as fsr
+        from ..services import field_state
+
+        fsr._sync_library(db)
+        if stackup_key and fsr._stackup_dict(stackup_key) is None:
+            return json.dumps({"error": f"unknown stackup {stackup_key}"})
+        snap = db.get(M.ProjectSnapshot, snapshot_id) if snapshot_id else None
+        rev, _ = field_state.revision_for_edit(db, project_id, board, snap)
+        rev.stackup_key = stackup_key
+        rev.created_by = rev.created_by or "jaravis"
+        db.commit()
+        return json.dumps(fsr._board_state(db, project_id, board, snap))
+    finally:
+        db.close()
+
+
+@beta_tool
+def fieldsolver_save_profile(project_id: int, name: str, config: dict,
+                             result: dict | None = None, board: str = "",
+                             snapshot_id: int = 0, profile_id: int = 0) -> str:
+    """Create or update an impedance profile on a board, with its result.
+
+    `config` is the profile as the solver page holds it — at minimum
+    `{type, target, tolerance, f, cells}` — and `result` is what
+    fieldsolver_solve returned, stored so nobody has to solve it again. Pass
+    `profile_id` to update an existing one, 0 to add.
+
+    Store the NUMBERS, never a solved field: a mesh is tens of megabytes per
+    frequency and the page redraws it by solving again.
+    """
+    db = SessionLocal()
+    try:
+        from ..routers import field_solver as fsr
+        from ..services import field_state
+
+        fsr._sync_library(db)
+        snap = db.get(M.ProjectSnapshot, snapshot_id) if snapshot_id else None
+        rev, copies = field_state.revision_for_edit(db, project_id, board, snap)
+        st = fsr._stackup_dict(rev.stackup_key) if rev.stackup_key else None
+        target = None
+        if profile_id:
+            target = copies.get(profile_id) or db.get(M.ProjectFieldProfile, profile_id)
+            if target is not None and target.revision_id != rev.id:
+                target = None
+        if target is None:
+            pos = 1 + max([p.position for p in field_state.profiles_of(db, rev)] or [0])
+            target = M.ProjectFieldProfile(revision_id=rev.id, position=pos, name=name,
+                                           config=config, created_by="jaravis")
+            db.add(target)
+        target.name = name
+        target.config = config
+        if result is not None:
+            target.result = result
+            target.solved_at = datetime.now(timezone.utc)
+            target.stackup_key = rev.stackup_key
+            target.stackup_sha = field_state.stackup_sha(st)
+        db.commit()
+        return json.dumps(fsr._board_state(db, project_id, board, snap))
+    finally:
+        db.close()
+
+# ------------------------------------------------------------------ simulation
+# Running a circuit, and reading what it said. Mirrors `routers/sim_runs.py`.
+
+
+def _sim_source(snapshot_id: int, board: str, upload_id: str):
+    from ..services import sim_run as _sr
+
+    if upload_id:
+        return _sr.upload_source(upload_id)
+    db = SessionLocal()
+    try:
+        snap = db.get(M.ProjectSnapshot, snapshot_id)
+        if snap is None:
+            raise ValueError("snapshot not found")
+        for b in snap.boards or []:
+            if b.get("name") == board or not board:
+                return _sr.snapshot_source(snap, b)
+        raise ValueError(f"snapshot has no board '{board}'")
+    finally:
+        db.close()
+
+
+_VERDICT = re.compile(r"^\s*(PASS|FAIL)\b[ \t]*(.*)$")
+
+
+def _sim_summary(payload: bytes) -> dict:
+    """The parts of a run an agent can read: verdicts, vectors and their range.
+
+    A harness prints a PASS/FAIL table from its own `.control` block, and that
+    table — not the waveform — is what says whether the circuit did its job. The
+    float blob is summarised rather than returned: a transient carries tens of
+    thousands of points per vector and none of them are readable as JSON.
+    """
+    import struct
+
+    from ..services.sim_spice import decode_header
+
+    head = decode_header(payload)
+    (hlen,) = struct.unpack("<I", payload[4:8])
+    blob = payload[8 + hlen:]
+
+    def stats(off: int, ln: int) -> dict:
+        vals = struct.unpack_from(f"<{ln}f", blob, off) if ln else ()
+        if not vals:
+            return {}
+        return {"min": min(vals), "max": max(vals), "last": vals[-1]}
+
+    plots = []
+    for pl in head.get("plots", []):
+        plots.append({
+            "name": pl["name"],
+            "points": pl["n"],
+            "sweep": pl["scale"]["name"],
+            "vectors": [
+                {"name": v["name"], "unit": v["unit"], **stats(v["offset"], v["len"])}
+                for v in pl["vectors"]
+            ],
+        })
+    log = head.get("log", "")
+    verdicts = []
+    for line in log.splitlines():
+        m = _VERDICT.match(line)
+        if m:
+            verdicts.append({"ok": m.group(1) == "PASS", "text": m.group(2).strip()})
+    return {
+        "verdicts": verdicts,
+        "passed": all(v["ok"] for v in verdicts) if verdicts else None,
+        "plots": plots,
+        "unmodelled": head.get("unmodelled", []),
+        "control": head.get("control", ""),
+        "log_tail": log[-2000:],
+    }
+
+
+@beta_tool
+def sim_projects(snapshot_id: int) -> str:
+    """The simulation projects a commit carries.
+
+    A simulation is a PROJECT, not a sheet: a design repository keeps one `_sim`
+    KiCad project per block it exercises, whose root sheet includes the real
+    block and adds the harness — supplies, stimulus, loads, a `.control` verdict
+    block. Each entry says whether it is a simulation project and how many SPICE
+    directives it holds. Pass a `board` from here to the other sim tools.
+    """
+    db = SessionLocal()
+    try:
+        from ..services import gitrepo, sim_run as _sr
+
+        snap = db.get(M.ProjectSnapshot, snapshot_id)
+        if snap is None:
+            return json.dumps({"error": "snapshot not found"})
+        try:
+            gitrepo.materialize(snap.project_id, snap.sha)
+        except (OSError, gitrepo.GitError):
+            pass                       # the name-based hint still works without a checkout
+        return json.dumps({"projects": _sr.snapshot_projects(snap)})
+    finally:
+        db.close()
+
+
+@beta_tool
+def sim_scenarios(snapshot_id: int = 0, board: str = "", upload_id: str = "") -> str:
+    """What a harness offers to run, read off its own text.
+
+    `scenarios` are its `.control` blocks, each named by its own first echo and
+    counted by the PASS/FAIL lines it prints; `analyses` are the analysis
+    directives on the sheet; `stimulus` and `notes` are the rest of the SPICE
+    text beside the circuit; `analysis_forms` describes the parameters a
+    transient / AC / DC / operating-point directive takes, which is what to fill
+    in when passing `analysis` to sim_run_scenario.
+
+    Use this before running, so the run you ask for is one the harness defines.
+    """
+    try:
+        from ..services import sim_run as _sr
+
+        return json.dumps(_sr.scenarios(_sim_source(snapshot_id, board, upload_id)))
+    except Exception as e:                                  # noqa: BLE001 — reported to the caller
+        return json.dumps({"error": f"{e}"})
+
+
+@beta_tool
+def sim_netlist(snapshot_id: int = 0, board: str = "", upload_id: str = "") -> str:
+    """The SPICE netlist kicad-cli produces for a harness.
+
+    This is the deck ngspice is given, harness and all. It is the fastest way to
+    see why a run failed: a part with no model emits `U47 __U47` and no nodes, a
+    diode without `Sim.Device` loses its connections silently, and a `Sim.Device
+    R` on a switch prefixes rather than replaces the reference.
+    """
+    try:
+        from ..services import sim_run as _sr
+
+        return json.dumps({"netlist": _sr.netlist_spice(_sim_source(snapshot_id, board, upload_id))})
+    except Exception as e:                                  # noqa: BLE001
+        return json.dumps({"error": f"{e}"})
+
+
+@beta_tool
+def sim_run_scenario(snapshot_id: int = 0, board: str = "", upload_id: str = "",
+                     control: str = "", analysis: str = "", timeout: int = 0) -> str:
+    """Run a simulation and return what it said.
+
+    `control` replaces the harness's own `.control` block (empty = use the
+    sheet's), `analysis` injects a directive such as `.tran 1u 5m`. Returns the
+    PASS/FAIL verdicts the harness printed, one entry per plot with each
+    vector's min / max / final value, any part the netlist could not model, and
+    the tail of the ngspice log.
+
+    A run that PRINTED but produced no waveform is a SUCCESS, not a failure: a
+    verdict harness runs its analysis inside the control block, so ngspice
+    writes no rawfile and the answer is the table. To get both, leave `.tran` on
+    the sheet and let the block start with `run`.
+    """
+    try:
+        from ..services import sim_run as _sr
+
+        data = _sr.run(_sim_source(snapshot_id, board, upload_id),
+                       control=control or None, analysis=analysis, timeout=timeout)
+        return json.dumps(_sim_summary(data))
+    except Exception as e:                                  # noqa: BLE001 — an ngspice log tail
+        return json.dumps({"error": f"{e}"})
+
+
 TOOLS = [
     # library reads
     search_components, get_component, list_categories, list_base_symbols,
@@ -1807,8 +2268,14 @@ TOOLS = [
     propose_new_component, propose_component_edit,
     propose_symbol_edit, propose_footprint_edit, propose_skill_update,
     set_footprint_package_name,
-    # simulation
+    # simulation models
     list_sim_models, get_sim_model, propose_sim_model_edit, set_symbol_sim_link,
+    # running a simulation
+    sim_projects, sim_scenarios, sim_netlist, sim_run_scenario,
+    # controlled impedance (the 2D field solver)
+    fieldsolver_stackups, fieldsolver_rules, fieldsolver_geometry, fieldsolver_solve,
+    fieldsolver_find_solutions, fieldsolver_board, fieldsolver_assign_stackup,
+    fieldsolver_save_profile,
 ]
 
 # Anthropic-hosted server tools — executed on the API side, no local dispatch.
