@@ -60,6 +60,8 @@ import {
   type Profile,
 } from "./model";
 import { useSolverJob } from "./useSolverJob";
+import { useWheel } from "../../useWheel";
+import NumberInput from "../../components/NumberInput";
 
 const SOLVE_STEPS = [
   { key: "mesh", label: "Mesh the cross-section" },
@@ -107,7 +109,7 @@ export default function FieldSolver() {
   const [locked, setLocked] = useState(true);
   const [viewport, setViewport] = useState<View | null>(null);
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const job = useSolverJob();
   const { isAdmin } = useAuth();
 
@@ -359,12 +361,16 @@ export default function FieldSolver() {
   );
 
   // ---------------------------------------------------------------- canvas
-  const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+  // A locked view returns without cancelling the event, so the wheel scrolls
+  // the page as usual. An unlocked one cancels it, or the page scrolls under
+  // the cross-section and a touchpad pinch zooms the browser as well.
+  const onWheel = (e: WheelEvent) => {
     if (locked || !viewport) return;
     e.preventDefault();
     const f = Math.exp(e.deltaY * 0.0015);
     setViewport({ ...viewport, halfw: Math.max(0.02, Math.min(200, viewport.halfw * f)) });
   };
+  const canvasCb = useWheel(canvasRef, onWheel);
   const drag = useRef<{ x: number; y: number; vp: View } | null>(null);
   const onDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (locked || !viewport) return;
@@ -506,8 +512,8 @@ export default function FieldSolver() {
               {stackup.layers.map((l, i) => (
                 <tr key={`${l.type}${i}`} className={l.type === "copper" ? "" : "fs-diel"}>
                   <td>{l.type === "copper" ? l.name : l.label}</td>
-                  <td className="muted">{l.material ? materials.find((m) => m.id === l.material)?.name ?? l.material : "—"}</td>
-                  <td className="muted">{l.type}</td>
+                  <td>{l.material ? materials.find((m) => m.id === l.material)?.name ?? l.material : "—"}</td>
+                  <td>{l.type}</td>
                   <td>{l.thickness_mm.toFixed(4)}</td>
                   {profiles.map((p) => {
                     if (l.type !== "copper") return <td key={p.id} />;
@@ -615,20 +621,20 @@ export default function FieldSolver() {
             <div className="fs-row">
               <label className="fs-field">
                 <span>Target Z</span>
-                <input
+                <NumberInput
                   className="text fs-num"
-                  type="number"
+                  step={0.5}
                   value={profile.target}
-                  onChange={(e) => setProfile({ target: Number(e.target.value) }, false)}
+                  onChange={(v) => setProfile({ target: v }, false)}
                 />
               </label>
               <label className="fs-field">
                 <span>Tolerance %</span>
-                <input
+                <NumberInput
                   className="text fs-num"
-                  type="number"
+                  step={1}
                   value={profile.tolerance}
-                  onChange={(e) => setProfile({ tolerance: Number(e.target.value) }, false)}
+                  onChange={(v) => setProfile({ tolerance: v }, false)}
                 />
               </label>
               <label className="fs-field">
@@ -689,13 +695,12 @@ export default function FieldSolver() {
                 ) : null}
                 <label className="fs-field">
                   <span>points / decade</span>
-                  <input
+                  <NumberInput
                     className="text fs-num"
-                    type="number"
                     min={2}
                     max={20}
                     value={perDecade(profile)}
-                    onChange={(e) => setProfile({ ppd: Number(e.target.value) }, false)}
+                    onChange={(v) => setProfile({ ppd: v }, false)}
                   />
                 </label>
               </div>
@@ -770,14 +775,13 @@ export default function FieldSolver() {
                     <td>{label}</td>
                     {[0, 1].map((j) => (
                       <td key={j}>
-                        <input
+                        <NumberInput
                           className="text fs-num"
-                          type="number"
-                          step="0.05"
+                          step={0.05}
                           value={profile.ranges[k]?.[j] ?? 0}
-                          onChange={(e) => {
+                          onChange={(v) => {
                             const r = profile.ranges[k] ?? [0, 1];
-                            r[j] = Number(e.target.value);
+                            r[j] = v;
                             profile.ranges[k] = r as [number, number];
                             touch();
                           }}
@@ -813,22 +817,20 @@ export default function FieldSolver() {
                 <div className="fs-row">
                   <label className="fs-field">
                     <span>hole mm</span>
-                    <input
+                    <NumberInput
                       className="text fs-num"
-                      type="number"
-                      step="0.05"
+                      step={0.05}
                       value={cell.via_hole}
-                      onChange={(e) => setCell({ via_hole: Number(e.target.value) })}
+                      onChange={(v) => setCell({ via_hole: v })}
                     />
                   </label>
                   <label className="fs-field">
                     <span>pad ⌀ mm</span>
-                    <input
+                    <NumberInput
                       className="text fs-num"
-                      type="number"
-                      step="0.05"
+                      step={0.05}
                       value={cell.via_pad}
-                      onChange={(e) => setCell({ via_pad: Number(e.target.value) })}
+                      onChange={(v) => setCell({ via_pad: v })}
                     />
                   </label>
                   <label className="fs-field">
@@ -845,12 +847,11 @@ export default function FieldSolver() {
                   {cell.fence_mode === "exact" ? (
                     <label className="fs-field">
                       <span>distance mm</span>
-                      <input
+                      <NumberInput
                         className="text fs-num"
-                        type="number"
-                        step="0.05"
+                        step={0.05}
                         value={cell.fence_distance}
-                        onChange={(e) => setCell({ fence_distance: Number(e.target.value) })}
+                        onChange={(v) => setCell({ fence_distance: v })}
                       />
                     </label>
                   ) : null}
@@ -866,13 +867,12 @@ export default function FieldSolver() {
                   {cell.via_rows.map((r, i) => (
                     <label key={i} className="fs-field">
                       <span>row {i + 2} pitch mm</span>
-                      <input
+                      <NumberInput
                         className="text fs-num"
-                        type="number"
-                        step="0.05"
+                        step={0.05}
                         value={r.pitch}
-                        onChange={(e) => {
-                          cell.via_rows[i] = { ...r, pitch: Number(e.target.value) };
+                        onChange={(v) => {
+                          cell.via_rows[i] = { ...r, pitch: v };
                           invalidate();
                         }}
                       />
@@ -889,12 +889,11 @@ export default function FieldSolver() {
             {cell.use_w2 ? (
               <label className="fs-field fs-sub">
                 <span>undercut per side µm</span>
-                <input
+                <NumberInput
                   className="text fs-num"
-                  type="number"
-                  step="0.5"
+                  step={0.5}
                   value={cell.etch_um ?? Number(ruleset?.etch_outer_um ?? 12.5)}
-                  onChange={(e) => setCell({ etch_um: Number(e.target.value) })}
+                  onChange={(v) => setCell({ etch_um: v })}
                 />
               </label>
             ) : null}
@@ -906,12 +905,11 @@ export default function FieldSolver() {
             {cell.use_rough ? (
               <label className="fs-field fs-sub">
                 <span>RMS µm</span>
-                <input
+                <NumberInput
                   className="text fs-num"
-                  type="number"
-                  step="0.1"
+                  step={0.1}
                   value={cell.roughness_um}
-                  onChange={(e) => setCell({ roughness_um: Number(e.target.value) })}
+                  onChange={(v) => setCell({ roughness_um: v })}
                 />
               </label>
             ) : null}
@@ -956,35 +954,32 @@ export default function FieldSolver() {
             <div className="fs-row">
               <label className="fs-field">
                 <span>Width W1 mm</span>
-                <input
+                <NumberInput
                   className="text fs-num"
-                  type="number"
-                  step="0.005"
+                  step={0.005}
                   value={cell.w}
-                  onChange={(e) => setCell({ w: Number(e.target.value) })}
+                  onChange={(v) => setCell({ w: v })}
                 />
               </label>
               {pair ? (
                 <label className="fs-field">
                   <span>Spacing S mm</span>
-                  <input
+                  <NumberInput
                     className="text fs-num"
-                    type="number"
-                    step="0.005"
+                    step={0.005}
                     value={cell.s}
-                    onChange={(e) => setCell({ s: Number(e.target.value) })}
+                    onChange={(v) => setCell({ s: v })}
                   />
                 </label>
               ) : null}
               {isCpw(profile) ? (
                 <label className="fs-field">
                   <span>Gap mm</span>
-                  <input
+                  <NumberInput
                     className="text fs-num"
-                    type="number"
-                    step="0.005"
+                    step={0.005}
                     value={cell.gap}
-                    onChange={(e) => setCell({ gap: Number(e.target.value) })}
+                    onChange={(v) => setCell({ gap: v })}
                   />
                 </label>
               ) : null}
@@ -1184,9 +1179,8 @@ export default function FieldSolver() {
                 </div>
               ) : null}
               <canvas
-                ref={canvasRef}
+                ref={canvasCb}
                 className={`fs-canvas${locked ? "" : " fs-unlocked"}`}
-                onWheel={onWheel}
                 onMouseDown={onDown}
                 onMouseMove={onMove}
                 onMouseUp={endDrag}

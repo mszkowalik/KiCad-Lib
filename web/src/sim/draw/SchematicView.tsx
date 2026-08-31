@@ -18,6 +18,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import KicadSheet, { type View } from "./KicadSheet";
+import { useWheel } from "../../useWheel";
 import type { Pt, SchTheme, SheetDrawing } from "./types";
 
 export type { View } from "./KicadSheet";
@@ -166,9 +167,12 @@ export default function SchematicView({
     ];
   }, [view]);
 
-  const onWheel = useCallback((e: React.WheelEvent) => {
+  // Zoom the sheet only. The event has to be cancelled, or the window scrolls
+  // under the drawing and a touchpad pinch zooms the browser as well.
+  const onWheel = useCallback((e: WheelEvent) => {
     const at = toMm(e.clientX, e.clientY);
     if (!at) return;
+    e.preventDefault();
     const factor = Math.exp(e.deltaY * 0.0015);
     const w = Math.min(Math.max(view.w * factor, 2), Math.max(size[0], size[1]) * 2);
     const scale = w / view.w;
@@ -179,6 +183,7 @@ export default function SchematicView({
       h: view.h * scale,
     });
   }, [toMm, view, size]);
+  const frameCb = useWheel(frameRef, onWheel);
 
   const down = (e: React.PointerEvent) => {
     const mm = toMm(e.clientX, e.clientY);
@@ -221,7 +226,7 @@ export default function SchematicView({
   return (
     <div
       className={`sim-frame${className ? ` ${className}` : ""}`}
-      ref={frameRef}
+      ref={frameCb}
       // The aspect ratio must stay EXACT — every layer maps client pixels
       // across this box assuming the viewBox fills it, so letterboxing would
       // put the charge canvas and the click targets off the wires. So the
@@ -233,7 +238,6 @@ export default function SchematicView({
       }}
       tabIndex={tabIndex}
       onKeyDown={onKeyDown}
-      onWheel={onWheel}
       onPointerDown={down}
       onPointerMove={move}
       onPointerUp={up}

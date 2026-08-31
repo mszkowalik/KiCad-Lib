@@ -17,6 +17,7 @@ import {
   type FsStackup,
 } from "../../api";
 import { errorMessage } from "../../api";
+import NumberInput from "../../components/NumberInput";
 
 export interface StackupEditorProps {
   stackup: FsStackup;
@@ -151,22 +152,18 @@ export function StackupEditor({ stackup, materials, finishes, rules, onClose, on
               <td>
                 {d.soldermask ? (
                   <>
-                    <input
+                    <NumberInput
                       className="text fs-num"
-                      type="number"
-                      step="0.005"
+                      step={0.005}
                       value={d.soldermask.above_substrate_mm}
-                      onChange={(e) =>
-                        set({ soldermask: { ...d.soldermask!, above_substrate_mm: Number(e.target.value) } })
-                      }
+                      onChange={(v) => set({ soldermask: { ...d.soldermask!, above_substrate_mm: v } })}
                     />
                     {" / "}
-                    <input
+                    <NumberInput
                       className="text fs-num"
-                      type="number"
-                      step="0.005"
+                      step={0.005}
                       value={d.soldermask.above_trace_mm}
-                      onChange={(e) => set({ soldermask: { ...d.soldermask!, above_trace_mm: Number(e.target.value) } })}
+                      onChange={(v) => set({ soldermask: { ...d.soldermask!, above_trace_mm: v } })}
                     />
                   </>
                 ) : (
@@ -214,12 +211,11 @@ export function StackupEditor({ stackup, materials, finishes, rules, onClose, on
               </td>
               <td>
                 {d.finish ? (
-                  <input
+                  <NumberInput
                     className="text fs-num"
-                    type="number"
-                    step="0.5"
+                    step={0.5}
                     value={d.finish.thickness_um}
-                    onChange={(e) => set({ finish: { ...d.finish!, thickness_um: Number(e.target.value) } })}
+                    onChange={(v) => set({ finish: { ...d.finish!, thickness_um: v } })}
                   />
                 ) : null}
               </td>
@@ -256,12 +252,11 @@ export function StackupEditor({ stackup, materials, finishes, rules, onClose, on
                 </td>
                 <td className="muted">{l.type}</td>
                 <td>
-                  <input
+                  <NumberInput
                     className="text fs-num"
-                    type="number"
-                    step="0.001"
+                    step={0.001}
                     value={l.thickness_mm}
-                    onChange={(e) => setLayer(i, { thickness_mm: Number(e.target.value) })}
+                    onChange={(v) => setLayer(i, { thickness_mm: v })}
                   />
                 </td>
                 <td>
@@ -399,12 +394,12 @@ export function RulesEditor({ ruleset, finishes, onClose, onSaved, onDeleted }: 
               {RULE_FIELDS.filter((f) => f.group === g).map((f) => (
                 <label key={f.key} className="fs-field-row">
                   <span>{f.label}</span>
-                  <input
+                  <NumberInput
                     className="text fs-num"
-                    type="number"
                     step={f.step}
-                    value={(d[f.key] as number) ?? ""}
-                    onChange={(e) => setD({ ...d, [f.key]: e.target.value === "" ? null : Number(e.target.value) })}
+                    value={(d[f.key] as number | null) ?? null}
+                    onChange={(v) => setD({ ...d, [f.key]: v })}
+                    onEmpty={() => setD({ ...d, [f.key]: null })}
                   />
                 </label>
               ))}
@@ -450,24 +445,22 @@ export function RulesEditor({ ruleset, finishes, onClose, onSaved, onDeleted }: 
                       />
                     </td>
                     <td>
-                      <input
+                      <NumberInput
                         className="text fs-num"
-                        type="number"
-                        step="0.05"
+                        step={0.05}
                         value={v.hole}
-                        onChange={(e) =>
-                          setD({ ...d, via_sizes: sizes.map((x, k) => (k === i ? { ...x, hole: Number(e.target.value) } : x)) })
+                        onChange={(n) =>
+                          setD({ ...d, via_sizes: sizes.map((x, k) => (k === i ? { ...x, hole: n } : x)) })
                         }
                       />
                     </td>
                     <td>
-                      <input
+                      <NumberInput
                         className="text fs-num"
-                        type="number"
-                        step="0.05"
+                        step={0.05}
                         value={v.pad}
-                        onChange={(e) =>
-                          setD({ ...d, via_sizes: sizes.map((x, k) => (k === i ? { ...x, pad: Number(e.target.value) } : x)) })
+                        onChange={(n) =>
+                          setD({ ...d, via_sizes: sizes.map((x, k) => (k === i ? { ...x, pad: n } : x)) })
                         }
                       />
                     </td>

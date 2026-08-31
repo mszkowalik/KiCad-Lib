@@ -4799,13 +4799,21 @@ a.check-cell:hover {
 .fs-board-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .fs-gridwrap { overflow-x: auto; margin: 10px 0; }
 .fs-grid td, .fs-grid th { vertical-align: top; }
-.fs-grid tr.fs-diel td { color: var(--muted); }
+/* A dielectric row is data, not commentary. It is told apart from a copper
+   row by its fill, not by dim letters. */
+.fs-grid tr.fs-diel td { background: var(--surface-2); }
 .fs-prof .fs-note { display: block; font-weight: 400; }
 .fs-cell { cursor: pointer; border-left: 2px solid transparent; }
 .fs-cell.on { border-left-color: var(--accent); background: var(--accent-soft); }
 .fs-cell .fs-note { display: block; }
 .fs-z { font-weight: 600; }
-.fs-lower { display: grid; grid-template-columns: minmax(320px, 380px) 1fr; gap: 12px; align-items: start; }
+/* The properties column is a form and the results column holds the drawing.
+   `minmax(0, 1fr)` on the second track, not `1fr`: a grid track sizes to its
+   MIN-CONTENT by default, so the widest solution table would push the panel
+   past the window instead of scrolling inside its own box. Under 1000px the
+   two do not fit side by side, so they stack. */
+.fs-lower { display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); gap: 12px; align-items: start; }
+@media (max-width: 1000px) { .fs-lower { grid-template-columns: minmax(0, 1fr); } }
 .fs-props { display: flex; flex-direction: column; gap: 10px; }
 .fs-results { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .fs-fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; margin: 0; }
@@ -4826,7 +4834,16 @@ a.check-cell:hover {
 .fs-error { color: var(--err); }
 .fs-spacer { flex: 1; }
 .fs-details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
-.fs-dims input { max-width: 84px; }
+/* The dims table sits in the ~400px properties column, where `.data`'s 12px
+   cell padding leaves the label so narrow that "Trace width W1" breaks over
+   three lines. Fixed columns give the numbers a set width and the label the
+   rest. */
+.fs-dims { table-layout: fixed; }
+.fs-dims th, .fs-dims td { padding: 5px 6px; }
+.fs-dims th:first-child, .fs-dims td:first-child { padding-left: 0; }
+.fs-dims th:nth-child(2), .fs-dims th:nth-child(3) { width: 84px; }
+.fs-dims th:last-child, .fs-dims td:last-child { width: 26px; padding-left: 2px; }
+.fs-dims input { width: 100%; max-width: none; }
 .fs-kv td:last-child, .fs-sweep td { text-align: right; font-variant-numeric: tabular-nums; }
 .fs-empty td, .fs-card.fs-empty .fs-card-v { color: var(--muted); }
 .fs-summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
