@@ -23,6 +23,10 @@ against closed forms (microstrip Hammerstad-Jensen 0.6 %, stripline Wheeler
   arm64 has no wheel published, so the image builds the same version from the
   upstream git tag. The two builds agree on Z0 to 0.0013 % and produce meshes
   that differ by about 3 % in node count.
+- The server VM went from 2 cores and 8 GB to 8 cores and 16 GB, and from a
+  `x86-64-v2-AES` CPU model, which has no AVX at all, to `host`. A geometry
+  search that took 21.1 s takes 8.2 s. The api container's memory ceiling rose
+  from 1500 MB to 6 GB to hold six solver workers.
 
 This file starts on 2026-08-28. For earlier work, read the git history.
 

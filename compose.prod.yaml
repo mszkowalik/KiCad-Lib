@@ -46,16 +46,25 @@ services:
   api:
     image: ${IMAGE_PREFIX:-ghcr.io/mszkowalik/kicad-lib}/api:${IMAGE_TAG:-latest}
     restart: unless-stopped
-    # The box is 8 GB and shared with unrelated stacks. Without a ceiling the
-    # api once grew to ~4.8 GB of allocator arena, filled all 3.8 GB of swap
-    # and took the whole host down with it. A limit turns that failure mode
-    # into a restart of one container: `restart: unless-stopped` brings it
-    # straight back. Steady state is ~250 MB, sweeps peak around 600 MB.
-    mem_limit: 1500m
+    # The box is shared with unrelated stacks. Without a ceiling the api once
+    # grew to ~4.8 GB of allocator arena, filled all 3.8 GB of swap and took
+    # the whole host down with it. A limit turns that failure mode into a
+    # restart of one container: `restart: unless-stopped` brings it straight
+    # back. Steady state is ~250 MB, sweeps peak around 600 MB, and each field
+    # solver pool worker adds ~500 MB. Raised from 1500m on 2026-08-31, when
+    # the server VM went from 2 cores and 8 GB to 8 cores and 16 GB.
+    mem_limit: 6g
     # No swap beyond the limit -- swapping this container is what hurt the
     # host, so let it be OOM-killed instead of thrashing.
-    memswap_limit: 1500m
+    memswap_limit: 6g
     environment:
+      # Field solver pool. Leave two cores for the API, Postgres and the
+      # neighbours, and hold OpenBLAS to one thread for each pool worker --
+      # otherwise every worker starts its own threads and they fight for the
+      # same cores. WORKERS is also capped by os.cpu_count() in design.py.
+      FIELDSOLVER_WORKERS: ${FIELDSOLVER_WORKERS:-6}
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
       # Halves of one fix, with api/app/services/memory.py -- see api/Dockerfile.
       MALLOC_ARENA_MAX: ${MALLOC_ARENA_MAX:-2}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-kicadlib}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-kicadlib}

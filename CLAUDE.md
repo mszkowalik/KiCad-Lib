@@ -110,6 +110,17 @@ is very slow under emulation.
   `cache-to` line in `images.yml` or a `cache_from` list silently brings the
   ~10-minute cold rebuild back.
 
+- **The server is a Proxmox guest, and the field solver feels its size.** The
+  server runs as VM 104 (`ubuntu`) on the Proxmox node `pve`
+  (`ssh proxmox`), an AMD Ryzen 7 8745H with 8 cores and 16 threads. On
+  2026-08-31 the VM went from 2 cores to 8, from 8 GB to 16 GB (ballooned, with
+  an 8 GB floor, because the node has only ~29 GB for all its guests), and from
+  `cpu: x86-64-v2-AES` to `cpu: host`. The CPU model matters: `x86-64-v2` has no
+  AVX at all, so numpy and scipy fell back to OpenBLAS kernels from before 2011.
+  The geometry search went from 21.1 s to 8.2 s. If solving is slow again, check
+  `qm config 104` for the core count and the CPU model FIRST — the solver fans
+  out over `FIELDSOLVER_WORKERS` processes, capped by `os.cpu_count()`.
+
 ## Controlled impedance
 
 The 2D field solver lives at **Simulator → Field solver** (`/sim?tab=field`) and
