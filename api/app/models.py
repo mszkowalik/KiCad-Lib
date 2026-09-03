@@ -2300,15 +2300,31 @@ class DeviceUnit(Base):
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_status: Mapped[str] = mapped_column(String(20), default="")  # pass|fail of the newest run
     notes: Mapped[str] = mapped_column(Text, default="")
+    # Where the device is NOW — a cache of its newest DeviceEvent, rebuilt by
+    # `orders.refresh_device_state`. "" means no event has ever been written
+    # (a legacy unit whose batch was never recorded). See decision 0003.
+    #   in_stock | allocated | shipped | returned | disposed
+    state: Mapped[str] = mapped_column(String(20), default="")
+    # The batch the `produced` event named. Soft pointer, cached here so stock
+    # per run is one indexed query instead of a scan over the event log.
+    production_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     runs: Mapped[list["ProgrammingRun"]] = relationship(
         back_populates="device", order_by="ProgrammingRun.started_at.desc()"
+    )
+    events: Mapped[list["DeviceEvent"]] = relationship(
+        back_populates="device", cascade="all, delete-orphan",
+        order_by="DeviceEvent.at, DeviceEvent.id", foreign_keys="DeviceEvent.device_id",
     )
     configs: Mapped[list["DeviceConfigValue"]] = relationship(
         back_populates="device", cascade="all, delete-orphan"
     )
 
-    __table_args__ = (UniqueConstraint("mac", name="uq_device_mac"),)
+    __table_args__ = (
+        UniqueConstraint("mac", name="uq_device_mac"),
+        Index("ix_device_units_state", "state"),
+        Index("ix_device_units_prod_run", "production_run_id"),
+    )
 
 
 class ProgrammingRun(Base):
@@ -2613,3 +2629,227 @@ class LoginAttempt(Base):
     first_failed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_failed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ------------------------------------------------- sales: orders, shipments, device history
+# Decision record docs/decisions/0003-orders-shipments-and-device-history.md.
+# A sale is no longer a set of columns on a production run: it is an ORDER of
+# one or more products, closed by invoices, fulfilled by shipments whose content
+# is a set of devices — and every device carries its own append-only history.
+# All money on this side is NET; VAT is printed, never computed with.
+
+
+class Customer(Base):
+    """Who buys. A table rather than a string on the run, because orders recur
+    and the payment terms feed every invoice's due date."""
+
+    __tablename__ = "customers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), unique=True)
+    tax_id: Mapped[str] = mapped_column(String(40), default="")
+    address: Mapped[str] = mapped_column(Text, default="")
+    payment_terms_days: Mapped[int] = mapped_column(Integer, default=14)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SalesOrder(Base):
+    """One customer order, above the project: an Aqua and a dongle sit on one
+    order. `status` is DERIVED from shipments (`orders.refresh_order_status`)
+    and never set by hand; `cancelled` is the one manual flag."""
+
+    __tablename__ = "sales_orders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"))
+    order_ref: Mapped[str] = mapped_column(String(200), default="")  # the customer's PO / our ref
+    order_date: Mapped[str] = mapped_column(String(20), default="")  # ISO date
+    currency: Mapped[str] = mapped_column(String(10), default="PLN")
+    vat_pct: Mapped[float] = mapped_column(Float, default=23.0)  # printed only
+    status: Mapped[str] = mapped_column(String(20), default="open")  # open|partial|fulfilled|cancelled
+    cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    customer: Mapped[Customer] = relationship()
+    lines: Mapped[list["SalesOrderLine"]] = relationship(
+        back_populates="order", cascade="all, delete-orphan", order_by="SalesOrderLine.position"
+    )
+    invoices: Mapped[list["OrderInvoice"]] = relationship(
+        back_populates="order", cascade="all, delete-orphan",
+        order_by="OrderInvoice.issue_date, OrderInvoice.id",
+    )
+    shipments: Mapped[list["Shipment"]] = relationship(
+        back_populates="order", cascade="all, delete-orphan",
+        order_by="Shipment.shipped_at, Shipment.id",
+    )
+
+
+class SalesOrderLine(Base):
+    """One product on an order: a project (optionally a board + variant), a
+    quantity and a NET unit price in the order's currency."""
+
+    __tablename__ = "sales_order_lines"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("sales_orders.id"))
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    board: Mapped[str] = mapped_column(String(200), default="")
+    variant: Mapped[str] = mapped_column(String(100), default="")
+    product: Mapped[str] = mapped_column(String(200), default="")  # what the invoice calls it
+    qty_ordered: Mapped[int] = mapped_column(Integer, default=0)
+    unit_price: Mapped[float] = mapped_column(Float, default=0.0)  # net, order currency
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    # Set by the startup migration that turned a run's sale columns into an
+    # order line (decision 0003 §10). UNIQUE so the migration is idempotent.
+    migrated_from_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    order: Mapped[SalesOrder] = relationship(back_populates="lines")
+
+    __table_args__ = (
+        Index("ix_order_lines_order", "order_id"),
+        Index("ix_order_lines_project", "project_id"),
+        UniqueConstraint("migrated_from_run_id", name="uq_order_line_migrated_run"),
+    )
+
+
+class OrderInvoice(Base):
+    """A document issued against an order. `advance` + `final` + `correction`
+    are expected to sum to the order's net total (a warning, never a block);
+    a `proforma` is not money and counts towards nothing. Revenue converts per
+    invoice AT ITS ISSUE DATE — the rate the accounting uses."""
+
+    __tablename__ = "order_invoices"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("sales_orders.id"))
+    kind: Mapped[str] = mapped_column(String(20), default="final")  # proforma|advance|final|correction
+    number: Mapped[str] = mapped_column(String(100), default="")
+    issue_date: Mapped[str] = mapped_column(String(20), default="")  # ISO
+    due_date: Mapped[str] = mapped_column(String(20), default="")  # ISO; default issue + terms
+    net_amount: Mapped[float] = mapped_column(Float, default=0.0)
+    currency: Mapped[str] = mapped_column(String(10), default="")  # empty = the order's
+    paid_at: Mapped[str] = mapped_column(String(20), default="")  # ISO; "" = unpaid
+    attachment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft -> run_attachments
+    notes: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    order: Mapped[SalesOrder] = relationship(back_populates="invoices")
+
+    __table_args__ = (Index("ix_order_invoices_order", "order_id"),)
+
+
+class Shipment(Base):
+    """A header: when, under which delivery note, which way. Its CONTENT is the
+    set of `shipped` (or `returned`) device events pointing at it, plus a
+    per-line unserialized quantity for stock from before devices were recorded."""
+
+    __tablename__ = "shipments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("sales_orders.id"))
+    kind: Mapped[str] = mapped_column(String(20), default="delivery")  # delivery|return
+    shipped_at: Mapped[str] = mapped_column(String(20), default="")  # ISO date
+    delivery_note: Mapped[str] = mapped_column(String(200), default="")
+    tracking: Mapped[str] = mapped_column(String(200), default="")
+    notes: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    order: Mapped[SalesOrder] = relationship(back_populates="shipments")
+    lines: Mapped[list["ShipmentLine"]] = relationship(
+        back_populates="shipment", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (Index("ix_shipments_order", "order_id"),)
+
+
+class ShipmentLine(Base):
+    """Legacy quantity only (decision 0003 §8): units shipped from a batch that
+    has no device rows to move. A new run never writes one — its units are
+    device events. `source_run_id` says whose per-device cost the units carry."""
+
+    __tablename__ = "shipment_lines"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    shipment_id: Mapped[int] = mapped_column(ForeignKey("shipments.id"))
+    order_line_id: Mapped[int] = mapped_column(ForeignKey("sales_order_lines.id"))
+    qty_unserialized: Mapped[int] = mapped_column(Integer, default=0)
+    source_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft -> production_runs
+
+    shipment: Mapped[Shipment] = relationship(back_populates="lines")
+
+    __table_args__ = (Index("ix_shipment_lines_line", "order_line_id"),)
+
+
+class DeviceEvent(Base):
+    """The append-only history of one device. The newest event IS the state.
+
+    kind            references                              state after
+    produced        production_run_id                       in_stock
+    allocated       order_line_id                           allocated
+    shipped         order_line_id, shipment_id,             shipped
+                    replaces_device_id (a replacement),
+                    auto (FIFO picked it, nobody typed it)
+    unshipped       shipment_id — a FIFO guess corrected    in_stock
+                    by a real return (decision 0003 §6)
+    returned        order_line_id, shipment_id, reason      returned
+    repaired        cost lines                              in_stock
+    disposed        reason                                  disposed
+
+    Fulfilment counts `shipped` events with NO `replaces_device_id`; a device
+    re-shipped to the same order after repair names ITSELF as the replaced
+    device, so it is never counted twice.
+    """
+
+    __tablename__ = "device_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("device_units.id"))
+    kind: Mapped[str] = mapped_column(String(20))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    actor: Mapped[str] = mapped_column(String(100), default="")
+    note: Mapped[str] = mapped_column(String(500), default="")
+    reason: Mapped[str] = mapped_column(String(60), default="")
+    auto: Mapped[bool] = mapped_column(Boolean, default=False)
+    production_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft
+    order_line_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sales_order_lines.id"), nullable=True
+    )
+    shipment_id: Mapped[int | None] = mapped_column(ForeignKey("shipments.id"), nullable=True)
+    replaces_device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("device_units.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    device: Mapped[DeviceUnit] = relationship(back_populates="events", foreign_keys=[device_id])
+    cost_lines: Mapped[list["RepairCostLine"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index("ix_device_events_device", "device_id", "at"),
+        Index("ix_device_events_line", "order_line_id"),
+        Index("ix_device_events_shipment", "shipment_id"),
+        Index("ix_device_events_kind", "kind"),
+    )
+
+
+class RepairCostLine(Base):
+    """What a repair cost, charged to the order the device was last shipped
+    to. `labour` or `material`; a material line may name a library component
+    drawn from the parts pool. Labour is not recorded yet — the kind exists so
+    it can be (decision 0003 §7)."""
+
+    __tablename__ = "repair_cost_lines"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("device_events.id"))
+    kind: Mapped[str] = mapped_column(String(20), default="material")  # labour|material
+    amount: Mapped[float] = mapped_column(Float, default=0.0)  # net
+    currency: Mapped[str] = mapped_column(String(10), default="PLN")
+    component_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft
+    qty: Mapped[float] = mapped_column(Float, default=1.0)
+    note: Mapped[str] = mapped_column(String(300), default="")
+
+    event: Mapped[DeviceEvent] = relationship(back_populates="cost_lines")

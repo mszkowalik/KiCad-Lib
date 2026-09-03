@@ -670,6 +670,33 @@ function SaleCard({
           {busy ? "Saving…" : "Save sale"}
         </button>
       </div>
+      {run.sales ? (
+        <p className="muted">
+          From shipments: {run.sales.qty_sold_derived.toLocaleString()} units of this batch went to{" "}
+          {run.sales.orders.length === 0 ? (
+            "no order yet"
+          ) : (
+            run.sales.orders.map((o, i) => (
+              <span key={o.order_line_id}>
+                {i ? ", " : ""}
+                <Link className="val-link" to={`/production/orders/${o.order_id}`}>
+                  {o.customer}
+                  {o.order_ref ? ` · ${o.order_ref}` : ""}
+                </Link>{" "}
+                ({o.qty_from_run.toLocaleString()})
+              </span>
+            ))
+          )}
+          {run.sales.stock ? (
+            <>
+              {" "}· {run.sales.stock.stock.toLocaleString()} still on the shelf
+              {run.sales.stock.overdrawn ? ` · ${run.sales.stock.overdrawn} more shipped than built` : ""}
+            </>
+          ) : null}
+          . Orders are managed on <Link className="val-link" to="/production/orders">Production → Orders</Link>;
+          the fields above stay until the register reads the orders.
+        </p>
+      ) : null}
     </div>
   );
 }

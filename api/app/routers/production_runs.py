@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as M
 from ..db import get_db
-from ..services import production, project_bom, run_actuals, storage
+from ..services import orders, production, project_bom, run_actuals, storage
 from .util import audit
 
 router = APIRouter(prefix="/api", tags=["production-runs"])
@@ -85,6 +85,9 @@ def _run_json(r: M.ProductionRun, db: Session | None = None, with_detail: bool =
             {"id": d.id, "serial": d.serial, "note": d.note, "created_at": d.created_at.isoformat()}
             for d in sorted(r.devices, key=lambda d: d.serial)
         ]
+        # Decision 0003 §9: the orders this batch's units went to, `qty_sold`
+        # derived from shipments, and what is still on the shelf.
+        out["sales"] = orders.run_sales_json(db, r)
     return out
 
 

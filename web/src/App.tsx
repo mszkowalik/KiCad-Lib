@@ -23,6 +23,8 @@ import FlashRunDetail from "./pages/FlashRunDetail";
 import Invoices from "./pages/Invoices";
 import Stock from "./pages/Stock";
 import NewComponent from "./pages/NewComponent";
+import Orders from "./pages/Orders";
+import OrderDetail from "./pages/OrderDetail";
 import ProductionJlc from "./pages/ProductionJlc";
 import ProductionOverview from "./pages/ProductionOverview";
 import ProductionWrites from "./pages/ProductionWrites";
@@ -87,6 +89,7 @@ const REVIEW_LINKS = [
 
 const PRODUCTION_LINKS = [
   { to: "/production", label: "Overview", end: true },
+  { to: "/production/orders", label: "Orders" },
   { to: "/production/invoices", label: "Invoices" },
   { to: "/production/stock", label: "Stock" },
   { to: "/production/jlc", label: "JLC" },
@@ -188,6 +191,8 @@ function Shell() {
           {/* Production */}
           <Route element={<SectionNav links={PRODUCTION_LINKS} />}>
             <Route path="/production" element={<ProductionOverview />} />
+            <Route path="/production/orders" element={<Orders />} />
+            <Route path="/production/orders/:id" element={<OrderDetail />} />
             <Route path="/production/invoices" element={<Invoices />} />
             <Route path="/production/stock" element={<Stock />} />
             <Route path="/production/jlc" element={<ProductionJlc />} />

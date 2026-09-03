@@ -32,6 +32,12 @@
   --sim-hot: #c0392f;
   --sim-cold: #1f63d6;
   --sim-zero: #5c6a7b;
+  /* The schematic's voltage tint, on Falstad's convention: green is above
+     ground, red is below it, and a net at zero carries no colour at all. Not
+     --sim-hot/--sim-cold, which are the field solver's own pair and mean
+     something else. */
+  --sim-pos: #2c9e5b;
+  --sim-neg: #cf3f3f;
   --sim-current: #b26a34;
   --sim-trace-0: #1f63d6;
   --sim-trace-1: #c0392f;
@@ -85,6 +91,8 @@
     --sim-hot: #e0655b;
     --sim-cold: #5b93f5;
     --sim-zero: #8d9db0;
+    --sim-pos: #4ecb84;
+    --sim-neg: #f26d6d;
     --sim-current: #e8c15c;
     --sim-trace-0: #5b93f5;
     --sim-trace-1: #e0655b;
@@ -1366,6 +1374,9 @@ dl.kv {
 
 .err-text {
   color: var(--err);
+}
+.warn-text {
+  color: var(--warn);
 }
 
 .props .prop-key {
@@ -2771,6 +2782,455 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
   overflow: hidden;
   background: none;
   border-color: transparent;
+  /* The part dialog floats over the drawing and is positioned inside it, so
+     this box is what its pixels are measured against. */
+  position: relative;
+}
+
+/* ------------------------------------------------- the simulator's bars */
+/* Two bars, and each answers one question. The top one: what am I looking at.
+   The one under the drawing: what will run, and what did it say. They used to
+   be a single toolbar that grew with the data — the simulation, the sheet, the
+   mode, the view, the speed, the status, the plot name, the point count and
+   Play, all on one line and wrapping onto three. */
+
+.sim-topbar,
+.sim-runbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sim-topbar {
+  margin-bottom: 12px;
+}
+
+.sim-runbar {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  margin-bottom: 16px;
+}
+
+/* A second row of the same bar: the numbers an analysis asks for. It only
+   appears for an analysis the user chose. */
+.sim-runbar-form {
+  margin-top: -12px;
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.sim-speed > input[type="range"] {
+  width: 92px;
+  accent-color: var(--accent);
+}
+
+.sim-speed-read {
+  font-size: 0.78rem;
+  min-width: 2.6rem;
+  text-align: right;
+}
+
+.sim-runbar-spacer {
+  flex: 1 1 auto;
+}
+
+.sim-runbar-pick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.sim-runbar-pick > .text {
+  min-width: 8rem;
+}
+
+.sim-runbar-pick > input.text {
+  min-width: 5.5rem;
+  width: 6rem;
+}
+
+.sim-runbar-directive {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-radius: 5px;
+  padding: 3px 7px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 22rem;
+}
+
+/* ----------------------------------------------------------- the waveform */
+
+.sim-scope-card {
+  padding: 6px 10px 8px;
+  /* Inside the dock: the pane list scrolls, the window does not. The cap is
+     chosen so TWO compact panes fit without scrolling on a 1080p window. */
+  max-height: 34vh;
+  overflow-y: auto;
+}
+
+/* The simulator page spends its pixels on the drawing, Falstad's way: no
+   page title, one toolbar row, hairline gaps. Decoration pays rent here. */
+.page-sim {
+  padding: 6px 12px 20px;
+}
+
+.page-sim .card { margin-bottom: 8px; }
+.page-sim .card.pad { padding: 8px 12px; }
+.page-sim .sim-topbar { margin-bottom: 6px; }
+.page-sim .sim-topbar .proj-tabs { margin: 0; }
+.page-sim .proj-tabs button { padding: 4px 12px; }
+.page-sim .toolbar { margin-bottom: 6px; gap: 8px; }
+.page-sim .sch-props { min-height: 0; }
+/* The split spaces its children itself. */
+.sim-split .card { margin-bottom: 0; }
+.sim-dock .sim-runbar { padding: 6px 10px; }
+
+/* The bottom dock: run bar + scope pinned to the window's bottom edge, so
+   the schematic above and the waveform below are visible TOGETHER — the
+   one-window reading Falstad got right. Sticky, not fixed: it sits in the
+   page flow and the reference drawer below it is still reachable. */
+.sim-dock {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* The split: canvas over dock, together exactly one window tall (the page
+   measures the height). The canvas takes whatever the dock leaves; the scope
+   card scrolls internally past its cap, so a fourth pane never squeezes the
+   drawing to a stamp. */
+.sim-split {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 420px;
+}
+
+.sim-canvas-slot {
+  flex: 1 1 auto;
+  /* The drawing must stay usable even with a full dock under it. */
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sim-canvas-slot .schview {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.sim-scope-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+/* A live trace is a BAND between the min and the max of a column, not a line:
+   the worker sends one column per pixel, and a column of a square wave really
+   does span both rails. */
+/* ------------------------------------------------------------ the scope */
+/* Panes stack and share the X axis; only the bottom one carries its labels,
+   because three copies of the same time axis is three chances to read the
+   wrong one. */
+
+.sim-plots {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sim-plots-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.sim-pane {
+  border-top: 1px solid var(--line);
+  padding-top: 3px;
+}
+
+.sim-pane:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.sim-pane-chart {
+  width: 100%;
+}
+
+.sim-pane-act {
+  font-size: 0.76rem;
+}
+
+/* uPlot draws into a canvas and takes its colours from these. */
+.sim-pane .u-over,
+.sim-pane .u-under {
+  border-color: var(--line);
+}
+
+.sim-pane .u-select {
+  background: var(--accent-soft);
+}
+
+/* ------------------------------------------------------------ the legend */
+
+.sim-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  margin-top: 2px;
+}
+
+.sim-legend .ghost {
+  padding: 1px 8px;
+}
+
+.sim-legend-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 1px 4px 1px 9px;
+  font-size: 0.74rem;
+  max-width: 100%;
+}
+
+.sim-legend-item.off {
+  opacity: 0.4;
+}
+
+.sim-legend-name {
+  border: none;
+  background: none;
+  color: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.sim-legend-stats {
+  display: inline-flex;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Every reading gets a FIXED column, sized to eng()'s worst case ("-99.9 mV"
+   is 9 characters, a min…max pair 19). The numbers update thirty times a
+   second, and a pill that breathes with them moves its own × button out from
+   under the pointer. Right-aligned, so the digits tick in place. */
+.sim-legend-stats b,
+.sim-legend-stats span {
+  display: inline-block;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sim-legend-stats b {
+  color: var(--text);
+  font-weight: 600;
+  min-width: 9ch;
+}
+
+.sim-legend-stats span:nth-of-type(1) { min-width: 17ch; } /* min…max */
+.sim-legend-stats span:nth-of-type(2) { min-width: 11ch; } /* mean */
+.sim-legend-stats span:nth-of-type(3) { min-width: 12ch; } /* rms */
+.sim-legend-stats span:nth-of-type(4) { min-width: 11ch; } /* peak-peak */
+
+.sim-legend-x {
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.sim-menu {
+  position: absolute;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 132px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+  padding: 4px;
+}
+
+.sim-menu button {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: inherit;
+  font-size: 0.82rem;
+}
+
+.sim-menu button:hover { background: var(--surface-2); }
+.sim-menu button:disabled { opacity: 0.4; cursor: default; }
+
+.sim-legend-x:hover {
+  color: var(--text);
+}
+
+/* ----------------------------------------------------- reference, closed */
+
+.sim-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.sim-details {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.sim-details > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.sim-details > summary:hover {
+  color: var(--accent);
+}
+
+.sim-details > summary .muted {
+  font-family: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.sim-details-body {
+  padding: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sim-verdict-card {
+  padding: 12px 14px;
+}
+
+/* ------------------------------------------------------- the part dialog */
+
+.part-popup {
+  position: absolute;
+  z-index: 20;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  max-height: 70%;
+  display: flex;
+  flex-direction: column;
+}
+
+.part-popup-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 7px 8px 7px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  border-radius: var(--radius) var(--radius) 0 0;
+  cursor: move;
+  /* Dragging the bar must not select the text in it. */
+  user-select: none;
+}
+
+.part-popup-ref {
+  font-weight: 600;
+}
+
+.part-popup-value {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.part-popup-x {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+.part-popup-x:hover {
+  color: var(--text);
+}
+
+.part-popup-body {
+  padding: 10px 12px 12px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.part-facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.86rem;
+}
+
+.part-facts dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.part-facts dd {
+  margin: 0 0 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+.part-popup-note {
+  font-size: 0.8rem;
+}
+
+.part-popup-actions {
+  margin-top: 0.2rem;
 }
 
 /* Cost-vs-volume chart */
@@ -3495,6 +3955,52 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
 .device-config-table th:nth-child(2), .device-config-table td:nth-child(2) { width: 38%; }
 .device-config-table th:nth-child(3), .device-config-table td:nth-child(3) { width: 16%; }
 .device-config-table th:nth-child(4), .device-config-table td:nth-child(4) { width: 20%; }
+
+/* ---- sales orders (decision 0003): every table fixed, no wrapping ---- */
+.finished-stock-table { table-layout: fixed; }
+.finished-stock-table th:nth-child(1), .finished-stock-table td:nth-child(1) { width: 14%; }
+.finished-stock-table th:nth-child(2), .finished-stock-table td:nth-child(2) { width: 22%; }
+.finished-stock-table th:nth-child(n+3), .finished-stock-table td:nth-child(n+3) { width: 9.14%; }
+.order-lines-table { table-layout: fixed; }
+.order-lines-table th:nth-child(1), .order-lines-table td:nth-child(1) { width: 18%; }
+.order-lines-table th:nth-child(2), .order-lines-table td:nth-child(2) { width: 20%; }
+.order-lines-table th:nth-child(n+3), .order-lines-table td:nth-child(n+3) { width: 9.5%; }
+.order-lines-table th:nth-child(9), .order-lines-table td:nth-child(9) { width: 5%; }
+.order-lines-edit-table { table-layout: fixed; }
+.order-lines-edit-table th:nth-child(1), .order-lines-edit-table td:nth-child(1) { width: 30%; }
+.order-lines-edit-table th:nth-child(2), .order-lines-edit-table td:nth-child(2) { width: 34%; }
+.order-lines-edit-table th:nth-child(3), .order-lines-edit-table td:nth-child(3) { width: 14%; }
+.order-lines-edit-table th:nth-child(4), .order-lines-edit-table td:nth-child(4) { width: 16%; }
+.order-lines-edit-table th:nth-child(5), .order-lines-edit-table td:nth-child(5) { width: 6%; }
+.order-invoices-table { table-layout: fixed; }
+.order-invoices-table th:nth-child(1), .order-invoices-table td:nth-child(1) { width: 11%; }
+.order-invoices-table th:nth-child(2), .order-invoices-table td:nth-child(2) { width: 24%; }
+.order-invoices-table th:nth-child(3), .order-invoices-table td:nth-child(3) { width: 13%; }
+.order-invoices-table th:nth-child(4), .order-invoices-table td:nth-child(4) { width: 13%; }
+.order-invoices-table th:nth-child(5), .order-invoices-table td:nth-child(5) { width: 17%; }
+.order-invoices-table th:nth-child(6), .order-invoices-table td:nth-child(6) { width: 16%; }
+.order-invoices-table th:nth-child(7), .order-invoices-table td:nth-child(7) { width: 6%; }
+.order-shipments-table { table-layout: fixed; }
+.order-shipments-table th:nth-child(1), .order-shipments-table td:nth-child(1) { width: 12%; }
+.order-shipments-table th:nth-child(2), .order-shipments-table td:nth-child(2) { width: 10%; }
+.order-shipments-table th:nth-child(3), .order-shipments-table td:nth-child(3) { width: 40%; }
+.order-shipments-table th:nth-child(4), .order-shipments-table td:nth-child(4) { width: 16%; }
+.order-shipments-table th:nth-child(5), .order-shipments-table td:nth-child(5) { width: 16%; }
+.order-shipments-table th:nth-child(6), .order-shipments-table td:nth-child(6) { width: 6%; }
+.order-shipments-table td.expand-cell { white-space: normal; overflow: visible; }
+.order-shipments-table tr.clickable { cursor: pointer; }
+.ship-batches-table { table-layout: fixed; }
+.ship-batches-table th:nth-child(1), .ship-batches-table td:nth-child(1) { width: 6%; }
+.ship-batches-table th:nth-child(2), .ship-batches-table td:nth-child(2) { width: 46%; }
+.ship-batches-table th:nth-child(n+3), .ship-batches-table td:nth-child(n+3) { width: 16%; }
+.ship-line { border-top: 1px solid var(--line); padding-top: 0.5rem; margin-top: 0.5rem; }
+.serial-cloud { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.4rem; }
+.device-history-table { table-layout: fixed; }
+.device-history-table th:nth-child(1), .device-history-table td:nth-child(1) { width: 16%; }
+.device-history-table th:nth-child(2), .device-history-table td:nth-child(2) { width: 14%; }
+.device-history-table th:nth-child(3), .device-history-table td:nth-child(3) { width: 40%; }
+.device-history-table th:nth-child(4), .device-history-table td:nth-child(4) { width: 15%; }
+.device-history-table th:nth-child(5), .device-history-table td:nth-child(5) { width: 15%; }
 
 .device-runs-table { table-layout: fixed; }
 .device-runs-table th:nth-child(1), .device-runs-table td:nth-child(1) { width: 15%; }
@@ -4385,45 +4891,35 @@ a.check-cell:hover {
   opacity: 0.35;
 }
 
+/* A pin is a target: click it for its voltage and, where the net around it
+   determines one, its current. The visible dot is SMALL — under the voltage
+   tint's stroke — and the click area is the wide transparent stroke, so the
+   picture and the target are sized independently. Filled where a current is
+   known, faint where only the voltage is. */
 .sim-pin {
   fill: var(--sim-current);
   opacity: 0.55;
+  stroke: transparent;
+  stroke-width: 1.6;
   pointer-events: all;
-  cursor: help;
+  cursor: pointer;
+}
+
+.sim-pin-plain {
+  fill: var(--sim-zero);
+  opacity: 0.35;
+}
+
+.sim-pin:hover {
+  fill: var(--accent);
+  opacity: 1;
 }
 
 .sim-caption {
-  padding: 0 0.6rem 0.4rem;
-  line-height: 1.4;
-}
-
-.sim-scrub {
-  width: 100%;
-}
-
-.sim-scope-plot {
-  width: 100%;
-  height: 160px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  cursor: crosshair;
-}
-
-.sim-scope-axis {
-  stroke: var(--line);
-  stroke-width: 2;
-}
-
-.sim-playhead {
-  stroke: var(--accent);
-  stroke-width: 2;
-}
-
-.sim-trace {
-  fill: none;
-  stroke-width: 2;
-  vector-effect: non-scaling-stroke;
+  padding: 0 0.6rem;
+  margin: 2px 0 0;
+  line-height: 1.35;
+  font-size: 0.74rem;
 }
 
 .sim-trace-0 { stroke: var(--sim-trace-0); color: var(--sim-trace-0); }
@@ -4433,25 +4929,13 @@ a.check-cell:hover {
 .sim-trace-4 { stroke: var(--sim-trace-4); color: var(--sim-trace-4); }
 .sim-trace-5 { stroke: var(--sim-trace-5); color: var(--sim-trace-5); }
 
-.sim-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  align-items: center;
-  margin-top: 0.5rem;
-}
-
 /* Net names are DATA: `/lowpass` is not `/LOWPASS`, and the pill's uppercase
    also turns the SI micro prefix into a capital M. Both readouts opt out. */
 .sim-legend-item,
+.sim-legend-item *,
 .sim-nets .pill {
   text-transform: none;
   letter-spacing: normal;
-}
-
-.sim-legend-item {
-  cursor: pointer;
-  border-color: currentColor;
 }
 
 /* One label plus its control, so a toolbar row reads as pairs when it wraps */
@@ -4595,28 +5079,42 @@ a.check-cell:hover {
 
 /* A part a live run can steer. Only ever drawn in live mode — a hotspot over
    every symbol would swallow the clicks that pick a net. */
+/* Every part is clickable, so every part has one of these. It is INVISIBLE
+   until the pointer is on it: an 87-part sheet drawn in 87 accent boxes is a
+   diagram of the hit targets, not of the circuit. What stays visible is what
+   carries a reading — a contact, whose box says which way it is thrown. */
 .sim-part {
   fill: transparent;
-  stroke: var(--accent);
+  stroke: none;
   stroke-width: 0.15;
-  stroke-opacity: 0.35;
   pointer-events: all;
   cursor: pointer;
 }
 
 .sim-part:hover {
   fill: var(--accent-soft);
+  stroke: var(--accent);
   stroke-opacity: 0.9;
 }
 
 .sim-part.on {
   fill: var(--accent-soft);
+  stroke: var(--accent);
   stroke-opacity: 0.8;
 }
 
 .sim-part.switch {
   stroke: var(--sim-current);
   stroke-opacity: 0.7;
+}
+
+/* The part whose dialog is open. */
+.sim-part-open {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 0.22;
+  stroke-opacity: 0.9;
+  pointer-events: none;
 }
 
 .sim-knob.on {
@@ -4629,6 +5127,7 @@ a.check-cell:hover {
 .sim-part.sheet {
   stroke: var(--sim-trace-2);
   stroke-opacity: 0.4;
+  stroke-width: 0.15;
 }
 
 /* ------------------------------------------------------- part inspector */

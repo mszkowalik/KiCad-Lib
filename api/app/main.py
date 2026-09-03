@@ -39,6 +39,7 @@ from .routers import (
     skills,
     users,
     view,
+    orders,
 )
 
 log = logging.getLogger(__name__)
@@ -99,6 +100,7 @@ app.include_router(jlc_import.router)
 app.include_router(ledger.router)
 app.include_router(run_costs.router)
 app.include_router(flasher.router)
+app.include_router(orders.router)
 
 # Published-state file mirror, served read-only (sync + downloads).
 app.mount("/files", StaticFiles(directory=settings.mirror_dir), name="files")
@@ -280,6 +282,17 @@ _PHASE1_DDL = (
     ("ix_datasheet_pages_tsv",
      "CREATE INDEX IF NOT EXISTS ix_datasheet_pages_tsv "
      "ON datasheet_pages USING GIN (tsv)"),
+    # Decision 0003: the device's current state and its batch, both caches of
+    # `device_events`. "" = no event yet (a legacy unit whose batch was never
+    # recorded); NULL run = the same.
+    ("device_units.state",
+     "ALTER TABLE device_units ADD COLUMN IF NOT EXISTS state varchar(20) NOT NULL DEFAULT ''"),
+    ("device_units.production_run_id",
+     "ALTER TABLE device_units ADD COLUMN IF NOT EXISTS production_run_id integer"),
+    ("ix_device_units_state",
+     "CREATE INDEX IF NOT EXISTS ix_device_units_state ON device_units (state)"),
+    ("ix_device_units_prod_run",
+     "CREATE INDEX IF NOT EXISTS ix_device_units_prod_run ON device_units (production_run_id)"),
 )
 
 # name -> "ok" | "failed: ..."; served by GET /api/health/schema.
@@ -437,6 +450,26 @@ def _flasher_bundle_migration(conn) -> None:
         if has_col(table, "deployment_script_version_id") and has_col(table, "deployment_version_id"):
             conn.execute(text(f"ALTER TABLE {table} DROP COLUMN deployment_script_version_id"))
     log.info("flasher: release tables retired")
+
+
+def _migrate_run_sales() -> None:
+    """Decision 0003 §10: a run's sale columns become an order line and one
+    unserialized delivery, once per run (`uq_order_line_migrated_run`). The
+    run's columns stay, so the register's figures do not move."""
+    try:
+        from .db import SessionLocal
+        from .services import orders
+
+        db = SessionLocal()
+        try:
+            res = orders.migrate_from_runs(db)
+            db.commit()
+            if res["lines"]:
+                print(f"sales orders: migrated {res['lines']} run(s) into {res['orders']} new order(s)")
+        finally:
+            db.close()
+    except Exception as e:  # noqa: BLE001 — never block startup on the migration
+        log.warning(f"sales-order migration did not complete: {type(e).__name__}: {e}")
 
 
 @app.on_event("startup")
@@ -712,6 +745,7 @@ def startup() -> None:
         log.warning(f"startup schema block did not complete: {type(e).__name__}: {e}")
     _ensure_phase1_schema()
     _ensure_dedup_indexes()
+    _migrate_run_sales()
     try:
         from .db import SessionLocal
         from .services import appconfig

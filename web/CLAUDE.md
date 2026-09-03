@@ -341,6 +341,14 @@ sign-off states to `STATUS_TONES`.
 - **Each number has one home.** Run economics render on the run page and the
   Production overview; stock figures on Production → Stock. Link there
   instead of re-rendering a figure on a new surface.
+- **Orders live on Production → Orders** (`pages/Orders.tsx`,
+  `pages/OrderDetail.tsx`, decision 0003). The Orders page is also the ONE
+  home of finished-device stock ("Devices on the shelf"), which counts
+  recorded devices next to legacy units without a serial. The Ship card
+  draws devices oldest-first from the batches the user ticks; returns,
+  repairs and disposals are on the DEVICE page (`components/DeviceHistoryCard.tsx`),
+  because they are events in a device's history. The run page's sale card
+  stays until the register reads the orders; it now points at the order.
 
 ### Attachments open in a viewer, never as a download
 
@@ -656,6 +664,528 @@ sheet the editor wrote embeds both blade positions, so the graphics are
 already there. The altered values live on the page, not inside
 `LiveControls`, because the drawing and the panel change the same number.
 
+## A sketch has no edit mode, and it opens RUNNING
+
+Falstad has no Edit button, and neither does a sketch any more: the tools are
+always out, the page opens in Live, and Scenario is the mode you switch to
+deliberately — the formal run, the harness, the verdicts. A project sheet's
+schematic tab offers both doors: **Simulate** (scenario) and **Play live**
+(`?mode=live`).
+
+The click grammar that makes always-editing coherent (Falstad's own):
+
+- **click** selects — a wire click also plots it, a pin click plots the
+  terminal; neither has a drag gesture to collide with;
+- **drag** moves;
+- **double-click** opens the part dialog (Plot current lives in there now —
+  plotting on every selection put a trace on the scope each time a part was
+  picked up to move it).
+
+Two rules with teeth:
+
+- **Live edits never write a project file.** A sketch is scratch space in
+  `sim_uploads/`; a sheet from a git project is read-only in live, knobs only.
+  Download is the only way out of the playground, by design — the git checkout
+  is the source of truth.
+- **A pin dropped on the MIDDLE of a wire is connected** (`attach()` in the
+  netlister, same rule as labels and junctions). That is what makes dragging a
+  part onto a live circuit join it mid-gesture; the reload pipeline needs no
+  drag-special-casing at all, because a reload only fires when the netlist
+  STRUCTURALLY changed — a part floating in space between two connections
+  produces no reloads, severing and rejoining each produce exactly one.
+
+## Sketch live mode is a RELOAD, never a restart (`sim/edit/netlist.ts`)
+
+The Falstad feel — edit the circuit while it runs, parts keep their state —
+rests on three pieces, and each exists for latency:
+
+1. **The browser netlists the document itself.** For a sketch we own every
+   byte, so `netlistDoc` writes the SPICE netlist in under a millisecond and
+   the start frame carries it — kicad-cli (the slowest step, QEMU-emulated on
+   a Mac) is not in the path at all. Project sheets still go through
+   kicad-cli; that file is not ours to reinterpret.
+2. **An edit is `session.reload(...)`, debounced 120 ms.** Same worker, same
+   websocket; the worker halts, swaps the circuit, and resumes. The session is
+   created ONCE per live toggle — geometry refreshes and vector changes must
+   not tear it down, or every autosave would restart the run.
+3. **State travels on the components.** Each C and L card in a reload carries
+   `IC=%IC_<ref>%`; the WORKER fills the token from its own last data point
+   (cap voltage across its OLD nodes, inductor branch current) and `.tran uic`
+   starts from there. Keyed to the reference, not the node — a charged cap
+   unwired, dragged away and rewired elsewhere is still charged. `rshunt=1e12`
+   keeps the floating island solvable in between.
+
+Rules that were paid for:
+
+- **Node names are lowercase from birth, and an edit REUSES the running run's
+  names** (`reuse` callback: last netlist first, server geometry second — the
+  geometry is a save behind during a burst of edits). One vocabulary across
+  the netlist, the frames and the overlay, or traces die on every edit.
+- **A name is claimed ONCE per build, biggest net first.** Reuse works by pin
+  membership, and a pin that LEFT a net still remembers it — so a severed
+  op-amp's floating output pin reclaimed `/ampout` while the labelled wire
+  kept it too, SPICE merged the two same-named nodes, and the part went on
+  driving a wire it was visibly not connected to (the drawing said severed,
+  the voltage kept swinging). Labels and power names are claimed first; then
+  nets in descending pin count, so the net that kept most of the membership —
+  not a lone runaway pin — carries the name forward.
+- **A label names the wire it sits ON, not the endpoint it touches.** People
+  put labels mid-segment; joining labels only by endpoint coordinates renamed
+  `/in` to `net-_u1-pad1_` silently — measured on the worked example itself.
+- **Frame v2 carries its own overlay count.** A reload changes the overlay
+  while frames closed against the old list are in flight; a frame must be
+  sliced by what IT holds, not by what the config now says.
+- The netlist names the model library by token (`%SIGMA_SIM_LIB%`); the render
+  server substitutes the real path and refuses any other `.include`.
+
+## Adding a dependency needs `--renew-anon-volumes`
+
+The dev web container mounts `./web:/srv` and keeps the image's linux
+`node_modules` behind an **anonymous volume**, so the host's macOS builds do not
+shadow them. That volume survives `docker compose up --build`: the image gets
+the new package and the container keeps the old tree, and Vite answers every
+request with `Failed to resolve import`.
+
+    docker compose up -d --build --force-recreate --renew-anon-volumes web
+
+## The scope: stacked panes on one X axis (`sim/Plots.tsx`, `sim/panes.ts`)
+
+Drawn by **uPlot** — 45 kB, no dependencies, canvas, built for tens of
+thousands of points with a synchronised crosshair across several charts. The
+hand-drawn SVG scope it replaced could not stack, redrew every path on every
+frame, and had no cursor worth the name.
+
+`sim/panes.ts` is the model and holds no React: a pane is one pair of axes, a
+trace belongs to exactly one pane, and merge/split are list operations. Three
+things are deliberately ours rather than uPlot's:
+
+1. **The legend.** A row of pills carrying the statistics — value at the
+   cursor, min…max, mean, rms, peak-to-peak, over the window ON SCREEN. Click
+   the name to hide a trace, the × to drop it. Hiding is not removing: reading
+   the trace underneath is not the same as being done with this one.
+2. **The layout.** Panes are React, so stacking is a list and not a chart's
+   internals.
+3. **The band.** A live run sends a min-max COLUMN per pixel, so a live trace is
+   a band between two hidden series with the mid-line over it.
+
+Two traps, both measured:
+
+- **A new trace goes in with its own UNIT.** Volts and amps on one pair of axes
+  is a chart with two meanings and one scale, and the number that gets squashed
+  is always the interesting one. Merge them by hand if that is what you want.
+- **The cursor hook fires for a crosshair the PAGE moved too.** Reporting that
+  back as a scrub stopped replay the instant it started — play moved the
+  cursor, the hook called it a scrub, and a scrub pauses. It reports only while
+  the pointer is over that chart.
+
+## Voltage colour is a SCALE, not an autorange
+
+Green above ground, red below, nothing at zero — Falstad's convention, and the
+one every reader of a simulated schematic already knows. It saturates at a
+reference the user picks (±10 V by default), NOT at the run's own extremes.
+Autoscaling reads well on one circuit and lies on the next: a board whose
+largest excursion is 40 mV of noise gets drawn in full colour, and the same
+green then means 5 V on the sheet beside it.
+
+`--sim-pos` / `--sim-neg` are that pair. They are not `--sim-hot` / `--sim-cold`,
+which belong to the field solver and mean something else.
+
+## Click a wire, a pin or a part — and get BOTH readings
+
+A net has no current: ngspice reports device branches, never wires. A **wire**
+does have one, and so does a **pin**, and both are reconstructed from the
+currents around them (`sim/currents.ts`). So:
+
+| Click | Voltage | Current |
+|---|---|---|
+| a wire | its net | that SEGMENT's own, `iw(<wire id>)` |
+| a pin | the net it sits on | that terminal's, `ip(<ref>.<pin>)` |
+| a part body | — | its branch, `i(@r1[i])` or `i(v1)` |
+
+The two land in separate panes on one time axis, because volts and amps do not
+share a scale. `Merge up` overlays them when that is what you want.
+
+**A pin on a part with more than two legs is the interesting case.** SPICE
+reports no per-terminal current for one, so an op-amp output would otherwise be
+unplottable. The net around it names it: where a terminal is the only one on
+its net whose current is unknown, conservation fixes it exactly. Where two are
+unknown it cannot be named, and the pin plots its voltage alone rather than a
+number nobody can stand behind — the same rule the charge animation already
+followed.
+
+Verified numerically on the worked example at one sample: `v(/ampout)` 0.9805 V,
+`i(@r2[i])` −89.136 uA, the wire on that net +89.136 uA, and **U1 pin 5**
+−89.136 uA — a reading that is in no rawfile.
+
+These are not SPICE vectors and the names say so: `iw(` is a wire, `ip(` is a
+terminal, `i(` is a device. On a finished run they are solved across the whole
+of it, once, and only when one is on the scope; over a budget the run is sampled
+at a stride and the gaps are straight lines. On a live run there is no history
+to solve over, so one is kept: a probe is solved per FRAME into a ring buffer
+the width of the scope, then put on the worker's column grid by time.
+
+## Two bars, one drawing, and everything else closed
+
+The simulator page is: a bar that says what you are looking at, the drawing, a
+bar that says what will run and what it said, the waveform, and then reference
+material behind disclosures.
+
+It was not. There was ONE toolbar carrying the simulation, the sheet, the mode,
+the view, the speed, the status, the plot name, the point count and Play — it
+grew with the data and wrapped onto three lines — and under the drawing came
+four full-width cards in a row: the knobs, "What to run" (a row of big buttons
+per scenario, a second row per analysis, a form, Run, a verdict table and a
+textarea), the scope, and the net list with the whole SPICE netlist inside it.
+
+Rules that came out of fixing it:
+
+- **A choice among a handful of named things is a menu, not a row of buttons.**
+  The scenario and the analysis are `<select>`s in `sim/RunBar.tsx`, on one
+  line with Run and the directive they build.
+- **A form row appears only for an analysis someone chose.** "From the sheet"
+  has no numbers to ask for, and an empty form under every run is furniture.
+- **The verdict summary belongs on the run bar; the table belongs under the
+  waveform** (`sim/Verdicts.tsx`). One is the answer at a glance, the other is
+  the working.
+- **Reference goes in `<details>`** (`sim/Disclosure.tsx`): the net list, the
+  SPICE netlist, the control block, the off-drawing knobs. Each is something a
+  person wants twice a day and never while reading a waveform.
+- **Plot metadata sits with the plot.** Play, the point count and the duration
+  moved off the top toolbar into the scope card's own head.
+
+## The overlay is matched to the file by POSITION, never by list index
+
+`useSimOverlay` draws the editor's own wires when there is a document, so the
+tint lands on the wire the user is looking at rather than on the last save. It
+used to pair the document's wires to the file's **by list index**, and drop the
+whole overlay when the two lengths disagreed.
+
+They always disagree. A document holds RUNS; a `.kicad_sch` holds one two-point
+wire per segment (`sch_write._wires`), so one bend is enough to break the count.
+On the worked example it is 26 runs against 36 wires — and "drop the overlay"
+means **no tint, no charge dots and no clickable wires at all**, on every
+circuit drawn in the browser, in every mode. That is what "nothing is animated
+and I cannot select a net" was.
+
+Match by position instead: a segment's two endpoints name exactly one wire in
+the file. A segment the file has not caught up with goes untinted on its own
+rather than taking the overlay with it.
+
+## A live command sent before the socket opens is QUEUED, not dropped
+
+`LiveSession.send` used to drop a command while the socket was still
+connecting — and that is exactly when the page sends. The effect that creates
+the session and the effect that tells it which scopes to watch run in the same
+commit, microseconds apart and long before the handshake finishes. So a live
+run opened with a trace already picked watched nothing at all.
+
+Commands are now queued and flushed on open, after the start frame — the worker
+reads that one first and refuses anything before it. It fixes `setSpeed` and
+`alter` on the same path.
+
+The other half of the same bug is in `render/sim_worker.py`: `set_scopes`
+resolves its vector names against the run's index. A frame is keyed by the
+run's own bare names (`/in`) while the rest of the platform speaks the wrapped
+form (`v(/in)`), and only `on_init` used to resolve — so a scope set at START
+worked and a scope set LATER, which is every trace the user clicks mid-run,
+matched nothing and closed no columns. No error, just an empty plot.
+
+## Audit findings, 2026-09-01 — the naming seams are where the bugs live
+
+A sweep after the severed-op-amp bug, looking for the same disease elsewhere.
+Fixed:
+
+- **The diode card doubled its element letter.** `spiceName("D1")` is already
+  `d1`; the card prepended another `d`. `dd1` ran fine — under a name the
+  geometry does not know, so the diode's current, charge dots and alter were
+  all dead. Any card built from `spiceName` must NOT re-prefix.
+- **`liveReader.current` tried only the savecurrents spelling.** A source's
+  current is its own branch (`i(v1)`), so every source read null in live
+  mode, every source pin became an "unknown terminal", and the charge overlay
+  and probe fallback quietly degraded.
+- **Adding a capacitor or inductor mid-run killed the reload.** The browser
+  measures carry-state on the circuit being REPLACED, so a brand-new part's
+  `%IC_<ref>%` token had no state entry, reached ngspice unfilled, and the
+  whole edited netlist was refused ("error" banner). The worker
+  (`render/sim_worker.py`) now zero-fills every leftover token — a new part
+  arrives uncharged, which is what adding it mid-run means.
+- **A switch on a net zeroed every wire current on it.** The drawing says
+  `SW1`; the run's element is `rsw1` (`Sim.Device` prefix). The current
+  solver asked the run for `sw1`, got null, counted the switch an unknown
+  terminal — two unknowns with the op-amp, and the whole net's segments came
+  back 0. `currents.ts` now translates ref → element (`elementOf`, from
+  `sym.spice`) everywhere it reads or names a current, `probeTerms` counts
+  unknown terminals up front (a coefficient read off a pre-zeroed unresolved
+  net is a silent 0, not a NaN), and the KiCad-sourced live overlay list asks
+  for element-named currents too.
+- **A dying transient froze the page at RUNNING.** ngspice aborts a
+  background run (timestep too small, singular matrix) with no callback the
+  worker listened to — frames just stopped. `sim_worker.py` now keeps
+  ngspice's own output in a ring (`_on_char`) and a watchdog thread turns an
+  unexpected `ngSpice_running() == False` into an `error` event carrying the
+  last error lines. Deliberate halts (Hold, an alter's pause, a reload's
+  swap) set `deliberate_halt` and stay silent; bg_run re-arms the watch, so
+  fixing the circuit and reloading recovers the same session.
+- **A severed terminal's current vanished instead of reading zero.**
+  `solveSegmentCurrents` skipped wireless groups entirely, so a pin left on a
+  floating one-pin net had no entry and its probe drew gaps. The injection
+  accounting now runs for pin-only groups too — a lone unknown pin reads 0 by
+  conservation, a pin-to-pin contact still resolves — so a disconnected
+  current drops to zero the way a floating node's voltage does.
+- **A speed change kept history at the old timebase.** Carried columns are
+  sim-seconds-per-column; the carry now requires the pitch to match, and the
+  worker's backlog (which resets on the same change) reseeds.
+
+The circuit tab is a SPLIT that fills the window: `.sim-split` (height
+measured from its top edge to the viewport bottom) holds the canvas slot
+(flex:1) over `.sim-dock` (run bar + scope, natural height, scope card
+scrolling internally past ~36vh) — schematic and waveform share one screen,
+Falstad's one-window reading. `SchematicView` gained a `fill` prop for this:
+instead of sizing the frame by the view's aspect (which shrank the drawing to
+a stamp in a fixed-height slot), the frame fills the box and the VIEW is
+padded to the box's aspect around its centre — the viewBox always fills the
+frame, so the pixel-mapping layers (charge canvas, click targets) stay honest.
+Wheel, pan and all mm mapping work in that `shown` window. The reference
+drawer still sits below the split in page flow. The pixels go to the drawing,
+Falstad's proportions: no page `<h1>`, the Circuit/Field-solver tabs share
+the topbar row, `.page-sim` compacts card padding/margins and gaps to
+hairlines, panes are 104px with the scope's status folded into the Plots bar row
+(`head` prop — the `.sim-scope-head` row is gone) and a hairline legend, the
+scope card caps at 34vh (sized so TWO compact panes fit unscrolled at 1080p), the canvas slot
+never drops under 300px, and a sketch that already carries a circuit opens
+FITTED (`openFit`, decided once per document uuid) instead of on the fixed
+`OPENING_VIEW` working window. In LIVE mode the run controls (Hold, status,
+Speed, the t/points readout) render `bare` inside the topbar beside the volt
+scale and current slider — the dock carries a run bar only in scenario mode.
+The `.sch-props` card under the canvas renders
+only when it has something to say (a label/directive editor, or the how-to on
+an EMPTY sheet) — as a standing hint it was the tallest decoration on the
+page.
+
+The measurement setup is STICKY per circuit: the scope panes, the picked net
+and the live speed are `useStickyState` under `sim:<source>:*`, so a refresh
+restores them (volt-ref and current-speed were already sticky, globally). The
+post-run default trace seeds only an EMPTY scope for the same reason.
+
+Editor interactions (SimulatorView): right-click opens `.sim-menu` (Copy /
+Cut / Rotate / Mirror / Delete / Properties / Paste — Paste lands at the
+click's mm, converted through `viewRef`); Ctrl/Cmd-C/X/V copy, cut and paste
+the selected symbol (paste under the pointer, next free reference for its
+prefix). A pointer-down that hits a part's body suppresses the pin-dot probe
+under the same pixels (`downHit`), and `unconnected-*` nets are never added
+to the scope — both stop an edit session flooding the plots. The probe
+grammar is two-tier: a SINGLE click on a wire or pin only selects its net
+(toggle); a DOUBLE click opens a chooser (`.sim-menu`) at the pointer —
+Plot voltage / wire or pin current / both — wired overlay `onProbe` →
+SimulatorView `probe` state → page `pickNet`/`pickPin` with a
+`"v" | "i" | "both"` selector. A power
+symbol's dialog edits its NET (the Value field), not the #PWR reference.
+
+Known and accepted, so nobody re-finds them as surprises:
+
+- Two different labels on one net: the browser picks the first in document
+  order, kicad-cli may pick the other — that net's overlay readings can go
+  dead until the names agree. Label a net once.
+- A trace whose WIRE is deleted outright keeps its carried history as a
+  frozen band until removed by hand (a severed wire or pin reads 0 instead).
+- The overlay's net map (groups, pin membership) comes from the SERVER
+  geometry, refreshed by the sketch autosave + re-parse — about a second
+  behind the run. After a reconnect, current cannot be routed into the
+  segment that ends at the rejoined pin until the map knows the pin is back,
+  so charge beads there lag the rest of the sheet by that round trip.
+- The raw `alter` box steers the RUN only; a sketch reload rebuilds from the
+  document, so raw alters do not survive an edit (dialog edits do — they
+  write the document).
+- A subckt part's `i(@u1[i])` overlay vector never exists (subcircuits have
+  no branch current); it is requested and ignored, by design.
+
+## A trace opened late is seeded with its own PAST
+
+The run has been solving since the session opened; only the scope was
+forgetting it. The worker keeps a rolling one-window min/max history for every
+overlay vector (`HISTORY_COLS` in `sim_worker.py`, a couple of MB at worst),
+and a newly opened scope is seeded from it — so clicking a net five seconds in
+shows the full window immediately, on the fixed time base, instead of a band
+that takes one window-length to arrive.
+
+The parts that keep it honest:
+
+- **`backlog` is per scope and set by the browser** ("I hold no columns for
+  this one"): re-sent scope lists — a speed change, a pane merge — keep their
+  columns browser-side and must not receive them twice.
+- **The speed knob changes the pixel pitch**, so a new `history_span` resets
+  the history; old columns are at the wrong timebase.
+- **Terms scopes (wire and pin probes) are seeded by interval arithmetic**
+  over their components' rings — a positive coefficient maps lo->lo, a
+  negative one swaps them. Conservative (a sum's true envelope can be
+  narrower), but a column is microseconds of simulated time, the components
+  move together at that scale, and an envelope a hair wide beats a current
+  pane arriving one window after the voltage beside it. The rings share one
+  edge grid, so aligning from the newest end is exact.
+- `render/server.py` rebuilds the worker's start frame field by field;
+  forgetting to forward a new field there disables a feature silently — that
+  is exactly how this one shipped broken the first time.
+
+## Live current names are RAW; a scope keeps WALL pace
+
+Two defects that presented together as "the plot takes seconds to appear, and
+two panes drift apart":
+
+- **`LiveState.vectors` holds raw ngspice names** — `@r2[i]`, `v1#branch` —
+  never the wrapped `i(...)` a rawfile speaks. `hasCurrent` tested the wrapped
+  form, returned false for every device in live mode, and every wire/pin probe
+  silently fell back to the 30 Hz reconstruction while the voltage beside it
+  ran at full column rate: one pane visibly sparser than the other. The
+  worker's `resolve` now tries all three spellings of a current, and the
+  browser tests the raw ones.
+- **A scope closed at most one column per solver point.** At the default speed
+  the point rate (~110/s) is below the 150 columns/s a 4-second window needs,
+  so every plot crept slower than wall clock — the band "took seconds to start
+  showing". The worker now closes EVERY edge a data point crossed; when the
+  solver's step is larger than a pixel the extra columns repeat the last
+  value, which is what a scope showing a signal slower than its beam has
+  always drawn. Measured 153/153/153 columns per second — identical to the frame —
+  across a voltage, a wire probe and a source pin after the fix.
+
+## Send the worker the SUM, not the answer
+
+A wire's current and a terminal's are not vectors — they are reconstructed from
+the device currents around them. Reconstructing one in the browser means doing
+it once per FRAME, thirty times a second, and the result is a staircase drawn
+next to a smooth voltage on the very same net: the worker closes a column every
+few microseconds of simulated time, the browser can only supply a value every
+thirty milliseconds of wall clock.
+
+The reconstruction is LINEAR in the terminal currents, so it can be sent instead
+of computed. `probeTerms` reads the coefficients off by solving once per device
+with a reader that says "this one is 1 A, everything else is 0" — no algebra to
+get wrong, and it is the same solver either way. A live scope then carries
+`terms: [{vec, coeff}]` and the worker closes its columns like any other.
+
+Two rules that follow:
+
+- **The basis must keep the run's NULLS.** A device the run reports no branch
+  current for is what makes a terminal the unknown one; answering 0 for it
+  instead solves a different circuit. `probeTerms` takes a `hasCurrent`
+  predicate for exactly that, and it comes from the run — `LiveState.vectors`
+  live, `plot.byName` for a finished one — never from a guess about naming.
+- **`liveState` changes thirty times a second and its vector LIST does not.**
+  Depend on `liveState.vectors`, or the scope list is re-sent every frame.
+
+Measured on the worked example: the terms are exact — `iw(w10)` is `-i(r2)`,
+U1 pin 5 is `+i(r2)`, and the sum matches the direct solve to 0.00e+0 A across
+the whole run. Live, a summed scope closed 946 columns against the voltage
+scope's 946 over the same ten seconds.
+
+The frame-rate reconstruction is still there, as a fallback for a probe that
+cannot be expressed at all — a net with two unknown terminals, or a loop. That
+one is a staircase by nature.
+
+## A live scope's columns are addressed by POSITION — carry them by NAME
+
+`LiveState.columns[i]` belongs to `config.scopes[i]`, so changing the scope list
+moves every trace's history one slot along. `setScopes` used to answer that by
+clearing the lot, which meant **removing one trace blanked every other trace on
+the page**: the whole scope went back to zero columns and the plots had nothing
+left to draw.
+
+It now carries each surviving trace's columns across by vec name; only a new
+trace starts empty. Frames already in flight were closed against the old list,
+so for about one round trip a column can land in the wrong slot — one or two out
+of six hundred, against a history that would otherwise be thrown away.
+
+The other half was in the page: live `plotData` returned **null** when no
+columns had arrived, and a null there destroys every chart and rebuilds it when
+data returns. The live grid is now always the full width, padded with NaN, so a
+moment with no columns is an empty scope rather than no scope.
+
+## The charge-dot speed is a knob, and it says nothing about the simulation
+
+The dots on a wire move at a speed proportional to that wire's share of the
+run's peak current. How fast the whole picture runs is a viewing preference —
+too fast to follow on one circuit is too slow to see on another — so it is a
+slider in the top bar, remembered for the session.
+
+Two things it is NOT: it does not change the simulation, and it is not the live
+run's `speed` (simulated seconds per second of wall clock), which lives on the
+run bar in live mode. Keep them apart in any wording — a user who confuses them
+will think a slower picture is a more accurate one.
+
+The mapping is logarithmic with 1x in the middle, because the useful range is a
+factor of sixty and a linear slider spends four fifths of its travel above "too
+fast to follow". Zero stops the dots where they are; the tint still says what
+every net is worth, which is the right picture for a screenshot.
+
+## A live run learns its own scale
+
+`voltageRange` and `currentPeak` come from a finished run's extremes, which a
+live run does not have — it has the latest frame. Left at their defaults a 5 V
+circuit tinted against ±24 V and every dot ran at the wrong speed.
+
+The live scale is learned from the frames and only ever GROWS. A peak that
+tracked the instant would change the tint and the dot speed thirty times a
+second, which reads as noise rather than as current. The effect returns the
+same object when nothing grew, or it would re-render the page every frame for
+no change.
+
+## A live run has a scope too (now `sim/Plots.tsx`)
+
+Live mode drew a circuit and no waveform, and clicking a net appeared to do
+nothing — because the scope card was rendered only for a FINISHED run, so
+`pickNet` was adding traces to something that was not on the page.
+
+The whole path existed except the browser end. The worker has accepted a scope
+list since it was written, closes one min/max COLUMN per pixel of scope, and
+ships the closed columns in every frame; `LiveState.columns` has always carried
+them. The page passed `scopes: []` and never called anything to change it.
+
+- `LiveSession.setScopes` is new. Changing what a scope watches must NOT go
+  through the session config — rebuilding that restarts the simulation, so a
+  new trace would throw the run away.
+- Columns already closed belong to the OLD scope list and are dropped with it.
+  Keeping them would draw one trace's history under another's name.
+- A live trace is a **band** between a column's min and max, not a line. That
+  is honest: one column of a 1 kHz square sampled over 10 ms really does span
+  both rails.
+- `sim_s_per_px` is tied to the speed, so a scope shows the same few seconds of
+  WALL clock at every setting — which is what a person means by "the last few
+  seconds".
+
+## Click the part, not a table (`sim/PartPopup.tsx`)
+
+A part is set in a dialog that opens ON the part. What this replaced listed
+every steerable part in the design under the drawing — forty text boxes in a
+grid, in an order nobody chose, for a circuit three inches above them. Falstad
+has always done it the other way, and so has every schematic editor: click the
+component, get a dialog about that component.
+
+The dialog is deliberately two halves, and only the second is about simulation:
+
+1. **What the part is** — reference, value, the library part behind it, and
+   whatever the placement carries: footprint, datasheet, description, the
+   manufacturer's number, the model it is simulated as. This half is the reason
+   the component is a separate file: the same dialog is meant to open on a
+   project's schematic tab and answer "what IS this?" out of the catalogue.
+2. **What it can be set to** — `ComponentInspector`, unchanged.
+
+Rules that follow from how it works:
+
+- **Every part gets a hit target, in every mode**, and the target is invisible
+  until hovered. A hotspot that appeared only during a live run would make the
+  same part clickable and then not; 87 accent boxes on a real sheet would be a
+  diagram of the hit targets rather than of the circuit.
+- **A sheet KiCad wrote is never rewritten**, so its dialog is `readOnly` and
+  steers the RUN through `onLive`. The dialog says so rather than looking
+  broken. A sketch's dialog writes to the document like the editor always did.
+- **The dialog is dragged by its title bar**, because the part it describes is
+  underneath it.
+- **It stops its own pointer events.** The drawing under it listens for clicks
+  on wires and parts, and without that every click inside the dialog would also
+  pick whatever is behind it.
+- The panel under the drawing kept only what a drawing CANNOT show: a source
+  living in a SPICE text block, and the parts on OTHER sheets of the design —
+  those by a search box, not a grid.
+
 ## An upload runs itself once, a snapshot does not
 
 Every measurement in the simulator reads from a run: the scope, the readout,
@@ -672,7 +1202,7 @@ those runs are long and a reviewer picks the scenario before spending one.
 The guard is a ref holding the upload id, not the effect's dependency list:
 `doRun` is rebuilt whenever the chosen scenario changes.
 
-## What to run, and what it said (`sim/ScenarioPanel.tsx`)
+## What to run, and what it said (now `sim/RunBar.tsx` + `sim/Verdicts.tsx`)
 
 A harness carries its scenario as SPICE text beside the circuit. Left as text
 it is a wall the user is asked to take on faith before pressing Run, so the

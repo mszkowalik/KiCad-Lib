@@ -417,6 +417,18 @@ class RunEngine:
                 dev = db.get(M.DeviceUnit, run.device_unit_id)
                 dev.last_seen = utcnow()
                 dev.last_status = status
+                # Decision 0003 §5: the first PASS in a batch is the device's
+                # `produced` event — it enters finished-goods stock at that
+                # run's per-device cost, and nobody has to record it by hand.
+                if status == "pass" and run.production_run_id and not run.draft_run:
+                    from ..orders import mark_produced
+                    try:
+                        mark_produced(db, dev, run.production_run_id, actor=run.operator or "flasher",
+                                      note=f"passed programming run #{run.id}")
+                    except Exception as e:  # noqa: BLE001 — a history conflict must not fail the run
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            f"device {dev.id}: produced event not written: {e}")
             # The green/red grid the device view shows. Derived here so it exists
             # for a run that died mid-way too: the steps that did pass still
             # prove their functionality, and the rest go grey.

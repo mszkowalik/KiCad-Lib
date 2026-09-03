@@ -31,6 +31,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 |---|---|---|
 | [0001](0001-generate-package-sim-wrappers-from-blocks.md) | Generate a package simulation wrapper from blocks, instead of writing it | Backend, simulation |
 | [0002](0002-field-solver-in-the-platform.md) | The field solver lives in the platform, and its stackups are project data | Backend, frontend, projects |
+| [0003](0003-orders-shipments-and-device-history.md) | Sales orders, shipments and a per-device history replace the sale fields on a run | Backend, frontend, production, flasher |
 
 ## Proposed
 

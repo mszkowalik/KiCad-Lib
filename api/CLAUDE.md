@@ -338,7 +338,39 @@ section first.
   in MinIO, NEVER the run prefix: `delete_run` wipes that prefix, and a financial
   record's evidence must outlive the run (same reasoning as `RunCostDocument`
   being project-owned).
-- **The sale side lives on the run** (`sale_unit_price`, `sale_currency`, `qty_sold`,
+- **Sales are ORDERS, shipments and a per-device history — decision 0003**
+  (`services/orders.py`, `routers/orders.py`, `docs/decisions/0003-…`). A
+  `SalesOrder` sits above the project with one line per product; `OrderInvoice`
+  rows close it (advance + final + correction should sum to the net total — a
+  warning, never a block; a proforma is not money; revenue converts per invoice
+  at the invoice date); a `Shipment` is a header whose content is `shipped`
+  device events, plus `qty_unserialized` per line for batches that predate
+  device records (§8). `DeviceEvent` is append-only and its newest row IS the
+  device's state; `DeviceUnit.state` / `.production_run_id` are caches of it.
+  Rules that cost something to learn:
+  - **A device's log is monotonic.** `record_event` bumps an earlier `at` to
+    one second after the previous event, and APPENDS to `device.events` rather
+    than `db.add`, so the next write in the same request sees it. Expire the
+    device before serialising after a commit — the relationship was loaded
+    before the write.
+  - **Fulfilment counts `shipped` events with NO `replaces_device_id`**; a
+    warranty replacement names the device it replaces, and a device re-shipped
+    to the same line after repair names ITSELF, so it is never counted twice.
+    Order cost counts every shipped device, replacements included, at its
+    batch's per-device actual (`per_device_cost_usd`, from the register).
+  - **A FIFO pick is a guess and a return corrects it** (`return_device`): the
+    returned device takes the place of a FIFO-picked device on the same line,
+    which goes back to stock or inherits the returned device's old slot; both
+    moves are events. A line fulfilled by unserialized units converts one of
+    them into the named device instead.
+  - **The flasher writes `produced` on the first PASS in a batch**
+    (`engine.py` → `mark_produced`, idempotent; never on a draft run). Legacy
+    devices are linked with `POST /api/runs/{id}/produced`.
+  - **The startup migration is idempotent through `uq_order_line_migrated_run`**
+    and leaves the run's sale columns in place — the register still reads them,
+    so its figures cannot move. The run page shows `sales` (derived `qty_sold`,
+    the orders its units went to, what is on the shelf) beside them.
+- **The sale side ALSO still lives on the run, for the register** (`sale_unit_price`, `sale_currency`, `qty_sold`,
   `customer`, `order_ref`, `order_date`; startup-migrated). Price is stored PER
   DEVICE, never as a batch total — the total is derived, so a later quantity
   correction cannot silently rewrite revenue. Revenue charges on `qty_sold` (units
@@ -1212,6 +1244,39 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   unrunnable from the UI. It now returns an empty rawfile when the log holds
   anything the deck itself printed (`_printed_anything`, which discounts
   ngspice's own banner), and `sim_run` encodes a payload with no plots.
+- **Trim a run's log by what it SAID, not by where it ends.** ngspice prints
+  an operating-point dump — one line per node — when the transient starts, and
+  a SECOND one after the control block finishes. On the worked example that is
+  179 lines, and a plain `log[-4000:]` tail threw all four PASS lines away: the
+  run worked, the answers were printed, and the browser got a wall of node
+  voltages with no verdict in it. `sim_spice.trim_log` keeps the tail AND every
+  verdict, section heading and error line the tail cut off, and the cap is
+  20 kB rather than 4 kB. Measured 2026-08-31.
+- **The model library is per-INSTANCE data, not code.** A palette or a harness
+  that names `sigma_…` runs only where that model is published. Pointing the
+  simulator palette at the `sigma_rail_*` family worked on production and
+  failed on a local database that had never seen it — kicad-cli then reports
+  `could not find base model` followed by `Unknown simulation model parameter`
+  for every param, which reads like a code fault and is not one. Copy the
+  models through `POST /api/sim-models/propose` (the name is read out of the
+  `.subckt` line), blocks before the wrappers that instantiate them; the mirror
+  regenerates on publish.
+- **The live endpoint takes a browser-written netlist, gated.** A sketch's
+  live session sends `netlist` in the start frame (and in `op: "reload"`)
+  instead of a path, and `render/server.py` skips kicad-cli entirely — that is
+  most of the instant feel. The gate (`sanitize_browser_netlist`): no
+  `.control` block, and no `.include`/`.lib` except the `%SIGMA_SIM_LIB%`
+  token, which the server rewrites to the real model-library path. An include
+  is a file read with the worker's eyes; the only file a sketch may read is
+  ours to name.
+- **`sim_worker.py` reloads a circuit without losing component state.**
+  `op: "reload"` fills each `IC=%IC_<ref>%` token from the worker's last data
+  point (it keeps the WHOLE point in `self.last`, not just the overlay
+  subset), halts, `destroy all` + `remcirc`, loads, `bg_run`. Simulated time
+  stays continuous via `t_offset` — each new transient starts its own clock at
+  zero and the stream's clock must not jump backwards under the scopes. The
+  frame format is v2: it carries its own overlay count, because a reload can
+  change the overlay while old frames are still in flight.
 - **A harness that wants waveforms too says `run`, and leaves `.tran` on the
   sheet.** The rule above is about what ngspice DOES, not what a harness must
   settle for: with the analysis inside the control block ngspice writes no
@@ -1221,6 +1286,12 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   (measured 2026-08-30; `services/sim_example.py` is built this way). `run`
   also picks up whatever analysis the Scenario panel injects, so the checks
   survive a user asking for a different sweep.
+- **A geometry symbol carries `props`: every field on the placement, hidden
+  ones included.** `draw.symbols[].fields` cannot serve that purpose — it drops
+  hidden fields, because it exists to DRAW the sheet and a hidden field is
+  precisely one that is not drawn. `props` is what a part says about itself
+  (footprint, datasheet, description, manufacturer's number, model), and it is
+  what the part dialog shows.
 - **`services/sim_example.py` is the worked circuit the Simulator offers when
   there is nothing to open** (`POST /api/sim/example`). It is an ordinary
   sketch — stored by `store_sketch` like any drawing, so it is editable and

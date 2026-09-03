@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-09-03 — Sales orders, shipments and a per-device history
+
+Decision record [0003](docs/decisions/0003-orders-shipments-and-device-history.md).
+A sale is no longer a set of columns on a production run.
+
+- **Customers and orders** are tables: an order holds one line per product,
+  so an Aqua and a dongle sit on one order. Status (open / partial /
+  fulfilled) follows the shipments and is never set by hand.
+- **Invoices per order**: proforma, advance, final, correction. Advance +
+  final + correction should equal the net total; the page warns, nothing
+  blocks. Due date defaults to issue + the customer's terms. Revenue converts
+  per invoice at the invoice date.
+- **Every device has a history**: produced in a batch, shipped on an order,
+  returned, repaired, replaced, disposed of. The flasher writes the first
+  event on the first pass in a batch. Finished-device stock is a count of
+  devices on the shelf per batch, valued at the batch's actual per-device
+  cost; batches from before device records are counted from the batch
+  quantity ("without a serial").
+- **Shipping draws oldest-first** from the batches the user ticks, or takes
+  pasted device IDs. A return against a device FIFO never picked swaps it in
+  and puts the guessed device back. A warranty replacement is charged to the
+  original order, so an order with three replacements shows the cost of
+  503 devices against the revenue of 500.
+- **Migration at startup**: each run with a price became an order line and
+  one unserialized delivery; runs sharing an order reference share the order.
+  The run's own sale columns stay for the register, whose figures do not move.
+- New: Production → Orders, an order page, "Where it is" on every device page.
+
 ## 2026-08-31 — Field solver
 
 Controlled-impedance geometry moved from the standalone prototype into the

@@ -2384,6 +2384,21 @@ export interface RunInfo {
   overrides?: Record<string, unknown>;
   attachments?: RunAttachmentRow[];
   devices?: RunDeviceRow[];
+  /** decision 0003: where this batch's units went, and what is still on the shelf */
+  sales?: RunSales;
+}
+
+export interface RunSales {
+  qty_sold_derived: number;
+  orders: {
+    order_id: number;
+    order_ref: string;
+    customer: string;
+    order_line_id: number;
+    product: string;
+    qty_from_run: number;
+  }[];
+  stock: FinishedStockRow | null;
 }
 
 export interface RunCreate {
@@ -5285,6 +5300,9 @@ export interface SimSymbol {
   ref: string;
   value: string;
   lib_id: string;
+  /** Every field on the placement, hidden ones included — what the part says
+   *  about itself. The part dialog shows it. */
+  props: { k: string; v: string }[];
   at: number[];
   angle: number;
   bbox: number[] | null;
@@ -5795,4 +5813,399 @@ export function fsDeleteProfile(
   if (board) q.set("board", board);
   if (snapshotId) q.set("snapshot_id", String(snapshotId));
   return request(`/api/fieldsolver/projects/${projectId}/profiles/${profileId}?${q}`, { method: "DELETE" });
+}
+
+// ------------------------------------------------------------ sales orders
+// Decision record 0003: orders above the project, invoices per order,
+// shipments whose content is a set of devices, and a per-device history.
+
+export interface CustomerRow {
+  id: number;
+  name: string;
+  tax_id: string;
+  address: string;
+  payment_terms_days: number;
+  notes: string;
+  created_at: string | null;
+}
+
+export interface OrderLineRow {
+  id: number;
+  project_id: number;
+  project: string;
+  board: string;
+  variant: string;
+  product: string;
+  qty_ordered: number;
+  unit_price: number;
+  net_total: number | null;
+  qty_shipped: number;
+  qty_open: number;
+  qty_shipped_devices: number;
+  qty_shipped_unserialized: number;
+  qty_replacements: number;
+  qty_returned: number;
+  qty_allocated: number;
+  migrated_from_run_id: number | null;
+}
+
+export interface OrderInvoiceRow {
+  id: number;
+  order_id: number;
+  kind: "proforma" | "advance" | "final" | "correction";
+  number: string;
+  issue_date: string;
+  due_date: string;
+  net_amount: number;
+  currency: string;
+  paid_at: string;
+  attachment_id: number | null;
+  notes: string;
+}
+
+export interface ShipmentDeviceRow {
+  device_id: number;
+  serial: string;
+  mac: string;
+  state: string;
+  order_line_id: number;
+  auto: boolean;
+  replaces_device_id: number | null;
+  run_id: number | null;
+}
+
+export interface ShipmentRow {
+  id: number;
+  order_id: number;
+  kind: "delivery" | "return";
+  shipped_at: string;
+  delivery_note: string;
+  tracking: string;
+  notes: string;
+  qty: number;
+  per_line: Record<string, number>;
+  devices: ShipmentDeviceRow[];
+  unserialized: { order_line_id: number; qty_unserialized: number; source_run_id: number | null }[];
+}
+
+export interface OrderEconomics {
+  currency: string;
+  revenue_net: number | null;
+  revenue_basis: "invoices" | "order";
+  revenue_usd: number | null;
+  devices_cost_usd: number | null;
+  repair_cost_usd: number | null;
+  cost_usd: number | null;
+  margin_usd: number | null;
+  margin_pct: number | null;
+  shipped_devices: number;
+  shipped_unserialized: number;
+  replacements: number;
+  uncosted_units: number;
+  unknown_currencies: string[];
+}
+
+export interface OrderRow {
+  id: number;
+  customer_id: number;
+  customer: string;
+  order_ref: string;
+  order_date: string;
+  currency: string;
+  vat_pct: number;
+  status: "open" | "partial" | "fulfilled" | "cancelled";
+  cancelled: boolean;
+  notes: string;
+  created_at: string | null;
+  lines: OrderLineRow[];
+  qty_ordered: number;
+  qty_shipped: number;
+  total_net: number | null;
+  invoiced_net: number | null;
+  invoice_gap: number | null;
+  invoice_count: number;
+  unpaid_count: number;
+  invoices?: OrderInvoiceRow[];
+  shipments?: ShipmentRow[];
+  economics?: OrderEconomics;
+}
+
+export interface OrderLineIn {
+  project_id: number;
+  board?: string;
+  variant?: string;
+  product?: string;
+  qty_ordered: number;
+  unit_price: number;
+}
+
+export interface OrderCreate {
+  customer_id?: number | null;
+  customer?: string;
+  order_ref?: string;
+  order_date?: string;
+  currency?: string;
+  vat_pct?: number;
+  notes?: string;
+  lines: OrderLineIn[];
+}
+
+export interface OrderPatchBody {
+  customer_id?: number;
+  order_ref?: string;
+  order_date?: string;
+  currency?: string;
+  vat_pct?: number;
+  notes?: string;
+  cancelled?: boolean;
+}
+
+export interface InvoiceIn {
+  kind: OrderInvoiceRow["kind"];
+  number: string;
+  issue_date: string;
+  due_date?: string;
+  net_amount: number;
+  currency?: string;
+  paid_at?: string;
+  notes?: string;
+}
+
+export interface ShipmentLineIn {
+  order_line_id: number;
+  device_ids?: number[];
+  qty?: number;
+  run_ids?: number[];
+  board?: string;
+  variant?: string;
+  qty_unserialized?: number;
+  source_run_id?: number | null;
+  replaces_device_id?: number | null;
+  note?: string;
+}
+
+export interface ShipmentIn {
+  shipped_at?: string;
+  delivery_note?: string;
+  tracking?: string;
+  notes?: string;
+  lines: ShipmentLineIn[];
+}
+
+/** One batch's finished devices, both counting paths (decision 0003 §8). */
+export interface FinishedStockRow {
+  run_id: number;
+  label: string;
+  project_id: number;
+  project: string;
+  board: string;
+  variant: string;
+  run_date: string;
+  status: string;
+  built: number;
+  devices_produced: number;
+  devices_in_stock: number;
+  devices_shipped: number;
+  unserialized_shipped: number;
+  legacy_stock: number;
+  overdrawn: number;
+  stock: number;
+  unit_cost_usd?: number | null;
+  stock_value_usd?: number | null;
+}
+
+export interface FinishedStock {
+  runs: FinishedStockRow[];
+  totals: {
+    stock: number;
+    devices_in_stock: number;
+    legacy_stock: number;
+    overdrawn: number;
+    stock_value_usd: number | null;
+  };
+}
+
+export interface DeviceEventRow {
+  id: number;
+  kind: "produced" | "allocated" | "shipped" | "unshipped" | "returned" | "repaired" | "disposed";
+  at: string | null;
+  actor: string;
+  note: string;
+  reason: string;
+  auto: boolean;
+  production_run_id: number | null;
+  production_run: string | null;
+  order_line_id: number | null;
+  order_id: number | null;
+  order_ref: string | null;
+  customer: string | null;
+  product: string | null;
+  shipment_id: number | null;
+  replaces_device_id: number | null;
+  replaces_serial: string | null;
+  cost_lines: {
+    id: number;
+    kind: "labour" | "material";
+    amount: number;
+    currency: string;
+    component_id: number | null;
+    qty: number;
+    note: string;
+  }[];
+}
+
+export interface DeviceHistory {
+  device_id: number;
+  state: string;
+  production_run_id: number | null;
+  production_run: string | null;
+  events: DeviceEventRow[];
+}
+
+export function listCustomers(signal?: AbortSignal): Promise<CustomerRow[]> {
+  return request(`/api/customers`, { signal });
+}
+
+export function createCustomer(body: Omit<CustomerRow, "id" | "created_at">): Promise<CustomerRow> {
+  return request(`/api/customers`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) });
+}
+
+export function updateCustomer(
+  id: number,
+  body: Partial<Omit<CustomerRow, "id" | "created_at">>,
+): Promise<CustomerRow> {
+  return request(`/api/customers/${id}`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(body) });
+}
+
+export function listOrders(signal?: AbortSignal): Promise<OrderRow[]> {
+  return request(`/api/orders`, { signal });
+}
+
+export function createOrder(body: OrderCreate): Promise<OrderRow> {
+  return request(`/api/orders`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) });
+}
+
+export function getOrder(id: number, signal?: AbortSignal): Promise<OrderRow> {
+  return request(`/api/orders/${id}`, { signal });
+}
+
+export function updateOrder(id: number, body: OrderPatchBody): Promise<OrderRow> {
+  return request(`/api/orders/${id}`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(body) });
+}
+
+export function deleteOrder(id: number): Promise<{ deleted: number }> {
+  return request(`/api/orders/${id}`, { method: "DELETE" });
+}
+
+export function addOrderLine(orderId: number, body: OrderLineIn): Promise<OrderRow> {
+  return request(`/api/orders/${orderId}/lines`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateOrderLine(lineId: number, body: Partial<OrderLineIn>): Promise<OrderRow> {
+  return request(`/api/order-lines/${lineId}`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteOrderLine(lineId: number): Promise<OrderRow> {
+  return request(`/api/order-lines/${lineId}`, { method: "DELETE" });
+}
+
+export function addOrderInvoice(orderId: number, body: InvoiceIn): Promise<OrderRow> {
+  return request(`/api/orders/${orderId}/invoices`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateOrderInvoice(invoiceId: number, body: Partial<InvoiceIn>): Promise<OrderRow> {
+  return request(`/api/order-invoices/${invoiceId}`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteOrderInvoice(invoiceId: number): Promise<OrderRow> {
+  return request(`/api/order-invoices/${invoiceId}`, { method: "DELETE" });
+}
+
+export function getOrderStockOptions(
+  orderId: number,
+  signal?: AbortSignal,
+): Promise<Record<string, FinishedStockRow[]>> {
+  return request(`/api/orders/${orderId}/stock-options`, { signal });
+}
+
+export function createShipment(orderId: number, body: ShipmentIn): Promise<OrderRow> {
+  return request(`/api/orders/${orderId}/shipments`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteShipment(shipmentId: number): Promise<OrderRow> {
+  return request(`/api/shipments/${shipmentId}`, { method: "DELETE" });
+}
+
+export function getFinishedStock(projectId?: number, signal?: AbortSignal): Promise<FinishedStock> {
+  return request(`/api/finished-stock${projectId ? `?project_id=${projectId}` : ""}`, { signal });
+}
+
+export function getDeviceHistory(deviceId: number, signal?: AbortSignal): Promise<DeviceHistory> {
+  return request(`/api/devices/${deviceId}/history`, { signal });
+}
+
+export function returnDevice(
+  deviceId: number,
+  body: { order_line_id?: number | null; reason?: string; returned_at?: string; shipment_id?: number | null; note?: string },
+): Promise<DeviceHistory> {
+  return request(`/api/devices/${deviceId}/return`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function repairDevice(
+  deviceId: number,
+  body: {
+    outcome: "to_stock" | "dispose";
+    repaired_at?: string;
+    cost_lines?: { kind: "labour" | "material"; amount: number; currency?: string; component_id?: number | null; qty?: number; note?: string }[];
+    note?: string;
+  },
+): Promise<DeviceHistory> {
+  return request(`/api/devices/${deviceId}/repair`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function disposeDevice(
+  deviceId: number,
+  body: { reason?: string; disposed_at?: string; note?: string },
+): Promise<DeviceHistory> {
+  return request(`/api/devices/${deviceId}/dispose`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function linkDevicesToRun(runId: number, deviceIds: number[]): Promise<{ linked: number; skipped: { id: number; reason: string }[] }> {
+  return request(`/api/runs/${runId}/produced`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ device_ids: deviceIds }),
+  });
 }

@@ -10,6 +10,7 @@ import {
   type DeviceDetailPayload,
 } from "../api";
 import { BackLink, ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import DeviceHistoryCard from "../components/DeviceHistoryCard";
 import CheckGrid from "../components/flasher/CheckGrid";
 import { fmtDuration, fmtWhen } from "../components/flasher/common";
 
@@ -166,6 +167,7 @@ export default function DeviceDetail() {
           </div>
 
           <div className="detail-right">
+            <DeviceHistoryCard deviceId={deviceId} serial={device.serial || device.mac} />
             <div className="card pad">
               <h2 className="card-title">Programming history</h2>
               <p className="card-subtitle">
