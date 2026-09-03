@@ -11,15 +11,30 @@
  */
 import { API_URL } from "../api";
 
+/** One scope. `vec` names a vector the run has; `terms` asks for a weighted
+ *  SUM of vectors instead — how a wire's or a terminal's current is expressed,
+ *  since ngspice has no vector for either. */
+export interface LiveScopeSpec {
+  vec: string;
+  sim_s_per_px: number;
+  terms?: { vec: string; coeff: number }[];
+}
+
 export interface LiveConfig {
   /** Which source to simulate, in the shape the relay expects. */
   target: Record<string, unknown>;
+  /** A netlist the editor wrote itself. Skips kicad-cli on the server, which
+   *  is most of what makes a sketch's live mode feel instant. */
+  netlist?: string;
   /** Vector names to keep the latest value of, e.g. `v(/safety/so1)`. */
   overlay: string[];
-  scopes: { vec: string; sim_s_per_px: number }[];
+  scopes: LiveScopeSpec[];
   /** Simulated seconds per second of wall clock. */
   speed: number;
   tstep: number;
+  /** The scope pixel pitch, so the worker can keep min/max HISTORY for every
+   *  overlay vector and hand a newly opened trace its own past. */
+  historySpan?: number;
 }
 
 export interface LiveState {
@@ -33,6 +48,10 @@ export interface LiveState {
   message: string;
   /** Refs dropped from the netlist for having no model. */
   unmodelled: string[];
+  /** Every vector this run has, as ngspice named them. It is what says which
+   *  devices answer for a branch current, which decides how a wire or a pin
+   *  current can be expressed. */
+  vectors: string[];
 }
 
 /** How many columns a scope keeps. Beyond this the oldest scroll off, which
@@ -56,6 +75,7 @@ export class LiveSession {
       pointsPerSecond: 0,
       message: "",
       unmodelled: [],
+      vectors: [],
     };
   }
 
@@ -70,11 +90,19 @@ export class LiveSession {
     socket.onopen = () => {
       socket.send(JSON.stringify({
         ...this.config.target,
+        ...(this.config.netlist ? { netlist: this.config.netlist } : {}),
         tstep: this.config.tstep,
         speed: this.config.speed,
         overlay: this.config.overlay,
         scopes: this.config.scopes,
+        history_span: this.config.historySpan ?? 0,
       }));
+      // Whatever was asked for while this was still connecting, in order and
+      // after the start frame — the worker reads that one first and refuses
+      // anything before it.
+      const queued = this.pending;
+      this.pending = [];
+      for (const command of queued) socket.send(JSON.stringify(command));
     };
     socket.onmessage = (event) => {
       if (typeof event.data === "string") this.onEvent(JSON.parse(event.data));
@@ -89,7 +117,11 @@ export class LiveSession {
   private onEvent(event: Record<string, unknown>): void {
     switch (event.ev) {
       case "ready":
-        this.patch({ status: "running", message: "" });
+        this.patch({
+          status: "running",
+          message: "",
+          vectors: ((event.vectors as string[]) ?? []).map((v) => v.toLowerCase()),
+        });
         break;
       case "netlist":
         this.patch({ unmodelled: (event.unmodelled as string[]) ?? [] });
@@ -111,13 +143,17 @@ export class LiveSession {
 
   private onFrame(buffer: ArrayBuffer): void {
     const view = new DataView(buffer);
-    if (view.getUint8(0) !== 1) return;
-    const n = this.config.overlay.length;
+    // Frame v2 carries its own overlay count: a reload can change the overlay
+    // while frames closed against the old list are still in flight, and a
+    // frame must be sliced by what IT holds, not by what the config now says.
+    if (view.getUint8(0) !== 2) return;
     const simTime = view.getFloat64(1, true);
-    const values = new Float32Array(n);
-    for (let i = 0; i < n; i += 1) values[i] = view.getFloat32(9 + i * 4, true);
+    const n = view.getUint16(9, true);
+    const expected = this.config.overlay.length;
+    const values = new Float32Array(expected);
+    for (let i = 0; i < Math.min(n, expected); i += 1) values[i] = view.getFloat32(11 + i * 4, true);
 
-    let offset = 9 + n * 4;
+    let offset = 11 + n * 4;
     const count = view.getUint16(offset, true);
     offset += 2;
     const columns = this.state.columns.map((c) => c.slice());
@@ -143,10 +179,95 @@ export class LiveSession {
     this.patch({ status: "error", message });
   }
 
+  /** A command, now or as soon as the socket opens.
+   *
+   *  It used to be dropped silently when the socket was still connecting, and
+   *  that is exactly when the page sends: the effect that creates the session
+   *  and the one that tells it which scopes to watch run in the same commit,
+   *  microseconds apart and long before the handshake finishes. So a live run
+   *  opened with a trace already picked watched nothing at all.
+   */
   private send(command: Record<string, unknown>): void {
     if (this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify(command));
+      return;
     }
+    if (this.socket && this.socket.readyState === WebSocket.CONNECTING) {
+      this.pending.push(command);
+    }
+  }
+
+  private pending: Record<string, unknown>[] = [];
+
+  /** Change what the scopes watch, without restarting the run.
+   *
+   *  Columns are addressed by POSITION in this list, so a scope list that
+   *  changes shape moves every trace's history one slot along. Carry it over
+   *  by NAME: a trace that is still watched keeps what it has collected, and
+   *  only a new one starts empty.
+   *
+   *  Dropping the lot instead — which this used to do — meant that removing
+   *  one trace blanked every OTHER trace on the page, because the whole scope
+   *  went back to zero columns and the plots had nothing left to draw.
+   *
+   *  Frames already in flight were closed against the old list, so for about
+   *  one round trip a column can land in the wrong slot. That is one or two
+   *  columns out of six hundred, against a history that would otherwise be
+   *  thrown away entirely.
+   */
+  setScopes(scopes: LiveScopeSpec[]): void {
+    const was = this.config.scopes;
+    // Carry a trace's history only when the vec AND the pixel pitch match: a
+    // speed change alters sim-seconds-per-column, and old columns kept under
+    // a new pitch draw the past at the wrong timebase. Dropped history is
+    // reseeded by the worker's backlog, which resets on the same change.
+    const kept = scopes.map((s) => {
+      const at = was.findIndex((old) => old.vec === s.vec && old.sim_s_per_px === s.sim_s_per_px);
+      return at >= 0 ? this.state.columns[at] ?? [] : [];
+    });
+    this.config = { ...this.config, scopes };
+    this.send({
+      op: "scopes",
+      // `backlog` marks the scopes this side holds NO columns for — the
+      // worker seeds those from its history so they open full, and must not
+      // seed the ones whose columns survived the list change.
+      scopes: scopes.map((s, i) => ({ ...s, backlog: !(kept[i]?.length) })),
+      history_span: scopes[0]?.sim_s_per_px ?? this.config.historySpan ?? 0,
+    });
+    this.patch({ columns: kept });
+  }
+
+  /** Swap the running circuit for an edited one, keeping component state.
+   *
+   *  The worker fills each `%IC_<ref>%` token from the part's own last
+   *  reading, so a charged cap stays charged across the edit. Scope columns
+   *  are carried by vec name, the same as `setScopes` — an edit that keeps a
+   *  trace keeps its history.
+   */
+  reload(payload: {
+    netlist: string;
+    state: { ref: string; kind: "c" | "l"; a: string; b: string }[];
+    overlay: string[];
+    scopes: LiveScopeSpec[];
+  }): void {
+    const was = this.config.scopes;
+    const kept = payload.scopes.map((s) => {
+      const at = was.findIndex((old) => old.vec === s.vec && old.sim_s_per_px === s.sim_s_per_px);
+      return at >= 0 ? this.state.columns[at] ?? [] : [];
+    });
+    this.config = {
+      ...this.config,
+      netlist: payload.netlist,
+      overlay: payload.overlay,
+      scopes: payload.scopes,
+    };
+    this.send({
+      op: "reload",
+      ...payload,
+      scopes: payload.scopes.map((s, i) => ({ ...s, backlog: !(kept[i]?.length) })),
+      history_span: payload.scopes[0]?.sim_s_per_px ?? this.config.historySpan ?? 0,
+    });
+    this.patch({ columns: kept });
   }
 
   setSpeed(value: number): void {

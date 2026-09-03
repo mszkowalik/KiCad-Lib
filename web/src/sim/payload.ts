@@ -175,7 +175,14 @@ export function liveReader(
     position,
     scaleType: "time",
     voltage: (spice, ground) => (ground ? 0 : spice ? read(`v(${spice})`) : null),
-    current: (ref) => read(`i(@${ref.toLowerCase()}[i])`),
+    // Both spellings: `@r1[i]` is savecurrents, a source's is its own
+    // branch. Trying only the first made every source current null in live
+    // mode, which turned each source pin into an "unknown terminal" and
+    // quietly degraded the charge overlay and the probe fallback.
+    current: (ref) => {
+      const low = ref.toLowerCase();
+      return read(`i(@${low}[i])`) ?? read(`i(${low})`);
+    },
   };
 }
 

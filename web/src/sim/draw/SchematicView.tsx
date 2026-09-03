@@ -34,6 +34,11 @@ function round(v: number): number {
 }
 
 export interface Props {
+  /** Fill the parent box instead of sizing by aspect ratio. The parent must
+   *  have a definite height; the VIEW is widened (or heightened) to the box's
+   *  own aspect, so the viewBox always fills the frame exactly and every
+   *  pixel-mapping layer stays honest. */
+  fill?: boolean;
   drawing: SheetDrawing;
   theme: SchTheme;
   /** Paper size in millimetres. */
@@ -121,6 +126,7 @@ export function contentBox(
 }
 
 export default function SchematicView({
+  fill: fillBox,
   drawing,
   theme,
   size,
@@ -154,7 +160,38 @@ export default function SchematicView({
   // A new sheet, or a switch between fitted and whole-page, resets the
   // viewport; panning within one does not, and neither does editing it.
   useEffect(() => setView(baseRef.current), [resetKey, fit]);
-  useEffect(() => onView?.(view), [view, onView]);
+
+  /** The box's own aspect, when filling it. Watched, because the split
+   *  layout resizes the box as the window and the scope dock change. */
+  const [boxAspect, setBoxAspect] = useState<number | null>(null);
+  useEffect(() => {
+    if (!fillBox) return undefined;
+    const el = frameRef.current;
+    if (!el) return undefined;
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect();
+      if (r.width && r.height) setBoxAspect(round(r.width / r.height));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fillBox]);
+
+  /** What is actually rendered. In fill mode the stored view is padded out to
+   *  the box's aspect around its centre, so the viewBox fills the frame with
+   *  no letterboxing — the layers map client pixels across the box assuming
+   *  exactly that. */
+  const shown = useMemo<View>(() => {
+    if (!fillBox || !boxAspect) return view;
+    const a = view.w / view.h;
+    if (Math.abs(a - boxAspect) < 1e-3) return view;
+    if (a < boxAspect) {
+      const w = view.h * boxAspect;
+      return { x: view.x - (w - view.w) / 2, y: view.y, w, h: view.h };
+    }
+    const h = view.w / boxAspect;
+    return { x: view.x, y: view.y - (h - view.h) / 2, w: view.w, h };
+  }, [fillBox, boxAspect, view]);
+  useEffect(() => onView?.(shown), [shown, onView]);
 
   const drag = useRef<{ x: number; y: number; view: View; moved: number; panning: boolean } | null>(null);
 
@@ -162,10 +199,10 @@ export default function SchematicView({
     const box = frameRef.current?.getBoundingClientRect();
     if (!box || !box.width || !box.height) return null;
     return [
-      view.x + ((clientX - box.left) / box.width) * view.w,
-      view.y + ((clientY - box.top) / box.height) * view.h,
+      shown.x + ((clientX - box.left) / box.width) * shown.w,
+      shown.y + ((clientY - box.top) / box.height) * shown.h,
     ];
-  }, [view]);
+  }, [shown]);
 
   // Zoom the sheet only. The event has to be cancelled, or the window scrolls
   // under the drawing and a touchpad pinch zooms the browser as well.
@@ -174,22 +211,22 @@ export default function SchematicView({
     if (!at) return;
     e.preventDefault();
     const factor = Math.exp(e.deltaY * 0.0015);
-    const w = Math.min(Math.max(view.w * factor, 2), Math.max(size[0], size[1]) * 2);
-    const scale = w / view.w;
+    const w = Math.min(Math.max(shown.w * factor, 2), Math.max(size[0], size[1]) * 2);
+    const scale = w / shown.w;
     setView({
-      x: at[0] - (at[0] - view.x) * scale,
-      y: at[1] - (at[1] - view.y) * scale,
+      x: at[0] - (at[0] - shown.x) * scale,
+      y: at[1] - (at[1] - shown.y) * scale,
       w,
-      h: view.h * scale,
+      h: shown.h * scale,
     });
-  }, [toMm, view, size]);
+  }, [toMm, shown, size]);
   const frameCb = useWheel(frameRef, onWheel);
 
   const down = (e: React.PointerEvent) => {
     const mm = toMm(e.clientX, e.clientY);
     const panning = e.button === 1
       || (e.button === 0 && (typeof leftPan === "function" ? (mm ? leftPan(mm) : false) : leftPan));
-    drag.current = { x: e.clientX, y: e.clientY, view, moved: 0, panning };
+    drag.current = { x: e.clientX, y: e.clientY, view: shown, moved: 0, panning };
     if (mm && e.button === 0) onPointerDownMm?.(mm, e);
   };
 
@@ -231,9 +268,9 @@ export default function SchematicView({
       // across this box assuming the viewBox fills it, so letterboxing would
       // put the charge canvas and the click targets off the wires. So the
       // height budget caps the WIDTH instead.
-      style={{
-        aspectRatio: `${view.w} / ${view.h}`,
-        maxWidth: `calc(${MAX_HEIGHT_VH}vh * ${round(view.w / view.h)})`,
+      style={fillBox ? { width: "100%", height: "100%", cursor } : {
+        aspectRatio: `${shown.w} / ${shown.h}`,
+        maxWidth: `calc(${MAX_HEIGHT_VH}vh * ${round(shown.w / shown.h)})`,
         cursor,
       }}
       tabIndex={tabIndex}
@@ -251,12 +288,12 @@ export default function SchematicView({
         className="sim-layer"
         drawing={drawing}
         theme={theme}
-        view={view}
-        underlay={underlay?.(view)}
+        view={shown}
+        underlay={underlay?.(shown)}
       >
         {children}
       </KicadSheet>
-      {layers?.(view)}
+      {layers?.(shown)}
     </div>
   );
 }

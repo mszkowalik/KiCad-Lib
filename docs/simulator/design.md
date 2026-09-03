@@ -625,7 +625,171 @@ Verified end to end over HTTP: 12 nets and no others, no dangling pin, no wire
 through a body, no crossing wires, a 1380-point transient across 17 vectors,
 and four checks passing.
 
-### Slice 9 — later, in this order
+### Slice 9 — the part dialog — **DONE (2026-08-31)**
+
+| File | Change |
+|---|---|
+| `web/src/sim/PartPopup.tsx` | **new.** What a part is, and what it can be set to, on the part |
+| `web/src/sim/SimulatorView.tsx` | opens it from the drawing in every mode; the editor's symbol panel moved into it |
+| `web/src/sim/useSimOverlay.tsx` | a hit target for EVERY part, invisible until hovered, and the click event passed on |
+| `web/src/pages/Simulator.tsx` | the knob table is gone; the panel keeps only what a drawing cannot show |
+| `api/app/services/sim_geom.py` | `props` on each symbol — every field on the placement |
+
+The panel it replaced listed every steerable part in the design under the
+drawing: forty text boxes in a grid, for a circuit the user was looking at
+three inches above them. What is left in that panel is a source with no symbol
+at all, and a search box for the parts that live on other sheets.
+
+Two halves, on purpose. The identity half — reference, value, library part,
+footprint, datasheet, description, model — is not about simulation, because the
+same dialog is meant to open on a project's schematic tab and answer "what IS
+this?" from the catalogue.
+
+### Slice 10 — the page, rearranged, and a live scope — **DONE (2026-08-31)**
+
+| File | Change |
+|---|---|
+| `web/src/sim/RunBar.tsx` | **new.** Run, what to run, which analysis, the directive, the score — one line |
+| `web/src/sim/Verdicts.tsx` | **new.** The PASS/FAIL table, under the waveform |
+| `web/src/sim/Disclosure.tsx` | **new.** Nets, netlist, control block and off-drawing knobs, closed |
+| `web/src/sim/LiveScope.tsx` | **new.** The waveform of a run that never ends |
+| `web/src/sim/live.ts` | `setScopes` — the worker has taken it since it was written |
+| `web/src/pages/Simulator.tsx` | two bars, one drawing, one waveform, one drawer |
+| `web/src/sim/ScenarioPanel.tsx` | removed — its controls are the run bar, its table is `Verdicts` |
+
+The old page put one toolbar above the drawing carrying nine unrelated things,
+and four full-width cards below it. The new one asks two questions in two bars:
+what am I looking at, and what will run.
+
+**Live mode had no scope at all**, which is why it drew a circuit and nothing
+else and why clicking a net looked dead — `pickNet` was adding traces to a card
+that only rendered for a finished run. The rest of the path was already built
+and measured working end to end: the worker closes one min/max column per pixel
+and ships them in every frame (1074 columns in 12 s on the example). The
+browser passed `scopes: []` and never sent a change.
+
+### Slice 11 — the scope, rebuilt on uPlot — **DONE (2026-08-31)**
+
+| File | Change |
+|---|---|
+| `web/src/sim/panes.ts` | **new.** The plot model: panes, traces, merge/split, statistics |
+| `web/src/sim/Plots.tsx` | **new.** Stacked panes on one X axis, uPlot, our own legend |
+| `web/src/sim/Scope.tsx`, `LiveScope.tsx` | removed |
+| `web/src/sim/useSimOverlay.tsx` | green/red voltage tint against a fixed volt scale |
+| `web/src/pages/Simulator.tsx` | panes, both plot sources, the Volts knob, click-a-part-plots-its-current |
+
+`uplot@1.6` is the first charting dependency in `web/`. It is 45 kB with no
+dependencies of its own, draws to canvas, and syncs a crosshair across several
+charts — which is the whole of what stacked panes need.
+
+What the page can do now that it could not: stack any number of panes on one
+time axis, merge them onto one pair of axes and split them again, hide a trace
+without losing it, drag to zoom (every pane together), and read value, min, max,
+mean, rms and peak-to-peak per trace over the window on screen. A live run draws
+the same way, as a band between each column's min and max.
+
+Voltage colour is now green above ground and red below, saturating at a volt
+scale the user picks rather than at the run's own extremes — a scale, not an
+autorange.
+
+### Slice 12 — a wire has a current, and so does a pin — **DONE (2026-08-31)**
+
+| File | Change |
+|---|---|
+| `web/src/sim/currents.ts` | a lone unknown terminal is named by conservation; `solveProbeSeries` over a whole run |
+| `web/src/sim/useSimOverlay.tsx` | every pin is a click target; a wire click reports WHICH segment |
+| `web/src/pages/Simulator.tsx` | a wire or a pin puts both of its readings on the scope; a live ring buffer for the reconstruction |
+
+ngspice reports device branches, never wires and never the terminals of a part
+with more than two legs. Both are reconstructed from the currents around them —
+the same solve that already drove the charge animation, now evaluated across a
+whole run instead of at one sample.
+
+The op-amp output is the case that matters. It has no branch current of its own,
+and it is the only terminal on its net whose current is unknown, so conservation
+fixes it exactly. Checked at one sample of the worked example: `v(/ampout)`
+0.9805 V, `i(@r2[i])` -89.136 uA, the wire on that net +89.136 uA, and U1 pin 5
+-89.136 uA — a reading that is in no rawfile.
+
+Where TWO terminals on a net are unknown it cannot be named, and the pin plots
+its voltage alone. A number nobody can stand behind is worse than a gap.
+
+### Slice 13 — a probe at the solver's rate — **DONE (2026-08-31)**
+
+A live wire current came out as a staircase beside a smooth voltage on the same
+net. The worker closes a scope column every few microseconds of simulated time;
+the browser could only reconstruct a wire current once per frame, thirty times a
+second, so one value was held across five columns.
+
+The reconstruction is linear in the terminal currents, so it is now SENT rather
+than computed: `probeTerms` reads the coefficients off by solving once per
+device with a unit reader, and a live scope carries `terms: [{vec, coeff}]` that
+`render/sim_worker.py` sums per data point. Exact on the example — the terms
+reproduce the direct solve to 0.00e+0 A across the run — and a summed scope
+closes the same number of columns as the voltage beside it.
+
+### Slice 14 — the Falstad feel: instant reload, state on the parts — **DONE (2026-08-31)**
+
+| File | Change |
+|---|---|
+| `web/src/sim/edit/netlist.ts` | **new.** The document as a SPICE netlist, in the browser, <1 ms |
+| `render/sim_worker.py` | `op: "reload"`: fill `IC=%IC_ref%` from the last data point, swap circuit, resume; frame v2; continuous time |
+| `render/server.py` | a start frame (or reload) may carry the netlist itself; `sanitize_browser_netlist` gates it |
+| `web/src/sim/live.ts` | `netlist` in the config, `reload()`, frame-v2 parsing |
+| `web/src/pages/Simulator.tsx` | ONE session per live toggle for sketches; edits become debounced reloads |
+
+Why: the old edit path was autosave → server file rewrite → kicad-cli under
+QEMU → new run from t = 0 with all state discarded. Falstad's insight is that
+the state belongs to the COMPONENTS — a capacitor is its voltage — so a
+topology edit is a matrix rebuild, not a fresh universe.
+
+Measured, end to end against the real worker: a 100 µF cap charged to 5.0000 V
+through 1 kΩ; mid-run reload deleted the source and resistor and wired a 10 kΩ
+load across the cap; the run resumed with the cap at 5 V and discharging —
+3.7045 V at 0.3 s after the swap, which is 5·e^(−0.3/1.0) exactly (τ = RC =
+1 s). Simulated time continuous across the swap. The full example (op-amp,
+rail logic, DFF) runs on the browser netlist through the `%SIGMA_SIM_LIB%`
+sentinel with `missing: []`.
+
+Left out, and said so: XSPICE digital state (a DFF's Q) re-initialises on
+reload — carrying it needs the model's `ic` param mapped, a follow-up.
+
+### Slice 15 — no edit mode, live by default — **DONE (2026-09-01)**
+
+| File | Change |
+|---|---|
+| `web/src/pages/Simulator.tsx` | a sketch opens LIVE with tools out; Edit toggle removed; `?mode=` param |
+| `web/src/sim/SimulatorView.tsx` | click selects, double-click opens the dialog, pins clickable while editing |
+| `web/src/sim/edit/netlist.ts` | a pin on the middle of a wire connects (`attach`) |
+| `web/src/components/project/SchematicTab.tsx` | two doors: Simulate (formal) and Play live |
+
+The two paths are now split by PURPOSE, not by machinery. Live is the
+playground: instant, stateful, and constitutionally unable to write a project
+file — a sketch autosaves to its own scratch upload, a git sheet is knobs-only,
+and Download is the only artefact. Scenario is formal verification: the
+harness, the analysis, the verdict table.
+
+Drag-and-reconnect needed no special casing: a reload fires only when the
+netlist structurally changes, so lifting a part off a circuit reloads once
+(severed), carrying it produces nothing (floating part, same netlist), and
+dropping its pin onto a wire — middle of a segment included — reloads once
+more (joined). The state rides the component the whole way.
+
+Left for later, in this order:
+- Wires that FOLLOW a dragged part's pins (Falstad posts). Until then a drag
+  detaches; the sim says so instantly.
+- XSPICE digital state (a DFF's Q) across a reload, via the model `ic` params.
+- A "fork to playground" for project sheets: parse a KiCad sheet into an
+  editable document. Needs the document model to carry arbitrary lib_symbols.
+- Scenario auto-rerun for sketches through the browser netlist (control block
+  included), so the formal path stops needing kicad-cli for sketches too.
+
+
+
+
+
+
+
 
 - Placing parts from the platform library, with `Sim.*` already attached.
 - Editing a sheet KiCad wrote: patch the parsed tree (`parse_sexpr` lists

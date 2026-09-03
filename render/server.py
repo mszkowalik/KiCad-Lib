@@ -140,6 +140,33 @@ def _release_session() -> None:
         _live_count = max(0, _live_count - 1)
 
 
+# The model library, as THIS container resolves it. A browser netlist names it
+# by token; a real path from a browser is refused outright.
+SIM_LIB_PATH = str(DATA_ROOT / "pcmroot/symbols/com_sevensigma_library/7Sigma_sim.sp")
+_INCLUDE_RE = re.compile(r"^\s*\.(include|lib)\b", re.IGNORECASE)
+
+
+def sanitize_browser_netlist(text: str) -> str:
+    """A netlist written by the editor, made safe to run.
+
+    Two rules. No `.control` block — live mode never has one, and the banned
+    command list exists for a reason. And no `.include`/`.lib` other than the
+    sentinel: an include is a file read with the worker's eyes, and the only
+    file a sketch may read is the model library, whose path is ours to know.
+    """
+    body, control = sim_spice.find_control(text)
+    if control.strip():
+        raise sim_spice.SimError("a live netlist may not carry a control block")
+    out = []
+    for line in body.splitlines():
+        if _INCLUDE_RE.match(line):
+            if "%SIGMA_SIM_LIB%" not in line:
+                raise sim_spice.SimError("a browser netlist may only include the model library")
+            line = line.replace("%SIGMA_SIM_LIB%", SIM_LIB_PATH)
+        out.append(line)
+    return "\n".join(out)
+
+
 @app.websocket("/sim/live")
 async def sim_live(ws: WebSocket):
     """An endless transient you can watch and poke at.
@@ -156,8 +183,14 @@ async def sim_live(ws: WebSocket):
         await ws.close(code=1003)
         return
 
+    # A sketch arrives as the netlist itself — the browser wrote it, and
+    # skipping the kicad-cli export is most of what makes editing feel
+    # instant. A project sheet still arrives as a path and goes through
+    # kicad-cli, because that file is not ours to reinterpret.
+    browser_netlist = str(start.get("netlist", "") or "")
     src = (DATA_ROOT / str(start.get("path", ""))).resolve()
-    if not str(src).startswith(str(DATA_ROOT.resolve())) or not src.exists():
+    if not browser_netlist and (
+            not str(src).startswith(str(DATA_ROOT.resolve())) or not src.exists()):
         await ws.send_text(json.dumps({"ev": "error", "message": "no such schematic"}))
         await ws.close()
         return
@@ -172,18 +205,23 @@ async def sim_live(ws: WebSocket):
     proc = None
     try:
         tstep = float(start.get("tstep", 1e-5)) or 1e-5
-        with tempfile.TemporaryDirectory() as td:
-            netlist_bytes, _ = run_op(KICAD_CLI, "sch_spice", src, td, variant=start.get("variant", ""))
-        # The schematic's own directives describe a FINITE run; live mode wants
-        # one that never ends and reports every device current.
-        # A large stop time, not an absurd one. `1e9` produced a run that
-        # reported its vectors and then never emitted a single point; 1000 s
-        # is what was measured working, and at any speed a person would watch
-        # it is days of wall clock — endless in every sense that matters.
-        prepared, info = sim_spice.prepare_netlist(
-            netlist_bytes.decode("utf-8", "replace"),
-            control="", analysis=f".tran {tstep:g} {LIVE_TSTOP_S:g}",
-        )
+        if browser_netlist:
+            prepared = sanitize_browser_netlist(browser_netlist)
+            info = {"unmodelled": []}
+        else:
+            with tempfile.TemporaryDirectory() as td:
+                netlist_bytes, _ = run_op(KICAD_CLI, "sch_spice", src, td, variant=start.get("variant", ""))
+            # The schematic's own directives describe a FINITE run; live mode
+            # wants one that never ends and reports every device current.
+            # A large stop time, not an absurd one. `1e9` produced a run that
+            # reported its vectors and then never emitted a single point;
+            # 1000 s is what was measured working, and at any speed a person
+            # would watch it is days of wall clock — endless in every sense
+            # that matters.
+            prepared, info = sim_spice.prepare_netlist(
+                netlist_bytes.decode("utf-8", "replace"),
+                control="", analysis=f".tran {tstep:g} {LIVE_TSTOP_S:g}",
+            )
         await ws.send_text(json.dumps({"ev": "netlist", "unmodelled": info["unmodelled"]}))
 
         proc = subprocess.Popen(
@@ -195,6 +233,11 @@ async def sim_live(ws: WebSocket):
             "speed": start.get("speed", 1e-3),
             "overlay": start.get("overlay", []),
             "scopes": start.get("scopes", []),
+            # The scope pixel pitch, so the worker keeps history for every
+            # overlay vector from the FIRST point — a trace opened late is
+            # seeded with its own past. Dropping this here silently disabled
+            # the whole feature: the browser sent it, the worker never saw it.
+            "history_span": start.get("history_span", 0),
         })
 
         loop = asyncio.get_running_loop()
@@ -218,7 +261,17 @@ async def sim_live(ws: WebSocket):
             while True:
                 text = await asyncio.wait_for(ws.receive_text(), timeout=LIVE_IDLE_TIMEOUT_S)
                 try:
-                    _write_frame(proc, json.loads(text))
+                    cmd = json.loads(text)
+                    # A reload carries a fresh browser netlist. Same gate as
+                    # the start frame — the sentinel is resolved here, and
+                    # anything else that reads a file is refused.
+                    if cmd.get("op") == "reload":
+                        try:
+                            cmd["netlist"] = sanitize_browser_netlist(str(cmd.get("netlist", "")))
+                        except sim_spice.SimError as err:
+                            await ws.send_text(json.dumps({"ev": "error", "message": str(err)}))
+                            continue
+                    _write_frame(proc, cmd)
                 except (ValueError, OSError):
                     return
 

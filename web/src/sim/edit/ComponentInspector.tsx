@@ -139,7 +139,9 @@ export default function ComponentInspector({
   return (
     <div className="sim-inspector">
       <div className="sim-inspector-head">
-        <h3>{title}</h3>
+        {/* The popup puts the reference in its own title bar, so it passes no
+            title here — and an empty heading is a gap nobody asked for. */}
+        {title ? <h3>{title}</h3> : null}
         {valueForms.length > 1 ? (
           <div className="seg" role="group" aria-label="Waveform">
             {valueForms.map((f) => (

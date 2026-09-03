@@ -18,7 +18,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SimGeometry } from "../api";
-import SchematicView from "./draw/SchematicView";
+import SchematicView, { type View } from "./draw/SchematicView";
 import type { LibSymbol, Pt, SchTheme } from "./draw/types";
 import { eng, type Range, type SampleReader } from "./payload";
 import useSimOverlay from "./useSimOverlay";
@@ -27,8 +27,8 @@ import {
   pointInBox, snapPt, spiceName, symbolBox, symbolPins,
   type DocSymbol, type PaletteEntry, type SchDoc,
 } from "./edit/doc";
-import ComponentInspector from "./edit/ComponentInspector";
-import type { ParamField } from "./edit/params";
+import PartPopup, { type PartFacts } from "./PartPopup";
+import type { ParamField, ParamForm } from "./edit/params";
 
 export type Tool = "select" | "wire" | "label" | "text";
 
@@ -62,11 +62,26 @@ interface Props {
   running: boolean;
   voltageRange: Range;
   currentPeak: number;
+  /** How fast the charge dots travel, as a multiple of the default. */
+  currentSpeed?: number;
+  /** Volts at which the tint saturates. 0 means "use the run's own range". */
+  voltRef?: number;
   selectedNet: string | null;
-  onPickNet: (net: string | null) => void;
+  onPickNet: (net: string | null, wireId?: string) => void;
+  /** Add the chosen reading(s) to the scope — the double-click chooser. */
+  onProbeNet?: (net: string, wireId: string | undefined, what: "v" | "i" | "both") => void;
+  onProbePin?: (pin: { ref: string; pin: string; group: string }, what: "v" | "i" | "both") => void;
   onUnresolved: (items: { net: string; reason: string }[]) => void;
   parts?: Map<number, { title: string; kind: string; on?: boolean }>;
   onPickPart?: (index: number) => void;
+  /** A terminal picked on the drawing: its voltage and its current. */
+  onPickPin?: (pin: { ref: string; pin: string; group: string }) => void;
+  /** What the netlist says a part is worth, by SPICE instance name. It is what
+   *  a sheet KiCad wrote can offer: that file is never rewritten, so the
+   *  popup's one value box steers the RUN and says so. */
+  controls?: Map<string, { value: string; unit: string; kind: string }>;
+  /** Flip a contact drawn as a switch, in a live run. */
+  onFlip?: (index: number) => void;
   /** Symbols to draw as a different library part — a contact flipped live. */
   partSwap?: Map<number, string>;
   /** Absent for a schematic that came from KiCad: that file carries tokens the
@@ -90,9 +105,9 @@ const OPENING_VIEW = { x: 55, y: 45, w: 150, h: 106 };
 const GRID_DOTS = GRID * 2;
 
 export default function SimulatorView({
-  theme, fit, geometry, reader, clock, running, voltageRange, currentPeak,
-  selectedNet, onPickNet, onUnresolved, parts, onPickPart, partSwap, edit,
-  onAlter,
+  theme, fit, geometry, reader, clock, running, voltageRange, currentPeak, currentSpeed, voltRef,
+  selectedNet, onPickNet, onProbeNet, onProbePin, onUnresolved, parts, onPickPart, onPickPin, controls, onFlip,
+  partSwap, edit, onAlter,
 }: Props) {
   const [tool, setTool] = useState<Tool>("select");
   const [placing, setPlacing] = useState<PaletteEntry | null>(null);
@@ -101,14 +116,50 @@ export default function SimulatorView({
   const [cursor, setCursor] = useState<Pt>([0, 0]);
   const [run, setRun] = useState<Pt[] | null>(null);
   const moving = useRef<{ id: string; from: Pt; at: Pt } | null>(null);
+  /** The part dialog: WHICH part, and where it opened. `id` names a symbol in
+   *  the editor's document, `index` one on a sheet that came from KiCad — a
+   *  sheet has one or the other, never both. */
+  const [popup, setPopup] = useState<{ index: number | null; id: string | null; x: number; y: number } | null>(null);
+  /** The right-click menu: where it opened (px for the box, mm for Paste). */
+  const [menu, setMenu] = useState<{ x: number; y: number; mm: Pt; sel: Selection | null } | null>(null);
+  /** The double-click chooser: which readings of this wire or pin to plot. */
+  const [probe, setProbe] = useState<{
+    x: number; y: number;
+    net: string | null; wireId?: string;
+    pin?: { ref: string; pin: string; group: string };
+  } | null>(null);
+  /** One copied symbol. A ref, not state — nothing draws it. */
+  const clipboard = useRef<DocSymbol | null>(null);
+  const viewRef = useRef<View | null>(null);
+  /** What the last pointer-down hit, so a click that SELECTS a part does not
+   *  also probe the pin dot under the same pixels. */
+  const downHit = useRef<Selection | null>(null);
+  const frame = useRef<HTMLDivElement | null>(null);
+
+  /** A pointer position as pixels inside the drawing's own box, clamped so
+   *  the dialog opens beside the part rather than off the edge. */
+  const framePoint = (e: { clientX: number; clientY: number }) => {
+    const box = frame.current?.getBoundingClientRect();
+    if (!box) return { x: 16, y: 16 };
+    return {
+      x: Math.max(8, Math.min(e.clientX - box.left + 18, box.width - 356)),
+      y: Math.max(8, Math.min(e.clientY - box.top - 16, Math.max(8, box.height - 120))),
+    };
+  };
 
   const editing = !!edit?.active;
   const doc = edit?.doc;
+  /* A sketch with a circuit on it opens FITTED, like Falstad — the fixed
+   * working window is for an EMPTY sheet. Decided once per document, so
+   * placing the first part never yanks the viewport. */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const openFit = useMemo(() => !!doc && doc.symbols.length > 0, [doc?.uuid]);
   const libs = edit?.libs;
 
   // A tool that is no longer reachable must not stay armed under the drawing.
   useEffect(() => {
     if (!editing) { setPlacing(null); setRun(null); setTool("select"); setSelected(null); }
+    setPopup(null);
   }, [editing]);
 
   /** Junctions are DERIVED. Nobody places a junction dot in KiCad either — it
@@ -128,8 +179,26 @@ export default function SimulatorView({
   }, [doc, libs]);
 
   const overlay = useSimOverlay({
-    geometry, reader, clock, running, voltageRange, currentPeak,
-    selectedNet, onPickNet, onUnresolved, parts, onPickPart,
+    geometry, reader, clock, running, voltageRange, currentPeak, currentSpeed, voltRef,
+    selectedNet, onPickNet, onUnresolved, parts,
+    // A click that lands on a part's BODY is a selection, not a probe — the
+    // pin dots overlap the outline, and selecting a part must not fill the
+    // scope with its terminals.
+    onPickPin: (pin: { ref: string; pin: string; group: string }) => {
+      if (editing && downHit.current?.kind === "symbol") return;
+      onPickPin?.(pin);
+    },
+    // Double-click: a small chooser at the pointer, not an immediate trace.
+    onProbe: ({ net, wireId, pin, e }) => {
+      if (editing && pin && downHit.current?.kind === "symbol") return;
+      setProbe({ ...framePoint(e), net, wireId, pin });
+    },
+    // In edit mode the editor hit-tests the document itself, and a second
+    // set of click targets over the same parts would fight it.
+    onPickPart: editing ? undefined : (index: number, e: React.MouseEvent) => {
+      onPickPart?.(index);
+      setPopup({ index, id: null, ...framePoint(e) });
+    },
     // While a tool has the pointer, the net targets must not swallow clicks.
     interactive: !editing || (tool === "select" && !placing),
     wires: doc?.wires,
@@ -288,6 +357,12 @@ export default function SimulatorView({
   };
 
   const onDown = (mm: Pt) => {
+    // A press on empty paper dismisses the dialog. The overlay's own click
+    // lands AFTER this one, so picking a different part still opens it.
+    setPopup(null);
+    setMenu(null);
+    setProbe(null);
+    downHit.current = null;
     if (!editing || !doc) return;
     if (placing) { place(placing, snapPt(mm), ghostAngle); return; }
     if (tool === "wire") {
@@ -327,6 +402,7 @@ export default function SimulatorView({
     }
     const hit = hitAnything(mm);
     setSelected(hit);
+    downHit.current = hit;
     if (hit?.kind === "symbol") {
       const s = doc.symbols.find((x) => x.id === hit.id);
       if (s) moving.current = { id: s.id, from: mm, at: [s.at[0], s.at[1]] };
@@ -344,6 +420,27 @@ export default function SimulatorView({
     if (at[0] !== s.at[0] || at[1] !== s.at[1]) patchSymbol(m.id, { at }, true);
   };
 
+  const copySel = () => {
+    const sym = selected?.kind === "symbol" && doc
+      ? doc.symbols.find((x) => x.id === selected.id) : null;
+    if (sym) clipboard.current = { ...sym, fields: { ...sym.fields } };
+  };
+
+  const pasteAt = (p: Pt) => {
+    const clip = clipboard.current;
+    if (!clip || !doc || !edit) return;
+    const at = snapPt(p);
+    const prefix = (clip.fields.Reference ?? "").match(/^#?[A-Za-z]+/)?.[0] ?? "U";
+    const sym: DocSymbol = {
+      ...clip,
+      id: newId(),
+      at: [at[0], at[1], clip.at[2]],
+      fields: { ...clip.fields, Reference: nextRef(doc, prefix) },
+    };
+    edit.onChange({ ...doc, symbols: [...doc.symbols, sym] });
+    setSelected({ kind: "symbol", id: sym.id });
+  };
+
   const onKey = (e: React.KeyboardEvent) => {
     if (!editing || !edit) return;
     const meta = e.metaKey || e.ctrlKey;
@@ -352,11 +449,20 @@ export default function SimulatorView({
       if (e.shiftKey) edit.onRedo(); else edit.onUndo();
       return;
     }
+    if (meta && e.key.toLowerCase() === "c") { e.preventDefault(); copySel(); return; }
+    if (meta && e.key.toLowerCase() === "x") {
+      e.preventDefault();
+      copySel();
+      if (selected?.kind === "symbol") remove(selected);
+      return;
+    }
+    // Pasted under the pointer, which is where the eye already is.
+    if (meta && e.key.toLowerCase() === "v") { e.preventDefault(); pasteAt(cursor); return; }
     if (meta) return;
     switch (e.key) {
       case "Escape":
         e.preventDefault();
-        setPlacing(null); setRun(null); setTool("select"); setSelected(null);
+        setPlacing(null); setRun(null); setTool("select"); setSelected(null); setMenu(null); setProbe(null);
         break;
       case "Delete":
       case "Backspace":
@@ -389,6 +495,86 @@ export default function SimulatorView({
   const selectedText = selected?.kind === "text" && doc
     ? doc.texts.find((t) => t.id === selected.id) ?? null : null;
   const selectedBox = selectedSymbol && libs ? symbolBox(selectedSymbol, libs) : null;
+
+  // ------------------------------------------------------- the part dialog
+
+  /** The part the dialog is about. A sketch answers from the document, so a
+   *  change writes to the file; a sheet KiCad wrote answers from the parsed
+   *  geometry, and only the RUN follows what is typed. */
+  const popSym = popup?.id && doc ? doc.symbols.find((x) => x.id === popup.id) ?? null : null;
+  const popGeom = popup && popup.index !== null && geometry
+    ? geometry.symbols.find((x) => x.index === popup.index) ?? null : null;
+
+  const libProps = popSym && libs ? libs[popSym.lib_id]?.props ?? [] : [];
+  const popFacts: PartFacts | null = popSym
+    ? {
+      ref: popSym.fields.Reference ?? "",
+      value: popSym.fields.Value ?? libProps.find((f) => f.k === "Value")?.v ?? "",
+      libId: popSym.lib_id,
+      // The library's defaults, with whatever this placement overrides on top.
+      props: [
+        ...libProps.map((f) => ({ k: f.k, v: popSym.fields[f.k] ?? f.v })),
+        ...Object.entries(popSym.fields)
+          .filter(([k]) => !libProps.some((f) => f.k === k))
+          .map(([k, v]) => ({ k, v })),
+      ],
+      spice: libs ? spiceName(popSym, libs) : "",
+    }
+    : popGeom
+      ? { ref: popGeom.ref, value: popGeom.value, libId: popGeom.lib_id,
+          props: popGeom.props ?? [], spice: popGeom.spice }
+      : null;
+
+  const popControl = popGeom && controls ? controls.get(popGeom.spice) : undefined;
+  const popForms: ParamForm[] = popSym
+    ? edit?.palette.find((x) => x.lib_id === popSym.lib_id)?.forms
+      // A switch is drawn as one of two definitions, and only one is in the
+      // palette.
+      ?? edit?.palette.find((x) => x.lib_id === edit.switchPair.open)?.forms
+      ?? []
+    : popControl
+      ? [{
+        id: "value",
+        label: "Value",
+        target: "value",
+        template: "{v}",
+        fields: [{
+          key: "v",
+          label: popControl.kind === "source" ? "Source" : "Value",
+          unit: popControl.unit,
+          default: popControl.value,
+          scale: "text",
+          min: 0,
+          max: 0,
+          // ngspice accepts `alter` on a waveform and silently keeps the old
+          // script, so a harness-driven source is marked as needing a re-run
+          // rather than pretending to move.
+          live: popControl.kind !== "scripted",
+        }],
+      }]
+      : [];
+
+  const popLive = onAlter && popFacts?.spice
+    ? (_f: ParamField, v: string) => onAlter(`alter ${popFacts.spice} = ${v}`)
+    : undefined;
+
+  /** Right-click: select what is under the pointer and offer its verbs. */
+  const onMenu = (e: React.MouseEvent) => {
+    if (!editing || !doc) return;
+    e.preventDefault();
+    const box = frame.current?.getBoundingClientRect();
+    const view = viewRef.current;
+    if (!box || !view || !box.width || !box.height) return;
+    const mm: Pt = [
+      view.x + ((e.clientX - box.left) / box.width) * view.w,
+      view.y + ((e.clientY - box.top) / box.height) * view.h,
+    ];
+    const hit = hitAnything(mm);
+    setSelected(hit);
+    setPopup(null);
+    setMenu({ ...framePoint(e), mm, sel: hit });
+  };
+
   const ghostLib = placing && libs ? libs[placing.lib_id] : null;
   const size: [number, number] = doc ? PAPER : [geometry!.size[0], geometry!.size[1]];
 
@@ -431,13 +617,14 @@ export default function SimulatorView({
         </div>
       ) : null}
 
-      <div className="card schview">
+      <div className="card schview" ref={frame} onContextMenu={onMenu}>
         <SchematicView
+          fill
           drawing={drawing}
           theme={theme}
           size={size}
-          fit={doc ? false : fit}
-          initialView={doc ? OPENING_VIEW : undefined}
+          fit={doc ? openFit : fit}
+          initialView={doc && !openFit ? OPENING_VIEW : undefined}
           resetKey={doc ? doc.uuid : geometry?.instance_path ?? ""}
           extraBounds={extraBounds}
           tabIndex={editing ? 0 : undefined}
@@ -449,9 +636,16 @@ export default function SimulatorView({
             moving.current = null;
             overlay.dragged.current = moved;
           }}
-          onDoubleClickMm={() => { if (run) { commitRun(preview ?? []); setRun(null); } }}
+          onDoubleClickMm={(mm, e) => {
+            if (run) { commitRun(preview ?? []); setRun(null); return; }
+            // Falstad's grammar: click selects, double-click opens the part.
+            if (editing && doc && tool === "select" && !placing) {
+              const hit = hitAnything(mm);
+              if (hit?.kind === "symbol") setPopup({ index: null, id: hit.id, ...framePoint(e) });
+            }
+          }}
           onKeyDown={onKey}
-          onView={overlay.onView}
+          onView={(v) => { viewRef.current = v; overlay.onView(v); }}
           layers={overlay.layers}
           underlay={(view) => {
             // Only when a dot is far enough apart to read. Zoomed out they
@@ -476,6 +670,15 @@ export default function SimulatorView({
           )) : null}
           {preview ? (
             <polyline className="sch-preview" points={preview.map((p) => `${p[0]},${p[1]}`).join(" ")} />
+          ) : null}
+          {popGeom?.bbox ? (
+            <rect
+              className="sim-part-open"
+              x={popGeom.bbox[0]}
+              y={popGeom.bbox[1]}
+              width={popGeom.bbox[2] - popGeom.bbox[0]}
+              height={popGeom.bbox[3] - popGeom.bbox[1]}
+            />
           ) : null}
           {selectedBox ? (
             <rect
@@ -508,72 +711,198 @@ export default function SimulatorView({
               : reader.scaleType === "frequency"
                 ? `f = ${eng(reader.position, "Hz")}`
                 : "one operating point"}
-            {" · click a wire to plot it · scroll to zoom, drag to pan"}
+            {" · click selects a net, double-click plots it · scroll to zoom, drag to pan"}
           </p>
+        ) : null}
+
+        {popup && popFacts ? (
+          <PartPopup
+            key={popup.id ?? popup.index ?? "part"}
+            part={popFacts}
+            at={{ x: popup.x, y: popup.y }}
+            forms={popForms}
+            value={popSym
+              ? popSym.fields.Value ?? libProps.find((f) => f.k === "Value")?.v ?? ""
+              : popGeom?.value ?? ""}
+            params={popSym
+              ? popSym.fields["Sim.Params"] ?? libProps.find((f) => f.k === "Sim.Params")?.v ?? ""
+              : popGeom?.sim?.params ?? ""}
+            onValue={popSym ? (v: string) => setField(popSym.id, "Value", v) : undefined}
+            onParams={popSym ? (v: string) => setField(popSym.id, "Sim.Params", v) : undefined}
+            onLive={popLive}
+            readOnly={!popSym}
+            onClose={() => setPopup(null)}
+          >
+            {popSym && doc && edit ? (
+              <>
+                {edit.palette.find((x) => x.lib_id === popSym.lib_id)?.sim === "power"
+                  || libs?.[popSym.lib_id]?.power ? (
+                  /* A power symbol IS its net: the editable thing is the net
+                     it drives, not the #PWR bookkeeping reference. */
+                    <label className="sim-knob">
+                      <span>Net</span>
+                      <input
+                        className="text"
+                        value={popSym.fields.Value ?? libProps.find((f) => f.k === "Value")?.v ?? ""}
+                        onChange={(e) => setField(popSym.id, "Value", e.target.value)}
+                      />
+                    </label>
+                  ) : (
+                    <label className="sim-knob">
+                      <span>Reference</span>
+                      <input
+                        className="text"
+                        value={popSym.fields.Reference ?? ""}
+                        onChange={(e) => setField(popSym.id, "Reference", e.target.value)}
+                      />
+                    </label>
+                  )}
+                <div className="sim-knobs part-popup-actions">
+                  {popSym.lib_id === edit.switchPair.open
+                    || popSym.lib_id === edit.switchPair.closed ? (
+                    <div className="seg" role="group" aria-label="Contact">
+                      {([["closed", edit.switchPair.closed], ["open", edit.switchPair.open]] as const).map(([name, id]) => (
+                        <button
+                          key={name}
+                          type="button"
+                          className={popSym.lib_id === id ? "on" : ""}
+                          // Drop the overrides with the swap: the state lives in
+                          // the library definition, so the drawing, the Value and
+                          // the resistance move together or not at all.
+                          onClick={() => edit.onChange({
+                            ...doc,
+                            symbols: doc.symbols.map((x) => (x.id === popSym.id
+                              ? { ...x, lib_id: id, fields: { Reference: x.fields.Reference ?? "" } }
+                              : x)),
+                          })}
+                        >
+                          {name}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  {onPickPart && popSym && geometry ? (() => {
+                    const geomSym = geometry.symbols.find(
+                      (x) => x.ref === (popSym.fields.Reference ?? "") && !x.power,
+                    );
+                    return geomSym ? (
+                      <button type="button" onClick={() => onPickPart(geomSym.index)}>
+                        Plot current
+                      </button>
+                    ) : null;
+                  })() : null}
+                  {editing ? (
+                    <>
+                      <button type="button" className="ghost" onClick={rotate}>Rotate</button>
+                      <button type="button" className="ghost" onClick={() => mirror("y")}>Mirror</button>
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => { remove({ kind: "symbol", id: popSym.id }); setPopup(null); }}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
+            {/* A contact on a sheet KiCad wrote has no second definition to be
+                drawn as, so it is thrown by resistance instead. */}
+            {!popSym && popGeom && onFlip && parts?.get(popGeom.index)?.kind === "switch" ? (
+              <div className="sim-knobs part-popup-actions">
+                <button type="button" onClick={() => onFlip(popGeom.index)}>
+                  {parts.get(popGeom.index)?.on ? "Open the contact" : "Close the contact"}
+                </button>
+              </div>
+            ) : null}
+          </PartPopup>
+        ) : null}
+        {probe ? (
+          <div className="sim-menu" style={{ left: probe.x, top: probe.y }}>
+            {probe.pin ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => { if (probe.pin) onProbePin?.(probe.pin, "v"); setProbe(null); }}
+                >
+                  Plot voltage
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { if (probe.pin) onProbePin?.(probe.pin, "i"); setProbe(null); }}
+                >
+                  Plot pin current
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { if (probe.pin) onProbePin?.(probe.pin, "both"); setProbe(null); }}
+                >
+                  Plot both
+                </button>
+              </>
+            ) : probe.net ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => { if (probe.net) onProbeNet?.(probe.net, probe.wireId, "v"); setProbe(null); }}
+                >
+                  Plot voltage
+                </button>
+                <button
+                  type="button"
+                  disabled={!probe.wireId}
+                  onClick={() => { if (probe.net) onProbeNet?.(probe.net, probe.wireId, "i"); setProbe(null); }}
+                >
+                  Plot wire current
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { if (probe.net) onProbeNet?.(probe.net, probe.wireId, "both"); setProbe(null); }}
+                >
+                  Plot both
+                </button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+        {menu && editing && doc ? (
+          <div className="sim-menu" style={{ left: menu.x, top: menu.y }}>
+            {menu.sel?.kind === "symbol" ? (
+              <>
+                <button type="button" onClick={() => { copySel(); setMenu(null); }}>Copy</button>
+                <button type="button" onClick={() => { copySel(); if (menu.sel) remove(menu.sel); setMenu(null); }}>Cut</button>
+                <button type="button" onClick={() => { rotate(); setMenu(null); }}>Rotate</button>
+                <button type="button" onClick={() => { mirror("y"); setMenu(null); }}>Mirror</button>
+                <button type="button" onClick={() => { if (menu.sel) remove(menu.sel); setMenu(null); }}>Delete</button>
+                <button
+                  type="button"
+                  onClick={() => { setPopup({ index: null, id: menu.sel?.id ?? null, x: menu.x, y: menu.y }); setMenu(null); }}
+                >
+                  Properties…
+                </button>
+              </>
+            ) : menu.sel ? (
+              <button type="button" onClick={() => { if (menu.sel) remove(menu.sel); setMenu(null); }}>Delete</button>
+            ) : null}
+            <button
+              type="button"
+              disabled={!clipboard.current}
+              onClick={() => { pasteAt(menu.mm); setMenu(null); }}
+            >
+              Paste
+            </button>
+          </div>
         ) : null}
       </div>
 
-      {editing && edit && doc ? (
+      {/* Only when it has something to SAY: a label or directive being
+          edited, or the how-to on an empty sheet. A part's dialog opens on
+          the part, and a standing hint under a working circuit was the
+          tallest decoration on the page. */}
+      {editing && edit && doc && (selectedLabel || selectedText || !doc.symbols.length) ? (
         <div className="card pad sch-props">
-          {selectedSymbol ? (
-            <>
-              <ComponentInspector
-                title={selectedSymbol.fields.Reference || "part"}
-                forms={edit.palette.find((p) => p.lib_id === selectedSymbol.lib_id)?.forms
-                  // A switch is drawn as one of two definitions, and only one
-                  // of them is in the palette.
-                  ?? edit.palette.find((p) => p.lib_id === edit.switchPair.open)?.forms
-                  ?? []}
-                value={selectedSymbol.fields.Value
-                  ?? libs?.[selectedSymbol.lib_id]?.props.find((f) => f.k === "Value")?.v ?? ""}
-                params={selectedSymbol.fields["Sim.Params"]
-                  ?? libs?.[selectedSymbol.lib_id]?.props.find((f) => f.k === "Sim.Params")?.v ?? ""}
-                onValue={(v) => setField(selectedSymbol.id, "Value", v)}
-                onParams={(v) => setField(selectedSymbol.id, "Sim.Params", v)}
-                onLive={onAlter && libs
-                  ? (_f: ParamField, v: string) =>
-                      onAlter(`alter ${spiceName(selectedSymbol, libs)} = ${v}`)
-                  : undefined}
-              >
-                <label className="sim-knob">
-                  <span>Reference</span>
-                  <input
-                    className="text"
-                    value={selectedSymbol.fields.Reference ?? ""}
-                    onChange={(e) => setField(selectedSymbol.id, "Reference", e.target.value)}
-                  />
-                </label>
-              </ComponentInspector>
-              <div className="sim-knobs">
-                {selectedSymbol.lib_id === edit.switchPair.open
-                  || selectedSymbol.lib_id === edit.switchPair.closed ? (
-                  <div className="seg" role="group" aria-label="Contact">
-                    {([["closed", edit.switchPair.closed], ["open", edit.switchPair.open]] as const).map(([name, id]) => (
-                      <button
-                        key={name}
-                        type="button"
-                        className={selectedSymbol.lib_id === id ? "on" : ""}
-                        // Drop the overrides with the swap: the state lives in
-                        // the library definition, so the drawing, the Value and
-                        // the resistance move together or not at all.
-                        onClick={() => edit.onChange({
-                          ...doc,
-                          symbols: doc.symbols.map((s) => (s.id === selectedSymbol.id
-                            ? { ...s, lib_id: id, fields: { Reference: s.fields.Reference ?? "" } }
-                            : s)),
-                        })}
-                      >
-                        {name}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-                <button type="button" className="ghost" onClick={rotate}>Rotate</button>
-                <button type="button" className="ghost" onClick={() => mirror("y")}>Mirror</button>
-                <button type="button" className="ghost" onClick={() => remove(selected!)}>Delete</button>
-              </div>
-            </>
-          ) : selectedLabel ? (
+          {selectedLabel ? (
             <label className="sim-knob">
               <span>Net name</span>
               <input

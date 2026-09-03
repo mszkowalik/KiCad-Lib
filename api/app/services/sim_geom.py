@@ -392,6 +392,13 @@ def sheet_geometry(text: str, instance_path: str = "", net_prefix: str = "") -> 
         sim = _sim_props(sym)
         symbols.append({
             "ref": ref, "value": _property(sym, "Value"), "lib_id": lib_id,
+            # EVERY field on the placement, hidden ones included. This is what
+            # a part says about itself — footprint, datasheet, description, the
+            # manufacturer's number — and the popup that opens on a part shows
+            # it. `draw.symbols[].fields` cannot serve: it drops hidden fields,
+            # because it exists to DRAW the sheet, and a hidden field is
+            # precisely one that is not drawn.
+            "props": _all_props(sym),
             "at": [at[0], at[1]], "angle": at[2], "mirror": mirror, "unit": unit,
             "bbox": box, "power": is_power, "index": idx,
             "sim": sim,
@@ -485,6 +492,15 @@ def _instance_ref(sym, instance_path: str) -> str:
                 if ref is not None and len(ref) > 1:
                     return str(ref[1]).strip('"')
     return ""
+
+
+def _all_props(sym) -> list[dict]:
+    """Every property on a placement, in file order, hidden included."""
+    out = []
+    for prop in iter_nodes(sym, "property"):
+        if len(prop) > 2:
+            out.append({"k": str(prop[1]).strip('"'), "v": str(prop[2]).strip('"')})
+    return out
 
 
 def _sim_props(sym) -> dict:

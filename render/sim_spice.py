@@ -387,6 +387,44 @@ def _decimate(scale: list[float], series: list[list[float]], limit: int
     return out_scale, out, True
 
 
+# ---------------------------------------------------------------- the log
+
+# How much of a run's output travels with it.
+LOG_LIMIT = 20000
+
+# What a run SAYS, as opposed to what it dumps. A verdict table, a section
+# heading and an error are the answers; an operating-point dump is one line
+# per node that ngspice prints whether anyone asked for it or not — and it
+# prints a SECOND one AFTER the control block finishes.
+#
+# Measured 2026-08-31: the example's four passing checks sat at line 113 of a
+# 240-line log, the trailing dump was 179 lines of node voltages, and a plain
+# `log[-4000:]` tail threw every PASS away. The run worked, the answers were
+# printed, and the browser was handed a wall of node voltages with no verdict
+# in it — which is the same failure as a run that says nothing.
+_SIGNAL_RE = re.compile(
+    r"^\s*(?:PASS\b|FAIL\b|--+\s*\S.*?--+\s*$|\*?\s*(?:error|warning|fatal)\b)",
+    re.IGNORECASE,
+)
+
+
+def trim_log(log: str, limit: int = LOG_LIMIT) -> str:
+    """The tail of a run's output, plus anything it SAID that the tail cut off.
+
+    A tail alone is the wrong trim for a harness: what it prints is the point
+    of the run, and ngspice prints more after it than it does.
+    """
+    if len(log) <= limit:
+        return log
+    tail = log[-limit:]
+    said = [ln for ln in log[: -limit].splitlines() if _SIGNAL_RE.match(ln)]
+    if not said:
+        return tail
+    head = "\n".join(said[-400:])
+    keep = max(0, limit - len(head) - 24)
+    return head + "\n\n[…earlier output trimmed…]\n\n" + tail[-keep:]
+
+
 def encode_payload(plots: list[dict], *, nets: set[str] | None = None,
                    info: dict | None = None, log: str = "",
                    max_points: int = MAX_POINTS) -> bytes:
@@ -403,7 +441,7 @@ def encode_payload(plots: list[dict], *, nets: set[str] | None = None,
         "plots": [],
         "unmodelled": (info or {}).get("unmodelled", []),
         "control": (info or {}).get("control", ""),
-        "log": log[-4000:],
+        "log": trim_log(log),
     }
     blob = bytearray()
     for plot in plots:

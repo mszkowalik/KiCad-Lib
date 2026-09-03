@@ -139,12 +139,24 @@ export default function SchematicTab({ snapshot, board, variant }: Props) {
             {variant ? <span className="pill neutral">variant: {variant}</span> : null}
             {/* The simulator reads the same checkout as this view, so it needs
                 nothing but the snapshot and the board. */}
+            {/* Two doors, one room. Simulate is the FORMAL path — the
+                harness, the verdicts, the run that counts. Play live is the
+                playground: watch it run, turn its knobs — and nothing done
+                there can ever write back to this project, because the git
+                checkout is the source of truth. */}
             <Link
               className="btn"
               to={`/sim?snapshot=${snapshot.id}&board=${encodeURIComponent(board.name)}`}
-              title="Open this schematic in the simulator"
+              title="Run the harness and read its verdicts"
             >
               Simulate
+            </Link>
+            <Link
+              className="btn"
+              to={`/sim?snapshot=${snapshot.id}&board=${encodeURIComponent(board.name)}&mode=live`}
+              title="Watch it run and turn its knobs — never writes to the project"
+            >
+              Play live
             </Link>
             {current ? (
               <span className="muted">
