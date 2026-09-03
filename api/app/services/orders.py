@@ -366,17 +366,18 @@ def create_shipment(db: Session, order: M.SalesOrder, *, kind: str = "delivery",
             moved += 1
         if unser > 0:
             src = spec.get("source_run_id")
-            if not src:
-                raise HTTPException(422, "unserialized units need a source batch")
-            avail = next((s for s in run_stock(db, li.project_id) if s["run_id"] == int(src)), None)
-            if avail is None:
-                raise HTTPException(404, f"no run {src} in project {li.project_id}")
-            if avail["legacy_stock"] < unser:
-                raise HTTPException(409, {"error": "not enough unserialized units in that batch",
-                                          "available": avail["legacy_stock"], "requested": unser,
-                                          "order_line_id": li.id})
+            if src:
+                avail = next((s for s in run_stock(db, li.project_id) if s["run_id"] == int(src)), None)
+                if avail is None:
+                    raise HTTPException(404, f"no run {src} in project {li.project_id}")
+                if avail["legacy_stock"] < unser:
+                    raise HTTPException(409, {"error": "not enough unserialized units in that batch",
+                                              "available": avail["legacy_stock"], "requested": unser,
+                                              "order_line_id": li.id})
+            # No source batch = units the platform never built (prototypes from
+            # before any run): fulfilment counts them, cost reports them uncosted.
             db.add(M.ShipmentLine(shipment_id=sh.id, order_line_id=li.id,
-                                  qty_unserialized=unser, source_run_id=int(src)))
+                                  qty_unserialized=unser, source_run_id=int(src) if src else None))
             moved += unser
     if moved == 0:
         raise HTTPException(422, "the shipment moves nothing")

@@ -846,7 +846,7 @@ function ShipCard({ order, onDone }: { order: OrderRow; onDone: (o: OrderRow) =>
                 <label>
                   …from batch
                   <select className="text" value={r.unserRun} onChange={(e) => set(li.id, { unserRun: e.target.value })}>
-                    <option value="">—</option>
+                    <option value="">no batch (built before any run; uncosted)</option>
                     {opts.filter((o) => o.legacy_stock > 0).map((o) => (
                       <option key={o.run_id} value={o.run_id}>{o.label} ({o.legacy_stock})</option>
                     ))}
