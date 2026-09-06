@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-07 — Order page layout, device list sorting, sort hints
+
+- **Order page**: the products, invoices and shipments tables size their
+  columns to the content and scroll inside the card instead of clipping;
+  under 1700 px the tables take the full width with the two short cards
+  beneath. Notes is a full-width row of the order form.
+- **Devices list**: Project, Batch and Runs sort and filter on the server,
+  and a Where column shows the device state (in stock, shipped, …). The
+  batch shown is the one the orders side linked to the device.
+- **Every sortable header** shows a faint sort glyph and the whole header
+  cell is the click target — before, the title alone was the button and
+  nothing marked it as one.
+
 ## 2026-09-06 — Orders in the project window, demand, decided JLC orders
 
 - **Orders tab** on every project, next to Batches: one row per order line

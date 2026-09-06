@@ -278,7 +278,9 @@ export default function DataTable<T>({
                   {c.label}
                   {sort?.key === c.key ? (
                     <span className="sort-ind">{sort.dir === "asc" ? "▲" : "▼"}</span>
-                  ) : null}
+                  ) : (
+                    <span className="sort-hint" aria-hidden="true">⇅</span>
+                  )}
                 </button>
               </th>
             ),

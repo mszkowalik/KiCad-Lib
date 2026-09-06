@@ -3961,38 +3961,14 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
 .finished-stock-table th:nth-child(1), .finished-stock-table td:nth-child(1) { width: 14%; }
 .finished-stock-table th:nth-child(2), .finished-stock-table td:nth-child(2) { width: 22%; }
 .finished-stock-table th:nth-child(n+3), .finished-stock-table td:nth-child(n+3) { width: 9.14%; }
-.order-lines-table { table-layout: fixed; }
-.order-lines-table th:nth-child(1), .order-lines-table td:nth-child(1) { width: 18%; }
-.order-lines-table th:nth-child(2), .order-lines-table td:nth-child(2) { width: 20%; }
-.order-lines-table th:nth-child(n+3), .order-lines-table td:nth-child(n+3) { width: 9.5%; }
-.order-lines-table th:nth-child(9), .order-lines-table td:nth-child(9) { width: 5%; }
 .order-lines-edit-table { table-layout: fixed; }
 .order-lines-edit-table th:nth-child(1), .order-lines-edit-table td:nth-child(1) { width: 30%; }
 .order-lines-edit-table th:nth-child(2), .order-lines-edit-table td:nth-child(2) { width: 34%; }
 .order-lines-edit-table th:nth-child(3), .order-lines-edit-table td:nth-child(3) { width: 14%; }
 .order-lines-edit-table th:nth-child(4), .order-lines-edit-table td:nth-child(4) { width: 16%; }
 .order-lines-edit-table th:nth-child(5), .order-lines-edit-table td:nth-child(5) { width: 6%; }
-.order-invoices-table { table-layout: fixed; }
-.order-invoices-table th:nth-child(1), .order-invoices-table td:nth-child(1) { width: 11%; }
-.order-invoices-table th:nth-child(2), .order-invoices-table td:nth-child(2) { width: 24%; }
-.order-invoices-table th:nth-child(3), .order-invoices-table td:nth-child(3) { width: 13%; }
-.order-invoices-table th:nth-child(4), .order-invoices-table td:nth-child(4) { width: 13%; }
-.order-invoices-table th:nth-child(5), .order-invoices-table td:nth-child(5) { width: 17%; }
-.order-invoices-table th:nth-child(6), .order-invoices-table td:nth-child(6) { width: 16%; }
-.order-invoices-table th:nth-child(7), .order-invoices-table td:nth-child(7) { width: 6%; }
-.order-shipments-table { table-layout: fixed; }
-.order-shipments-table th:nth-child(1), .order-shipments-table td:nth-child(1) { width: 12%; }
-.order-shipments-table th:nth-child(2), .order-shipments-table td:nth-child(2) { width: 10%; }
-.order-shipments-table th:nth-child(3), .order-shipments-table td:nth-child(3) { width: 40%; }
-.order-shipments-table th:nth-child(4), .order-shipments-table td:nth-child(4) { width: 16%; }
-.order-shipments-table th:nth-child(5), .order-shipments-table td:nth-child(5) { width: 16%; }
-.order-shipments-table th:nth-child(6), .order-shipments-table td:nth-child(6) { width: 6%; }
 .order-shipments-table td.expand-cell { white-space: normal; overflow: visible; }
 .order-shipments-table tr.clickable { cursor: pointer; }
-.ship-batches-table { table-layout: fixed; }
-.ship-batches-table th:nth-child(1), .ship-batches-table td:nth-child(1) { width: 6%; }
-.ship-batches-table th:nth-child(2), .ship-batches-table td:nth-child(2) { width: 46%; }
-.ship-batches-table th:nth-child(n+3), .ship-batches-table td:nth-child(n+3) { width: 16%; }
 .ship-line { border-top: 1px solid var(--line); padding-top: 0.5rem; margin-top: 0.5rem; }
 .serial-cloud { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.4rem; }
 .device-history-table { table-layout: fixed; }
@@ -5402,3 +5378,41 @@ a.check-cell:hover {
 .demand-table { table-layout: fixed; }
 .demand-table th:nth-child(1), .demand-table td:nth-child(1) { width: 18%; }
 .demand-table th:nth-child(n+2):nth-child(-n+6), .demand-table td:nth-child(n+2):nth-child(-n+6) { width: 9%; }
+
+/* Order page: two wide tables on the left (9 and 7 columns), two short cards
+   on the right — the generic 40/60 split truncated every header. */
+.order-page { grid-template-columns: minmax(0, 3fr) minmax(360px, 2fr); }
+.order-page .detail-right { grid-template-rows: auto auto; align-content: start; }
+@media (max-width: 1700px) {
+  /* Under ~1700px the 60/40 split still truncates the nine-column products
+     table, so the tables take the full width and the two short cards sit
+     side by side beneath them. */
+  .order-page { display: block; }
+  .order-page .detail-right {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto;
+    margin-top: 16px;
+  }
+}
+@media (max-width: 1100px) {
+  .order-page .detail-right { display: block; }
+}
+
+/* Order tables size to their content and scroll inside .table-wrap when the
+   card is too narrow — nothing is ever clipped. Headers, numbers and dates
+   stay on one line; names and free text may wrap. */
+.order-table { table-layout: auto; width: 100%; }
+.order-table th, .order-table td.num, .order-table td.mono, .order-table td.nowrap { white-space: nowrap; }
+.order-table td { overflow: visible; text-overflow: clip; }
+.order-table td.expand-cell { white-space: normal; }
+.order-lines-table td.project { white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.order-table th:last-child, .order-table td:last-child { white-space: nowrap; width: 1%; padding-right: 14px; }
+.order-table .btn-sm { margin: 0; }
+
+/* Every sortable header says so: a faint glyph that brightens on hover, and the
+   whole header cell is the click target — before this the title alone was the
+   button and nothing marked it as one (2026-09-07). */
+.th-sort { display: block; width: 100%; text-align: inherit; }
+.sort-hint { font-size: 9px; margin-left: 4px; opacity: 0.3; }
+.th-sort:hover .sort-hint { opacity: 1; color: var(--accent); }

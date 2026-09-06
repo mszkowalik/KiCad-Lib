@@ -4085,6 +4085,8 @@ export interface DeviceListRow {
   modem_model: string;
   project: { id: number; name: string };
   batch: { id: number; label: string } | null;
+  /** Decision 0003: in_stock / shipped / returned / disposed, or "" for a device no batch has claimed. */
+  state: string;
   last_status: string;
   runs: number;
   /** newest outcome per check name, tallied */

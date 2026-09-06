@@ -24,7 +24,7 @@ from fastapi import (
 )
 from fastapi.responses import Response
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import String, cast, func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -1199,6 +1199,15 @@ def _run_summary_json(r: M.ProgrammingRun, db: Session) -> dict:
 # `sort` comes from a query string and must never be able to name an arbitrary
 # column.
 _DEVICE_SORTS = {
+    # Project and batch sort by NAME through the outer joins `list_devices`
+    # adds; `runs` by a correlated count. All three were unsortable until
+    # 2026-09-07 because they lived on other tables.
+    "project": M.Project.name,
+    "batch": M.ProductionRun.label,
+    "state": M.DeviceUnit.state,
+    "runs": (select(func.count(M.ProgrammingRun.id))
+             .where(M.ProgrammingRun.device_unit_id == M.DeviceUnit.id)
+             .correlate(M.DeviceUnit).scalar_subquery()),
     "last_seen": M.DeviceUnit.last_seen,
     "first_seen": M.DeviceUnit.first_seen,
     "mac": M.DeviceUnit.mac,
@@ -1215,6 +1224,10 @@ _DEVICE_SORTS = {
 # rows match" about 5400 devices it never loaded. Same allow-list reasoning as
 # the sort map: a column name arrives in a query string.
 _DEVICE_FILTERS = {
+    "runs": cast(_DEVICE_SORTS["runs"], String),
+    "project": M.Project.name,
+    "batch": M.ProductionRun.label,
+    "state": M.DeviceUnit.state,
     "serial": M.DeviceUnit.serial,
     "mac": M.DeviceUnit.mac,
     "tasmota_id": M.DeviceUnit.tasmota_id,
@@ -1247,7 +1260,13 @@ def list_devices(
     therefore SERVER-side here — a client that only holds one page cannot
     honestly filter the rest.
     """
-    query = db.query(M.DeviceUnit)
+    # Outer joins so project and batch can be sorted and filtered by name.
+    # The batch is the device's own `production_run_id` (decision 0003), which
+    # is what the orders side links; the latest programming run's batch is
+    # only a fallback for devices no batch has claimed.
+    query = (db.query(M.DeviceUnit)
+             .outerjoin(M.Project, M.Project.id == M.DeviceUnit.project_id)
+             .outerjoin(M.ProductionRun, M.ProductionRun.id == M.DeviceUnit.production_run_id))
     if project_id:
         query = query.filter(M.DeviceUnit.project_id == project_id)
     if status:
@@ -1298,13 +1317,16 @@ def list_devices(
     # only free while the identity map still holds the object, and it holds
     # weak references.
     run_ids = {r.production_run_id for r in latest.values() if r.production_run_id}
+    run_ids |= {d.production_run_id for d in devices if d.production_run_id}
     prod_runs = {r.id: r for r in db.query(M.ProductionRun)
                  .filter(M.ProductionRun.id.in_(run_ids))} if run_ids else {}
     tally = checks_svc.counts_for_devices(db, ids)
     out = []
     for d in devices:
         last = latest.get(d.id)
-        prod = prod_runs.get(last.production_run_id) if last else None
+        prod = prod_runs.get(d.production_run_id) if d.production_run_id else None
+        if prod is None and last is not None and last.production_run_id:
+            prod = prod_runs.get(last.production_run_id)
         # NOT `counts` — that name holds the run count per device.
         checked = tally.get(d.id, {})
         out.append({
@@ -1315,7 +1337,7 @@ def list_devices(
             "imsi": d.imsi, "modem_model": d.modem_model,
             "project": {"id": d.project_id, "name": projects.get(d.project_id, "?")},
             "batch": {"id": prod.id, "label": prod.label} if prod else None,
-            "last_status": d.last_status, "runs": counts.get(d.id, 0),
+            "state": d.state, "last_status": d.last_status, "runs": counts.get(d.id, 0),
             "first_seen": _iso(d.first_seen), "last_seen": _iso(d.last_seen),
             "notes": d.notes,
         })

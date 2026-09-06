@@ -151,14 +151,22 @@ export default function Devices() {
       className: "mono dim",
       get: (d) => d.tasmota_id || "—",
     },
-    { key: "mac", label: "MAC", width: 12, serverFilter: true, className: "mono dim", get: (d) => d.mac },
-    { key: "chip", label: "Chip", width: 7, serverFilter: true, get: (d) => d.chip || "—" },
-    // Project and batch live on other tables — the toolbar's project select is
-    // the server-side control for the first, so neither takes a filter box.
-    { key: "project", label: "Project", width: 10, interactive: false, get: (d) => d.project.name },
-    { key: "batch", label: "Batch", width: 11, interactive: false, get: (d) => d.batch?.label ?? "—" },
-    { key: "imei", label: "IMEI", width: 12, serverFilter: true, className: "mono dim", get: (d) => d.imei || "—" },
-    { key: "runs", label: "Runs", width: 4, numeric: true, interactive: false, get: (d) => d.runs },
+    { key: "mac", label: "MAC", width: 11, serverFilter: true, className: "mono dim", get: (d) => d.mac },
+    { key: "chip", label: "Chip", width: 6, serverFilter: true, get: (d) => d.chip || "—" },
+    // Project and batch live on other tables; the server joins them by name so
+    // both sort and filter like any other column.
+    { key: "project", label: "Project", width: 9, serverFilter: true, get: (d) => d.project.name },
+    { key: "batch", label: "Batch", width: 10, serverFilter: true, get: (d) => d.batch?.label ?? "—" },
+    {
+      key: "state",
+      label: "Where",
+      width: 7,
+      serverFilter: true,
+      get: (d) => d.state || "",
+      render: (d) => (d.state ? <StatusPill status={d.state} /> : <>—</>),
+    },
+    { key: "imei", label: "IMEI", width: 11, serverFilter: true, className: "mono dim", get: (d) => d.imei || "—" },
+    { key: "runs", label: "Runs", width: 4, numeric: true, serverFilter: true, get: (d) => d.runs },
     {
       key: "checks",
       label: "Checks",

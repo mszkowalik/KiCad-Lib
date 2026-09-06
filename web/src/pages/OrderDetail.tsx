@@ -120,7 +120,7 @@ export default function OrderDetail() {
           />
         ) : null}
 
-        <div className="detail-page">
+        <div className="detail-page order-page">
           <div className="detail-left">
             <LinesCard order={order} projects={projects} apply={apply} />
             <InvoicesCard order={order} apply={apply} />
@@ -203,11 +203,11 @@ function HeaderCard({ order, apply }: { order: OrderRow; apply: (w: () => Promis
           Order date
           <input className="text" value={date} onChange={(e) => setDate(e.target.value)} />
         </label>
+        <label className="fw-wide">
+          Notes
+          <textarea className="note-textarea" value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </label>
       </div>
-      <label>
-        Notes
-        <textarea className="note-textarea" value={notes} onChange={(e) => setNotes(e.target.value)} />
-      </label>
       <div className="btn-row">
         <button
           type="button"
@@ -296,7 +296,7 @@ function LinesCard({
         </button>
       </div>
       <div className="table-wrap">
-        <table className="data data-fixed order-lines-table">
+        <table className="data order-table order-lines-table">
           <thead>
             <tr>
               <th>Product</th>
@@ -314,9 +314,9 @@ function LinesCard({
             {order.lines.map((li) => (
               <tr key={li.id}>
                 <td className="mono" title={li.product}>{li.product || "—"}</td>
-                <td title={li.project}>
+                <td className="project" title={[li.project, li.board, li.variant].filter(Boolean).join(" / ")}>
                   <Link className="val-link" to={`/projects/${li.project_id}`}>{li.project}</Link>
-                  {li.board ? <span className="muted"> {li.board}</span> : null}
+                  {li.board && li.board !== li.project ? <span className="muted"> {li.board}</span> : null}
                   {li.variant ? <span className="muted"> / {li.variant}</span> : null}
                 </td>
                 <td className="num">
@@ -460,7 +460,7 @@ function InvoicesCard({ order, apply }: { order: OrderRow; apply: (w: () => Prom
         <p className="muted">Nothing issued yet.</p>
       ) : (
         <div className="table-wrap">
-          <table className="data data-fixed order-invoices-table">
+          <table className="data order-table order-invoices-table">
             <thead>
               <tr>
                 <th>Kind</th>
@@ -571,7 +571,7 @@ function ShipmentsCard({ order, apply }: { order: OrderRow; apply: (w: () => Pro
         <p className="muted">Nothing shipped yet.</p>
       ) : (
         <div className="table-wrap">
-          <table className="data data-fixed order-shipments-table">
+          <table className="data order-table order-shipments-table">
             <thead>
               <tr>
                 <th>Date</th>
@@ -794,7 +794,7 @@ function ShipCard({ order, onDone }: { order: OrderRow; onDone: (o: OrderRow) =>
                 <p className="muted">No stock in {li.project}.</p>
               ) : (
                 <div className="table-wrap">
-                  <table className="data data-fixed ship-batches-table">
+                  <table className="data order-table ship-batches-table">
                     <thead>
                       <tr>
                         <th />
