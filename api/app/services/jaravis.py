@@ -287,21 +287,58 @@ def list_base_symbols(query: str = "") -> str:
         db.close()
 
 
+_FP_DESCR_RE = re.compile(r'\(descr\s+"((?:[^"\\]|\\.)*)"')
+_FP_TAGS_RE = re.compile(r'\(tags\s+"((?:[^"\\]|\\.)*)"')
+_FP_EQUIV_RE = re.compile(r'\(property\s+"Equivalent Packages"\s+"((?:[^"\\]|\\.)*)"')
+
+
+def _footprint_aliases(source_text: str | None) -> dict:
+    """The three places a footprint records which packages it serves.
+
+    A land that fits several vendor designations (QFN-16 / WQFN-16 / LFCSP-16
+    on one 3x3 mm 0.5 mm copper) carries them in its ``tags``, in a hidden
+    ``Equivalent Packages`` property and in ``descr`` — see conventions-
+    footprints §1 "One land per standard package". The search below matches
+    on all three so an agent looking for "WQFN-16" finds the QFN-16 land
+    instead of minting a duplicate.
+    """
+    src = source_text or ""
+    m_d, m_t, m_e = _FP_DESCR_RE.search(src), _FP_TAGS_RE.search(src), _FP_EQUIV_RE.search(src)
+    return {
+        "descr": m_d.group(1) if m_d else "",
+        "tags": m_t.group(1) if m_t else "",
+        "equivalent_packages": m_e.group(1) if m_e else "",
+    }
+
+
 @beta_tool
 def list_footprints(query: str = "") -> str:
     """List available footprints (7Sigma library) with pad counts.
 
     Args:
-        query: Optional case-insensitive name filter.
+        query: Optional case-insensitive filter. Matched against the NAME and
+            also against the footprint's ``tags``, ``descr`` and hidden
+            ``Equivalent Packages`` property, so a search for a vendor
+            package designation ("WQFN-16", "LFCSP-16", "RTE") returns the
+            shared land that serves it. A hit made through one of those
+            fields carries ``matched_on`` and the field's text, so you can
+            see WHY the land is offered before you reuse it.
     """
     db = SessionLocal()
     try:
         out = []
+        q = query.lower()
         for f in db.query(M.Footprint).order_by(M.Footprint.name):
-            if query and query.lower() not in f.name.lower():
-                continue
             cur = next((v for v in f.versions if v.id == f.current_version_id), None)
-            out.append({"name": f.name, "pads": (cur.parsed or {}).get("pad_count") if cur else None})
+            row = {"name": f.name, "pads": (cur.parsed or {}).get("pad_count") if cur else None}
+            if q and q not in f.name.lower():
+                aliases = _footprint_aliases(cur.source_text if cur else "")
+                hit = next((k for k in ("equivalent_packages", "tags", "descr") if q in aliases[k].lower()), None)
+                if hit is None:
+                    continue
+                row["matched_on"] = hit
+                row[hit] = aliases[hit]
+            out.append(row)
         return json.dumps(_capped(out, "footprints"))
     finally:
         db.close()

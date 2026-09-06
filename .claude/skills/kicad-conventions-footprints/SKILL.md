@@ -2,7 +2,7 @@
 name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints, and the naming standard: the KLC tier rule (Tier 0 stock names are frozen), the twelve-slot field order, decided spellings (_HandSoldering, vendor tokens, no rotation in names), the 7Sigma: namespace, validator-enforced pad/silk/fab/courtyard style, the 0.1mm grid, NPTH mechanical holes, thermal vias, non-electrical parts, and why connector pad numbering always follows the datasheet. Use when naming, picking or authoring any footprint."
 ---
-<!-- platform-skill: conventions-footprints v26 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v27 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 Footprints live in the `7Sigma:` namespace and are always referenced as
@@ -119,6 +119,54 @@ different pitch, a different lead span, a different pad count or numbering is
 a different package and gets its own footprint (see the escalation list
 above). "Standard package" means the leads land in the same place; it does not
 mean the name looks similar.
+
+### Recording that one land serves several package names
+
+**Decided by Mateusz Kowalik on 2026-09-07.** KiCad has no alias mechanism
+for footprints, so when one land serves several vendor designations the
+fact lives on the footprint you keep, in three places, and all three are
+filled every time:
+
+1. **`tags`** — every designation and vendor package code the land serves,
+   plus body and pitch: `"QFN NoLead QFN-16 VQFN-16 WQFN-16 LFCSP-16 3x3mm
+   P0.5mm EP1.7 RTE RGT CP-16 MO-220 ThermalVias"`. KiCad's footprint
+   browser searches tags, so a human typing WQFN finds the QFN-16 land.
+2. **A hidden `Equivalent Packages` property** — same pattern as
+   `FT Rotation Offset` in §9: `(property "Equivalent Packages" "…" (layer
+   "F.Fab") (hide yes) …)`. One entry per designation, `;`-separated, each
+   carrying the EVIDENCE: the vendor code, the drawing or the KiCad stock
+   land derived from it, the component already verified on this copper, and
+   the numeric difference from this land. The tags say *that* it fits; this
+   property says *why*, so the next person does not re-derive it.
+3. **`descr`** — one sentence saying the land is shared and pointing at the
+   property.
+
+Then the symbol side: a part whose package is WQFN or LFCSP gets a
+`ki_fp_filters` glob that matches the shared land (`QFN-16*3x3mm*P0.5mm*`),
+so the footprint chooser offers it. Per symbol, so it only helps parts that
+exist.
+
+**Search all three before minting a footprint for a vendor package name.**
+`list_footprints(query)` matches the name AND the tags, `descr` and
+`Equivalent Packages` text (since 2026-09-07); a hit made through one of
+those carries `matched_on` and the field's text. `list_footprints("WQFN-16")`
+returns `QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm_ThermalVias`, which is the
+answer. When you reuse a shared land for a NEW designation, append that
+designation to all three places in the same session, with its evidence, and
+record a `custom:` item on the component naming the vendor drawing you
+compared.
+
+**Retiring a superseded land.** Repoint every component (`propose_component_edit`,
+Footprint property), move the symbol's default `Footprint` and
+`ki_fp_filters`, then `DELETE /api/footprints/<id>`. The delete is refused
+while any HISTORICAL component version still pins the footprint — which is
+every footprint that ever had a component — so in practice the land stays,
+and you mark it instead: prefix `descr` with `RETIRED <date>. Do not use for
+new parts: … uses <survivor>` and add `RETIRED superseded` to its tags.
+`WQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm_ThermalVias` and
+`LFCSP-16-1EP_3x3mm_P0.5mm_EP1.6x1.6mm_ThermalVias` are the two examples,
+both folded into the QFN-16 land on 2026-09-07 (largest difference 0.025 mm
+on a pad centre, 0.1 mm on the exposed pad).
 
 These boards are assembled by JLCPCB. The land JLC publishes for a part is the
 one their pick-and-place and reflow process is built around, and it is derived

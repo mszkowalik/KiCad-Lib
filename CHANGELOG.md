@@ -2,6 +2,12 @@
 
 ## 2026-09-07 — Order page layout, device list sorting, sort hints
 
+- **`list_footprints` finds a shared land by any package name it serves.**
+  The agent tool matches the query against a footprint's `tags`, `descr`
+  and hidden `Equivalent Packages` property as well as its name, and a hit
+  made that way says which field matched and quotes it. Searching "WQFN-16"
+  or "LFCSP-16" now returns the QFN-16 3x3 mm land those packages share
+  (conventions-footprints v27, §1), instead of nothing.
 - **Order page**: the products, invoices and shipments tables size their
   columns to the content and scroll inside the card instead of clipping;
   under 1700 px the tables take the full width with the two short cards
