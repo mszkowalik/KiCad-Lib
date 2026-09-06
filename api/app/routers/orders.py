@@ -389,7 +389,7 @@ def create_shipment(order_id: int, body: ShipmentIn, request: Request, db: Sessi
     actor = actor_of(request)
     sh = svc.create_shipment(db, o, shipped_at=body.shipped_at, delivery_note=body.delivery_note,
                              tracking=body.tracking, notes=body.notes,
-                             lines=[l.model_dump() for l in body.lines], actor=actor)
+                             lines=[ln.model_dump() for ln in body.lines], actor=actor)
     audit(db, "order.ship", "sales_order", o.id, {"shipment_id": sh.id}, actor=actor)
     db.commit()
     db.expire(o, ["shipments", "lines"])
@@ -529,6 +529,12 @@ def link_produced(run_id: int, body: ProducedIn, request: Request, db: Session =
 
 
 # ------------------------------------------------------------------- stock
+
+
+@router.get("/demand")
+def demand(project_id: int | None = None, db: Session = Depends(get_db)):
+    """Open order quantity against shelf stock and planned batches, per project."""
+    return svc.project_demand(db, project_id)
 
 
 @router.get("/finished-stock")

@@ -5397,3 +5397,8 @@ a.check-cell:hover {
 .fs-notice { border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: var(--radius);
   padding: 8px 12px; margin: 8px 0; background: var(--surface-2); }
 .fs-notice.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+
+/* Demand card (Orders page and the project Orders tab). */
+.demand-table { table-layout: fixed; }
+.demand-table th:nth-child(1), .demand-table td:nth-child(1) { width: 18%; }
+.demand-table th:nth-child(n+2):nth-child(-n+6), .demand-table td:nth-child(n+2):nth-child(-n+6) { width: 9%; }

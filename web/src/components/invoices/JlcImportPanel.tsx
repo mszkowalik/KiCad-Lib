@@ -473,7 +473,7 @@ function describe(r: JlcDecisionApplyResult): string {
 
 function ConfidencePill({ order }: { order: JlcQueueOrder }) {
   const tone =
-    order.confidence === "high"
+    order.confidence === "high" || order.confidence === "decided"
       ? "ok"
       : order.confidence === "none"
         ? "neutral"

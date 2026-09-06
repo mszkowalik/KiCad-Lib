@@ -160,10 +160,9 @@ def _run_fill(db: Session, run_id: int) -> dict:
     codes = [d.smt_order_code for d in db.query(M.JlcOrderDecision)
              .filter_by(run_id=run_id, outcome="link_run").all()]
     devices = 0
-    for row in db.query(M.JlcImport).filter_by(kind="assembly").all():
-        for code, info in (row.panel_info or {}).items():
-            if code in codes and info.get("devices"):
-                devices += info["devices"]
+    for code, info in jlc_import.effective_panels(db).items():
+        if code in codes and info.get("devices"):
+            devices += info["devices"]
     recorded = (run.qty or run.plan_qty or 0) if run else 0
     return {
         "run_id": run_id, "orders": codes, "devices_built": devices,

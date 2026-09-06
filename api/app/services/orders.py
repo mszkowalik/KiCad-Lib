@@ -696,7 +696,7 @@ def order_json(db: Session, order: M.SalesOrder, *, with_detail: bool = False,
         "notes": order.notes, "created_at": order.created_at.isoformat() if order.created_at else None,
         "lines": lines,
         "qty_ordered": sum(li.qty_ordered or 0 for li in order.lines),
-        "qty_shipped": sum(l["qty_shipped"] for l in lines),
+        "qty_shipped": sum(ln["qty_shipped"] for ln in lines),
         "total_net": _round(total_net),
         "invoiced_net": _round(invoiced_net),
         # The sum check (§3): a warning in the UI, never a block.
@@ -863,3 +863,50 @@ def run_sales_json(db: Session, run: M.ProductionRun) -> dict:
                        "product": li.product, "qty_from_run": n})
     stock = next((s for s in run_stock(db, run.project_id) if s["run_id"] == run.id), None)
     return {"qty_sold_derived": devices + unser, "orders": orders, "stock": stock}
+
+
+def project_demand(db: Session, project_id: int | None = None) -> list[dict]:
+    """Open demand against supply, per project — the number the project window
+    and the Orders page both ask for. Open demand is the unshipped part of
+    every non-cancelled order line; supply is what is on the shelf plus what
+    planned batches will build. Shortfall is what nothing yet covers."""
+    q = (db.query(M.SalesOrderLine, M.SalesOrder)
+         .join(M.SalesOrder)
+         .filter(M.SalesOrder.cancelled.is_(False)))
+    if project_id:
+        q = q.filter(M.SalesOrderLine.project_id == project_id)
+    open_qty: dict[int, int] = defaultdict(int)
+    open_orders: dict[int, set[int]] = defaultdict(set)
+    for li, o in q.all():
+        left = max((li.qty_ordered or 0) - line_shipped(li), 0)
+        if left:
+            open_qty[li.project_id] += left
+            open_orders[li.project_id].add(o.id)
+    shelf: dict[int, int] = defaultdict(int)
+    planned: dict[int, int] = defaultdict(int)
+    planned_runs: dict[int, list[dict]] = defaultdict(list)
+    for r in run_stock(db, project_id):
+        shelf[r["project_id"]] += r["stock"]
+    rq = db.query(M.ProductionRun).filter(M.ProductionRun.status == "planned")
+    if project_id:
+        rq = rq.filter(M.ProductionRun.project_id == project_id)
+    for r in rq.all():
+        planned[r.project_id] += r.qty or 0
+        planned_runs[r.project_id].append({"run_id": r.id, "label": r.label, "qty": r.qty or 0,
+                                           "run_date": r.run_date or ""})
+    projects = {p.id: p.name for p in db.query(M.Project).all()}
+    ids = set(open_qty) | set(shelf) | set(planned)
+    if project_id:
+        ids = {project_id}
+    out = []
+    for pid in sorted(ids, key=lambda i: projects.get(i, "")):
+        o, sh, pl = open_qty.get(pid, 0), shelf.get(pid, 0), planned.get(pid, 0)
+        out.append({
+            "project_id": pid, "project": projects.get(pid, f"#{pid}"),
+            "open": o, "open_orders": len(open_orders.get(pid, ())),
+            "on_shelf": sh, "planned": pl,
+            "planned_runs": sorted(planned_runs.get(pid, []), key=lambda r: (r["run_date"], r["run_id"])),
+            "shortfall": max(o - sh - pl, 0),
+            "surplus": max(sh + pl - o, 0),
+        })
+    return out

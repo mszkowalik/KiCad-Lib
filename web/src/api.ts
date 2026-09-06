@@ -3431,7 +3431,13 @@ export interface JlcQueueOrder {
   lot_count: number | null;
   part_count: number;
   proposed_outcome: "link_run" | "external" | "needs_human";
+  /** "decided" once a decision is recorded — the proposal then restates it. */
   confidence: string;
+  decided: boolean;
+  /** What JLC itself reported, kept when a decision overrides `panel_factor`. */
+  jlc_panel_factor: number | null;
+  /** Parts JLC sourced from its own stock — not itemised, so the BOM vote is a floor. */
+  jlc_sourced_usd: number | null;
   proposed_run_id: number | null;
   proposed_run_label: string;
   reason: string;
@@ -6077,8 +6083,25 @@ export function updateCustomer(
   return request(`/api/customers/${id}`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(body) });
 }
 
-export function listOrders(signal?: AbortSignal): Promise<OrderRow[]> {
-  return request(`/api/orders`, { signal });
+export function listOrders(signal?: AbortSignal, projectId?: number): Promise<OrderRow[]> {
+  return request(`/api/orders${projectId ? `?project_id=${projectId}` : ""}`, { signal });
+}
+
+/** Open order quantity against the shelf and the planned batches, per project. */
+export interface DemandRow {
+  project_id: number;
+  project: string;
+  open: number;
+  open_orders: number;
+  on_shelf: number;
+  planned: number;
+  planned_runs: { run_id: number; label: string; qty: number; run_date: string }[];
+  shortfall: number;
+  surplus: number;
+}
+
+export function getDemand(projectId?: number, signal?: AbortSignal): Promise<DemandRow[]> {
+  return request(`/api/demand${projectId ? `?project_id=${projectId}` : ""}`, { signal });
 }
 
 export function createOrder(body: OrderCreate): Promise<OrderRow> {

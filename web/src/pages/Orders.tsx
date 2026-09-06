@@ -12,12 +12,14 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   createOrder,
   errorMessage,
+  getDemand,
   getFinishedStock,
   isAbortError,
   listCustomers,
   listOrders,
   getProjects,
   type CustomerRow,
+  type DemandRow,
   type FinishedStock,
   type OrderLineIn,
   type OrderRow,
@@ -30,6 +32,7 @@ import { amount, plain, usd } from "../format";
 export default function Orders() {
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [stock, setStock] = useState<FinishedStock | null>(null);
+  const [demand, setDemand] = useState<DemandRow[] | null>(null);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +51,11 @@ export default function Orders() {
       });
     getFinishedStock(undefined, ac.signal)
       .then(setStock)
+      .catch((err) => {
+        if (!isAbortError(err)) setError(errorMessage(err));
+      });
+    getDemand(undefined, ac.signal)
+      .then(setDemand)
       .catch((err) => {
         if (!isAbortError(err)) setError(errorMessage(err));
       });
@@ -142,6 +150,7 @@ export default function Orders() {
           />
         ) : null}
 
+        <DemandCard rows={demand} />
         <StockCard stock={stock} />
 
         <div className="card pad">
@@ -164,6 +173,68 @@ export default function Orders() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Open demand per project against the shelf and the planned batches. */
+export function DemandCard({ rows, title = "Demand" }: { rows: DemandRow[] | null; title?: string }) {
+  const live = useMemo(() => (rows ? rows.filter((r) => r.open || r.on_shelf || r.planned) : []), [rows]);
+  return (
+    <div className="card pad">
+      <h2 className="card-title">{title}</h2>
+      <p className="card-subtitle">
+        Open is what customers ordered and have not received. Planned counts every batch
+        still in the planned state. Short is what nothing covers yet.
+      </p>
+      {!rows ? (
+        <Spinner label="Counting…" />
+      ) : live.length === 0 ? (
+        <p className="muted">Nothing open.</p>
+      ) : (
+        <div className="table-wrap">
+          <table className="data data-fixed demand-table">
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th className="num">Open</th>
+                <th className="num">Orders</th>
+                <th className="num">On the shelf</th>
+                <th className="num">Planned</th>
+                <th className="num">Short</th>
+                <th>Planned batches</th>
+              </tr>
+            </thead>
+            <tbody>
+              {live.map((r) => (
+                <tr key={r.project_id}>
+                  <td title={r.project}>
+                    <Link className="comp-link" to={`/projects/${r.project_id}`}>{r.project}</Link>
+                  </td>
+                  <td className="num">{r.open.toLocaleString()}</td>
+                  <td className="num">{r.open_orders}</td>
+                  <td className="num">{r.on_shelf.toLocaleString()}</td>
+                  <td className="num">{r.planned.toLocaleString()}</td>
+                  <td className={`num ${r.shortfall ? "err-text" : ""}`}>
+                    {r.shortfall ? r.shortfall.toLocaleString() : r.surplus ? <span className="muted">+{r.surplus.toLocaleString()}</span> : "—"}
+                  </td>
+                  <td>
+                    {r.planned_runs.length === 0
+                      ? <span className="muted">—</span>
+                      : r.planned_runs.map((b, i) => (
+                          <span key={b.run_id}>
+                            {i ? ", " : ""}
+                            <Link className="comp-link" to={`/runs/${b.run_id}`}>{b.label}</Link>
+                            <span className="muted"> ({b.qty.toLocaleString()})</span>
+                          </span>
+                        ))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

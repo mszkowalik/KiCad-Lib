@@ -783,6 +783,36 @@ OUTCOME_EXTERNAL = "external"    # a project outside the platform: stock only, n
 OUTCOME_HUMAN = "needs_human"    # a real signal exists but is not conclusive
 
 
+def effective_panels(db: Session) -> dict[str, dict]:
+    """`smtOrderCode` -> panelisation, with a recorded decision overriding JLC.
+
+    JLC's cached `panel_info` is what the sync saw; a decision with a panel
+    factor is a person saying JLC was wrong (a re-order assembles boards
+    panelised earlier, and JLC then reports 1-up). Every reader — the planner,
+    the queue, the run-fill check — must go through here, or a decided order
+    keeps showing the cached count (Batch 8, 2026-09-06: 200 devices and
+    "short" against 800 recorded, after the decision said 4-up).
+    """
+    panels: dict[str, dict] = {}
+    for row in db.query(M.JlcImport).filter_by(kind="assembly").all():
+        for code, info in (row.panel_info or {}).items():
+            panels[code] = dict(info)
+    for d in db.query(M.JlcOrderDecision).all():
+        if d.outcome == "pending" or not d.panel_factor:
+            continue
+        info = panels.setdefault(d.smt_order_code, {})
+        info["jlc_panel_factor"] = info.get("panel_factor")
+        info["panel_factor"] = d.panel_factor
+        n = info.get("panels")
+        info["devices"] = (n * d.panel_factor) if n else info.get("devices")
+        info["source"] = "decision"
+    return panels
+
+
+def decisions_by_code(db: Session) -> dict[str, M.JlcOrderDecision]:
+    return {d.smt_order_code: d for d in db.query(M.JlcOrderDecision).all()}
+
+
 def plan_orders(db: Session, invoices: list[dict],
                 runs: list[M.ProductionRun] | None = None) -> list[dict]:
     """Decide every assembly order TOGETHER, because some conclusions are only
@@ -803,11 +833,10 @@ def plan_orders(db: Session, invoices: list[dict],
     if runs is None:
         runs = db.query(M.ProductionRun).all()
 
-    # Panelisation JLC STATES, cached at sync time from `selectPersonOrder`.
-    panels: dict[str, dict] = {}
-    for row in db.query(M.JlcImport).filter_by(kind="assembly").all():
-        for code, info in (row.panel_info or {}).items():
-            panels[code] = info
+    # Panelisation JLC STATES, cached at sync time from `selectPersonOrder`,
+    # overridden by any decision that names a panel factor.
+    panels = effective_panels(db)
+    decided = decisions_by_code(db)
 
     planned: list[dict] = []
     for inv in invoices:
@@ -815,6 +844,10 @@ def plan_orders(db: Session, invoices: list[dict],
             code = order.get("smt_order_code") or ""
             stated = panels.get(code) or {}
             devices = stated.get("devices")
+            if devices is None and stated.get("source") == "decision" and stated.get("panel_factor"):
+                # Decided factor but JLC never reported a pasted count: the
+                # billed quantity is the only panel count there is.
+                devices = int((order.get("qty") or 0) * stated["panel_factor"]) or None
             as_of = inv.get("invoice_date")
             bom_prop = propose_run(db, order, order.get("consumption") or [], runs,
                                    as_of=as_of)
@@ -853,6 +886,7 @@ def plan_orders(db: Session, invoices: list[dict],
                 "presale_usd": order.get("presale"),
                 "consumption": order.get("consumption") or [],
                 "lot_count": order.get("lot_count"),
+                "devices": devices,
                 "proposal": prop,
             })
 
@@ -923,13 +957,37 @@ def plan_orders(db: Session, invoices: list[dict],
                 "pick the run it belongs to, or book it as external."
             )
 
+    # A recorded decision is the human's word and outranks every inference
+    # above, including the collision pass — applied last so nothing demotes
+    # it. The proposal then simply restates the decision.
     for p in planned:
-        p["outcome"] = _outcome_for(p)
+        dec = decided.get(p["smt_order_code"])
+        if dec is None or dec.outcome == "pending":
+            continue
+        prop = p["proposal"]
+        prop["run_id"] = dec.run_id if dec.outcome == "link_run" else None
+        if dec.panel_factor:
+            prop["panel_factor"] = dec.panel_factor
+            prop["panel_source"] = "decision"
+        prop["confidence"] = "decided"
+        prop["decided"] = True
+        prop["reason"] = (
+            f"decided by {dec.decided_by or 'user'}: "
+            + ("external project" if dec.outcome == "external" else f"run {dec.run_id}")
+            + (f", {dec.panel_factor}-up" if dec.panel_factor else "")
+            + (f" — {dec.note}" if dec.note else "")
+        )
+        prop["collision_note"] = ""
+
+    for p in planned:
+        p["outcome"] = _outcome_for(p, decided.get(p["smt_order_code"]))
     return planned
 
 
 def _devices_of(p: dict) -> int:
     """Device count for an order, preferring JLC's stated panelisation."""
+    if p.get("devices"):
+        return int(p["devices"])
     prop = p.get("proposal") or {}
     for c in (prop.get("candidates") or []):
         if c.get("implied_devices"):
@@ -938,10 +996,12 @@ def _devices_of(p: dict) -> int:
     return int((p.get("jlc_number") or 0) * k) if k else 0
 
 
-def _outcome_for(p: dict) -> str:
+def _outcome_for(p: dict, decision: M.JlcOrderDecision | None = None) -> str:
     """Default intent. Deliberately conservative: only HIGH confidence links a
     run, and anything with no usable signal is proposed as external rather than
     parked forever — but every one of these is a PROPOSAL a human confirms."""
+    if decision is not None and decision.outcome != "pending":
+        return decision.outcome
     conf = p["proposal"].get("confidence")
     if conf == "high" and p["proposal"].get("run_id"):
         return OUTCOME_LINK
@@ -1156,10 +1216,19 @@ def decision_queue(db: Session) -> list[dict]:
     run_names = {r.id: f"{r.label}" for r in runs}
     decided = {d.smt_order_code: d for d in db.query(M.JlcOrderDecision).all()}
     planned = plan_orders(db, invoices, runs)
-    panels: dict[str, dict] = {}
+    panels = effective_panels(db)
+    # JLC-sourced parts (`materialMoney`) are not itemised per part, so the BOM
+    # vote sees only the prepaid share — an order where JLC supplied the
+    # ESP32s for 300 of 800 devices votes 2.5 per device. Named so the reader
+    # knows the vote is a floor there, not a factor.
+    material: dict[str, float] = {}
     for row in staged:
-        for code, info in (row.panel_info or {}).items():
-            panels[code] = info
+        for code, fees in ((row.fee_info or {}).get("orders") or {}).items():
+            spi = (fees or {}).get("spi") or {}
+            try:
+                material[code] = round(float(spi.get("materialMoney") or 0), 2)
+            except (TypeError, ValueError):
+                pass
 
     out = []
     for p in planned:
@@ -1188,7 +1257,10 @@ def decision_queue(db: Session) -> list[dict]:
             "implied_devices": devices,
             "panels_assembled": stated.get("panels"),
             "panel_source": prop.get("panel_source", ""),
+            "jlc_panel_factor": stated.get("jlc_panel_factor", stated.get("panel_factor")),
             "bom_vote": prop.get("bom_vote"),
+            "jlc_sourced_usd": material.get(code),
+            "decided": bool(prop.get("decided")),
             "money_usd": p["money_usd"],
             "presale_usd": p["presale_usd"],
             "consumed_value_usd": round(sum(c["money"] for c in cons), 2),

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-06 — Orders in the project window, demand, decided JLC orders
+
+- **Orders tab** on every project, next to Batches: one row per order line
+  for that project's products, with the order's status and a link to it.
+- **Demand card** on the Orders page and at the top of the Orders tab: open
+  order quantity against devices on the shelf and the quantity of planned
+  batches, with the shortfall or the surplus. `GET /api/demand`.
+- **A JLC import decision now overrides JLC's cached panel count.** Before,
+  an order decided as 4-up kept showing JLC's 1-up count in the queue and in
+  the run-fill check (Batch 8: 200 devices and "short" against 800). The
+  queue shows a decided order as decided, keeps JLC's own factor for
+  reference, and names the parts JLC sourced from its own stock, which the
+  BOM vote cannot see.
+
 ## 2026-09-03 — Sales orders, shipments and a per-device history
 
 Decision record [0003](docs/decisions/0003-orders-shipments-and-device-history.md).

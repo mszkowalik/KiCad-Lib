@@ -358,6 +358,20 @@ section first.
     to the same line after repair names ITSELF, so it is never counted twice.
     Order cost counts every shipped device, replacements included, at its
     batch's per-device actual (`per_device_cost_usd`, from the register).
+  - **Demand is derived, never stored** (`project_demand`, `GET /api/demand`):
+    open = unshipped order-line quantity, supply = shelf stock + the quantity
+    of every run still `planned`. A planned batch is not yet linked to the
+    order lines it covers; the project tab shows the arithmetic only.
+- **A JLC decision outranks JLC's cached panelisation.** `JlcImport.panel_info`
+  is what the sync saw; a `JlcOrderDecision` with a `panel_factor` is a person
+  saying it was wrong (a re-order assembles boards panelised earlier and JLC
+  then reports 1-up). Every reader goes through
+  `jlc_import.effective_panels(db)` — the planner, the decision queue and the
+  router's run-fill check — and `plan_orders` applies recorded decisions
+  AFTER the collision pass, so a decided order restates its decision
+  (`confidence: "decided"`) instead of being demoted. The BOM vote counts
+  only prepaid parts; the queue names the JLC-sourced material
+  (`jlc_sourced_usd`) so a low vote on such an order reads as a floor.
   - **A FIFO pick is a guess and a return corrects it** (`return_device`): the
     returned device takes the place of a FIFO-picked device on the same line,
     which goes back to stock or inherits the returned device's old slot; both

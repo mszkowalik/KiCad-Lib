@@ -349,6 +349,11 @@ sign-off states to `STATUS_TONES`.
   repairs and disposals are on the DEVICE page (`components/DeviceHistoryCard.tsx`),
   because they are events in a device's history. The run page's sale card
   stays until the register reads the orders; it now points at the order.
+  The project window has an **Orders tab** (`components/project/OrdersTab.tsx`):
+  read-only, one row per order line of that project, headed by the demand
+  card (`DemandCard` in `pages/Orders.tsx`, from `GET /api/demand`) — open
+  quantity against the shelf and the planned batches. Both surfaces share
+  the one component so the figure has one rendering.
 
 ### Attachments open in a viewer, never as a download
 
