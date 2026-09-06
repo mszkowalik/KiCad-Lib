@@ -2,7 +2,7 @@
 name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints, and the naming standard: the KLC tier rule (Tier 0 stock names are frozen), the twelve-slot field order, decided spellings (_HandSoldering, vendor tokens, no rotation in names), the 7Sigma: namespace, validator-enforced pad/silk/fab/courtyard style, the 0.1mm grid, NPTH mechanical holes, thermal vias, non-electrical parts, and why connector pad numbering always follows the datasheet. Use when naming, picking or authoring any footprint."
 ---
-<!-- platform-skill: conventions-footprints v25 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v26 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 Footprints live in the `7Sigma:` namespace and are always referenced as
@@ -70,6 +70,55 @@ code if one exists.
 
 If the land genuinely does not fit the new part, that is a **new footprint**, not an
 edit to the old one.
+
+### One land per standard package — never multiply pad locations
+
+**Decided by Mateusz Kowalik on 2026-09-06.** When a new part comes in a
+package the library already holds a land for — a 6x6 mm SMD tactile switch,
+a 12x12 mm tactile switch, any body where every vendor's drawing describes
+the same leads on the same pitch and span — **the new footprint reuses that
+copper and drawing verbatim.** Copy the existing source, change the name, the
+hidden `Value` and the `(model ...)` line, and publish. The 3D model is the
+only thing that differs between the members of such a family, because it is
+the only thing that actually differs between the parts: a 4.3 mm, a 7 mm and a
+16 mm tact switch share one lead frame and one body, and a board that fits one
+fits all of them.
+
+What this rules out:
+
+- **Drawing the new vendor's recommended land instead.** Vendors' land
+  drawings for the same 6x6 body disagree with each other by tenths of a
+  millimetre (Kinghelm's own two sheets specify pads at x = ±4.5 and at
+  x = ±3.975 for the same part family; XKB says ±4.7 with a wider pad). Every
+  such drawing produces a footprint that is "correct" to one sheet and a
+  second pad location in the library for no gain. Record the vendor's numbers
+  in `fp.land_pattern` on the new footprint and say the shared land covers the
+  lead — do not draw them.
+- **Snapping the shared numbers differently.** `SW_Push-4P_SPST_SMD_6x6mm_H7mm_…`
+  sat at y = ±2.30 while its siblings sat at ±2.25, a 0.05 mm import
+  artefact, until 2026-09-06. Same family, same file, byte for byte apart from
+  the name, `Value` and model.
+- **Reusing a wrong-height model to avoid drawing one.** Height is the whole
+  point of the family split. If no vendor model exists at the right height,
+  build one: `SW_Push-4P_SPST_SMD_6x6mm_H16mm_XKBConnection_TS-1102S-C-X-B`
+  and the 5 mm Kinghelm model were drawn with CadQuery from the datasheet
+  side view, seating plane at z = 0, offset `0 0 0`, and measured from the
+  STEP before upload. EasyEDA's own models for these families were found at
+  11.4 mm and 20.1 mm for parts that are 15 mm and 16 mm tall — measure, never
+  trust.
+
+The shared land for the 6x6 mm SMD tactile family is the copper of
+`SW_Push-4P_SPST_SMD_6x6mm_H4.3mm_Kinghelm_KH-6X6X4.3H-STM`: pads 1.6 x 1.4 mm
+at (±4.0, ±2.25), `roundrect_rratio 0.2`, silk segments at x = ±3 and y = ±3
+broken clear of the pads, a 1.4 mm actuator circle, courtyard ±5.0 x ±3.2,
+`Cmts.User` pin-1 circle centred on pad 1. When a member of the family is
+corrected, correct every member the same way in the same session.
+
+This does not license re-cutting a land that is genuinely different: a
+different pitch, a different lead span, a different pad count or numbering is
+a different package and gets its own footprint (see the escalation list
+above). "Standard package" means the leads land in the same place; it does not
+mean the name looks similar.
 
 These boards are assembled by JLCPCB. The land JLC publishes for a part is the
 one their pick-and-place and reflow process is built around, and it is derived

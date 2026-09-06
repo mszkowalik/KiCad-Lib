@@ -2,7 +2,8 @@
 name: kicad-conventions-library
 description: "House style for component data: canonical manufacturer names (with the full raw-to-canonical lookup table), ki_description {Key} templating per category, the Value field rule, and category-placement rules. Read before proposing a new component or editing an existing one's properties."
 ---
-<!-- platform-skill: conventions-library v25 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-library v26 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+
 # Library conventions
 
 This is the house style for component **data**: manufacturer naming,
@@ -174,6 +175,7 @@ alphabetically by canonical value.)
 | MaxLinear | (none — internal capital, see exceptions above) |
 | MDD (Microdiode Semiconductor) | MDD, Microdiode, Microdiode Semiconductor |
 | MEAN WELL | Mean Well |
+| MyAntenna | (none — internal capital A is the company's own form: "MyAntenna RF Technology Co., Ltd" on its datasheet letterhead and legal line, and LCSC's brand page reads the same. Do not write "Myantenna" or "My Antenna". Shenzhen antenna and RF-cable maker, imyantenna.com; first used on AEWW031 and the ACA-* pigtails, 2026-09-06) |
 | Murata | muRata, MURATA, Murata Electronics (a regional-subsidiary name mistakenly applied library-wide by a prior pass — always normalize back to plain "Murata") |
 | OMRON | Omron Electronics, OMRON (raw feed value — previously misjudged as distributor-shout and wrongly Title-Cased when it was actually already correct) |
 | onsemi | ON Semiconductor, ONSEMI, On Semiconductor |
