@@ -2,6 +2,17 @@
 
 ## 2026-09-07 — Order page layout, device list sorting, sort hints
 
+- **Sync plugin 1.4.1 quarantines the duplicates iCloud makes at install.**
+  A PCM install into an iCloud folder can leave a `7Sigma_Base 2.kicad_sym`
+  (the previous library) beside the real one. KiCad registers it as a second
+  symbol library and the sync plugin, which has no baseline for it, listed
+  every symbol in it as "only here — never sent" (153 rows on 2026-09-06).
+  The sweep that runs at the start of every sync now handles duplicate
+  files as well as folders: empty folders are deleted, anything with content
+  is moved to `strays/<timestamp>/` inside the plugin folder, and the dead
+  `sym-lib-table` / `fp-lib-table` rows go with it. Nothing is deleted. The
+  sweep itself, from 2026-08-27, never reached installed plugins because that
+  change did not bump `PLUGIN_VERSION`; this one does.
 - **`list_footprints` finds a shared land by any package name it serves.**
   The agent tool matches the query against a footprint's `tags`, `descr`
   and hidden `Equivalent Packages` property as well as its name, and a hit

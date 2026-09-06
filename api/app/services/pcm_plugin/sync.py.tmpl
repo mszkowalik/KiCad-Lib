@@ -43,14 +43,18 @@ window can show what the platform would give back.
 
 Every sync also SWEEPS the installed packages before it fetches anything. The
 KiCad user directory is usually inside iCloud Drive, whose file provider
-uniquifies a colliding folder name — a `7Sigma 2.pretty` appears beside
-`7Sigma.pretty` when the PCM extracts over a copy iCloud still holds. It is
-empty, yet the PCM registers every `*.pretty` in a package as a library, so
-KiCad grows a second, broken footprint library. The sweep deletes such empty
-folders and drops the dead rows they left in the global fp-lib-table /
-sym-lib-table. It cannot live in the apply path: the install that creates a
-stray also marks the package current, so apply is the one path that never runs
-again.
+uniquifies a colliding name — a `7Sigma 2.pretty` appears beside
+`7Sigma.pretty`, or a `7Sigma_Base 2.kicad_sym` beside `7Sigma_Base.kicad_sym`,
+when the PCM extracts over a copy iCloud still holds. The PCM registers every
+`*.pretty` and `*.kicad_sym` in a package as a library, so KiCad grows a
+second, broken footprint library — or a second, STALE symbol library, whose
+every entry this plugin has no baseline for and therefore lists as "only here"
+(153 rows on one machine, 2026-09-06). The sweep deletes empty duplicates,
+moves duplicates with content to `strays/` beside this file (never deletes
+them: their content could be the user's), and drops the dead rows they left in
+the global fp-lib-table / sym-lib-table. It cannot live in the apply path: the
+install that creates a stray also marks the package current, so apply is the
+one path that never runs again.
 
 Reopen the symbol chooser / footprint viewer after a sync — KiCad re-reads
 changed library files; a KiCad restart is only needed after very large
@@ -63,8 +67,10 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 import zipfile
@@ -94,6 +100,7 @@ STATE_FILE = HERE / "sync_state.json"
 MODELS_STATE_FILE = HERE / "models_state.json"  # relpath -> sha256 of installed models
 LOCAL_STATE_FILE = HERE / "local_state.json"    # abspath -> sha256 of footprints WE wrote
 LOCK_FILE = HERE / "sync.lock"
+STRAYS_DIR = HERE / "strays"  # duplicates WITH content go here, never to the bin
 LOCK_STALE_S = 30 * 60  # a lock this old is a crash leftover — take it over
 
 # Why a drawing is in the conflict window. Shown per row, because the answer
@@ -285,24 +292,44 @@ def _prune_empty_dirs(root: Path) -> list[Path]:
     return gone
 
 
-def _sweep_strays() -> tuple[list[str], list[str]]:
-    """Clean the folders macOS invents inside our installed packages.
+def _quarantine(path: Path, stamp: str) -> Path:
+    """Move `path` out of the install tree into `strays/<stamp>/`, keeping its
+    place under 3rdparty so it is obvious where it came from."""
+    dest = STRAYS_DIR / stamp / path.relative_to(THIRD_PARTY)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(path), str(dest))
+    return dest
+
+
+def _sweep_strays() -> tuple[list[str], list[str], list[str]]:
+    """Clean what macOS invents inside our installed packages.
 
     The KiCad user directory is often inside iCloud Drive (`~/Documents`), and
-    the file provider uniquifies a colliding directory name — the PCM extracts
+    the file provider uniquifies a colliding name — the PCM extracts
     `7Sigma.pretty` over a copy iCloud still holds and a `7Sigma 2.pretty`
-    appears beside it. It is empty, but the PCM registers it anyway, so KiCad
-    grows a second, broken footprint library that nothing here ever wrote.
+    appears beside it; the same happens to `7Sigma_Base.kicad_sym`. The PCM
+    registers them anyway, so KiCad grows a second footprint library that is
+    empty, or a second symbol library that is an OLD copy of the real one. The
+    old copy is the worse of the two: nothing here ever wrote it, so no entry
+    in it has a baseline, and the conflict window lists every one of them as
+    "only here — never sent".
 
-    Returns (deleted, left alone). This runs on EVERY sync, not only when a
-    package is applied: a stray appears at INSTALL time, and the install that
-    made it also told KiCad the package was current, so the apply path — where
-    the prune used to live alone — is exactly the path that never runs again.
-    A duplicate with files in it is reported, never deleted: this plugin cannot
-    know whether those files are the user's.
+    A duplicate is anything whose name is `<base> <n><ext>` with `<base><ext>`
+    present beside it. An empty folder is deleted. Anything with content —
+    a folder with files, or a library file — is MOVED to `strays/` beside
+    this plugin, never deleted: this plugin cannot know whether that content
+    is the user's, and a move keeps it while taking it out of what KiCad and
+    the conflict scan see. Returns (deleted, moved, left alone).
+
+    This runs on EVERY sync, not only when a package is applied: a stray
+    appears at INSTALL time, and the install that made it also told KiCad the
+    package was current, so the apply path — where the prune used to live
+    alone — is exactly the path that never runs again.
     """
     deleted: list[str] = []
-    kept: list[str] = []
+    moved: list[str] = []
+    left: list[str] = []
+    stamp = time.strftime("%Y%m%d-%H%M%S")
     for kind in MANAGED_KINDS:
         base = THIRD_PARTY / kind
         if not base.is_dir():
@@ -312,14 +339,29 @@ def _sweep_strays() -> tuple[list[str], list[str]]:
                 continue
             deleted.extend(str(d.relative_to(THIRD_PARTY))
                            for d in _prune_empty_dirs(pkg_root))
-            for d in pkg_root.iterdir():
-                m = _DUP_NAME.match(d.name)
-                if not d.is_dir() or not m:
+            # Collect first, shallowest first, then move: a duplicate inside a
+            # duplicate goes with its parent.
+            strays: list[Path] = []
+            for p in sorted(pkg_root.rglob("*"), key=lambda q: len(q.parts)):
+                m = _DUP_NAME.match(p.name)
+                if not m:
                     continue
-                original = pkg_root / (m.group("base") + (m.group("ext") or ""))
-                if original.is_dir():
-                    kept.append(str(d.relative_to(THIRD_PARTY)))
-    return deleted, kept
+                if p.is_file() and p.suffix not in LIB_SUFFIXES:
+                    continue  # only library files are ours to judge
+                original = p.parent / (m.group("base") + (m.group("ext") or ""))
+                if not original.exists():
+                    continue  # a name of its own, not a uniquified copy
+                if any(parent in strays for parent in p.parents):
+                    continue
+                strays.append(p)
+            for p in strays:
+                rel = str(p.relative_to(THIRD_PARTY))
+                try:
+                    _quarantine(p, stamp)
+                    moved.append(rel)
+                except OSError:
+                    left.append(rel)  # busy, or read-only — say so, try next time
+    return deleted, moved, left
 
 
 def _kicad_config_dir() -> Path | None:
@@ -349,8 +391,8 @@ def _kicad_config_dir() -> Path | None:
 def _repair_lib_tables() -> list[str]:
     """Drop library rows that point INSIDE our packages at a path that is gone.
 
-    Deleting a stray folder is only half the repair: the PCM already wrote a
-    row for it into the global table, and KiCad reports a missing library on
+    Deleting or moving a stray is only half the repair: the PCM already wrote
+    a row for it into the global table, and KiCad reports a missing library on
     every start until the row goes too. The test is deliberately narrow — a row
     is removed only when its URI resolves into one of our install directories
     AND that path does not exist — so a library of the user's own, or one from
@@ -1024,18 +1066,23 @@ def main() -> int:
         # Before anything is fetched, and whether or not a package turns out to
         # be stale: the folders macOS invents are what KiCad shows as extra,
         # broken libraries, and they appear at install time — see _sweep_strays.
-        swept, left = _sweep_strays()
+        swept, moved, left = _sweep_strays()
         dead_rows = _repair_lib_tables()
         if swept:
             _notify(f"Removed {len(swept)} empty library folder(s) macOS left "
                     "behind: " + _names(swept))
+        if moved:
+            _notify(f"Moved {len(moved)} duplicate library file(s)/folder(s) "
+                    "macOS made during install into the plugin's strays/ "
+                    "folder: " + _names(moved) + ". Nothing was deleted — "
+                    "check that folder before you clear it.")
         if dead_rows:
             _notify(f"Removed {len(dead_rows)} library table entry(ies) pointing "
-                    "at folders that are gone: " + _names(dead_rows)
+                    "at files or folders that are gone: " + _names(dead_rows)
                     + ". Restart KiCad to stop it reporting a missing library.")
         if left:
-            _notify("Duplicate library folder(s) with files inside — check them "
-                    "and delete them by hand: " + _names(left))
+            _notify("Duplicate library file(s)/folder(s) could not be moved — "
+                    "check them and delete them by hand: " + _names(left))
         _notify("Checking for 7Sigma library updates…")
         try:
             repo = json.loads(_get(f"{BASE_URL}/api/kicad/pcm/repository.json", timeout=120))

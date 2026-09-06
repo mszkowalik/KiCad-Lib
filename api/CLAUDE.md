@@ -2176,19 +2176,30 @@ record: `docs/decisions/0002-field-solver-in-the-platform.md`.
   fetches anything** (`_sweep_strays` + `_repair_lib_tables` in
   `pcm_plugin/sync.py.tmpl`). The KiCad user directory usually sits in iCloud
   Drive (`~/Documents/KiCad/<ver>`), and the file provider uniquifies a
-  colliding folder name: the PCM extracts `7Sigma.pretty` over a copy iCloud
-  still holds and an EMPTY `7Sigma 2.pretty` appears beside it. KiCad's PCM
-  registers every `*.pretty` in a package, empty or not, so the user gets a
-  second, broken footprint library row. Two rules follow. The sweep cannot live
-  in the apply path — the install that creates a stray also records the package
-  as current, so apply is the one path that never runs again (seen 2026-08-25:
-  the prune at the end of `_apply_package` had been there all along and the
-  stray survived it). And deleting the folder is only half the repair: the row
-  the PCM already wrote into the global `fp-lib-table` must go too, or KiCad
-  reports a missing library forever. The table edit is deliberately narrow — a
-  row goes only when its URI resolves inside a `com_sevensigma*` install
-  directory AND that path is gone — and it asks for a KiCad restart, because
-  KiCad holds the tables in memory and can write them back on exit.
+  colliding name: the PCM extracts `7Sigma.pretty` over a copy iCloud still
+  holds and an EMPTY `7Sigma 2.pretty` appears beside it — or it extracts
+  `7Sigma_Base.kicad_sym` and a `7Sigma_Base 2.kicad_sym` holding the OLD
+  library appears (2026-09-06). KiCad's PCM registers every `*.pretty` and
+  `*.kicad_sym` in a package, so the user gets a second, broken footprint
+  library row, or a second, stale symbol library — and the stale one is worse:
+  no entry in it has a baseline in `local_state.json`, so the conflict window
+  lists all of them as "only here — never sent" (153 rows). Three rules
+  follow. The sweep cannot live in the apply path — the install that creates a
+  stray also records the package as current, so apply is the one path that
+  never runs again (seen 2026-08-25: the prune at the end of `_apply_package`
+  had been there all along and the stray survived it). A duplicate with
+  content is MOVED to `strays/<stamp>/` inside the plugin folder, never
+  deleted (plugin 1.4.1) — the plugin cannot know whether the content is the
+  user's, and a move takes it out of KiCad's and the scan's sight while
+  keeping it. And removing the stray is only half the repair: the row the PCM
+  already wrote into the global `fp-lib-table` / `sym-lib-table` must go too,
+  or KiCad reports a missing library forever. The table edit is deliberately
+  narrow — a row goes only when its URI resolves inside a `com_sevensigma*`
+  install directory AND that path is gone — and it asks for a KiCad restart,
+  because KiCad holds the tables in memory and can write them back on exit.
+  The sweep commit of 2026-08-27 bumped only `BUILDER_REV`, so 1.4.0 with the
+  sweep never reached anyone who had 1.4.0 without it — the second time the
+  rule two bullets up bit.
 - **Comments are one generic table** (`M.Comment`: `target_type` ∈
   {`component`,`symbol`,`footprint`} + `target_id`), NOT per-entity. Component,
   symbol and footprint notes all flow through `routers/comments.py`
