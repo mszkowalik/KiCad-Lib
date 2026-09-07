@@ -1320,6 +1320,56 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   names itself with its first `echo`. The PASS/FAIL table it prints is parsed
   in the BROWSER (`web/src/sim/scenario.ts`), from the log the run already
   carries; a second copy here would be a second thing to keep in step.
+- **`sanitize_browser_netlist` refuses `.control` ANYWHERE, not "the first
+  block".** It used to split with `find_control`, which takes the first block
+  only, and test whether that body was empty — so an empty `.control`/`.endc`
+  pair followed by a real block, or simply a second block, reached ngspice
+  with `shell` and `write` available in the render container. Measured and
+  closed 2026-09-07. The gate is a per-line test on the directive, and the
+  banned-command list in `check_control` is not the defence for live mode.
+- **A hold survives an `alter` and a reload** (`render/sim_worker.py`,
+  2026-09-07). `apply_alter` cleared `deliberate_halt` unconditionally, so an
+  alter made while holding let the watchdog report a false error 0.45 s
+  later; `reload` ended in `bg_run`, so a held run resumed while the page
+  still said `halted`. Both now remember whether the run was held and put it
+  back. `%IC_<ref>%` tokens are matched case-insensitively — the ref is
+  lowercased before the replace, and a literal match zero-filled `%IC_C1%`.
+- **A control block arrives WITH its fences, and the injector adds its own.**
+  The scenario panel and `sim_run_scenario` send a `.control` text item
+  exactly as the sheet holds it; `prepare_netlist` wrapped it in a second
+  `.control`/`.endc`, ngspice printed `Nesting of .control statements is not
+  allowed!` and quit, and every scenario chosen from the menu ran into that.
+  `_bare_control` strips the fences first (2026-09-07, both copies).
+- **A run that printed an ERROR is not a run that succeeded.** `run_ngspice`
+  took any echoed line as proof the block ran, so a deck that died with
+  `Error: …` answered 200 with no plots and the browser showed "no checks in
+  this run". `_FATAL_RE` now turns `Error:`, `fatal`, `Simulation interrupted`,
+  `timestep too small` and `singular matrix` into a `SimError` with the
+  complaints, and an empty rawfile counts only with rc 0 and no such line.
+- **ngspice names a diode's current `@d1[id]` and a BJT's `@q1[ic]`**, not
+  `[i]`. `_I_DEV_RE` accepted `[i]` alone, so every diode current was dropped
+  from every payload and the current solver saw an unknown terminal at each
+  one (2026-09-07, ngspice 44.2).
+- **A root-sheet wire between two sheet pins is named after the CHILD's
+  label** — `/MISC/TEMP`, never `TEMP`. `assign_nets` now tries
+  `<prefix>/<sheet name>/<pin name>` for every sheet pin on the group before
+  marking it `derived`; on CE_Dongle_V3's root that took 16 untinted nets down
+  to one (a sheet pin whose child label is spelled differently).
+- **A `text_box` netlists like a `text`.** `sheet_geometry` and
+  `_DIRECTIVE_RE` read both, so a harness written in a box is a scenario and
+  the project list calls it a simulation.
+- **`httpx` errors are not `RuntimeError`s.** A render container that is down
+  used to kill every sim route in ASGI with a bare 500; `run_project_op` now
+  re-raises them as `RuntimeError("render service unreachable: …")`. The same
+  pass made `/netlist` keep the net list when only the SPICE export fails,
+  and `snapshot_projects` say `error` when the checkout is missing instead
+  of guessing `directives: 0` with a straight face.
+- **The model library is per-instance, and it shows.** A schematic saved
+  against production carries `Sim.Name sigma_fuse` etc.; a local database
+  that never received those models fails the WHOLE netlist with `could not
+  find base model`, and nothing simulates until they are copied over
+  (`POST /api/sim-models/propose`, base models before wrappers). Production
+  had 57 models and the local database 33 on 2026-09-07.
 - **An operating point has no sweep axis.** `sim_spice.encode_payload` drops
   the first vector as the axis for a transient, an AC sweep or a DC sweep —
   but an `.op` writes an ordinary node voltage first, and dropping it loses a
@@ -1709,10 +1759,20 @@ Facts that are not obvious from the code:
   "User configuration" and applies no flags). In that mode `$` is NOT a comment —
   numparam feeds the text to the expression parser and the model fails to load —
   and an XSPICE `.model … adc_bridge` inside a subcircuit does not resolve. Use
-  `;` for in-line comments, and reproduce that parser without KiCad by putting
-  `set ngbehavior=pslta` in `<dir>/scripts/spinit` and running
-  `SPICE_LIB_DIR=<dir> ngspice -b …`. KiCad's bundled ngspice is 45.2, not
-  whatever is on PATH.
+  `;` for in-line comments, and reproduce that parser without KiCad by writing
+  `set ngbehavior=pslta` into a `.spiceinit` file in the working directory
+  and running `ngspice -b …` there. Do NOT put it in a private
+  `<dir>/scripts/spinit` with `SPICE_LIB_DIR=<dir>`: that REPLACES the stock
+  `spinit`, which is what loads the XSPICE code models, and every model with
+  an `adc_bridge` then fails with `MIF-ERROR - unable to find definition`
+  — a false failure that the earlier form of this recipe produced on
+  `sigma_and4`, `sigma_dff`, `sigma_inv` and `sigma_sym_sn74hc21`
+  (2026-09-07). KiCad's bundled ngspice is 45.2, not whatever is on PATH;
+  the render container has 44.2. Measured on 2026-09-07: all 33 local models
+  pass `.op` in default mode, and in `pslta` mode `sigma_hss` (and the
+  `sigma_sym_bts723gw` wrapper on it) fail on `$` comments — the exact trap
+  this bullet describes, in a published model. `propose_sim_model_version`
+  now refuses a `$` outside column 1.
 - **Model names are the namespace**: `sigma_` prefix enforced
   (`sim_store.NAME_RE`), and the row name must equal the `.subckt` name.
   `kind` is `primitive` (a building block), `part` (a hand-written wrapper for

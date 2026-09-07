@@ -191,9 +191,15 @@ export default function useSimOverlay({
     if (!ctx) return;
     const ratio = window.devicePixelRatio || 1;
     const box = canvas.getBoundingClientRect();
-    if (canvas.width !== Math.round(box.width * ratio)) {
-      canvas.width = Math.round(box.width * ratio);
-      canvas.height = Math.round(box.height * ratio);
+    const w = Math.round(box.width * ratio);
+    const h = Math.round(box.height * ratio);
+    // Compare BOTH sides. The first paint lands before the split has a
+    // height, and testing the width alone left the bitmap 1474 x 0 for the
+    // life of the page: no charge dot was ever drawn, in any mode
+    // (measured 2026-09-07).
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
     }
     const scale = (canvas.width / view.w) || 1;
     ctx.setTransform(scale, 0, 0, scale, -view.x * scale, -view.y * scale);

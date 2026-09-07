@@ -154,11 +154,14 @@ def sanitize_browser_netlist(text: str) -> str:
     sentinel: an include is a file read with the worker's eyes, and the only
     file a sketch may read is the model library, whose path is ours to know.
     """
-    body, control = sim_spice.find_control(text)
-    if control.strip():
-        raise sim_spice.SimError("a live netlist may not carry a control block")
+    # `find_control` takes only the FIRST block, so an empty first block
+    # followed by a real one, or simply a second block, walked straight past
+    # this gate (found 2026-09-07). Refuse the directive wherever it appears.
     out = []
-    for line in body.splitlines():
+    for line in text.splitlines():
+        low = line.strip().lower()
+        if low.startswith((".control", ".endc")):
+            raise sim_spice.SimError("a live netlist may not carry a control block")
         if _INCLUDE_RE.match(line):
             if "%SIGMA_SIM_LIB%" not in line:
                 raise sim_spice.SimError("a browser netlist may only include the model library")

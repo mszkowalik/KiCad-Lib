@@ -55,12 +55,18 @@ def run_project_op(op: str, rel_src: str, *, variant: str = "", layer: str = "",
                 control=control, analysis=analysis, ngspice=settings.ngspice_bin,
                 timeout=timeout,
             )
-    resp = httpx.post(
-        f"{settings.render_url}/render-project",
-        json={"op": op, "path": rel_src, "variant": variant, "layer": layer, "theme": theme,
-              "files": files, "control": control, "analysis": analysis, "timeout": timeout},
-        timeout=900,
-    )
+    try:
+        resp = httpx.post(
+            f"{settings.render_url}/render-project",
+            json={"op": op, "path": rel_src, "variant": variant, "layer": layer, "theme": theme,
+                  "files": files, "control": control, "analysis": analysis, "timeout": timeout},
+            timeout=900,
+        )
+    except httpx.HTTPError as e:
+        # A render container that is down, or a request that outlived its
+        # timeout. Not a RuntimeError subclass, so without this every sim
+        # route died in ASGI with a bare 500 and no message.
+        raise RuntimeError(f"render service unreachable: {type(e).__name__}: {e}") from e
     if resp.status_code != 200:
         detail = ""
         try:

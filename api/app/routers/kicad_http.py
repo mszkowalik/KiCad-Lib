@@ -159,8 +159,15 @@ def part_payload(cv, sheets: list[M.Datasheet], visible: dict[str, bool], sim_li
         (d["key"], SIM_LIB_INSTALLED if d["key"] == "Sim.Library" else d["value"])
         for d in sim_props(sim_link)
     ]
-    # user properties + injected datasheet links (prices stay on the platform)
-    entries += [(p.key, resolved_value(None if p.is_null else p.value, props)) for p in cv.properties]
+    # user properties + injected datasheet links (prices stay on the platform).
+    # A component's OWN Sim.Library row is rewritten too: one part shipped
+    # with a laptop scratch path in it, and a path only the author's machine
+    # can resolve is never what a client should be handed (2026-09-07).
+    entries += [
+        (p.key, SIM_LIB_INSTALLED if p.key == "Sim.Library" and not p.is_null
+         else resolved_value(None if p.is_null else p.value, props))
+        for p in cv.properties
+    ]
     # Emit the footprint-derived name too, unless the component has its own row.
     if not any(p.key == "Footprint_Name" for p in cv.properties) and props.get("Footprint_Name"):
         entries.append(("Footprint_Name", props["Footprint_Name"]))

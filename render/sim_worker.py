@@ -536,6 +536,11 @@ class Session:
         feel live: at any watchable speed the pause is shorter than a frame.
         """
         was_running = self.is_running()
+        # A run that is not running was HELD by the user (or has ended). The
+        # hold flag must survive the alter: clearing it unconditionally let
+        # the watchdog see a stopped run and report a false error 0.45 s
+        # after every alter made while holding (measured 2026-09-07).
+        held = self.deliberate_halt and not was_running
         self.deliberate_halt = True
         if was_running:
             self.command("bg_halt")
@@ -548,7 +553,7 @@ class Session:
             # time it spent halted by sprinting.
             self.started = time.monotonic() - self.sim_t / (self.speed or 1e9)
             self.command("bg_resume")
-        self.deliberate_halt = False
+        self.deliberate_halt = held
 
     def reload(self, cmd: dict) -> None:
         """Swap the running circuit for a new one, carrying component state.
@@ -572,7 +577,10 @@ class Session:
                 b = str(st.get("b", "0")).lower()
                 val = (self.last.get(a, 0.0) if a != "0" else 0.0) - (
                     self.last.get(b, 0.0) if b != "0" else 0.0)
-            netlist = netlist.replace(f"%IC_{ref}%", f"{val:.9g}")
+            # The ref was lowercased above; the token in the netlist may not
+            # be. A literal match silently zero-filled `%IC_C1%` and lost
+            # the state (2026-09-07).
+            netlist = re.sub(re.escape(f"%IC_{ref}%"), f"{val:.9g}", netlist, flags=re.IGNORECASE)
         # A part that did not exist in the OLD circuit has a token but no
         # state entry — the browser measures state on the run it is replacing.
         # An unfilled token is not SPICE and ngspice refuses the whole
@@ -581,6 +589,10 @@ class Session:
         # mid-run means.
         netlist = re.sub(r"%IC_[^%]+%", "0", netlist)
 
+        # A held run stays held across the swap: the browser keeps showing
+        # `halted`, and a reload that quietly resumed it disagreed with the
+        # page (measured 2026-09-07).
+        held = self.deliberate_halt and not self.is_running()
         self.deliberate_halt = True
         self.command("bg_halt")
         deadline = time.monotonic() + 2.0
@@ -613,9 +625,16 @@ class Session:
             send_event(ev="error", message="ngspice refused the edited netlist")
             return
         self.started = time.monotonic() - self.sim_t / (self.speed or 1e9)
+        # bg_run is needed either way: on_init fires from it and re-resolves
+        # the overlay and scope names against the new circuit.
         self.command("bg_run")
         self.watch_armed = True
-        self.deliberate_halt = False
+        if held:
+            deadline = time.monotonic() + 2.0
+            while not self.is_running() and time.monotonic() < deadline:
+                time.sleep(0.005)
+            self.command("bg_halt")
+        self.deliberate_halt = held
         send_event(ev="reloaded", sim_t=self.sim_t)
 
     def stop(self) -> None:

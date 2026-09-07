@@ -453,6 +453,11 @@ def sheet_geometry(text: str, instance_path: str = "", net_prefix: str = "") -> 
             groups.setdefault(sp["group"], {"id": sp["group"], "pins": [], "labels": [],
                                             "wires": [], "net": None})
             groups[sp["group"]]["labels"].append(sp["name"])
+            # KiCad names a net that reaches a sub-sheet only through its
+            # sheet pins after the CHILD's label: `/MISC/TEMP`, not `TEMP`.
+            # assign_nets needs the sheet name to try that spelling.
+            groups[sp["group"]].setdefault("sheet_pins", []).append(
+                {"sheet": sub["name"], "pin": sp["name"]})
     for junction in junctions:
         junction["group"] = group_id(_key(*junction["at"]))
 
@@ -604,7 +609,14 @@ def assign_nets(geom: dict, xml_nets: dict) -> dict:
             # A local label on `/TEMP` netlists as `/TEMP/<label>`; a global
             # label and a power net carry no prefix. Take whichever spelling
             # the netlist actually has.
-            for candidate in (f"{prefix}/{label}" if prefix else "", f"/{label}", label):
+            candidates = [f"{prefix}/{label}" if prefix else "", f"/{label}", label]
+            # A root-sheet wire between two sheet-pin boxes carries the
+            # child's name: `/<sheet>/<pin>`. Without this every such net
+            # was marked `derived` and never tinted (measured on
+            # CE_Dongle_V3, eight nets on the root sheet, 2026-09-07).
+            candidates += [f"{prefix}/{sp['sheet']}/{sp['pin']}"
+                           for sp in group.get("sheet_pins", [])]
+            for candidate in candidates:
                 if candidate and candidate.lower() in known:
                     group["net"] = known[candidate.lower()]
                     break

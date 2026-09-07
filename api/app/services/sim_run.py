@@ -312,9 +312,11 @@ def snapshot_projects(snapshot) -> list[dict]:
                 text = (settings.data_dir / rel).read_text(encoding="utf-8")
                 entry["directives"] = len(_DIRECTIVE_RE.findall(text))
                 entry["simulation"] = entry["directives"] > 0
-            except OSError:
-                # The checkout is not materialised yet; the name still hints.
+            except OSError as e:
+                # The checkout is not materialised yet; the name still hints,
+                # and the caller is told the answer is a guess.
                 entry["simulation"] = entry["board"].lower().endswith("_sim")
+                entry["error"] = f"checkout not available on this server: {e}"
         out.append(entry)
     return out
 
@@ -325,7 +327,7 @@ def snapshot_projects(snapshot) -> list[dict]:
 # geometry pass over every sheet in a hierarchy.
 _PLACED_RE = re.compile(r"\(lib_id ")
 _WIRE_RE = re.compile(r"\(wire\b")
-_DIRECTIVE_RE = re.compile(r'\(text\s+"\\?\.(tran|ac|dc|op|noise|control|param|include|lib|four)\b',
+_DIRECTIVE_RE = re.compile(r'\(text(?:_box)?\s+"\\?\.(tran|ac|dc|op|noise|control|param|include|lib|four)\b',
                            re.IGNORECASE)
 
 

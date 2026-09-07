@@ -197,7 +197,12 @@ function PaneChart({
       bands: built.bands,
       hooks: {
         setCursor: [(u) => {
-          if (hovering.current && u.cursor.idx != null) onCursor(u.cursor.idx);
+          // Only a crosshair the POINTER moved is a scrub. `cursor.event` is
+          // null for a programmatic setCursor (the replay driving it), and
+          // the hover flag alone was not enough: pressing Run shifts the
+          // dock up, the new pane lands under the resting pointer, and the
+          // replay paused the instant it started (2026-09-07).
+          if (hovering.current && u.cursor.event && u.cursor.idx != null) onCursor(u.cursor.idx);
         }],
         setScale: [(u) => {
           const from = u.valToIdx(u.scales.x.min ?? 0);
@@ -264,7 +269,10 @@ function PaneChart({
             index={pane.traces.indexOf(t)}
             data={data}
             window={window}
-            cursor={cursor}
+            // A live grid is padded with NaN on the left and its newest
+            // column is the last one; the page cursor is a replay position
+            // and reads 0 there, which showed the OLDEST column as "now".
+            cursor={live ? Number.POSITIVE_INFINITY : cursor}
             onToggle={() => onToggle(t.name)}
             onRemove={() => onRemove(t.name)}
           />

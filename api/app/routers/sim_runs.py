@@ -258,13 +258,20 @@ def _netlist(src: SimSource) -> dict:
     matches against. Shown in the UI so a wrong simulation can be read rather
     than guessed at."""
     try:
-        spice = sim_run.netlist_spice(src)
         nets = sim_run.netlist_xml(src)
     except SimSourceError as e:
         raise HTTPException(422, str(e)) from e
     except (OpError, RuntimeError) as e:
         raise HTTPException(502, f"netlist failed: {e}") from e
-    return {"spice": spice, "nets": nets["nets"]}
+    # The SPICE export fails on its own for a reason the net list helps to
+    # read (a model the library does not carry, a bad Sim.Params). Keep the
+    # nets and say what went wrong beside them rather than losing both.
+    try:
+        spice = sim_run.netlist_spice(src)
+        error = ""
+    except (OpError, RuntimeError) as e:
+        spice, error = "", f"SPICE export failed: {e}"
+    return {"spice": spice, "nets": nets["nets"], "error": error}
 
 
 # --------------------------------------------------------------------- live

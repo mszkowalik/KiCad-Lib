@@ -397,10 +397,16 @@ export default function Simulator() {
     return names.slice(0, 400);
   }, [geometry, sketchVectors]);
 
-  const liveIndex = useMemo(
-    () => new Map(liveVectors.map((name, i) => [name, i])),
-    [liveVectors],
-  );
+  // A vector the worker could not resolve keeps a 0 in its slot; leaving it
+  // out of the index makes the reader answer null, the same "unknown
+  // terminal" a finished run reports for it.
+  const liveMissing = liveState?.missing;
+  const liveIndex = useMemo(() => {
+    const missing = new Set(liveMissing ?? []);
+    return new Map(
+      liveVectors.flatMap((name, i): [string, number][] => (missing.has(name) ? [] : [[name, i]])),
+    );
+  }, [liveVectors, liveMissing]);
 
   const controls: LiveControl[] = useMemo(
     () => (netlist ? liveControls(netlist) : []),
@@ -506,6 +512,10 @@ export default function Simulator() {
     setGeometry(null);
     setRun(null);
     setError(null);
+    // The previous board's instance path is meaningless here, and the
+    // geometry effect would ask for it in the same commit and leave a stale
+    // "no such sheet instance" banner behind (2026-09-07).
+    setSheetPath("");
     getSimSheets(source, ctrl.signal)
       .then((r) => {
         setSheets(r.sheets);
@@ -563,22 +573,30 @@ export default function Simulator() {
   const frame = useRef<number>(0);
   const last = useRef<number>(0);
 
+  // The charge dots move on `clock`, and only this loop advances it. A live
+  // run has no replay to play, so it used to leave the clock still and the
+  // dots stood on the wires while the run went on (2026-09-07). The loop runs
+  // for a replay OR a running live session; only a replay steps the sample.
+  const replaying = playing && !!scale && scale.length >= 2;
+  const liveRunning = liveState?.status === "running";
   useEffect(() => {
-    if (!playing || !scale || scale.length < 2) return;
+    if (!replaying && !liveRunning) return;
     last.current = performance.now();
     const step = (now: number) => {
       const dt = Math.min(0.1, (now - last.current) / 1000);
       last.current = now;
       setClock((c) => c + dt);
-      setSample((s) => {
-        const advance = Math.max(1, Math.round((scale.length / REPLAY_SECONDS) * dt));
-        return (s + advance) % scale.length;
-      });
+      if (replaying && scale) {
+        setSample((s) => {
+          const advance = Math.max(1, Math.round((scale.length / REPLAY_SECONDS) * dt));
+          return (s + advance) % scale.length;
+        });
+      }
       frame.current = requestAnimationFrame(step);
     };
     frame.current = requestAnimationFrame(step);
     return () => cancelAnimationFrame(frame.current);
-  }, [playing, scale]);
+  }, [replaying, liveRunning, scale]);
 
   // Open and close the live session. Changing sheet or project tears it down:
   // the overlay it feeds belongs to one drawing.

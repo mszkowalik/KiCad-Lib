@@ -52,6 +52,10 @@ export interface LiveState {
    *  devices answer for a branch current, which decides how a wire or a pin
    *  current can be expressed. */
   vectors: string[];
+  /** Overlay vectors the run could NOT resolve. Their slot in `values` is a
+   *  0 the worker fills in, not a reading, and a reader must answer null for
+   *  them or a device with no branch current becomes a known 0 A terminal. */
+  missing: string[];
 }
 
 /** How many columns a scope keeps. Beyond this the oldest scroll off, which
@@ -76,6 +80,7 @@ export class LiveSession {
       message: "",
       unmodelled: [],
       vectors: [],
+      missing: [],
     };
   }
 
@@ -121,6 +126,7 @@ export class LiveSession {
           status: "running",
           message: "",
           vectors: ((event.vectors as string[]) ?? []).map((v) => v.toLowerCase()),
+          missing: ((event.missing as string[]) ?? []).map((v) => v.toLowerCase()),
         });
         break;
       case "netlist":

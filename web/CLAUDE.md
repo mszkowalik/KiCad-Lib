@@ -895,6 +895,53 @@ form (`v(/in)`), and only `on_init` used to resolve — so a scope set at START
 worked and a scope set LATER, which is every trace the user clicks mid-run,
 matched nothing and closed no columns. No error, just an empty plot.
 
+## Audit findings, 2026-09-07 — the animation was never drawn
+
+A full pass over the simulator after "errors everywhere". Fixed, with the rule
+each one leaves behind:
+
+- **The charge canvas was 1474 x 0 for the life of the page.** `paint` in
+  `useSimOverlay` resized the bitmap only when its WIDTH changed; the first
+  paint lands before the split has a height, so the height stayed 0 and no
+  dot was ever drawn, in any mode. Compare both sides before resizing a
+  canvas bitmap.
+- **Live mode never advanced the clock.** The only writer of `clock` was the
+  replay loop, which runs when `playing` is true — and a live run never plays.
+  The loop now runs for a replay OR a running live session, and only a replay
+  steps the sample. The dots moving on a sketch before this was the auto-run
+  race leaving `playing` true.
+- **A live legend showed the OLDEST column as "now".** The page cursor is a
+  replay position and reads 0; a live grid is NaN-padded on the left, so
+  `statsOf` read the left edge. `LegendPill` takes `+Infinity` when live.
+- **A stopped session wrote into the page.** `stop()` closed the socket and
+  left `onclose` attached, which fired after the page had replaced the
+  session. Null every handler before `close()`.
+- **A live vector the worker could not resolve read 0 A, not null.** The
+  `ready` event's `missing` list is now kept on `LiveState` and left out of
+  `liveIndex`, so the reader answers null and the current solver counts an
+  unknown terminal, as it does for a finished run.
+- **The previous board's sheet path survived a source change** and could
+  leave a stale "no such sheet instance" banner. The sheets effect resets it.
+- **Pressing Run paused the replay it started.** The dock grows when the
+  scope card appears, the new pane lands under the pointer resting on Run,
+  `pointerenter` set the hover flag, and the replay's own programmatic
+  `setCursor` was reported as a scrub. The hook now also requires
+  `u.cursor.event`, which uPlot leaves null for a cursor the page set.
+- The scratch files `src/sim/__net.mts` / `__repro.mts` imported JSON that
+  does not exist and broke `npm run build` (`tsc --noEmit`). Do not leave
+  `__*.mts` probes in `src/`.
+
+Server-side fixes from the same pass are in `api/CLAUDE.md` (a control block
+sent with its own fences, ngspice errors reported as success, diode currents
+named `[id]`, sheet-pin nets on a root sheet).
+
+Still open, found and not fixed (2026-09-07): wire probes are keyed by file
+index (`iw(w12)`), which shifts when an earlier wire is deleted; a net split
+into two wire groups joined only by labels solves each group as closed, so its
+segment currents are wrong; a run with both `.op` and `.tran` shows the
+one-point `.op` plot first; `GET …/sketch` answers 404 on every KiCad upload,
+which is one console error per open.
+
 ## Audit findings, 2026-09-01 — the naming seams are where the bugs live
 
 A sweep after the severed-op-amp bug, looking for the same disease elsewhere.

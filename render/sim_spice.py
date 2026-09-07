@@ -119,7 +119,7 @@ def prepare_netlist(
     the refs that were dropped and the control block that ran.
     """
     body, own_control = find_control(text)
-    ctl = own_control if control is None else control
+    ctl = own_control if control is None else _bare_control(control)
     if ctl:
         check_control(ctl)
 
@@ -148,6 +148,29 @@ def prepare_netlist(
     return out, {"unmodelled": dropped, "control": ctl}
 
 
+def _bare_control(control: str) -> str:
+    """A control block WITHOUT its `.control` / `.endc` lines.
+
+    The scenario panel and the agent send a block exactly as the sheet holds
+    it, fences included; the injector adds its own. Two fences nested made
+    ngspice print `Nesting of .control statements is not allowed!` and quit,
+    and every scenario chosen from the menu ran into that (2026-09-07).
+    """
+    return "\n".join(
+        ln for ln in control.splitlines()
+        if ln.strip().lower() not in (".control", ".endc")
+    )
+
+
+# What ngspice says when a run died. A deck that PRINTED (a verdict table) is a
+# success, but one that printed an error is not, whatever else it echoed.
+_FATAL_RE = re.compile(
+    r"^\s*(error\b|fatal\b|.*fatal error in ngspice|.*simulation interrupted due to error"
+    r"|.*transient solution failed|.*timestep too small|.*singular matrix)",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
 def run_ngspice(netlist: str, work_dir: str | Path, *, ngspice: str = "ngspice",
                 timeout: int = 60, env: dict | None = None) -> tuple[bytes, str]:
     """Batch run. Returns (rawfile bytes, ngspice log). Raises on no output."""
@@ -170,11 +193,13 @@ def run_ngspice(netlist: str, work_dir: str | Path, *, ngspice: str = "ngspice",
         # successful run, not a failure — `EVSE_20_CTRL` has six of them, and
         # treating them as failures made every one unrunnable from the UI.
         # A run that produced neither vectors NOR output really did fail.
-        if _printed_anything(log):
+        if _printed_anything(log) and proc.returncode == 0 and not _FATAL_RE.search(log):
             return b"", log
         raise SimError(
             f"ngspice produced no data (rc={proc.returncode}). {complaints(log)}"
         )
+    if _FATAL_RE.search(log):
+        raise SimError(f"ngspice stopped with an error (rc={proc.returncode}). {complaints(log)}")
     return raw.read_bytes(), log
 
 
@@ -302,7 +327,11 @@ def parse_raw(data: bytes) -> list[dict]:
 # run is subcircuit internals (v(xu1.53), @q.xu1.q4[ic]) — 40 of the 91
 # vectors on the reference circuit, and meaningless outside the model.
 _V_RE = re.compile(r"^v\((.+)\)$", re.IGNORECASE)
-_I_DEV_RE = re.compile(r"^i\(@([^.\[]+)\[i\]\)$", re.IGNORECASE)
+# ngspice names a resistor's or capacitor's current `@r1[i]`, but a diode's
+# `@d1[id]` and a BJT's collector current `@q1[ic]` (ngspice 44, measured
+# 2026-09-07). Accepting only `[i]` dropped every diode current from every
+# payload, so each diode was an unknown terminal to the current solver.
+_I_DEV_RE = re.compile(r"^i\(@([^.\[]+)\[(?:i|id|ic)\]\)$", re.IGNORECASE)
 _I_SRC_RE = re.compile(r"^i\(([a-z][a-z0-9_]*)\)$", re.IGNORECASE)
 _SCALE_TYPES = frozenset({"time", "frequency", "voltage"})
 
