@@ -1224,6 +1224,48 @@ The four deployments then dropped their "(retroactive)" suffix (2026-07-30):
 they are the real production procedures, and each carries its origin in its
 description instead. `Dongle_V2 test` says outright that it measures nothing.
 
+### The serial log names the product — second pass (2026-09-10)
+
+The "honest limit" above was wrong. Every config report carries the device's
+own `INFO1` line, `"Module":"CE_Aqua"` or `"Module":"CE_Dongle_v2"`, and the
+`Modules` list the firmware prints at boot. That is the firmware build, not
+the test. Checked against the first pass: none of the 4,121 Module=Dongle
+devices ever ran the CE_Aqua test, and all 584 Aqua-tested devices are
+Module=Aqua. 347 devices in CE_Dongle_V2 were Module=Aqua — 94 configured in
+2024-10/11 without a test, 253 in 2025-12/2026-01 (the "302 overdrawn" on
+Dongle Batch 6). 316 early-2024 reports have no serial log at all; they stay
+dongles (Batch 1 comes out at 521 of 525 with them).
+
+Two more traps found on the way:
+
+- **The 2025-11-05 firmware names a device by its full MAC** (`dongle_<12 hex>`)
+  where earlier builds used the last three bytes. 78 twelve-hex names share
+  their suffix with a six-hex name; 77 are the same Aqua board re-flashed in
+  2025-12/2026-01 (same `F8:B3:B7` modules from April 2025) and were merged
+  into the older record. The 78th (`78421C8BD26C` vs `8BD26C`) is a different
+  OUI and a different product — a real three-byte collision, kept apart.
+- **The run migration turned batch quantities into sales.** Aqua runs 12 and
+  13 carried a `sale_unit_price` and no `qty_sold`, so §10 made orders 20 and
+  21 (315 + 200 units, no reference, no invoice) from their build quantity,
+  on top of the real Aqua invoices. Deleted, and the runs' sale columns
+  blanked so the idempotent migration cannot bring them back. Runs 5, 6 and 11
+  carried prices and quantities that disagreed with their (edited) order
+  lines; aligned.
+
+Every `shipped` event of both projects was a FIFO auto-pick, so all 4,933 were
+dropped and re-picked oldest-first per (shipment, order line) with the same
+quantities — a re-flashed board counts as available from its LAST flash, not
+its first. Result: Dongle 4,435 devices / 4,366 shipped / 69 on the shelf,
+Aqua 990 / 867 / 123. `docs/flasher/fix_aqua_attribution_2.py` is the script
+(dry-run by default, `--apply` commits); the pre-change dump is
+`~/kicadlib-backup-2026-09-10-before-cleanup.sql.gz` on the server.
+
+Still open after it: the batch quantities do not match the flash counts
+(Dongle Batch 5: 455 boards, 569 devices; Batch 6: 945 / 992; Aqua Batch 3:
+125 / 166), the 1,000-unit delivery of 2025-12-30 needs 312 devices flashed
+2026-01-04..06, and 69 dongles + 123 Aquas are on the shelf in the records
+while the physical shelf is reported empty.
+
 ### Functional checks — green/red per functionality (2026-07-30)
 
 The device view answered "did the run pass". The question a production line
