@@ -59,7 +59,7 @@ SOURCE_NICKNAME = "7Sigma"  # the nickname used inside mirror files (repo conven
 LIB_ID = "com.sevensigma.library"
 MODELS_ID = "com.sevensigma.models3d"
 PLUGIN_ID = "com.sevensigma.sync"
-PLUGIN_VERSION = "1.4.1"  # bump when the plugin source changes — PCM update detection
+PLUGIN_VERSION = "1.5.0"  # bump when the plugin source changes — PCM update detection
 # ^ MANUAL, and PCM decides "update available" purely from this string. A new
 # zip with the same version reaches nobody: the content hash changes, the
 # download changes, and every installed copy stays on the old code. Shipping
@@ -74,7 +74,7 @@ PCM_FP_PREFIX = "PCM_"  # KiCad's hardcoded auto-registration nickname prefix
 # server-side. Same deliberate KiCad-10 pin as THIRD_PARTY_VAR above.
 SIM_LIB_INSTALLED = f"${{{THIRD_PARTY_VAR}}}/symbols/{LIB_INSTALL_DIR}/{SIM_LIB_FILE}"
 SCHEMA = "https://go.kicad.org/pcm/schemas/v1"
-BUILDER_REV = 12  # bump when the package builder output changes for the same mirror
+BUILDER_REV = 13  # bump when the package builder output changes for the same mirror
 # ^ AND whenever anything in THIS FILE changes what a package advertises —
 # PLUGIN_VERSION, a package name/description, a manifest field. `tag` hashes the
 # mirror digest and the plugin FILE contents only, so a pcm.py-only edit leaves

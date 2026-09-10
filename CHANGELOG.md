@@ -41,6 +41,32 @@
   the byte rule wrote; `POST /api/datasheets/restamps/collapse` folds it into
   the surviving version and drops the orphaned files.
 
+## 2026-09-10 — Sync plugin 1.5.0 owns library updates; HTTP catalog every 2 minutes
+
+- **Sync plugin 1.5.0 records what it installed in the Plugin and Content
+  Manager.** The PCM decides "update available" from its own record,
+  `installed_packages.json`, and only its dialog writes it — so a library the
+  Sync button had already refreshed still showed a badge on every start, and
+  Update All re-downloaded the 259 MB models zip the delta had delivered.
+  After a successful sync the library and 3D-model packages are recorded at
+  the served version and pinned, KiCad's own switch for "updated elsewhere":
+  no badge, no Update All, a manual Update still in the menu. The plugin
+  package is left alone and still updates through the PCM. KiCad reads the
+  record at start-up and writes its in-memory copy back when the PCM dialog
+  closes, so a dialog closed later in the same session can restore the old
+  versions; the next sync corrects them. The closing notification now also
+  says that placed parts are copies (Tools → Update Footprints / Symbols from
+  Library).
+- **KiCad re-fetches the part catalog every 2 minutes instead of every hour.**
+  The `.kicad_httplib` now carries `timeout_categories_seconds` and
+  `timeout_parts_seconds` of 120. KiCad 10 refreshes the catalog in a
+  background thread every `max` of the two, and no menu action, IPC command or
+  plugin can force it, so the interval is the only lever. A published
+  footprint or field change reaches the symbol chooser within two minutes;
+  one refresh costs 17 requests and about 44 kB on the wire. The values are
+  embedded in the file: download `7Sigma.kicad_httplib` again from Setup and
+  replace the installed copy.
+
 ## 2026-09-07 — Order page layout, device list sorting, sort hints
 
 - **Sync plugin 1.4.1 quarantines the duplicates iCloud makes at install.**

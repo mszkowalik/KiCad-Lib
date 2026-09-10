@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """7Sigma Library Sync — KiCad IPC action plugin entrypoint.
 
-Toolbar button (PCB + schematic editors): fetches the platform's current PCM
+Toolbar button (KiCad 10 shows it in the PCB editor): fetches the platform's current PCM
 library packages and refreshes the installed copies IN PLACE under the
 3rd-party directory, incrementally (whole package skipped when its content
 sha256 matches the last synced one). Only dependency: certifi (see
@@ -36,6 +36,16 @@ full-zip fallback overwrote it without a word. `models_state.json` therefore
 stores size and mtime beside each sha, and `_model_edits` stats the tree (fast)
 and hashes only the files whose stat moved — 4745 models are about 1.4 GB, so
 hashing all of them every sync was the reason the check did not exist.
+
+Since plugin 1.5.0 a sync also tells KiCad's Plugin and Content Manager what
+it installed. The PCM decides "update available" from its own record
+(`installed_packages.json` in the settings folder) and only its dialog writes
+it, so a library refreshed here still looked outdated there: a badge on every
+start, and an Update All that pulls the 259 MB models zip the delta already
+delivered. After a successful sync the two content packages are recorded at
+the served version and PINNED — KiCad's own switch for "updated elsewhere" —
+while the plugin package is left alone: it updates through the PCM. See
+`_record_pcm_installed` for what KiCad does with the file and when.
 
 Because of the second kind, a package with no upstream change is still fetched
 while any local edit is outstanding. It is 0.5 MB, and it is the only way the
@@ -102,6 +112,7 @@ LOCAL_STATE_FILE = HERE / "local_state.json"    # abspath -> sha256 of footprint
 LOCK_FILE = HERE / "sync.lock"
 STRAYS_DIR = HERE / "strays"  # duplicates WITH content go here, never to the bin
 LOCK_STALE_S = 30 * 60  # a lock this old is a crash leftover — take it over
+PCM_RECORD = "installed_packages.json"  # what KiCad's PCM believes is installed
 
 # Why a drawing is in the conflict window. Shown per row, because the answer
 # depends on it: a two-way clash is a real arbitration, while "changed here
@@ -364,14 +375,16 @@ def _sweep_strays() -> tuple[list[str], list[str], list[str]]:
     return deleted, moved, left
 
 
-def _kicad_config_dir() -> Path | None:
-    """Where THIS KiCad keeps its global library tables.
+def _kicad_config_dir(*markers: str) -> Path | None:
+    """Where THIS KiCad keeps its settings — the global library tables by
+    default, or whichever file names `markers` asks for.
 
     Derived from the install location rather than guessed: the plugin sits in
     `<user dir>/<version>/3rdparty/plugins/<id>/`, so the version is known, and
     only the platform's config root has to be filled in. `KICAD_CONFIG_HOME`
     wins when it is set, which is how a portable install moves the tables.
     """
+    markers = markers or ("fp-lib-table", "sym-lib-table")
     version = THIRD_PARTY.parent.name
     env = os.environ.get("KICAD_CONFIG_HOME")
     if env:
@@ -383,9 +396,79 @@ def _kicad_config_dir() -> Path | None:
     else:
         root = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "kicad"
     for candidate in (root / version, root):
-        if (candidate / "fp-lib-table").exists() or (candidate / "sym-lib-table").exists():
+        if any((candidate / m).exists() for m in markers):
             return candidate
     return None
+
+
+def _record_pcm_installed(packages: list[dict], state: dict) -> tuple[list[str], list[str]]:
+    """Tell KiCad's Plugin and Content Manager what this sync just made current.
+
+    The PCM decides "update available" from its own record, `installed_packages.json`
+    in the KiCad settings folder, and nothing but the PCM dialog ever writes it
+    (verified in the 10.0 source: read once in the PLUGIN_CONTENT_MANAGER
+    constructor, written in DIALOG_PCM's destructor). A library this button
+    refreshed in place therefore still looked outdated to the PCM: a badge on
+    start-up, and an Update All that pulls the 259 MB models zip the delta
+    already delivered. So, for every content package whose installed copy now
+    matches the platform (`state` says so), the record gets the version the
+    platform serves and the entry is PINNED — KiCad's own switch for "someone
+    else updates this", which keeps it out of the badge count and of Update All
+    while a manual Update stays one menu entry away. The plugin's own package is
+    never touched: it updates through the PCM, and must.
+
+    KiCad reads the record once, when the project manager starts, and writes
+    its in-memory copy back when the PCM dialog closes. An edit made here is
+    seen at the next start; a dialog closed later in the same session can put
+    the old versions back, and the next sync corrects them again. Any problem
+    with the file is ignored — this is a courtesy to the PCM, not the sync.
+
+    Returns (packages whose record changed, packages pinned for the first time).
+    """
+    config = _kicad_config_dir(PCM_RECORD)
+    if config is None:
+        return [], []
+    path = config / PCM_RECORD
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        entries = data["packages"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return [], []
+    served = {p["identifier"]: p for p in packages if p.get("type") == "library"}
+    changed: list[str] = []
+    pinned: list[str] = []
+    for entry in entries:
+        try:
+            ident = entry["package"]["identifier"]
+        except (KeyError, TypeError):
+            continue
+        pkg = served.get(ident)
+        if pkg is None:
+            continue
+        ver = pkg["versions"][0]
+        if state.get(ident) != ver["download_sha256"]:
+            continue  # not current here — the PCM's opinion stands
+        # Version and pin are the test; the package body is rewritten with them
+        # because GetPackageUpdateVersion asserts the recorded version exists in
+        # the recorded package's own version list.
+        if entry.get("current_version") == ver["version"] and entry.get("pinned") is True:
+            continue
+        if entry.get("pinned") is not True:
+            pinned.append(pkg["name"])
+        entry["package"] = pkg
+        entry["current_version"] = ver["version"]
+        entry["pinned"] = True
+        changed.append(pkg["name"])
+    if changed:
+        tmp = path.with_name(PCM_RECORD + ".tmp")
+        try:
+            tmp.write_text(json.dumps(data, indent=4, ensure_ascii=False) + "\n",
+                           encoding="utf-8")
+            os.replace(tmp, path)
+        except OSError:
+            tmp.unlink(missing_ok=True)
+            return [], []
+    return changed, pinned
 
 
 def _repair_lib_tables() -> list[str]:
@@ -1175,11 +1258,22 @@ def main() -> int:
             except Exception as e:
                 failed.append(f"{pkg['name']}: {e}")
 
+        # What succeeded is current here now — say so where the PCM looks.
+        _, pinned_now = _record_pcm_installed(packages, state)
+        if pinned_now:
+            _notify("The Plugin and Content Manager now leaves " + _names(pinned_now)
+                    + " to this button (pinned): updates come from here, and "
+                    "PCM's Update All skips them. The Sync plugin itself still "
+                    "updates through the PCM.")
+
         if failed:
             _notify("Sync errors: " + "; ".join(failed))
             return 1
         if updated:
-            _notify(f"Updated: {', '.join(updated)}. Reopen the symbol chooser to pick up changes.")
+            _notify(f"Updated: {', '.join(updated)}. KiCad re-reads a changed "
+                    "library on its next use — reopen the chooser. Parts already "
+                    "placed are copies: Tools → Update Footprints / Symbols from "
+                    "Library.")
         else:
             _notify("Library already up to date.")
         return 0

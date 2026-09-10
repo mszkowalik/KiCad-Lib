@@ -79,14 +79,14 @@ KNOBS: tuple[Knob, ...] = (
     Knob("footprint_lib_nickname", "KiCad", "Footprint library nickname", "str",
          "Footprint refs are rewritten from 7Sigma: to this nickname. The PCM "
          "install registers PCM_7Sigma."),
-    Knob("httplib_timeout_categories_s", "KiCad", "Catalog cache in KiCad (seconds)", "int",
-         "How long KiCad reuses its own copy of the part lists before asking "
-         "again. It re-fetches every category at once, so a low value makes the "
-         "first Add Symbol click slow. Re-download the .kicad_httplib after a "
-         "change — the value is embedded in that file. KiCad's default is 600."),
-    Knob("httplib_timeout_parts_s", "KiCad", "Part detail cache in KiCad (seconds)", "int",
-         "Same, for a single part's fields. KiCad's default is 30. Both caches "
-         "are per KiCad session and always cold on startup."),
+    Knob("httplib_timeout_categories_s", "KiCad", "Catalog refresh in KiCad (seconds)", "int",
+         "KiCad 10 refreshes its copy of the catalog in the background every "
+         "max(catalog, part detail) seconds — the two knobs act as one interval. "
+         "One refresh is about 44 kB on the wire. Re-download the .kicad_httplib "
+         "after a change — the value is embedded in that file. KiCad's default is 600."),
+    Knob("httplib_timeout_parts_s", "KiCad", "Part detail refresh in KiCad (seconds)", "int",
+         "Same interval, kept equal to the catalog one. KiCad's default is 30. "
+         "The copy is per KiCad session and always cold on startup."),
     Knob("symbol_theme", "KiCad", "Symbol preview theme", "str",
          "kicad-cli colour theme for symbol previews. The theme JSON must exist "
          "where the renderer runs. Empty = KiCad default."),

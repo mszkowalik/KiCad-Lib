@@ -102,9 +102,10 @@ export default function Setup() {
             <b>7Sigma Library</b> (the deduplicated base symbol drawings + footprints —
             parts are picked from the live HTTP catalog below, which references these, so
             adding components never requires a library update), <b>7Sigma 3D Models</b>{" "}
-            and <b>7Sigma Library Sync</b> — a toolbar button in the PCB and schematic
-            editors that pulls updates on click (changed 3D models transfer as a small
-            compressed delta, not the full package).
+            and <b>7Sigma Library Sync</b> — a toolbar button in the PCB editor that pulls
+            updates on click (changed 3D models transfer as a small compressed delta, not
+            the full package) and records them in the Plugin and Content Manager, so
+            the PCM is only needed to update the plugin itself.
           </p>
           <pre className="code-block code-block-wrap">{config?.pcm_repo_url ?? "…"}</pre>
           {config?.personalised ? (
@@ -135,7 +136,10 @@ export default function Setup() {
             </li>
             <li>
               To pull library updates later, press the <b>Sync 7Sigma Library</b> toolbar
-              button in the PCB or schematic editor (or use PCM's Update — both work)
+              button in the PCB editor. It marks the library and 3D-model packages as
+              current and pinned in the PCM, so PCM's Update is only for the Sync plugin
+              itself. Parts already placed on a board or schematic are copies: run Tools
+              → Update Footprints / Symbols from Library after a sync.
             </li>
           </ol>
         </div>

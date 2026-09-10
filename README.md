@@ -93,10 +93,13 @@ importer.
    `7Sigma_Base.kicad_sym` — only the unique base drawings — plus footprints;
    registered as `PCM_7Sigma_Base` / `PCM_7Sigma`), **7Sigma 3D Models** and
    **7Sigma Library Sync** (an IPC action plugin — source in
-   `services/pcm_plugin/` — that adds a toolbar button to the PCB AND
-   schematic editors which pulls updates in place; changed 3D models come as
+   `services/pcm_plugin/` — that adds a toolbar button, shown by KiCad 10 in
+   the PCB editor, which pulls updates in place; changed 3D models come as
    an LZMA delta via `POST /api/kicad/pcm/models-delta`, never the full
-   package; note KiCad requires `requirements.txt` in python plugins). The
+   package; after a sync the library and models packages are recorded as
+   current and pinned in `installed_packages.json`, so the PCM is only needed
+   to update the plugin itself; note KiCad requires `requirements.txt` in
+   python plugins). The
    packages are rewritten to be self-consistent (footprint refs →
    `PCM_7Sigma:`, 3D paths →
    `${KICAD10_3RD_PARTY}/3dmodels/com_sevensigma_models3d/`). Each package is

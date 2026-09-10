@@ -2048,17 +2048,24 @@ record: `docs/decisions/0002-field-solver-in-the-platform.md`.
   `Component` join needs `contains_eager` or the parent row is re-fetched per
   row. Verified 2026-07-30: 4.14s -> 0.38s wall clock for 15 categories,
   payloads byte-identical.
-- **KiCad caches the catalog itself, and its defaults are the reason a fast
-  backend still felt slow.** `source.timeout_categories_seconds` (KiCad default
-  **600**) and `source.timeout_parts_seconds` (default **30**) live in the
-  `.kicad_httplib`; the category one expires the part lists of ALL categories at
-  once, so with the default the first "Add Symbol" click in any 10-minute window
-  refetches the entire catalog. `routers/kicad_sync.py::httplib_file` now emits
-  both from `httplib_timeout_categories_s` / `httplib_timeout_parts_s` (3600 /
-  600, editable in Settings). The cache is per KiCad session and always cold on
-  startup, so the server-side cost still matters. **The values are baked into
-  the downloaded file** — changing the knob needs a re-download, exactly like
-  `httplib_token`.
+- **KiCad 10 refreshes the HTTP catalog in a background thread, and nothing
+  else refreshes it.** `source.timeout_categories_seconds` and
+  `source.timeout_parts_seconds` live in the `.kicad_httplib`; KiCad 10 fills
+  its copy once, then `backgroundRefreshWorker` (`sch_io_http_lib.cpp`) sleeps
+  `max(categories, parts)` seconds between full re-fetches, so the two values
+  act as ONE interval and a low value no longer slows an "Add Symbol" click
+  (in KiCad 9 the category timeout expired every part list at once, on the
+  click). There is no menu action, no IPC API command and no plugin hook that
+  forces a refresh — verified in the 10.0 source 2026-09-10 — the only manual
+  way is a real edit to the global symbol library table (Manage Symbol
+  Libraries → change the row's description → OK), which clears and reloads
+  every symbol library. `routers/kicad_sync.py::httplib_file` emits both from
+  `httplib_timeout_categories_s` / `httplib_timeout_parts_s` (120 / 120 since
+  2026-09-10, editable in Settings). One refresh is 17 requests, ~44 kB gzip on
+  the wire (16 categories, 439 parts). The copy is per KiCad session and cold
+  on startup, so the server-side cost still matters. **The values are baked
+  into the downloaded file** — changing the knob needs a re-download, exactly
+  like `httplib_token`.
 - **KiCad field visibility is curated ON THE BASE SYMBOL — never per
   component** (user decision 2026-08-04). The component only holds values; a
   key the base symbol draws visible (R's Value, C's Voltage/Dielectric, LED's
@@ -2332,6 +2339,26 @@ record: `docs/decisions/0002-field-solver-in-the-platform.md`.
   The sweep commit of 2026-08-27 bumped only `BUILDER_REV`, so 1.4.0 with the
   sweep never reached anyone who had 1.4.0 without it — the second time the
   rule two bullets up bit.
+- **The sync plugin writes KiCad's PCM record, and pins the content
+  packages** (`_record_pcm_installed` in `pcm_plugin/sync.py.tmpl`, plugin
+  1.5.0). `installed_packages.json` in the KiCad settings folder is what the
+  PCM compares against the repository; verified in the 10.0 source, it is
+  read ONCE (`PLUGIN_CONTENT_MANAGER` constructor) and written ONLY when
+  `DIALOG_PCM` closes, and the badge check (`RunBackgroundUpdate`) runs at
+  start-up and after that dialog. So an in-place sync left the PCM offering
+  the 259 MB models zip as an "update" forever. After a sync, every content
+  package whose `sync_state.json` sha matches the served one is recorded at
+  the served version with the served package body (KiCad asserts the recorded
+  version exists in the recorded version list) and `pinned: true` — pinned
+  packages are excluded from the badge count and from Update All, and
+  `MarkInstalled` keeps the pin across a PCM-driven update. The plugin's own
+  entry is never touched: the plugin cannot update itself, so PCM must keep
+  offering it. The file is found through `_kicad_config_dir(PCM_RECORD)`, the
+  same resolver the lib-table repair uses; any read or write problem is
+  swallowed. A PCM dialog closed later in the same KiCad session writes the
+  stale in-memory record back; the next sync re-corrects it. No IPC API
+  command reloads libraries or updates placed footprints, so the closing
+  notification tells the user about Tools → Update … from Library.
 - **Comments are one generic table** (`M.Comment`: `target_type` ∈
   {`component`,`symbol`,`footprint`} + `target_id`), NOT per-entity. Component,
   symbol and footprint notes all flow through `routers/comments.py`
