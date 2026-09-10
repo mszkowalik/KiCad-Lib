@@ -5960,6 +5960,7 @@ export interface OrderCreate {
 
 export interface OrderPatchBody {
   customer_id?: number;
+  customer?: string; // create-or-find by name when no id
   order_ref?: string;
   order_date?: string;
   currency?: string;

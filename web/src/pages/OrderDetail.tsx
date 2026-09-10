@@ -20,13 +20,16 @@ import {
   getOrderStockOptions,
   isAbortError,
   getProjects,
+  listCustomers,
   updateOrder,
   updateOrderInvoice,
   updateOrderLine,
+  type CustomerRow,
   type FinishedStockRow,
   type InvoiceIn,
   type OrderInvoiceRow,
   type OrderLineRow,
+  type OrderPatchBody,
   type OrderRow,
   type ProjectInfo,
   type ShipmentLineIn,
@@ -181,20 +184,60 @@ export default function OrderDetail() {
 }
 
 function HeaderCard({ order, apply }: { order: OrderRow; apply: (w: () => Promise<OrderRow>) => Promise<void> }) {
+  const [customers, setCustomers] = useState<CustomerRow[]>([]);
+  const [customer, setCustomer] = useState(order.customer);
   const [ref, setRef] = useState(order.order_ref);
   const [date, setDate] = useState(order.order_date);
+  const [currency, setCurrency] = useState(order.currency);
+  const [vat, setVat] = useState(String(order.vat_pct));
   const [notes, setNotes] = useState(order.notes);
   const dialog = useDialog();
   useEffect(() => {
+    const ac = new AbortController();
+    listCustomers(ac.signal).then(setCustomers).catch(() => setCustomers([]));
+    return () => ac.abort();
+  }, []);
+  useEffect(() => {
+    setCustomer(order.customer);
     setRef(order.order_ref);
     setDate(order.order_date);
+    setCurrency(order.currency);
+    setVat(String(order.vat_pct));
     setNotes(order.notes);
   }, [order]);
-  const dirty = ref !== order.order_ref || date !== order.order_date || notes !== order.notes;
+  const vatNum = Number(vat);
+  const vatOk = vat.trim() !== "" && Number.isFinite(vatNum) && vatNum >= 0;
+  const dirty =
+    customer.trim() !== order.customer ||
+    ref !== order.order_ref ||
+    date !== order.order_date ||
+    currency.trim().toUpperCase() !== order.currency ||
+    (vatOk && vatNum !== order.vat_pct) ||
+    notes !== order.notes;
+  const canSave = dirty && customer.trim() !== "" && currency.trim() !== "" && vatOk;
+  const save = () => {
+    const name = customer.trim();
+    const existing = customers.find((c) => c.name === name);
+    const body: OrderPatchBody = { order_ref: ref, order_date: date, currency: currency.trim().toUpperCase(), vat_pct: vatNum, notes };
+    if (name !== order.customer) {
+      if (existing) body.customer_id = existing.id;
+      else body.customer = name;
+    }
+    return apply(() => updateOrder(order.id, body));
+  };
   return (
     <div className="card pad edit-card">
       <h2 className="card-title">Order</h2>
       <div className="edit-grid">
+        <label className="fw-wide">
+          Customer
+          <input className="text" list="order-customer-names" value={customer} onChange={(e) => setCustomer(e.target.value)} />
+          <datalist id="order-customer-names">
+            {customers.map((c) => (
+              <option key={c.id} value={c.name} />
+            ))}
+          </datalist>
+        </label>
         <label>
           Reference
           <input className="text" value={ref} onChange={(e) => setRef(e.target.value)} />
@@ -203,18 +246,21 @@ function HeaderCard({ order, apply }: { order: OrderRow; apply: (w: () => Promis
           Order date
           <input className="text" value={date} onChange={(e) => setDate(e.target.value)} />
         </label>
+        <label>
+          Currency
+          <input className="text" value={currency} maxLength={3} onChange={(e) => setCurrency(e.target.value)} />
+        </label>
+        <label>
+          VAT %
+          <input className="text" value={vat} inputMode="decimal" onChange={(e) => setVat(e.target.value)} />
+        </label>
         <label className="fw-wide">
           Notes
           <textarea className="note-textarea" value={notes} onChange={(e) => setNotes(e.target.value)} />
         </label>
       </div>
       <div className="btn-row">
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          disabled={!dirty}
-          onClick={() => apply(() => updateOrder(order.id, { order_ref: ref, order_date: date, notes }))}
-        >
+        <button type="button" className="btn btn-primary btn-sm" disabled={!canSave} onClick={save}>
           Save
         </button>
         <button
@@ -240,7 +286,7 @@ function HeaderCard({ order, apply }: { order: OrderRow; apply: (w: () => Promis
         </button>
       </div>
       <p className="muted">
-        Currency {order.currency} · VAT {order.vat_pct}% (printed only; every figure here is net).
+        A new customer name creates the customer. VAT is printed only; every figure here is net.
       </p>
     </div>
   );

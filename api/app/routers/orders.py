@@ -114,6 +114,7 @@ class OrderIn(BaseModel):
 
 class OrderPatch(BaseModel):
     customer_id: int | None = None
+    customer: str | None = None  # create-or-find by name when no id, as on create
     order_ref: str | None = None
     order_date: str | None = None
     currency: str | None = None
@@ -179,11 +180,20 @@ def get_order(order_id: int, db: Session = Depends(get_db)):
 def update_order(order_id: int, body: OrderPatch, request: Request, db: Session = Depends(get_db)):
     o = _order(db, order_id)
     before = {}
-    for k, v in body.model_dump(exclude_unset=True).items():
-        if k == "customer_id" and v is not None and db.get(M.Customer, v) is None:
-            raise HTTPException(404, "customer not found")
-        if k == "currency" and v:
-            v = v.upper()
+    fields = body.model_dump(exclude_unset=True)
+    name = (fields.pop("customer", None) or "").strip()
+    if name and not fields.get("customer_id"):
+        fields["customer_id"] = svc.get_customer(db, name).id
+    for k, v in fields.items():
+        if k == "customer_id":
+            if v is None or db.get(M.Customer, v) is None:
+                raise HTTPException(404, "customer not found")
+        if k == "currency":
+            v = (v or "").strip().upper()
+            if not v:
+                raise HTTPException(422, "an order needs a currency")
+        if k == "vat_pct" and (v is None or v < 0):
+            raise HTTPException(422, "vat_pct must be >= 0")
         if isinstance(v, str) and k != "notes":
             v = v.strip()
         if getattr(o, k) != v:
