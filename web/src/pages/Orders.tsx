@@ -21,6 +21,7 @@ import {
   type CustomerRow,
   type DemandRow,
   type FinishedStock,
+  type FinishedStockRow,
   type OrderLineIn,
   type OrderRow,
   type ProjectInfo,
@@ -239,9 +240,28 @@ export function DemandCard({ rows, title = "Demand" }: { rows: DemandRow[] | nul
   );
 }
 
-/** Finished devices per batch: recorded devices next to legacy units. */
+/** More devices passed programming than the batch is recorded to hold. Since
+ *  `built` counts passed devices, this can no longer show up as `overdrawn`,
+ *  and it is the one arithmetic in the card that is impossible rather than
+ *  merely unlucky: the run quantity is wrong, or devices were filed under the
+ *  wrong batch. Under-building is normal attrition and is not flagged. */
+function overbuilt(r: FinishedStockRow): boolean {
+  return r.devices_produced > 0 && r.qty_recorded > 0 && r.built > r.qty_recorded;
+}
+
+/** Finished devices per batch: recorded devices next to legacy units.
+ *
+ *  Every batch that was actually built gets a row, empty or not. Filtering by
+ *  what is LEFT deleted a batch from the card the moment its last device
+ *  shipped — six of seven dongle batches vanished the day `built` started
+ *  counting passed devices instead of the typed quantity (2026-09-10). A batch
+ *  is a fact; its remaining stock is a number on it. Planned batches hold
+ *  nothing yet and stay out. */
 function StockCard({ stock }: { stock: FinishedStock | null }) {
-  const rows = useMemo(() => (stock ? stock.runs.filter((r) => r.stock > 0 || r.overdrawn > 0) : []), [stock]);
+  const rows = useMemo(
+    () => (stock ? stock.runs.filter((r) => (r.status || "").trim().toLowerCase() !== "planned") : []),
+    [stock],
+  );
   return (
     <div className="card pad">
       <div className="toolbar">
@@ -255,9 +275,12 @@ function StockCard({ stock }: { stock: FinishedStock | null }) {
         ) : null}
       </div>
       <p className="card-subtitle">
-        A device enters the shelf when it passes programming in a batch and leaves it on a
-        shipment. Units from batches that predate device records are counted from the batch
-        quantity (“no serial”); a return can name one of them later.
+        Recorded is the quantity on the production run. Built counts the devices that passed:
+        a device enters the shelf when its newest programming or test run passes, and leaves
+        it on a shipment. A board that never passed is not stock, so built is normally the
+        smaller of the two — built above recorded is impossible and is marked. Every batch
+        stays listed after its last device ships. Only a batch with no device records at all
+        is counted from the batch quantity (“no serial”); a return can name one of those later.
       </p>
       {!stock ? (
         <Spinner label="Counting…" />
@@ -270,8 +293,8 @@ function StockCard({ stock }: { stock: FinishedStock | null }) {
               <tr>
                 <th>Project</th>
                 <th>Batch</th>
+                <th className="num">Recorded</th>
                 <th className="num">Built</th>
-                <th className="num">Devices</th>
                 <th className="num">Shipped</th>
                 <th className="num">In stock</th>
                 <th className="num">No serial</th>
@@ -281,13 +304,26 @@ function StockCard({ stock }: { stock: FinishedStock | null }) {
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.run_id} className={r.overdrawn ? "err-text" : undefined}>
+                <tr key={r.run_id} className={r.overdrawn || overbuilt(r) ? "err-text" : undefined}>
                   <td title={r.project}>{r.project}</td>
                   <td title={r.label}>
                     <Link className="comp-link" to={`/runs/${r.run_id}`}>{r.label}</Link>
                   </td>
-                  <td className="num">{r.built.toLocaleString()}</td>
-                  <td className="num" title="devices recorded in this batch">{r.devices_produced.toLocaleString()}</td>
+                  <td className="num" title="the quantity on the production run — boards ordered or assembled">
+                    {r.qty_recorded.toLocaleString()}
+                  </td>
+                  <td
+                    className="num"
+                    title={
+                      overbuilt(r)
+                        ? `${r.built} devices passed programming but the batch is recorded as ${r.qty_recorded} boards — the run quantity is wrong, or devices from another batch were filed here`
+                        : r.devices_produced
+                          ? `${r.built} devices passed programming; ${r.qty_recorded - r.built} of the recorded boards never did`
+                          : "no device records: counted from the batch quantity"
+                    }
+                  >
+                    {r.built.toLocaleString()}
+                  </td>
                   <td className="num">{(r.devices_shipped + r.unserialized_shipped).toLocaleString()}</td>
                   <td className="num">{r.devices_in_stock.toLocaleString()}</td>
                   <td

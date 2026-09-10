@@ -6012,6 +6012,8 @@ export interface FinishedStockRow {
   run_date: string;
   status: string;
   built: number;
+  /** the quantity typed on the run (ordered or assembled); `built` counts passed devices instead when the batch has any */
+  qty_recorded: number;
   devices_produced: number;
   devices_in_stock: number;
   devices_shipped: number;
