@@ -2039,6 +2039,14 @@ def fieldsolver_board(project_id: int, board: str = "", snapshot_id: int = 0) ->
     `snapshot_id` picks the commit (0 = the current assignment). A profile whose
     `outdated` flag is true was solved against a different stackup: its numbers
     are kept for reference and should not be trusted until it is solved again.
+
+    `comparison` holds the layer-by-layer check of the `.kicad_pcb` against the
+    assigned stackup: a `verdict` of "match", "differs" or "unknown" (one side states
+    no stackup), a `rows` table of everything compared — copper layer count, total
+    build, each copper thickness, and each dielectric GAP with its sheets, Dk and loss
+    tangent — and the `tolerance` that decides what counts as the same. `mismatch`
+    repeats `comparison.differences`. Reported, never enforced: a board is allowed to
+    disagree with the stackup it is solved against.
     """
     db = SessionLocal()
     try:

@@ -14,6 +14,7 @@ import {
   fsStackups,
   isAbortError,
   type FsBoardState,
+  type FsComparison,
   type FsStackup,
 } from "../../api";
 import { useAuth } from "../../auth";
@@ -132,28 +133,9 @@ export default function StackupTab({
             : " Only an administrator can create or edit a stackup."}
         </p>
 
-        {state.mismatch.length ? (
-          <div className="fs-notice warn">
-            <b>The board file and the assigned stackup disagree.</b>
-            <ul className="fs-notes">
-              {state.mismatch.map((m) => (
-                <li key={m}>{m}</li>
-              ))}
-            </ul>
-            <span className="muted fs-note">
-              Nothing is blocked — the impedance numbers are computed against the assigned stackup, which is what the
-              fab will build.
-            </span>
-          </div>
-        ) : state.board_file ? (
-          <p className="muted fs-note">
-            The board file declares {state.board_file.copper_layers} copper layers and{" "}
-            {state.board_file.total_mm.toFixed(3)} mm, which agrees with the assigned stackup.
-          </p>
-        ) : (
-          <p className="muted fs-note">The board file declares no stackup of its own, so there is nothing to compare.</p>
-        )}
       </section>
+
+      <BoardFileCheck state={state} />
 
       <section className="card pad">
         <h2 className="card-title">Impedance profiles</h2>
@@ -214,5 +196,131 @@ export default function StackupTab({
         )}
       </section>
     </div>
+  );
+}
+
+
+/** Does the `.kicad_pcb` describe the same board as the assigned stackup?
+ *
+ *  The two are compared in a normal form — the copper layers, and the dielectric GAP
+ *  between each neighbouring pair — because KiCad allows only `copper - 1` dielectric
+ *  layers and writes a multi-sheet gap as sub-layers of one layer. The backend does
+ *  the work (`services/field_state.py`); this panel only says where the two differ.
+ *
+ *  Informational by design (user decision 2026-08-31): a board may disagree with the
+ *  stackup it is solved and costed against, and nothing here refuses anything.
+ */
+function BoardFileCheck({ state }: { state: FsBoardState }) {
+  const cmp: FsComparison | undefined = state.comparison;
+  const file = state.board_file;
+
+  if (!state.stackup) {
+    return (
+      <section className="card pad">
+        <h2 className="card-title">Board file against the stackup</h2>
+        <p className="muted fs-note">
+          No stackup is assigned to this board, so there is nothing to compare it against.
+        </p>
+      </section>
+    );
+  }
+  if (!file) {
+    return (
+      <section className="card pad">
+        <h2 className="card-title">
+          Board file against the stackup <span className="pill neutral">not compared</span>
+        </h2>
+        <p className="muted fs-note">
+          {state.board_file_note || "The board file was not read, and the platform gave no reason."}
+        </p>
+      </section>
+    );
+  }
+
+  const same = cmp.verdict === "match";
+  const compared = cmp.rows.filter((r) => r.ok !== null).length;
+  const fmt = (v: string | number | null, unit: string) => {
+    if (v === null || v === undefined) return "—";
+    if (typeof v === "number") return `${unit === "mm" ? v.toFixed(4) : String(v)}${unit ? ` ${unit}` : ""}`;
+    return v;
+  };
+
+  return (
+    <section className="card pad">
+      <h2 className="card-title">
+        Board file against the stackup{" "}
+        <span className={`pill ${same ? "ok" : "warn"}`}>{same ? "same" : "differs"}</span>
+      </h2>
+
+      {same ? (
+        <p className="fs-note">
+          <b>The board file describes the same build as the assigned stackup.</b> All {compared} compared values agree:{" "}
+          {file.copper_layers} copper layers, {file.total_mm.toFixed(4)} mm of copper and dielectric, and every copper
+          thickness, dielectric thickness, Dk and loss tangent inside tolerance.
+        </p>
+      ) : (
+        <div className="fs-notice warn">
+          <b>The board file and the assigned stackup describe different boards.</b>
+          <ul className="fs-notes">
+            {cmp.differences.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+          <span className="muted fs-note">
+            Nothing is blocked — the impedance numbers are computed against the assigned stackup, which is what the fab
+            will build. Fix the board file in KiCad (Board Setup → Physical Stackup) or assign the stackup the board
+            really uses.
+          </span>
+        </div>
+      )}
+
+      <table className="data fs-kv">
+        <thead>
+          <tr>
+            <th>Checked</th>
+            <th>Board file</th>
+            <th>Assigned stackup</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {cmp.rows.map((r, i) => (
+            <tr key={`${r.what}-${i}`} className={r.ok === false ? "fs-bad" : undefined}>
+              <td style={r.what.startsWith("  ") ? { paddingLeft: 26, color: "var(--muted)" } : undefined}>
+                {r.what.trim()}
+              </td>
+              <td>{fmt(r.board, r.unit)}</td>
+              <td>{fmt(r.stackup, r.unit)}</td>
+              <td>
+                {r.ok === true ? (
+                  <span className="pill ok">same</span>
+                ) : r.ok === false ? (
+                  <span className="pill err">differs</span>
+                ) : (
+                  <span className="pill neutral">not stated</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <p className="muted fs-note">
+        Inside tolerance counts as the same: copper ±{cmp.tolerance.copper_mm} mm, dielectric ±
+        {cmp.tolerance.dielectric_mm} mm, Dk ±{cmp.tolerance.eps_r}, loss tangent ±{cmp.tolerance.tand}. A dielectric is
+        compared as the gap between two copper layers, because KiCad carries a multi-sheet gap as sub-layers of one
+        layer and a fab lists each sheet.
+      </p>
+      {cmp.notes.length ? (
+        <details className="fs-details">
+          <summary>What is not compared</summary>
+          <ul className="fs-notes">
+            {cmp.notes.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </section>
   );
 }

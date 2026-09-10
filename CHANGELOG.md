@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-09-11 — JLC06121H-3313A, and a board file checked against its stackup layer by layer
+
+- **`JLC06121H-3313A` joins the stackup library.** JLCPCB's published 6-layer
+  1.2 mm controlled-impedance build, outer 1 oz and inner 0.5 oz: prepreg 3313
+  0.0994 mm under each outer layer, a 0.1 mm core under each of those, and
+  **three 7628 sheets — 0.2104, 0.218 and 0.2104 mm — in the middle gap**.
+  Copper and dielectric sum to 1.1684 mm. The Dk of every sheet was already in
+  the material library, so nothing was assumed that the fab does not publish.
+  JLCPCB renders the 1.2 mm tables only after a click, which is why the code
+  appears nowhere in the page source; the figures were read from the rendered
+  page on 11 September 2026.
+- **The project Stackup tab now says WHERE the board file and the assigned
+  stackup disagree**, not only that they do. Both sides are reduced to the same
+  normal form — the ordered copper layers, and the dielectric GAP between each
+  neighbouring pair — and every copper thickness, gap thickness, sheet
+  thickness, Dk and loss tangent is compared, each with its own verdict.
+  Inside tolerance counts as the same: copper 0.005 mm, dielectric 0.02 mm, Dk
+  0.05, loss tangent 0.002.
+- **Why the gap and not the layer.** KiCad allows only `copper - 1` dielectric
+  layers, so a fab gap built from three prepreg sheets becomes one KiCad
+  dielectric carrying three sub-layers, written with the bare `addsublayer`
+  token. Counting `(layer …)` nodes could therefore never agree with the fab's
+  own table, and the old reader returned the first sheet of such a layer and
+  silently lost the rest. What a field sees is the gap.
+- **"No stackup in the file" and "the checkout is gone" no longer look the
+  same.** The board file was read inside a bare `except`, so a pruned mirror
+  reported the board as declaring no stackup of its own. The page now states
+  which of the two happened, and what to do about it.
+- `total_mm` of a board file is now the copper-plus-dielectric build, the way a
+  fab states a stackup; the solder mask is reported separately as `mask_mm`.
+  The two sides describe a mask differently and are not compared on it.
+- The agent tool `fieldsolver_board` returns the same table as `comparison`.
+
 ## 2026-09-10 — Datasheets stored once, versioned by text; re-signed PDFs no longer bump parts
 
 - **One stored file per distinct content.** Datasheet bytes moved from

@@ -174,6 +174,94 @@
       }
     },
     {
+      "id": "JLC06121H-3313A",
+      "manufacturer": "JLCPCB",
+      "name": "JLC06121H-3313A (6 layer, 1.2 mm)",
+      "verified": true,
+      "source": "https://jlcpcb.com/impedance — 6-Layer Impedance Control Stackup, 1.2 mm, outer 1 oz / inner 0.5 oz, entry 9) JLC06121H-3313A (read 2026-09-11). Published build, top to bottom: copper 0.035, prepreg 3313x1 0.09940, copper 0.0152, core 0.1 ('0.10mm H/HOZ without copper'), copper 0.0152, prepreg 7628x1 0.21040, prepreg 7628x1 0.218, prepreg 7628x1 0.21040, copper 0.0152, core 0.1, copper 0.0152, prepreg 3313x1 0.09940, copper 0.035. The three 7628 sheets are listed as three separate rows by the fab and are kept separate here. Sum 1.1684 mm against the 1.2 mm nominal class.",
+      "soldermask": "jlc_soldermask",
+      "layers": [
+        {
+          "type": "copper",
+          "name": "L1",
+          "thickness_mm": 0.035
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_pp_3313",
+          "thickness_mm": 0.0994,
+          "label": "prepreg 3313 x1"
+        },
+        {
+          "type": "copper",
+          "name": "L2",
+          "thickness_mm": 0.0152
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_core",
+          "thickness_mm": 0.1,
+          "label": "core"
+        },
+        {
+          "type": "copper",
+          "name": "L3",
+          "thickness_mm": 0.0152
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_pp_7628",
+          "thickness_mm": 0.2104,
+          "label": "prepreg 7628 x1"
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_pp_7628",
+          "thickness_mm": 0.218,
+          "label": "prepreg 7628 x1"
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_pp_7628",
+          "thickness_mm": 0.2104,
+          "label": "prepreg 7628 x1"
+        },
+        {
+          "type": "copper",
+          "name": "L4",
+          "thickness_mm": 0.0152
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_core",
+          "thickness_mm": 0.1,
+          "label": "core"
+        },
+        {
+          "type": "copper",
+          "name": "L5",
+          "thickness_mm": 0.0152
+        },
+        {
+          "type": "dielectric",
+          "material": "jlc_pp_3313",
+          "thickness_mm": 0.0994,
+          "label": "prepreg 3313 x1"
+        },
+        {
+          "type": "copper",
+          "name": "L6",
+          "thickness_mm": 0.035
+        }
+      ],
+      "finish": {
+        "type": "HASL (lead-free)",
+        "thickness_um": 10,
+        "assumed": true,
+        "source": "JLCPCB default finish is lead-free HASL. Thickness not published as a single value: JLCPCB blog gives 1-50 um for HASL; 10 um assumed. ENIG at JLCPCB: Ni 3-6 um + Au 0.025-0.05 um (jlcpcb.com/help/article/jlcpcb-surface-finish)."
+      }
+    },
+    {
       "id": "JLC06161H-3313",
       "manufacturer": "JLCPCB",
       "name": "JLC06161H-3313 (6 layer, 1.6 mm)",

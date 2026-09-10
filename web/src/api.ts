@@ -5794,9 +5794,50 @@ export interface FsBoardState {
   } | null;
   stackup: FsStackup | null;
   profiles: FsBoardProfile[];
-  board_file: { copper_layers: number; total_mm: number; layers: { name: string; type: string; thickness_mm: number }[] } | null;
+  board_file: FsBoardFile | null;
   /** Plain-language differences between the board file and the assigned stackup. */
   mismatch: string[];
+  /** The per-layer table behind `mismatch` — see services/field_state.py. */
+  comparison: FsComparison;
+  /** Why there is no `board_file`, when there is none. Empty when there is one. */
+  board_file_note: string;
+}
+
+export interface FsBoardSheet {
+  type: string;
+  label: string;
+  thickness_mm: number;
+  eps_r: number | null;
+  tand: number | null;
+}
+
+export interface FsBoardFile {
+  copper_layers: number;
+  /** Copper plus dielectric, the way a fab states a stackup. Mask excluded. */
+  total_mm: number;
+  /** Solder mask, both sides together. KiCad states it, a fab does not. */
+  mask_mm: number;
+  finish: string;
+  layers: { name: string; type: string; thickness_mm: number; sheets?: FsBoardSheet[] }[];
+  copper: { name: string; thickness_mm: number }[];
+  gaps: { above: string; below: string; thickness_mm: number; sheets: FsBoardSheet[] }[];
+}
+
+/** One thing compared. `ok` is null when a side does not state a value. */
+export interface FsComparisonRow {
+  what: string;
+  board: string | number | null;
+  stackup: string | number | null;
+  ok: boolean | null;
+  unit: string;
+}
+
+export interface FsComparison {
+  verdict: "match" | "differs" | "unknown";
+  differences: string[];
+  rows: FsComparisonRow[];
+  notes: string[];
+  tolerance: { copper_mm: number; dielectric_mm: number; eps_r: number; tand: number };
 }
 
 export function fsBoardState(

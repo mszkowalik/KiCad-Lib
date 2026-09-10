@@ -498,22 +498,44 @@ def _board_state(db: Session, project_id: int, board: str, snapshot):
         ],
         "board_file": None,
         "mismatch": [],
+        # the per-layer table behind `mismatch`: verdict, rows, notes, tolerances
+        "comparison": field_state.compare_stackup_detail(None, st),
+        # why there is no `board_file`, when there is none. "No stackup in the file" and
+        # "the checkout is gone" look identical on the page otherwise, and only one of
+        # the two is the user's to fix.
+        "board_file_note": "No commit is selected, so no board file was read.",
     }
     if snapshot is not None:
+        out["board_file_note"] = ""
         try:
             from ..services import gitrepo
 
-            root = gitrepo.materialize(snapshot.project_id, snapshot.sha)
             name = board or ((snapshot.boards or [{}])[0] or {}).get("name", "")
             entry = next((b for b in (snapshot.boards or []) if b.get("name") == name), None)
             pcb = entry.get("pcb") if entry else None
-            if pcb:
+            if not pcb:
+                out["board_file_note"] = f"“{name or 'this board'}” has no .kicad_pcb in this commit."
+            else:
+                root = gitrepo.materialize(snapshot.project_id, snapshot.sha)
                 declared = field_state.board_stackup(root / pcb)
-                out["board_file"] = declared
-                out["mismatch"] = field_state.compare_stackup(declared, st)
-        except Exception:
-            # a pruned checkout or an unreadable board must not break the page
+                if declared is None:
+                    out["board_file_note"] = (
+                        f"{pcb} carries no (stackup …) block. KiCad writes one only after "
+                        "somebody fills in Board Setup → Physical Stackup."
+                    )
+                else:
+                    detail = field_state.compare_stackup_detail(declared, st)
+                    out["board_file"] = declared
+                    out["comparison"] = detail
+                    out["mismatch"] = detail["differences"]
+        except Exception as e:
+            # a pruned checkout or an unreadable board must not break the page — but it
+            # must not read as "the board declares no stackup" either
             out["board_file"] = None
+            out["board_file_note"] = (
+                f"The board file could not be read from commit {snapshot.sha[:8]}: "
+                f"{type(e).__name__}: {e}. Fetch the repository again on the History tab."
+            )
     return out
 
 
