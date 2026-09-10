@@ -1266,6 +1266,25 @@ Still open after it: the batch quantities do not match the flash counts
 2026-01-04..06, and 69 dongles + 123 Aquas are on the shelf in the records
 while the physical shelf is reported empty.
 
+**Built means finished and passed (Mateusz, 2026-09-10, same day).** The
+retro link had written a `produced` event for every imported device, failed
+ones included, and the shelf table added the typed batch quantity on top as
+"no serial" units. Both are gone: 82 devices whose newest run did not pass
+(76 Aqua, 6 dongles) lost their `produced` event and sit as unrecorded until a
+later pass (`docs/flasher/fix_built_is_passed.py`, audit action
+`device.unbuilt`), the FIFO picks were redone from passed devices, and
+`run_stock` counts a batch with device records from its devices only — the
+typed quantity is `qty_recorded` for the tooltip and nothing else. A batch
+with no device records at all (the V3 prototypes) is still counted from its
+quantity, and that is the only source of an unserialized unit. Several flash
+cycles of one MAC are one device with several runs, never several devices;
+the only exception was the six-hex re-flash under a twelve-hex name, merged
+above. Records after: dongles 4,429 passed / 4,366 shipped / 63 on the
+shelf; Aqua 914 / 867 / 47. Still open: a device that passes programming and
+later fails a test keeps its `produced` event under the engine's
+first-pass rule — the engine needs a "failed after pass" event before the next
+production run relies on it.
+
 ### Functional checks — green/red per functionality (2026-07-30)
 
 The device view answered "did the run pass". The question a production line

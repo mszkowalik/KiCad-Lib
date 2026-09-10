@@ -188,14 +188,25 @@ def run_stock(db: Session, project_id: int | None = None) -> list[dict]:
     for r in runs:
         # A batch that is still planned holds nothing yet: only its devices,
         # of which it has none, count. The planned quantity is a plan.
-        basis = 0 if (r.status or "").strip().lower() == "planned" else _run_basis_qty(r)
-        legacy_pool = basis - produced[r.id]  # units never recorded as devices
+        typed = 0 if (r.status or "").strip().lower() == "planned" else _run_basis_qty(r)
+        # BUILT means finished and passed (user rule, 2026-09-10). A batch that
+        # has device records is counted from them and from nothing else: the
+        # typed quantity is what was ordered or assembled, and boards that never
+        # passed programming are not stock. Only a batch with NO device records
+        # (prototypes from before the flasher wrote records) is counted from its
+        # quantity, and that is the only place an unserialized unit can come from.
+        if produced[r.id]:
+            basis, legacy_pool = produced[r.id], 0
+        else:
+            basis = typed
+            legacy_pool = typed  # units never recorded as devices
         legacy_stock = legacy_pool - unser[r.id] + unser_returned[r.id]
         out.append({
             "run_id": r.id, "label": r.label, "project_id": r.project_id,
             "project": projects.get(r.project_id, "?"), "board": r.board, "variant": r.variant,
             "run_date": r.run_date, "status": r.status,
             "built": basis,
+            "qty_recorded": typed,
             "devices_produced": produced[r.id],
             "devices_in_stock": in_stock[r.id],
             "devices_shipped": shipped[r.id],

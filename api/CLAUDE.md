@@ -358,6 +358,16 @@ section first.
     to the same line after repair names ITSELF, so it is never counted twice.
     Order cost counts every shipped device, replacements included, at its
     batch's per-device actual (`per_device_cost_usd`, from the register).
+  - **Built means finished and passed** (user rule, 2026-09-10). `run_stock`
+    counts a batch that has ANY device record from its devices only: the typed
+    run quantity is `qty_recorded` for a tooltip and never adds "no serial"
+    units to the shelf. Only a batch with no device records at all (the V3
+    prototypes) is counted from its quantity, and that is the only source of
+    an unserialized unit. A device whose newest run did not pass has no
+    `produced` event and is not stock; several flash cycles of one MAC are one
+    device with several runs, never several devices. Known gap: the engine's
+    first-pass rule keeps `produced` when a later run fails — add a
+    failed-after-pass event before relying on live runs for stock.
   - **Demand is derived, never stored** (`project_demand`, `GET /api/demand`):
     open = unshipped order-line quantity, supply = shelf stock + the quantity
     of every run still `planned`. A planned batch is not yet linked to the
