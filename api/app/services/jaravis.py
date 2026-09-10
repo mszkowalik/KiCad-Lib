@@ -1208,7 +1208,8 @@ def _archive_datasheet(db, ds) -> dict:
         return {"archived": False, "reason": "nothing stored", "source_url": ds.source_url}
     return {"archived": True, "filename": dv.filename, "size_bytes": dv.size_bytes,
             "page_count": dv.page_count, "text_pages": dv.text_pages,
-            "text_layer": dv.text_layer}
+            "text_layer": dv.text_layer, "doc_revision": dv.doc_revision,
+            "relinked": bool(r.get("relinked"))}
 
 
 @beta_tool

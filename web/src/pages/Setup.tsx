@@ -295,7 +295,12 @@ function DatasheetCard() {
             {status.datasheets_with_local_copy} / {status.datasheets_total} datasheets stored
             locally
             {status.running
-              ? ` — fetching… ${status.done}/${status.total} (${status.new_versions} new)`
+              ? ` — fetching… ${status.done}/${status.total} (${status.new_versions} new, ${status.restamped} re-signed)`
+              : ""}
+            {status.storage
+              ? ` — ${status.storage.documents} distinct files, ${Math.round(
+                  status.storage.document_bytes / 1048576,
+                )} MB, ${status.storage.documents_shared_by_several_datasheets} shared between parts`
               : ""}
           </p>
           <p className="muted">

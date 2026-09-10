@@ -135,9 +135,70 @@ section first.
   to the store path. Manual re-fetch (`POST /api/datasheets/{id}/fetch`)
   deliberately passes `conditional=False` — a supplier can swap file content
   without touching its validators, and clicking re-fetch means "actually look".
+- **Bytes are stored once, in `documents`, and versions point at them**
+  (2026-09-10, [decision 0004](../docs/decisions/0004-datasheet-identity-and-storage.md)).
+  `DatasheetVersion` is a history entry — `datasheet_id`, `version_no`,
+  `filename`, `fetched_at`, the HTTP validators — plus `document_id`. Every
+  column that describes the bytes (`sha256`, `size_bytes`, `content_type`,
+  `data`, `text_layer`, `page_count`, `text_pages`, `pages_indexed_at`) lives
+  on `Document`, and `DatasheetVersion` proxies them as read-only properties
+  for the readers that predate the split. Two versions of two components that
+  fetched the same PDF share one document; `datasheet_pages` is keyed on the
+  document, so a shared file is indexed once. `Document.data` is a deferred
+  column — load the document row freely, the PDF comes only when `.data` is
+  read. `services/datasheet_migrate.py` did the move at startup (SQL only,
+  server-side, then `VACUUM FULL`) and keys off the presence of
+  `datasheet_versions.data`, so it is a no-op on every later boot. Never
+  re-add the old columns to `datasheet_versions` in `_PHASE1_DDL`.
+- **A new version means the TEXT changed, not the bytes.** TI re-signs every
+  PDF about every two days (new `ModDate`, new sha, same document) and
+  generates the package addendum at download time (date stamp in the header,
+  live tape-and-reel tables, package sections in a different order). Under
+  the old byte rule one TPS61023 datasheet reached 32 versions and 31 automatic
+  component bumps. `inspect_document` now computes `Document.text_sha256`
+  from the per-page text through `page_identity`: body pages hashed in order,
+  TI addendum pages (`PACKAGE OPTION ADDENDUM`, outline drawings, the notice)
+  hashed as an unordered set, `PACKAGE MATERIALS INFORMATION` pages excluded,
+  the `www.ti.com D-Mon-YYYY` stamp stripped everywhere. `fetch_datasheet`'s
+  ladder: 304 → unchanged; same sha → unchanged; same text hash →
+  **`restamped`** (validators refreshed, audit row, nothing stored); bytes
+  already held as another document → **`relinked`** (new version, no new
+  blob); else a new document and a new version. A scan has no text hash and
+  compares by bytes. `doc_revision` (`parse_revision`: PDF Title "(Rev. B)",
+  TI Keywords "SLVSF14B", "Rev. X" / "Revised March 2023" on page 1 or the
+  last page) is informational — it goes in the note and the UI, it never
+  decides. `GET /api/datasheets/restamps` lists the history the byte rule
+  wrote, `POST /api/datasheets/restamps/collapse` folds it (pins move to the
+  survivor, orphaned documents are deleted); it refuses while the
+  classification backfill runs, because a document without a text hash yet
+  never matches.
+- **A datasheet revision does not carry the review record.** The automatic
+  bump goes through `publish.publish_component_version` like every other
+  publish, and `review.carry_component` asks `datasheet_store.datasheet_carries`
+  after `signoff.data_carries`: a pin that moved to a document with a
+  different text hash refuses the carry ("datasheet 'X' changed (Rev. G to
+  Rev. H)"). The sign-off still carries — the part is the same part. The bump
+  also opens a `ReviewRequest` on the component whose note names the revision
+  labels and the pages whose text changed (`changed_pages`, from the stored
+  `page_hashes`), so the change reaches the worklist instead of being a silent
+  system version.
+- **No single request shape works at every supplier.** Measured 2026-09-10 on
+  the direct PDF URLs: Infineon answers an AWS WAF challenge with 0 bytes and
+  Nexperia a 403 to `curl/8.1`, both serve a browser string; onsemi serves
+  curl and 403s the browser; Microchip, ST and Analog Devices refuse both from
+  here. `datasheet_store._get` tries the user agent remembered for the host
+  (`FetchHost`, learned, never configured) and the other one on a refusal
+  (401/403/406/429/503, a WAF header, an empty 200), then records what worked.
+  The 11 "empty file" rejections from Infineon in the audit log were this.
+- **A publish that touched the datasheet rows fetches them immediately.**
+  `routers/components.py` calls `start_fetch_component(comp.id)` after the
+  commit when `body.datasheets` was sent: a scoped, stateless run of the
+  fetch worker over that component's rows without a local copy, so a new URL
+  has its PDF within seconds instead of at 03:00. The agent path already
+  archived at publish time (`_archive_datasheet`, above).
 - **Every stored document is classified searchable or not, ONCE, at store
   time** (`datasheet_store.classify_text_layer` → the `text_layer`,
-  `page_count`, `text_pages` columns on `DatasheetVersion`). It opens the PDF
+  `page_count`, `text_pages` columns on `Document`). It opens the PDF
   with PyMuPDF and counts pages whose extracted text clears
   `_TEXT_MIN_CHARS` (24, above a scanner's stamped page number); ≥
   `_TEXT_RATIO_OK` (0.9) of pages is `text`, none is `scan`, between is
@@ -150,11 +211,12 @@ section first.
     it. Failures land as `text_layer = "error"`, which is itself a useful
     signal — it caught a 0-byte "PDF" Infineon served as `text/html`.
   - **`""` means "not classified yet"**, and is what
-    `start_text_layer_classify("missing")` claims. It is armed unconditionally
-    30 s after startup, so it costs nothing on every boot after the first
-    sweep. `_classify_worker` loads ONE row at a time and expunges it —
-    a `query(DatasheetVersion).all()` here pulls the whole library into
-    memory. `POST /api/datasheets/classify` re-runs it (`mode: "all"` after a
+    `start_text_layer_classify("missing")` claims — together with searchable
+    documents that have no `text_sha256` yet, which the revision ladder needs.
+    It is armed unconditionally 30 s after startup, so it costs nothing on
+    every boot after the first sweep. `_classify_worker` loads ONE row at a
+    time and expunges it — a `query(Document).all()` here pulls the whole
+    library into memory. `POST /api/datasheets/classify` re-runs it (`mode: "all"` after a
     threshold change); `GET /api/datasheets/classify-status` and
     `/fetch-status` both report the per-class counts.
 

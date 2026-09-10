@@ -1,5 +1,46 @@
 # Changelog
 
+## 2026-09-10 — Datasheets stored once, versioned by text; re-signed PDFs no longer bump parts
+
+- **One stored file per distinct content.** Datasheet bytes moved from
+  `datasheet_versions` into a content-addressed `documents` table; a version
+  is now a history row that points at a document, and two components that
+  link the same PDF share one copy (24 files were shared between parts, the
+  TPS7A20 variants among them). The page index follows the document, so a
+  shared file is indexed once. The move ran at startup in SQL and rewrote the
+  tables, which handed the disk back
+  ([decision 0004](docs/decisions/0004-datasheet-identity-and-storage.md)).
+- **A new version means the text changed.** TI re-signs every PDF about every
+  two days and generates the whole tail of the document at download time, so
+  one TPS61023 datasheet had 37 stored copies, each of which bumped the
+  component to a new version and dropped its verification. The identity is
+  now a hash of the page text with a role per page: the body in order, the
+  orderable-part table reduced to its part-number and lifecycle pairs, the
+  drawings as an unordered set, the live tape-and-reel tables excluded. On a
+  copy of the production library that took 704 versions down to 616 and 557
+  stored files down to 484, and every difference left is real. A re-signed
+  file answers `restamped` and stores nothing. The revision label parsed from
+  the document ("Rev. B", "SLVSF14B") shows on the datasheet card and in the
+  history.
+- **A real revision is a review event.** The automatic bump now runs through
+  the shared publish path; the review record does not carry across a
+  datasheet whose text changed (the sign-off does), and a review request is
+  opened with the revision labels, the pages that are new or edited, how many
+  drawings were removed, and whether the orderable-part table moved.
+- **A stored web page is no longer counted as an unsearchable datasheet.**
+  LCSC serves its "document not available" page as `C10425.pdf` with
+  `Content-Type: text/html`; the leading bytes now decide what a file is, so
+  186 such pages moved from `scan` to `none`. One of them is a current copy
+  and needs a real datasheet.
+- **The fetcher learns which user agent a host accepts.** Infineon and
+  Nexperia refuse `curl` and serve a browser string; onsemi does the reverse.
+  A refusal retries with the other string and the answer is remembered per
+  host. The 11 empty Infineon downloads in the audit log were this.
+- **A saved URL is fetched at once**, not at the nightly run.
+- **Clean-up endpoints.** `GET /api/datasheets/restamps` lists the history
+  the byte rule wrote; `POST /api/datasheets/restamps/collapse` folds it into
+  the surviving version and drops the orphaned files.
+
 ## 2026-09-07 — Order page layout, device list sorting, sort hints
 
 - **Sync plugin 1.4.1 quarantines the duplicates iCloud makes at install.**

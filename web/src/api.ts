@@ -167,6 +167,8 @@ export interface DatasheetVersionInfo {
   text_layer: TextLayer;
   page_count: number | null;
   text_pages: number | null;
+  /** Revision label parsed from the document ("Rev. B", "SLVSF14B"), or null. */
+  doc_revision: string | null;
 }
 
 /** Can this document be searched and read, or are its pages only images?
@@ -198,6 +200,10 @@ export interface DatasheetRow {
   text_layer: TextLayer;
   page_count: number | null;
   text_pages: number | null;
+  /** Revision label of the CURRENT stored copy, or null when none parsed. */
+  doc_revision: string | null;
+  /** Other components whose current copy is the very same stored file. */
+  shared_with: string[];
   versions: DatasheetVersionInfo[];
 }
 
@@ -922,10 +928,14 @@ export async function renderTemplateSource(
 
 export interface DatasheetFetchResult {
   id: number;
-  /** "new_version" | "unchanged" | "skipped_unstable_non_pdf" | "no_url" */
+  /** "new_version" | "unchanged" | "restamped" (same text, re-signed bytes —
+   *  nothing stored) | "skipped_unstable_non_pdf" | "no_url" */
   result: string;
   version_no?: number;
   component_bumped_to?: number | null;
+  /** new_version only: the bytes were already held for another component. */
+  relinked?: boolean;
+  doc_revision?: string | null;
   has_file: boolean;
   filename: string | null;
   content_type: string | null;
@@ -1144,6 +1154,10 @@ export interface DatasheetFetchStatus {
   errors: number;
   /** Of `unchanged`, how many the supplier settled with a 304 (no download). */
   not_modified: number;
+  /** Re-signed PDFs with identical text: nothing stored. */
+  restamped: number;
+  /** New versions that reused bytes already held for another component. */
+  relinked: number;
   started_at: string | null;
   finished_at: string | null;
   last_error: string | null;
@@ -1154,6 +1168,13 @@ export interface DatasheetFetchStatus {
   last_nightly_at: string | null;
   datasheets_total: number;
   datasheets_with_local_copy: number;
+  storage: {
+    documents: number;
+    document_bytes: number;
+    versions: number;
+    documents_shared_by_several_datasheets: number;
+    hosts_learned: number;
+  };
 }
 
 export function getKicadConfig(signal?: AbortSignal): Promise<KicadConfig> {

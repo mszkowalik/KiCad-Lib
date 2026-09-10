@@ -1671,11 +1671,24 @@ export default function ComponentDetail() {
                         ) : (
                           <span className="null ds-nofile">no local copy</span>
                         )}
+                        {d.doc_revision ? (
+                          <span className="ds-revision mono" title="Revision label parsed from the document">
+                            {d.doc_revision}
+                          </span>
+                        ) : null}
                         <TextLayerTag
                           layer={d.text_layer}
                           pages={d.page_count}
                           textPages={d.text_pages}
                         />
+                        {d.shared_with && d.shared_with.length > 0 ? (
+                          <span
+                            className="ds-shared muted"
+                            title={`The same stored file is the current datasheet of: ${d.shared_with.join(", ")}`}
+                          >
+                            shared with {d.shared_with.length}
+                          </span>
+                        ) : null}
                         {d.versions.length > 1 ? (
                           <details className="ds-history">
                             <summary>history ({d.versions.length})</summary>
@@ -1694,6 +1707,7 @@ export default function ComponentDetail() {
                                   </a>{" "}
                                   · {new Date(v.fetched_at).toLocaleDateString()} ·{" "}
                                   {Math.round(v.size_bytes / 1024)} kB{" "}
+                                  {v.doc_revision ? <>· {v.doc_revision} </> : null}
                                   <TextLayerTag
                                     layer={v.text_layer}
                                     pages={v.page_count}

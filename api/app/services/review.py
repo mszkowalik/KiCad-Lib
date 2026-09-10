@@ -518,6 +518,14 @@ def carry_component(db: Session, comp: M.Component, old_cv, new_cv) -> dict | No
     ok, why = signoff.data_carries(old_cv, new_cv)
     if not ok:
         return {"carried": False, "reason": f"component data: {why}"}
+    # A verification says "the data matches the documentation". Unchanged data
+    # against a NEW datasheet revision is not verified — the sign-off (the
+    # part is still the same part) carries, the review record does not.
+    from .datasheet_store import datasheet_carries
+
+    ok, why = datasheet_carries(db, old_cv, new_cv)
+    if not ok:
+        return {"carried": False, "reason": why}
 
     record = M.ReviewRecord(
         subject_kind="component", subject_id=comp.id, subject_version_id=new_cv.id,

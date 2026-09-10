@@ -24,12 +24,15 @@ from ..services.datasheet_store import (
     BadDocument,
     FETCH_STATE,
     classify_counts,
+    collapse_restamps,
     current_version,
     fetch_datasheet,
     find_broken,
+    find_restamps,
     purge_broken,
     start_fetch_all,
     start_text_layer_classify,
+    storage_stats,
     store_upload,
 )
 from ..services.mirror import top_level_of, update_mirror_symbols
@@ -58,7 +61,7 @@ def fetch_status(db: Session = Depends(get_db)):
     with_copy = db.query(M.Datasheet).filter(M.Datasheet.archived.is_(False),
                                              M.Datasheet.current_version_id.isnot(None)).count()
     return {**FETCH_STATE, "datasheets_total": total, "datasheets_with_local_copy": with_copy,
-            "text_layer_counts": classify_counts(db)}
+            "text_layer_counts": classify_counts(db), "storage": storage_stats(db)}
 
 
 class ClassifyBody(BaseModel):
@@ -93,7 +96,62 @@ def broken(db: Session = Depends(get_db)):
 @router.delete("/broken")
 def purge(request: Request, db: Session = Depends(get_db)):
     """Remove every document `GET /broken` lists. Audited per row."""
-    return purge_broken(db, actor=actor_of(request))
+    res = purge_broken(db, actor=actor_of(request))
+    if res.get("documents_dropped"):
+        from ..db import engine
+        from ..services.datasheet_migrate import reclaim_space
+
+        res["reclaim_started"] = reclaim_space(engine)
+    return res
+
+
+@router.get("/restamps")
+def restamps(db: Session = Depends(get_db)):
+    """Every stored version that repeats the document before it — the
+    history the byte-identity rule wrote when a vendor re-signed the same
+    PDF. A dry run of `POST /restamps/collapse`. Needs the classification
+    backfill to have finished (`GET /classify-status`), or documents without
+    a text hash yet compare by bytes and never match."""
+    return {"items": find_restamps(db), "classify": CLASSIFY_STATE}
+
+
+@router.post("/restamps/collapse")
+def restamps_collapse(request: Request, db: Session = Depends(get_db)):
+    """Fold every restamped version into the one it repeats: pins move, the
+    survivor keeps the newest validators, orphaned documents are deleted.
+    Audited per row. A table rewrite starts afterwards to hand the disk
+    back — watch it on `GET /api/datasheets/storage`."""
+    if CLASSIFY_STATE["running"]:
+        raise HTTPException(409, "the classification backfill is still running — "
+                                 "wait for it, or the collapse misses documents")
+    res = collapse_restamps(db, actor=actor_of(request))
+    if res["documents_dropped"]:
+        from ..db import engine
+        from ..services.datasheet_migrate import reclaim_space
+
+        res["reclaim_started"] = reclaim_space(engine)
+    return res
+
+
+@router.get("/storage")
+def storage(db: Session = Depends(get_db)):
+    """How much the stored corpus is, how much of it is shared, and the state
+    of the last table rewrite."""
+    from ..services.datasheet_migrate import VACUUM_STATE
+
+    return {**storage_stats(db), "reclaim": VACUUM_STATE}
+
+
+@router.post("/storage/reclaim")
+def storage_reclaim():
+    """Rewrite the datasheet tables so deleted files leave the disk. Takes an
+    exclusive lock on them for the duration, so it runs in the background."""
+    from ..db import engine
+    from ..services.datasheet_migrate import reclaim_space
+
+    if not reclaim_space(engine):
+        raise HTTPException(409, "a table rewrite is already running")
+    return {"status": "started"}
 
 
 class IndexBody(BaseModel):
@@ -192,6 +250,7 @@ def fetch(ds_id: int, db: Session = Depends(get_db)):
         "content_type": cur.content_type if cur else None,
         "size_bytes": cur.size_bytes if cur else None,
         "fetched_at": cur.fetched_at.isoformat() if cur else None,
+        "doc_revision": cur.doc_revision if cur else None,
     }
 
 

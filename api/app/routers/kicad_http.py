@@ -118,9 +118,11 @@ def datasheets_by_component(db: Session, comp_ids) -> dict[int, list[M.Datasheet
     """Every component's datasheet rows, one query, WITHOUT the stored PDFs.
 
     `injected_props` reads only `content_type` and `filename` off the current
-    version, but `DatasheetVersion.data` holds the whole document — lazy-loading
-    the relationship pulled a component's PDFs (megabytes) into memory just to
-    decide whether a link should point at the local copy.
+    version. `content_type` lives on the version's `Document`, whose `data`
+    column is deferred, so eager-loading the document row costs a few small
+    columns per version and never the PDF — lazy-loading per row used to pull
+    a component's PDFs (megabytes) into memory just to decide whether a link
+    should point at the local copy.
     """
     comp_ids = list(comp_ids)
     if not comp_ids:
@@ -128,7 +130,7 @@ def datasheets_by_component(db: Session, comp_ids) -> dict[int, list[M.Datasheet
     rows = (
         db.query(M.Datasheet)
         .filter(M.Datasheet.component_id.in_(comp_ids))
-        .options(selectinload(M.Datasheet.versions).defer(M.DatasheetVersion.data))
+        .options(selectinload(M.Datasheet.versions).selectinload(M.DatasheetVersion.document))
         .order_by(M.Datasheet.component_id, M.Datasheet.position)
         .all()
     )

@@ -26,7 +26,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, deferred, mapped_column, relationship
 
 from .db import Base
 
@@ -474,9 +474,10 @@ class ComponentPrice(Base):
 class Datasheet(Base):
     """Datasheet identity — component-scoped, multiple per component. The
     first (position 0) maps to KiCad's native Datasheet field; the rest are
-    emitted as hidden custom fields ("Datasheet 2", ...). The downloaded
-    documents live in DatasheetVersion rows (immutable, content-addressed);
-    current_version_id points at the latest fetched content."""
+    emitted as hidden custom fields ("Datasheet 2", ...). The fetched history
+    lives in DatasheetVersion rows; the bytes themselves live ONCE per
+    distinct content in `Document` (see there). current_version_id points at
+    the latest version that carried a real content change."""
 
     __tablename__ = "datasheets"
 
@@ -496,53 +497,139 @@ class Datasheet(Base):
     __table_args__ = (UniqueConstraint("component_id", "position", name="uq_datasheet_position"),)
 
 
+class Document(Base):
+    """One distinct file, stored ONCE, addressed by its bytes (user decision
+    2026-09-10: "don't duplicate files, just relink them").
+
+    Before this table each DatasheetVersion carried its own copy of the PDF.
+    Three TPS7A20 variants therefore held the same 2.4 MB TI document three
+    times, and TI re-signs every PDF about every two days with nothing but
+    the ModDate changed, so one datasheet had accumulated 32 byte-different,
+    text-identical copies. The row here is what a version POINTS AT; two
+    versions of two components that fetched the same bytes share one row.
+
+    Two identities live side by side:
+
+    ``sha256``      the bytes. Unique. Answers "have we stored exactly this
+                    file before" — the dedupe key on every store.
+    ``text_sha256`` the extracted text of every page, whitespace-collapsed.
+                    Answers "is this the same document" — the REVISION key.
+                    A re-signed PDF has a new sha256 and the same text hash;
+                    a real revision changes both. NULL for a scan (no text)
+                    and for non-PDF files, where the byte hash is the only
+                    identity there is.
+    ``doc_revision`` the revision label parsed from the PDF metadata or the
+                    first/last page ("SLVSF14B", "Rev. C", "Revised March
+                    2023"). Informational: it goes in the note and the UI. It
+                    never decides — vendors edit text without touching the
+                    label, and the text hash catches that.
+    ``page_hashes`` per-page text hashes, so a revision change can say WHICH
+                    pages changed without re-opening the old file.
+
+    The classification columns (`text_layer`, `page_count`, `text_pages`) and
+    the page index marker moved here from DatasheetVersion: they describe the
+    bytes, so they belong to the bytes. `data` is deferred — every list view
+    reads the small columns and must never drag megabytes along.
+    """
+
+    __tablename__ = "documents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sha256: Mapped[str] = mapped_column(String(64), unique=True)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    data: Mapped[bytes] = deferred(mapped_column(LargeBinary))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # "" = not classified yet, then "text" | "mixed" | "scan" | "none" | "error".
+    # See services/datasheet_store.classify_text_layer.
+    text_layer: Mapped[str] = mapped_column(String(10), default="", server_default="")
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    text_pages: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    text_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    doc_revision: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    page_hashes: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # When the per-page extraction last ran. NULL = never, which is what the
+    # backfill sweep claims. A separate marker rather than "has any page
+    # rows", because a non-PDF legitimately yields ZERO pages.
+    pages_indexed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    versions: Mapped[list["DatasheetVersion"]] = relationship(back_populates="document")
+
+
 class DatasheetVersion(Base):
-    """An immutable downloaded copy of a datasheet. A new version is created
-    only when the downloaded content's sha256 differs from the current one."""
+    """One fetch of a datasheet row that carried a CONTENT change — an entry
+    in the row's history, pointing at the `Document` that holds the bytes.
+
+    A new version is created only when the fetched document's text differs
+    from the current one (or, for files without text, its bytes). A vendor
+    re-signing the same PDF refreshes the validators on the current version
+    and creates nothing — that is what keeps the history readable.
+
+    `filename`, `fetched_at` and the HTTP validators are per fetch and stay
+    here; everything that describes the bytes lives on the document and is
+    proxied below for the readers that predate the split."""
 
     __tablename__ = "datasheet_versions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     datasheet_id: Mapped[int] = mapped_column(ForeignKey("datasheets.id"))
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"))
     version_no: Mapped[int] = mapped_column(Integer)
     filename: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    size_bytes: Mapped[int] = mapped_column(Integer)
-    sha256: Mapped[str] = mapped_column(String(64))
-    data: Mapped[bytes] = mapped_column(LargeBinary)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    # Validators from the response that produced this copy, replayed as
-    # If-None-Match / If-Modified-Since by the nightly re-check so an
-    # unchanged document costs one 304 instead of a full download.
-    # (Added by startup migration; NULL on rows fetched before it landed.)
+    # Validators from the response that produced (or last confirmed) this
+    # copy, replayed as If-None-Match / If-Modified-Since by the nightly
+    # re-check so an unchanged document costs one 304 instead of a download.
     etag: Mapped[str | None] = mapped_column(String(300), nullable=True)
     last_modified: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    # Is this document searchable, or are its pages only images? Classified
-    # ONCE, at store time, because deciding it means opening the PDF and
-    # walking every page — far too expensive to redo on each list render.
-    # "" = not classified yet (what the startup backfill looks for), then
-    # "text" | "mixed" | "scan" | "none" (not a PDF) | "error".
-    # See services/datasheet_store.classify_text_layer.
-    # (Added by startup migration; "" on rows stored before it landed.)
-    text_layer: Mapped[str] = mapped_column(String(10), default="", server_default="")
-    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    text_pages: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # When the per-page extraction last ran for this version. NULL = never,
-    # which is what the backfill sweep claims. It is a separate marker rather
-    # than "does this version have any DatasheetPage rows", because a non-PDF
-    # legitimately yields ZERO pages and would otherwise be retried for ever.
-    # (Added by startup migration.)
-    pages_indexed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
 
     datasheet: Mapped[Datasheet] = relationship(back_populates="versions")
+    document: Mapped[Document] = relationship(back_populates="versions")
 
     __table_args__ = (UniqueConstraint("datasheet_id", "version_no", name="uq_datasheet_version"),)
 
+    # Read-through to the document, for the readers written before the split.
+    @property
+    def data(self) -> bytes:
+        return self.document.data
+
+    @property
+    def sha256(self) -> str:
+        return self.document.sha256
+
+    @property
+    def size_bytes(self) -> int:
+        return self.document.size_bytes
+
+    @property
+    def content_type(self) -> str | None:
+        return self.document.content_type
+
+    @property
+    def text_layer(self) -> str:
+        return self.document.text_layer
+
+    @property
+    def page_count(self) -> int | None:
+        return self.document.page_count
+
+    @property
+    def text_pages(self) -> int | None:
+        return self.document.text_pages
+
+    @property
+    def text_sha256(self) -> str | None:
+        return self.document.text_sha256
+
+    @property
+    def doc_revision(self) -> str | None:
+        return self.document.doc_revision
+
 
 class DatasheetPage(Base):
-    """One page of an archived datasheet, extracted for search and navigation.
+    """One page of an archived document, extracted for search and navigation.
 
     A DERIVED CACHE, never an authority. The layout extractor preserves the
     row/column association of a table and recovers the text drawn inside a
@@ -553,20 +640,21 @@ class DatasheetPage(Base):
     "OSC32_OUTPC15-"). So these rows are for FINDING a page. Every value that
     enters the library is still read off the page image.
 
-    Keyed on ``datasheet_version_id``, which is immutable, so a row never goes
-    stale: new PDF content is a new version and gets its own pages. Rebuildable
-    from the stored PDF at any time (``services/datasheet_pages.py``).
+    Keyed on ``document_id``: the bytes are immutable, so a row never goes
+    stale, and a document shared by three components is extracted once.
+    Rebuildable from the stored file at any time
+    (``services/datasheet_pages.py``).
 
     ``extract_kind`` is the load-bearing column and the page-level twin of
-    ``DatasheetVersion.text_layer``. An empty ``content`` must never be
-    ambiguous: the layout extractor returns zero characters on a scanned page
-    in 0.08s with no error, so an unmarked empty row would make search return
-    nothing and let a reader conclude the page is blank."""
+    ``Document.text_layer``. An empty ``content`` must never be ambiguous:
+    the layout extractor returns zero characters on a scanned page in 0.08s
+    with no error, so an unmarked empty row would make search return nothing
+    and let a reader conclude the page is blank."""
 
     __tablename__ = "datasheet_pages"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    datasheet_version_id: Mapped[int] = mapped_column(ForeignKey("datasheet_versions.id"))
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"))
     page_no: Mapped[int] = mapped_column(Integer)  # 1-based, as printed and as read_datasheet takes it
     # Markdown, not plain text: tables keep their grid and figure text is
     # fenced in picture-text markers. Column is `content` and not `text`
@@ -586,9 +674,28 @@ class DatasheetPage(Base):
     has_table: Mapped[bool] = mapped_column(Boolean, default=False)
 
     __table_args__ = (
-        UniqueConstraint("datasheet_version_id", "page_no", name="uq_datasheet_page"),
-        Index("ix_datasheet_page_version", "datasheet_version_id"),
+        UniqueConstraint("document_id", "page_no", name="uq_document_page"),
+        Index("ix_datasheet_page_document", "document_id"),
     )
+
+
+class FetchHost(Base):
+    """What one supplier host accepts from our fetcher.
+
+    No single request shape works everywhere (measured 2026-09-10): Infineon
+    and Nexperia answer 403 or a WAF challenge to `curl/8.1` and serve a
+    browser string, onsemi does the exact opposite, Diodes and Renesas take
+    either. A fetch tries the remembered agent first and the other on refusal;
+    the one that worked is written here so the next night gets it right first
+    time. Rows are learned, never configured."""
+
+    __tablename__ = "fetch_hosts"
+
+    host: Mapped[str] = mapped_column(String(253), primary_key=True)
+    user_agent: Mapped[str] = mapped_column(String(300))
+    last_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class ComponentVersionDatasheet(Base):

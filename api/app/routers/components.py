@@ -62,7 +62,9 @@ def _prices_json(p: M.ComponentPrice | None) -> dict | None:
     }
 
 
-def _datasheets_json(rows: list[M.Datasheet]) -> list[dict]:
+def _datasheets_json(db: Session, rows: list[M.Datasheet]) -> list[dict]:
+    from ..services.datasheet_store import shared_with
+
     out = []
     for d in rows:
         cur = next((v for v in d.versions if v.id == d.current_version_id), None)
@@ -82,11 +84,15 @@ def _datasheets_json(rows: list[M.Datasheet]) -> list[dict]:
             "text_layer": (cur.text_layer or "") if cur else "",
             "page_count": cur.page_count if cur else None,
             "text_pages": cur.text_pages if cur else None,
+            # The revision label parsed from the document, and the other
+            # components whose current copy is the very same stored file.
+            "doc_revision": cur.doc_revision if cur else None,
+            "shared_with": shared_with(db, cur.document_id, d.component_id) if cur else [],
             "versions": [
                 {"version_no": v.version_no, "fetched_at": v.fetched_at.isoformat(),
                  "size_bytes": v.size_bytes, "sha256": v.sha256[:12],
                  "text_layer": v.text_layer or "", "page_count": v.page_count,
-                 "text_pages": v.text_pages}
+                 "text_pages": v.text_pages, "doc_revision": v.doc_revision}
                 for v in d.versions
             ],
         })
@@ -295,7 +301,7 @@ def version_detail(comp_id: int, version_no: int, db: Session = Depends(get_db))
         "component_name": comp.name,
         # Component-scoped (identical across versions): auto-managed data.
         "prices": _prices_json(_price_row(db, comp.id)),
-        "datasheets": _datasheets_json(_datasheet_rows(db, comp.id)),
+        "datasheets": _datasheets_json(db, _datasheet_rows(db, comp.id)),
         # Version-scoped pins: which exact PDF content THIS version used.
         "datasheet_pins": [
             {"datasheet_id": link.datasheet_id,
@@ -465,6 +471,14 @@ def create_version(comp_id: int, body: VersionCreate, request: Request,
     carried = res["signoff"]
     db.commit()
 
+    # A row that got a URL in this save has no local copy yet. Fetch it now,
+    # in the background, instead of leaving the part without its PDF until
+    # the nightly run. No-op when every row already has one.
+    if body.datasheets is not None:
+        from ..services.datasheet_store import start_fetch_component
+
+        start_fetch_component(comp.id)
+
     mirror_result = refresh_mirror_for_component(db, settings, comp, res["tops"])
 
     comp = _get_component(db, comp_id)  # reload with relationships
@@ -624,7 +638,7 @@ async def add_file(
     cv = current_version(comp)
     if cv is not None:
         update_mirror_symbols(db, settings, {top_level_of(cv.category).name})
-    return {**result, "datasheets": _datasheets_json(_datasheet_rows(db, comp.id))}
+    return {**result, "datasheets": _datasheets_json(db, _datasheet_rows(db, comp.id))}
 
 
 _MODEL_PREFIX_MARKERS = ("${SEVENSIGMA_DIR}/3DModels/", "3DModels/")

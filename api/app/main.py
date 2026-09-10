@@ -252,23 +252,11 @@ _PHASE1_DDL = (
     ("review_records.checklist_items",
      "ALTER TABLE review_records ADD COLUMN IF NOT EXISTS checklist_items jsonb"),
     # Which archived datasheets are searchable PDFs and which are pure scans.
-    # A scan is invisible to text search AND unreadable by the agent's
-    # read_datasheet — it returns blank pages and the verification silently
-    # rests on the rendered images alone. Making the distinction visible is
-    # what lets the library be swept and the scans replaced.
-    # "" means "not classified yet" and is what the startup backfill claims.
-    ("datasheet_versions.text_layer",
-     "ALTER TABLE datasheet_versions ADD COLUMN IF NOT EXISTS "
-     "text_layer varchar(10) NOT NULL DEFAULT ''"),
-    ("datasheet_versions.page_count",
-     "ALTER TABLE datasheet_versions ADD COLUMN IF NOT EXISTS page_count integer"),
-    ("datasheet_versions.text_pages",
-     "ALTER TABLE datasheet_versions ADD COLUMN IF NOT EXISTS text_pages integer"),
-    # Per-page extraction (services/datasheet_pages.py). The marker is on the
-    # VERSION and not derived from "has any page rows", because a non-PDF
-    # legitimately yields zero pages and would be retried on every sweep.
-    ("datasheet_versions.pages_indexed_at",
-     "ALTER TABLE datasheet_versions ADD COLUMN IF NOT EXISTS pages_indexed_at timestamptz"),
+    # The searchable-PDF classification (text_layer, page_count, text_pages)
+    # and the page-index marker used to be columns here on datasheet_versions.
+    # Since 2026-09-10 they live on `documents`, which create_all builds whole;
+    # services/datasheet_migrate.py moved the data and dropped the old columns.
+    # Never re-add them — the migration keys off `datasheet_versions.data`.
     # The search vector is a GENERATED column, so it can never disagree with
     # the content beside it — no trigger to forget and no app code to skip.
     # The config is `simple` and must stay identical to
@@ -745,6 +733,12 @@ def startup() -> None:
         log.warning(f"startup schema block did not complete: {type(e).__name__}: {e}")
     _ensure_phase1_schema()
     _ensure_dedup_indexes()
+    # Datasheet bytes into the content-addressed `documents` table. Must run
+    # AFTER create_all (which builds the empty table) and after the phase-1
+    # DDL (the pages' generated tsv column). Idempotent — see the module.
+    from .services.datasheet_migrate import migrate_to_documents
+
+    migrate_to_documents(engine)
     _migrate_run_sales()
     try:
         from .db import SessionLocal
@@ -917,7 +911,10 @@ def health_schema():
     and a feature that depends on a column which was never added fails somewhere
     far away from the cause. This is where to look first.
     """
-    failed = {k: v for k, v in _SCHEMA_RESULTS.items() if v != "ok"}
+    from .services.datasheet_migrate import RESULT as _DOC_MIGRATION
+
+    _SCHEMA_RESULTS.update(_DOC_MIGRATION)
+    failed = {k: v for k, v in _SCHEMA_RESULTS.items() if v not in ("ok", "skipped")}
     return {
         "ok": not failed,
         "statements": _SCHEMA_RESULTS,

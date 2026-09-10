@@ -1196,10 +1196,15 @@ dl.kv {
   padding: 0 18px 12px;
 }
 
+/* Wraps, because the row carries a variable number of chips — the file
+   button, the parsed revision, the text-layer tag, "shared with N", the
+   history toggle — and the card is a narrow column. Without wrapping the
+   file button is squeezed until its name disappears behind the next chip. */
 .ds-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 6px 10px;
   padding: 5px 18px;
   min-width: 0;
 }
@@ -1221,7 +1226,7 @@ dl.kv {
   align-items: center;
   gap: 7px;
   min-width: 0;
-  max-width: 60%;
+  max-width: 100%;
   padding: 5px 12px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -5416,3 +5421,18 @@ a.check-cell:hover {
 .th-sort { display: block; width: 100%; text-align: inherit; }
 .sort-hint { font-size: 9px; margin-left: 4px; opacity: 0.3; }
 .th-sort:hover .sort-hint { opacity: 1; color: var(--accent); }
+
+/* Datasheet card: the parsed revision label and the shared-file marker. */
+.ds-revision {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ds-shared {
+  flex-shrink: 0;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: help;
+}
