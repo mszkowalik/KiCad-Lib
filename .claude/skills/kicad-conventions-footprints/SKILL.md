@@ -2,7 +2,7 @@
 name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints, and the naming standard: the KLC tier rule (Tier 0 stock names are frozen), the twelve-slot field order, decided spellings (_HandSoldering, vendor tokens, no rotation in names), the 7Sigma: namespace, validator-enforced pad/silk/fab/courtyard style, the 0.1mm grid, NPTH mechanical holes, thermal vias, non-electrical parts, and why connector pad numbering always follows the datasheet. Use when naming, picking or authoring any footprint."
 ---
-<!-- platform-skill: conventions-footprints v27 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v28 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 Footprints live in the `7Sigma:` namespace and are always referenced as
@@ -95,9 +95,11 @@ What this rules out:
   in `fp.land_pattern` on the new footprint and say the shared land covers the
   lead — do not draw them.
 - **Snapping the shared numbers differently.** `SW_Push-4P_SPST_SMD_6x6mm_H7mm_…`
-  sat at y = ±2.30 while its siblings sat at ±2.25, a 0.05 mm import
-  artefact, until 2026-09-06. Same family, same file, byte for byte apart from
-  the name, `Value` and model.
+  sat at y = ±2.30 while its siblings sat at ±2.25 until 2026-09-06, when
+  all four were aligned on ±2.25 — and then moved to ±2.30 on 2026-09-10,
+  because ±2.25 is off the 0.1 mm grid and this is not a fine-pitch part
+  (§5). Same family, same file, byte for byte apart from the name, `Value`
+  and model.
 - **Reusing a wrong-height model to avoid drawing one.** Height is the whole
   point of the family split. If no vendor model exists at the right height,
   build one: `SW_Push-4P_SPST_SMD_6x6mm_H16mm_XKBConnection_TS-1102S-C-X-B`
@@ -109,9 +111,10 @@ What this rules out:
 
 The shared land for the 6x6 mm SMD tactile family is the copper of
 `SW_Push-4P_SPST_SMD_6x6mm_H4.3mm_Kinghelm_KH-6X6X4.3H-STM`: pads 1.6 x 1.4 mm
-at (±4.0, ±2.25), `roundrect_rratio 0.2`, silk segments at x = ±3 and y = ±3
-broken clear of the pads, a 1.4 mm actuator circle, courtyard ±5.0 x ±3.2,
-`Cmts.User` pin-1 circle centred on pad 1. When a member of the family is
+at (±4.0, ±2.3), `roundrect_rratio 0.2`, silk segments at x = ±3 and y = ±3
+broken clear of the pads, a 1.4 mm actuator circle, courtyard ±5.1 x ±3.3,
+`Cmts.User` pin-1 circle centred on pad 1 (all on the 0.1 mm grid since
+2026-09-10). When a member of the family is
 corrected, correct every member the same way in the same session.
 
 This does not license re-cutting a land that is genuinely different: a
@@ -627,6 +630,16 @@ Pad centres and sizes belong on the **0.1 mm grid**. Two exceptions:
 When snapping, round pad sizes to `0.1 x n` too. If the across-edge dimension
 shifts, move the pad **outward** (away from the body) so the lead toe stays
 covered.
+
+**The first exception is for fine pitch only. A coarse pitch that happens to
+end in 0.05 is snapped.** A 4.5 mm lead pitch puts the pads at y = ±2.25, and
+the 6x6 mm SMD tactile family was published there on 2026-09-06 with a comment
+citing the "pitch-axis exception". That was a misreading: the exception
+exists because a 0.5 mm-pitch lead is 0.3 mm wide and a 0.05 mm shift eats a
+sixth of the overlap, while a 0.7 mm tact-switch foot on a 1.4 mm pad has
+0.3 mm to spare on each side. Mateusz Kowalik corrected it on 2026-09-10: the
+family now sits at ±2.3, outward per the rule above. Before invoking the
+exception, check the pitch — below 1 mm it may apply, above it does not.
 
 ## 6. Mechanical holes must be NPTH
 
