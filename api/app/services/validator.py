@@ -19,7 +19,7 @@ import re
 from sqlalchemy.orm import Session
 
 from .. import models as M
-from .generator import build_excluded
+from .generator import build_excluded, off_board
 from .mirror import top_level_of
 from .templates import TEMPLATE_RE
 
@@ -406,11 +406,28 @@ def validate_component(db: Session, cv: M.ComponentVersion, comp: M.Component) -
     # a description, and it still goes through the review axis.
     sim_only = build_excluded(top_level_of(cv.category).name) if cv.category else False
 
+    # An OFF-BOARD part: it is in the library and it does sit on a schematic,
+    # but it has no land pattern — a cabled antenna, an RF pigtail, an
+    # enclosure. It was the third class of footprint-less part and the only one
+    # with no branch here, so `cmp.required_props` and `cmp.footprint_ref` both
+    # failed by construction on every one of them, and a human had to answer
+    # `na` by hand on each. Same predicate the generator uses, so what the
+    # validator forgives and what KiCad is told cannot drift apart: the base
+    # symbol must DECLARE `(on_board no)` — an empty Footprint alone still
+    # fails, which is what keeps this from forgiving a forgotten one.
+    sv = cv.symbol_version
+    off_board_part = off_board(
+        bool(sv is not None and re.search(r"\(on_board\s+no\)", sv.source_text or "")),
+        bool((props.get("Footprint") or "").strip()),
+    )
+
     if not comp.in_library:
         # BOM-only part: no symbol, no footprint, no KiCad emission.
         items.append(_item("cmp.required_props", "na", "BOM-only part"))
         items.append(_item("cmp.footprint_ref", "na", "BOM-only part"))
-    elif sim_only:
+    elif sim_only or off_board_part:
+        why = ("simulation-only part — excluded from the board" if sim_only
+               else "off-board part — no land pattern, base symbol declares on_board no")
         required = [k for k in rules.get("required_properties", ["Footprint", "ki_description"])
                     if k != "Footprint"]
         missing = [k for k in required if k not in props]
@@ -418,8 +435,7 @@ def validate_component(db: Session, cv: M.ComponentVersion, comp: M.Component) -
             items.append(_item("cmp.required_props", "failed", "missing: " + ", ".join(missing)))
         else:
             items.append(_item("cmp.required_props", "checked"))
-        items.append(_item("cmp.footprint_ref", "na",
-                           "simulation-only part — excluded from the board"))
+        items.append(_item("cmp.footprint_ref", "na", why))
     else:
         required = rules.get("required_properties", ["Footprint", "ki_description"])
         missing = [k for k in required if k not in props]

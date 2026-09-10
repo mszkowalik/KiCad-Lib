@@ -2,7 +2,7 @@
 name: kicad-conventions-library
 description: "House style for component data: canonical manufacturer names (with the full raw-to-canonical lookup table), ki_description {Key} templating per category, the Value field rule, and category-placement rules. Read before proposing a new component or editing an existing one's properties."
 ---
-<!-- platform-skill: conventions-library v26 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-library v27 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Library conventions
 
@@ -175,7 +175,7 @@ alphabetically by canonical value.)
 | MaxLinear | (none — internal capital, see exceptions above) |
 | MDD (Microdiode Semiconductor) | MDD, Microdiode, Microdiode Semiconductor |
 | MEAN WELL | Mean Well |
-| MyAntenna | (none — internal capital A is the company's own form: "MyAntenna RF Technology Co., Ltd" on its datasheet letterhead and legal line, and LCSC's brand page reads the same. Do not write "Myantenna" or "My Antenna". Shenzhen antenna and RF-cable maker, imyantenna.com; first used on AEWW031 and the ACA-* pigtails, 2026-09-06) |
+| MyAntenna | (none — internal capital A is the company's own form: "MyAntenna RF Technology Co., Ltd" on its datasheet letterhead and legal line, and LCSC's brand page reads the same. Do not write "Myantenna" or "My Antenna". Shenzhen antenna and RF-cable maker, imyantenna.com; first used on AEWW031, 2026-09-06; the ACA-* pigtail this line originally claimed alongside it did not exist until ACA-RFSMA-K TO IPEX1 001 was added 2026-09-10) |
 | Murata | muRata, MURATA, Murata Electronics (a regional-subsidiary name mistakenly applied library-wide by a prior pass — always normalize back to plain "Murata") |
 | OMRON | Omron Electronics, OMRON (raw feed value — previously misjudged as distributor-shout and wrongly Title-Cased when it was actually already correct) |
 | onsemi | ON Semiconductor, ONSEMI, On Semiconductor |
@@ -319,6 +319,22 @@ instead of being silently changed:
 If a maintainer wants either renamed, do it as one dedicated base-symbol pass
 across every affected sibling at once, not piecemeal.
 
+**RESOLVED 2026-09-11 — `VSWR`, not `V.S.W.R`.** RF carried both spellings for
+the same quantity: four on-board antennas on `V.S.W.R` (`ACS0301U`,
+`BWGNSCNX9-9W2`, `GPS1003`, `KH5220-A36`) and four cabled parts on `VSWR`
+(`AEWW031`, `BW4GJWX195-13KJ`, and the two RF pigtails). Two keys for one
+quantity means a `{Key}` template, a parametric filter or a future family
+standard silently reaches half the category. **The house spelling is `VSWR`** —
+the ordinary unpunctuated acronym, matching every other acronym key here. All
+four `V.S.W.R` parts were renamed in one pass; the category now reads one way.
+
+This is also the worked example of when such a rename is cheap. A property key
+is NOT in `NON_MATERIAL_KEYS`, so renaming one blocks the verification and
+sign-off carry and the part comes back unreviewed. All four were unreviewed and
+unsigned, and no `ki_description` referenced the key, so the pass cost nothing.
+**Check both of those before renaming a key on a signed part** — on a verified
+one, the rename costs the verification.
+
 ### Templates already standardized
 
 | Category / sub-family | Template |
@@ -352,6 +368,7 @@ across every affected sibling at once, not piecemeal.
 | ICs / Analog switches — multiplexers (TMUX1208 family) | `{Channels} Analog Multiplexer {Footprint_Name}` |
 | ICs / Voltage-level translators (TI TXSxxxxE) | `{Bit Width} Bidirectional Level Translator {VCCA Range}/{VCCB Range} {Footprint_Name}` |
 | ICs / Winbond serial NOR flash memory (W25Qxx) | `{Capacity} {Voltage Range} {Max Frequency} SPI {Footprint_Name}` |
+| RF / Coaxial pigtail (I-PEX/U.FL to SMA or RP-SMA) | `<Manufacturer> <MPN> RF coaxial pigtail, {Connector}, {Cable Type} {Cable Length}, {Frequency Range}, {Impedance}, VSWR {VSWR}` — manufacturer and MPN spelled literally then the specs templated, following the cabled-antenna parts (`146153-0050`, `AEWW031`). `Connector` names BOTH ends in one string and is the property that actually matters: a pigtail is chosen by what it mates with, and SMA vs RP-SMA differ only in the centre contact, so spell out the gender (`I-PEX Gen 1 plug to SMA female (SMA-K) bulkhead jack`). Beware the Chinese datasheet form — `外螺内孔` reads like RP-SMA to an English reader and is a standard SMA JACK, because the jack carries the external thread and the plug carries the coupling nut. No `Insertion Loss` property: only one of the two published a figure for the assembly, and a key that half a pair of two carries cannot be templated. Written 2026-09-10 for `BWIPX1-SMA-1.13L100` and `ACA-RFSMA-K TO IPEX1 001` |
 | ICs / Current and power monitor (TI INA2xx digital monitors) | `{ADC Resolution} {Interface} Current and Power Monitor {Common Mode Range} {Footprint_Name}` — written 2026-08-27 for `INA238AQDGSRQ1` (I2C) and `INA239AQDGSRQ1` (SPI), which are the same die and the same VSSOP-10 package and differ ONLY in the serial interface, so `Interface` is the discriminator a reader needs on the sheet. `Common Mode Range` and the supply come from the datasheet's **Recommended Operating Conditions**, never from Absolute Maximum Ratings — for these two parts the common-mode figure happens to be −0.3V~85V in both tables while the supply is 2.7V~5.5V recommended against 6V absolute, so taking the abs-max column would have shipped a wrong supply range. Add `Supply Voltage` as a property even though the template does not print it |
 
 ### Power ratings (`Power`) — one spelling per rating

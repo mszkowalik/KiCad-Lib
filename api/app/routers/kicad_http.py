@@ -22,10 +22,12 @@ from .. import models as M
 from ..config import settings
 from ..db import get_db
 from ..services.generator import (
+    base_declares_off_board,
     base_hidden_maps,
     base_reference_prefixes,
     build_excluded,
     injected_props,
+    off_board,
     schematic_field_visibility,
     sim_excluded,
     sim_props,
@@ -141,7 +143,8 @@ def datasheets_by_component(db: Session, comp_ids) -> dict[int, list[M.Datasheet
 
 
 def part_payload(cv, sheets: list[M.Datasheet], visible: dict[str, bool], sim_link: dict | None = None,
-                 reference_prefix: str = "", top_category: str = "") -> dict:
+                 reference_prefix: str = "", top_category: str = "",
+                 base_off_board: bool = False) -> dict:
     """One part in KiCad's part shape — the SAME body for the per-part endpoint
     and for each entry of a category listing.
 
@@ -225,7 +228,17 @@ def part_payload(cv, sheets: list[M.Datasheet], visible: dict[str, bool], sim_li
         # sheet lives in the same project as the board, so a stimulus part that
         # does not say it is off the BOM lands in the purchase order.
         "exclude_from_bom": "true" if build_excluded(top_category) else "false",
-        "exclude_from_board": "true" if build_excluded(top_category) else "false",
+        # Off-board parts, by the same must-be-stated argument, and this is the
+        # record that decides it: KiCad places from the HTTP part, so a cabled
+        # antenna or an RF pigtail that does not say it is off the board is
+        # pushed onto the board with no footprint to place. The mirror's
+        # `.kicad_sym` cannot carry this on its own — see `off_board`.
+        "exclude_from_board": (
+            "true"
+            if build_excluded(top_category)
+            or off_board(base_off_board, bool((fields.get("footprint", {}).get("value") or "").strip()))
+            else "false"
+        ),
         "fields": fields,
     }
 
@@ -240,6 +253,7 @@ def part_payloads(db: Session, versions: list) -> list[dict]:
     bases = base_hidden_maps(db, {cv.base_component for cv in versions})
     sim_links = resolve_sim_links(db, [])  # warnings surface on mirror writes, not here
     refs = base_reference_prefixes(db, {cv.base_component for cv in versions})
+    off = base_declares_off_board(db, {cv.base_component for cv in versions})
     return [
         part_payload(
             cv,
@@ -248,6 +262,7 @@ def part_payloads(db: Session, versions: list) -> list[dict]:
             sim_links.get(cv.symbol_version.symbol_id) if cv.symbol_version else None,
             refs.get(cv.base_component, ""),
             top_level_of(cv.category).name if cv.category else "",
+            off.get(cv.base_component, False),
         )
         for cv in versions
     ]

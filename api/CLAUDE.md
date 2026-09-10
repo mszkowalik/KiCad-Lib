@@ -1826,6 +1826,50 @@ Facts that are not obvious from the code:
     category too**, next to the symbol versions and the link set. Moving the last
     component out of `Simulation` changes the base library with no symbol version
     touched, and without the categories in the hash the flag lags.
+- **`on_board` has a SECOND source: an off-board part** (`generator.off_board`,
+  2026-09-11). The category rule above covers a part that is not built at all;
+  this one covers a part that IS built and bought but has no land pattern — a
+  cabled antenna, an RF pigtail, an enclosure with no drawn outline. It is
+  off-board when **the base symbol declares `(on_board no)` AND the component has
+  no footprint**, and both halves are load-bearing:
+  - Without the declaration, a component whose `Footprint` is merely FORGOTTEN
+    would silently drop off the board — exactly the defect `cmp.footprint_ref`
+    exists to catch.
+  - Without the footprint test, the 17 `TERMINAL_BLOCK_PLUG` components would
+    drop off too. That symbol declares `(on_board no)` while every component on
+    it carries the deliberate `TerminalBlock_Plug_Invisible` land, which has been
+    placed on real boards for as long as the generator was overriding the
+    declaration. Honouring the declaration alone would make the next
+    `Update PCB from Schematic` DELETE those footprints from existing boards.
+
+  **Before this, `set_build_exclusions` forced `on_board = True` for everything
+  outside `Simulation`, so a base symbol's `(on_board no)` was silently thrown
+  away** — verified on the live mirror 2026-09-10: `Antenna_Cabled` and
+  `RF_Pigtail` were emitted `(on_board yes)` despite both sources saying `no`,
+  and the `Antenna_Cabled` v1 comment's claim that this is what stops KiCad
+  reporting a missing footprint was simply not in force for six parts.
+
+  Three things follow. **`off_board` is called by BOTH writers of KiCad data** —
+  the mirror through `set_build_exclusions(…, has_footprint=bool)` and
+  `kicad_http.part_payload` for `exclude_from_board` — because KiCad places from
+  the HTTP record, so patching only the `.kicad_sym` changes nothing in anyone's
+  schematic (the same trap `exclude_from_sim` documents above). **The base
+  library passes `has_footprint=None`**, which means "keep the drawing's own
+  declaration": there is no component there and so no footprint to test, and the
+  drawing is the only place that intent is authored. And **`in_bom` is
+  deliberately NOT derived from the base symbol**: several carry an `(in_bom no)`
+  this library does not mean — `RPi_CM5` is a Compute Module 5, a real purchased
+  part — so honouring that token would drop the most expensive line on the board
+  out of every BOM. Whether a part is bought is `Component.purchasable`.
+- **`validator.validate_component` shares that predicate**, so what the validator
+  forgives and what KiCad is told cannot drift. An off-board part answers
+  `cmp.required_props` / `cmp.footprint_ref` as `na`, alongside the existing
+  BOM-only (`in_library=False`) and simulation-only branches. It was the third
+  class of footprint-less part and the only one with no branch, so both machine
+  items **failed by construction** on every cabled antenna, pigtail and
+  footprint-less enclosure, and a human had to answer `na` by hand on each. The
+  safety net survives because the predicate needs the symbol's declaration: an
+  empty `Footprint` on an ordinary part still fails.
 - **KiCad's embedded ngspice runs `ngbehavior=ps lt a`** (Compatibility mode
   "PSpice and LTSpice", `schematic.ngspice.model_mode` 4 in the `.kicad_pro`; 0 is
   "User configuration" and applies no flags). In that mode `$` is NOT a comment —

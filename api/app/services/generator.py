@@ -407,7 +407,38 @@ def build_excluded(top_category: str) -> bool:
     return top_category == SIM_ONLY_CATEGORY
 
 
-def set_build_exclusions(symbol, top_category: str) -> None:
+def off_board(base_declares_no: bool, has_footprint: bool) -> bool:
+    """True for a component that belongs on a schematic but not on a board.
+
+    An off-board part is one whose base symbol DECLARES `(on_board no)` and
+    that has no footprint: a cabled antenna, an RF pigtail, an enclosure. Both
+    halves are required, and each rules out a case the other would get wrong:
+
+    - Without the declaration, every component whose `Footprint` is merely
+      MISSING would silently drop off the board — the exact defect
+      `cmp.footprint_ref` exists to catch.
+    - Without the footprint test, the 17 terminal-block plugs would drop off
+      too. `TERMINAL_BLOCK_PLUG` declares `(on_board no)` but every component
+      on it carries the deliberate `TerminalBlock_Plug_Invisible` land, which
+      has been placed on real boards for as long as this generator has been
+      forcing `on_board yes`. Honouring the declaration alone would make the
+      next `Update PCB from Schematic` DELETE those footprints from existing
+      boards.
+
+    Both writers of KiCad data must agree here, so both call this: the mirror's
+    `.kicad_sym` (through `set_build_exclusions`) and the HTTP catalog record
+    that KiCad actually places from.
+    """
+    return base_declares_no and not has_footprint
+
+
+def off_board_part(symbol, has_footprint: bool) -> bool:
+    """`off_board` for a caller holding a kiutils Symbol built from the base
+    drawing, where `onBoard is False` IS the declaration (None = absent)."""
+    return off_board(symbol.onBoard is False, has_footprint)
+
+
+def set_build_exclusions(symbol, top_category: str, has_footprint: bool | None = None) -> None:
     """Force `in_bom` and `on_board` from the top-level category.
 
     Forced in both directions, like `set_exclude_from_sim`: moving a part OUT
@@ -420,10 +451,37 @@ def set_build_exclusions(symbol, top_category: str) -> None:
     simulation-only part would otherwise reappear in the BOM after every
     symbol update, and the harness sheets are included in the same project as
     the board.
+
+    `has_footprint` says which library is being written, and the two want
+    different things:
+
+    - A bool — the per-category component library. `on_board` is DERIVED:
+      forced on for an ordinary part, off for an `off_board_part`. Category
+      still wins, so a Simulation part stays off either way.
+    - None — the deduplicated base-symbol library (`7Sigma_Base.kicad_sym`),
+      where there is no component and therefore no footprint to test. The
+      drawing's own `(on_board no)` is the only place that intent is authored,
+      so it is KEPT rather than overwritten. Before this, the base library
+      reported `Antenna_Cabled`, `RF_Pigtail` and `TERMINAL_BLOCK_PLUG` as
+      on-board, discarding what their authors wrote.
+
+    `in_bom` is NOT derived from the base symbol, on purpose. Several base
+    symbols carry a `(in_bom no)` this library does not mean — `RPi_CM5` is a
+    Compute Module 5, a real purchased part, and honouring that token would
+    drop the most expensive line on the board out of every BOM. Whether a part
+    is bought is the component's `purchasable` flag, not a symbol attribute.
     """
     excluded = build_excluded(top_category)
     symbol.inBom = not excluded
-    symbol.onBoard = not excluded
+    if excluded:
+        symbol.onBoard = False
+    elif has_footprint is None:
+        # Base library: keep the drawing's own `(on_board no)`, but still STATE
+        # the answer — an absent token is read as "included", and the point of
+        # forcing these at all is that the library record must not be silent.
+        symbol.onBoard = symbol.onBoard is not False
+    else:
+        symbol.onBoard = not off_board_part(symbol, has_footprint)
 
 
 _BASE_REF_BY_SYMBOL_VERSION: dict[int, str] = {}
@@ -459,6 +517,48 @@ def base_reference_prefixes(db, names) -> dict[str, str]:
         for svid in missing:
             _BASE_REF_BY_SYMBOL_VERSION.setdefault(svid, "")
     return {name: _BASE_REF_BY_SYMBOL_VERSION[svid] for name, svid in by_name.items()}
+
+
+_BASE_OFF_BOARD_BY_SYMBOL_VERSION: dict[int, bool] = {}
+
+
+def base_declares_off_board(db, names) -> dict[str, bool]:
+    """`{base_component: the drawing says (on_board no)}` for many at once.
+
+    Same batching contract as `base_reference_prefixes`. The HTTP catalog needs
+    this because KiCad places from the HTTP record, not from the base
+    `.kicad_sym`: `part_payload` has to decide `exclude_from_board` for itself,
+    and half of that answer lives in the symbol source.
+
+    Read straight out of the source text rather than through kiutils — this
+    sits on the symbol chooser's critical path, and one regex over ~50 cached
+    templates is much cheaper than parsing each library.
+    """
+    from .. import models as M
+
+    names = {n for n in names if n}
+    if not names:
+        return {}
+    by_name = {
+        name: svid
+        for name, svid in db.query(M.Symbol.name, M.Symbol.current_version_id)
+        .filter(M.Symbol.name.in_(names))
+        .all()
+        if svid
+    }
+    missing = {svid for svid in by_name.values() if svid not in _BASE_OFF_BOARD_BY_SYMBOL_VERSION}
+    if missing:
+        for svid, text in (
+            db.query(M.SymbolVersion.id, M.SymbolVersion.source_text)
+            .filter(M.SymbolVersion.id.in_(missing))
+            .all()
+        ):
+            _BASE_OFF_BOARD_BY_SYMBOL_VERSION[svid] = bool(
+                re.search(r"\(on_board\s+no\)", text or "")
+            )
+        for svid in missing:
+            _BASE_OFF_BOARD_BY_SYMBOL_VERSION.setdefault(svid, False)
+    return {name: _BASE_OFF_BOARD_BY_SYMBOL_VERSION[svid] for name, svid in by_name.items()}
 
 
 def injected_props(datasheets) -> list[dict]:

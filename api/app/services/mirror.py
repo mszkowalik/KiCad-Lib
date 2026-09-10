@@ -187,7 +187,10 @@ def write_symbol_libs(db: Session, settings: Settings, only_tops: set[str] | Non
                     template, comp.name, props, cv.removed_properties, warnings
                 )
                 set_exclude_from_sim(built, sv.symbol_id in sim_links)
-                set_build_exclusions(built, top_name)
+                # bool, not None: this is the component library, so on_board is
+                # derived — an off-board part (no land pattern, base symbol says
+                # on_board no) must not be pushed onto the board.
+                set_build_exclusions(built, top_name, has_footprint=bool((fp_ref or "").strip()))
                 syms.append(built)
                 component_count += 1
             except Exception as e:
