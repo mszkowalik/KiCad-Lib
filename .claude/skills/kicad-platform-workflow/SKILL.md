@@ -2,7 +2,7 @@
 name: kicad-platform-workflow
 description: "How changes become library: every write publishes immediately (no draft gate, no Proposals view), a publish regenerates the KiCad libraries and file mirror with no manual build, geometry publishes repoint the components on them, which changes carry a verification across a new version and which strip it, what mirror warnings mean, where the retired YAML pipeline went, and who handles platform setup. Use when asked how to publish, rebuild or regenerate."
 ---
-<!-- platform-skill: platform-workflow v9 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: platform-workflow v10 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Platform workflow — how changes become library
 
 Postgres is the source of truth. Every symbol, footprint, component and skill is
@@ -110,6 +110,26 @@ Regeneration reports **mirror warnings** rather than failing. The usual one is
 component doesn't carry. The publish still lands; the warning means the
 generated description is wrong and the component needs a follow-up edit
 ([[add-component]]).
+
+### When a user's KiCad sees it
+
+The platform side is done at the publish. The user's side has three clocks, and
+none of them needs a KiCad restart (decision record 0006 in the repo,
+2026-09-10):
+
+- **The HTTP catalog** — part records, fields, `7S Version`, the footprint a
+  part names — refreshes inside KiCad every 2 minutes. KiCad 10 re-fetches it
+  in a background thread; no menu action, IPC command or plugin can force it,
+  so "publish, then wait up to two minutes" is the honest answer.
+- **Base symbols, footprints and 3D models** arrive when the user presses
+  **Sync 7Sigma Library** in the PCB editor. The sync writes only what changed,
+  fetches 3D models as a per-file delta, and records the two content packages
+  in KiCad's Plugin and Content Manager as current and pinned — the PCM is for
+  installing once and for updating the Sync plugin itself, never for library
+  updates. KiCad re-reads a changed library file on its next use.
+- **Parts already placed** on a board or schematic are copies. They change only
+  through Tools → Update Footprints / Symbols from Library, and nothing on the
+  platform can do that for the user.
 
 ## Geometry publishes also repoint the components
 
