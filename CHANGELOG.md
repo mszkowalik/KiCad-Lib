@@ -146,6 +146,55 @@
   embedded in the file: download `7Sigma.kicad_httplib` again from Setup and
   replace the installed copy.
 
+## 2026-09-10 — Built means finished and passed; the Aqua history, again
+
+- **The shelf no longer holds units nobody can pick up.** Stock per batch used
+  to add the quantity typed on the production run to the devices recorded in
+  it, which claimed 118 units that exist in no record and $1,700 at cost —
+  four on Dongle Batch 1 against 521 real devices, 44 on Batch 3, 67 on Aqua
+  Batch 5 — while two other batches read as 113 and 47 units "overdrawn". A
+  batch that has any device record is now counted from its devices and from
+  nothing else; the typed quantity rides along as `qty_recorded` so a wrong
+  run quantity stays visible. Only a batch with **no** device records at all,
+  which is the V3 prototype runs, is still counted from its quantity, and that
+  is the one remaining source of an unserialized unit. See
+  [decision 0007](docs/decisions/0007-built-means-finished-and-passed.md),
+  which overrides item 8 of [decision 0003](docs/decisions/0003-orders-shipments-and-device-history.md).
+- **A board that never passed is not stock.** The retro import had written a
+  `produced` event for every imported device, failed ones included, so 82
+  boards whose newest programming or test run failed sat on the shelf and
+  could be picked for a shipment. They are unbuilt until a later run passes.
+  Production after the pass: dongles 4,429 passed, 4,366 shipped, 63 on the
+  shelf; Aqua 914, 867, 47.
+- **Every built batch stays on the shelf card.** The card selected rows by what
+  was left on them, so the moment `built` started counting passed devices, six
+  of seven dongle batches vanished — everything they held had shipped. The
+  filter now drops planned batches and keeps the rest, and **Recorded sits next
+  to Built**: a row is marked when built is above recorded, which is impossible
+  rather than merely unlucky. Dongle Batch 5 is recorded as 455 boards and has
+  568 devices, Batch 6 as 945 against 992. Under-building is ordinary attrition
+  and is not marked.
+- **347 more Aqua units were filed under the dongle.** The July re-attribution
+  used the functional test and the pushed GPIO template and called an untested
+  Aqua indistinguishable. It is not: every config report carries the device's
+  own `INFO1` line, `"Module":"CE_Aqua"` or `"Module":"CE_Dongle_v2"`. The
+  signal agrees with the test everywhere the two overlap — none of the 4,121
+  Module=Dongle devices ever ran the Aqua test, and all 584 Aqua-tested devices
+  are Module=Aqua.
+- **77 boards had two records each.** The 2025-11-05 firmware names a device by
+  its full MAC where earlier builds used the last three bytes, so a board
+  re-flashed after that date appeared as both `dongle_<6 hex>` and
+  `dongle_<12 hex>`. They are merged into the older record. One pair survived
+  the merge: `8BD26C` and `78:42:1C:8B:D2:6C` are a genuine three-byte
+  collision between two products.
+- **Two Aqua batches had been sold twice.** The run migration turned the build
+  quantity of runs 12 and 13 into orders of 315 and 200 units that no invoice
+  covers, on top of the real Aqua sales. Both orders are gone and the runs'
+  sale columns are blank, so the idempotent migration cannot recreate them.
+- Scripts: `docs/flasher/fix_aqua_attribution_2.py` and
+  `docs/flasher/fix_built_is_passed.py`, both dry-run by default. The reasoning
+  and the numbers are in `docs/flasher/design.md`.
+
 ## 2026-09-07 — Order page layout, device list sorting, sort hints
 
 - **Sync plugin 1.4.1 quarantines the duplicates iCloud makes at install.**

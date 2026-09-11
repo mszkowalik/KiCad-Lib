@@ -352,7 +352,18 @@ sign-off states to `STATUS_TONES`.
 - **Orders live on Production → Orders** (`pages/Orders.tsx`,
   `pages/OrderDetail.tsx`, decision 0003). The Orders page is also the ONE
   home of finished-device stock ("Devices on the shelf"), which counts
-  recorded devices next to legacy units without a serial. The Ship card
+  recorded devices next to legacy units without a serial. **That card lists
+  every batch that was built, empty or not** — it filters on `r.status`
+  (planned batches hold nothing yet) and NEVER on what is left on a row.
+  Selecting by `stock > 0 || overdrawn > 0` deleted six of seven dongle
+  batches from the page the day `built` started counting passed devices
+  instead of the typed run quantity (decision 0007), because everything they
+  held had shipped. A batch is a fact; its remaining stock is a number on it.
+  `Recorded` (`qty_recorded`, what the run says) sits beside `Built` (devices
+  that passed), and `overbuilt()` marks the row when built is above recorded —
+  the one impossible arithmetic left, since a device-tracked batch can no
+  longer report `overdrawn`. Under-building is ordinary attrition and is not
+  marked. The Ship card
   draws devices oldest-first from the batches the user ticks; returns,
   repairs and disposals are on the DEVICE page (`components/DeviceHistoryCard.tsx`),
   because they are events in a device's history. The run page's sale card

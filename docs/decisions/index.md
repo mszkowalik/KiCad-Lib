@@ -34,6 +34,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0003](0003-orders-shipments-and-device-history.md) | Sales orders, shipments and a per-device history replace the sale fields on a run | Backend, frontend, production, flasher |
 | [0004](0004-datasheet-identity-and-storage.md) | Store each datasheet once and version it by its text, not its bytes | Backend, datasheets, review |
 | [0005](0005-off-board-parts.md) | Treat a part as off-board when its base symbol declares it and it has no land pattern | Backend, KiCad output, review |
+| [0007](0007-built-means-finished-and-passed.md) | Count a batch by the devices that passed, not by the quantity typed on it (overrides item 8 of [0003](0003-orders-shipments-and-device-history.md)) | Backend, frontend, production, flasher |
 
 ## Proposed
 
