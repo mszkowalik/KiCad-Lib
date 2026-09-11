@@ -52,6 +52,33 @@
   --fs-mask: rgba(60, 150, 60, 0.35);
   --fs-finish: #e9c46a;
 
+  /* board stackup table (components/StackupTable.tsx). One colour per layer KIND,
+     so the eye finds copper, core and prepreg without reading a word. Altium's
+     stackup editor does the same job with green for the non-electrical layers and
+     one warm family for the build; these are that scheme on our own palette, kept
+     light enough that --text stays readable on every row. */
+  /* Copper is the one layer that carries current, so it is the one that is
+     saturated; the dielectrics stay neutral and separate only from each other by
+     value (core darker than prepreg). That gives the copper/dielectric alternation
+     you actually navigate by, without six warm shades competing. The non-electrical
+     layers keep Altium's green. --stk-*-ink is the same hue at drawing strength,
+     for the thickness rail. */
+  --stk-overlay: #dde8d9;
+  --stk-overlay-ink: #6d8a63;
+  --stk-mask: #a8d5b5;
+  --stk-mask-ink: #2f7d4e;
+  --stk-finish: #f2dfa8;
+  --stk-finish-ink: #a8842a;
+  --stk-copper: #f6c69c;
+  --stk-copper-ink: #b26a34;
+  --stk-core: #d8d2c7;
+  --stk-core-ink: #7d7566;
+  --stk-prepreg: #edeae2;
+  --stk-prepreg-ink: #9c9587;
+  --stk-dielectric: #e6e3dc;
+  --stk-dielectric-ink: #8d8779;
+  --stk-edge: rgba(27, 36, 48, 0.16);
+
   /* modal dialogs */
   --scrim: rgba(27, 36, 48, 0.35);
   --modal-shadow: 0 12px 40px rgba(27, 36, 48, 0.18);
@@ -100,6 +127,24 @@
     --sim-trace-3: #d69a62;
     --sim-trace-4: #ad8bf0;
     --sim-trace-5: #4fc4d6;
+
+    --stk-overlay: #2a3a2c;
+    --stk-overlay-ink: #7ea173;
+    --stk-mask: #1f4c36;
+    --stk-mask-ink: #4bbd84;
+    --stk-finish: #463a1d;
+    --stk-finish-ink: #d7a52f;
+    --stk-copper: #4b3320;
+    --stk-copper-ink: #d69a62;
+    /* Core darker than prepreg, the same way round as the light palette: a core is
+       the heavier, cured laminate and reads as the denser band. */
+    --stk-core: #262523;
+    --stk-core-ink: #9a9081;
+    --stk-prepreg: #35332e;
+    --stk-prepreg-ink: #837d71;
+    --stk-dielectric: #2c2b28;
+    --stk-dielectric-ink: #857f74;
+    --stk-edge: rgba(219, 227, 237, 0.16);
 
     --scrim: rgba(0, 0, 0, 0.55);
     --modal-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
@@ -5277,11 +5322,8 @@ a.check-cell:hover {
 /* ------------------------------------------------------------ field solver */
 .fs-page { display: flex; flex-direction: column; gap: 12px; }
 .fs-board-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.fs-gridwrap { overflow-x: auto; margin: 10px 0; }
-.fs-grid td, .fs-grid th { vertical-align: top; }
 /* A dielectric row is data, not commentary. It is told apart from a copper
    row by its fill, not by dim letters. */
-.fs-grid tr.fs-diel td { background: var(--surface-2); }
 .fs-prof .fs-note { display: block; font-weight: 400; }
 .fs-cell { cursor: pointer; border-left: 2px solid transparent; }
 .fs-cell.on { border-left-color: var(--accent); background: var(--accent-soft); }
@@ -5436,3 +5478,229 @@ a.check-cell:hover {
   white-space: nowrap;
   cursor: help;
 }
+
+/* ======================================================= board stackup table */
+/* components/StackupTable.tsx. Colour carries the layer KIND (the background) and,
+   in compare mode, the verdict (the right edge only) — two meanings that must never
+   compete for the same pixels. Rows are dense and tabular on purpose: this is a
+   stackup you navigate, not a chart you read once. */
+
+/* Fixed layout with widths summing to 100%, per the house rule: no table in the
+   platform scrolls sideways and no row folds. The stackup has more columns than
+   most, so the widths are declared per mode. */
+.stk-wrap { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.stk { width: 100%; border-collapse: collapse; font-size: 12.5px; table-layout: fixed; }
+.stk th, .stk td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the Name cell holds the note bubble, so it may not clip its own children */
+.stk td.stk-name { overflow: visible; }
+
+/* With profile columns appended (the field solver) the built-in widths deliberately
+   sum to less than 100%: a fixed-layout table shares the remainder equally between the
+   columns that declare none, which is what the profiles want. */
+.stk-single.stk-has-extra col.stk-c-num { width: 3%; }
+.stk-single.stk-has-extra col.stk-c-rail { width: 5%; }
+.stk-single.stk-has-extra col.stk-c-name { width: 16%; }
+.stk-single.stk-has-extra col.stk-c-mat { width: 12%; }
+.stk col.stk-c-add { width: 7%; }
+.stk col.stk-c-act { width: 9%; }
+.stk td.stk-act { text-align: right; }
+.stk .stk-rowbtns { display: inline-flex; gap: 3px; align-items: center; white-space: nowrap; }
+.stk .stk-rowbtns .btn { padding: 0 6px; }
+.stk .stk-fixed { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+/* An editor row holds inputs and selects. They must not be clipped by the ellipsis
+   rules the read-only table needs, and a cell with two boxes in it has to be allowed
+   to show both. */
+.stk-edit td { padding: 3px 8px; overflow: visible; white-space: normal; }
+.stk-edit .text, .stk-edit select { width: 100%; max-width: none; }
+.stk-edit .fs-inline { display: flex; gap: 4px; align-items: center; }
+.stk-edit .fs-inline .text { width: auto; min-width: 0; flex: 1; max-width: none; }
+.stk-edit .fs-check { margin: 0; white-space: nowrap; }
+.stk-edit .fs-check input { flex: none; }
+.stk-single.stk-has-extra col.stk-c-t { width: 8%; }
+.stk-single.stk-has-extra col.stk-c-dk { width: 5%; }
+/* A profile cell is ONE line, like every other row: the stackup's rhythm depends on
+   a copper row being the same height as the dielectric rows around it. */
+.stk .fs-cell {
+  display: flex; align-items: center; gap: 4px;
+  margin: -4px -10px; padding: 4px 10px; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.stk .fs-cell input[type="checkbox"] { width: auto; margin: 0 2px 0 0; flex: none; }
+.stk .fs-cell > b { flex: none; }
+.stk .fs-cell > .muted { overflow: hidden; text-overflow: ellipsis; }
+.stk .fs-cell > .fs-z { flex: none; }
+.stk .fs-prof { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.stk .fs-prof .muted { font-weight: 400; text-transform: none; letter-spacing: 0; }
+/* the summary truncates; the remove button never does */
+.stk .fs-prof-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.stk .fs-prof-del { flex: none; padding: 0 6px; line-height: 1.4; font-size: 13px; }
+
+/* The "add a profile" column: one cell spanning the body, so the control sits at the
+   middle of the column a new profile will occupy. */
+.stk td.stk-add { vertical-align: middle; text-align: center; background: var(--surface); border-left: 1px solid var(--line); white-space: normal; }
+.stk th.stk-add { border-left: 1px solid var(--line); }
+.stk .stk-add-btn { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; line-height: 1.2; padding: 8px 6px; height: auto; }
+.stk .stk-add-btn .stk-add-plus { font-size: 17px; font-weight: 600; }
+.stk .stk-add-btn .stk-add-label { font-size: 10.5px; color: var(--muted); text-transform: none; }
+
+.stk-single col.stk-c-num { width: 5%; }
+.stk-single col.stk-c-rail { width: 9%; }
+.stk-single col.stk-c-name { width: 32%; }
+.stk-single col.stk-c-mat { width: 34%; }
+.stk-single col.stk-c-t { width: 12%; }
+.stk-single col.stk-c-dk { width: 8%; }
+
+.stk-compare col.stk-c-num { width: 4%; }
+.stk-compare col.stk-c-rail { width: 6%; }
+.stk-compare col.stk-c-name { width: 30%; }
+.stk-compare col.stk-c-mat { width: 15%; }
+.stk-compare col.stk-c-t { width: 10%; }
+.stk-compare col.stk-c-dk { width: 7%; }
+.stk-compare col.stk-c-check { width: 11%; }
+
+/* The editor needs room for controls where the read-only table needs room for words:
+   the mask row alone carries two number boxes in the thickness cell. */
+.stk-edit col.stk-c-num { width: 4%; }
+.stk-edit col.stk-c-rail { width: 4%; }
+.stk-edit col.stk-c-name { width: 15%; }
+.stk-edit col.stk-c-mat { width: 22%; }
+/* the mask row puts TWO unit-carrying boxes in this cell, each with its own marker */
+.stk-edit col.stk-c-t { width: 16%; }
+.stk-edit col.stk-c-dk { width: 21%; }
+.stk-edit col.stk-c-act { width: 18%; }
+
+.stk th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--surface-2); color: var(--muted);
+  font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+  font-weight: 600; text-align: left; white-space: nowrap;
+  padding: 6px 10px; border-bottom: 1px solid var(--line);
+}
+.stk td { padding: 4px 10px; border-bottom: 1px solid var(--stk-edge); color: var(--text); }
+.stk tr:last-child td { border-bottom: none; }
+.stk .stk-right { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stk th.stk-grp { text-align: center; border-left: 1px solid var(--line); }
+.stk th.stk-sub2 { top: 27px; font-size: 10px; letter-spacing: 0.02em; }
+.stk .stk-sub { font-size: 9px; opacity: 0.8; }
+.stk .stk-verdict { white-space: nowrap; }
+.stk .stk-empty { padding: 14px; text-align: center; }
+/* A row's note appears on hover over its ⓘ. The browser's own `title` bubble takes
+   about a second to appear and cannot be styled or read on a touch screen, so the
+   marker carries the text itself. `position: static` on the row's cells would clip
+   it, hence the fixed-width bubble anchored to the marker. */
+.stk .stk-info { color: var(--muted); font-size: 11px; position: relative; cursor: help; }
+.stk .stk-info:hover, .stk .stk-info:focus-visible { color: var(--accent); }
+.stk .stk-tip {
+  position: absolute; left: 0; top: calc(100% + 6px); z-index: 5;
+  width: 320px; max-width: 60vw; padding: 7px 10px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--modal-shadow);
+  font-size: 11.5px; line-height: 1.4; white-space: normal; text-align: left;
+  opacity: 0; visibility: hidden; transition: opacity 0.12s;
+}
+.stk .stk-info:hover .stk-tip, .stk .stk-info:focus-visible .stk-tip { opacity: 1; visibility: visible; }
+/* the last rows would push their bubble off the bottom of the card */
+.stk tbody tr:nth-last-child(-n + 3) .stk-tip { top: auto; bottom: calc(100% + 6px); }
+.stk .stk-cell-bad { color: var(--err); font-weight: 700; }
+.stk .stk-num {
+  width: 30px; text-align: center; font-family: var(--mono); font-size: 11px;
+  color: var(--muted); border-right: 1px solid var(--stk-edge);
+}
+.stk .stk-name { font-weight: 600; white-space: nowrap; }
+.stk .stk-alias { font-weight: 400; color: var(--muted); }
+.stk .stk-mat { color: var(--muted); white-space: nowrap; }
+
+/* the proportional thickness rail — the graphical half of the table */
+.stk .stk-rail { padding: 4px 8px; }
+.stk .stk-bar { display: block; height: 10px; min-width: 3px; border-radius: 2px; opacity: 0.85; }
+
+/* one background per layer kind, and the rail in the same hue at drawing strength */
+.stk tr.stk-overlay { --stk-fill: var(--stk-overlay); --stk-ink: var(--stk-overlay-ink); }
+.stk tr.stk-paste { --stk-fill: var(--stk-overlay); --stk-ink: var(--stk-overlay-ink); }
+.stk tr.stk-mask { --stk-fill: var(--stk-mask); --stk-ink: var(--stk-mask-ink); }
+.stk tr.stk-finish { --stk-fill: var(--stk-finish); --stk-ink: var(--stk-finish-ink); }
+.stk tr.stk-copper { --stk-fill: var(--stk-copper); --stk-ink: var(--stk-copper-ink); }
+.stk tr.stk-core { --stk-fill: var(--stk-core); --stk-ink: var(--stk-core-ink); }
+.stk tr.stk-prepreg { --stk-fill: var(--stk-prepreg); --stk-ink: var(--stk-prepreg-ink); }
+.stk tr.stk-dielectric { --stk-fill: var(--stk-dielectric); --stk-ink: var(--stk-dielectric-ink); }
+.stk tbody td { background: var(--stk-fill); color: var(--stk-text, var(--text)); }
+/* a row painted in the board's own ink carries its own readable text colour */
+.stk tbody tr[style*="--stk-text"] .stk-mat,
+.stk tbody tr[style*="--stk-text"] .stk-derived,
+.stk tbody tr[style*="--stk-text"] .stk-info,
+.stk tbody tr[style*="--stk-text"] .muted { color: var(--stk-text); opacity: 0.78; }
+.stk tbody .stk-bar { background: var(--stk-ink); }
+
+/* a copper row reads as the electrically real one */
+.stk tbody .stk-copper .stk-num { color: var(--text); font-weight: 700; }
+.stk tbody .stk-copper .stk-name { color: var(--stk-copper-ink); }
+
+/* the verdict, on the right edge only */
+.stk .stk-v-match td:last-child { box-shadow: inset -3px 0 0 var(--ok); }
+.stk .stk-v-differs td:last-child { box-shadow: inset -3px 0 0 var(--err); }
+.stk .stk-v-note td:last-child { box-shadow: inset -3px 0 0 var(--warn); }
+.stk .stk-v-none td:last-child { box-shadow: inset -3px 0 0 var(--line); }
+.stk tr.stk-v-differs .stk-name { color: var(--err); }
+
+.stk tr.stk-pick { cursor: pointer; }
+.stk tr.stk-pick:hover td:not(.stk-num) { filter: brightness(1.06); }
+/* Selection is a left bar and a tint, not a box: an inset outline on every cell of a
+   fixed-layout row draws a grid of internal lines. */
+/* A blue wash over an orange copper row mixes to mud, so selection keeps the layer's
+   own colour and is marked at the edge instead. */
+.stk tr.stk-sel .stk-num { box-shadow: inset 3px 0 0 var(--accent); font-weight: 700; }
+.stk tr.stk-sel .stk-name { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+
+.stk-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 8px 0 0; font-size: 11.5px; color: var(--muted); }
+.stk-legend-note { flex: 1 1 220px; min-width: 0; }
+.stk-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.stk-chip { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--stk-edge); display: inline-block; }
+.stk-chip.stk-overlay { background: var(--stk-overlay); border-color: var(--stk-overlay-ink); }
+.stk-chip.stk-mask { background: var(--stk-mask); border-color: var(--stk-mask-ink); }
+.stk-chip.stk-finish { background: var(--stk-finish); border-color: var(--stk-finish-ink); }
+.stk-chip.stk-copper { background: var(--stk-copper); border-color: var(--stk-copper-ink); }
+.stk-chip.stk-core { background: var(--stk-core); border-color: var(--stk-core-ink); }
+.stk-chip.stk-prepreg { background: var(--stk-prepreg); border-color: var(--stk-prepreg-ink); }
+
+/* ------------------------------------------------- unit-carrying number field */
+/* components/SiInput.tsx. A bad value is marked on the box itself and explained
+   behind the marker beside it, rather than in a banner somewhere else on screen. */
+.si-wrap { display: inline-flex; align-items: center; gap: 4px; min-width: 0; width: 100%; }
+.si-wrap > .text { min-width: 0; flex: 1; }
+.si-bad > .text { border-color: var(--err); background: var(--err-soft); color: var(--err); }
+.si-help {
+  position: relative; flex: none; cursor: help; color: var(--muted);
+  font-size: 11px; line-height: 1; width: 14px; text-align: center;
+}
+.si-bad .si-help {
+  color: var(--err); font-weight: 700; font-size: 12px;
+  border: 1px solid var(--err); border-radius: 50%; height: 14px;
+}
+.si-help:hover, .si-help:focus-visible { color: var(--accent); }
+.si-bad .si-help:hover, .si-bad .si-help:focus-visible { color: var(--err); }
+.si-tip {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 6;
+  width: 300px; max-width: 64vw; padding: 7px 10px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--modal-shadow);
+  font-size: 11.5px; line-height: 1.45; white-space: normal; text-align: left; font-weight: 400;
+  opacity: 0; visibility: hidden; transition: opacity 0.12s;
+}
+.si-help:hover .si-tip, .si-help:focus-visible .si-tip { opacity: 1; visibility: visible; }
+.si-tip-bad { display: block; color: var(--err); margin-bottom: 4px; }
+/* the derived half of a pair: reads as a sentence beside its box, never as a field */
+.stk .stk-derived { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ------------------------------------------------------------ board colour */
+/* The mask and legend a PROJECT picks. Swatches rather than a dropdown: the thing
+   being chosen is a colour, and a list of colour names is a worse way to show colours
+   than the colours themselves. */
+.stk-colors .fs-field { flex: 0 0 auto; }
+.swatches { display: inline-flex; gap: 5px; align-items: center; }
+.swatch {
+  width: 24px; height: 24px; padding: 0; border-radius: 5px; cursor: pointer;
+  border: 1px solid var(--line); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+.swatch:hover:not(:disabled) { transform: translateY(-1px); }
+.swatch.on { outline: 2px solid var(--accent); outline-offset: 2px; border-color: var(--accent); }
+.swatch:disabled { cursor: default; opacity: 0.6; }

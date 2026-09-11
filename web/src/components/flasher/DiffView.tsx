@@ -10,6 +10,7 @@ import {
 } from "../../api";
 import { ErrorBanner, Spinner } from "../Ui";
 import { fmtBytes, shortSha } from "./common";
+import { useModal } from "../modal";
 
 function stateClass(state: string): string {
   return state === "unchanged" ? "neutral" : state === "removed" ? "err" : state === "added" ? "ok" : "warn";
@@ -24,6 +25,7 @@ export default function DiffView({
   versions: DeploymentVersionRow[];
   onClose: () => void;
 }) {
+  const modal = useModal(() => onClose());
   const earlier = versions.filter((v) => v.id !== versionId);
   const [against, setAgainst] = useState<number | "">("");
   const [diff, setDiff] = useState<DeploymentDiff | null>(null);
@@ -43,8 +45,8 @@ export default function DiffView({
   const changedOnly = (rows: { state: string }[]) => rows.filter((r) => r.state !== "unchanged");
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="card pad modal-card modal-card-wide" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...modal.backdropProps}>
+      <div className="card pad modal-card modal-card-wide" {...modal.cardProps}>
         <div className="toolbar">
           <h2 className="card-title">Compare versions</h2>
           <select

@@ -385,6 +385,95 @@ nothing can render. For API-served bytes, pass the same-origin PATH (e.g.
 `Content-Disposition: inline`; without it the browser saves the file to Downloads
 instead of showing it (user preference, 2026-07-27).
 
+### ONE stackup table, and it is not a DataTable (`components/StackupTable.tsx`)
+
+Every view of a board stackup goes through it — the project's Stackup tab comparing a
+`.kicad_pcb` against the assigned stackup, the field solver showing the one it is
+solving on, and the stackup EDITOR. Three views, one component, so they cannot drift
+apart about what a layer is.
+
+- **The rows come from the server** (`field_state.stack_rows`), already aligned. The
+  page never pairs a board file against a stackup itself: the picture would then be
+  able to disagree with the verdict the platform computed, which is the one thing this
+  table must not do. The editor is the exception and shapes its own rows, because a
+  draft being typed into cannot round-trip per keystroke — shaping only, no tolerances.
+- **It is deliberately not a `DataTable`.** A stackup's ORDER is its meaning — the rows
+  are a physical sequence from the top of the board down — so a sortable header would
+  let a reader destroy the only thing it says, and sixteen rows have nothing to filter.
+  What the house rule protects (fixed layout, no sideways scroll, one line per row) is
+  honoured in the stylesheet, per mode, with widths summing to 100%.
+- **Colour carries the layer KIND; in compare mode a second colour carries the
+  VERDICT, on the right edge only** — two meanings that must never compete for the same
+  pixels. Copper is the saturated one because it is the layer that conducts;
+  dielectrics stay neutral and separate from each other by value, core darker than
+  prepreg in both themes.
+- **`renderCell` is what makes the editor the same table** rather than a second one
+  that drifts: it puts a control in a cell and falls back to the default rendering when
+  it returns `undefined`.
+- **Board colour is passed in, never read from the stackup** (decision 0008). A row
+  painted in the board's own ink carries its own text colour, chosen by WCAG relative
+  luminance — a black mask is a legal choice and the theme's text is unreadable on it.
+
+### Numbers that carry a unit: `SiInput` / `components/si.ts`
+
+Every dimension and frequency field in the stackup editor, the field solver and the
+production rules is an `SiInput`. Type `35um`, `0.035`, `1.4mil`, `2.4GHz`.
+
+- **A bare number means the field's base unit**, and the box re-prints itself with the
+  unit it used — so a misread is visible immediately instead of silent. `assume` /
+  `fixedUnit` are for a value STORED in something other than the base (µm rules).
+- **Display switches to µm below 50 µm, not below 1 mm.** A fab quotes laminates in
+  millimetres (prepreg 3313 is 0.0994 mm) and foils and coatings in micrometres
+  (copper 35 µm). At a 1 mm threshold the prepreg read as "99.4 um", which is not how
+  anyone quotes it.
+- **Copper thickness is validated against the foils that exist** (`COPPER_WEIGHTS`),
+  and the weight is READ OFF it — never computed by division, because 0.0152 ÷ 0.0348
+  rounds to the wrong weight. Both the nominal weight and the figure a fab publishes as
+  built are accepted: JLCPCB states its half-ounce inner layers as 15.2 µm, the etched
+  thickness, and marking the fab's own number as an error would be wrong.
+- **The solder mask over a trace is derived, not typed** — half the figure over the
+  substrate. Subtracting the copper thickness (the intuitive rule) gives −4.5 µm on
+  JLCPCB's published pair, because its 30.5 µm over substrate is THINNER than the 35 µm
+  copper it covers; a conformal coating thins over a raised feature instead of
+  levelling across it, and 1.2 mil / 0.6 mil is exactly half.
+
+### Every modal: `useModal` — locked page, click outside, Escape
+
+**Any overlay that covers the page goes through `useModal` in
+`components/modal.ts`.** It is three behaviours the platform applies everywhere, and
+the reason they live in one hook is that nine of the ten modals here had none of them:
+
+1. **The page behind does not scroll.** A wheel over a dialog scrolled the page under
+   it, so closing the dialog left the reader somewhere else. The lock pads `body` by
+   the scrollbar width, or everything behind the modal jumps sideways as it opens.
+2. **A click outside closes it** — on `mousedown`, not `click`: a press that starts
+   inside the card and releases outside (the end of a text selection, a dragged
+   slider) is not "clicking outside", and closing on it loses work mid-gesture.
+3. **Escape closes it.**
+
+```tsx
+const modal = useModal(() => setEditing(null), { active: !!editing });
+// ...
+<div className="modal-backdrop" {...modal.backdropProps}>
+  <div className="card pad modal-card" {...modal.cardProps}>
+```
+
+- **Escape is bound on `document`, never on the backdrop's `onKeyDown`.** A key
+  handler on an element only fires while focus is inside it, and focus sits on
+  `document.body` until something in the dialog takes it — so a backdrop-bound Escape
+  silently does nothing on any dialog that does not focus itself first. `RecheckDialog`
+  had to focus its own button to work around exactly this; new dialogs do not.
+- **`active` exists because several modals are rendered inside a `&&`**, and a hook
+  cannot be called conditionally. Call it at the top of the component and say whether
+  the modal is open.
+- **Both effects are stack-aware**, because modals nest: Escape reaches only the top
+  one, and the scroll lock lifts when the last one closes, not the first.
+- **A modal that must be answered passes `useModal(null, { active })`** — it still
+  locks the page, and neither Escape nor a click outside dismisses it. The bench's SIM
+  PIN prompt is the one case: a flashing run is waiting on the answer.
+- Dismissing goes through the same path as the dialog's own Cancel, so a confirm
+  dismissed by Escape resolves false — it never confirms by accident.
+
 ### No native browser popups — use the in-app dialog system
 
 Never call `window.confirm` / `window.prompt` / `window.alert` (or the bare

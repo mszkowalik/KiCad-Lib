@@ -29,6 +29,10 @@ class Material:
         self.manufacturer = d["manufacturer"]
         self.name = d["name"]
         self.kind = d["kind"]
+        # Where the material may be PUT, as opposed to what it is: "laminate",
+        # "soldermask", "conductor", "ambient". A mask and air are both dielectrics
+        # and neither belongs in a stackup gap.
+        self.use = d.get("use") or ("conductor" if d["kind"] == "conductor" else "laminate")
         self.source = d.get("source", "")
         self.points = d.get("points", [])
         self.sigma = d.get("sigma")
@@ -36,7 +40,7 @@ class Material:
     def to_dict(self) -> dict:
         return {
             "id": self.id, "manufacturer": self.manufacturer, "name": self.name,
-            "kind": self.kind, "source": self.source, "points": self.points,
+            "kind": self.kind, "use": self.use, "source": self.source, "points": self.points,
             "sigma": self.sigma,
         }
 

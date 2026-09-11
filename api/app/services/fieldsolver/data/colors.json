@@ -1,0 +1,68 @@
+{
+  "_note": "Board appearance. These belong to a PROJECT, never to a stackup: a stackup describes how a board conducts, and a green board and a red one built to the same stackup are electrically the same board. Keeping colour out of the stackup is what stops the library filling with one variant per colour. Source: JLCPCB's own order form (jlcpcb.com/quote, read 2026-09-11) — PCB Color offers Green, Purple, Red, Yellow, Blue, White, Black, and Silkscreen is not a free choice there: it is White on every mask except a White one, where it is Black. The hex values are REPRESENTATIVE swatches for drawing the board on screen. JLCPCB publishes no colour values, so these are not matched to its ink.",
+  "soldermask": [
+    {
+      "id": "green",
+      "name": "Green",
+      "hex": "#0d7038",
+      "ink": "#0a5a2d"
+    },
+    {
+      "id": "purple",
+      "name": "Purple",
+      "hex": "#4a2a78",
+      "ink": "#38205c"
+    },
+    {
+      "id": "red",
+      "name": "Red",
+      "hex": "#9c2020",
+      "ink": "#7a1919"
+    },
+    {
+      "id": "yellow",
+      "name": "Yellow",
+      "hex": "#c9a12a",
+      "ink": "#a07f1f"
+    },
+    {
+      "id": "blue",
+      "name": "Blue",
+      "hex": "#123a70",
+      "ink": "#0e2d57"
+    },
+    {
+      "id": "white",
+      "name": "White",
+      "hex": "#e6e6e2",
+      "ink": "#c2c2bd"
+    },
+    {
+      "id": "black",
+      "name": "Black",
+      "hex": "#1c1c1c",
+      "ink": "#2e2e2e"
+    }
+  ],
+  "silkscreen": [
+    {
+      "id": "white",
+      "name": "White",
+      "hex": "#f0f0ec",
+      "ink": "#cfcfc9"
+    },
+    {
+      "id": "black",
+      "name": "Black",
+      "hex": "#1a1a1a",
+      "ink": "#333333"
+    }
+  ],
+  "silkscreen_rule": {
+    "default": "white",
+    "by_mask": {
+      "white": "black"
+    },
+    "source": "jlcpcb.com/quote: the Silkscreen option offers White on every mask colour and Black when the mask is White."
+  }
+}

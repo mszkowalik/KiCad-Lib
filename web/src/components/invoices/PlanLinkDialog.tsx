@@ -21,6 +21,7 @@ import {
   type RunCostLineRow,
 } from "../../api";
 import { ErrorBanner, Spinner } from "../Ui";
+import { useModal } from "../modal";
 
 export default function PlanLinkDialog({
   line, projectId, projectName, currency, supplier, onClose,
@@ -32,6 +33,7 @@ export default function PlanLinkDialog({
   supplier: string;
   onClose: (changed: boolean) => void;
 }) {
+  const modal = useModal(() => onClose(false));
   const [items, setItems] = useState<CostItem[] | null>(null);
   const [choice, setChoice] = useState<string>(line.plan_key || "");
   const [newLabel, setNewLabel] = useState(line.label || "");
@@ -86,8 +88,8 @@ export default function PlanLinkDialog({
   };
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose(false)}>
-      <div className="card pad modal-card" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...modal.backdropProps}>
+      <div className="card pad modal-card" {...modal.cardProps}>
         <h2 className="card-title">Link to a planned cost</h2>
         <p className="card-subtitle">
           “{line.label || line.kind}” — {amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}{" "}

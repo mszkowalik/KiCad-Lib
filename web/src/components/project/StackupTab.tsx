@@ -6,18 +6,23 @@
  *  against the previous stackup are marked outdated rather than thrown away.
  */
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   errorMessage,
   fsAssignStackup,
   fsBoardState,
   fsDeleteProfile,
+  fsColors,
+  fsSetAppearance,
   fsStackups,
   isAbortError,
   type FsBoardState,
+  type FsColors,
   type FsComparison,
   type FsStackup,
 } from "../../api";
 import { useAuth } from "../../auth";
+import StackupTable, { StackupLegend } from "../StackupTable";
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner } from "../Ui";
 
@@ -40,15 +45,21 @@ export default function StackupTab({
   const dialog = useDialog();
   const [state, setState] = useState<FsBoardState | null>(null);
   const [stackups, setStackups] = useState<FsStackup[]>([]);
+  const [palette, setPalette] = useState<FsColors | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(
     (signal?: AbortSignal) => {
-      Promise.all([fsBoardState(projectId, board, snapshot?.id ?? null, signal), fsStackups(signal)])
-        .then(([s, list]) => {
+      Promise.all([
+        fsBoardState(projectId, board, snapshot?.id ?? null, signal),
+        fsStackups(signal),
+        fsColors(signal),
+      ])
+        .then(([s, list, cols]) => {
           setState(s);
           setStackups(list);
+          setPalette(cols);
         })
         .catch((e) => {
           if (!isAbortError(e)) setError(errorMessage(e));
@@ -75,6 +86,31 @@ export default function StackupTab({
     }
   };
 
+  /** The board's ink. A colour is written to the PROJECT, never to the stackup: the
+   *  library would otherwise need a copy of every stackup per colour, and the solver
+   *  cannot tell two of them apart. */
+  const setColor = async (patch: { mask_color?: string; silk_color?: string }) => {
+    if (!palette) return;
+    const mask = patch.mask_color ?? state?.revision?.mask_color ?? "";
+    // JLCPCB does not sell the legend as a free choice — white on every mask but a
+    // white one. Follow that when the mask changes, unless the user has already said
+    // otherwise for this board.
+    const silk =
+      patch.silk_color ??
+      (patch.mask_color !== undefined
+        ? palette.silkscreen_rule.by_mask[patch.mask_color] ?? palette.silkscreen_rule.default
+        : state?.revision?.silk_color ?? "");
+    setBusy(true);
+    setError("");
+    try {
+      setState(await fsSetAppearance(projectId, { mask_color: mask, silk_color: silk, board, snapshot_id: snapshot?.id ?? null }));
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const remove = async (id: number, name: string) => {
     if (!(await dialog.confirm(`Remove “${name}” from this board?`, { title: "Remove profile" }))) return;
     setBusy(true);
@@ -85,6 +121,15 @@ export default function StackupTab({
     } finally {
       setBusy(false);
     }
+  };
+
+  const maskColor = state?.revision?.mask_color ?? "";
+  const silkColor = state?.revision?.silk_color ?? "";
+  const inkOf = (list: FsColors["soldermask"] | undefined, id: string) =>
+    list?.find((c) => c.id === id)?.hex;
+  const boardInk = {
+    mask: inkOf(palette?.soldermask, maskColor),
+    silk: inkOf(palette?.silkscreen, silkColor),
   };
 
   if (!state) return <Spinner label="Loading the board's impedance work" />;
@@ -124,6 +169,52 @@ export default function StackupTab({
             </span>
           ) : null}
         </div>
+        {palette ? (
+          <div className="fs-row stk-colors">
+            <label className="fs-field">
+              <span>Solder mask colour</span>
+              <span className="swatches">
+                {palette.soldermask.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className={`swatch${maskColor === c.id ? " on" : ""}`}
+                    style={{ background: c.hex }}
+                    title={`${c.name} solder mask`}
+                    aria-label={`${c.name} solder mask`}
+                    aria-pressed={maskColor === c.id}
+                    disabled={busy}
+                    onClick={() => setColor({ mask_color: c.id })}
+                  />
+                ))}
+              </span>
+            </label>
+            <label className="fs-field">
+              <span>Silkscreen</span>
+              <span className="swatches">
+                {palette.silkscreen.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className={`swatch${silkColor === c.id ? " on" : ""}`}
+                    style={{ background: c.hex }}
+                    title={`${c.name} legend`}
+                    aria-label={`${c.name} legend`}
+                    aria-pressed={silkColor === c.id}
+                    disabled={busy}
+                    onClick={() => setColor({ silk_color: c.id })}
+                  />
+                ))}
+              </span>
+            </label>
+          </div>
+        ) : null}
+        <p className="muted fs-note">
+          The colour belongs to this board, not to the stackup — the same stackup in another colour is the same board
+          electrically, so choosing one here changes nothing in the library. The legend follows the mask the way the fab
+          sells it (white on everything but a white mask), and you can override it.
+        </p>
+
         <p className="muted fs-note">
           {snapshot
             ? `Applies from ${snapshot.ref_name || snapshot.sha.slice(0, 8)} forward; earlier commits keep what they had.`
@@ -135,7 +226,7 @@ export default function StackupTab({
 
       </section>
 
-      <BoardFileCheck state={state} />
+      <BoardFileCheck state={state} ink={boardInk} />
 
       <section className="card pad">
         <h2 className="card-title">Impedance profiles</h2>
@@ -148,6 +239,21 @@ export default function StackupTab({
             profile in the field solver and calculate it again.
           </div>
         ) : null}
+        <p className="muted fs-note">
+          A profile is built in the field solver — it needs a geometry and a solve — so this is the way across. The
+          solver opens on this board's stackup and saves back to this commit.
+        </p>
+        <div className="fs-row">
+          <Link
+            className="btn btn-sm btn-accent"
+            to={`/sim?tab=field${state.revision?.stackup_key ? `&stackup=${encodeURIComponent(state.revision.stackup_key)}` : ""}&project=${projectId}${
+              board ? `&board=${encodeURIComponent(board)}` : ""
+            }${snapshot ? `&snapshot=${snapshot.id}` : ""}`}
+          >
+            {state.profiles.length ? "Add or edit profiles in the field solver" : "Build a profile in the field solver"}
+          </Link>
+        </div>
+
         {state.profiles.length ? (
           <table className="data">
             <thead>
@@ -190,9 +296,7 @@ export default function StackupTab({
             </tbody>
           </table>
         ) : (
-          <p className="muted fs-note">
-            No profiles on this board yet. Build one in Simulator → Field solver and save it to this project.
-          </p>
+          <p className="muted fs-note">No profiles on this board yet.</p>
         )}
       </section>
     </div>
@@ -210,7 +314,7 @@ export default function StackupTab({
  *  Informational by design (user decision 2026-08-31): a board may disagree with the
  *  stackup it is solved and costed against, and nothing here refuses anything.
  */
-function BoardFileCheck({ state }: { state: FsBoardState }) {
+function BoardFileCheck({ state, ink }: { state: FsBoardState; ink?: { mask?: string; silk?: string } }) {
   const cmp: FsComparison | undefined = state.comparison;
   const file = state.board_file;
 
@@ -274,42 +378,54 @@ function BoardFileCheck({ state }: { state: FsBoardState }) {
         </div>
       )}
 
-      <table className="data fs-kv">
-        <thead>
-          <tr>
-            <th>Checked</th>
-            <th>Board file</th>
-            <th>Assigned stackup</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {cmp.rows.map((r, i) => (
-            <tr key={`${r.what}-${i}`} className={r.ok === false ? "fs-bad" : undefined}>
-              <td style={r.what.startsWith("  ") ? { paddingLeft: 26, color: "var(--muted)" } : undefined}>
-                {r.what.trim()}
-              </td>
-              <td>{fmt(r.board, r.unit)}</td>
-              <td>{fmt(r.stackup, r.unit)}</td>
-              <td>
-                {r.ok === true ? (
-                  <span className="pill ok">same</span>
-                ) : r.ok === false ? (
-                  <span className="pill err">differs</span>
-                ) : (
-                  <span className="pill neutral">not stated</span>
-                )}
-              </td>
+      <StackupTable rows={cmp.stack} mode="compare" boardLabel="Board file" stackupLabel="Assigned stackup" colors={ink} />
+      <StackupLegend
+        note={
+          <>
+            Inside tolerance counts as the same: copper ±{cmp.tolerance.copper_mm} mm, dielectric ±
+            {cmp.tolerance.dielectric_mm} mm, Dk ±{cmp.tolerance.eps_r}, loss tangent ±{cmp.tolerance.tand}.
+          </>
+        }
+      />
+
+      <details className="fs-details">
+        <summary>The same check as a list of values ({compared} compared)</summary>
+        <table className="data fs-kv">
+          <thead>
+            <tr>
+              <th>Checked</th>
+              <th>Board file</th>
+              <th>Assigned stackup</th>
+              <th />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {cmp.rows.map((r, i) => (
+              <tr key={`${r.what}-${i}`} className={r.ok === false ? "fs-bad" : undefined}>
+                <td style={r.what.startsWith("  ") ? { paddingLeft: 26, color: "var(--muted)" } : undefined}>
+                  {r.what.trim()}
+                </td>
+                <td>{fmt(r.board, r.unit)}</td>
+                <td>{fmt(r.stackup, r.unit)}</td>
+                <td>
+                  {r.ok === true ? (
+                    <span className="pill ok">same</span>
+                  ) : r.ok === false ? (
+                    <span className="pill err">differs</span>
+                  ) : (
+                    <span className="pill neutral">not stated</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
 
       <p className="muted fs-note">
-        Inside tolerance counts as the same: copper ±{cmp.tolerance.copper_mm} mm, dielectric ±
-        {cmp.tolerance.dielectric_mm} mm, Dk ±{cmp.tolerance.eps_r}, loss tangent ±{cmp.tolerance.tand}. A dielectric is
-        compared as the gap between two copper layers, because KiCad carries a multi-sheet gap as sub-layers of one
-        layer and a fab lists each sheet.
+        A dielectric is compared as the gap between two copper layers, because KiCad carries a multi-sheet gap as
+        sub-layers of one layer and a fab lists each sheet. The surface finish is shown and does not decide the verdict:
+        it is a separate order option at the fab.
       </p>
       {cmp.notes.length ? (
         <details className="fs-details">

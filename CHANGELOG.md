@@ -79,6 +79,58 @@
   The two sides describe a mask differently and are not compared on it.
 - The agent tool `fieldsolver_board` returns the same table as `comparison`.
 
+## 2026-09-11 — One stackup table everywhere, a stackup that is electrical only, and a board that has a colour
+
+- **`JLC06121H-3313A` joins the stackup library** — JLCPCB's published 6-layer
+  1.2 mm build, with **three 7628 sheets in the middle gap** (0.2104, 0.218,
+  0.2104 mm). 1.1684 mm of copper and dielectric. JLCPCB renders its 1.2 mm
+  tables only after a click, which is why the code appears nowhere in the page
+  source; the figures were read from the rendered page.
+- **EVSE_20_CTRL is built to it.** The board file carried a placeholder — FR4 at
+  Er 4.5 everywhere, prepreg 0.1 mm, core 0.35 mm — that no fab states, so no
+  width solved against it would have been the width the board gets.
+- **One stackup table, everywhere** (`web/src/components/StackupTable.tsx`):
+  the project comparison, the field solver and the stackup editor all draw the
+  same colour-coded, top-to-bottom rows, aligned by one backend function so the
+  picture cannot disagree with the verdict.
+- **The board-file check is layer by layer.** It compared two things — copper
+  count and total thickness — so a board could carry the wrong laminate in every
+  gap and read as agreeing. Now every copper thickness, dielectric gap, sheet,
+  Dk and loss tangent has its own verdict, plus solder mask ink thickness and Dk
+  and the presence of a legend, each against a published figure.
+- **KiCad sub-layers are read.** A fab gap of three prepreg sheets is one KiCad
+  dielectric carrying `addsublayer` groups; the old reader took the first
+  `(thickness)` and silently lost the rest. `total_mm` also counted the solder
+  mask, which a fab stackup does not, so every comparison was 0.02 mm out.
+- **"No stackup in the file" and "the checkout is gone" no longer look the
+  same** — the board file was read inside a bare `except`.
+- **A stackup is electrical only**
+  ([decision 0008](docs/decisions/0008-a-stackup-is-electrical-only.md)). Board
+  **colour is project data**, versioned like the assignment, chosen from
+  JLCPCB's own list with the legend following the mask; picking one writes
+  nothing to the library. Outer layers are **per face**, so a board can carry
+  legend or a different finish on one side. Copper is named `L1`…`Ln` by
+  position and dielectric labels are generated — neither is typed — and a save
+  that would put **copper against copper is refused**.
+- **Impedance profiles survive a refresh** (`field_workspaces`, one row per
+  person) and are banked **per stackup**: switching parks the open set and picks
+  up the other, because a profile's cells are keyed by copper layer name.
+  Saving to a board is **all-or-nothing** and refuses a stackup mismatch,
+  server-side. Removing a profile, a stackup or a rule set now asks first.
+- **The solder mask is drawn as one object.** It arrives as several overlapping
+  rectangles and each was filled with a translucent green, so every overlap
+  doubled the alpha — three different greens, darkest where two met, and a
+  coplanar ground that looked mis-drawn.
+- **Numbers carry their unit** (`SiInput`): type `35um`, `0.035`, `1.4mil`,
+  `2.4GHz`. Copper thickness is checked against the foils that exist and the
+  weight is read off it. The mask over a trace is derived as half the figure
+  over the substrate — subtracting the copper gives −4.5 µm on JLCPCB's own
+  published pair.
+- **Every modal locks the page behind it, closes on Escape and on a click
+  outside** (`web/src/components/modal.ts`). Escape is bound on the document:
+  on the backdrop it only fires once focus is inside, which is why dialogs had
+  to focus themselves to be dismissable at all.
+
 ## 2026-09-10 — Datasheets stored once, versioned by text; re-signed PDFs no longer bump parts
 
 - **One stored file per distinct content.** Datasheet bytes moved from

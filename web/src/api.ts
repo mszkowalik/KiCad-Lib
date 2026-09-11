@@ -5539,6 +5539,9 @@ export interface FsLayer {
   thickness_mm: number;
   eps_r?: number;
   tand?: number;
+  /** Copper weight where the fab publishes it ("1oz"). Never derived from thickness:
+   *  an etched half-ounce inner measures 0.0152 mm and would round to the wrong one. */
+  weight?: string;
 }
 
 export interface FsStackup {
@@ -5548,18 +5551,36 @@ export interface FsStackup {
   source: string;
   verified: boolean;
   builtin: boolean;
-  soldermask: { material: string; above_substrate_mm: number; above_trace_mm: number } | null;
+  /** The mask MATERIAL id, or null for a stackup built without one. The coating
+   *  geometry is not here — it lives in `mask_geom`. The type used to claim an object
+   *  with the geometry inlined, which no endpoint has ever sent: the editor read
+   *  fields that did not exist (empty boxes) and wrote an object back where the server
+   *  expects an id. */
+  soldermask: string | null;
   finish: { type: string; thickness_um: number; assumed?: boolean } | null;
   layers: FsLayer[];
   total_mm: number;
   mask_geom: Record<string, number>;
+  /** The outer layers PER FACE. `soldermask`, `finish` and `silkscreen` above are the
+   *  TOP face, kept because the solver only ever coats the top. */
+  faces?: {
+    top?: { silkscreen?: unknown; soldermask?: string | null; finish?: FsStackup["finish"] };
+    bottom?: { silkscreen?: unknown; soldermask?: string | null; finish?: FsStackup["finish"] };
+  };
+  silkscreen?: unknown;
+  /** The drawable top-to-bottom row list, built by the same code as the comparison. */
+  stack: FsStackRow[];
 }
 
 export interface FsMaterial {
   id: string;
   name: string;
   manufacturer: string;
+  /** What it IS: "dielectric" or "conductor". */
   kind: string;
+  /** Where it may be PUT: "laminate", "soldermask", "conductor", "ambient". A mask
+   *  and air are both dielectrics and neither belongs in a stackup gap. */
+  use: string;
   source: string;
   points: { f_hz: number; dk: number; tand: number; tand_assumed?: boolean }[];
 }
@@ -5788,6 +5809,8 @@ export interface FsBoardState {
     id: number;
     board: string;
     stackup_key: string;
+    mask_color: string;
+    silk_color: string;
     anchor_sha: string;
     anchor_ref: string;
     anchor_committed_at: string | null;
@@ -5817,6 +5840,8 @@ export interface FsBoardFile {
   total_mm: number;
   /** Solder mask, both sides together. KiCad states it, a fab does not. */
   mask_mm: number;
+  mask_top_mm: number | null;
+  mask_bot_mm: number | null;
   finish: string;
   layers: { name: string; type: string; thickness_mm: number; sheets?: FsBoardSheet[] }[];
   copper: { name: string; thickness_mm: number }[];
@@ -5832,10 +5857,40 @@ export interface FsComparisonRow {
   unit: string;
 }
 
+/** One side of a stack row — what the board file says, or what the stackup says. */
+export interface FsStackFace {
+  name: string;
+  material: string;
+  thickness_mm: number | null;
+  dk: number | null;
+  tand: number | null;
+  weight: string;
+  type: string;
+}
+
+/** One drawable layer, with the two sides already aligned by the backend.
+ *
+ *  `severity` is what the table paints: "differs" decides the verdict, "note" is a
+ *  difference shown on purpose that does NOT (the surface finish), "none" is a row
+ *  nothing could be compared on. See services/field_state.py: stack_rows. */
+export interface FsStackRow {
+  kind: "overlay" | "mask" | "finish" | "paste" | "copper" | "core" | "prepreg" | "dielectric";
+  index: number | null;
+  board: FsStackFace | null;
+  stackup: FsStackFace | null;
+  ok: Record<string, boolean | null>;
+  advisory: Record<string, boolean | null>;
+  row_ok: boolean | null;
+  severity: "match" | "differs" | "note" | "none";
+  note: string;
+}
+
 export interface FsComparison {
   verdict: "match" | "differs" | "unknown";
   differences: string[];
   rows: FsComparisonRow[];
+  /** The same comparison drawn as a stackup, top to bottom. */
+  stack: FsStackRow[];
   notes: string[];
   tolerance: { copper_mm: number; dielectric_mm: number; eps_r: number; tand: number };
 }
@@ -5852,11 +5907,67 @@ export function fsBoardState(
   return request(`/api/fieldsolver/projects/${projectId}/board?${q}`, { signal });
 }
 
+export interface FsColor {
+  id: string;
+  name: string;
+  hex: string;
+  ink: string;
+}
+
+export interface FsColors {
+  soldermask: FsColor[];
+  silkscreen: FsColor[];
+  /** JLCPCB does not offer the silkscreen as a free choice: white on every mask
+   *  except a white one, where it is black. The page follows this unless overridden. */
+  silkscreen_rule: { default: string; by_mask: Record<string, string>; source: string };
+}
+
+export function fsColors(signal?: AbortSignal): Promise<FsColors> {
+  return request(`/api/fieldsolver/colors`, { signal });
+}
+
+/** Board appearance. PROJECT data — a colour is never written to a stackup, or the
+ *  library would fill with one variant per colour that the solver cannot tell apart. */
+export function fsSetAppearance(
+  projectId: number,
+  body: { mask_color: string; silk_color: string; board?: string; snapshot_id?: number | null },
+): Promise<FsBoardState> {
+  return request(`/api/fieldsolver/projects/${projectId}/appearance`, fsJson(body));
+}
+
 export function fsAssignStackup(
   projectId: number,
   body: { stackup_key: string; board?: string; snapshot_id?: number | null },
 ): Promise<FsBoardState> {
   return request(`/api/fieldsolver/projects/${projectId}/stackup`, fsJson(body));
+}
+
+/** The solver page as one person left it. Scratch space, one row per user — the
+ *  moment work matters it is saved to a project, which is versioned. */
+export function fsGetWorkspace(signal?: AbortSignal): Promise<{ data: unknown | null; updated_at: string | null }> {
+  return request(`/api/fieldsolver/workspace`, { signal });
+}
+
+export function fsPutWorkspace(data: unknown): Promise<{ ok: boolean }> {
+  return request(`/api/fieldsolver/workspace`, { ...fsJson(data), method: "PUT" });
+}
+
+/** Save several profiles to a board at once, all or nothing.
+ *
+ *  Refuses — writing NOTHING — when the board's assigned stackup is not the one the
+ *  profiles were built on. Pass `assign_stackup` to assign it to a board that carries
+ *  none as part of the same action. */
+export function fsSaveProfiles(
+  projectId: number,
+  body: {
+    profiles: { name: string; config: Record<string, unknown>; result?: Record<string, unknown> | null }[];
+    board?: string;
+    snapshot_id?: number | null;
+    stackup_key?: string;
+    assign_stackup?: boolean;
+  },
+): Promise<FsBoardState & { saved: { added: number; replaced: number } }> {
+  return request(`/api/fieldsolver/projects/${projectId}/profiles/batch`, fsJson(body));
 }
 
 export function fsSaveProfile(

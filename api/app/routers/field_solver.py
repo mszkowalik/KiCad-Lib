@@ -64,8 +64,16 @@ def materials(db: Session = Depends(get_db)):
 
 @router.get("/stackups")
 def stackups(db: Session = Depends(get_db)):
+    """Every stackup, each carrying `stack` — the drawable top-to-bottom row list.
+
+    Built by the same code that aligns a board file against a stackup
+    (`field_state.stack_rows`), so the field solver's picture of a stackup and the
+    project page's comparison of one are the same picture."""
     _sync_library(db)
-    return STACKS.to_list()
+    out = []
+    for st in STACKS.to_list():
+        out.append(dict(st, stack=field_state.stack_rows(None, field_state.library_build(st))))
+    return out
 
 
 @router.post("/stackups")
@@ -442,6 +450,41 @@ def cancel_job(jid: str):
     return {"id": jid, "state": job["state"], "cancel": True}
 
 
+# ---------------------------------------------------------- solver workspace
+# Scratch space, one row per person: the solver page used to keep its profiles in
+# React state, so a refresh threw the work away. See models.FieldWorkspace for why
+# this is not a shared library of profiles.
+
+@router.get("/workspace")
+def get_workspace(request: Request, db: Session = Depends(get_db)):
+    row = db.query(M.FieldWorkspace).filter_by(owner=actor_of(request)).one_or_none()
+    return {"data": row.data if row else None,
+            "updated_at": row.updated_at.isoformat() if row else None}
+
+
+@router.put("/workspace")
+def put_workspace(body: dict, request: Request, db: Session = Depends(get_db)):
+    """Overwrite this person's workspace. No history: the moment the work matters it
+    is saved to a project, and that IS versioned."""
+    owner = actor_of(request)
+    row = db.query(M.FieldWorkspace).filter_by(owner=owner).one_or_none()
+    if row is None:
+        db.add(M.FieldWorkspace(owner=owner, data=body))
+    else:
+        row.data = body
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/workspace")
+def clear_workspace(request: Request, db: Session = Depends(get_db)):
+    row = db.query(M.FieldWorkspace).filter_by(owner=actor_of(request)).one_or_none()
+    if row is not None:
+        db.delete(row)
+        db.commit()
+    return {"ok": True}
+
+
 # ------------------------------------------------- a board's impedance work
 # Which stackup a board is built on, and the impedance profiles it carries, are
 # commit-versioned exactly like the manual cost data: assigned at a commit, carried
@@ -453,6 +496,15 @@ class BoardStackupIn(BaseModel):
     snapshot_id: int | None = None
 
 
+class AppearanceIn(BaseModel):
+    """How the board looks. Separate from the stackup on purpose — see the endpoint."""
+
+    mask_color: str = ""
+    silk_color: str = ""
+    board: str = ""
+    snapshot_id: int | None = None
+
+
 class ProfileIn(BaseModel):
     name: str
     config: dict
@@ -460,6 +512,25 @@ class ProfileIn(BaseModel):
     board: str = ""
     snapshot_id: int | None = None
     profile_id: int | None = None
+
+
+class ProfileItem(BaseModel):
+    name: str
+    config: dict
+    result: dict | None = None
+
+
+class ProfileBatchIn(BaseModel):
+    """Several profiles saved to a board in one go, under one stackup check."""
+
+    profiles: list[ProfileItem]
+    board: str = ""
+    snapshot_id: int | None = None
+    # the stackup the solver page built these against; the gate compares it with the
+    # one the board is assigned
+    stackup_key: str = ""
+    # assign `stackup_key` to a board that carries none, as part of the same action
+    assign_stackup: bool = False
 
 
 def _snapshot(db: Session, snapshot_id: int | None):
@@ -565,6 +636,41 @@ def assign_stackup(project_id: int, body: BoardStackupIn, request: Request,
     return _board_state(db, project_id, body.board, snap)
 
 
+@router.get("/colors")
+def colors():
+    """The board colours a project may choose from.
+
+    Read from JLCPCB's own order form. The silkscreen is NOT a free choice there — it
+    is white on every mask except a white one, where it is black — so `silkscreen_rule`
+    carries that and the page follows it unless the user overrides it.
+    """
+    import json as _json
+    from ..services.fieldsolver.materials import DATA
+
+    return _json.loads((DATA / "colors.json").read_text())
+
+
+@router.post("/projects/{project_id}/appearance")
+def set_appearance(project_id: int, body: AppearanceIn, request: Request,
+                   db: Session = Depends(get_db)):
+    """Set this board's mask and silkscreen colour, effective at this commit forward.
+
+    Colour is PROJECT data and is deliberately not a stackup field. A green board and a
+    red one built to the same stackup conduct identically, so a colour on the stackup
+    would mean a library variant per colour — a hundred entries that differ in nothing
+    the solver reads. Choosing one here writes to the project's own revision and leaves
+    every stackup in the library untouched.
+    """
+    _sync_library(db)
+    snap = _snapshot(db, body.snapshot_id)
+    rev, _ = field_state.revision_for_edit(db, project_id, body.board, snap)
+    rev.mask_color = body.mask_color or ""
+    rev.silk_color = body.silk_color or ""
+    rev.created_by = rev.created_by or actor_of(request)
+    db.commit()
+    return _board_state(db, project_id, body.board, snap)
+
+
 @router.post("/projects/{project_id}/profiles")
 def save_profile(project_id: int, body: ProfileIn, request: Request,
                  db: Session = Depends(get_db)):
@@ -594,6 +700,98 @@ def save_profile(project_id: int, body: ProfileIn, request: Request,
         target.stackup_sha = field_state.stackup_sha(st)
     db.commit()
     return _board_state(db, project_id, body.board, snap)
+
+
+@router.post("/projects/{project_id}/profiles/batch")
+def save_profiles(project_id: int, body: ProfileBatchIn, request: Request,
+                  db: Session = Depends(get_db)):
+    """Save several profiles to a board at once, all or nothing.
+
+    One endpoint rather than N calls to `save_profile`, for a reason that is not
+    tidiness: `revision_for_edit` is copy-on-write, so the first call would create the
+    revision and the rest would mutate it — a failure halfway through leaves some
+    profiles saved and some not, which is exactly what a refusal is supposed to
+    prevent.
+
+    **The stackup gate.** A profile's geometry is only meaningful against the stackup
+    it was solved on, so saving one built on stackup A onto a board assigned stackup B
+    writes numbers that describe no board. That is refused here, not merely warned
+    about, and nothing is written. It is enforced server-side because the agent tools
+    write through this same path.
+
+    What is deliberately NOT a refusal: the board FILE disagreeing with the assigned
+    stackup. A board is allowed to disagree with the stackup it is costed and solved
+    against (decision 0002, user 2026-08-31) — the platform reports that and refuses
+    nothing. Blocking here would reverse a decision this endpoint has no business
+    reversing.
+    """
+    _sync_library(db)
+    if not body.profiles:
+        raise HTTPException(400, "no profiles to save")
+    snap = _snapshot(db, body.snapshot_id)
+
+    rev_now = field_state.revision_for(db, project_id, body.board, snap)
+    assigned = rev_now.stackup_key if rev_now else ""
+    want = body.stackup_key
+
+    if want and assigned and assigned != want:
+        raise HTTPException(400, {
+            "error": (
+                f"Nothing was saved. This board is assigned “{assigned}” and these profiles were "
+                f"built on “{want}”. A geometry only means anything against the stackup it was "
+                f"solved on. Assign “{want}” to the board, or rebuild the profiles on “{assigned}”."
+            ),
+            "assigned_stackup": assigned,
+            "page_stackup": want,
+            "saved": 0,
+        })
+    if want and not assigned and not body.assign_stackup:
+        raise HTTPException(400, {
+            "error": (
+                f"Nothing was saved. This board carries no stackup, so there is nothing for these "
+                f"profiles to describe. Assign “{want}” to it and save in one step, or assign a "
+                f"stackup to the board first."
+            ),
+            "assigned_stackup": "",
+            "page_stackup": want,
+            "saved": 0,
+        })
+
+    rev, _ = field_state.revision_for_edit(db, project_id, body.board, snap)
+    if want and not assigned and body.assign_stackup:
+        if _stackup_dict(want) is None:
+            raise HTTPException(400, f"unknown stackup {want}")
+        rev.stackup_key = want
+        rev.created_by = rev.created_by or actor_of(request)
+
+    st = _stackup_dict(rev.stackup_key) if rev.stackup_key else None
+    sha = field_state.stackup_sha(st)
+    existing = {p.name: p for p in field_state.profiles_of(db, rev)}
+    pos = max([p.position for p in existing.values()] or [0])
+    added, replaced = 0, 0
+    for item in body.profiles:
+        # a name already on the board is REPLACED, not duplicated: saving "SE50" twice
+        # used to leave two rows called SE50 and no way to tell which was current
+        target = existing.get(item.name)
+        if target is None:
+            pos += 1
+            target = M.ProjectFieldProfile(revision_id=rev.id, position=pos, name=item.name,
+                                           config=item.config, created_by=actor_of(request))
+            db.add(target)
+            existing[item.name] = target
+            added += 1
+        else:
+            replaced += 1
+        target.config = item.config
+        if item.result is not None:
+            target.result = item.result
+            target.solved_at = datetime.now(timezone.utc)
+            target.stackup_key = rev.stackup_key
+            target.stackup_sha = sha
+    db.commit()
+    out = _board_state(db, project_id, body.board, snap)
+    out["saved"] = {"added": added, "replaced": replaced}
+    return out
 
 
 @router.delete("/projects/{project_id}/profiles/{profile_id}")

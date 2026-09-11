@@ -16,6 +16,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { useModal } from "./modal";
 
 export interface ConfirmOptions {
   title?: string;
@@ -129,20 +130,14 @@ function DialogBox({ req, onDone }: { req: Request; onDone: () => void }) {
   const cancelLabel = (req.kind === "confirm" ? req.opts.cancelLabel : undefined) ?? "Cancel";
   const tone = req.kind === "confirm" ? (req.opts.tone ?? "primary") : "primary";
 
+  // Scroll lock, click-outside and Escape, the same three for every modal here.
+  // Escape used to be bound on the backdrop's onKeyDown, which only fires when focus
+  // is inside it — see components/modal.ts.
+  const modal = useModal(cancel);
+
   return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) cancel();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          cancel();
-        }
-      }}
-    >
-      <div className="card pad modal-card" role="dialog" aria-modal="true" aria-label={title}>
+    <div className="modal-backdrop" {...modal.backdropProps}>
+      <div className="card pad modal-card" role="dialog" aria-modal="true" aria-label={title} {...modal.cardProps}>
         <div className="card-title">{title}</div>
         <p className="modal-msg">{req.message}</p>
         {req.kind === "select" ? (

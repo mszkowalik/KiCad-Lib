@@ -277,41 +277,77 @@ export function drawCrossSection(a: DrawArgs): void {
     drawColourBar(ctx, canvas, dpr, p, isMag ? cmapSeq : cmapDiv, pmin, pmax, unitOf(view), isMag);
   }
 
-  // geometry on top of the field
+  // Geometry on top of the field, in three passes rather than one.
+  //
+  // The solder mask arrives as SEVERAL overlapping rectangles — a slab over the
+  // substrate, a cap per trace, a fill per coplanar gap, a cap over each plane edge —
+  // because that is the clearest way for `templates.py` to build a conformal coating.
+  // The mask colour is translucent, so filling them one by one summed the alpha at
+  // every overlap: the coating read as three different greens, darkest exactly where
+  // two objects met, and the coplanar ground looked mis-drawn. They are the SAME
+  // coating, so they are merged into one path and filled once.
+  //
+  // The order matters as much as the merge. The substrate slab runs UNDER the copper
+  // (c1 is 30 um, the copper 35), so the mask is drawn before the conductors — which
+  // is the painter order the mesher itself uses (`mesh.py`: later regions overwrite).
+  // Copper then covers the part of the coating beneath it, while the caps above the
+  // copper survive, and that is the picture a real cross-section gives.
   const labels = new Map<string, { x: number; y: number; t: string; tall: number; area: number }>();
-  for (const reg of g.regions) {
+  const trace = (pts: [number, number][]) => {
     ctx.beginPath();
-    reg.points.forEach((q, i) => (i ? ctx.lineTo(X(q[0]), Y(q[1])) : ctx.moveTo(X(q[0]), Y(q[1]))));
+    pts.forEach((q, i) => (i ? ctx.lineTo(X(q[0]), Y(q[1])) : ctx.moveTo(X(q[0]), Y(q[1]))));
     ctx.closePath();
-    if (reg.kind === "conductor") {
-      ctx.fillStyle = reg.role === "signal" ? p.signal : p.reference;
-      ctx.fill();
-      ctx.strokeStyle = p.text;
-      ctx.setLineDash([]);
-      const px = reg.points.map((q) => X(q[0]));
-      const py = reg.points.map((q) => Y(q[1]));
-      const tall = Math.max(...py) - Math.min(...py);
-      const area = (Math.max(...px) - Math.min(...px)) * tall;
-      const cand = {
-        x: reg.role === "signal" ? (Math.min(...px) + Math.max(...px)) / 2 : Math.max(6 * dpr, Math.min(...px) + 4 * dpr),
-        y: (Math.min(...py) + Math.max(...py)) / 2,
-        t: reg.name,
-        tall,
-        area,
-      };
-      const prev = labels.get(reg.name);
-      if (!prev || cand.area > prev.area) labels.set(reg.name, cand);
-    } else if (reg.name === "mask") {
-      ctx.fillStyle = p.mask;
-      ctx.fill();
-      ctx.strokeStyle = p.mask;
-      ctx.setLineDash([]);
-    } else {
-      ctx.strokeStyle = p.muted;
-      ctx.setLineDash([4 * dpr, 3 * dpr]);
+  };
+
+  // 1 — dielectric outlines
+  ctx.setLineDash([4 * dpr, 3 * dpr]);
+  ctx.strokeStyle = p.muted;
+  ctx.lineWidth = dpr;
+  for (const reg of g.regions) {
+    if (reg.kind === "conductor" || reg.name === "mask") continue;
+    trace(reg.points);
+    ctx.stroke();
+  }
+
+  // 2 — the coating, as one object
+  const mask = g.regions.filter((r) => r.name === "mask" && r.kind !== "conductor");
+  if (mask.length) {
+    ctx.beginPath();
+    for (const reg of mask) {
+      reg.points.forEach((q, i) => (i ? ctx.lineTo(X(q[0]), Y(q[1])) : ctx.moveTo(X(q[0]), Y(q[1]))));
+      ctx.closePath();
     }
+    ctx.fillStyle = p.mask;
+    ctx.fill();          // nonzero: the union fills once, overlaps do not darken
+    ctx.setLineDash([]);
+    ctx.strokeStyle = p.mask;
     ctx.lineWidth = dpr;
     ctx.stroke();
+  }
+
+  // 3 — copper, over the coating it sits in
+  ctx.setLineDash([]);
+  for (const reg of g.regions) {
+    if (reg.kind !== "conductor") continue;
+    trace(reg.points);
+    ctx.fillStyle = reg.role === "signal" ? p.signal : p.reference;
+    ctx.fill();
+    ctx.strokeStyle = p.text;
+    ctx.lineWidth = dpr;
+    ctx.stroke();
+    const px = reg.points.map((q) => X(q[0]));
+    const py = reg.points.map((q) => Y(q[1]));
+    const tall = Math.max(...py) - Math.min(...py);
+    const area = (Math.max(...px) - Math.min(...px)) * tall;
+    const cand = {
+      x: reg.role === "signal" ? (Math.min(...px) + Math.max(...px)) / 2 : Math.max(6 * dpr, Math.min(...px) + 4 * dpr),
+      y: (Math.min(...py) + Math.max(...py)) / 2,
+      t: reg.name,
+      tall,
+      area,
+    };
+    const prev = labels.get(reg.name);
+    if (!prev || cand.area > prev.area) labels.set(reg.name, cand);
   }
   for (const ov of g.overlays ?? []) {
     ctx.beginPath();

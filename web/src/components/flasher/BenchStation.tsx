@@ -6,6 +6,7 @@ import { createProgrammingRun, errorMessage } from "../../api";
 import { RunClient, type RunSpec } from "../../flasher/runClient";
 import { Station, type LogDir } from "../../flasher/station";
 import { StatusPill } from "../Ui";
+import { useModal } from "../modal";
 
 export interface StationSlotProps {
   index: number;
@@ -35,6 +36,9 @@ export default function BenchStation(props: StationSlotProps) {
   const [runId, setRunId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState<{ label: string; secret: boolean; resolve: (v: string) => void } | null>(null);
+  // The SIM PIN prompt has no cancel: the flashing run is waiting on the answer, so
+  // Escape and a click outside must not dismiss it. It still locks the page behind it.
+  const modal = useModal(null, { active: !!prompt });
   const clientRef = useRef<RunClient | null>(null);
   const logEnd = useRef<HTMLDivElement>(null);
 
@@ -191,7 +195,7 @@ export default function BenchStation(props: StationSlotProps) {
 
       {prompt ? (
         <div className="modal-backdrop">
-          <div className="card pad modal-card">
+          <div className="card pad modal-card" {...modal.cardProps}>
             <h2 className="card-title">{prompt.label}</h2>
             <PromptInput secret={prompt.secret} onSubmit={answerPrompt} />
           </div>

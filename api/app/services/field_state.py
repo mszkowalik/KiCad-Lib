@@ -150,6 +150,8 @@ def revision_json(rev: M.ProjectFieldRevision | None) -> dict | None:
         "id": rev.id,
         "board": rev.board,
         "stackup_key": rev.stackup_key,
+        "mask_color": rev.mask_color or "",
+        "silk_color": rev.silk_color or "",
         "anchor_sha": rev.effective_sha,
         "anchor_ref": rev.effective_ref,
         "anchor_committed_at": (
@@ -200,12 +202,14 @@ def profile_json(p: M.ProjectFieldProfile, outdated: bool) -> dict:
 TOLERANCE = {
     "copper_mm": 0.005,
     "dielectric_mm": 0.02,
+    "mask_mm": 0.002,
     "eps_r": 0.05,
     "tand": 0.002,
 }
 
 _COPPER_RE = re.compile(r"^(F\.Cu|B\.Cu|In\d+\.Cu)$")
-_SKIP_RE = re.compile(r"\.(SilkS|Paste)$")
+_SILK_RE = re.compile(r"\.SilkS$")
+_SKIP_RE = re.compile(r"\.Paste$")
 
 
 def _sublayers(layer) -> list[dict]:
@@ -291,6 +295,11 @@ def board_stackup(pcb_path) -> dict | None:
     gaps: list[list[dict]] = []
     pending: list[dict] = []
     mask_mm = 0.0
+    mask_top = None
+    mask_bot = None
+    mask_dk = None
+    silk_top = False
+    silk_bot = False
     total = 0.0
     for layer in iter_nodes(stack, "layer"):
         name = str(layer[1]).strip('"') if len(layer) > 1 else ""
@@ -308,9 +317,19 @@ def board_stackup(pcb_path) -> dict | None:
             pending = []
             continue
         if name.endswith(".Mask"):
-            mask_mm += _f(groups[0].get("thickness"))
-            layers.append({"name": name, "type": kind,
-                           "thickness_mm": round(_f(groups[0].get("thickness")), 6)})
+            t = _f(groups[0].get("thickness"))
+            mask_mm += t
+            if "epsilon_r" in groups[0]:
+                mask_dk = _f(groups[0]["epsilon_r"], None)
+            if name.startswith("F."):
+                mask_top = round(t, 6)
+            else:
+                mask_bot = round(t, 6)
+            layers.append({"name": name, "type": kind, "thickness_mm": round(t, 6)})
+            continue
+        if _SILK_RE.search(name):
+            silk_top = silk_top or name.startswith("F.")
+            silk_bot = silk_bot or name.startswith("B.")
             continue
         sheets = [_sheet(g, kind or "dielectric") for g in groups]
         for s in sheets:
@@ -323,11 +342,30 @@ def board_stackup(pcb_path) -> dict | None:
         "copper_layers": len(copper),
         "total_mm": round(total, 4),
         "mask_mm": round(mask_mm, 4),
+        "mask_top_mm": mask_top,
+        "mask_bot_mm": mask_bot,
+        "mask_dk": mask_dk,
+        "silk_top": silk_top,
+        "silk_bot": silk_bot,
         "finish": node_value(stack, "copper_finish", "") or "",
         "layers": layers,
         "copper": copper,
         "gaps": _build(copper, gaps),
     }
+
+
+def _material_name(material_id: str) -> str:
+    """The material's display name, or its id when the library does not know it.
+
+    A raw id (`jlc_pp_3313`) in a Material column is a database key on a page a person
+    reads; the library already carries "Prepreg 3313 (FR-4)".
+    """
+    from .fieldsolver.materials import LIB
+
+    try:
+        return LIB.get(material_id).name
+    except KeyError:
+        return material_id or ""
 
 
 def _library_eps(material_id: str, f_hz: float = 1e9) -> tuple[float | None, float | None]:
@@ -356,7 +394,8 @@ def library_build(stackup: dict | None) -> dict | None:
     for l in stackup.get("layers", []):
         t = round(_f(l.get("thickness_mm")), 6)
         if l.get("type") == "copper":
-            copper.append({"name": l.get("name", ""), "thickness_mm": t})
+            copper.append({"name": l.get("name", ""), "thickness_mm": t,
+                           "weight": str(l.get("weight") or "")})
             if len(copper) > 1:
                 gaps.append(pending)
             pending = []
@@ -365,12 +404,21 @@ def library_build(stackup: dict | None) -> dict | None:
         pending.append({"type": l.get("label") or "dielectric", "label": l.get("label") or l.get("material", ""),
                         "material": l.get("material", ""), "thickness_mm": t,
                         "eps_r": dk, "tand": tand})
+    fin = stackup.get("finish") or {}
     return {
         "copper_layers": len(copper),
         "total_mm": round(float(stackup.get("total_mm") or 0), 4),
         "copper": copper,
         "gaps": _build(copper, gaps),
-        "finish": (stackup.get("finish") or {}).get("type", ""),
+        "faces": stackup.get("faces") or {},
+        "soldermask": stackup.get("soldermask") or "",
+        "mask_dk": _library_eps(stackup.get("soldermask") or "")[0],
+        "mask_thickness_mm": stackup.get("mask_thickness_mm"),
+        "mask_thickness_is_minimum": bool(stackup.get("mask_thickness_is_minimum")),
+        "mask_source": stackup.get("mask_source", ""),
+        "silkscreen": bool((stackup.get("silkscreen") or {}).get("present")),
+        "finish": fin.get("type", ""),
+        "finish_um": fin.get("thickness_um"),
     }
 
 
@@ -379,6 +427,17 @@ def _near(a, b, tol: float) -> bool | None:
     if a is None or b is None:
         return None
     return abs(float(a) - float(b)) <= tol
+
+
+def _at_least(value, minimum, tol: float) -> bool | None:
+    """True when `value` clears `minimum`, or None when either side is silent.
+
+    A fab that publishes ">= 10 um" of mask ink is not contradicted by a board that
+    declares 25 um, so this is the honest test for a published minimum.
+    """
+    if value is None or minimum is None:
+        return None
+    return float(value) >= float(minimum) - tol
 
 
 def _row(what: str, board, lib, ok, unit: str = "") -> dict:
@@ -392,6 +451,269 @@ def _weighted_dk(sheets: list[dict]) -> float | None:
     return round(sum(s["thickness_mm"] * s["eps_r"] for s in sheets if s.get("eps_r") is not None) / num, 4)
 
 
+# The row kinds the visualiser colours. A fab and a `.kicad_pcb` name their layers
+# differently ("prepreg" / "Prepreg", "core" / "Core", "Top Solder Mask"), so the
+# kind is decided here once and the page only paints it.
+_KIND_WORDS = (
+    ("mask", "mask"),
+    ("silk", "overlay"),
+    ("overlay", "overlay"),
+    ("paste", "paste"),
+    ("prepreg", "prepreg"),
+    ("core", "core"),
+)
+
+
+def _kind_of(text: str, default: str = "dielectric") -> str:
+    low = (text or "").lower()
+    for word, kind in _KIND_WORDS:
+        if word in low:
+            return kind
+    return default
+
+
+def _face(name: str = "", material: str = "", thickness_mm=None, dk=None, tand=None,
+          weight: str = "", type_text: str = "") -> dict:
+    """One side of a stack row — what the board file says, or what the stackup says."""
+    return {"name": name, "material": material, "thickness_mm": thickness_mm,
+            "dk": dk, "tand": tand, "weight": weight, "type": type_text}
+
+
+def _stack_row(kind: str, index=None, board=None, stackup=None, ok=None, note: str = "",
+               advisory=None) -> dict:
+    """One drawable row.
+
+    `ok` holds the checks that decide the verdict. `advisory` holds checks that are
+    shown and deliberately do NOT decide it — the surface finish is the case: it is a
+    separate order option at the fab, the stackup's own finish is an assumed default,
+    and "same layer structure" does not include it. Painting such a row red under a
+    green verdict would say something the platform does not mean, and hiding it would
+    lose a difference the user should see. It gets its own state instead.
+    """
+    ok = ok or {}
+    advisory = advisory or {}
+    checks = [v for v in ok.values() if v is not None]
+    row_ok = all(checks) if checks else None
+    adv = [v for v in advisory.values() if v is not None]
+    if row_ok is False:
+        severity = "differs"
+    elif adv and not all(adv):
+        severity = "note"
+    elif row_ok is True:
+        severity = "match"
+    else:
+        severity = "none"
+    return {
+        "kind": kind,
+        "index": index,
+        "board": board,
+        "stackup": stackup,
+        "ok": ok,
+        "advisory": advisory,
+        # the row's own verdict: False when any compared property differs, None when
+        # nothing on the row could be compared at all
+        "row_ok": row_ok,
+        "severity": severity,
+        "note": note,
+    }
+
+
+def _sheet_faces(sheets: list[dict], from_library: bool) -> list[dict]:
+    out = []
+    for sh in sheets:
+        label = sh.get("label") or sh.get("material") or "dielectric"
+        out.append(_face(
+            name=label,
+            material=_material_name(sh.get("material") or "") if from_library else label,
+            thickness_mm=sh.get("thickness_mm"),
+            dk=sh.get("eps_r"),
+            tand=sh.get("tand"),
+            type_text=_kind_of(str(sh.get("type") or ""), "dielectric"),
+        ))
+    return out
+
+
+def _lib_face(lib: dict | None, side: str, key: str):
+    """One face's outer layer from the library build, falling back to the whole-board
+    value for a stackup written before faces existed."""
+    if not lib:
+        return None
+    faces = lib.get("faces") or {}
+    face = faces.get(side.lower()) or {}
+    if key in face:
+        return face[key]
+    return {"soldermask": lib.get("soldermask"), "silkscreen": lib.get("silkscreen"),
+            "finish": lib.get("finish")}.get(key)
+
+
+def stack_rows(board: dict | None, lib: dict | None) -> list[dict]:
+    """The two sides aligned into one top-to-bottom list, ready to be drawn.
+
+    The same list serves three views, which is the point of building it here: a board
+    file on its own, a library stackup on its own, and the two compared. A row carries
+    whichever sides exist; the page paints `kind` and reads `row_ok`.
+
+    Alignment follows the normal form — copper i against copper i, gap i against gap i,
+    sheet j against sheet j — so the picture can never disagree with the verdict. When a
+    gap holds a different NUMBER of sheets on the two sides, the extra sheets are drawn
+    as rows with one side empty, because that difference is the thing worth seeing.
+    """
+    rows: list[dict] = []
+    both = bool(board) and bool(lib)
+
+    def _overlay(side: str, present_b: bool) -> dict | None:
+        """Presence only. A fab publishes that it prints a legend and publishes its
+        line width and text height, but no ink thickness — so there is a real check
+        here (does the board expect one at all) and nothing to measure."""
+        fb = _face(f"{side} Overlay", "legend ink", type_text="silkscreen") if (board and present_b) else None
+        silk = _lib_face(lib, side, "silkscreen")
+        present_l = bool(silk.get("present")) if isinstance(silk, dict) else bool(silk)
+        fl = _face(f"{side} Overlay", "legend ink", type_text="silkscreen") if present_l else None
+        if not fb and not fl:
+            return None
+        ok = {}
+        note = "The fab prints a legend and publishes no ink thickness, so only its presence is checked."
+        if both:
+            ok = {"present": bool(fb) == bool(fl)}
+            if not ok["present"]:
+                note = ("The board file declares a silkscreen and the stackup does not model one."
+                        if fb else "The stackup prints a legend and the board file declares no silkscreen layer.")
+        return _stack_row("overlay", board=fb, stackup=fl, ok=ok, note=note)
+
+    def _mask(side: str, t_b) -> dict | None:
+        """Ink thickness and Dk.
+
+        The fab's figure is a MINIMUM (">= 10 um"), so a board declaring more is not a
+        conflict and the check is `board >= minimum`, not equality. It is a different
+        quantity from `mask_geom`, which is the coating PROFILE the solver builds —
+        those three numbers are not compared against anything in the board file,
+        because KiCad does not record them.
+        """
+        fb = _face(f"{side} Solder", "solder mask", t_b, dk=(board or {}).get("mask_dk"),
+                   type_text="solder mask") if board else None
+        fl = None
+        mask_id = _lib_face(lib, side, "soldermask")
+        if mask_id:
+            fl = _face(f"{side} Solder", _material_name(str(mask_id)),
+                       lib.get("mask_thickness_mm"), dk=_library_eps(str(mask_id))[0], type_text="solder mask")
+        if not fb and not fl:
+            return None
+        ok: dict = {}
+        notes: list[str] = []
+        if both:
+            ok["present"] = bool(fb) == bool(fl)
+            if not ok["present"]:
+                notes.append("The board file declares a solder mask and the stackup does not."
+                             if fb else "The stackup carries a solder mask and the board file declares none.")
+        if fb and fl:
+            if lib.get("mask_thickness_is_minimum"):
+                ok["thickness"] = _at_least(fb["thickness_mm"], fl["thickness_mm"], TOLERANCE["mask_mm"])
+                notes.append(f"The fab states the ink thickness as a minimum of {fl['thickness_mm']} mm, "
+                             "so the board is checked for at least that, not for the same.")
+            else:
+                ok["thickness"] = _near(fb["thickness_mm"], fl["thickness_mm"], TOLERANCE["mask_mm"])
+            ok["dk"] = _near(fb["dk"], fl["dk"], TOLERANCE["eps_r"])
+            if fb["dk"] is None:
+                notes.append("The board file states no mask Dk. KiCad can carry one on the mask layer "
+                             f"(Board Setup -> Physical Stackup); the fab publishes {fl['dk']}.")
+        notes.append("The coating PROFILE the solver builds (above substrate, above trace, between traces) "
+                     "has no counterpart in a .kicad_pcb and is not compared.")
+        return _stack_row("mask", board=fb, stackup=fl, ok=ok, note=" ".join(notes))
+
+    def _finish(side: str) -> dict | None:
+        """The finish sits on exposed copper on BOTH outer layers, so it is drawn on
+        both — one row near the top read as though the bottom had none."""
+        fb = _face(str((board or {}).get("finish") or ""), type_text="surface finish") \
+            if (board and board.get("finish")) else None
+        fl = None
+        fin = _lib_face(lib, side, "finish")
+        if isinstance(fin, dict) and fin.get("type"):
+            fl = _face(str(fin["type"]), type_text="surface finish",
+                       thickness_mm=(float(fin["thickness_um"]) / 1000.0 if fin.get("thickness_um") else None))
+        elif fin:
+            fl = _face(str(fin), type_text="surface finish")
+        if not fb and not fl:
+            return None
+        same = None
+        if fb and fl and fb["name"] and fl["name"]:
+            same = fb["name"].strip().lower() == fl["name"].strip().lower()
+        note = (f"On exposed copper, both outer layers — this row is drawn on each of them. The solver grows "
+                f"the copper inside the {side.lower()} mask opening by the stackup's finish, not the board file's.")
+        if same is False:
+            note = (f"The board file asks for {fb['name']} and the stackup carries {fl['name']}. "
+                    "The finish is a separate order option at the fab and the stackup's is an assumed "
+                    "default, so it is shown but does not decide the verdict. " + note)
+        return _stack_row("finish", board=fb, stackup=fl, advisory={"finish": same}, note=note)
+
+    # ---- above the first copper layer
+    for row in (_overlay("Top", (board or {}).get("silk_top", False)),
+                _mask("Top", (board or {}).get("mask_top_mm")),
+                _finish("Top")):
+        if row:
+            rows.append(row)
+
+    # ---- the copper layers and the gaps between them
+    bc = (board or {}).get("copper", [])
+    lc = (lib or {}).get("copper", [])
+    bg = (board or {}).get("gaps", [])
+    lg = (lib or {}).get("gaps", [])
+    for i in range(max(len(bc), len(lc))):
+        b = bc[i] if i < len(bc) else None
+        l = lc[i] if i < len(lc) else None
+        fb = _face(b["name"], "copper", b["thickness_mm"], weight=b.get("weight", ""), type_text="copper") if b else None
+        fl = _face(l["name"], "copper", l["thickness_mm"], weight=l.get("weight", ""), type_text="copper") if l else None
+        if b and l:
+            ok = {"thickness": _near(b["thickness_mm"], l["thickness_mm"], TOLERANCE["copper_mm"])}
+            note = ""
+        elif both:
+            # one side has a copper layer the other does not: that is a difference,
+            # not an absence of one, so the row must read red rather than "—"
+            ok = {"present": False}
+            note = ("The board file has this copper layer and the assigned stackup does not."
+                    if b else "The stackup has this copper layer and the board file does not.")
+        else:
+            ok, note = {}, ""
+        rows.append(_stack_row("copper", index=i + 1, board=fb, stackup=fl, ok=ok, note=note))
+
+        gb = bg[i] if i < len(bg) else None
+        gl = lg[i] if i < len(lg) else None
+        if gb is None and gl is None:
+            continue
+        sb = _sheet_faces(gb["sheets"], False) if gb else []
+        sl = _sheet_faces(gl["sheets"], True) if gl else []
+        split = both and gb and gl and len(sb) != len(sl)
+        for j in range(max(len(sb), len(sl))):
+            fb = sb[j] if j < len(sb) else None
+            fl = sl[j] if j < len(sl) else None
+            ok = {}
+            if fb and fl:
+                ok = {
+                    "thickness": _near(fb["thickness_mm"], fl["thickness_mm"], TOLERANCE["dielectric_mm"]),
+                    "dk": _near(fb["dk"], fl["dk"], TOLERANCE["eps_r"]),
+                    "tand": _near(fb["tand"], fl["tand"], TOLERANCE["tand"]),
+                }
+            elif both:
+                ok = {"present": False}
+            kind = _kind_of((fb or fl or {}).get("type", ""), "dielectric")
+            note = ""
+            if both and not (fb and fl):
+                note = ("The board file has this sheet and the assigned stackup does not."
+                        if fb else "The stackup has this sheet and the board file does not.")
+            if split:
+                nb = len(sb) if gb else 0
+                ns = len(sl) if gl else 0
+                note = (f"{note} This gap is {nb} sheet(s) in the board file and {ns} in the stackup.").strip()
+            rows.append(_stack_row(kind, board=fb, stackup=fl, ok=ok, note=note))
+
+    # ---- below the last copper layer, mirroring the top
+    for row in (_finish("Bottom"),
+                _mask("Bottom", (board or {}).get("mask_bot_mm")),
+                _overlay("Bottom", (board or {}).get("silk_bot", False))):
+        if row:
+            rows.append(row)
+    return rows
+
+
 def compare_stackup_detail(board: dict | None, library: dict | None) -> dict:
     """Layer-by-layer comparison of a `.kicad_pcb` against the assigned stackup.
 
@@ -403,8 +725,9 @@ def compare_stackup_detail(board: dict | None, library: dict | None) -> dict:
     """
     lib = library_build(library)
     if not board or not lib:
-        return {"verdict": "unknown", "differences": [], "rows": [], "notes": [],
-                "tolerance": TOLERANCE}
+        # one side alone still draws: the visualiser takes the same row list
+        return {"verdict": "unknown", "differences": [], "rows": [],
+                "stack": stack_rows(board, lib), "notes": [], "tolerance": TOLERANCE}
 
     diffs: list[str] = []
     notes: list[str] = []
@@ -489,6 +812,8 @@ def compare_stackup_detail(board: dict | None, library: dict | None) -> dict:
         "verdict": "differs" if diffs else "match",
         "differences": diffs,
         "rows": rows,
+        # the same comparison drawn as a stackup, top to bottom
+        "stack": stack_rows(board, lib),
         "notes": notes,
         "tolerance": TOLERANCE,
     }

@@ -28,6 +28,7 @@ import {
   StepSelect,
   type RunOption,
 } from "../costs";
+import { useModal } from "../modal";
 
 /** Templates come from the production-step catalog (`/api/cost-steps`): the
  *  vendor's exact wording paired with the vendor-neutral step key, so a split
@@ -72,6 +73,7 @@ export default function SplitLineDialog({
   existing: RunCostLineRow[];
   onClose: (doc: RunCostDocumentRow | null) => void;
 }) {
+  const modal = useModal(() => onClose(null));
   const [rows, setRows] = useState<Row[]>(() =>
     existing.length
       ? existing.map((c) => ({
@@ -182,8 +184,8 @@ export default function SplitLineDialog({
   };
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose(null)}>
-      <div className="card pad modal-card modal-card-wide" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...modal.backdropProps}>
+      <div className="card pad modal-card modal-card-wide" {...modal.cardProps}>
         <h2 className="card-title">Split “{line.label || line.kind}”</h2>
         <p className="card-subtitle">
           {fmt(parentAmount)} {currency} on the invoice. The position keeps that figure — the shares

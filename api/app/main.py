@@ -474,6 +474,16 @@ def startup() -> None:
             conn.execute(text(
                 "ALTER TABLE components ADD COLUMN IF NOT EXISTS in_library boolean NOT NULL DEFAULT true"
             ))
+            # Board appearance, which lives on the project's field revision and never
+            # on the stackup (see models.ProjectFieldRevision).
+            conn.execute(text(
+                "ALTER TABLE project_field_revisions ADD COLUMN IF NOT EXISTS "
+                "mask_color varchar(32) NOT NULL DEFAULT ''"
+            ))
+            conn.execute(text(
+                "ALTER TABLE project_field_revisions ADD COLUMN IF NOT EXISTS "
+                "silk_color varchar(32) NOT NULL DEFAULT ''"
+            ))
             conn.execute(text(
                 "ALTER TABLE components ADD COLUMN IF NOT EXISTS purchasable boolean NOT NULL DEFAULT true"
             ))

@@ -24,6 +24,7 @@ import {
 } from "../../api";
 import { ErrorBanner, Spinner } from "../Ui";
 import StepEditor from "./StepEditor";
+import { useModal } from "../modal";
 
 interface ImageDraft {
   firmware_asset_id: number | "";
@@ -43,6 +44,7 @@ export default function Composer({
   meta: FlasherMeta | null;
   onClose: (published: boolean) => void;
 }) {
+  const modal = useModal(() => onClose(false));
   const [touched, setTouched] = useState<Set<Section>>(new Set());
   const [assets, setAssets] = useState<FirmwareAssetRow[]>([]);
   const [bundles, setBundles] = useState<BerryBundleRow[]>([]);
@@ -191,8 +193,8 @@ export default function Composer({
   const sectionState = (s: Section) => (touched.has(s) ? "changed" : "unchanged");
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose(false)}>
-      <div className="card pad modal-card modal-card-wide" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...modal.backdropProps}>
+      <div className="card pad modal-card modal-card-wide" {...modal.cardProps}>
         <h2 className="card-title">
           New version of {deployment.name}
           {fromVersion ? ` — starting from v${fromVersion.version_no}` : " — first version"}

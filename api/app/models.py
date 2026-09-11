@@ -198,6 +198,12 @@ class ProjectFieldRevision(Base):
     effective_committed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # the library stackup this board is built on, by FieldStackup.key or a builtin id
     stackup_key: Mapped[str] = mapped_column(String(120), default="")
+    # How the board LOOKS, which belongs to the project and never to the stackup: a
+    # green board and a red one built to the same stackup conduct identically, so
+    # putting colour in the library would fill it with a variant per colour for no
+    # electrical reason. Versioned with the assignment above, by the same rule.
+    mask_color: Mapped[str] = mapped_column(String(32), default="")
+    silk_color: Mapped[str] = mapped_column(String(32), default="")
     created_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -229,6 +235,29 @@ class ProjectFieldProfile(Base):
     stackup_sha: Mapped[str] = mapped_column(String(64), default="")
     created_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class FieldWorkspace(Base):
+    """The field solver page as one person left it — stackup, rule set, profiles.
+
+    Scratch space, not a library. A profile only means anything against a particular
+    stackup, so a shared catalogue of loose profiles would be a catalogue of things
+    nobody can use without asking which board they came from. What this table exists
+    for is narrower and was the actual complaint: work built in the solver used to
+    live in React state and a refresh threw it away.
+
+    Keyed by `owner`, the actor name, NOT by a foreign key onto `users.id` — with
+    `AUTH_ENABLED=0` (dev) there is no user row at all and `actor_of` answers "user".
+    One row per person, overwritten in place; history is not wanted here, and the
+    moment work matters it is saved to a project, which IS versioned.
+    """
+
+    __tablename__ = "field_workspaces"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner: Mapped[str] = mapped_column(String(120), unique=True)
+    data: Mapped[dict] = mapped_column(JSONB)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 

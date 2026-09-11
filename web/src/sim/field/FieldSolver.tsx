@@ -10,6 +10,7 @@
  *  |H|, surface current. The solver is quasi-TEM and floored at 1 MHz.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   errorMessage,
   fsCheck,
@@ -17,6 +18,8 @@ import {
   fsGeometry,
   fsMaterials,
   fsRules,
+  fsGetWorkspace,
+  fsPutWorkspace,
   fsStackups,
   isAbortError,
   type FsFinish,
@@ -34,6 +37,8 @@ import { useAuth } from "../../auth";
 import ProjectPanel from "./ProjectPanel";
 import type { FsBoardProfile } from "../../api";
 import Chart from "./Chart";
+import StackupTable, { StackupLegend } from "../../components/StackupTable";
+import { useDialog } from "../../components/Dialog";
 import { RulesEditor, StackupEditor } from "./Editors";
 import { drawCrossSection, fitView, palette, type FieldView, type View } from "./draw";
 import {
@@ -47,8 +52,9 @@ import {
   lineType,
   maskOn,
   minPitch,
+  F_CEIL,
+  F_FLOOR,
   newProfile,
-  parseFreq,
   perDecade,
   refOptions,
   refreshName,
@@ -62,6 +68,7 @@ import {
 import { useSolverJob } from "./useSolverJob";
 import { useWheel } from "../../useWheel";
 import NumberInput from "../../components/NumberInput";
+import SiInput from "../../components/SiInput";
 
 const SOLVE_STEPS = [
   { key: "mesh", label: "Mesh the cross-section" },
@@ -80,6 +87,49 @@ const VIEWS: { value: FieldView; label: string }[] = [
   { value: "Js", label: "surface current density on the copper" },
   { value: "none", label: "geometry only" },
 ];
+
+/** One stackup's worth of work. */
+interface Bench {
+  profiles: Profile[];
+  selProfile?: number;
+  selLayer?: string;
+}
+
+/** What the workspace row holds. Deliberately the page's own state, not a second
+ *  model of it: the solver page IS the document here.
+ *
+ *  Profiles are banked PER STACKUP. A profile's cells are keyed by copper layer name,
+ *  so a geometry built on a six-layer board describes nothing on a two-layer one —
+ *  carrying one across would keep a cell for a layer that no longer exists and quietly
+ *  claim it was solved against the new stackup. Switching stackups therefore parks the
+ *  current set and picks up whatever was left on the one being opened. */
+interface SavedWorkspace {
+  stackupId?: string;
+  ruleId?: string;
+  epsModel?: string;
+  byStackup?: Record<string, Bench>;
+  /** Read once from a workspace written before the bank existed, then dropped. */
+  profiles?: Profile[];
+  selProfile?: number;
+  selLayer?: string;
+}
+
+/** A new bench: one profile, enabled on the top copper layer. */
+function freshBench(st: FsStackup): Bench {
+  const p = newProfile(0);
+  const l = copperLayers(st)[0]?.name as string;
+  if (l) cellOf(p, st, l).enabled = true;
+  return { profiles: [p], selProfile: p.id, selLayer: l };
+}
+
+/** The selection a bench should open with, dropping one that names a layer or a
+ *  profile the bench no longer has. */
+function selFor(b: Bench, st: FsStackup): { profile: number; layer: string } {
+  const first = copperLayers(st)[0]?.name as string;
+  const layer = b.selLayer && copperLayers(st).some((c) => c.name === b.selLayer) ? b.selLayer : first;
+  const profile = b.profiles.some((q) => q.id === b.selProfile) ? (b.selProfile as number) : b.profiles[0].id;
+  return { profile, layer };
+}
 
 export default function FieldSolver() {
   const [stackups, setStackups] = useState<FsStackup[]>([]);
@@ -112,6 +162,16 @@ export default function FieldSolver() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const job = useSolverJob();
   const { isAdmin } = useAuth();
+  const dialog = useDialog();
+  const [params] = useSearchParams();
+
+  // The workspace is this person's scratch space, restored on mount and written back
+  // debounced. `restored` gates the writer: without it the first render would save the
+  // blank starting page over whatever was stored before the GET came back.
+  const restored = useRef(false);
+  const saveTimer = useRef<number | null>(null);
+  /** Work parked on the stackups that are not open. */
+  const [bank, setBank] = useState<Record<string, Bench>>({});
 
   const stackup = useMemo(() => stackups.find((s) => s.id === stackupId), [stackups, stackupId]);
   const ruleset = useMemo(() => rules.find((r) => r.id === ruleId), [rules, ruleId]);
@@ -126,22 +186,46 @@ export default function FieldSolver() {
       fsRules(ctrl.signal),
       fsMaterials(ctrl.signal),
       fsFinishes(ctrl.signal),
+      fsGetWorkspace(ctrl.signal).catch(() => ({ data: null, updated_at: null })),
     ])
-      .then(([st, ru, ma, fi]) => {
+      .then(([st, ru, ma, fi, ws]) => {
         setStackups(st);
         setRules(ru);
         setMaterials(ma);
         setFinishes(fi);
-        const first = st.find((s) => s.id === "JLC04161H-7628") ?? st[0];
-        if (first) setStackupId(first.id);
-        setRuleId(ru[0]?.id ?? "");
-        const p = newProfile(0);
-        setProfiles([p]);
-        if (first) {
-          const l = copperLayers(first)[0]?.name as string;
-          cellOf(p, first, l).enabled = true;
-          setSel({ profile: p.id, layer: l });
+
+        // A ?stackup= in the URL wins over the stored workspace: it is what the
+        // project page just asked for, and it is the whole point of the deep link.
+        const wanted = params.get("stackup");
+        const saved = (ws?.data ?? null) as SavedWorkspace | null;
+        const known = (id: string | null | undefined) => (id && st.some((x) => x.id === id) ? id : "");
+        const stackKey = known(wanted) || known(saved?.stackupId) || (st.find((s) => s.id === "JLC04161H-7628") ?? st[0])?.id || "";
+        const first = st.find((s) => s.id === stackKey);
+        setStackupId(stackKey);
+        setRuleId((saved?.ruleId && ru.some((r) => r.id === saved.ruleId) ? saved.ruleId : ru[0]?.id) ?? "");
+        if (saved?.epsModel) setEpsModel(saved.epsModel);
+
+        // A workspace written before the bank existed holds one set tagged with the
+        // stackup it belonged to; it becomes that stackup's bench and nothing else.
+        const banked: Record<string, Bench> = { ...(saved?.byStackup ?? {}) };
+        if (!saved?.byStackup && saved?.profiles?.length && saved.stackupId) {
+          banked[saved.stackupId] = {
+            profiles: saved.profiles,
+            selProfile: saved.selProfile,
+            selLayer: saved.selLayer,
+          };
         }
+        setBank(banked);
+        const bench = banked[stackKey];
+        if (bench?.profiles?.length && first) {
+          setProfiles(bench.profiles);
+          setSel(selFor(bench, first));
+        } else if (first) {
+          const b = freshBench(first);
+          setProfiles(b.profiles);
+          setSel(selFor(b, first));
+        }
+        restored.current = true;
         setLoading(false);
       })
       .catch((e) => {
@@ -154,6 +238,62 @@ export default function FieldSolver() {
   }, []);
 
   const touch = useCallback(() => setProfiles((ps) => [...ps]), []);
+
+  /** Move to another stackup without losing either side's work.
+   *
+   *  The open set is parked under the stackup it was built on, and whatever was left
+   *  on the stackup being opened comes back. Carrying the profiles across instead
+   *  would keep cells for copper layers the new stackup does not have, and the next
+   *  save would claim they had been solved against it. */
+  const switchStackup = useCallback(
+    (id: string) => {
+      if (id === stackupId) return;
+      const target = stackups.find((s) => s.id === id);
+      if (!target) return;
+      setBank((old) => {
+        const next = { ...old };
+        if (stackupId && profiles.length)
+          next[stackupId] = { profiles, selProfile: sel?.profile, selLayer: sel?.layer };
+        return next;
+      });
+      const bench = bank[id]?.profiles?.length ? bank[id] : freshBench(target);
+      setProfiles(bench.profiles);
+      setSel(selFor(bench, target));
+      setStackupId(id);
+      invalidate();
+    },
+    // `invalidate` is declared below and is stable; profiles/sel are read, not tracked
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stackupId, stackups, profiles, sel, bank],
+  );
+
+  // ------------------------------------------------------------- workspace
+  // Written back debounced, the same 700 ms the sketch editor autosaves at. A solve
+  // result travels with its profile's cells, so reopening the page shows the numbers
+  // again without re-solving — only the field picture needs a run.
+  useEffect(() => {
+    if (!restored.current || loading) return;
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      const body: SavedWorkspace = {
+        stackupId,
+        ruleId,
+        epsModel,
+        byStackup: {
+          ...bank,
+          ...(stackupId && profiles.length
+            ? { [stackupId]: { profiles, selProfile: sel?.profile, selLayer: sel?.layer } }
+            : {}),
+        },
+      };
+      fsPutWorkspace(body).catch(() => {
+        /* losing scratch space must never interrupt the work on screen */
+      });
+    }, 700);
+    return () => {
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    };
+  }, [stackupId, ruleId, epsModel, profiles, sel, bank, loading]);
 
   /** Anything that changes the geometry invalidates the result shown for it. */
   const invalidate = useCallback(() => {
@@ -438,7 +578,7 @@ export default function FieldSolver() {
           <label className="fs-field">
             <span>Stackup</span>
             <span className="fs-inline">
-              <select className="text" value={stackupId} onChange={(e) => { setStackupId(e.target.value); invalidate(); }}>
+              <select className="text" value={stackupId} onChange={(e) => switchStackup(e.target.value)}>
                 {stackups.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.builtin ? "" : "★ "}
@@ -478,100 +618,140 @@ export default function FieldSolver() {
           </label>
         </div>
 
-        <div className="fs-gridwrap">
-          <table className="data fs-grid">
-            <thead>
-              <tr>
-                <th>Layer</th>
-                <th>Material</th>
-                <th>Type</th>
-                <th>Thickness mm</th>
-                {profiles.map((p) => (
-                  <th key={p.id} className="fs-prof">
-                    {p.name}
-                    <span className="muted fs-note">
-                      {TYPE_LABEL[p.type]} · {p.target} Ω ±{p.tolerance}% · {fmtHz(p.f)}
-                    </span>
-                    {profiles.length > 1 ? (
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={() => {
-                          setProfiles((ps) => ps.filter((q) => q.id !== p.id));
-                          if (sel.profile === p.id) setSel({ profile: profiles[0].id, layer: sel.layer });
-                        }}
-                      >
-                        ×
-                      </button>
-                    ) : null}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {stackup.layers.map((l, i) => (
-                <tr key={`${l.type}${i}`} className={l.type === "copper" ? "" : "fs-diel"}>
-                  <td>{l.type === "copper" ? l.name : l.label}</td>
-                  <td>{l.material ? materials.find((m) => m.id === l.material)?.name ?? l.material : "—"}</td>
-                  <td>{l.type}</td>
-                  <td>{l.thickness_mm.toFixed(4)}</td>
-                  {profiles.map((p) => {
-                    if (l.type !== "copper") return <td key={p.id} />;
-                    const name = l.name as string;
-                    const c = cellOf(p, stackup, name);
-                    const selected = sel.profile === p.id && sel.layer === name;
-                    const r = c.result as Record<string, number> | null | undefined;
-                    const z = r ? (r.Z0 ?? r.Zdiff) : null;
-                    return (
-                      <td
-                        key={p.id}
-                        className={`fs-cell${selected ? " on" : ""}`}
-                        onClick={() => {
-                          setSel({ profile: p.id, layer: name });
-                          setResult(null);
-                          setFrames([]);
-                          setSearch(null);
-                        }}
-                      >
-                        <label className="fs-check">
-                          <input
-                            type="checkbox"
-                            checked={c.enabled}
-                            onChange={(e) => {
-                              c.enabled = e.target.checked;
-                              touch();
-                            }}
-                          />
-                          W1 {fmt(c.w, 3)} mm
-                        </label>
-                        <span className="muted fs-note">
-                          {c.top_ref}/{c.bottom_ref} · {c.mask_mode === "both" ? "mask?" : maskOn(c) ? "mask" : "no mask"}
-                          {c.via_fence ? " · fence" : ""}
-                        </span>
-                        {z != null ? (
-                          <span className="fs-z">
-                            {zKey(p)} {fmt(z, 1)} Ω
-                          </span>
-                        ) : null}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <button
-          type="button"
-          className="btn btn-sm"
-          onClick={() => {
-            const p = newProfile(profiles.length);
-            setProfiles((ps) => [...ps, p]);
-            setSel({ profile: p.id, layer: cu[0].name as string });
+        {/* The stackup, drawn by the SAME visualiser the project page compares one
+            with (components/StackupTable.tsx). One picture of a stackup across the
+            platform: a layer that reads as core here reads as core there. The
+            impedance profiles ride along as extra columns, and a click on a copper
+            row picks the layer the properties panel edits. */}
+        <StackupTable
+          rows={stackup.stack}
+          mode="single"
+          side="stackup"
+          selectedCopper={sel.layer}
+          onSelectCopper={(name) => {
+            setSel({ profile: sel.profile, layer: name });
+            setResult(null);
+            setFrames([]);
+            setSearch(null);
           }}
-        >
-          + Add impedance profile
-        </button>
+          extraColumns={profiles.map((p) => ({
+            key: String(p.id),
+            // Remove sits on the LEFT of the header: the profile's own summary is as
+            // long as the column allows and truncates, so a button after it is the
+            // first thing the ellipsis eats.
+            header: (
+              <span className="fs-prof">
+                {profiles.length > 1 ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm fs-prof-del"
+                    title={`Remove ${p.name}`}
+                    aria-label={`Remove ${p.name}`}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      // A profile is a target, a geometry per copper layer and, often,
+                      // a solve that took minutes. Removing one on a single click is
+                      // not proportionate to what it costs to rebuild.
+                      const solved = Object.values(p.cells ?? {}).filter((c) => c?.result).length;
+                      if (
+                        !(await dialog.confirm(
+                          `Remove the impedance profile “${p.name}”? Its target, the geometry on every ` +
+                            `copper layer and ${solved ? `${solved} solved result${solved === 1 ? "" : "s"}` : "any work on it"} ` +
+                            `go with it, and nothing here can bring them back.`,
+                          { title: "Remove profile", confirmLabel: "Remove", tone: "danger" },
+                        ))
+                      )
+                        return;
+                      setProfiles((ps) => ps.filter((q) => q.id !== p.id));
+                      if (sel.profile === p.id) setSel({ profile: profiles[0].id, layer: sel.layer });
+                    }}
+                  >
+                    ×
+                  </button>
+                ) : null}
+                <span className="fs-prof-text" title={`${p.name} · ${TYPE_LABEL[p.type]} · ${p.target} Ω ±${p.tolerance}% · ${fmtHz(p.f)}`}>
+                  {p.name}
+                  <span className="muted">
+                    {" · "}
+                    {TYPE_LABEL[p.type]} · {p.target} Ω ±{p.tolerance}% · {fmtHz(p.f)}
+                  </span>
+                </span>
+              </span>
+            ),
+            cell: (row) => {
+              if (row.kind !== "copper") return null;
+              const name = row.stackup?.name ?? "";
+              if (!name) return null;
+              const c = cellOf(p, stackup, name);
+              const selected = sel.profile === p.id && sel.layer === name;
+              const r = c.result as Record<string, number> | null | undefined;
+              const z = r ? (r.Z0 ?? r.Zdiff) : null;
+              // One line, like every other row in the table: checkbox, width, the
+              // reference pair and the mask, then the solved impedance. It stacked
+              // onto two lines before, which made every copper row twice as tall as
+              // the dielectric rows between them and broke the stackup's rhythm.
+              const refs = `${c.top_ref}/${c.bottom_ref}`;
+              const mask = c.mask_mode === "both" ? "mask?" : maskOn(c) ? "mask" : "no mask";
+              const summary = `W1 ${fmt(c.w, 3)} mm · ${refs} · ${mask}${c.via_fence ? " · fence" : ""}${
+                z != null ? ` · ${zKey(p)} ${fmt(z, 1)} Ω` : ""
+              }`;
+              return (
+                <span
+                  className={`fs-cell${selected ? " on" : ""}`}
+                  title={summary}
+                  onClick={() => {
+                    setSel({ profile: p.id, layer: name });
+                    setResult(null);
+                    setFrames([]);
+                    setSearch(null);
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={c.enabled}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      c.enabled = e.target.checked;
+                      touch();
+                    }}
+                  />
+                  <b>W1 {fmt(c.w, 3)} mm</b>
+                  <span className="muted">
+                    {" · "}
+                    {refs} · {mask}
+                    {c.via_fence ? " · fence" : ""}
+                  </span>
+                  {z != null ? (
+                    <span className="fs-z">
+                      {" · "}
+                      {zKey(p)} {fmt(z, 1)} Ω
+                    </span>
+                  ) : null}
+                </span>
+              );
+            },
+          }))}
+          trailingColumn={{
+            cell: (
+              <button
+                type="button"
+                className="btn btn-sm stk-add-btn"
+                title="Add an impedance profile"
+                onClick={() => {
+                  const p = newProfile(profiles.length);
+                  setProfiles((ps) => [...ps, p]);
+                  setSel({ profile: p.id, layer: cu[0].name as string });
+                }}
+              >
+                <span className="stk-add-plus" aria-hidden="true">
+                  +
+                </span>
+                <span className="stk-add-label">add profile</span>
+              </button>
+            ),
+          }}
+        />
+        <StackupLegend />
       </section>
 
       <div className="fs-lower">
@@ -639,15 +819,19 @@ export default function FieldSolver() {
               </label>
               <label className="fs-field">
                 <span>Design f</span>
-                <input
-                  className="text fs-num"
-                  defaultValue={fmtHz(profile.f)}
-                  key={profile.f}
-                  onBlur={(e) => {
-                    const hz = parseFreq(e.target.value);
-                    if (hz) setProfile({ f: Math.max(1e6, hz) });
-                    else e.target.value = fmtHz(profile.f);
-                  }}
+                <SiInput
+                  className="fs-num"
+                  quantity="frequency"
+                  value={profile.f}
+                  min={F_FLOOR}
+                  max={F_CEIL}
+                  onChange={(v) => setProfile({ f: Math.min(F_CEIL, Math.max(F_FLOOR, v)) })}
+                  help={
+                    <>
+                      Type any unit: 2.4GHz, 2400MHz, 2.4e9. A bare number means Hz. The solver is quasi-TEM and is
+                      floored at 1 MHz.
+                    </>
+                  }
                 />
               </label>
             </div>
@@ -669,26 +853,26 @@ export default function FieldSolver() {
                   <>
                     <label className="fs-field">
                       <span>from</span>
-                      <input
-                        className="text fs-num"
-                        defaultValue={fmtHz(profile.fr0)}
-                        onBlur={(e) => {
-                          const hz = parseFreq(e.target.value);
-                          if (hz) setProfile({ fr0: hz }, false);
-                          else e.target.value = fmtHz(profile.fr0);
-                        }}
+                      <SiInput
+                        className="fs-num"
+                        quantity="frequency"
+                        value={profile.fr0}
+                        min={F_FLOOR}
+                        max={F_CEIL}
+                        onChange={(v) => setProfile({ fr0: v }, false)}
+                        help={<>Type any unit: 100MHz, 1e8, 0.1GHz. A bare number means Hz.</>}
                       />
                     </label>
                     <label className="fs-field">
                       <span>to</span>
-                      <input
-                        className="text fs-num"
-                        defaultValue={fmtHz(profile.fr1)}
-                        onBlur={(e) => {
-                          const hz = parseFreq(e.target.value);
-                          if (hz) setProfile({ fr1: hz }, false);
-                          else e.target.value = fmtHz(profile.fr1);
-                        }}
+                      <SiInput
+                        className="fs-num"
+                        quantity="frequency"
+                        value={profile.fr1}
+                        min={F_FLOOR}
+                        max={F_CEIL}
+                        onChange={(v) => setProfile({ fr1: v }, false)}
+                        help={<>Type any unit: 100MHz, 1e8, 0.1GHz. A bare number means Hz.</>}
                       />
                     </label>
                   </>
@@ -775,10 +959,11 @@ export default function FieldSolver() {
                     <td>{label}</td>
                     {[0, 1].map((j) => (
                       <td key={j}>
-                        <NumberInput
-                          className="text fs-num"
-                          step={0.05}
+                        <SiInput
+                          className="fs-num"
+                          min={0}
                           value={profile.ranges[k]?.[j] ?? 0}
+                          help={<>Type any unit: 0.2, 200um, 7.9mil. A bare number means mm.</>}
                           onChange={(v) => {
                             const r = profile.ranges[k] ?? [0, 1];
                             r[j] = v;
@@ -816,21 +1001,23 @@ export default function FieldSolver() {
               <div className="fs-sub">
                 <div className="fs-row">
                   <label className="fs-field">
-                    <span>hole mm</span>
-                    <NumberInput
-                      className="text fs-num"
-                      step={0.05}
+                    <span>hole</span>
+                    <SiInput
+                      className="fs-num"
                       value={cell.via_hole}
+                      min={0}
                       onChange={(v) => setCell({ via_hole: v })}
+                      help={<>Type any unit: 0.2, 200um, 7.9mil. A bare number means mm.</>}
                     />
                   </label>
                   <label className="fs-field">
-                    <span>pad ⌀ mm</span>
-                    <NumberInput
-                      className="text fs-num"
-                      step={0.05}
+                    <span>pad ⌀</span>
+                    <SiInput
+                      className="fs-num"
                       value={cell.via_pad}
+                      min={0}
                       onChange={(v) => setCell({ via_pad: v })}
+                      help={<>Type any unit: 0.2, 200um, 7.9mil. A bare number means mm.</>}
                     />
                   </label>
                   <label className="fs-field">
@@ -846,12 +1033,13 @@ export default function FieldSolver() {
                   </label>
                   {cell.fence_mode === "exact" ? (
                     <label className="fs-field">
-                      <span>distance mm</span>
-                      <NumberInput
-                        className="text fs-num"
-                        step={0.05}
+                      <span>distance</span>
+                      <SiInput
+                        className="fs-num"
                         value={cell.fence_distance}
+                        min={0}
                         onChange={(v) => setCell({ fence_distance: v })}
+                        help={<>Type any unit: 0.2, 200um, 7.9mil. A bare number means mm.</>}
                       />
                     </label>
                   ) : null}
@@ -866,11 +1054,12 @@ export default function FieldSolver() {
                   </button>
                   {cell.via_rows.map((r, i) => (
                     <label key={i} className="fs-field">
-                      <span>row {i + 2} pitch mm</span>
-                      <NumberInput
-                        className="text fs-num"
-                        step={0.05}
+                      <span>row {i + 2} pitch</span>
+                      <SiInput
+                        className="fs-num"
+                        min={0}
                         value={r.pitch}
+                        help={<>Type any unit: 0.6, 600um, 23.6mil. A bare number means mm.</>}
                         onChange={(v) => {
                           cell.via_rows[i] = { ...r, pitch: v };
                           invalidate();
@@ -888,12 +1077,18 @@ export default function FieldSolver() {
             </label>
             {cell.use_w2 ? (
               <label className="fs-field fs-sub">
-                <span>undercut per side µm</span>
-                <NumberInput
-                  className="text fs-num"
-                  step={0.5}
-                  value={cell.etch_um ?? Number(ruleset?.etch_outer_um ?? 12.5)}
-                  onChange={(v) => setCell({ etch_um: v })}
+                <span>undercut per side</span>
+                <SiInput
+                  className="fs-num"
+                  assume="um"
+                  fixedUnit="um"
+                  min={0}
+                  value={(cell.etch_um ?? Number(ruleset?.etch_outer_um ?? 12.5)) / 1000}
+                  onChange={(v) => {
+                    const um = v * 1000;
+                    setCell({ etch_um: um });
+                  }}
+                  help={<>Type any unit: 12.5, 12.5um, 0.0125mm. A bare number means um here.</>}
                 />
               </label>
             ) : null}
@@ -904,12 +1099,18 @@ export default function FieldSolver() {
             </label>
             {cell.use_rough ? (
               <label className="fs-field fs-sub">
-                <span>RMS µm</span>
-                <NumberInput
-                  className="text fs-num"
-                  step={0.1}
-                  value={cell.roughness_um}
-                  onChange={(v) => setCell({ roughness_um: v })}
+                <span>RMS</span>
+                <SiInput
+                  className="fs-num"
+                  assume="um"
+                  fixedUnit="um"
+                  min={0}
+                  value={(cell.roughness_um) / 1000}
+                  onChange={(v) => {
+                    const um = v * 1000;
+                    setCell({ roughness_um: um });
+                  }}
+                  help={<>Type any unit: 12.5, 12.5um, 0.0125mm. A bare number means um here.</>}
                 />
               </label>
             ) : null}
@@ -953,33 +1154,36 @@ export default function FieldSolver() {
             <legend>5 · Resulting dimensions</legend>
             <div className="fs-row">
               <label className="fs-field">
-                <span>Width W1 mm</span>
-                <NumberInput
-                  className="text fs-num"
-                  step={0.005}
+                <span>Width W1</span>
+                <SiInput
+                  className="fs-num"
                   value={cell.w}
+                  min={0}
                   onChange={(v) => setCell({ w: v })}
+                  help={<>Type any unit: 0.2, 200um, 7.9mil. A bare number means mm.</>}
                 />
               </label>
               {pair ? (
                 <label className="fs-field">
-                  <span>Spacing S mm</span>
-                  <NumberInput
-                    className="text fs-num"
-                    step={0.005}
+                  <span>Spacing S</span>
+                  <SiInput
+                    className="fs-num"
                     value={cell.s}
+                    min={0}
                     onChange={(v) => setCell({ s: v })}
+                    help={<>Type any unit: 0.2, 200um, 7.9mil. A bare number means mm.</>}
                   />
                 </label>
               ) : null}
               {isCpw(profile) ? (
                 <label className="fs-field">
-                  <span>Gap mm</span>
-                  <NumberInput
-                    className="text fs-num"
-                    step={0.005}
+                  <span>Gap</span>
+                  <SiInput
+                    className="fs-num"
                     value={cell.gap}
+                    min={0}
                     onChange={(v) => setCell({ gap: v })}
+                    help={<>Type any unit: 0.2, 200um, 7.9mil. A bare number means mm.</>}
                   />
                 </label>
               ) : null}
@@ -1305,20 +1509,27 @@ export default function FieldSolver() {
 
       <ProjectPanel
         stackupKey={stackupId}
-        profileName={profile.name}
-        profileConfig={profile as unknown as Record<string, unknown>}
-        profileResult={
+        profiles={profiles}
+        initial={{
+          projectId: params.get("project") ? Number(params.get("project")) : null,
+          snapshotId: params.get("snapshot") ? Number(params.get("snapshot")) : null,
+          board: params.get("board") ?? "",
+        }}
+        liveResult={
           result
             ? {
-                // numbers only: a solved mesh is tens of megabytes and is cheap
-                // to redraw only by solving again
-                summary: result.summary,
-                design: result.design,
-                sweep: result.sweep,
-                C0: result.C0,
-                mesh: result.mesh,
-                notes: result.notes,
-                geometry: result.geometry,
+                profileId: profile.id,
+                payload: {
+                  // numbers only: a solved mesh is tens of megabytes and is cheap
+                  // to redraw only by solving again
+                  summary: result.summary,
+                  design: result.design,
+                  sweep: result.sweep,
+                  C0: result.C0,
+                  mesh: result.mesh,
+                  notes: result.notes,
+                  geometry: result.geometry,
+                },
               }
             : null
         }

@@ -15,6 +15,7 @@ import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner } from "../Ui";
 import { fmtWhen } from "./common";
 import DataTable, { type Column } from "../DataTable";
+import { useModal } from "../modal";
 
 interface Editing {
   name: string;
@@ -26,6 +27,7 @@ export default function ParamSetsPanel({ projectId }: { projectId: number }) {
   const [sets, setSets] = useState<ParamSetRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
+  const modal = useModal(() => setEditing(null), { active: !!editing });
   const [busy, setBusy] = useState(false);
 
   const reload = useCallback(() => {
@@ -172,8 +174,8 @@ export default function ParamSetsPanel({ projectId }: { projectId: number }) {
       )}
 
       {editing ? (
-        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setEditing(null)}>
-          <div className="card pad modal-card" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...modal.backdropProps}>
+          <div className="card pad modal-card" {...modal.cardProps}>
             <h2 className="card-title">Param set “{editing.name}”</h2>
             {editing.rows.map((r, i) => (
               <div key={i} className="btn-row">

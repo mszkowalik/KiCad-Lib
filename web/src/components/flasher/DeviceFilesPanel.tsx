@@ -17,6 +17,7 @@ import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
 import { fmtBytes, fmtWhen, shortSha } from "./common";
 import DataTable, { type Column } from "../DataTable";
+import { useModal } from "../modal";
 
 export default function DeviceFilesPanel({ projectId }: { projectId: number }) {
   const dialog = useDialog();
@@ -24,6 +25,7 @@ export default function DeviceFilesPanel({ projectId }: { projectId: number }) {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<number | null>(null); // expanded file id
   const [editor, setEditor] = useState<{ filename: string; content: string; comment: string } | null>(null);
+  const modal = useModal(() => setEditor(null), { active: !!editor });
   const [busy, setBusy] = useState(false);
   // This panel has its own tab now, so it opens expanded; the toggle stays
   // for a quick collapse when a project has many files.
@@ -219,8 +221,8 @@ export default function DeviceFilesPanel({ projectId }: { projectId: number }) {
       ) : null}
 
       {editor ? (
-        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setEditor(null)}>
-          <div className="card pad modal-card modal-card-wide" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...modal.backdropProps}>
+          <div className="card pad modal-card modal-card-wide" {...modal.cardProps}>
             <h2 className="card-title">
               {editor.filename} — new draft version
             </h2>

@@ -22,6 +22,7 @@ import { useDialog } from "../Dialog";
 import DataTable, { type Column } from "../DataTable";
 import { ErrorBanner, Spinner } from "../Ui";
 import { fmtBytes, fmtWhen, shortSha } from "./common";
+import { useModal } from "../modal";
 
 const FALLBACK_CHIPS = ["esp32", "esp32c6"];
 const FALLBACK_KINDS = ["factory", "app", "filesystem", "safeboot"];
@@ -43,6 +44,7 @@ export default function FirmwarePanel({
   const [notes, setNotes] = useState("");
   const [picked, setPicked] = useState<File | null>(null);
   const [editing, setEditing] = useState<FirmwareAssetRow | null>(null);
+  const modal = useModal(() => setEditing(null), { active: !!editing });
   const fileRef = useRef<HTMLInputElement>(null);
 
   const chips = meta?.chips ?? FALLBACK_CHIPS;
@@ -317,8 +319,8 @@ export default function FirmwarePanel({
       </div>
 
       {editing ? (
-        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setEditing(null)}>
-          <div className="card pad modal-card" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...modal.backdropProps}>
+          <div className="card pad modal-card" {...modal.cardProps}>
             <h2 className="card-title mono">{editing.filename}</h2>
             <p className="card-subtitle">
               Metadata only — the bytes are the identity and never change. sha256{" "}

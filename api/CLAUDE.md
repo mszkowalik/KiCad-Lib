@@ -2015,6 +2015,47 @@ record: `docs/decisions/0002-field-solver-in-the-platform.md`.
   board's current one and the UI says so.
 - **`stackup_sha` hashes layers, coating and finish only.** Renaming a stackup
   must not invalidate anybody's numbers.
+- **A stackup carries only what changes a field** (decision
+  [0008](../docs/decisions/0008-a-stackup-is-electrical-only.md)). No colour, ever:
+  `JLC06121H-3313A` in seven mask colours is fourteen library rows the solver cannot
+  tell apart. Board colour is PROJECT data — `mask_color` / `silk_color` on
+  `ProjectFieldRevision`, versioned like the assignment, written by
+  `POST /projects/{id}/appearance`, and the choices come from
+  `GET /api/fieldsolver/colors` (JLCPCB's own list; the legend follows the mask).
+- **`soldermask`, `finish` and `silkscreen` on a stackup mean the TOP FACE.** The
+  per-face truth is `faces: {top, bottom}`; those three are kept because
+  `templates.py` guards every mask region with `outer_top` and only ever coats the
+  top, so redefining them would silently change every solved geometry. `_face_of`
+  reads either shape — a bare value means both faces, which is what every stackup
+  written before faces said, so nothing needed migrating.
+- **`StackupLibrary.normalise` runs on every save and refuses an unbuildable stack.**
+  Copper is renamed `L1`…`Ln` by position and a dielectric's label is generated from
+  its material and the copper pair it lies between — neither is typed, so a stackup
+  cannot claim its third copper layer is `L5`. Copper against copper is rejected
+  (nothing insulates them, and the solver would model a different board without
+  complaining); several dielectrics in a row are fine, because a fab lists each
+  prepreg sheet and `JLC06121H-3313A` has three in one gap.
+- **`field_state.stack_rows` is the ONE place the two sides are aligned.** It reduces
+  a `.kicad_pcb` and a stackup to the same normal form — the ordered copper layers and
+  the dielectric GAP between each neighbouring pair — and every view of a stackup in
+  the browser draws that list. Aligning in the page instead would let the picture
+  drift from the verdict. KiCad allows only `copper - 1` dielectric layers, so a fab
+  gap of three prepreg sheets is one KiCad dielectric with `addsublayer` sub-layers;
+  reading only the first `(thickness)` of such a layer silently loses the rest.
+- **The comparison reports and refuses nothing.** A board file is allowed to disagree
+  with the stackup it is solved against (decision 0002). `severity` separates a
+  difference that decides the verdict from one that is shown and does not — the
+  surface finish is the latter, because it is a separate order option at the fab.
+- **Profiles saved to a board go through `POST /projects/{id}/profiles/batch`**, not N
+  calls to `save_profile`: `revision_for_edit` is copy-on-write, so the first call
+  would create the revision and a failure halfway would leave a partial save. It
+  refuses — writing nothing — when the board's assigned stackup is not the one the
+  profiles were built on, server-side, because the agent tools use the same path.
+- **`field_workspaces` is scratch space, one row per person**, holding the solver
+  page's own state banked BY STACKUP. A profile's cells are keyed by copper layer
+  name, so a set built on a six-layer board describes nothing on a two-layer one;
+  switching stackups parks one bench and picks up another. No history — the moment
+  work matters it is saved to a project, which is versioned.
 - **A stored result holds numbers, not fields.** Summary, sweep, C/L, notes and
   the geometry outline; never the solved mesh (tens of megabytes per frequency
   frame). That is what makes reopening a profile instant and why the field
