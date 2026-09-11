@@ -21,7 +21,7 @@ mounts the repo at `/repo` for exactly that.
 | `mcp/` | Stdio MCP server proxying the agent tools to Claude Code | `api/CLAUDE.md` (agent section) |
 | `render/` | kicad-cli render container (previews, project exports) | — |
 | `api/app/services/fieldsolver/` | 2D quasi-TEM field solver (impedance geometry) | `docs/decisions/0002-field-solver-in-the-platform.md` |
-| `clients/` | Client-side helpers (KiCad sync plugin etc.) | — |
+| `clients/` | A sample `.kicad_httplib` and unrelated client projects (flasher, invoice import). The KiCad sync plugin is NOT here: its source is `api/app/services/pcm_plugin/`, packaged by `api/app/services/pcm.py` | `api/CLAUDE.md` |
 | `compose.yaml` | Full dev deployment (db, minio, api, render, web) | `README.md` |
 | `compose.prod.yaml` | Server deployment from the published GHCR images | `README.md` |
 | `.github/workflows/images.yml` | Builds + pushes the api/web/render images | `README.md` |
@@ -139,6 +139,53 @@ to get wrong (full reasoning in
 The solver is quasi-TEM and floored at **1 MHz**; `triangle`, its mesher, is
 free for personal and research use only and must be replaced before any
 commercial release.
+
+## Getting the library into KiCad
+
+Full reasoning in [docs/decisions/0006](docs/decisions/0006-sync-button-owns-library-updates.md).
+
+- **The Plugin and Content Manager installs once and updates only the plugin.**
+  It installs the base symbols and footprints, the 3D models and the Sync
+  plugin from the user's personal repository URL. After that, library updates
+  come from the **Sync 7Sigma Library** button, which KiCad 10 shows in the PCB
+  editor. A sync records the two content packages in the PCM as current and
+  pinned, so the PCM offers no library update and Update All skips them. The
+  plugin cannot update itself, so its own PCM entry is left alone.
+- **KiCad re-reads a changed library on its next use, no restart.** The
+  footprint, symbol and 3D caches check file modification times (verified in
+  the 10.0 source). Parts already placed are copies: Tools → Update Footprints
+  / Symbols from Library. A restart is needed only after the plugin edits a
+  library table.
+- **The HTTP catalog refreshes itself every 2 minutes, and nothing can force
+  it.** KiCad 10 re-fetches in a background thread every `max` of the two
+  timeouts in the `.kicad_httplib`; both are 120 s since 2026-09-10 and are
+  baked into the downloaded file, so a change means a re-download. One refresh
+  is about 44 kB on the wire.
+
+## Datasheets
+
+Every datasheet URL is re-fetched once a night, and the archive is the document
+KiCad itself is pointed at. Three rules that are expensive to get wrong (full
+reasoning in
+[docs/decisions/0004](docs/decisions/0004-datasheet-identity-and-storage.md)):
+
+- **A new version means the TEXT changed, never the bytes.** Vendors re-sign
+  and re-generate PDFs constantly — Texas Instruments does it about every two
+  days — so a byte comparison called a fresh download a new revision. One
+  TPS61023 datasheet reached 37 stored copies of a single Rev. B that way, and
+  every one of them bumped the component and dropped its verification. The
+  identity is a hash of the page text with a role per page.
+- **A real revision is a review event.** The bump goes through the shared
+  publish path: the sign-off carries because the part did not change, the
+  review record does not because the document it was checked against did, and
+  a review request opens naming the pages that moved.
+- **A file is stored once and shared.** Bytes live in `documents`, addressed by
+  sha256; a datasheet version points at one. Three variants of a part that link
+  the same PDF hold one copy and one page index between them.
+
+Deleting a stored file does not free the disk until the table is rewritten, so
+the clean-up endpoints end in a `VACUUM FULL`. See "Datasheets" in
+`api/CLAUDE.md` for the fetch ladder, the page roles and the endpoints.
 
 ## Access control
 

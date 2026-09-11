@@ -296,6 +296,14 @@ sign-off states to `STATUS_TONES`.
   is the one KiCad itself is pointed at. So: `.ds-file` carries the icon,
   the filename and the stored version; `.ds-origin` is the word "original"
   with the full URL only in its `title`, pushed right by `.ds-gap`.
+  Beside them sit `.ds-revision` (the revision label parsed out of the
+  document — "Rev. B", "SLVSF14B" — absent when nothing parsed) and
+  `.ds-shared` ("shared with N", the other components whose current copy is
+  the very same stored file; both come from `DatasheetRow`).
+  **`.ds-row` wraps, and must keep wrapping.** The row carries a variable
+  number of chips and the card is a narrow column; without `flex-wrap` the
+  file button is squeezed until its name disappears behind the chip after it,
+  which is exactly what adding these two did before the wrap.
 - **`TextLayerTag` (in `ComponentDetail.tsx`) reads `text_layer` — never
   computes it.** Green `OK` is a searchable PDF, amber `partial` / `no text`
   are not, red `unreadable` is a file that would not open. `none` (a DXF, a
