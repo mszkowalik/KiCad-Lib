@@ -5624,6 +5624,14 @@ a.check-cell:hover {
 .stk tr.stk-prepreg { --stk-fill: var(--stk-prepreg); --stk-ink: var(--stk-prepreg-ink); }
 .stk tr.stk-dielectric { --stk-fill: var(--stk-dielectric); --stk-ink: var(--stk-dielectric-ink); }
 .stk tbody td { background: var(--stk-fill); color: var(--stk-text, var(--text)); }
+/* A pill keeps its own meaning-colour, but its fill is translucent and mixes with
+   whatever is behind it — on a dark blue or black board row the verdict became dark
+   green on dark blue. Give it an opaque ground of its own on an inked row. */
+.stk tbody tr[style*="--stk-text"] .pill {
+  background: var(--surface);
+  box-shadow: 0 0 0 1px color-mix(in oklab, currentColor 45%, transparent);
+}
+
 /* a row painted in the board's own ink carries its own readable text colour */
 .stk tbody tr[style*="--stk-text"] .stk-mat,
 .stk tbody tr[style*="--stk-text"] .stk-derived,
