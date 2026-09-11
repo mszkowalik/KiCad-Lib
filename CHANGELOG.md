@@ -1,5 +1,51 @@
 # Changelog
 
+## 2026-09-11 — A part with no land pattern stays off the board
+
+- **A cabled antenna, an RF pigtail or an enclosure with no drawn outline is no
+  longer pushed onto the PCB.** The generator forced `on_board yes` on every
+  part outside the `Simulation` category, so a base symbol's own
+  `(on_board no)` was thrown away — `Antenna_Cabled` and `RF_Pigtail` were
+  emitted as on-board although both drawings say otherwise, and the note on
+  `Antenna_Cabled` claiming this flag prevents a missing-footprint report had
+  not been true for any of six parts. A part is now off-board when **the base
+  symbol declares `(on_board no)` AND the component has no footprint**. See
+  [decision 0005](docs/decisions/0005-off-board-parts.md).
+- **Both halves of that rule are load-bearing.** Without the declaration, a
+  `Footprint` somebody merely forgot would drop the part off the board in
+  silence. Without the footprint test, the 17 terminal-block plugs would drop
+  off too: `TERMINAL_BLOCK_PLUG` declares `(on_board no)` while every component
+  on it carries the deliberate `TerminalBlock_Plug_Invisible` land, so the next
+  *Update PCB from Schematic* would have **deleted those footprints from boards
+  that already exist**.
+- **One predicate, three readers.** `generator.off_board` is called by the
+  mirror, by the KiCad HTTP catalog record (which is what KiCad actually places
+  from) and by the validator, so what the validator forgives and what KiCad is
+  told cannot drift. `in_bom` is deliberately not derived the same way —
+  `RPi_CM5` carries an `(in_bom no)` this library does not mean, and honouring
+  it would drop the most expensive line on the board out of every BOM.
+- **The validator gained its third footprint-less branch.** It already answered
+  `na` for BOM-only and simulation-only parts; an off-board part was the case
+  with no branch, so `cmp.required_props` and `cmp.footprint_ref` failed by
+  construction on every cabled antenna and pigtail and had to be answered by
+  hand. An ordinary part with an empty `Footprint` still fails.
+- **Two RF pigtails and a shared symbol.** `BWIPX1-SMA-1.13L100` (C784403,
+  I-PEX Gen 1 to SMA female) and `ACA-RFSMA-K TO IPEX1 001` (C22467635, to
+  RP-SMA female), on a new 0-pin `RF_Pigtail` base symbol with reference `W`.
+  Both are bulkhead types and both mate with an antenna already in the library.
+  Gender was confirmed from each manufacturer's own drawing: the Chinese
+  `外螺内孔` reads like RP-SMA to an English eye and is a standard SMA jack,
+  because the jack carries the external thread and the plug carries the nut.
+- **`Enclosure` now declares itself off-board.** This moves only the three
+  Italtronic enclosures, which have no footprint; the four Hammond and the
+  Takachi parts carry real lands and are untouched. Whether the Italtronic
+  three should get their own mechanical footprints is still open
+  ([docs/todo.md](docs/todo.md)).
+- **RF uses one spelling for VSWR.** The category carried both `V.S.W.R` (four
+  on-board antennas) and `VSWR` (four cabled parts) for one quantity, which
+  splits any template or parametric filter. All four were renamed; none was
+  reviewed or signed, so the rename cost no verification.
+
 ## 2026-09-11 — JLC06121H-3313A, and a board file checked against its stackup layer by layer
 
 - **`JLC06121H-3313A` joins the stackup library.** JLCPCB's published 6-layer

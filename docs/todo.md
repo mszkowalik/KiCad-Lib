@@ -17,6 +17,7 @@ said. Never strike a row through and leave it.
 
 | # | Item | Why | Done when |
 |---|---|---|---|
+| 1 | Draw mechanical footprints for the three Italtronic enclosures — `Italtronic_05.0502530`, `Italtronic_35.0207000.BL`, `Italtronic_P05050201P.BL` | Every other `Mechanical_7S` enclosure has its own land (`Enclosure_Hammond_1551RFLGY`, `_1551TFLGY`, `_1551XFLGY`, `_1556CGY`, `Enclosure_TAKACHI_SIM6-12-3W`); these three are the only members of the family without one, so their outline and keepout are invisible on a layout. Raised by a review pass on 2026-08-25 and still flagged on all three parts. [Decision 0005](decisions/0005-off-board-parts.md) stopped the machine tier failing them but deliberately did not settle this — assigning a footprint puts each part back on the board automatically, so the two are compatible in either order | A footprint exists for each of the three, is assigned, and the `custom:footprint-missing-enclosure` flag on each part is answered rather than left open |
 
 ## More information
 

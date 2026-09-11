@@ -175,6 +175,32 @@ work found but not agreed yet goes to `docs/todo.md`, after the user agrees.
 A register holds open rows only. When a `docs/todo.md` row is answered, write
 the answer into its home, then delete the row — do not strike it through.
 
+### The documentation is part of the change, not a follow-up
+
+**A change is not done until its documentation lands in the SAME commit.** Do
+not report work as finished, and do not push or deploy it, until you have gone
+through this list and said in your report which entries you wrote and which you
+decided did not apply:
+
+| Write | When |
+|---|---|
+| `docs/decisions/NNNN-*.md` + a row in `docs/decisions/index.md` | The change adds an external dependency, alters deployment or access control, or **would be expensive to reverse**. Reversing it changes other people's boards, data or credentials. Follow the rules in [docs/decisions/index.md](docs/decisions/index.md). |
+| `CHANGELOG.md` | Anything a user of the platform would notice: a new capability, a behaviour change, a correction. Add a dated section at the top. |
+| `docs/todo.md` | You found real work and are not doing it now. **Ask first**, unless the user already asked for that item. |
+| `CLAUDE.md`, `api/CLAUDE.md`, `web/CLAUDE.md` | A non-obvious fact about how the repo, platform or process works. Put it in the most specific file. **When a change makes an existing statement wrong, correcting it is part of the change** — a stale rule in these files is worse than a missing one, because the next agent believes it. |
+| A platform skill, via `propose_skill_update` | A component or library convention, a decision rule, or a trap. Never record a convention only in `.claude/skills/` — the next refresh overwrites it. |
+
+Two failure modes to avoid, both seen in this repo:
+
+- **Writing the code and calling it done.** The decision record for
+  [0005](docs/decisions/0005-off-board-parts.md) was written after the change
+  had already been committed, pushed and deployed, which is exactly what rule 2
+  of the decisions index forbids. The record is the only place the REJECTED
+  options survive, and those are what stop the next person re-proposing them.
+- **Leaving a register to grow stale.** A decision record is never edited once
+  accepted — supersede it. A `docs/todo.md` row is deleted when it lands, never
+  struck through.
+
 ## Conventions
 
 - Component/library conventions live in the platform's **skill documents** — not
