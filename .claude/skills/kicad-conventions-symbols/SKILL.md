@@ -2,7 +2,7 @@
 name: kicad-conventions-symbols
 description: "Choosing AND authoring base symbols: pin-type directionality from the component's own viewpoint, V.24 UART and SPI role policy, functional pin grouping, box/pitch geometry formulas, and stacked (shorted) pins. Use when picking a base symbol or writing a propose_symbol_edit."
 ---
-<!-- platform-skill: conventions-symbols v10 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-symbols v11 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Symbol conventions
 
 Every component is built on a **base symbol** — a graphical template with pins.
@@ -369,8 +369,13 @@ Two legitimate uses:
    is electrically safe and gives the layout extra copper. This is a
    **layout-driven decision**: only do it when the board designer asks for that
    specific short, and confirm the pad really is `NC` in the datasheet first.
-   Example: `TPD4E05U06`, where pad 10 (datasheet `NC`) is stacked hidden onto
-   pad 1 (`D1+`).
+   **No symbol in this library does this today.** `TPD4E05U06` was named here as
+   the example — "pad 10 (datasheet `NC`) stacked hidden onto pad 1 (`D1+`)" —
+   and that was never true of the drawing: no published version of it has ever
+   carried a stacked pin. Corrected 2026-09-13 after reading TI SLVSBO7L Rev. L
+   p.4, which does confirm pads 6, 7, 9 and 10 are `NC` on the DQA package but
+   gives no reason to tie any of them to a signal. Do not restore the example
+   without a board designer asking for that specific short.
 
 Rules for a stacked pin:
 
