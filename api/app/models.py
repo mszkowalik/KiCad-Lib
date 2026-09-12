@@ -2595,19 +2595,25 @@ class ProgrammingLog(Base):
     so expect a few thousand rows per run. `device_ts` holds the device's own
     timestamp ("00:00:04.248") when the line carries one — useful because it
     survives independently of server clock skew. Never UPDATE or DELETE rows.
+
+    **`(run_id, seq)` IS the primary key.** A surrogate `id` sat beside it until
+    2026-09-12, carrying its own index of 52 MB that had never been scanned once
+    — `idx_scan` read 0 against 2.44 M rows, because nothing addresses a log
+    line by anything but its run and its sequence. Dropping it and promoting the
+    unique constraint took the table from 375 MB to 304 MB. The table is the
+    largest row count in the database and it only grows, so a column that costs
+    4 bytes a row and answers no query is worth this note.
     """
 
     __tablename__ = "programming_logs"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    run_id: Mapped[int] = mapped_column(ForeignKey("programming_runs.id"))
-    seq: Mapped[int] = mapped_column(Integer)
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey("programming_runs.id"), primary_key=True)
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     device_ts: Mapped[str] = mapped_column(String(20), default="")
     dir: Mapped[str] = mapped_column(String(10))  # tx|rx|app|err|esptool
     text: Mapped[str] = mapped_column(Text, default="")
-
-    __table_args__ = (UniqueConstraint("run_id", "seq", name="uq_programming_log_seq"),)
 
 
 class DeviceConfigValue(Base):

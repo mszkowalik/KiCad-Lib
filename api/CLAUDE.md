@@ -607,6 +607,18 @@ section first.
 
 Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its history).
 
+- **`programming_logs` is keyed by `(run_id, seq)` and has NO surrogate id**
+  (2026-09-12, `services/proglog_migrate.py`). It is the largest row count in
+  the database — 2.44 M rows over 6321 runs — and it only grows, because every
+  line of every run is kept by user decision (2026-07-27). The old `id` column
+  carried a 52 MB index that `pg_stat_user_indexes` said had never been scanned
+  once; dropping it took the table from 375 MB to 304 MB. Do not add a
+  surrogate key back: the reader filters `run_id` and `seq` and orders by `seq`,
+  and the writer is a `bulk_insert_mappings` that supplies neither. **On this
+  table, cost per row is the design constraint** — a column here is four bytes
+  times two and a half million.
+
+
 - **ONE revision binds everything: the DEPLOYMENT VERSION.** It pins firmware
   images (`deployment_images`), berryware (`deployment_files` → exact
   `device_file_versions`), the procedure (`steps`), and the parameter wiring.

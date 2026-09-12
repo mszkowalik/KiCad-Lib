@@ -749,6 +749,13 @@ def startup() -> None:
     from .services.datasheet_migrate import migrate_to_documents
 
     migrate_to_documents(engine)
+    # Drop the surrogate key on `programming_logs` and rewrite the table. Runs
+    # here, at startup, because the rewrite holds an ACCESS EXCLUSIVE lock and
+    # must not sit under a request or under a live flasher run. Idempotent —
+    # see the module.
+    from .services.proglog_migrate import migrate as migrate_proglog_pk
+
+    migrate_proglog_pk(engine)
     _migrate_run_sales()
     try:
         from .db import SessionLocal
@@ -922,8 +929,10 @@ def health_schema():
     far away from the cause. This is where to look first.
     """
     from .services.datasheet_migrate import RESULT as _DOC_MIGRATION
+    from .services.proglog_migrate import RESULT as _PROGLOG_MIGRATION
 
     _SCHEMA_RESULTS.update(_DOC_MIGRATION)
+    _SCHEMA_RESULTS.update(_PROGLOG_MIGRATION)
     failed = {k: v for k, v in _SCHEMA_RESULTS.items() if v not in ("ok", "skipped")}
     return {
         "ok": not failed,

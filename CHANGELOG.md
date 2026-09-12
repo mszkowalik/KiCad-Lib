@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-09-12 — The programming log paid for an index nobody used
+
+- **`programming_logs` carried two indexes of 52 MB and only ever read one.**
+  The table holds 2,444,307 rows across 6321 runs, the largest row count in the
+  database, and it only grows because every line of every run is kept on
+  purpose. It had a surrogate `id` primary key beside a unique constraint on
+  `(run_id, seq)`. `pg_stat_user_indexes` reported **zero scans, ever**, on the
+  `id` index: nothing addresses a log line by anything but its run and its
+  sequence, no foreign key pointed at it, and the writer never supplied one.
+- **`(run_id, seq)` is the primary key now**, and the table went from 375 MB to
+  304 MB — 53 MB of index and 18 MB of row overhead. Nothing was deleted: the
+  row count and the run count are unchanged.
+- **A startup migration applies it once**, guarded by the presence of the `id`
+  column, and reports itself at `GET /api/health/schema` as
+  `programming_logs.pk`. It ends in a `VACUUM FULL`, because `DROP COLUMN` only
+  marks a column dead in Postgres and the bytes stay until the table is
+  rewritten. Measured on the full 2.44 M rows: 0.54 s of DDL and 1.7 s of
+  rewrite, which is why it runs at startup rather than in the background.
+
 ## 2026-09-12 — Every IC in the library now draws its supply current
 
 - **The amplifiers, comparators and logic gates delivered current to their
