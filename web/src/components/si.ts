@@ -11,10 +11,23 @@
  *  as "0.2104 mm".
  */
 
-export type Quantity = "length" | "frequency";
+export type Quantity = "length" | "frequency" | "resistance" | "percent";
 
 /** Multipliers onto the base unit — mm for a length, Hz for a frequency. */
-const UNITS: Record<Quantity, { base: string; units: Record<string, number>; steps: [number, string][] }> = {
+const UNITS: Record<
+  Quantity,
+  {
+    base: string;
+    units: Record<string, number>;
+    /** The prefixes AUTO-PRINTING may choose, largest first. Deliberately a
+     *  subset of `units`: `cm`, `mil` and `in` are accepted on the way IN and
+     *  never printed, because nobody quotes a board in centimetres. */
+    ladder: [string, number][];
+    /** Accept RKM notation (`4k7`). See `parseSi`. Only where it is a real
+     *  convention — a resistor is printed `4k7`, a board dimension never is. */
+    rkm?: boolean;
+  }
+> = {
   length: {
     base: "mm",
     units: {
@@ -30,26 +43,69 @@ const UNITS: Record<Quantity, { base: string; units: Record<string, number>; ste
       in: 25.4,
       '"': 25.4,
     },
-    // Printed unit by magnitude, largest first. The switch is at 50 um rather than at
-    // 1 mm because of how the figures are actually quoted: a fab publishes laminates
-    // in millimetres (prepreg 3313 is 0.0994 mm, not 99.4 um) and foils and coatings
-    // in micrometres (copper 35 um, mask 30.5 um). Printing everything in the unit
-    // the datasheet uses is what removes the mental conversion; a unit-carrying box
-    // still accepts either one on the way in.
-    steps: [
-      [0.05, "mm"],
-      [1e-3, "um"],
-      [0, "nm"],
+    // ONE rule for every quantity (user decision 2026-09-12): print in the
+    // prefix that puts 1-999 before the decimal point. This REPLACED a
+    // length-only rule that switched to um below 50 um, so that a fab's own
+    // spelling was preserved — prepreg 3313 read as 0.0994 mm rather than
+    // 99.4 um. That reading is gone on purpose; consistency across every
+    // unit-carrying field was judged worth more than matching one datasheet's
+    // spelling, and a value the user TYPED keeps the unit they typed anyway.
+    ladder: [
+      ["m", 1000],
+      ["mm", 1],
+      ["um", 1e-3],
+      ["nm", 1e-6],
     ],
+  },
+  /* Impedance. Only PREFIXES are accepted, never a spelled-out unit: the symbol
+     is hard to type on most keyboards and nobody writes "ohm" into a target
+     field. A bare number is ohms, so the box keeps behaving exactly as the
+     plain number field it replaced.
+
+     `M` and `m` are the one case where CASE MATTERS, and `parseSi` tries the
+     exact spelling before the lowercase one specifically so this works: on a
+     resistance, `10M` is ten megohms (what every schematic in the world means)
+     while `10m` is ten milliohms. Getting that backwards would silently move a
+     target by a factor of a billion. */
+  resistance: {
+    base: "Ω",
+    units: {
+      "": 1, R: 1, r: 1, "Ω": 1, ohm: 1, ohms: 1,
+      k: 1e3, K: 1e3, kohm: 1e3, "kΩ": 1e3,
+      M: 1e6, meg: 1e6, mohm: 1e6, "MΩ": 1e6,
+      G: 1e9, "GΩ": 1e9,
+      m: 1e-3, "mΩ": 1e-3,
+      u: 1e-6, "µ": 1e-6, "μ": 1e-6,
+    },
+    rkm: true,
+    ladder: [
+      ["GΩ", 1e9],
+      ["MΩ", 1e6],
+      ["kΩ", 1e3],
+      ["Ω", 1],
+      ["mΩ", 1e-3],
+      ["µΩ", 1e-6],
+    ],
+  },
+  /* A ratio in percent. It takes no prefixes — "3 milli-percent" is not a
+     thing anyone writes — but it is here so that a tolerance box is the same
+     control as the impedance box beside it: same frame, same ⓘ, same rounding
+     rule. A bare number is percent, and typing the sign is optional. */
+  percent: {
+    base: "%",
+    units: { "": 1, "%": 1, pct: 1, percent: 1 },
+    ladder: [["%", 1]],
   },
   frequency: {
     base: "Hz",
     units: { hz: 1, khz: 1e3, mhz: 1e6, ghz: 1e9, thz: 1e12, k: 1e3, m: 1e6, g: 1e9 },
-    steps: [
-      [1e9, "GHz"],
-      [1e6, "MHz"],
-      [1e3, "kHz"],
-      [0, "Hz"],
+    // "2G4" for 2.4 GHz is ordinary in RF part naming.
+    rkm: true,
+    ladder: [
+      ["GHz", 1e9],
+      ["MHz", 1e6],
+      ["kHz", 1e3],
+      ["Hz", 1],
     ],
   },
 };
@@ -61,7 +117,36 @@ const UNITS: Record<Quantity, { base: string; units: Record<string, number>; ste
 export function parseSi(text: string, q: Quantity, assume?: string): number | null {
   const t = text.trim().replace(",", ".").replace(/\s+/g, "");
   if (!t) return null;
-  const m = /^([+-]?(?:\d+\.?\d*|\.\d+))(.*)$/.exec(t);
+
+  /* RKM / R-notation (IEC 60062): the PREFIX STANDS IN FOR THE DECIMAL POINT,
+     so 4k7 is 4.7 k and 2G4 is 2.4 G. It is how values are printed on parts and
+     in most schematic Value fields, which is where the figure being typed here
+     usually comes from — and a decimal point is the character most often lost
+     to a bad photocopy or a small silkscreen, which is why the notation exists.
+
+     Tried FIRST, and only for <digits><letters><digits>: every other spelling
+     has either no trailing digits ("100R", "35um", "4mil") or a real decimal
+     point ("2.4e9"), so nothing already accepted changes meaning. Case is
+     preserved on the way through, which keeps 1M5 megohms and 1m5 milliohms.
+
+     NOT enabled for LENGTH, and that is the point of the flag rather than a
+     blanket rule: a length is based on mm, so `1m5` would read as 1.5 METRES —
+     1500 mm — in a box that expects a fraction of one. Nobody writes a board
+     dimension that way, so the notation buys nothing there and costs a silent
+     factor of a thousand. */
+  const rkm = UNITS[q].rkm ? /^([+-]?\d+)([A-Za-zΩµμ]+)(\d+)$/.exec(t) : null;
+  if (rkm) {
+    const mult = UNITS[q].units[rkm[2]] ?? UNITS[q].units[rkm[2].toLowerCase()];
+    if (mult !== undefined) {
+      const n = Number(`${rkm[1]}.${rkm[3]}`);
+      if (Number.isFinite(n)) return n * mult;
+    }
+  }
+  // The exponent is part of the NUMBER. Without it "2.4e9" split into 2.4 and
+  // a suffix "e9" that matches no unit, so the field refused a spelling its own
+  // help text advertises ("Type any unit: 2.4GHz, 2400MHz, 2.4e9"). No unit in
+  // any table begins with `e`, so taking it greedily is unambiguous.
+  const m = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)(.*)$/.exec(t);
   if (!m) return null;
   const n = Number(m[1]);
   if (!Number.isFinite(n)) return null;
@@ -82,24 +167,75 @@ const tidy = (v: number): string => {
   return String(Number(s));
 };
 
-/** Print a base-unit value in the prefix that suits its magnitude. */
-export function formatSi(v: number | null, q: Quantity, fixedUnit?: string): string {
-  if (v === null || v === undefined || !Number.isFinite(v)) return "";
+/** How many digits a printed value keeps after the point.
+ *
+ *  Three, with the prefix ladder guaranteeing at most three BEFORE it — so a
+ *  field is never wider than "999.999 MΩ" however large the number behind it.
+ *  1 560 432 Ω prints as "1.56 MΩ" and says so. */
+const MAX_DECIMALS = 3;
+
+export interface SiParts {
+  /** What the box shows. */
+  text: string;
+  /** Every digit, in the same unit — for the tooltip. */
+  exact: string;
+  /** True when digits were dropped, so the caller can say so. */
+  rounded: boolean;
+  /** The unit chosen, so a caller can remember it. */
+  unit: string;
+}
+
+/** Pick the prefix that puts 1-999 before the decimal point. */
+function pickUnit(v: number, q: Quantity, fixedUnit?: string): [string, number] {
   const spec = UNITS[q];
   if (fixedUnit) {
-    const mult = spec.units[fixedUnit] ?? spec.units[fixedUnit.toLowerCase()] ?? 1;
-    return `${tidy(v / mult)} ${fixedUnit}`;
+    return [fixedUnit, spec.units[fixedUnit] ?? spec.units[fixedUnit.toLowerCase()] ?? 1];
   }
-  if (v === 0) return `0 ${spec.base}`;
   const abs = Math.abs(v);
-  for (const [threshold, unit] of spec.steps) {
-    if (abs >= threshold) {
-      const mult = spec.units[unit] ?? spec.units[unit.toLowerCase()] ?? 1;
-      return `${tidy(v / mult)} ${unit}`;
+  if (abs === 0) return [spec.base, 1];
+  for (const [unit, mult] of spec.ladder) {
+    if (abs >= mult) return [unit, mult];
+  }
+  // Smaller than the smallest prefix: use it anyway rather than printing a
+  // string of leading zeros in the base unit.
+  const last = spec.ladder[spec.ladder.length - 1];
+  return last ?? [spec.base, 1];
+}
+
+/** Print a base-unit value, and say whether printing it lost anything. */
+export function formatSiParts(v: number | null, q: Quantity, fixedUnit?: string): SiParts {
+  if (v === null || v === undefined || !Number.isFinite(v)) {
+    return { text: "", exact: "", rounded: false, unit: UNITS[q].base };
+  }
+  let [unit, mult] = pickUnit(v, q, fixedUnit);
+  let scaled = v / mult;
+  // ROUND FIRST, THEN RE-PICK. 999 999 999 Hz lands on MHz (it is below 1 GHz),
+  // rounds to 1000.000 and printed "1000 MHz" — four digits before the point,
+  // which is the one thing the ladder exists to prevent. Rounding can only ever
+  // push a value UP across one step, so one re-pick is enough.
+  if (!fixedUnit && Math.abs(Number(scaled.toFixed(MAX_DECIMALS))) >= 1000) {
+    const spec = UNITS[q];
+    const i = spec.ladder.findIndex(([u]) => u === unit);
+    if (i > 0) {
+      [unit, mult] = spec.ladder[i - 1];
+      scaled = v / mult;
     }
   }
-  return `${tidy(v)} ${spec.base}`;
+  const exact = tidy(scaled);
+  const shown = tidy(Number(scaled.toFixed(MAX_DECIMALS)));
+  return {
+    text: `${shown} ${unit}`,
+    exact: `${exact} ${unit}`,
+    rounded: shown !== exact,
+    unit,
+  };
 }
+
+/** Print a base-unit value in the prefix that suits its magnitude. */
+export function formatSi(v: number | null, q: Quantity, fixedUnit?: string): string {
+  return formatSiParts(v, q, fixedUnit).text;
+}
+
 
 /** The units a field will accept, for a tooltip. */
 export function unitsOf(q: Quantity): string {

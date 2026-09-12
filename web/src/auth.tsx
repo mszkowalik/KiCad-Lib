@@ -6,7 +6,7 @@
  * paint a dozen error banners before the login form appeared.
  *
  * There is no sign-up and no password reset here, by design — an admin creates
- * accounts on the Setup page. Do not add a link for either.
+ * accounts on the Admin page. Do not add a link for either.
  */
 import {
   createContext,

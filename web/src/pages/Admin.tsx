@@ -16,6 +16,7 @@ import {
 import { useAuth } from "../auth";
 import SettingsCard from "../components/SettingsCard";
 import UsersCard from "../components/UsersCard";
+import DataTable, { type Column } from "../components/DataTable";
 import { useDialog } from "../components/Dialog";
 import { ErrorBanner, Spinner } from "../components/Ui";
 
@@ -178,6 +179,54 @@ function DatasheetCard() {
   );
 }
 
+/* Was a hand-rolled `<table className="data">` — the same header font as every
+   other table, but no sort control and no filter row, so it read as a different
+   kind of table. 29 currencies is a list, and a list is sorted and filtered
+   (2026-09-12). `override` is passed in because the action column calls it. */
+function fxCols(override: (r: FxRate) => void): Column<FxRate>[] {
+  return [
+    { key: "currency", label: "Currency", width: 16, className: "mono", get: (r) => r.currency },
+    { key: "rate", label: "Rate USD", width: 22, numeric: true, className: "mono", get: (r) => r.rate_usd },
+    {
+      key: "source",
+      label: "Source",
+      width: 20,
+      get: (r) => r.source,
+      render: (r) => (
+        <span className={`pill ${r.source === "manual" ? "warn" : "neutral"}`}>{r.source}</span>
+      ),
+    },
+    {
+      key: "updated",
+      label: "Updated",
+      width: 24,
+      className: "muted dim",
+      get: (r) => r.updated_at ?? "",
+      title: (r) => r.updated_at ?? undefined,
+      render: (r) => <>{r.updated_at ? new Date(r.updated_at).toLocaleDateString() : "—"}</>,
+    },
+    {
+      key: "override",
+      label: "",
+      width: 18,
+      interactive: false,
+      get: () => "",
+      render: (r) => (
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            override(r);
+          }}
+        >
+          Override
+        </button>
+      ),
+    },
+  ];
+}
+
 function FxCard() {
   const dialog = useDialog();
   const [rates, setRates] = useState<FxRate[] | null>(null);
@@ -255,38 +304,13 @@ function FxCard() {
         <p className="muted">No rates stored yet — press Refresh rates.</p>
       ) : (
         <div className="table-wrap">
-          <table className="data data-fixed fx-table">
-            <thead>
-              <tr>
-                <th>currency</th>
-                <th className="num">rate_usd</th>
-                <th>source</th>
-                <th>updated</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {rates.map((r) => (
-                <tr key={r.currency}>
-                  <td className="mono">{r.currency}</td>
-                  <td className="num mono">{r.rate_usd}</td>
-                  <td>
-                    <span className={`pill ${r.source === "manual" ? "warn" : "neutral"}`}>
-                      {r.source}
-                    </span>
-                  </td>
-                  <td className="muted dim" title={r.updated_at}>
-                    {r.updated_at ? new Date(r.updated_at).toLocaleDateString() : "—"}
-                  </td>
-                  <td>
-                    <button type="button" className="btn btn-sm" onClick={() => override(r)}>
-                      Override
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            columns={fxCols(override)}
+            rows={rates}
+            rowKey={(r) => r.currency}
+            persistKey="fx-rates"
+            empty="No exchange rates yet."
+          />
         </div>
       )}
     </div>

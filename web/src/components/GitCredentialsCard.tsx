@@ -71,14 +71,14 @@ function CredentialDetail({
       <div className="field-row">
         <Field label="Name">
           <input
-            className="row-input"
+            className="text"
             value={draft.name}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
           />
         </Field>
         <Field label="Host">
           <input
-            className="row-input"
+            className="text"
             placeholder="github.com"
             value={draft.host}
             onChange={(e) => setDraft({ ...draft, host: e.target.value })}
@@ -86,7 +86,7 @@ function CredentialDetail({
         </Field>
         <Field label="Account">
           <input
-            className="row-input"
+            className="text"
             placeholder="the login this token belongs to"
             value={draft.username}
             onChange={(e) => setDraft({ ...draft, username: e.target.value })}
@@ -94,14 +94,14 @@ function CredentialDetail({
         </Field>
         <Field label="Note" wide>
           <input
-            className="row-input"
+            className="text"
             value={draft.description}
             onChange={(e) => setDraft({ ...draft, description: e.target.value })}
           />
         </Field>
         <Field label="Replace the token" wide>
           <input
-            className="row-input"
+            className="text"
             type="password"
             autoComplete="new-password"
             placeholder="leave blank to keep the stored one"
@@ -300,7 +300,7 @@ export default function GitCredentialsCard() {
       <div className="field-row">
         <Field label="Name">
           <input
-            className="row-input"
+            className="text"
             placeholder="GitHub — mszkowalik"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -308,7 +308,7 @@ export default function GitCredentialsCard() {
         </Field>
         <Field label="Host">
           <input
-            className="row-input"
+            className="text"
             placeholder="github.com"
             value={form.host}
             onChange={(e) => setForm({ ...form, host: e.target.value })}
@@ -316,7 +316,7 @@ export default function GitCredentialsCard() {
         </Field>
         <Field label="Account">
           <input
-            className="row-input"
+            className="text"
             placeholder="optional"
             value={form.username}
             onChange={(e) => setForm({ ...form, username: e.target.value })}
@@ -324,7 +324,7 @@ export default function GitCredentialsCard() {
         </Field>
         <Field label="Token" wide>
           <input
-            className="row-input"
+            className="text"
             type="password"
             autoComplete="new-password"
             value={form.token}

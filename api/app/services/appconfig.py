@@ -110,8 +110,12 @@ KNOBS: tuple[Knob, ...] = (
          "Ladders older than this are refreshed."),
     Knob("fx_autofetch", "Pricing", "Refresh exchange rates", "bool",
          "Daily ECB rates via frankfurter.app.", restart=True),
+    # Its choices are DERIVED from the exchange rates that exist — see
+    # `_choices_for`. A frozen list would let somebody select a currency the
+    # platform cannot convert into.
     Knob("default_currency", "Pricing", "Display currency", "str",
-         "Used for cost totals when a project sets no override."),
+         "Used for cost totals when a project sets no override. The list is the "
+         "currencies with an exchange rate, plus USD, which is the base."),
     # ----------------------------------------------------------------- render
     Knob("render_mode", "Render", "Render mode", "str",
          "http = the render container; local = invoke kicad-cli directly, which "
@@ -140,9 +144,27 @@ def coerce(knob: Knob, raw: str) -> object:
     return str(raw)
 
 
-def validate(knob: Knob, value: object) -> None:
-    if knob.choices and str(value) not in knob.choices:
-        raise ValueError(f"{knob.label}: must be one of {', '.join(knob.choices)}")
+def _choices_for(db, knob: Knob) -> tuple[str, ...]:
+    """A knob's choices, which for the display currency are DERIVED.
+
+    The set a deployment can display in is exactly the set it can convert into
+    — the currencies with an exchange rate, plus USD, which is the base and
+    needs none. Hard-coding a list would let somebody pick a currency whose
+    rate does not exist, and every total on the platform would then silently
+    fall back or refuse.
+    """
+    if knob.key != "default_currency":
+        return knob.choices
+    from .. import models as M
+
+    have = {c for (c,) in db.query(M.ExchangeRate.currency).all() if c}
+    return tuple(sorted({"USD", *have}))
+
+
+def validate(knob: Knob, value: object, db=None) -> None:
+    choices = _choices_for(db, knob) if db is not None else knob.choices
+    if choices and str(value) not in choices:
+        raise ValueError(f"{knob.label}: must be one of {', '.join(choices)}")
     if knob.key == "datasheet_recheck_hour" and not 0 <= int(value) <= 23:
         raise ValueError("Re-check hour: must be between 0 and 23")
     if knob.key == "public_base_url":
@@ -180,7 +202,9 @@ def set_override(db: Session, key: str, raw: str, actor: str = "user") -> Knob:
     if knob is None:
         raise KeyError(key)
     value = coerce(knob, raw)
-    validate(knob, value)
+    # `db` so a derived choice list (the display currency) is checked against
+    # the rates that actually exist, not against a frozen tuple.
+    validate(knob, value, db)
     row = db.get(M.AppSetting, key)
     if row is None:
         row = M.AppSetting(key=key, value=str(raw))
@@ -222,7 +246,7 @@ def describe(db: Session) -> list[dict]:
             "kind": knob.kind,
             "secret": knob.secret,
             "restart": knob.restart,
-            "choices": list(knob.choices),
+            "choices": list(_choices_for(db, knob)),
             "source": "database" if overridden else "environment",
             "updated_at": rows[knob.key].updated_at.isoformat() if overridden else None,
         }

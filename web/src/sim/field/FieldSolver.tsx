@@ -157,7 +157,33 @@ export default function FieldSolver() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [view, setView] = useState<FieldView>("phi");
   const [locked, setLocked] = useState(true);
-  const [viewport, setViewport] = useState<View | null>(null);
+  /* The viewport is PER PROFILE, keyed by profile id and copper layer.
+   *
+   *  It used to be one shared `View`, set once and then kept: switching to
+   *  another profile therefore reused the previous one's zoom and centre, and
+   *  a narrower or thicker cross-section was drawn cropped with no indication
+   *  that the view, not the geometry, was wrong. Keeping "lock view" ticked
+   *  made it permanent, since a locked view refuses wheel and drag.
+   *
+   *  Storing one per profile does the two things asked of it at once: a
+   *  profile that has never been looked at is FITTED when it is opened, and a
+   *  profile you have zoomed into is exactly where you left it when you come
+   *  back. `lock view` is untouched by any of this — it stays ticked. */
+  const [viewports, setViewports] = useState<Record<string, View>>({});
+  const vpKey = sel ? `${sel.profile}:${sel.layer}` : "";
+  const viewport = viewports[vpKey] ?? null;
+  const setViewport = useCallback(
+    (v: View | null) =>
+      setViewports((prev) => {
+        if (v === null) {
+          const next = { ...prev };
+          delete next[vpKey];
+          return next;
+        }
+        return { ...prev, [vpKey]: v };
+      }),
+    [vpKey],
+  );
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const job = useSolverJob();
@@ -353,7 +379,11 @@ export default function FieldSolver() {
   }, [geometry, result, frames, frameIdx, view, viewport]);
 
   useEffect(() => {
-    const onResize = () => setViewport((v) => (v ? { ...v } : v));
+    // Nudge every stored viewport so the paint effect re-runs at the new size.
+    const onResize = () =>
+      setViewports((prev) =>
+        Object.fromEntries(Object.entries(prev).map(([k, v]) => [k, { ...v }])),
+      );
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
@@ -790,31 +820,56 @@ export default function FieldSolver() {
                 ))}
               </span>
             </label>
-            <label className="field-check">
-              <input
-                type="checkbox"
-                checked={isCpw(profile)}
-                onChange={(e) => setProfile({ type: lineType(pair ? "diff" : "single", e.target.checked) })}
-              />
-              Side ground on the signal layer (coplanar)
+            {/* A segmented pair, not a checkbox: it sits directly under Signal,
+                which is the same kind of choice about the same geometry, and two
+                controls that decide what the cross-section IS should not be two
+                different shapes. */}
+            <label className="field">
+              <span>Coplanar</span>
+              <span className="seg" role="group" aria-label="Coplanar">
+                {([false, true] as const).map((on) => (
+                  <button
+                    key={String(on)}
+                    type="button"
+                    className={isCpw(profile) === on ? "on" : ""}
+                    title={
+                      on
+                        ? "Ground pour beside the trace on the signal layer"
+                        : "No side ground on the signal layer"
+                    }
+                    onClick={() => setProfile({ type: lineType(pair ? "diff" : "single", on) })}
+                  >
+                    {on ? "On" : "Off"}
+                  </button>
+                ))}
+              </span>
             </label>
             <div className="field-row">
               <label className="field">
                 <span>Target Z</span>
-                <NumberInput
-                  className="text fs-num"
-                  step={0.5}
+                <SiInput
+                  className="fs-num"
+                  quantity="resistance"
                   value={profile.target}
                   onChange={(v) => setProfile({ target: v }, false)}
+                  help={
+                    <>
+                      A bare number is ohms. Prefixes only — <b>10M</b> is 10 MΩ, <b>4.7k</b> is 4700 Ω.
+                      Case matters here: <b>m</b> is milli.
+                    </>
+                  }
                 />
               </label>
               <label className="field">
-                <span>Tolerance %</span>
-                <NumberInput
-                  className="text fs-num"
-                  step={1}
+                <span>Tolerance</span>
+                <SiInput
+                  className="fs-num"
+                  quantity="percent"
                   value={profile.tolerance}
+                  min={0}
+                  max={100}
                   onChange={(v) => setProfile({ tolerance: v }, false)}
+                  help={<>A bare number is percent. ±3% of the target is the usual fab window.</>}
                 />
               </label>
               <label className="field">
@@ -936,12 +991,16 @@ export default function FieldSolver() {
           <fieldset className="fieldset">
             <legend>3 · Structure</legend>
             <table className="data fs-dims">
+              {/* No trailing "mm" column: each SiInput prints the unit it is
+                  showing INSIDE the box (and switches to um under 50 um), so a
+                  fixed column saying mm was both redundant and wrong at small
+                  values — and it was taking 26 px from the label column, which
+                  is what clipped "Gap to coplanar GND" in this narrow panel. */}
               <thead>
                 <tr>
                   <th />
                   <th>min</th>
                   <th>max</th>
-                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -973,7 +1032,6 @@ export default function FieldSolver() {
                         />
                       </td>
                     ))}
-                    <td className="muted">mm</td>
                   </tr>
                 ))}
               </tbody>

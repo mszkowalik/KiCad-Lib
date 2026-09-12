@@ -3398,7 +3398,16 @@ export function syncJlcStock(): Promise<{ items: number; valued: number; synced_
 export interface JlcUsageRow {
   project_id: number;
   project_name: string;
-  parts: { lcsc: string; refs: string; qty_per_device: number; board: string; held: number }[];
+  parts: {
+    lcsc: string;
+    refs: string;
+    qty_per_device: number;
+    board: string;
+    held: number;
+    /** Soft pointer — NULL when the BOM line matched no library component. */
+    component_id: number | null;
+    mpn: string;
+  }[];
 }
 
 export function getJlcStockUsage(signal?: AbortSignal): Promise<JlcUsageRow[]> {

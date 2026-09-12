@@ -18,7 +18,7 @@ import DataTable, { type Column } from "../components/DataTable";
 import { useDialog } from "../components/Dialog";
 import ChangesFeed from "../components/ChangesFeed";
 import { ComponentWorkbench, TemplateWorkbench } from "../components/ReviewWorkbench";
-import { ErrorBanner, LifecyclePill, ReviewPill, SignoffPill, Spinner } from "../components/Ui";
+import { ErrorBanner, FoldList, LifecyclePill, ReviewPill, SignoffPill, Spinner } from "../components/Ui";
 
 /** The review queue: what still needs verification, ranked by LEVERAGE — a
  * failed symbol pinning 30 components outranks a failed one pinning none —
@@ -681,11 +681,15 @@ function HealthTab({ health }: { health: ReviewHealth }) {
           <section key={kind} className="card pad meta-card">
             <h3 className="card-title">Failing {kind} checks, by item</h3>
             <p className="muted">One systemic fix clears a whole row.</p>
-            <dl className="kv">
-              {health.failing_keys[kind].map((f) => (
-                <Item key={f.key} k={f.key} v={f.count} />
-              ))}
-            </dl>
+            <FoldList items={health.failing_keys[kind]} noun="item">
+              {(shown) => (
+                <dl className="kv">
+                  {shown.map((f) => (
+                    <Item key={f.key} k={f.key} v={f.count} />
+                  ))}
+                </dl>
+              )}
+            </FoldList>
           </section>
         ) : null,
       )}
@@ -694,11 +698,15 @@ function HealthTab({ health }: { health: ReviewHealth }) {
         {health.used_not_signed.length === 0 ? (
           <p className="muted">None — every part on a board is signed off.</p>
         ) : (
-          <ul className="val-list">
-            {health.used_not_signed.map((n) => (
-              <li key={n}>{n}</li>
-            ))}
-          </ul>
+          <FoldList items={health.used_not_signed} noun="part">
+            {(shown) => (
+              <ul className="val-list">
+                {shown.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            )}
+          </FoldList>
         )}
       </section>
       <section className="card pad meta-card">
@@ -706,11 +714,15 @@ function HealthTab({ health }: { health: ReviewHealth }) {
         {health.used_deprecated.length === 0 ? (
           <p className="muted">None.</p>
         ) : (
-          <ul className="val-list">
-            {health.used_deprecated.map((n) => (
-              <li key={n}>{n}</li>
-            ))}
-          </ul>
+          <FoldList items={health.used_deprecated} noun="part">
+            {(shown) => (
+              <ul className="val-list">
+                {shown.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            )}
+          </FoldList>
         )}
       </section>
       <section className="card pad meta-card">
@@ -718,11 +730,15 @@ function HealthTab({ health }: { health: ReviewHealth }) {
         {health.top_skipped_items.length === 0 ? (
           <p className="muted">Nothing is being skipped.</p>
         ) : (
-          <dl className="kv">
-            {health.top_skipped_items.map((s) => (
-              <Item key={s.key} k={s.key} v={s.count} />
-            ))}
-          </dl>
+          <FoldList items={health.top_skipped_items} noun="item">
+            {(shown) => (
+              <dl className="kv">
+                {shown.map((s) => (
+                  <Item key={s.key} k={s.key} v={s.count} />
+                ))}
+              </dl>
+            )}
+          </FoldList>
         )}
       </section>
       {health.skip_reasons.length ? (
@@ -731,11 +747,15 @@ function HealthTab({ health }: { health: ReviewHealth }) {
           <p className="muted">
             A reason names the fix — "html datasheet" means: archive the real PDF, re-verify.
           </p>
-          <dl className="kv">
-            {health.skip_reasons.map((s) => (
-              <Item key={s.reason} k={s.reason} v={s.count} />
-            ))}
-          </dl>
+          <FoldList items={health.skip_reasons} noun="reason">
+            {(shown) => (
+              <dl className="kv">
+                {shown.map((s) => (
+                  <Item key={s.reason} k={s.reason} v={s.count} />
+                ))}
+              </dl>
+            )}
+          </FoldList>
         </section>
       ) : null}
     </div>

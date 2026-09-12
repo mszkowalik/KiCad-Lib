@@ -1,4 +1,4 @@
-/** User administration for the Setup page.
+/** User administration for the Admin page.
  *
  * The only place accounts are made. There is no self-registration and no
  * password recovery anywhere in the platform (user decision 2026-07-31), so an

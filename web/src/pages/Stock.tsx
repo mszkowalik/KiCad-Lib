@@ -540,48 +540,7 @@ export default function Stock() {
               />
             </div>
 
-            {usage && usage.length > 0 ? (
-              <div className="card pad">
-                <div className="card-title">Held parts used in projects</div>
-                {usage.map((u) => (
-                  <div key={u.project_id}>
-                    <div className="card-subtitle">
-                      <Link className="comp-link" to={`/projects/${u.project_id}`}>
-                        {u.project_name}
-                      </Link>
-                    </div>
-                    <table className="data">
-                      <thead>
-                        <tr>
-                          <th>LCSC</th>
-                          <th>Board</th>
-                          <th>Refs</th>
-                          <th className="num">Qty / device</th>
-                          <th className="num">Held at JLC</th>
-                          <th className="num">Devices coverable</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {u.parts.map((p, i) => (
-                          <tr key={i}>
-                            <td className="mono">{p.lcsc}</td>
-                            <td className="muted">{p.board}</td>
-                            <td className="mono cell-fp">{p.refs}</td>
-                            <td className="num">{p.qty_per_device}</td>
-                            <td className="num">{p.held.toLocaleString()}</td>
-                            <td className="num">
-                              {p.qty_per_device > 0
-                                ? Math.floor(p.held / p.qty_per_device).toLocaleString()
-                                : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
-              </div>
-            ) : null}
+            {usage && usage.length > 0 ? <HeldPartsCard usage={usage} /> : null}
           </>
         ) : null}
       </div>
@@ -598,6 +557,207 @@ const ZERO_COST_HINT =
  *  equals JLC's count exactly — meaning the WHOLE difference is an adjustment,
  *  which is exactly what the five invented opening balances looked like. */
 /** The cell's CONTENT — DataTable owns the <td>. */
+/** Every held part, ONE row per part — not per project, and not per board.
+ *
+ *  It was a table per project, stacked: the same component on three boards was
+ *  three rows in three tables that could not be sorted together, and a project
+ *  with 46 parts buried everything under it. But a part is the thing you decide
+ *  about — "do I have enough of this?" is one question however many boards use
+ *  it — so the row is the COMPONENT, and `held` is its single JLC balance
+ *  rather than a number repeated per board.
+ *
+ *  **Where it is used is behind the row.** Unfolding gives the boards and their
+ *  reference designators GROUPED BY PROJECT, because refs from two projects
+ *  read as one long meaningless list when mixed. Refs are the longest value
+ *  here and the least often read — you want them once you have found the part.
+ *
+ *  **The card itself folds.** 120 parts is most of a screen of scrolling before
+ *  anything below it, so it opens at 15 rows.
+ */
+function HeldPartsCard({ usage }: { usage: JlcUsageRow[] }) {
+  // Every project shown until one is switched off: the default answer to
+  // "which projects?" is all of them.
+  const [off, setOff] = useState<Set<number>>(new Set());
+  const [openKey, setOpenKey] = useState<string | number | null>(null);
+  const [allRows, setAllRows] = useState(false);
+
+  const rows = useMemo(() => {
+    // key by component, falling back to the LCSC code for a BOM line that
+    // matched no library component — which is what JLC stock is keyed on.
+    const by = new Map<
+      string,
+      {
+        key: string;
+        component_id: number | null;
+        mpn: string;
+        lcsc: string;
+        held: number;
+        qty_per_device: number;
+        projects: { id: number; name: string; board: string; refs: string; qty: number }[];
+      }
+    >();
+    for (const u of usage) {
+      if (off.has(u.project_id)) continue;
+      for (const part of u.parts) {
+        const key = part.component_id ? `c${part.component_id}` : `l${part.lcsc}`;
+        const row =
+          by.get(key) ??
+          {
+            key,
+            component_id: part.component_id,
+            mpn: part.mpn,
+            lcsc: part.lcsc,
+            held: part.held,
+            qty_per_device: 0,
+            projects: [],
+          };
+        // `held` is ONE JLC balance for the part — never a sum over the boards
+        // that use it, which would multiply the same stock by its popularity.
+        row.held = part.held;
+        row.qty_per_device += part.qty_per_device;
+        row.projects.push({
+          id: u.project_id,
+          name: u.project_name,
+          board: part.board,
+          refs: part.refs,
+          qty: part.qty_per_device,
+        });
+        by.set(key, row);
+      }
+    }
+    return [...by.values()].sort((a, b) => a.mpn.localeCompare(b.mpn));
+  }, [usage, off]);
+
+  type Row = (typeof rows)[number];
+
+  const cols: Column<Row>[] = [
+    {
+      key: "mpn",
+      label: "Part",
+      width: 24,
+      get: (r) => r.mpn || r.lcsc,
+      render: (r) =>
+        r.component_id ? (
+          <Link
+            className="comp-link"
+            to={`/library/components/${r.component_id}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {r.mpn || r.lcsc}
+          </Link>
+        ) : (
+          <>{r.mpn || r.lcsc}</>
+        ),
+    },
+    { key: "lcsc", label: "LCSC", width: 12, className: "mono", get: (r) => r.lcsc },
+    {
+      key: "projects",
+      label: "Used by",
+      width: 26,
+      // The NAMES, so filtering by project still works on the grouped row.
+      get: (r) => [...new Set(r.projects.map((p) => p.name))].join(", "),
+    },
+    {
+      key: "qty",
+      label: "Qty / device",
+      width: 11,
+      numeric: true,
+      // Summed across the boards this part appears on — what one device of
+      // everything that uses it costs in stock.
+      get: (r) => r.qty_per_device,
+    },
+    {
+      key: "held",
+      label: "Held at JLC",
+      width: 12,
+      numeric: true,
+      get: (r) => r.held,
+      render: (r) => <>{r.held.toLocaleString()}</>,
+    },
+    {
+      key: "coverable",
+      label: "Devices coverable",
+      width: 15,
+      numeric: true,
+      get: (r) => (r.qty_per_device > 0 ? Math.floor(r.held / r.qty_per_device) : ""),
+      render: (r) => (
+        <>{r.qty_per_device > 0 ? Math.floor(r.held / r.qty_per_device).toLocaleString() : "—"}</>
+      ),
+    },
+  ];
+
+  const FOLDED = 15;
+  const shown = allRows ? rows : rows.slice(0, FOLDED);
+
+  return (
+    <div className="card pad">
+      <div className="card-title">Held parts used in projects</div>
+      <p className="muted">
+        One row per part, however many boards use it. Click a row for the boards and their
+        reference designators.
+      </p>
+      <div className="seg seg-wrap" role="group" aria-label="Projects shown">
+        {usage.map((u) => (
+          <button
+            key={u.project_id}
+            type="button"
+            className={off.has(u.project_id) ? "" : "on"}
+            title={off.has(u.project_id) ? "Show this project" : "Hide this project"}
+            onClick={() =>
+              setOff((prev) => {
+                const next = new Set(prev);
+                if (!next.delete(u.project_id)) next.add(u.project_id);
+                return next;
+              })
+            }
+          >
+            {u.project_name} <span className="muted">{u.parts.length}</span>
+          </button>
+        ))}
+      </div>
+      <DataTable
+        columns={cols}
+        rows={shown}
+        rowKey={(r) => r.key}
+        persistKey="stock-held-parts"
+        openKey={openKey}
+        onOpenChange={setOpenKey}
+        expand={(r) => (
+          <div className="held-refs">
+            {/* Grouped by project: refs from two projects read as one
+                meaningless list when they are mixed together. */}
+            {[...new Map(r.projects.map((p) => [p.id, p])).values()].map((proj) => (
+              <div key={proj.id} className="held-refs-project">
+                <Link className="comp-link" to={`/projects/${proj.id}`}>
+                  {proj.name}
+                </Link>
+                {r.projects
+                  .filter((q) => q.id === proj.id)
+                  .map((q, i) => (
+                    <div key={i} className="held-refs-board">
+                      <span className="muted">{q.board}</span>{" "}
+                      <span className="mono">{q.refs || "—"}</span>
+                    </div>
+                  ))}
+              </div>
+            ))}
+          </div>
+        )}
+        empty={
+          off.size === usage.length
+            ? "Every project is hidden — switch one back on."
+            : "No held parts on the projects shown."
+        }
+      />
+      {rows.length > FOLDED ? (
+        <button type="button" className="btn btn-sm fold-more" onClick={() => setAllRows(!allRows)}>
+          {allRows ? `Show only ${FOLDED}` : `Show ${rows.length - FOLDED} more parts`}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function DeltaCell({ r }: { r: PartsStockRow }) {
   const d = r.delta_qty;
   if (d == null) return <>—</>;

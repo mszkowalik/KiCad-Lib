@@ -73,7 +73,7 @@ export default function AccountSecurityCard() {
       <div className="field-row">
         <Field label="Current password">
           <input
-            className="row-input"
+            className="text"
             type="password"
             autoComplete="current-password"
             value={pw.current}
@@ -82,7 +82,7 @@ export default function AccountSecurityCard() {
         </Field>
         <Field label="New password">
           <input
-            className="row-input"
+            className="text"
             type="password"
             autoComplete="new-password"
             value={pw.next}
@@ -91,7 +91,7 @@ export default function AccountSecurityCard() {
         </Field>
         <Field label="Repeat it">
           <input
-            className="row-input"
+            className="text"
             type="password"
             autoComplete="new-password"
             value={pw.again}
@@ -188,7 +188,7 @@ export default function AccountSecurityCard() {
       <div className="field-row">
         <Field label="New token label">
           <input
-            className="row-input"
+            className="text"
             placeholder="laptop, bench PC…"
             value={label}
             onChange={(e) => setLabel(e.target.value)}

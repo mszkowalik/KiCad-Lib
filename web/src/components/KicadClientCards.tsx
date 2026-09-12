@@ -5,7 +5,7 @@
  *  The PCM repository URL installs a sync plugin with that token already inside
  *  it, and the `.kicad_httplib` download embeds it too, so these links are
  *  personal credentials in URL form: two people looking at this page must see
- *  two different strings. Setup is the deployment's SHARED configuration —
+ *  two different strings. Admin is the deployment's SHARED configuration —
  *  `PUBLIC_BASE_URL` and the rest — and keeps only a pointer here.
  *
  *  `GET /api/kicad/config` already personalises itself from the caller's

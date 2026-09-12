@@ -668,7 +668,14 @@ const toBase = (v: number | null, unit: "mm" | "um"): number | null =>
   v === null || v === undefined ? null : unit === "um" ? v / 1000 : v;
 const fromBase = (v: number, unit: "mm" | "um"): number => (unit === "um" ? v * 1000 : v);
 
-const RULE_FIELDS: { key: string; label: string; step: number; group: string; unit?: "mm" | "um" }[] = [
+/* `unit` routes a field to SiInput in that length unit; `pct` routes it to the
+   same control as a percentage. A field with neither is genuinely dimensionless
+   (Dk, tanδ) and stays a plain number box — wrapping those in a unit parser
+   would be uniformity for its own sake. */
+const RULE_FIELDS: {
+  key: string; label: string; step: number; group: string;
+  unit?: "mm" | "um"; pct?: boolean;
+}[] = [
   { key: "min_width_2l", label: "2-layer trace width", step: 0.01, group: "Trace / space minimum", unit: "mm" },
   { key: "min_space_2l", label: "2-layer space", step: 0.01, group: "Trace / space minimum", unit: "mm" },
   { key: "min_width_ml", label: "multilayer trace width", step: 0.01, group: "Trace / space minimum", unit: "mm" },
@@ -686,7 +693,7 @@ const RULE_FIELDS: { key: string; label: string; step: number; group: string; un
   { key: "mask_c2", label: "mask over trace", step: 0.005, group: "Coating defaults", unit: "mm" },
   { key: "mask_expansion", label: "mask opening expansion", step: 0.01, group: "Coating defaults", unit: "mm" },
   { key: "finish_um", label: "finish thickness", step: 0.5, group: "Coating defaults", unit: "um" },
-  { key: "impedance_tolerance_pct", label: "impedance tolerance (%)", step: 1, group: "Other" },
+  { key: "impedance_tolerance_pct", label: "impedance tolerance", step: 1, group: "Other", pct: true },
 ];
 
 export interface RulesEditorProps {
@@ -775,6 +782,17 @@ export function RulesEditor({ ruleset, finishes, onClose, onSaved, onDeleted }: 
                       onChange={(v) => setD({ ...d, [f.key]: fromBase(v, f.unit!) })}
                       onEmpty={() => setD({ ...d, [f.key]: null })}
                       help={<>Type any unit: {f.unit === "mm" ? "0.2, 200um, 7.9mil" : "12.5, 12.5um, 0.0125mm"}.</>}
+                    />
+                  ) : f.pct ? (
+                    <SiInput
+                      className="fs-num"
+                      quantity="percent"
+                      min={0}
+                      max={100}
+                      value={(d[f.key] as number | null) ?? null}
+                      onChange={(v) => setD({ ...d, [f.key]: v })}
+                      onEmpty={() => setD({ ...d, [f.key]: null })}
+                      help={<>A bare number is percent.</>}
                     />
                   ) : (
                     <NumberInput

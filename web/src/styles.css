@@ -476,14 +476,6 @@ table.data {
   border-bottom: 1px solid var(--line);
 }
 
-.filter-input {
-  width: 100%;
-  min-width: 60px;
-  padding: 2px 8px;
-  font-family: var(--mono);
-  font-size: 12px;
-  border-radius: 4px;
-}
 
 .clear-filters {
   opacity: 1;
@@ -606,27 +598,98 @@ table.data {
   color: var(--muted);
 }
 
-/* `select.text` rides along: the rule used to be `input.text` alone, so a
-   <select className="text"> fell back to the native control and sat at a
-   different height from the inputs beside it. */
+/* ============================================================ ONE CONTROL
+
+   EVERY text control in the platform is drawn here, and nowhere else. The
+   size classes below change padding and font size; they must never restate a
+   border, a background, a radius or a focus ring, or the app goes back to
+   looking like three different apps.
+
+   That is not hypothetical — it is what this rule was written to end. Only
+   `.text` had an appearance; `.row-input` set padding, font-size and radius
+   and NOTHING else, so its 83 bare uses fell through to the browser's native
+   widget. The Admin page (native boxes), the browse filters and the field
+   solver (`.text`) therefore rendered three different-looking forms, which is
+   exactly what a reader notices first (reported with screenshots 2026-09-12).
+
+   `select` and `textarea` are in the list for the same reason a `<select
+   className="text">` was added to it once before: left out, a control falls
+   back to the native one and sits at a different height from the input beside
+   it. */
 input.text,
-select.text {
-  font: inherit;
+select.text,
+textarea.text,
+input.row-input,
+select.row-input,
+textarea.row-input,
+input.filter-input,
+input.search,
+textarea.note-textarea,
+textarea.skill-textarea {
+  /* font-size is STATED, never inherited. `font: inherit` made the same class
+     render at 31, 33, 35 and 36 px on four different pages, because each card
+     sets its own font size and the control picked it up — so "the inputs are
+     different heights" was true while every one of them said `.text`. The
+     FAMILY still inherits, which is what lets `.mono` work. */
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: inherit;
+  line-height: 1.2;
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 7px 10px;
 }
 
+/* A <select> computes `line-height: normal` whatever the rule says, and its
+   intrinsic box is a pixel taller again, so it never matched the <input> beside
+   it. These are single-line controls, so state the height rather than trusting
+   line-height: three sizes, 34 / 26 / 22, and nothing else. Textareas are
+   deliberately NOT in this list — they are sized by their own `min-height`
+   (`.skill-textarea` is 60vh). */
+input.text,
+select.text,
+input.search {
+  height: 34px;
+}
+input.row-input,
+select.row-input {
+  height: 26px;
+}
+input.filter-input {
+  height: 22px;
+}
+
 input.text:focus,
-select.text:focus {
+select.text:focus,
+textarea.text:focus,
+input.row-input:focus,
+select.row-input:focus,
+textarea.row-input:focus,
+input.filter-input:focus,
+input.search:focus,
+textarea.note-textarea:focus,
+textarea.skill-textarea:focus {
   outline: 2px solid var(--accent-soft);
   border-color: var(--accent);
 }
 
-input.text::placeholder {
+input.text::placeholder,
+input.row-input::placeholder,
+input.filter-input::placeholder,
+input.search::placeholder,
+textarea::placeholder {
   color: var(--muted);
+}
+
+input.text:disabled,
+select.text:disabled,
+input.row-input:disabled,
+select.row-input:disabled {
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
 /* ------------------------------------------------------------- form fields */
@@ -650,6 +713,14 @@ input.text::placeholder {
 .field > span:first-child {
   color: var(--muted);
   font-size: 12px;
+}
+/* `.text` carries no width of its own, so a field's control stretches to the
+   field rather than sitting at the browser's default size. */
+.field > input,
+.field > select,
+.field > textarea {
+  width: 100%;
+  min-width: 0;
 }
 /* The hint and the error sit under the control, never beside it: a message
    that reflows the field it describes moves the thing you are typing into. */
@@ -751,6 +822,7 @@ select.text.bad {
   min-width: 0;
 }
 
+/* SIZE ONLY — see the one control rule above. */
 input.search {
   width: 340px;
   font-family: var(--mono);
@@ -1571,11 +1643,30 @@ dl.kv {
   min-width: 0;
 }
 
-.row-input {
+/* SIZE ONLY — the appearance comes from the one control rule above. A compact
+   field for table rows, filter bars and toolbars, where a full-height input
+   would break the one-line-per-row rule every table here follows.
+
+   ELEMENT-QUALIFIED on purpose: the control rule says `input.row-input`, so a
+   bare `.row-input` here loses on specificity and every compact field silently
+   renders full size — which is what happened the first time (caught by
+   measuring, not by eye: the boxes still looked right, the table rows grew). */
+input.row-input,
+select.row-input,
+textarea.row-input {
   width: 100%;
   padding: 3px 8px;
   font-size: 13px;
-  border-radius: 4px;
+}
+
+/* SIZE ONLY — see the one control rule above, and the specificity note on
+   `.row-input`. */
+input.filter-input {
+  width: 100%;
+  min-width: 60px;
+  padding: 2px 8px;
+  font-family: var(--mono);
+  font-size: 12px;
 }
 
 .data th.ctr,
@@ -2578,17 +2669,29 @@ table.kv td:first-child { color: var(--ink-3, #697280); }
    field ended up half a screen apart (2026-09-12, when the Admin page stopped
    being capped at 860px). Cap the TABLE rather than the page — the cards below
    it use the full width legitimately. */
+/* The value column has to hold the longest placeholder a setting uses —
+   "set — type a new value to replace" — or the field reads as broken before
+   anybody types in it. The explanation column is prose and wraps happily, so
+   it gives up the width. Capping the TABLE rather than the page keeps the
+   cards below it (Users, the rates) on the full page width. */
 table.kv.settings-table {
   width: 100%;
-  max-width: 1000px;
+  max-width: 1120px;
   table-layout: fixed;
 }
 table.kv.settings-table td:nth-child(1) {
-  width: 58%;
+  width: 48%;
   padding-right: 24px;
 }
 table.kv.settings-table td:nth-child(2) {
-  width: 42%;
+  width: 52%;
+}
+/* `.text` carries no width, so a settings field sat at the browser's default
+   ~176 px however wide its column was, and "set — type a new value to replace"
+   was cut off in every secret field. Fill the cell. */
+table.kv.settings-table td:nth-child(2) > input,
+table.kv.settings-table td:nth-child(2) > select {
+  width: 100%;
 }
 /* The label line and its pills sit on one row; only the help text wraps. */
 table.kv.settings-table td:nth-child(1) > div:first-child {
@@ -3817,7 +3920,7 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
   border-bottom: 1px solid var(--line);
 }
 
-/* Exchange rates on the Setup page. */
+/* Exchange rates on the Admin page. */
 .fx-table { table-layout: fixed; }
 .fx-table th:nth-child(1), .fx-table td:nth-child(1) { width: 16%; }
 .fx-table th:nth-child(2), .fx-table td:nth-child(2) { width: 22%; }
@@ -3825,7 +3928,7 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
 .fx-table th:nth-child(4), .fx-table td:nth-child(4) { width: 24%; }
 .fx-table th:nth-child(5), .fx-table td:nth-child(5) { width: 18%; }
 
-/* Failed schema statements on the Setup page. The result column carries an
+/* Failed schema statements on the Admin page. The result column carries an
    error message that must be readable in full, so it opts out of the clamp. */
 .schema-table { table-layout: fixed; }
 .schema-table th:nth-child(1), .schema-table td:nth-child(1) { width: 34%; }
@@ -5380,7 +5483,12 @@ a.check-cell:hover {
    MIN-CONTENT by default, so the widest solution table would push the panel
    past the window instead of scrolling inside its own box. Under 1000px the
    two do not fit side by side, so they stack. */
-.fs-lower { display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); gap: 12px; align-items: start; }
+/* 380 min, not 320: the property panel carries a three-field row (target Z,
+   tolerance, design f) and the widest legitimate value in one of those boxes —
+   "999.999 kHz" — needs 121 px. Three of those, plus two 8 px gaps and the
+   fieldset's own 20 px of padding, is 411. At the old 320 minimum the third box
+   cut its own unit off. */
+.fs-lower { display: grid; grid-template-columns: minmax(415px, 460px) minmax(0, 1fr); gap: 12px; align-items: start; }
 @media (max-width: 1000px) { .fs-lower { grid-template-columns: minmax(0, 1fr); } }
 .fs-props { display: flex; flex-direction: column; gap: 10px; }
 .fs-results { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
@@ -5391,7 +5499,10 @@ a.check-cell:hover {
    the one that had been thought about. */
 .fs-field-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; }
 .fs-sub { margin-left: 18px; padding-left: 10px; border-left: 2px solid var(--line); }
-.fs-num { max-width: 96px; }
+/* Wide enough for the value AND its unit. The widest legitimate value in one
+   of these boxes is "999.999 kHz" at 121 px; at 110 it cut its own unit off,
+   and at 62 (before the ⓘ moved inside) even "500 um" did. */
+.fs-num { max-width: 130px; min-width: 82px; }
 .fs-note { font-size: 12px; }
 .fs-warn { color: var(--warn); font-size: 12px; }
 .fs-error { color: var(--err); }
@@ -5404,8 +5515,13 @@ a.check-cell:hover {
 .fs-dims { table-layout: fixed; }
 .fs-dims th, .fs-dims td { padding: 5px 6px; }
 .fs-dims th:first-child, .fs-dims td:first-child { padding-left: 0; }
-.fs-dims th:nth-child(2), .fs-dims th:nth-child(3) { width: 84px; }
-.fs-dims th:last-child, .fs-dims td:last-child { width: 26px; padding-left: 2px; }
+/* 108, not 92: the box shares the cell with the ⓘ marker (14 px + a 4 px gap),
+   so a 92 px column left 62 px for a value like "500 um" that needs 70 and cut
+   the unit off. The label column wraps, so it gives up the width. */
+.fs-dims th:nth-child(2), .fs-dims th:nth-child(3) { width: 108px; }
+/* The label wraps rather than clipping: this panel is ~320 px and the longest
+   label ("Gap to coplanar GND") does not fit on one line beside two inputs. */
+.fs-dims td:first-child { white-space: normal; line-height: 1.25; }
 .fs-dims input { width: 100%; max-width: none; }
 .fs-kv td:last-child, .fs-sweep td { text-align: right; font-variant-numeric: tabular-nums; }
 .fs-empty td, .fs-card.fs-empty .fs-card-v { color: var(--muted); }
@@ -5714,28 +5830,77 @@ a.check-cell:hover {
 /* ------------------------------------------------- unit-carrying number field */
 /* components/SiInput.tsx. A bad value is marked on the box itself and explained
    behind the marker beside it, rather than in a banner somewhere else on screen. */
-.si-wrap { display: inline-flex; align-items: center; gap: 4px; min-width: 0; width: 100%; }
-.si-wrap > .text { min-width: 0; flex: 1; }
+/* The ⓘ sits INSIDE the box, over its right edge, not beside it. Beside it,
+   the marker took 18 px of the field's own width — which in a 92 px table cell
+   left 62 px for a value like "500 um" that needs 70, so the unit was cut off.
+   Inside, the box keeps its whole width and only the text makes room. */
+.si-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+.si-wrap > .text {
+  width: 100%;
+  min-width: 0;
+  /* The WRAP carries the size cap (see SiInput). An input that also capped
+     itself would sit narrower than the box the marker is pinned to. */
+  max-width: none;
+  padding-right: 26px;
+}
 .si-bad > .text { border-color: var(--err); background: var(--err-soft); color: var(--err); }
 .si-help {
-  position: relative; flex: none; cursor: help; color: var(--muted);
-  font-size: 11px; line-height: 1; width: 14px; text-align: center;
+  position: absolute;
+  right: 7px;
+  /* NO transform. A transformed ancestor makes `position: fixed` resolve
+     against IT rather than the viewport, which silently broke the tooltip
+     placement the moment the marker moved inside the box. */
+  top: calc(50% - 7px);
+  height: 14px;
+  cursor: help;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 14px;
+  width: 14px;
+  text-align: center;
 }
 .si-bad .si-help {
-  color: var(--err); font-weight: 700; font-size: 12px;
-  border: 1px solid var(--err); border-radius: 50%; height: 14px;
+  color: var(--err);
+  font-weight: 700;
+  font-size: 12px;
+  border: 1px solid var(--err);
+  border-radius: 50%;
+  height: 14px;
 }
 .si-help:hover, .si-help:focus-visible { color: var(--accent); }
 .si-bad .si-help:hover, .si-bad .si-help:focus-visible { color: var(--err); }
+/* Placed by SiInput from the marker's box and clamped to the window — see the
+   comment there. `fixed`, not `absolute`: a 300 px tip in a 320 px panel ran
+   off the left edge of the screen on every field in the field solver. */
 .si-tip {
-  position: absolute; right: 0; top: calc(100% + 6px); z-index: 6;
-  width: 300px; max-width: 64vw; padding: 7px 10px;
-  background: var(--surface); color: var(--text); border: 1px solid var(--line);
-  border-radius: var(--radius); box-shadow: var(--modal-shadow);
-  font-size: 11.5px; line-height: 1.45; white-space: normal; text-align: left; font-weight: 400;
-  opacity: 0; visibility: hidden; transition: opacity 0.12s;
+  position: fixed;
+  z-index: 60;
+  width: 300px;
+  max-width: min(300px, calc(100vw - 16px));
+  padding: 7px 10px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--modal-shadow);
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: normal;
+  text-align: left;
+  font-weight: 400;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s;
 }
-.si-help:hover .si-tip, .si-help:focus-visible .si-tip { opacity: 1; visibility: visible; }
+.si-tip.on {
+  opacity: 1;
+  visibility: visible;
+}
 .si-tip-bad { display: block; color: var(--err); margin-bottom: 4px; }
 /* the derived half of a pair: reads as a sentence beside its box, never as a field */
 .stk .stk-derived { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -5817,4 +5982,60 @@ a.check-cell:hover {
 
 @media (max-width: 900px) {
   .sim-plots-hint { display: none; }
+}
+
+/* The unfold button on a `FoldList` — sits under the rows it reveals, muted
+   until hovered, because it is navigation for the card and not an action on
+   the data in it. */
+.fold-more {
+  margin-top: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.fold-more:hover {
+  color: var(--text);
+}
+
+/* A `.seg` used as a filter chip set rather than a two-way switch: it holds one
+   button per project and has to wrap, where the switch form never does. */
+.seg.seg-wrap {
+  flex-wrap: wrap;
+  height: auto;
+  margin-bottom: 8px;
+}
+
+/* The reference designators behind a held-parts row. They wrap — a long refs
+   list is the reason they are not a column. */
+.held-refs {
+  padding: 4px 2px 8px;
+  white-space: normal;
+  line-height: 1.5;
+}
+.held-refs-project + .held-refs-project {
+  margin-top: 6px;
+}
+.held-refs-board {
+  padding-left: 12px;
+}
+
+/* The help marker on a value that was rounded for display. Same marker, warmer
+   ink — it is saying "there is more here", not "something is wrong". */
+.si-help.si-rounded {
+  color: var(--warn);
+}
+.si-tip-round {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+/* The solver's property panel is ~340 px, and `.field-row > .field` has a
+   180 px basis — so two fields in a row WRAPPED to one each and "Target Z and
+   tolerance on a single row" silently did not happen. A smaller basis inside
+   this panel packs them as intended and still wraps when it must. */
+.fs-props .field-row > .field {
+  /* 100, so THREE fit across the 340 px panel (3x100 + two 8 px gaps = 316).
+     At 110 the third wrapped and "Design f" dropped to a line of its own. */
+  flex: 1 1 100px;
 }

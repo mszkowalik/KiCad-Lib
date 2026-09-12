@@ -1,4 +1,4 @@
-/** Editable runtime configuration — the first card on the Setup page.
+/** Editable runtime configuration — the first card on the Admin page.
  *
  * Values come from `Settings` on the API, which reads the environment; saving
  * one writes a database override that wins over it, and Revert drops the
@@ -115,7 +115,7 @@ export default function SettingsCard() {
     }
     if (it.choices.length > 0) {
       return (
-        <select className="row-input" value={current} disabled={busy === it.key} onChange={(e) => set(e.target.value)}>
+        <select className="text" value={current} disabled={busy === it.key} onChange={(e) => set(e.target.value)}>
           {it.choices.map((c) => (
             <option key={c} value={c}>
               {c}
@@ -126,7 +126,7 @@ export default function SettingsCard() {
     }
     return (
       <input
-        className="row-input mono"
+        className="text mono"
         type={it.secret ? "password" : it.kind === "int" ? "number" : "text"}
         value={current}
         disabled={busy === it.key}

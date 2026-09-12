@@ -124,9 +124,16 @@ def stock_usage(db: Session = Depends(get_db)):
                 {
                     "project_id": p.id,
                     "project_name": p.name,
+                    # `component_id` and `mpn` so the reader can group by PART
+                    # rather than by project: the same component on three boards
+                    # is one thing to decide about, not three rows. It is a soft
+                    # pointer and is legitimately NULL for a line that matched no
+                    # library component, so the client falls back to the LCSC
+                    # code — which is what the JLC stock is keyed on anyway.
                     "parts": [
                         {"lcsc": li.lcsc, "refs": li.refs, "qty_per_device": li.qty,
-                         "board": li.board, "held": private.get(li.lcsc, 0)}
+                         "board": li.board, "held": private.get(li.lcsc, 0),
+                         "component_id": li.component_id, "mpn": li.mpn or li.value}
                         for li in lines
                     ],
                 }

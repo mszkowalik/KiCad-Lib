@@ -1,4 +1,6 @@
-/** Small shared UI atoms: spinner, error banner, status pill, back link. */
+/** Small shared UI atoms: spinner, error banner, status pill, back link,
+ *  fold-away list. */
+import { useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 /** "← Back" that means BACK, not UP.
@@ -167,5 +169,46 @@ export function LifecyclePill({ state, title }: { state: string | null | undefin
     <span className={`pill ${tone}`} title={title}>
       {label}
     </span>
+  );
+}
+
+/** A long list that shows its first few rows and unfolds the rest in place.
+ *
+ *  The library-health cards hold lists that are legitimately long — every part
+ *  used on a board and not signed off, every chronically skipped checklist item
+ *  — and a card whose list runs to forty rows pushes everything under it off
+ *  the screen, so the OTHER cards stop being readable at a glance. This shows
+ *  `min` rows and puts the rest behind one button.
+ *
+ *  **It slices the array; it does not clamp a height.** A CSS `max-height`
+ *  would have to guess a row height, and the row would then shrink or the last
+ *  visible row would be cut in half. Rows keep exactly the height they have,
+ *  folded or not — which is the point, since these are read by scanning.
+ */
+export function FoldList<T>({
+  items,
+  min = 2,
+  noun = "more",
+  children,
+}: {
+  items: T[];
+  /** Rows shown while folded. */
+  min?: number;
+  /** What the unfold button counts, e.g. "part" -> "Show 12 more parts". */
+  noun?: string;
+  children: (shown: T[]) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const hidden = items.length - min;
+  const shown = open || hidden <= 0 ? items : items.slice(0, min);
+  return (
+    <>
+      {children(shown)}
+      {hidden > 0 ? (
+        <button type="button" className="btn btn-sm fold-more" onClick={() => setOpen(!open)}>
+          {open ? "Show fewer" : `Show ${hidden} more ${noun}${hidden === 1 ? "" : "s"}`}
+        </button>
+      ) : null}
+    </>
   );
 }

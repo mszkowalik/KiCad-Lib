@@ -39,6 +39,53 @@
   the upstream remote are the only copies of project source. See
   [decision 0009](docs/decisions/0009-the-git-mirror-is-the-source-archive.md).
 
+## 2026-09-12 — One control, one unit rule, and a tooltip that stays on screen
+
+- **Three input designs became one.** Only `.text` ever declared a border,
+  background and focus ring; `.row-input` was used bare 83 times and fell through
+  to the browser's NATIVE widget, so the Admin page, the table filters and the
+  field solver rendered three different-looking forms. One rule now draws every
+  text control, and the size classes carry size only — three heights, 34 / 26 /
+  22 px, and nothing else varies.
+- **Every unit now prints the same way**: the prefix that puts 1-999 before the
+  decimal point, at most three decimals. `0.05 Ω` reads `50 mΩ`, `1 560 432 Ω`
+  reads `1.56 MΩ` with a warm ⓘ carrying the exact value. Impedance and
+  percentage joined length and frequency, so Target Z and tolerance are the same
+  control as design frequency. On a resistance `10M` is megohms and `10m` is
+  milliohms.
+  - Length changed with it: prepreg 3313 now reads `99.4 um` rather than
+    `0.0994 mm`. One rule everywhere was judged worth more than matching a
+    single datasheet's spelling.
+- **`2.4e9` never parsed**, in any unit field, despite the frequency field's own
+  help text advertising it — the exponent was read as a unit suffix.
+- **The ⓘ moved inside the box, and its tooltip stays on screen.** Beside the
+  box the marker took 18 px of the field's width and cut `500 um` to `500 u`;
+  the tip itself was anchored `right: 0` and ran off the LEFT edge of the window
+  on every field in the solver, measured at x = −132.
+- **`4k7` now parses.** RKM notation — the prefix standing in for the decimal
+  point — is how values are printed on parts and in schematic Value fields, so
+  `4k7`, `4R7`, `1M5` and `2G4` all read correctly. Enabled for impedance and
+  frequency only: a length is based on mm, so `1m5` there would mean 1.5 metres
+  in a box expecting a fraction of one.
+- **Rounding could break its own rule.** 999 999 999 Hz sits below 1 GHz, so it
+  was printed in MHz, rounded to three decimals, and came out as `1000 MHz` —
+  four digits before the point, which is the one thing the prefix ladder exists
+  to prevent. The prefix is now re-picked AFTER rounding: it reads `1 GHz`.
+- **Field solver**: coplanar is a segmented Off/On beside Signal rather than a
+  checkbox, target Z, tolerance and design frequency share one row (the property
+  panel widened to fit the widest legitimate value, `999.999 kHz` at 121 px,
+  three across), the structure
+  box lost its redundant `mm` column, and the cross-section view is remembered
+  PER PROFILE — it used to reuse the previous profile's zoom and centre, which
+  "lock view" then made permanent.
+- **Stock's held parts are grouped by component**: 120 project-rows became 46
+  part-rows, folded to 15, with the boards and reference designators behind each
+  row grouped by project.
+- **Library health folds its long lists** to two rows plus a count.
+- **Admin**: the display currency is a dropdown of the currencies that actually
+  have an exchange rate, and its fields fill their column instead of sitting at
+  the browser's default 176 px with the placeholder cut off.
+
 ## 2026-09-12 — One way to label a field, and Setup becomes Admin
 
 - **Setup is now Admin, and it is the same width as every other page.** It

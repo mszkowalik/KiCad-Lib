@@ -1,7 +1,7 @@
 /** The signed-in user's own settings, reached by clicking their name in the
  *  top bar.
  *
- *  It is deliberately NOT the Setup page. Setup is administration of the
+ *  It is deliberately NOT the Admin page. Admin is administration of the
  *  platform — other people's accounts, the deployment's knobs. This is the
  *  things that belong to whoever is signed in: who they are, and the git
  *  accounts they have taught the platform to authenticate as.
@@ -41,7 +41,7 @@ export default function Account() {
             <p className="muted">
               Other people's accounts are administered on{" "}
               <Link className="comp-link" to="/admin">
-                Setup
+                Admin
               </Link>
               {isAdmin ? " → Users." : "."}
             </p>

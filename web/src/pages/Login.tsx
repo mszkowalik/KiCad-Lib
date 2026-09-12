@@ -5,7 +5,7 @@
  * half-loaded screen behind it.
  *
  * No "create account" and no "forgot password" link. Accounts are made by an
- * admin on the Setup page and passwords are reset there — see
+ * admin on the Admin page and passwords are reset there — see
  * `api/app/routers/auth.py`, which has no endpoint for either.
  */
 import { useState, type FormEvent } from "react";

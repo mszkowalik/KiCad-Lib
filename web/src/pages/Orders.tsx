@@ -290,65 +290,106 @@ function StockCard({ stock }: { stock: FinishedStock | null }) {
         <p className="muted">Nothing on the shelf.</p>
       ) : (
         <div className="table-wrap">
-          <table className="data data-fixed finished-stock-table">
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th>Batch</th>
-                <th className="num">Recorded</th>
-                <th className="num">Built</th>
-                <th className="num">Shipped</th>
-                <th className="num">In stock</th>
-                <th className="num">No serial</th>
-                <th className="num">Unit cost</th>
-                <th className="num">Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.run_id} className={r.overdrawn || overbuilt(r) ? "err-text" : undefined}>
-                  <td title={r.project}>{r.project}</td>
-                  <td title={r.label}>
-                    <Link className="comp-link" to={`/runs/${r.run_id}`}>{r.label}</Link>
-                  </td>
-                  <td className="num" title="the quantity on the production run — boards ordered or assembled">
-                    {r.qty_recorded.toLocaleString()}
-                  </td>
-                  <td
-                    className="num"
-                    title={
-                      overbuilt(r)
-                        ? `${r.built} devices passed programming but the batch is recorded as ${r.qty_recorded} boards — the run quantity is wrong, or devices from another batch were filed here`
-                        : r.devices_produced
-                          ? `${r.built} devices passed programming; ${r.qty_recorded - r.built} of the recorded boards never did`
-                          : "no device records: counted from the batch quantity"
-                    }
-                  >
-                    {r.built.toLocaleString()}
-                  </td>
-                  <td className="num">{(r.devices_shipped + r.unserialized_shipped).toLocaleString()}</td>
-                  <td className="num">{r.devices_in_stock.toLocaleString()}</td>
-                  <td
-                    className="num"
-                    title={
-                      r.overdrawn
-                        ? `${r.overdrawn} more units were shipped from this batch than it is recorded to hold`
-                        : "units counted from the batch quantity, not from device records"
-                    }
-                  >
-                    {r.overdrawn ? `−${r.overdrawn}` : r.legacy_stock.toLocaleString()}
-                  </td>
-                  <td className="num">{usd(r.unit_cost_usd)}</td>
-                  <td className="num">{usd(r.stock_value_usd, 0)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            columns={shelfCols}
+            rows={rows}
+            rowKey={(r) => r.run_id}
+            rowClass={(r) => (r.overdrawn || overbuilt(r) ? "err-text" : "")}
+            persistKey="finished-stock"
+            empty="No batch has been built yet."
+          />
         </div>
       )}
     </div>
   );
 }
+
+/* Was a hand-rolled `<table className="data">` — the same header font as the
+   DataTables around it, but no sort control and no filter row, so it read as a
+   different kind of table (reported 2026-09-12). Every `title` the hand-rolled
+   version carried is kept: they are the only place the arithmetic is
+   explained. */
+const shelfCols: Column<FinishedStockRow>[] = [
+  { key: "project", label: "Project", width: 13, get: (r) => r.project },
+  {
+    key: "label",
+    label: "Batch",
+    width: 21,
+    get: (r) => r.label,
+    render: (r) => (
+      <Link className="comp-link" to={`/runs/${r.run_id}`} onClick={(e) => e.stopPropagation()}>
+        {r.label}
+      </Link>
+    ),
+  },
+  {
+    key: "recorded",
+    label: "Recorded",
+    width: 9,
+    numeric: true,
+    get: (r) => r.qty_recorded,
+    title: () => "the quantity on the production run — boards ordered or assembled",
+    render: (r) => <>{r.qty_recorded.toLocaleString()}</>,
+  },
+  {
+    key: "built",
+    label: "Built",
+    width: 9,
+    numeric: true,
+    get: (r) => r.built,
+    title: (r) =>
+      overbuilt(r)
+        ? `${r.built} devices passed programming but the batch is recorded as ${r.qty_recorded} boards — the run quantity is wrong, or devices from another batch were filed here`
+        : r.devices_produced
+          ? `${r.built} devices passed programming; ${r.qty_recorded - r.built} of the recorded boards never did`
+          : "no device records: counted from the batch quantity",
+    render: (r) => <>{r.built.toLocaleString()}</>,
+  },
+  {
+    key: "shipped",
+    label: "Shipped",
+    width: 9,
+    numeric: true,
+    get: (r) => r.devices_shipped + r.unserialized_shipped,
+    render: (r) => <>{(r.devices_shipped + r.unserialized_shipped).toLocaleString()}</>,
+  },
+  {
+    key: "in_stock",
+    label: "In stock",
+    width: 9,
+    numeric: true,
+    get: (r) => r.devices_in_stock,
+    render: (r) => <>{r.devices_in_stock.toLocaleString()}</>,
+  },
+  {
+    key: "no_serial",
+    label: "No serial",
+    width: 9,
+    numeric: true,
+    get: (r) => (r.overdrawn ? -r.overdrawn : r.legacy_stock),
+    title: (r) =>
+      r.overdrawn
+        ? `${r.overdrawn} more units were shipped from this batch than it is recorded to hold`
+        : "units counted from the batch quantity, not from device records",
+    render: (r) => <>{r.overdrawn ? `−${r.overdrawn}` : r.legacy_stock.toLocaleString()}</>,
+  },
+  {
+    key: "unit_cost",
+    label: "Unit cost",
+    width: 10,
+    numeric: true,
+    get: (r) => r.unit_cost_usd ?? "",
+    render: (r) => <>{usd(r.unit_cost_usd)}</>,
+  },
+  {
+    key: "value",
+    label: "Value",
+    width: 11,
+    numeric: true,
+    get: (r) => r.stock_value_usd ?? "",
+    render: (r) => <>{usd(r.stock_value_usd, 0)}</>,
+  },
+];
 
 function NewOrderCard({
   customers,
