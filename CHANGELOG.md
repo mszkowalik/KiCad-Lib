@@ -1,5 +1,36 @@
 # Changelog
 
+## 2026-09-12 — The agent instructions moved next to the code they govern
+
+- **`api/CLAUDE.md` was 2764 lines and `web/CLAUDE.md` was 1688.** A `CLAUDE.md`
+  in a subdirectory is read when an agent opens a file in that directory, so
+  every backend task paid for the frontend rules and every frontend task paid
+  for the whole backend. Two files carried the rules for about 70 services, 17
+  routers, the simulator, the field solver, the flasher and the sync plugin.
+- **There are 17 `CLAUDE.md` files now, and the largest is 510 lines.** Each one
+  holds what applies to its own directory: `api/app/services/`,
+  `api/app/routers/`, `api/app/services/fieldsolver|flasher|pcm_plugin/`,
+  `mcp/`, `web/src/components/`, `web/src/pages/`, `web/src/sim/` and its three
+  sub-directories. The root file merged its layout and
+  routing tables into one that sends a task to the right file.
+- **Long-form topics moved to [docs/reference/](docs/reference/)** — datasheets,
+  production economics, the review axis, the projects module, SPICE runs,
+  simulation models, PCM packaging, KiCad integration, deployment, the Jaravis
+  implementation and two past simulator audits. The nearest `CLAUDE.md` links to
+  each page, so a rule is written once and read where it applies.
+- **The rules that keep this working are written down and checked.**
+  [docs/reference/writing-instruction-files.md](docs/reference/writing-instruction-files.md)
+  states the six: a 200-line budget per file, the derivability test, link never
+  summarise, put a rule in the narrowest file that covers it, never use `@path`
+  imports (they load at launch and defeat the split), and state the current fact
+  with no narration of what the file used to say. `scripts/check-docs.py`
+  enforces the three a machine can decide — line budget, broken relative links,
+  and `@path` imports — and reports 0 errors today.
+- **No rule was dropped.** Every line of the three original files is either in a
+  new file or is a heading level, a table row or a cross-reference that the move
+  itself changed. A link check over all 29 files reports no broken relative
+  link.
+
 ## 2026-09-12 — The programming log paid for an index nobody used
 
 - **`programming_logs` carried two indexes of 52 MB and only ever read one.**

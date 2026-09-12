@@ -12,30 +12,34 @@ final generated state, on the **`archive/yaml-library`** branch. To re-run a
 full YAML import, check out that branch in this working tree — `compose.yaml`
 mounts the repo at `/repo` for exactly that.
 
-## Layout
+## Layout, and where the rules live
 
-| Path | Role | Docs |
+**This file holds what applies everywhere. Every other rule sits next to the
+code it governs.** A `CLAUDE.md` in a subdirectory is read when you open a file
+in that directory, so a backend rule costs nothing on a frontend task. Put a new
+rule in the most specific file that covers it, and never copy a rule into two
+files — write it once and link to it.
+
+| Path | Role | Read before you change it |
 |---|---|---|
 | `api/` | FastAPI backend (DB, importer, generator, Jaravis, JLC/LCSC clients) | `api/CLAUDE.md` |
-| `web/` | React + Vite frontend | `web/CLAUDE.md` |
-| `mcp/` | Stdio MCP server proxying the agent tools to Claude Code | `api/CLAUDE.md` (agent section) |
+| `api/app/services/` | Business logic | `api/app/services/CLAUDE.md` — it routes every backend topic to its document |
+| `api/app/routers/` | HTTP endpoints | `api/app/routers/CLAUDE.md` |
+| `api/app/services/fieldsolver\|flasher\|pcm_plugin/` | Field solver, production programming, the KiCad sync plugin | the `CLAUDE.md` in that directory |
+| `web/` | React + Vite frontend | `web/CLAUDE.md` — the style system and the shared-input rule |
+| `web/src/components\|pages\|sim/` | Shared components, routes, the simulator | the `CLAUDE.md` in that directory |
+| `mcp/` | Stdio MCP server proxying the agent tools to Claude Code | `mcp/CLAUDE.md` |
 | `render/` | kicad-cli render container (previews, project exports) | — |
-| `api/app/services/fieldsolver/` | 2D quasi-TEM field solver (impedance geometry) | `docs/decisions/0002-field-solver-in-the-platform.md` |
 | `clients/` | A sample `.kicad_httplib` and unrelated client projects (flasher, invoice import). The KiCad sync plugin is NOT here: its source is `api/app/services/pcm_plugin/`, packaged by `api/app/services/pcm.py` | `api/CLAUDE.md` |
-| `compose.yaml` | Full dev deployment (db, minio, api, render, web) | `README.md` |
-| `compose.prod.yaml` | Server deployment from the published GHCR images | `README.md` |
-| `.github/workflows/images.yml` | Builds + pushes the api/web/render images | `README.md` |
+| `docs/reference/` | Long-form topic documents the `CLAUDE.md` files link to | [docs/reference/index.md](docs/reference/index.md) |
+| `docs/decisions/` | Architecture decisions, MADR format | [docs/decisions/index.md](docs/decisions/index.md) |
+| `compose.yaml`, `compose.prod.yaml`, `.github/workflows/images.yml` | Dev and server deployment, image builds | [docs/reference/deployment.md](docs/reference/deployment.md) |
 
 ## Running
 
-```bash
-cp .env.example .env    # once; JLC/Anthropic keys optional
-docker compose up -d --build
-```
-
-Web UI at http://localhost:5173, API at http://localhost:8020 (docs at
-`/docs`). The api and web containers live-mount their sources (`api/app`,
-`web/`) — host edits hot-reload without a rebuild.
+`README.md` holds the commands and the port table. One fact it does not state:
+the api and web containers live-mount their sources (`api/app`, `web/`), so host
+edits hot-reload and need no rebuild.
 
 ## Skills — the platform is the source of truth, the files are a working copy
 
@@ -79,113 +83,45 @@ reads to decide whether to open the document.
 ## Images and deployment
 
 `.github/workflows/images.yml` publishes `api`, `web` and `render` to GHCR on
-every push to `main` (pull requests build without pushing);
-`compose.prod.yaml` runs them on the server. Three rules follow from that:
+every push to `main`; `compose.prod.yaml` runs them on the server. Read
+[docs/reference/deployment.md](docs/reference/deployment.md) before you change a
+Dockerfile, a compose file or the workflow. Four traps it explains:
 
-- **The deployed UI is same-origin.** The `web` image is a `prod` Dockerfile
-  target: the built SPA served by nginx, which reverse-proxies `/api`,
-  `/kicad`, `/files`, `/docs` and `/openapi.json` to the api container. Vite
-  inlines env vars at build time, so a baked-in API URL would tie an image to
-  one hostname — `src/api.ts` therefore defaults `API_URL` to `""`. Never
-  reintroduce an absolute default (see `web/CLAUDE.md`).
-- **`compose.yaml` must ask for `target: dev`** on the web service, or dev
-  gets the nginx image instead of the Vite server.
-- **`render/` carries copies of four files from `api/app/services/`**
-  (`project_ops.py`, `sim_spice.py`, `board_template.kicad_pcb`,
-  `themes/Skyline-7S.json`). The workflow's `guard` job fails the build when
-  they are not byte-identical, so edit both together. The theme is on that
-  list because kicad-cli renders with it and the browser's own schematic
-  renderer reads the same file through `GET /api/sim/theme`.
+- **The deployed UI is same-origin**, so `src/api.ts` must keep defaulting
+  `API_URL` to `""`.
+- **`compose.yaml` must ask for `target: dev`** on the web service.
+- **`render/` carries byte-identical copies of four files** from
+  `api/app/services/` — edit both, or the `guard` job fails the build.
+- **The build cache has two halves** (`cache-to` in the workflow, `cache_from`
+  in `compose.yaml`). Dropping either brings the 10-minute cold rebuild back.
 
-`linux/amd64` only, on purpose: the render image's `kicad/kicad` base is
-published amd64-only, and the api image compiles LibreDWG from source, which
-is very slow under emulation.
-
-- **A pruned machine self-recovers.** The workflow also pushes a full
-  (`mode=max`) registry build cache to `ghcr.io/.../<name>:buildcache`, and the
-  `build.cache_from` lists in `compose.yaml` point at it — after a
-  `docker system prune`, `docker compose up -d` pulls the layers (LibreDWG
-  included) instead of recompiling. Unreachable cache refs only warn, so
-  offline builds still work. Keep both halves in sync: dropping either the
-  `cache-to` line in `images.yml` or a `cache_from` list silently brings the
-  ~10-minute cold rebuild back.
-
-- **The server is a Proxmox guest, and the field solver feels its size.** The
-  server runs as VM 104 (`ubuntu`) on the Proxmox node `pve`
-  (`ssh proxmox`), an AMD Ryzen 7 8745H with 8 cores and 16 threads. On
-  2026-08-31 the VM went from 2 cores to 8, from 8 GB to 16 GB (ballooned, with
-  an 8 GB floor, because the node has only ~29 GB for all its guests), and from
-  `cpu: x86-64-v2-AES` to `cpu: host`. The CPU model matters: `x86-64-v2` has no
-  AVX at all, so numpy and scipy fell back to OpenBLAS kernels from before 2011.
-  The geometry search went from 21.1 s to 8.2 s. If solving is slow again, check
-  `qm config 104` for the core count and the CPU model FIRST — the solver fans
-  out over `FIELDSOLVER_WORKERS` processes, capped by `os.cpu_count()`.
+`linux/amd64` only, on purpose.
 
 ## Controlled impedance
 
 The 2D field solver lives at **Simulator → Field solver** (`/sim?tab=field`) and
-its stackups are project data, not scratch data. Three rules that are expensive
-to get wrong (full reasoning in
-[docs/decisions/0002](docs/decisions/0002-field-solver-in-the-platform.md)):
-
-- **Stackups are written by administrators only** — they describe how the fab
-  builds boards and everyone shares them. Anyone may assign one to a board.
-- **A board's stackup and its impedance profiles are commit-versioned**, with the
-  same copy-on-write rule as the cost plan: assigned at a commit, carried forward
-  by later commits until changed, and earlier commits keep what they had.
-- **Changing the stackup keeps every profile and every result** and marks the
-  results outdated. The stored result holds the numbers, never the solved mesh.
-
-The solver is quasi-TEM and floored at **1 MHz**; `triangle`, its mesher, is
-free for personal and research use only and must be replaced before any
-commercial release.
+its stackups are project data, not scratch data. The three rules that are
+expensive to get wrong are in `api/app/services/fieldsolver/CLAUDE.md`, with the
+reasoning in
+[docs/decisions/0002](docs/decisions/0002-field-solver-in-the-platform.md).
 
 ## Getting the library into KiCad
 
-Full reasoning in [docs/decisions/0006](docs/decisions/0006-sync-button-owns-library-updates.md).
-
-- **The Plugin and Content Manager installs once and updates only the plugin.**
-  It installs the base symbols and footprints, the 3D models and the Sync
-  plugin from the user's personal repository URL. After that, library updates
-  come from the **Sync 7Sigma Library** button, which KiCad 10 shows in the PCB
-  editor. A sync records the two content packages in the PCM as current and
-  pinned, so the PCM offers no library update and Update All skips them. The
-  plugin cannot update itself, so its own PCM entry is left alone.
-- **KiCad re-reads a changed library on its next use, no restart.** The
-  footprint, symbol and 3D caches check file modification times (verified in
-  the 10.0 source). Parts already placed are copies: Tools → Update Footprints
-  / Symbols from Library. A restart is needed only after the plugin edits a
-  library table.
-- **The HTTP catalog refreshes itself every 2 minutes, and nothing can force
-  it.** KiCad 10 re-fetches in a background thread every `max` of the two
-  timeouts in the `.kicad_httplib`; both are 120 s since 2026-09-10 and are
-  baked into the downloaded file, so a change means a re-download. One refresh
-  is about 44 kB on the wire.
+The Plugin and Content Manager installs once; after that the **Sync 7Sigma
+Library** button owns library updates, and each user has one personal URL that
+carries their token. Full rules in
+[docs/reference/kicad-integration.md](docs/reference/kicad-integration.md), full
+reasoning in
+[docs/decisions/0006](docs/decisions/0006-sync-button-owns-library-updates.md).
 
 ## Datasheets
 
 Every datasheet URL is re-fetched once a night, and the archive is the document
-KiCad itself is pointed at. Three rules that are expensive to get wrong (full
-reasoning in
-[docs/decisions/0004](docs/decisions/0004-datasheet-identity-and-storage.md)):
-
-- **A new version means the TEXT changed, never the bytes.** Vendors re-sign
-  and re-generate PDFs constantly — Texas Instruments does it about every two
-  days — so a byte comparison called a fresh download a new revision. One
-  TPS61023 datasheet reached 37 stored copies of a single Rev. B that way, and
-  every one of them bumped the component and dropped its verification. The
-  identity is a hash of the page text with a role per page.
-- **A real revision is a review event.** The bump goes through the shared
-  publish path: the sign-off carries because the part did not change, the
-  review record does not because the document it was checked against did, and
-  a review request opens naming the pages that moved.
-- **A file is stored once and shared.** Bytes live in `documents`, addressed by
-  sha256; a datasheet version points at one. Three variants of a part that link
-  the same PDF hold one copy and one page index between them.
-
-Deleting a stored file does not free the disk until the table is rewritten, so
-the clean-up endpoints end in a `VACUUM FULL`. See "Datasheets" in
-`api/CLAUDE.md` for the fetch ladder, the page roles and the endpoints.
+KiCad itself is pointed at. Three rules are expensive to get wrong — a version
+means the TEXT changed, a real revision is a review event, and a file is stored
+once and shared. They are stated in
+[docs/reference/datasheets.md](docs/reference/datasheets.md), with the reasoning
+in [docs/decisions/0004](docs/decisions/0004-datasheet-identity-and-storage.md).
 
 ## Access control
 
@@ -234,7 +170,8 @@ decided did not apply:
 | `docs/decisions/NNNN-*.md` + a row in `docs/decisions/index.md` | The change adds an external dependency, alters deployment or access control, or **would be expensive to reverse**. Reversing it changes other people's boards, data or credentials. Follow the rules in [docs/decisions/index.md](docs/decisions/index.md). |
 | `CHANGELOG.md` | Anything a user of the platform would notice: a new capability, a behaviour change, a correction. Add a dated section at the top. |
 | `docs/todo.md` | You found real work and are not doing it now. **Ask first**, unless the user already asked for that item. |
-| `CLAUDE.md`, `api/CLAUDE.md`, `web/CLAUDE.md` | A non-obvious fact about how the repo, platform or process works. Put it in the most specific file. **When a change makes an existing statement wrong, correcting it is part of the change** — a stale rule in these files is worse than a missing one, because the next agent believes it. |
+| The nearest `CLAUDE.md`, or the `docs/reference/` page it links to | A non-obvious fact about how the repo, platform or process works. Put it in the most specific file that covers it — see "Layout, and where the rules live". **When a change makes an existing statement wrong, correcting it is part of the change** — a stale rule in these files is worse than a missing one, because the next agent believes it. |
+| A `CLAUDE.md` or a `docs/reference/` page | Before you write one, read [docs/reference/writing-instruction-files.md](docs/reference/writing-instruction-files.md) — the six rules that keep these files working, and why a file that grows past its usefulness makes an agent follow LESS of it. Run `python3 scripts/check-docs.py` before you report the work as done. |
 | A platform skill, via `propose_skill_update` | A component or library convention, a decision rule, or a trap. Never record a convention only in `.claude/skills/` — the next refresh overwrites it. |
 
 Two failure modes to avoid, both seen in this repo:
@@ -251,10 +188,19 @@ Two failure modes to avoid, both seen in this repo:
 ## Conventions
 
 - Component/library conventions live in the platform's **skill documents** — not
-  in these files. See "Skills" below for how the copies in `.claude/skills/`
+  in these files. See "Skills" above for how the copies in `.claude/skills/`
   relate to the database.
-- Backend and frontend conventions: see `api/CLAUDE.md` and `web/CLAUDE.md`.
-  Record new non-obvious rules in the most specific of those files.
+- Backend and frontend conventions live beside the code — see the table above. Record a new non-obvious rule in the most specific file that
+  covers it, and write it once. Two copies of a rule become two different rules.
+- **Every input in the web UI is a SHARED component, never a page-local one.**
+  One rule draws every text control, `components/Field.tsx` labels it, and a
+  value that carries a unit goes through `components/SiInput.tsx` whatever page
+  it is on. Four competing form styles and three different control appearances
+  existed at once before this was written down (2026-09-12). The full rules —
+  the two sizes, the SI quantities, where the ⓘ goes — are in `web/CLAUDE.md`
+  under "Reuse the existing style system"; this line is here because the rule is a PROJECT rule, not
+  a frontend detail: a new screen that invents its own input is wrong even when
+  it looks fine on its own page.
 - **Every write AUTO-PUBLISHES** — components, symbols and footprints since
   2026-08-23, skills since 2026-08-24. There is no draft gate and no approval
   queue left in the platform: the Proposals view and `routers/proposals.py`
@@ -263,8 +209,8 @@ Two failure modes to avoid, both seen in this repo:
   answers 410. Accountability lives on the **review axis** — machine
   validation on every publish, checklist verifications, the Reviews queue,
   human sign-off, and the per-component lifecycle (`released` on first
-  sign-off; `deprecated`/`obsolete` hidden from KiCad). See "The review axis"
-  in `api/CLAUDE.md`.
+  sign-off; `deprecated`/`obsolete` hidden from KiCad). See
+  [docs/reference/review-axis.md](docs/reference/review-axis.md).
 
 ## Leave the library better than you found it
 
