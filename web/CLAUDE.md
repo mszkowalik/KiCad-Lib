@@ -68,9 +68,9 @@ component:
 
 - **A value with a UNIT is an `SiInput`, on every page.** Quantities:
   `length` (base mm), `frequency` (Hz), `resistance` (Ω), `percent`,
-  `capacitance` (F), `inductance` (H), `voltage` (V), `current` (A), `time` (s).
-  Adding a field that carries a unit means adding it here, not writing a number
-  box.
+  `capacitance` (F), `inductance` (H), `voltage` (V), `current` (A), `time` (s),
+  `ratio` (no unit at all). Adding a field that carries a unit means adding it
+  here, not writing a number box.
   - **One prefix ladder: print in the prefix that puts 1-999 before the point**
     (user decision 2026-09-12). `0.05 Ω` reads `50 mΩ`, `1560432 Ω` reads
     `1.56 MΩ`. This REPLACED a length-only rule that kept a fab's own spelling
@@ -103,6 +103,17 @@ component:
     verified end to end against a downloaded `.kicad_sch`. A field the server
     gave no unit (a gain in `V/V`, a threshold in `x rail`, a point count) stays
     a plain box: a prefix on a dimensionless number is nonsense.
+  - **A number with NO unit gets prefixes only when its scale is logarithmic**
+    (`quantityForField`). A form asks for a log slider exactly when its value
+    spans decades, which is exactly when a prefix earns its place: an op-amp's
+    open-loop gain runs 1e2 to 1e7 and is written `100k` in its own default, so
+    it reads and writes `100k`, `1M`, `10M` — no unit printed and NO SPACE
+    before the prefix, the way a gain is written on a datasheet. Everything
+    linear stays a plain box, because a prefix on a dielectric constant of 4.3,
+    an emission coefficient of 1.9 or a threshold at 0.5 of the rail is noise.
+    Loss tangent is the deliberate near-miss: `0.002` could print `2m`, but
+    every fab and every datasheet publishes `Df = 0.02`, and a field should not
+    fight the convention the number is copied from.
   - **`quantityForUnit` is the only place a unit SYMBOL becomes a quantity.**
     `sch_lib.PARAM_FORMS`, `sim_scenario.ANALYSIS_FORMS` and `LiveControl` all
     already declare a unit per field, so a new simulator parameter becomes

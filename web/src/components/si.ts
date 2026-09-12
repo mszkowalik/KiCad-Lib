@@ -20,7 +20,8 @@ export type Quantity =
   | "inductance"
   | "voltage"
   | "current"
-  | "time";
+  | "time"
+  | "ratio";
 
 /** Multipliers onto the base unit — mm for a length, Hz for a frequency. */
 const UNITS: Record<
@@ -94,6 +95,36 @@ const UNITS: Record<
       ["Ω", 1],
       ["mΩ", 1e-3],
       ["µΩ", 1e-6],
+    ],
+  },
+  /* A pure number that spans decades — an amplifier's open-loop gain is 100
+     to 10 000 000. It has no unit, so nothing is printed after the prefix and
+     there is no space before it: 100k, 1M, 10M, the way a gain is written on
+     every op-amp datasheet.
+
+     It is deliberately NOT the default for every unitless field. A number that
+     never leaves one decade — a dielectric constant of 4.3, an emission
+     coefficient of 1.9, a threshold at 0.5 of the rail, twenty points per
+     decade — gains nothing from a prefix and reads worse with one. The test
+     that picks them out is the form's own: no unit AND a logarithmic scale. */
+  ratio: {
+    base: "",
+    units: {
+      "": 1, x: 1,
+      k: 1e3, K: 1e3,
+      M: 1e6, meg: 1e6, MEG: 1e6,
+      G: 1e9, T: 1e12,
+      m: 1e-3, u: 1e-6, "\u00b5": 1e-6, "\u03bc": 1e-6, n: 1e-9, p: 1e-12,
+    },
+    ladder: [
+      ["T", 1e12],
+      ["G", 1e9],
+      ["M", 1e6],
+      ["k", 1e3],
+      ["", 1],
+      ["m", 1e-3],
+      ["u", 1e-6],
+      ["n", 1e-9],
     ],
   },
   /* A ratio in percent. It takes no prefixes — "3 milli-percent" is not a
@@ -363,9 +394,12 @@ export function formatSiParts(v: number | null, q: Quantity, fixedUnit?: string)
   }
   const exact = tidy(scaled);
   const shown = tidy(Number(scaled.toFixed(MAX_DECIMALS)));
+  // A unitless quantity closes the gap: a gain is written "100k", never
+  // "100 k". Everything with a symbol keeps the space.
+  const gap = UNITS[q].base === "" ? "" : " ";
   return {
-    text: `${shown} ${unit}`,
-    exact: `${exact} ${unit}`,
+    text: `${shown}${gap}${unit}`,
+    exact: `${exact}${gap}${unit}`,
     rounded: shown !== exact,
     unit,
   };
@@ -415,6 +449,25 @@ export function quantityForUnit(unit: string | null | undefined): Quantity | nul
   if (!unit) return null;
   const u = unit.trim();
   return UNIT_TO_QUANTITY[u] ?? UNIT_TO_QUANTITY[u.toLowerCase()] ?? null;
+}
+
+/** Which quantity draws a parameter field, from the two things the server
+ *  declares about it: its unit and its scale.
+ *
+ *  A unit names the quantity. With no unit the SCALE decides, and that is the
+ *  whole rule: a form asks for a logarithmic slider exactly when its value
+ *  spans decades, which is also exactly when a prefix earns its place. An
+ *  op-amp's open-loop gain runs 1e2 to 1e7 and is written `100k` in its own
+ *  default. A dielectric constant, an emission coefficient and a threshold in
+ *  fractions of the rail are all linear and all stay plain numbers — a prefix
+ *  on 4.3 is noise. */
+export function quantityForField(
+  unit: string | null | undefined,
+  scale?: string,
+): Quantity | null {
+  const q = quantityForUnit(unit);
+  if (q) return q;
+  return scale === "log" ? "ratio" : null;
 }
 
 /** ngspice's own suffix table. Case-insensitive, and `meg` must be tried

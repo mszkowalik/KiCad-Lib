@@ -22,7 +22,7 @@ import {
   type ParamField, type ParamForm,
 } from "./params";
 import SiInput from "../../components/SiInput";
-import { parseSpice, quantityForUnit, toSpice } from "../../components/si";
+import { parseSpice, quantityForField, toSpice } from "../../components/si";
 
 /** A text field that survives a busy page.
  *
@@ -119,7 +119,7 @@ export default function ComponentInspector({
      ngspice's rule (`parseSpice`: `M` is milli) and WRITTEN back with ours
      (`toSpice`: mega always spells `MEG`). See the SPICE section of `si.ts`. */
   const row = (field: ParamField, current: string, set: (f: ParamField, v: string) => void) => {
-    const q = field.scale === "text" ? null : quantityForUnit(field.unit);
+    const q = field.scale === "text" ? null : quantityForField(field.unit, field.scale);
     return (
     <div className="sim-param" key={field.key}>
       <label>

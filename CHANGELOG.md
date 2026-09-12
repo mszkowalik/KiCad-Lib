@@ -14,6 +14,23 @@
   keeps their min-content small. `.num` is `white-space: nowrap` as well — a
   number is one token and must never break.
 
+## 2026-09-13 — A gain gets its prefixes too
+
+- **An op-amp's open-loop gain reads and writes `100k`, `1M`, `10M`.** It has
+  no unit, so nothing is printed after the prefix and there is no space before
+  it — the way a gain is written on a datasheet. Its form allows 1e2 to 1e7 and
+  its own default was already the string `100k`, which nothing parsed.
+- **The rule is the form's own, not a list of field names.** A unitless value
+  gets prefixes when its scale is LOGARITHMIC, because a form asks for a log
+  slider exactly when its value spans decades. Anything linear stays a plain
+  box: a dielectric constant of 4.3, an emission coefficient of 1.9, a
+  threshold at 0.5 of the rail, twenty points per decade. A future parameter
+  opts in by declaring `scale="log"` with no unit, with no frontend edit.
+- **Loss tangent is deliberately left alone.** `0.002` could print as `2m`, but
+  every fab and every datasheet publishes `Df = 0.02`. The same reasoning keeps
+  RKM notation off length fields: a box should not fight the convention the
+  number is copied from.
+
 ## 2026-09-13 — The simulator's numbers carry their units
 
 - **Capacitance, inductance, voltage, current and time are unit-aware fields
