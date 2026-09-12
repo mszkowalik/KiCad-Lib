@@ -1757,8 +1757,21 @@ export interface SnapshotBoard {
   pro: string;
   sch: string | null;
   pcb: string | null;
+  /** `board` is a design; `harness` is a simulation project — a root sheet
+   *  carrying SPICE directives, classified at ingest. A snapshot from before
+   *  2026-09-11 is classified on first read, so treat a missing value as a
+   *  board. */
+  kind?: "board" | "harness";
+  directives?: number;
   variants: { name: string; description: string }[];
   layers: { name: string; type: string; user_name: string }[];
+}
+
+/** The design boards of a snapshot — what the project view, the BOM and a
+ *  production run mean by "board". Simulation harnesses live under the
+ *  Simulator, which lists them itself. */
+export function designBoards(s: { boards: SnapshotBoard[] } | null | undefined): SnapshotBoard[] {
+  return (s?.boards ?? []).filter((b) => b.kind !== "harness");
 }
 
 export interface SnapshotInfo {
@@ -5485,6 +5498,32 @@ export async function getSketch(uploadId: string, signal?: AbortSignal): Promise
   return request(`/api/sim/upload/${encodeURIComponent(uploadId)}/sketch`, { signal });
 }
 
+/** Where a run named by `job` has got to.
+ *
+ *  ngspice says so itself: during a transient it prints the simulated time it
+ *  has reached, and the process that owns it records that. A verdict harness
+ *  solves the same transient TWICE — once for the rawfile, once for the
+ *  `meas` verdicts — so `sweep`/`sweeps` say which pass this is and the
+ *  `fraction` already spans both.
+ *
+ *  An empty object is NO NEWS, never a failure: a run that has not reached
+ *  the solver, or one whose record has expired. */
+export interface SimProgress {
+  phase?: "netlisting" | "solving" | "reading" | "done" | "failed";
+  fraction?: number;
+  /** Simulated seconds reached, and the transient's stop time. */
+  t?: number;
+  tstop?: number | null;
+  sweep?: number;
+  sweeps?: number;
+  /** Wall-clock seconds since the run was first heard from. */
+  elapsed?: number;
+}
+
+export async function getSimProgress(job: string, signal?: AbortSignal): Promise<SimProgress> {
+  return request(`/api/sim/progress/${encodeURIComponent(job)}`, { signal });
+}
+
 /** The schematic colours. Read from the same theme file kicad-cli renders
  *  the project's schematic tab with, so both views agree. */
 export async function getSimTheme(signal?: AbortSignal): Promise<{ name: string; schematic: SchTheme }> {
@@ -5499,7 +5538,7 @@ export async function getSimTheme(signal?: AbortSignal): Promise<{ name: string;
  *  harness that a `_sim` project wraps around a block goes with it. */
 export async function runSimulation(
   src: SimSourceRef,
-  body: { control?: string | null; analysis?: string; timeout?: number },
+  body: { control?: string | null; analysis?: string; timeout?: number; job?: string },
   signal?: AbortSignal,
 ): Promise<ArrayBuffer> {
   let res: Response;

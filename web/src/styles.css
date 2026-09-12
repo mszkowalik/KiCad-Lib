@@ -2927,6 +2927,12 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
   overflow-y: auto;
 }
 
+/* The Taller toggle. Two panes at double height do not fit in 34vh, and a
+   plot you have to scroll to see is not the bigger plot that was asked for. */
+.sim-scope-card.tall {
+  max-height: 62vh;
+}
+
 /* The simulator page spends its pixels on the drawing, Falstad's way: no
    page title, one toolbar row, hairline gaps. Decoration pays rent here. */
 .page-sim {
@@ -5712,3 +5718,68 @@ a.check-cell:hover {
 .swatch:hover:not(:disabled) { transform: translateY(-1px); }
 .swatch.on { outline: 2px solid var(--accent); outline-offset: 2px; border-color: var(--accent); }
 .swatch:disabled { cursor: default; opacity: 0.6; }
+
+/* ---------------------------------------------------- run progress ------ */
+/* A batch run of a real harness is half a minute. The bar carries ngspice's
+   own report of how far the transient has got, so it is a measurement and not
+   a spinner dressed up as one. */
+.sim-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 200px;
+}
+
+.sim-progress-track {
+  position: relative;
+  flex: 1 1 120px;
+  height: 6px;
+  min-width: 80px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.sim-progress-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.3s linear;
+}
+
+/* No fraction to show yet: kicad-cli reports nothing about its own progress,
+   and a bar frozen at zero reads as a stall. */
+.sim-progress-track.waiting .sim-progress-fill {
+  width: 40%;
+  transition: none;
+  animation: sim-progress-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes sim-progress-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sim-progress-track.waiting .sim-progress-fill { animation: none; width: 100%; opacity: 0.4; }
+  .sim-progress-fill { transition: none; }
+}
+
+.sim-progress-text {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* What the scope answers to. Drag-to-zoom is uPlot's own and nothing on
+   screen suggests it exists, so the bar says so once rather than hiding it in
+   a tooltip on every pane. */
+.sim-plots-hint {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .sim-plots-hint { display: none; }
+}

@@ -13,7 +13,7 @@
  *  reference material, not a control.
  */
 import { useMemo, useState } from "react";
-import type { SimScenarios } from "../api";
+import type { SimProgress, SimScenarios } from "../api";
 import { eng } from "./payload";
 import { buildValue, readValue, type ParamForm } from "./edit/params";
 import type { Verdicts } from "./scenario";
@@ -33,6 +33,8 @@ interface Props {
   analysis: string;
   onAnalysis: (next: string) => void;
   busy: boolean;
+  /** Where the run in flight has got to, while it is in flight. */
+  progress?: SimProgress | null;
   onRun: () => void;
   verdicts: Verdicts | null;
   ran: boolean;
@@ -46,8 +48,8 @@ interface Props {
 const SPEEDS = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1];
 
 export default function RunBar({
-  live, bare, scenarios, control, onControl, analysis, onAnalysis, busy, onRun, verdicts, ran,
-  state, speed, onSpeed, onHold,
+  live, bare, scenarios, control, onControl, analysis, onAnalysis, busy, progress, onRun,
+  verdicts, ran, state, speed, onSpeed, onHold,
 }: Props) {
   const forms = (scenarios?.analysis_forms ?? []) as ParamForm[];
   const [formId, setFormId] = useState<string | null>(null);
@@ -104,6 +106,8 @@ export default function RunBar({
         <button type="button" className="primary" onClick={onRun} disabled={busy}>
           {busy ? "Running…" : "Run"}
         </button>
+
+        {busy ? <RunProgress progress={progress} /> : null}
 
         {list.length ? (
           <label className="sim-runbar-pick">
@@ -190,5 +194,46 @@ export default function RunBar({
         </div>
       ) : null}
     </>
+  );
+}
+
+/** What a run in flight is doing.
+ *
+ *  Three things a person waiting on half a minute of solver actually wants:
+ *  how far, how long it has taken, and evidence that it is still moving. The
+ *  fraction is ngspice's own simulated time against the transient's stop time,
+ *  so it is a measurement rather than a guess — and a harness solves the same
+ *  transient twice (once for the rawfile, once for the `meas` verdicts), which
+ *  is why the sweep is named rather than hidden: without it the bar looks like
+ *  it is crawling through a run twice as long as the one the sheet describes.
+ */
+function RunProgress({ progress }: { progress?: SimProgress | null }) {
+  const phase = progress?.phase ?? "netlisting";
+  const fraction = typeof progress?.fraction === "number" ? progress.fraction : null;
+  const label =
+    phase === "netlisting" ? "reading the schematic"
+      : phase === "reading" ? "reading the result"
+        : phase === "done" ? "done"
+          : phase === "failed" ? "failed"
+            : progress?.sweeps && progress.sweeps > 1
+              ? `solving · sweep ${progress.sweep ?? 1} of ${progress.sweeps}`
+              : "solving";
+  // An indeterminate bar for a phase with no fraction — kicad-cli says nothing
+  // about its own progress, and a bar frozen at 0% reads as a stall.
+  const pct = fraction === null ? null : Math.round(fraction * 100);
+  return (
+    <span className="sim-progress" role="status" aria-live="polite">
+      <span className={`sim-progress-track${pct === null ? " waiting" : ""}`}>
+        <span
+          className="sim-progress-fill"
+          style={pct === null ? undefined : { width: `${pct}%` }}
+        />
+      </span>
+      <span className="muted sim-progress-text mono">
+        {label}
+        {pct === null ? "" : ` · ${pct}%`}
+        {progress?.elapsed ? ` · ${Math.round(progress.elapsed)}s` : ""}
+      </span>
+    </span>
   );
 }

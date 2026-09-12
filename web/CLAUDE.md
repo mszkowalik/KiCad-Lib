@@ -880,8 +880,11 @@ things are deliberately ours rather than uPlot's:
    internals.
 3. **The band.** A live run sends a min-max COLUMN per pixel, so a live trace is
    a band between two hidden series with the mid-line over it.
+4. **The X window.** It belongs to `Plots`, not to any one chart. Every pane
+   shares one time axis, so a zoom that moved only the pane under the pointer
+   would break the single reading that stacking them is for.
 
-Two traps, both measured:
+Three traps, all measured:
 
 - **A new trace goes in with its own UNIT.** Volts and amps on one pair of axes
   is a chart with two meanings and one scale, and the number that gets squashed
@@ -890,6 +893,20 @@ Two traps, both measured:
   back as a scrub stopped replay the instant it started — play moved the
   cursor, the hook called it a scrub, and a scrub pauses. It reports only while
   the pointer is over that chart.
+- **`setScale` fires for OUR OWN writes as loudly as for a user's drag.** The
+  page tells every pane the shared window, each pane's hook reports what it was
+  given, and without a guard the two hand the same range back and forth for
+  ever. `applied` holds the last range a chart actually put on screen and
+  `sameRange` compares with a tolerance — comparing floats exactly here is the
+  same bug with extra steps. Zoom is off while LIVE: that run owns its own x
+  scale and re-sets it on every frame.
+
+**What the scope answers to**, said once in its own bar because none of it is
+guessable: drag selects a window (uPlot's own), the wheel zooms about the
+pointer, shift-wheel and a trackpad's horizontal scroll pan, Reset zoom appears
+only once the view is not the whole run, and Taller doubles the pane height.
+Taller also widens the scope card's own `max-height` — a taller plot inside a
+card that still caps at 34vh buys pixels the reader has to scroll to reach.
 
 ## Voltage colour is a SCALE, not an autorange
 

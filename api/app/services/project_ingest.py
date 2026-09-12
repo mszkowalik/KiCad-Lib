@@ -142,6 +142,63 @@ def discover_boards(checkout: Path) -> list[dict]:
     return boards
 
 
+# A SPICE directive on the root sheet: `.tran`, `.control`, `.include` and the
+# rest, as KiCad stores them — a text or text box whose string starts with a
+# dot. This is the one thing that separates a simulation harness from the
+# design it exercises; `sim_run` uses the same pattern to count them per sheet.
+HARNESS_DIRECTIVE_RE = re.compile(
+    r'\(text(?:_box)?\s+"\\?\.(tran|ac|dc|op|noise|control|param|include|lib|four)\b',
+    re.IGNORECASE,
+)
+
+BOARD_KINDS = ("board", "harness")
+
+
+def classify_board(b: dict, checkout: Path) -> None:
+    """Set `kind` and `directives` on one discovered project record.
+
+    A design repository keeps one simulation project per block — CP_sim,
+    SAFETY_sim, TEMP_sim beside the board itself. Each is a real `.kicad_pro`,
+    so discovery lists them as boards; what tells them apart is the root sheet:
+    a harness carries SPICE directive text, a design does not. The `_sim`
+    suffix is NOT the rule — a schematic-only design with no layout yet is
+    still a board, and a harness is one whatever it is called. The suffix is
+    the tiebreak only when the sheet cannot be read, and that is marked.
+    """
+    b["directives"] = 0
+    if not b.get("sch"):
+        b["kind"] = "board"
+        return
+    try:
+        text = (checkout / b["sch"]).read_text(encoding="utf-8")
+    except OSError:
+        b["kind"] = "harness" if b["name"].lower().endswith("_sim") else "board"
+        b["kind_guessed"] = True
+        return
+    b["directives"] = len(HARNESS_DIRECTIVE_RE.findall(text))
+    b["kind"] = "harness" if b["directives"] > 0 else "board"
+
+
+def ensure_board_kinds(db, snap: "M.ProjectSnapshot") -> list[dict]:
+    """Snapshots ingested before `kind` existed carry none. Classify them from
+    the materialised checkout on first read and persist, so the answer is
+    computed once — and never by name."""
+    boards = snap.boards or []
+    if not boards or all("kind" in b for b in boards):
+        return boards
+    try:
+        checkout = gitrepo.materialize(snap.project_id, snap.sha)
+    except Exception:
+        return boards
+    fresh = [dict(b) for b in boards]
+    for b in fresh:
+        if "kind" not in b:
+            classify_board(b, checkout)
+    snap.boards = fresh
+    db.commit()
+    return fresh
+
+
 def _flag(v: str | None) -> bool:
     return bool((v or "").strip())
 
@@ -248,6 +305,7 @@ def ingest(project_id: int, ref: str, ref_name: str = "", is_tag: bool = False,
                         warnings.append(f"{b['name']}: cannot read board file — {e}")
                 else:
                     b["layers"] = []
+                classify_board(b, checkout)
 
             _set_stage(snapshot_id, "bom")
             db.query(M.SnapshotBomLine).filter_by(snapshot_id=snapshot_id).delete()

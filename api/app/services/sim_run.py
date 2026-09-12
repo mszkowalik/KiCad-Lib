@@ -21,6 +21,7 @@ from pathlib import Path
 
 from ..config import settings
 from . import gitrepo, pcm, project_render, sch_write, sim_geom, sim_scenario
+from .project_ingest import HARNESS_DIRECTIVE_RE as _DIRECTIVE_RE
 
 UPLOAD_ROOT = "sim_uploads"
 # What an upload may contain. Schematics and the model files a design keeps
@@ -298,15 +299,21 @@ def snapshot_projects(snapshot) -> list[dict]:
 
     A repository holds the design AND a simulation project per block it
     exercises — EVSE_20_CTRL carries CP_sim, DIN_sim, DOUT_sim, RESET_sim,
-    SAFETY_sim and TEMP_sim beside the board. Each is a real `.kicad_pro`, so
-    the ingest already discovers them as boards; what it cannot say is which
-    of them is a harness. A root sheet carrying SPICE directive text is.
+    SAFETY_sim and TEMP_sim beside the board. The ingest classifies each one
+    from its root sheet (`project_ingest.classify_board`) and stores `kind`;
+    a snapshot from before that field existed is classified here the same
+    way, and the caller is told when the answer had to be guessed by name.
     """
     out: list[dict] = []
     for board in snapshot.boards or []:
         entry = {"board": board.get("name", ""), "simulation": False, "directives": 0,
                  "has_schematic": bool(board.get("sch"))}
-        if board.get("sch"):
+        if "kind" in board:
+            entry["simulation"] = board["kind"] == "harness"
+            entry["directives"] = int(board.get("directives") or 0)
+            if board.get("kind_guessed"):
+                entry["error"] = "checkout was not available at ingest; classified by name"
+        elif board.get("sch"):
             try:
                 rel = project_render.rel_checkout(snapshot.project_id, snapshot.sha, board["sch"])
                 text = (settings.data_dir / rel).read_text(encoding="utf-8")
@@ -327,8 +334,6 @@ def snapshot_projects(snapshot) -> list[dict]:
 # geometry pass over every sheet in a hierarchy.
 _PLACED_RE = re.compile(r"\(lib_id ")
 _WIRE_RE = re.compile(r"\(wire\b")
-_DIRECTIVE_RE = re.compile(r'\(text(?:_box)?\s+"\\?\.(tran|ac|dc|op|noise|control|param|include|lib|four)\b',
-                           re.IGNORECASE)
 
 
 def sheets(src: SimSource) -> list[dict]:
@@ -464,7 +469,7 @@ def live_target(src: SimSource) -> str:
 # ---------------------------------------------------------------------- run
 
 def run(src: SimSource, *, control: str | None = None, analysis: str = "",
-        timeout: int = 0) -> bytes:
+        timeout: int = 0, job: str = "") -> bytes:
     """One batch scenario run -> the 7SIM payload the browser plots.
 
     ALWAYS the source's root sheet, whatever sheet the viewer is looking at.
@@ -478,6 +483,11 @@ def run(src: SimSource, *, control: str | None = None, analysis: str = "",
     """
     data, _ = project_render.run_project_op(
         "sim_run", src.root_rel, control=control, analysis=analysis,
-        timeout=timeout or settings.sim_timeout_s,
+        timeout=timeout or settings.sim_timeout_s, job=job,
     )
     return data
+
+
+def progress(job: str) -> dict:
+    """How far a named run has got. See project_render.sim_progress."""
+    return project_render.sim_progress(job)

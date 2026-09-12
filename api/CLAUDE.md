@@ -1242,6 +1242,18 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   `sim_run.run` ALWAYS netlists the source root, whatever sheet the viewer is
   showing: netlisting the block alone drops the harness and ngspice answers
   `incomplete or empty netlist`.
+- **Every `.kicad_pro` is a "board" to discovery, so the ingest classifies
+  them.** `project_ingest.classify_board` stamps each record with `kind`:
+  `harness` when the root sheet carries a SPICE directive
+  (`HARNESS_DIRECTIVE_RE`, the one regex `sim_run` also counts with), else
+  `board`. The `_sim` suffix is NOT the rule — a schematic-only design with no
+  layout is still a board — and is used only when the sheet cannot be read,
+  marked `kind_guessed`. Snapshots from before 2026-09-11 have no `kind`;
+  `_snap_json(…, db=db)` back-fills them from the checkout on first read and
+  persists. The project view, the project list and `web/src/api.ts
+  designBoards()` show `kind != harness` only; the Schematic tab's own
+  Simulation picker and the Simulator list the harnesses. A production run or
+  BOM never names a harness.
 - **Server-side, `Sim.Library` arrives spelled the INSTALLED way.** A project
   schematic stores `${KICAD10_3RD_PARTY}/symbols/com_sevensigma_library/…`
   (`pcm.SIM_LIB_INSTALLED`), not the mirror's `${SEVENSIGMA_DIR}/Symbols/…`,
@@ -1266,6 +1278,15 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   `${SEVENSIGMA_DIR}` in `Sim.Library` from the environment, and a symbol's
   stored rotation must be NEGATED once library y-up coordinates are flipped
   into sheet y-down (`sim_geom._place`) or a 270-degree part swaps its pins.
+- **`(mirror x|y)` is applied AFTER the rotation, in SHEET axes.** Before the
+  turn it flips the symbol's own axis, which at 90 or 270 degrees is the other
+  sheet axis, so a mirrored resistor lying on its side gets pin 1 at pin 2's
+  end. At 0 degrees the two orders agree, which is how the bug survived: it
+  showed on exactly one sheet of one project (CP_PWM, nine group-net
+  conflicts, 2026-09-12). Test for it by comparing every placed pin's group
+  net against the kicadxml netlist across a whole project, not by eye. All
+  three implementations move together — `sim_geom._place`,
+  `sch_draw.placement_matrix` and `web/src/sim/draw/geom.ts matrixOf`.
 - **The browser DRAWS the schematic; the server only parses it.**
   `services/sch_draw.py` turns a `.kicad_sch` into a draw document — library
   graphics in symbol coordinates plus a placement matrix each — and it is
@@ -1430,6 +1451,40 @@ token injected per-invocation via `http.extraheader` — never written to disk),
 - **A `text_box` netlists like a `text`.** `sheet_geometry` and
   `_DIRECTIVE_RE` read both, so a harness written in a box is a scenario and
   the project list calls it a simulation.
+- **`Sim.Params` is BAKED INTO THE PROJECT'S SCHEMATIC, and a library edit does
+  not reach an existing snapshot.** The mirror writes `Sim.*` rows onto the
+  generated library symbol, but a project's `.kicad_sch` is a git checkout and
+  carries whatever was in it at commit time — `grep "Sim.Params" CP_PWM.kicad_sch`
+  shows the values frozen there. kicad-cli netlists that file, so a component
+  edit today changes nothing about a harness committed yesterday. Adding `IQ` to
+  four op-amps on 2026-09-12 left `XU20 … sigma_opamp POLE=1.4 GAIN=3.16Meg
+  VOFF=125u ROUT=25` in the deck with no `IQ` at all. The board owner picks the
+  change up with **Tools → Update Symbols from Library** in KiCad and a commit;
+  nothing on the platform can do it for them. A MODEL edit does reach every
+  snapshot at once, because `Sim.Library` points at the mirror — so the two
+  halves of a change like this land at different times, and saying which is
+  which is part of reporting it.
+- **A run reports its own progress, and the store lives with the solver.**
+  ngspice prints `Reference value : <t>` — the simulated time it has reached —
+  to stdout during a transient, separated by carriage returns because it means
+  to overwrite a terminal line. `sim_spice.run_ngspice` therefore reads the
+  child incrementally (`select` on the pipe, stderr merged into stdout) rather
+  than with `subprocess.run`, and records the fraction under a `job` name the
+  BROWSER invents. The store is per process: in `RENDER_MODE=http` it is the
+  render container's and `project_render.sim_progress` proxies to
+  `GET /sim/progress/{job}` on it; in local mode the API already has it. Both
+  endpoints are sync `def`s, so FastAPI answers the poll on its threadpool
+  while the run's own request is still blocking. An empty answer is NO NEWS —
+  a job that has not reached the solver, or one whose record expired — and a
+  poller that reads it as a failure will lie about runs that are fine.
+- **A verdict harness solves its transient twice, and that is on purpose.**
+  The deck's `.tran` writes the rawfile the scope plots; the `tran` inside
+  `.control` is the run the `meas` verdicts read. Every `_sim` project in
+  EVSE_20_CTRL has both, so a scenario costs two sweeps — 27 s rather than
+  14 s for CP_sim (measured 2026-09-12). `sim_spice.transient_plan` counts
+  them so the progress fraction spans the whole run. Removing either half
+  breaks something: drop the deck's line and there are no vectors to plot,
+  drop the control block's and there are no verdicts.
 - **`httpx` errors are not `RuntimeError`s.** A render container that is down
   used to kill every sim route in ASGI with a bare 500; `run_project_op` now
   re-raises them as `RuntimeError("render service unreachable: …")`. The same

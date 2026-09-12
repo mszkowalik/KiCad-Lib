@@ -51,7 +51,10 @@ def _board(snap: M.ProjectSnapshot, board_name: str) -> dict:
     raise HTTPException(404, f"board '{board_name}' not in snapshot")
 
 
-def _snap_json(s: M.ProjectSnapshot, stage: str | None = None) -> dict:
+def _snap_json(s: M.ProjectSnapshot, stage: str | None = None, db: Session | None = None) -> dict:
+    # `kind` (board / harness) arrived on 2026-09-11; older snapshots are
+    # classified on first read when a session is given, else served as-is.
+    boards = project_ingest.ensure_board_kinds(db, s) if db is not None else (s.boards or [])
     return {
         "id": s.id,
         "project_id": s.project_id,
@@ -63,7 +66,7 @@ def _snap_json(s: M.ProjectSnapshot, stage: str | None = None) -> dict:
         "status": s.status,
         "stage": stage if stage is not None else project_ingest.active_stage(s.id),
         "error": s.error,
-        "boards": s.boards or [],
+        "boards": boards,
         "report": s.report,
         "created_at": s.created_at.isoformat(),
     }
@@ -88,7 +91,7 @@ def _project_json(db: Session, p: M.Project) -> dict:
         "description": p.description,
         "created_at": p.created_at.isoformat(),
         "has_mirror": gitrepo.has_mirror(p.id),
-        "latest_snapshot": _snap_json(latest) if latest else None,
+        "latest_snapshot": _snap_json(latest, db=db) if latest else None,
         "run_count": run_count,
     }
 
@@ -268,7 +271,7 @@ def list_snapshots(project_id: int, db: Session = Depends(get_db)):
         .order_by(M.ProjectSnapshot.created_at.desc())
         .all()
     )
-    return [_snap_json(s) for s in snaps]
+    return [_snap_json(s, db=db) for s in snaps]
 
 
 @router.post("/projects/{project_id}/snapshots")
@@ -291,7 +294,7 @@ def ingest_snapshot(project_id: int, body: IngestIn, db: Session = Depends(get_d
 
 @router.get("/snapshots/{snapshot_id}")
 def get_snapshot(snapshot_id: int, db: Session = Depends(get_db)):
-    return _snap_json(_snapshot(db, snapshot_id))
+    return _snap_json(_snapshot(db, snapshot_id), db=db)
 
 
 @router.delete("/snapshots/{snapshot_id}")

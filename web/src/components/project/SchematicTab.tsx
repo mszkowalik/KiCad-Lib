@@ -37,7 +37,20 @@ interface Props {
   variant: string;
 }
 
-export default function SchematicTab({ snapshot, board, variant }: Props) {
+export default function SchematicTab({ snapshot, board: design, variant }: Props) {
+  // The design board comes from the page; the simulation harnesses beside it
+  // (CP_sim, TEMP_sim, … — `kind: harness`) are this tab's own choice. They
+  // are KiCad projects too, but not boards anyone builds, so the page's
+  // Board dropdown does not list them (2026-09-11). Here is where a harness
+  // is read and where Simulate is sent to it.
+  const harnesses = useMemo(
+    () => snapshot.boards.filter((b) => b.kind === "harness" && b.sch),
+    [snapshot.boards],
+  );
+  const [pick, setPick] = useState<string>(design.name);
+  useEffect(() => setPick(design.name), [design.name, snapshot.id]);
+  const board: SnapshotBoard = harnesses.find((b) => b.name === pick) ?? design;
+
   const [sheets, setSheets] = useState<SimSheet[] | null>(null);
   const [path, setPath] = useState<string>("");
   const [geometry, setGeometry] = useState<SimGeometry | null>(null);
@@ -107,6 +120,10 @@ export default function SchematicTab({ snapshot, board, variant }: Props) {
   }
 
   const current = sheets?.find((s) => s.path === path);
+  const simBoardParam =
+    board.kind === "harness" || harnesses.length === 0
+      ? `&board=${encodeURIComponent(board.name)}`
+      : "";
 
   return (
     <div>
@@ -118,6 +135,24 @@ export default function SchematicTab({ snapshot, board, variant }: Props) {
             {/* A dropdown, not a row of buttons: a board has as many sheets as
                 it likes, and a toolbar that grows with the data pushes the
                 page sideways. */}
+            {harnesses.length > 0 ? (
+              <label className="sim-pick-group">
+                <span>Simulation</span>
+                <select
+                  className="text"
+                  value={board.name}
+                  onChange={(e) => {
+                    setPick(e.target.value);
+                    setSelected(null);
+                  }}
+                >
+                  <option value={design.name}>{design.name} · design</option>
+                  {harnesses.map((h) => (
+                    <option key={h.name} value={h.name}>{h.name} · harness</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <label className="sim-pick-group">
               <span>Sheet</span>
               <select
@@ -131,7 +166,7 @@ export default function SchematicTab({ snapshot, board, variant }: Props) {
                 {sheets.map((s) => (
                   <option key={s.path} value={s.path}>
                     {"  ".repeat(s.depth)}
-                    {s.name} · {s.symbols} parts
+                    {s.name}
                   </option>
                 ))}
               </select>
@@ -144,16 +179,19 @@ export default function SchematicTab({ snapshot, board, variant }: Props) {
                 playground: watch it run, turn its knobs — and nothing done
                 there can ever write back to this project, because the git
                 checkout is the source of truth. */}
+            {/* With the design chosen and harnesses present, send no board:
+                the Simulator then opens the first harness itself, instead of
+                the design and a "carries no directives" notice. */}
             <Link
               className="btn"
-              to={`/sim?snapshot=${snapshot.id}&board=${encodeURIComponent(board.name)}`}
+              to={`/sim?snapshot=${snapshot.id}${simBoardParam}`}
               title="Run the harness and read its verdicts"
             >
               Simulate
             </Link>
             <Link
               className="btn"
-              to={`/sim?snapshot=${snapshot.id}&board=${encodeURIComponent(board.name)}&mode=live`}
+              to={`/sim?snapshot=${snapshot.id}${simBoardParam}&mode=live`}
               title="Watch it run and turn its knobs — never writes to the project"
             >
               Play live

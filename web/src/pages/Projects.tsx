@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   createProject,
+  designBoards,
   errorMessage,
   getProjects,
   isAbortError,
@@ -108,7 +109,7 @@ export default function Projects() {
       label: "Boards",
       width: 16,
       get: (p) =>
-        p.latest_snapshot ? p.latest_snapshot.boards.map((b) => b.name).join(", ") || "—" : "—",
+        p.latest_snapshot ? designBoards(p.latest_snapshot).map((b) => b.name).join(", ") || "—" : "—",
     },
     { key: "runs", label: "Batches", width: 7, numeric: true, get: (p) => p.run_count },
     { key: "currency", label: "Currency", width: 7, get: (p) => p.effective_currency },

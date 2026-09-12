@@ -17,8 +17,13 @@
  *     a live trace is drawn as a band between two series with the middle line
  *     over it. uPlot draws bands natively; the two edge series are hidden from
  *     our legend because they are one reading, not three.
+ *
+ *  The X window is the PAGE's, not any one chart's: every pane shares one time
+ *  axis, so a zoom that moved only the pane under the pointer would break the
+ *  single reading that stacking them is for. One range lives here and every
+ *  pane is told it.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import { eng } from "./payload";
@@ -51,12 +56,56 @@ interface Props {
   onCursor: (index: number) => void;
   /** A live run keeps moving; a finished one is scrubbed. */
   live: boolean;
+  /** Panes at double height. Remembered by the page, per source. */
+  tall: boolean;
+  onTall: (next: boolean) => void;
 }
 
+/** Pane heights. Tall is exactly double, because the point of the toggle is to
+ *  read a decimated trace that is too fine for the short one — and a trace at
+ *  twice the pixels is twice the resolution, which is a claim a reader can
+ *  check. */
 const PANE_H = 104;
+const PANE_H_TALL = 208;
 const SYNC = uPlot.sync("sim");
 
-export default function Plots({ panes, onPanes, data, cursor, onCursor, live, head }: Props) {
+/** How much one wheel notch zooms. 1.25 is about eight notches per decade,
+ *  which lands on a decade without feeling slow. */
+const ZOOM_STEP = 1.25;
+
+type XRange = [number, number];
+
+/** Two ranges the same, within a millionth of the span on screen. Comparing
+ *  floats exactly here would feed the setScale hook back into itself forever. */
+function sameRange(a: XRange | null, b: XRange | null): boolean {
+  if (!a || !b) return a === b;
+  const span = Math.abs(b[1] - b[0]) || 1;
+  return Math.abs(a[0] - b[0]) < span * 1e-6 && Math.abs(a[1] - b[1]) < span * 1e-6;
+}
+
+export default function Plots({
+  panes, onPanes, data, cursor, onCursor, live, tall, onTall, head,
+}: Props) {
+  /** The X window every pane shows. `null` is "all of it". */
+  const [xRange, setXRange] = useState<XRange | null>(null);
+
+  /** The whole run, as the X axis measures it. */
+  const full = useMemo<XRange | null>(() => {
+    if (!data || data.x.length < 2) return null;
+    return [data.x[0], data.x[data.x.length - 1]];
+  }, [data]);
+
+  // A new run is a new window. Without this the scope stayed zoomed into a
+  // slice of the PREVIOUS result, which looks like a run that produced almost
+  // nothing.
+  useEffect(() => { setXRange(null); }, [full?.[0], full?.[1]]);
+
+  const zoomed = !!(xRange && full && !sameRange(xRange, full));
+
+  const setRange = useCallback((next: XRange | null) => {
+    setXRange((current) => (sameRange(current, next) ? current : next));
+  }, []);
+
   if (!panes.length) {
     return (
       <p className="muted">
@@ -71,6 +120,31 @@ export default function Plots({ panes, onPanes, data, cursor, onCursor, live, he
       <div className="sim-plots-bar">
         {head}
         <span className="sim-runbar-spacer" />
+        {/* What the scope answers to. Drag-to-zoom is uPlot's and is not
+            guessable; the wheel and the reset are ours. Said once, here,
+            rather than in a tooltip on every pane. */}
+        <span className="muted sim-plots-hint">
+          drag to zoom · wheel to zoom · shift-wheel to pan
+        </span>
+        {zoomed ? (
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => setRange(null)}
+            title="Back to the whole run"
+          >
+            Reset zoom
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => onTall(!tall)}
+          title={tall ? "Half height" : "Double height — more pixels for a decimated trace"}
+          aria-pressed={tall}
+        >
+          {tall ? "Shorter" : "Taller"}
+        </button>
         {panes.length > 1 ? (
           <button type="button" className="ghost" onClick={() => onPanes(mergeAll(panes))}>
             Merge all
@@ -90,6 +164,10 @@ export default function Plots({ panes, onPanes, data, cursor, onCursor, live, he
           cursor={cursor}
           onCursor={onCursor}
           live={live}
+          height={tall ? PANE_H_TALL : PANE_H}
+          xRange={xRange}
+          full={full}
+          onXRange={setRange}
           first={i === 0}
           last={i === panes.length - 1}
           onMergeUp={i > 0 ? () => onPanes(mergeUp(panes, pane.id)) : undefined}
@@ -103,13 +181,20 @@ export default function Plots({ panes, onPanes, data, cursor, onCursor, live, he
 }
 
 function PaneChart({
-  pane, data, cursor, onCursor, live, last, onMergeUp, onSplit, onToggle, onRemove,
+  pane, data, cursor, onCursor, live, height, xRange, full, onXRange,
+  last, onMergeUp, onSplit, onToggle, onRemove,
 }: {
   pane: Pane;
   data: PlotData | null;
   cursor: number;
   onCursor: (index: number) => void;
   live: boolean;
+  height: number;
+  /** The window every pane shows, or `null` for the whole run. */
+  xRange: XRange | null;
+  /** The whole run, which a zoom may not reach outside of. */
+  full: XRange | null;
+  onXRange: (next: XRange | null) => void;
   first: boolean;
   last: boolean;
   onMergeUp?: () => void;
@@ -128,6 +213,18 @@ function PaneChart({
    *  first back to the page stopped replay the instant it started: play moved
    *  the cursor, the hook reported it as a scrub, and a scrub pauses. */
   const hovering = useRef(false);
+  /** The last range this chart PUT ON SCREEN, whoever asked for it. The
+   *  setScale hook fires for our own writes as loudly as for a user's drag, so
+   *  without this the page and the chart hand the same range back and forth. */
+  const applied = useRef<XRange | null>(null);
+  /** Read by the wheel listener, which is attached once and must not close
+   *  over a stale bound. */
+  const bounds = useRef<XRange | null>(full);
+  bounds.current = full;
+  const report = useRef(onXRange);
+  report.current = onXRange;
+  const isLive = useRef(live);
+  isLive.current = live;
   const shown = useMemo(() => pane.traces.filter((t) => !t.off), [pane.traces]);
   const unit = pane.traces[0]?.unit ?? "";
 
@@ -170,7 +267,7 @@ function PaneChart({
     const text = themeColour("--muted", "#888");
     const plot = new uPlot({
       width,
-      height: PANE_H,
+      height,
       cursor: {
         sync: { key: SYNC.key },
         drag: { x: true, y: false, setScale: true },
@@ -205,18 +302,85 @@ function PaneChart({
           if (hovering.current && u.cursor.event && u.cursor.idx != null) onCursor(u.cursor.idx);
         }],
         setScale: [(u) => {
-          const from = u.valToIdx(u.scales.x.min ?? 0);
-          const to = u.valToIdx(u.scales.x.max ?? 0);
-          setWindow([from, to]);
+          const min = u.scales.x.min ?? 0;
+          const max = u.scales.x.max ?? 0;
+          setWindow([u.valToIdx(min), u.valToIdx(max)]);
+          // Tell the page, so every other pane follows. This fires for a
+          // drag-zoom, a double-click reset and our own writes alike; the
+          // `applied` guard is what stops the last of those looping.
+          const next: XRange = [min, max];
+          if (sameRange(applied.current, next)) return;
+          applied.current = next;
+          if (isLive.current) return;
+          const whole = bounds.current;
+          report.current(whole && sameRange(next, whole) ? null : next);
         }],
       },
     }, built.arrays as uPlot.AlignedData, node);
     chart.current = plot;
     setWindow([0, data.x.length - 1]);
-    return () => { plot.destroy(); chart.current = null; };
-    // `width` is applied through setSize, not by rebuilding.
+
+    // Wheel over the plot: zoom the time axis about the pointer, or pan it
+    // with shift held. A trackpad's own horizontal scroll pans too, which is
+    // the gesture a Mac user reaches for without being told. Not passive —
+    // the page must not scroll under a gesture aimed at the chart.
+    const over = plot.over;
+    const onWheel = (e: WheelEvent) => {
+      const whole = bounds.current;
+      if (!whole || isLive.current) return;
+      e.preventDefault();
+      const min = plot.scales.x.min ?? whole[0];
+      const max = plot.scales.x.max ?? whole[1];
+      const span = max - min;
+      if (!(span > 0)) return;
+      const pan = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY);
+      let next: XRange;
+      if (pan) {
+        const delta = (e.shiftKey ? e.deltaY || e.deltaX : e.deltaX) / Math.max(1, over.clientWidth);
+        next = [min + span * delta, max + span * delta];
+      } else {
+        // Keep the value under the pointer where it is, so the wheel zooms
+        // into what is being looked at rather than into the middle.
+        const rect = over.getBoundingClientRect();
+        const at = Math.min(1, Math.max(0, (e.clientX - rect.left) / (rect.width || 1)));
+        const focus = min + span * at;
+        const grown = e.deltaY > 0 ? span * ZOOM_STEP : span / ZOOM_STEP;
+        next = [focus - grown * at, focus + grown * (1 - at)];
+      }
+      // Never outside the run, and never so far in that the window is thinner
+      // than two samples — there is nothing to see past that and the axis
+      // labels collapse.
+      const limit = (whole[1] - whole[0]) / 1e6;
+      let [lo, hi] = next;
+      if (hi - lo < limit) return;
+      if (hi - lo >= whole[1] - whole[0]) { lo = whole[0]; hi = whole[1]; }
+      else if (lo < whole[0]) { hi += whole[0] - lo; lo = whole[0]; }
+      else if (hi > whole[1]) { lo -= hi - whole[1]; hi = whole[1]; }
+      plot.setScale("x", { min: lo, max: hi });
+    };
+    over.addEventListener("wheel", onWheel, { passive: false });
+
+    return () => {
+      over.removeEventListener("wheel", onWheel);
+      plot.destroy();
+      chart.current = null;
+      applied.current = null;
+    };
+    // `width` and `height` are applied through setSize, not by rebuilding.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shape, last, unit]);
+
+  // The page's window, put on this chart. A pane that was just built already
+  // carries it through `applied`, so this only moves the ones that did not
+  // start the gesture.
+  useEffect(() => {
+    const plot = chart.current;
+    if (!plot || live) return;
+    const want: XRange | null = xRange ?? full;
+    if (!want || sameRange(applied.current, want)) return;
+    applied.current = want;
+    plot.setScale("x", { min: want[0], max: want[1] });
+  }, [xRange, full, live, shape]);
 
   // New numbers, same shape.
   useEffect(() => {
@@ -230,7 +394,7 @@ function PaneChart({
     }
   }, [live, data]);
 
-  useEffect(() => { chart.current?.setSize({ width, height: PANE_H }); }, [width]);
+  useEffect(() => { chart.current?.setSize({ width, height }); }, [width, height]);
 
   useEffect(() => {
     const node = host.current;
@@ -250,8 +414,8 @@ function PaneChart({
     if (!plot || live) return;
     if (plot.cursor.idx === cursor) return;
     const left = plot.valToPos(plot.data[0][cursor] as number, "x");
-    if (Number.isFinite(left)) plot.setCursor({ left, top: PANE_H / 2 });
-  }, [cursor, live]);
+    if (Number.isFinite(left)) plot.setCursor({ left, top: height / 2 });
+  }, [cursor, live, height]);
 
   return (
     <div className="sim-pane">

@@ -99,11 +99,14 @@ def run_op(
     analysis: str = "",
     ngspice: str = "ngspice",
     timeout: int = 60,
+    job: str = "",
 ) -> tuple[bytes, str]:
     """Returns (bytes, media_type). out_dir must be a writable temp dir.
     gerber_svg: src is a DIRECTORY; files = [{file, color}] selects layers.
     sim_run: control/analysis override the schematic's own directives (see
-    sim_spice.prepare_netlist), ngspice is the binary, timeout is its cap."""
+    sim_spice.prepare_netlist), ngspice is the binary, timeout is its cap.
+    `job` names the run in `sim_spice`'s progress store so a caller in the same
+    PROCESS can ask how far it has got; it is meaningless for every other op."""
     src = Path(src)
     out = Path(out_dir)
     if not src.exists():
@@ -226,6 +229,9 @@ def run_op(
         return dest.read_bytes(), MEDIA[op]
 
     if op == "sim_run":
+        # kicad-cli first, and it is not instant on a real hierarchy — say so
+        # rather than showing a solver at 0% for the first several seconds.
+        sim_spice.set_progress(job, phase="netlisting", fraction=0.0)
         netlist_text, _ = run_op(kicad_cli, "sch_spice", src, out_dir, variant=variant, env=env)
         try:
             # prepare_netlist refuses a control block that reaches outside the
@@ -237,18 +243,18 @@ def run_op(
             )
             with tempfile.TemporaryDirectory() as sim_dir:
                 raw, log = sim_spice.run_ngspice(
-                    prepared, sim_dir, ngspice=ngspice, timeout=timeout, env=env,
+                    prepared, sim_dir, ngspice=ngspice, timeout=timeout, env=env, job=job,
                 )
                 # No rawfile means the control block ran the analysis itself
                 # and printed instead. The log IS the result.
                 plots = sim_spice.parse_raw(raw) if raw else []
         except sim_spice.SimError as e:
+            sim_spice.set_progress(job, phase="failed", fraction=0.0)
             raise OpError(str(e)) from e
-        return (
-            sim_spice.encode_payload(
-                plots, nets=sim_spice.top_level_nodes(prepared), info=info, log=log,
-            ),
-            MEDIA[op],
+        payload = sim_spice.encode_payload(
+            plots, nets=sim_spice.top_level_nodes(prepared), info=info, log=log,
         )
+        sim_spice.set_progress(job, phase="done", fraction=1.0)
+        return payload, MEDIA[op]
 
     raise OpError(f"unknown op: {op}")

@@ -134,11 +134,14 @@ def placement_matrix(at: list[float], mirror: str) -> list[float]:
     way the user sees it, and the y flip reverses that sense.
     """
     x, y, rot = (at + [0.0, 0.0, 0.0])[:3]
-    sx = -1.0 if "y" in mirror else 1.0
-    sy = 1.0 if "x" in mirror else -1.0
+    # Mirror AFTER the rotation, in sheet axes (see `_place`): mx flips the
+    # placed x for `(mirror y)`, my flips the placed y for `(mirror x)`. The
+    # y-up to y-down flip of the library frame stays in front of the turn.
+    mx = -1.0 if "y" in mirror else 1.0
+    my = -1.0 if "x" in mirror else 1.0
     c = math.cos(math.radians(rot))
     s = -math.sin(math.radians(rot))
-    return [c * sx, s * sx, -s * sy, c * sy, x, y]
+    return [mx * c, my * s, mx * s, -my * c, x, y]
 
 
 # ------------------------------------------------------- library definitions

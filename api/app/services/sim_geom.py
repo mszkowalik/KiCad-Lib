@@ -214,11 +214,18 @@ def _place(px: float, py: float, at: tuple[float, float, float], mirror: str) ->
     """
     x, y, rot = at
     py = -py  # library coordinates are y-up, the sheet is y-down
-    if "x" in mirror:
-        py = -py
-    if "y" in mirror:
-        px = -px
     rx, ry = _rot(px, py, -rot)
+    # The mirror comes AFTER the rotation, in sheet axes: `(mirror x)` flips
+    # the placed symbol top-for-bottom whatever its angle. Applied before the
+    # turn it flips the symbol's own axis instead, which at 90 or 270 degrees
+    # is the OTHER sheet axis — every mirrored resistor lying on its side on
+    # CP_PWM had pin 1 where the netlist put pin 2 (nine group conflicts on
+    # one sheet, 2026-09-12). At 0 degrees the two orders agree, which is why
+    # the other sheets never showed it.
+    if "x" in mirror:
+        ry = -ry
+    if "y" in mirror:
+        rx = -rx
     return x + rx, y + ry
 
 

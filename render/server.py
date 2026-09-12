@@ -358,6 +358,17 @@ class ProjectRenderRequest(BaseModel):
     control: str | None = None
     analysis: str = ""
     timeout: int = 60
+    # sim_run only: names this run in sim_spice's progress store, so the API
+    # can ask how far it has got while this request is still blocking. A
+    # caller that does not want progress sends nothing.
+    job: str = ""
+
+
+@app.get("/sim/progress/{job}")
+def sim_progress(job: str):
+    """How far a named sim_run has got. `{}` means no news — a job nobody
+    started, or one whose entry has expired — never a failure."""
+    return sim_spice.get_progress(job)
 
 
 @app.post("/render-project")
@@ -371,7 +382,7 @@ def render_project(req: ProjectRenderRequest):
                 KICAD_CLI, req.op, src, td,
                 variant=req.variant, layer=req.layer, theme=req.theme, files=req.files,
                 control=req.control, analysis=req.analysis,
-                ngspice=NGSPICE, timeout=max(5, min(req.timeout, 300)),
+                ngspice=NGSPICE, timeout=max(5, min(req.timeout, 300)), job=req.job,
             )
         except OpError as e:
             raise HTTPException(500, str(e)) from e

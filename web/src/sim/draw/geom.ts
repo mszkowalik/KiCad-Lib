@@ -23,11 +23,16 @@ export function matrixOf(at: At, mirror: string): Matrix {
   // reading on a pin whose position the server computed, and the renderer
   // draws that pin from here.
   const [x, y, rot] = at;
-  const sx = mirror.includes("y") ? -1 : 1;
-  const sy = mirror.includes("x") ? 1 : -1;
+  // Mirror AFTER the rotation, in sheet axes: `(mirror x)` flips the placed y,
+  // `(mirror y)` the placed x. The library's y-up frame is flipped before the
+  // turn. Mirroring first flipped the symbol's own axis, which at 90/270 is
+  // the other sheet axis — a mirrored resistor on its side drew pin 1 at
+  // pin 2's end (CP_PWM, 2026-09-12).
+  const mx = mirror.includes("y") ? -1 : 1;
+  const my = mirror.includes("x") ? -1 : 1;
   const c = Math.cos((rot * Math.PI) / 180);
   const s = -Math.sin((rot * Math.PI) / 180);
-  return [c * sx, s * sx, -s * sy, c * sy, x, y];
+  return [mx * c, my * s, mx * s, -my * c, x, y];
 }
 
 export function matrixString(m: Matrix): string {

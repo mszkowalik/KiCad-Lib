@@ -16,9 +16,13 @@ Verified against ngspice-47 and kicad-cli 10.0.5 (docs/simulator/design.md §2).
 from __future__ import annotations
 
 import json
+import os
 import re
+import select
 import struct
 import subprocess
+import threading
+import time
 from pathlib import Path
 
 MAGIC = b"7SIM"
@@ -171,21 +175,204 @@ _FATAL_RE = re.compile(
 )
 
 
+# ------------------------------------------------------------- progress
+#
+# A batch run of a real harness is half a minute, and a button that says
+# "Running…" for half a minute is indistinguishable from one that has hung.
+# ngspice already says where it is: during a transient it writes
+# `Reference value :  4.41480e-02` — the simulated time it has reached — to
+# stdout, one per solved chunk, separated by carriage returns rather than
+# newlines because it means to overwrite the line on a terminal. Against the
+# transient's own stop time that is a true fraction, not an estimate.
+#
+# The store is per PROCESS, which is the right scope: whoever runs ngspice
+# holds it. In RENDER_MODE=http that is the render container and the API
+# proxies to it; in local mode the API has run it itself.
+
+_PROGRESS: dict[str, dict] = {}
+_PROGRESS_LOCK = threading.Lock()
+# A job is dropped this long after its last update. Long enough that a browser
+# polling every half second still sees the final state of a run that ended.
+PROGRESS_TTL_S = 300.0
+# Never let an abandoned page leak the store unboundedly.
+PROGRESS_MAX = 256
+
+_REFERENCE_RE = re.compile(r"Reference value\s*:\s*(-?[\d.]+(?:[eE][-+]?\d+)?)")
+
+
+def set_progress(job: str, **fields) -> None:
+    """Record where a named run has got to. No-op without a job name."""
+    if not job:
+        return
+    now = time.monotonic()
+    with _PROGRESS_LOCK:
+        entry = _PROGRESS.setdefault(job, {"started": now})
+        entry.update(fields)
+        entry["updated"] = now
+        if len(_PROGRESS) > PROGRESS_MAX:
+            for key in sorted(_PROGRESS, key=lambda k: _PROGRESS[k]["updated"])[:-PROGRESS_MAX]:
+                _PROGRESS.pop(key, None)
+
+
+def get_progress(job: str) -> dict:
+    """What a named run is doing. `{}` for one nobody has heard of — which is
+    also what a finished-and-expired run reads as, so the caller must treat an
+    empty answer as "no news", never as "failed"."""
+    now = time.monotonic()
+    with _PROGRESS_LOCK:
+        for key, entry in list(_PROGRESS.items()):
+            if now - entry["updated"] > PROGRESS_TTL_S:
+                _PROGRESS.pop(key, None)
+        entry = _PROGRESS.get(job)
+        if not entry:
+            return {}
+        out = dict(entry)
+    out["elapsed"] = round(now - out.pop("started"), 2)
+    out.pop("updated", None)
+    return out
+
+
+def clear_progress(job: str) -> None:
+    if not job:
+        return
+    with _PROGRESS_LOCK:
+        _PROGRESS.pop(job, None)
+
+
+# `20u`, `720m`, `1.5Meg`, `100n`. `Meg` must be tested before `m`.
+_SUFFIXES = (("meg", 1e6), ("mil", 25.4e-6), ("t", 1e12), ("g", 1e9), ("k", 1e3),
+             ("m", 1e-3), ("u", 1e-6), ("n", 1e-9), ("p", 1e-12), ("f", 1e-15))
+_NUMBER_RE = re.compile(r"^([-+]?[\d.]+(?:[eE][-+]?\d+)?)\s*([a-zA-Z]*)$")
+
+
+def spice_number(text: str) -> float | None:
+    """A SPICE quantity as a float. `None` when it is not one."""
+    m = _NUMBER_RE.match(text.strip())
+    if not m:
+        return None
+    try:
+        value = float(m.group(1))
+    except ValueError:
+        return None
+    tail = m.group(2).lower()
+    for suffix, scale in _SUFFIXES:
+        if tail.startswith(suffix):
+            return value * scale
+    return value
+
+
+def transient_plan(netlist: str) -> tuple[float | None, int]:
+    """`(stop time, how many transient sweeps this deck will solve)`.
+
+    Both halves are needed to read ngspice's progress, because a verdict
+    harness solves the SAME transient twice: the deck's own `.tran` writes the
+    rawfile the browser plots, and the `tran` inside `.control` is the run the
+    `meas` verdicts read. Every `_sim` project in EVSE_20_CTRL is built that
+    way, so every scenario run costs two sweeps (2026-09-12). Counting them is
+    what keeps a progress bar monotonic — without it the bar reaches 98%, then
+    starts again from zero, which reads as a run that crashed and restarted.
+    """
+    stops: list[float] = []
+    sweeps = 0
+    in_control = False
+    for line in netlist.splitlines():
+        low = line.strip().lower()
+        if low.startswith(".control"):
+            in_control = True
+            continue
+        if low.startswith(".endc"):
+            in_control = False
+            continue
+        head = low.split()
+        if not head:
+            continue
+        name = head[0]
+        if (name == "tran" if in_control else name == ".tran") and len(head) > 2:
+            value = spice_number(head[2])
+            if value and value > 0:
+                stops.append(value)
+                sweeps += 1
+    if not stops:
+        return None, 0
+    return max(stops), sweeps
+
+
+def transient_stop(netlist: str) -> float | None:
+    """The longest transient stop time in the deck, or None."""
+    return transient_plan(netlist)[0]
+
+
 def run_ngspice(netlist: str, work_dir: str | Path, *, ngspice: str = "ngspice",
-                timeout: int = 60, env: dict | None = None) -> tuple[bytes, str]:
-    """Batch run. Returns (rawfile bytes, ngspice log). Raises on no output."""
+                timeout: int = 60, env: dict | None = None,
+                job: str = "") -> tuple[bytes, str]:
+    """Batch run. Returns (rawfile bytes, ngspice log). Raises on no output.
+
+    Reads the child's output as it arrives rather than at the end, so
+    `set_progress` can follow the transient. stderr is merged into stdout: the
+    log was a concatenation of the two anyway, and one stream cannot deadlock
+    against the other.
+    """
     work = Path(work_dir)
     cir = work / "sim.cir"
     raw = work / "sim.raw"
     cir.write_text(netlist, encoding="utf-8")
+    stop, sweeps = transient_plan(netlist)
+    sweeps = max(1, sweeps)
+    set_progress(job, phase="solving", fraction=0.0, t=0.0, tstop=stop, sweep=1, sweeps=sweeps)
+    proc = subprocess.Popen(
+        [ngspice, "-b", "-r", str(raw), str(cir)],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
+    )
+    chunks: list[bytes] = []
+    sweep = 1
+    last_t = 0.0
+    deadline = time.monotonic() + timeout
+    fd = proc.stdout.fileno()
+    timed_out = False
     try:
-        proc = subprocess.run(
-            [ngspice, "-b", "-r", str(raw), str(cir)],
-            capture_output=True, text=True, timeout=timeout, env=env,
-        )
-    except subprocess.TimeoutExpired as e:
-        raise SimError(f"ngspice did not finish within {timeout}s") from e
-    log = (proc.stdout or "") + (proc.stderr or "")
+        while True:
+            if time.monotonic() > deadline:
+                timed_out = True
+                break
+            ready, _, _ = select.select([fd], [], [], 0.2)
+            if not ready:
+                if proc.poll() is not None:
+                    break
+                continue
+            data = os.read(fd, 65536)
+            if not data:
+                break
+            chunks.append(data)
+            if job and stop:
+                hits = _REFERENCE_RE.findall(data.decode("utf-8", "replace"))
+                if hits:
+                    try:
+                        now_t = float(hits[-1])
+                    except ValueError:
+                        now_t = last_t
+                    # A reading that goes BACKWARDS is the next sweep starting,
+                    # not a solver losing ground. Count it and carry on, so the
+                    # fraction over the whole run only ever rises.
+                    if now_t < last_t - stop * 0.02:
+                        sweep = min(sweeps, sweep + 1)
+                    last_t = now_t
+                    done = (sweep - 1 + max(0.0, min(1.0, now_t / stop))) / sweeps
+                    set_progress(job, phase="solving", t=now_t, tstop=stop,
+                                 sweep=sweep, sweeps=sweeps,
+                                 fraction=max(0.0, min(1.0, done)))
+    finally:
+        if timed_out:
+            proc.kill()
+        try:
+            proc.stdout.close()
+        except OSError:
+            pass
+        proc.wait()
+    if timed_out:
+        set_progress(job, phase="failed", fraction=0.0)
+        raise SimError(f"ngspice did not finish within {timeout}s")
+    set_progress(job, phase="reading", fraction=1.0)
+    log = b"".join(chunks).decode("utf-8", "replace")
     if not raw.exists() or raw.stat().st_size == 0:
         # A verdict harness runs its analysis INSIDE the control block and
         # prints a table; ngspice writes the rawfile for the deck's own

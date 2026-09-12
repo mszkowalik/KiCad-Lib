@@ -2,7 +2,9 @@
 name: kicad-conventions-simulation
 description: "Authoring simulation models and symbol links: the sigma_ namespace, parameter naming from datasheet symbols (V_BR at test current, never V_RWM), mandatory pin maps and the NC sentinel, per-component Sim.Params, switch drive modes (static / alter / PWL), scenario .control blocks, and the ngspice convergence traps. Use when writing a sim model, linking a symbol, or setting Sim.Params."
 ---
-<!-- platform-skill: conventions-simulation v5 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+
+<!-- platform-skill: conventions-simulation v7 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+
 # Simulation model conventions
 
 Simulation models are versioned library objects, like symbols and footprints.
@@ -202,6 +204,101 @@ One primitive, three drive modes — pick per scenario, not per model:
 - State the condition with the value. `TON=55u` is meaningless without
   "max, from the BTS723GW switching table".
 
+## An IC draws its supply current. Make it.
+
+**A controlled source referenced to node 0 manufactures its current out of the
+ground node.** The supply pins are only READ, by ideal sensors that draw
+nothing, so a model built that way delivers current to its load and takes none
+from its rails. This was true of the whole analog and logic family until
+2026-09-12, and nothing in any model said so. Measured, with an ammeter in
+every supply leg and a real load on every output:
+
+| Model | Into its load | From its own supply pin |
+|---|---|---|
+| `sigma_opamp` | 5.00 mA | 14 pA |
+| `sigma_comp` | 10.9 mA | 25 pA |
+| `sigma_rail_buf` | 3.22 mA | 0 A |
+| `sigma_ldo` | 100 mA | 3 mA (its IQ only) |
+
+Every rail-current, decoupling, regulator-loading and efficiency result taken
+from those models was wrong. Signal-path answers were fine, which is why it
+survived: the verdict harnesses check signals.
+
+**The split is structural, and it predicts the measurement exactly.** A model
+whose output is a real SWITCH or resistor between the rail and the pin already
+passes the load current from the supply — `sigma_ucc27538` and `sigma_hss`
+measured 117 mA and 2.38 A from their rails, correctly. A model whose output is
+a controlled source does not. Read the topology before you trust a rail.
+
+**Two jobs, both on whichever block owns the rails:**
+
+1. **Quiescent current.** Declare `IQ` in `params:` and draw it rail to rail.
+2. **Output current.** Put a 0 V source in series with the output, copy its
+   current with an `H` source (one volt per amp), and hand that to
+   `sigma_supply`, which takes sourcing from vcc and pushes sinking into vee.
+
+```
+  Vsns 2 2a dc 0
+  Rout 2a out {ROUT}
+  Hsns isns 0 Vsns 1
+  Xsup vcc vee isns sigma_supply IQ={IQ}
+```
+
+`sigma_supply` carries an RC lag on purpose. The corrected current moves the
+rail, the rail moves the clamp, the clamp moves the output, and the output
+moves the current — a real loop, and an algebraic one, which aborts the
+operating point. It is the same trick `sigma_ldo` already used to break its
+current-limit loop.
+
+**Write the output source against node 0, not against vee.** `sigma_rail_monostable`
+was referenced to `vee`, so a HIGH output sourced its load current from the
+NEGATIVE rail. Spell the rail term out in the expression instead
+(`v(vee) + v(vcc,vee)*…`) — identical voltage, and one correction form for the
+whole family.
+
+### IQ IS PER CHANNEL, NOT PER PACKAGE
+
+**Composition shares a parameter across every block by default.** A composed
+wrapper places one block per channel and passes them ONE `IQ`, so a dual part
+charges it twice — `sigma_sym_tlv7022`, `sigma_sym_74lvc2g34`,
+`sigma_sym_sn74hc21` and `sigma_sym_bts723gw` each hold two blocks.
+
+Take the datasheet's supply-current row, divide by the number of channels in
+the package unless the row is already per channel, and **write that arithmetic
+into the component's `Sim.Params` comment** so the next reader can redo it.
+
+**A pin is not a part.** `sigma_pin_out` declares no `IQ` at all, because a
+wrapper places one per output and a quiescent current declared there would be
+charged once per pin. The package's figure belongs on the block that owns the
+die.
+
+**The default is 0, and that is deliberate.** A part with no `Sim.Params` row
+draws nothing and the rail says so, which is a loud wrong answer. A non-zero
+default would be somebody else's number quietly applied to this part.
+
+### A component edit does not reach a board that already exists
+
+**`Sim.Params` is baked into the project's own `.kicad_sch`.** The mirror writes
+`Sim.*` rows onto the generated library symbol, but a project is a git
+checkout and carries whatever was committed. kicad-cli netlists that file, so
+adding `IQ` to a component today changes nothing about a harness committed
+yesterday — `XU20 … sigma_opamp POLE=1.4 GAIN=3.16Meg VOFF=125u ROUT=25` stayed
+exactly that after four op-amps gained an `IQ` (2026-09-12). The board owner
+picks it up with **Tools → Update Symbols from Library** and a commit.
+
+A MODEL edit is different: `Sim.Library` points at the mirror, so a new
+`.subckt` reaches every snapshot at once. **The two halves of a change like
+this therefore land at different times**, and a report that does not say which
+half a reader is looking at is misleading.
+
+### Test it by measuring, never by reading
+
+Build a harness with a 0 V source in every supply leg and a real load on every
+output, run an operating point, and print the load current beside the supply
+current. They must agree to within `IQ`. Reading the `.subckt` is how this
+went unnoticed for as long as it did: `vcc` appears on several lines of
+`sigma_opamp`, and every one of them is a sensor.
+
 ## Say what the model does NOT do
 
 The header comment must name every behaviour left out, and why. This is not
@@ -216,6 +313,8 @@ Rank what you leave out by how quietly it lies:
 | A current limit | A fault sim reports a current the part cannot deliver. |
 | A protection or enable pin | A shutdown the design relies on does nothing. |
 | Frequency-dependent behaviour | An EMI or ripple result is meaningless. |
+| Supply current (IQ, or the load current the rails carry) | Every rail-current, decoupling and efficiency answer is wrong, and the signal path still looks right. See "An IC draws its supply current". |
+| Dynamic CV*f current while switching | A CMOS gate's real consumption at a working clock rate is far above its static figure. |
 | Self-heating, tolerance, ageing | Usually fine; say so anyway. |
 
 ## Prefer a loud failure to a quiet wrong answer

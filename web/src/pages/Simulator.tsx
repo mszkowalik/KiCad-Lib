@@ -26,6 +26,8 @@ import {
   getSketch,
   isAbortError,
   runSimulation,
+  getSimProgress,
+  type SimProgress,
   saveSketch,
   openSimExample,
   uploadSimSheets,
@@ -132,6 +134,11 @@ export default function Simulator() {
   const [netlist, setNetlist] = useState<string>("");
   const [run, setRun] = useState<SimRun | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Where the run in flight has got to. A batch run of a real harness is
+   *  half a minute of nothing, and a button that only says "Running…" for
+   *  that long is indistinguishable from one that has hung. */
+  const [progress, setProgress] = useState<SimProgress | null>(null);
+  const job = useRef("");
   const [error, setError] = useState<string | null>(null);
   const [unresolved, setUnresolved] = useState<{ net: string; reason: string }[]>([]);
 
@@ -146,6 +153,9 @@ export default function Simulator() {
   // Sticky: the traces on the scope and the picked net survive a refresh —
   // setting the measurements up is work, and F5 must not throw it away.
   const [panes, setPanes] = useStickyState<Pane[]>(`sim:${sourceKey}:panes`, []);
+  /** Panes at double height. Sticky beside the panes themselves: a person who
+   *  needed the room on this sheet needs it again on the next visit. */
+  const [tallPanes, setTallPanes] = useStickyState<boolean>(`sim:${sourceKey}:tall`, false);
   const [selectedNet, setSelectedNet] = useStickyState<string | null>(`sim:${sourceKey}:net`, null);
   const [fit, setFit] = useState(true);
   const [showUnconnected, setShowUnconnected] = useState(false);
@@ -822,12 +832,18 @@ export default function Simulator() {
     if (!source) return;
     setBusy(true);
     setError(null);
+    // A name the browser invents, so it can ask what its own run is doing
+    // while the POST is still open. It is a correlation id and nothing more:
+    // it opens no door, and an unknown one simply has no news.
+    job.current = `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    setProgress({ phase: "netlisting" });
     try {
       const buffer = await runSimulation(source, {
         // `null` keeps the sheet's own block; a string replaces it, and an
         // empty string is a run with no control block at all.
         control: control ? control : null,
         analysis,
+        job: job.current,
       });
       const decoded = decodeSimPayload(buffer);
       setRun(decoded);
@@ -853,8 +869,29 @@ export default function Simulator() {
       setRun(null);
     } finally {
       setBusy(false);
+      job.current = "";
+      setProgress(null);
     }
   }, [source, control, analysis, geometry]);
+
+  /** Poll the run in flight. Every second: the solver reports about once a
+   *  second on a real harness, and a faster poll only adds requests. A failed
+   *  poll is ignored — the run itself is the thing that reports failure, and
+   *  an error banner raised by a dropped status request would be a lie. */
+  useEffect(() => {
+    if (!busy || !job.current) return;
+    const id = job.current;
+    let stop = false;
+    const ctrl = new AbortController();
+    const tick = () => {
+      getSimProgress(id, ctrl.signal)
+        .then((p) => { if (!stop && Object.keys(p).length) setProgress(p); })
+        .catch(() => undefined);
+    };
+    const timer = window.setInterval(tick, 1000);
+    tick();
+    return () => { stop = true; window.clearInterval(timer); ctrl.abort(); };
+  }, [busy]);
 
   /** A source the user just opened runs itself, once.
    *
@@ -1321,7 +1358,7 @@ export default function Simulator() {
             >
               {sheets.map((x) => (
                 <option key={x.path} value={x.path}>
-                  {"\u00a0\u00a0".repeat(x.depth)}{x.name} · {x.symbols} parts
+                  {"\u00a0\u00a0".repeat(x.depth)}{x.name}
                 </option>
               ))}
             </select>
@@ -1339,6 +1376,7 @@ export default function Simulator() {
             analysis={analysis}
             onAnalysis={setAnalysis}
             busy={busy}
+            progress={progress}
             onRun={() => void doRun()}
             verdicts={verdicts}
             ran={!!run}
@@ -1476,6 +1514,7 @@ export default function Simulator() {
             analysis={analysis}
             onAnalysis={setAnalysis}
             busy={busy}
+            progress={progress}
             onRun={() => void doRun()}
             verdicts={verdicts}
             ran={!!run}
@@ -1491,7 +1530,11 @@ export default function Simulator() {
           {/* The waveform, whichever kind of run made it. One scope, stacked
               panes, one X axis — a live run and a finished one differ only in
               where the numbers come from. */}
-          <div className="card pad sim-scope-card">
+          {/* Taller panes need somewhere to be tall: the card caps its own
+              height and scrolls, so without this the toggle bought pixels the
+              reader had to scroll to reach. The drawing above gives up the
+              room, which is the trade the button is asking for. */}
+          <div className={`card pad sim-scope-card${tallPanes ? " tall" : ""}`}>
             <Plots
               panes={panes}
               onPanes={setPanes}
@@ -1499,6 +1542,8 @@ export default function Simulator() {
               cursor={sample}
               onCursor={(i) => { setPlaying(false); setSample(i); }}
               live={live}
+              tall={tallPanes}
+              onTall={setTallPanes}
               head={(
                 <>
                   {!live && plot && plot.scale.length > 1 ? (
@@ -1754,7 +1799,11 @@ function SimNotices({
   sheetName: string;
 }) {
   const unmodelled = run?.header.unmodelled ?? [];
-  if (!geometry.warnings.length && !unmodelled.length && !unresolved.length) return null;
+  // `unresolved` is per wire GROUP, and a power net is drawn as many groups —
+  // GND showed up twice in a list of 19 on CP_PWM. The reader is told about
+  // nets, so count each name once.
+  const unresolvedNets = [...new Set(unresolved.map((u) => u.net))];
+  if (!geometry.warnings.length && !unmodelled.length && !unresolvedNets.length) return null;
   return (
     <div className="card pad">
       <div className="card-title">What this run does not show</div>
@@ -1765,12 +1814,12 @@ function SimNotices({
           left out of the circuit entirely. Everything around them ran without them.
         </p>
       ) : null}
-      {unresolved.length ? (
+      {unresolvedNets.length ? (
         <p className="muted">
-          No charge is drawn on {unresolved.length === 1 ? "one net" : `${unresolved.length} nets`}
+          No charge is drawn on {unresolvedNets.length === 1 ? "one net" : `${unresolvedNets.length} nets`}
           {" — "}
-          {unresolved.slice(0, 6).map((u) => u.net).join(", ")}
-          {unresolved.length > 6 ? `, and ${unresolved.length - 6} more` : ""}. A net needs all
+          {unresolvedNets.slice(0, 6).join(", ")}
+          {unresolvedNets.length > 6 ? `, and ${unresolvedNets.length - 6} more` : ""}. A net needs all
           but one of its terminal currents to be known before the split between its wires can
           be worked out, and a subcircuit does not report the current at its pins.
         </p>

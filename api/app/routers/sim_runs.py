@@ -69,6 +69,10 @@ class RunRequest(BaseModel):
     # Replaces the schematic's own .tran/.ac/... directives when set.
     analysis: str = ""
     timeout: int = 0
+    # Names this run so the browser can poll its progress while it blocks.
+    # The browser makes the name up; it is a correlation id, not a handle to
+    # anything, and an unknown one simply has no news.
+    job: str = ""
 
 
 # ------------------------------------------------------------------ uploads
@@ -367,10 +371,20 @@ def upload_run(upload_id: str, body: RunRequest):
     return _run(_upload_source(upload_id), body)
 
 
+@router.get("/progress/{job}")
+def run_progress(job: str):
+    """Where a run named by the browser has got to: a phase, and a fraction
+    while ngspice is solving. An empty object is "no news" — a run that has
+    not reached the solver yet, or one whose record has expired — so a poller
+    must never read it as a failure."""
+    return sim_run.progress(job)
+
+
 def _run(src: SimSource, body: RunRequest) -> Response:
     try:
         data = sim_run.run(
             src, control=body.control, analysis=body.analysis, timeout=body.timeout,
+            job=body.job,
         )
     except SimSourceError as e:
         raise HTTPException(422, str(e)) from e

@@ -17,6 +17,7 @@ import httpx
 
 from ..config import settings
 from . import pcm, storage
+from . import sim_spice
 from .project_ops import MEDIA, run_op
 
 _locks: dict[str, threading.Lock] = {}
@@ -28,11 +29,39 @@ def _lock_for(key: str) -> threading.Lock:
         return _locks.setdefault(key, threading.Lock())
 
 
+def sim_progress(job: str) -> dict:
+    """How far a named sim_run has got, from whichever process is running it.
+
+    The progress store lives in the process that owns the ngspice child. In
+    `RENDER_MODE=http` that is the render container, and this is a second HTTP
+    call made WHILE the run's own request is still blocking — both endpoints
+    are sync `def`s, so FastAPI answers them on its threadpool and the run does
+    not hold the loop. An unreachable container or an unknown job is no news,
+    not a failure: the browser polls this and must not turn a hiccup into an
+    error banner over a run that is fine.
+    """
+    if not job:
+        return {}
+    if settings.render_mode == "local":
+        return sim_spice.get_progress(job)
+    try:
+        resp = httpx.get(f"{settings.render_url}/sim/progress/{job}", timeout=5)
+    except httpx.HTTPError:
+        return {}
+    if resp.status_code != 200:
+        return {}
+    try:
+        return resp.json() or {}
+    except ValueError:
+        return {}
+
+
 def run_project_op(op: str, rel_src: str, *, variant: str = "", layer: str = "", theme: str = "",
                    files: list | None = None, control: str | None = None, analysis: str = "",
-                   timeout: int = 60) -> tuple[bytes, str]:
+                   timeout: int = 60, job: str = "") -> tuple[bytes, str]:
     """rel_src is relative to DATA_DIR (== /data in the containers).
-    control/analysis/timeout only mean anything to the sim_run op."""
+    control/analysis/timeout/job only mean anything to the sim_run op; `job`
+    names the run in the progress store of whichever process runs ngspice."""
     # Cheap and idempotent, and it must happen on THIS side: in http mode the
     # render container reads the volume read-only and cannot create it.
     pcm.server_pcm_root()
@@ -53,13 +82,14 @@ def run_project_op(op: str, rel_src: str, *, variant: str = "", layer: str = "",
                 settings.kicad_cli, op, settings.data_dir / rel_src, td,
                 variant=variant, layer=layer, theme=theme, files=files, env=env,
                 control=control, analysis=analysis, ngspice=settings.ngspice_bin,
-                timeout=timeout,
+                timeout=timeout, job=job,
             )
     try:
         resp = httpx.post(
             f"{settings.render_url}/render-project",
             json={"op": op, "path": rel_src, "variant": variant, "layer": layer, "theme": theme,
-                  "files": files, "control": control, "analysis": analysis, "timeout": timeout},
+                  "files": files, "control": control, "analysis": analysis, "timeout": timeout,
+                  "job": job},
             timeout=900,
         )
     except httpx.HTTPError as e:

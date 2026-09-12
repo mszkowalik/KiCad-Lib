@@ -1,5 +1,118 @@
 # Changelog
 
+## 2026-09-12 — Every IC in the library now draws its supply current
+
+- **The amplifiers, comparators and logic gates delivered current to their
+  loads and took none from their rails.** A behavioural output stage is a
+  controlled source, and a controlled source referenced to node 0 manufactures
+  its current out of the ground node; the supply pins were only read, by ideal
+  sensors that draw nothing. Measured with an ammeter in every supply leg:
+  `sigma_opamp` put 5.00 mA into a 1k load and drew 14 pA from its rail,
+  `sigma_rail_buf` put out 3.22 mA and drew exactly zero, and `sigma_ldo`
+  delivered 100 mA while drawing only its own 3 mA. Every rail-current,
+  decoupling, regulator-loading and efficiency answer from those models was
+  wrong. Signal-path answers were not, which is why it lasted: the verdict
+  harnesses check signals.
+- **Eighteen models corrected, plus one new shared block.** `sigma_supply`
+  does the two jobs that belong to whichever block owns the rails: it draws a
+  quiescent current from rail to rail, and it moves the stage's output current
+  off node 0 and onto the supplies. It carries an RC lag because the
+  correction closes a real loop — rail to clamp to output to current — and an
+  algebraic one aborts the operating point.
+- **Models built from a real switch were always right.** `sigma_ucc27538` and
+  `sigma_hss` measured 117 mA and 2.38 A from their supplies, correctly; they
+  only needed a quiescent current. The split between the two kinds is
+  structural and now recorded in the simulation skill.
+- **`IQ` is per channel, not per package.** A composed wrapper shares one
+  parameter across every block it holds, so a dual part would charge a package
+  figure twice. Divide by the channel count and show the arithmetic in the
+  component's `Sim.Params` comment.
+- **Nothing in the signal path moved.** Against the old models a corrected
+  op-amp matched the closed-loop output and the saturated swing to seven
+  digits. All six `EVSE_20_CTRL` harnesses still pass every check — 102 of
+  102 — with no convergence trouble. The verdict numbers shift in the fourth
+  decimal, in the direction of a rail that now sags under real load.
+- **All 34 affected components now carry their own number**, each with the
+  datasheet page in its version comment. Five regulators held values that were
+  already wrong, one of them by a factor of ten. Three parts are marked
+  `placeholder` and say what would confirm them: the negative 12 V regulator,
+  whose datasheet publishes no typical at all; the gate driver, whose only
+  tabulated bias current is measured below its own turn-on threshold; and the
+  buck's efficiency, whose curve in the datasheet is drawn for a sibling
+  variant's board.
+- **The buck converter conflated two states.** It drew its SHUTDOWN current
+  whether enabled or not, and those differ by about an order of magnitude. It
+  now follows the enable pin.
+- **A component edit does not reach a board that already exists.**
+  `Sim.Params` is baked into the project's own schematic, which is a git
+  checkout, so a board picks these numbers up only after Tools → Update
+  Symbols from Library and a commit. A model edit is different: it reaches
+  every snapshot at once. The two halves of this change therefore land at
+  different times.
+
+## 2026-09-12 — A run that says how far it has got, and a scope you can zoom
+
+- **The Run button reports real progress, not just "Running…".** ngspice says
+  where it is: during a transient it prints the simulated time it has reached.
+  The process that owns the solver records that against the transient's own
+  stop time, and the browser polls it once a second. The bar names its phase
+  too, because reading the schematic through kicad-cli is several seconds
+  before the solver starts and a bar frozen at zero reads as a stall.
+- **A verdict harness solves its transient TWICE**, which the progress bar
+  made visible. The deck's own `.tran` writes the rawfile the scope plots, and
+  the `tran` inside `.control` is the run the `meas` verdicts read. Every
+  `_sim` project in EVSE_20_CTRL is built that way, so a 720 ms scenario costs
+  about 27 s instead of 14 s. The bar counts the sweeps and names which one is
+  running, so it stays monotonic instead of reaching 98% and starting again.
+- **The scope zooms and pans.** Drag selects a window, as it always did but
+  nothing said so. The wheel now zooms about the pointer, shift-wheel and a
+  trackpad's horizontal scroll pan, and Reset zoom appears once the view is
+  not the whole run. Every pane moves together, because they share one time
+  axis and a zoom that moved one of them would break the reading that stacking
+  them is for. A new run resets the window.
+- **Taller doubles the pane height**, and gives the scope more of the window
+  so two tall panes still fit without scrolling. The setting is remembered per
+  sheet.
+
+## 2026-09-12 — A mirrored part on its side is placed the way KiCad places it
+
+- **The schematic transform applied `(mirror x|y)` before the rotation. KiCad
+  applies it after, in sheet axes.** At 0 degrees the two orders agree, so
+  every sheet but one looked right. At 90 or 270 degrees the mirror flipped
+  the symbol's own axis, which is the OTHER sheet axis: a mirrored resistor
+  lying on its side had pin 1 drawn and connected at pin 2's end, and a
+  mirrored zener the wrong way round. CP_PWM carries eight such parts and
+  the Simulator reported nine "group touches more than one net" conflicts
+  for it. The overlay's `_place`, the server drawing's `placement_matrix`
+  and the browser's `matrixOf` all moved together; on the EVSE_20_CTRL
+  snapshot every one of 1511 placed pins now sits on the net the kicad-cli
+  netlist gives it, and the conflicts are gone. The netlist and the
+  simulation were never affected — they come from kicad-cli, not from this
+  transform.
+- **The "No charge is drawn on N nets" notice counts nets, not wire groups.**
+  A power net drawn in several places was listed once per place, so GND
+  appeared twice in a list of 19.
+
+## 2026-09-11 — The Board dropdown lists boards, not simulation harnesses
+
+- **A project's Board selector no longer offers its `_sim` projects.**
+  `EVSE_20_CTRL` carries six simulation harnesses beside the design, each a
+  real `.kicad_pro`, so the project view listed seven "boards" and a project
+  with one board and six harnesses showed a dropdown at all. The ingest now
+  classifies every discovered project as a `board` or a `harness` from its
+  root sheet: a sheet carrying a SPICE directive is a harness. The project
+  view, the project list and the BOM/board/schematic tabs show boards only;
+  the Simulator keeps listing the harnesses as before. The name suffix is not
+  the rule, so a schematic-only design stays a board and a harness is one
+  whatever it is called.
+- **The Schematic tab gained a Simulation picker.** It lists the design and
+  every harness of the snapshot, so a harness sheet is still readable in the
+  project view. Simulate and Play live open the harness that is picked. With
+  the design picked, they let the Simulator open its first harness instead of
+  the design and a "carries no directives" notice.
+- **Old snapshots are classified on first read** and the answer is stored, so
+  no re-fetch is needed.
+
 ## 2026-09-11 — A part with no land pattern stays off the board
 
 - **A cabled antenna, an RF pigtail or an enclosure with no drawn outline is no

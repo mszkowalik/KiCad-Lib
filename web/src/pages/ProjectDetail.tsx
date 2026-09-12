@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   deleteProject,
+  designBoards,
   errorMessage,
   fetchProject,
   getProject,
@@ -102,7 +103,7 @@ export default function ProjectDetail() {
   // Keep board/variant valid for the selected snapshot.
   useEffect(() => {
     if (!snapshot) return;
-    const boards = snapshot.boards ?? [];
+    const boards = designBoards(snapshot);
     if (!boards.some((b) => b.name === boardName)) {
       setBoardName(boards[0]?.name ?? "");
       setVariant("");
@@ -112,7 +113,8 @@ export default function ProjectDetail() {
     if (variant && !b?.variants.some((v) => v.name === variant)) setVariant("");
   }, [snapshot, boardName, variant]);
 
-  const board = snapshot?.boards.find((b) => b.name === boardName) ?? null;
+  const boards = designBoards(snapshot);
+  const board = boards.find((b) => b.name === boardName) ?? null;
 
   const doFetch = () => {
     setFetching(true);
@@ -188,11 +190,14 @@ export default function ProjectDetail() {
               ))}
             </select>
           </label>
-          {snapshot && snapshot.boards.length > 1 ? (
+          {/* Design boards only. A repository also carries one simulation
+              harness per block (CP_sim, TEMP_sim, …); those are projects too,
+              but they are the Simulator's to list, not a board to build. */}
+          {snapshot && boards.length > 1 ? (
             <label className="proj-inline-field">
               Board
               <select className="text" value={boardName} onChange={(e) => setBoardName(e.target.value)}>
-                {snapshot.boards.map((b) => (
+                {boards.map((b) => (
                   <option key={b.name} value={b.name}>{b.name}</option>
                 ))}
               </select>
