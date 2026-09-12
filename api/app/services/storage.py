@@ -1,8 +1,6 @@
-"""MinIO object storage — project snapshot archives, cached renders and
-production-run attachments.
+"""MinIO object storage — cached renders and production-run attachments.
 
 Key layout (single bucket, settings.minio_bucket):
-    projects/{project_id}/snapshots/{sha}/source.tar.gz
     projects/{project_id}/renders/{sha}/{board}/layers/{layer}.svg
     projects/{project_id}/renders/{sha}/{board}/board.glb | board.step
     projects/{project_id}/renders/{sha}/{board}/sim/... (netlists)
@@ -16,6 +14,7 @@ invalidation. Deleting a project/run deletes its prefix.
 from __future__ import annotations
 
 import io
+import logging
 import threading
 
 from minio import Minio
@@ -23,6 +22,8 @@ from minio.deleteobjects import DeleteObject
 from minio.error import S3Error
 
 from ..config import settings
+
+log = logging.getLogger("uvicorn.error")
 
 _client: Minio | None = None
 _lock = threading.Lock()
@@ -101,6 +102,60 @@ def drop_schematic_renders() -> int:
     for _ in errors:
         pass
     return len(doomed)
+
+
+def drop_snapshot_archives() -> tuple[int, bool]:
+    """Delete every stored `source.tar.gz` the git mirror can rebuild.
+
+    Returns (how many went, whether the job is finished).
+
+    Ingest wrote one per commit and nothing ever read it back — the key
+    appeared exactly twice in the codebase, at the write and in this module's
+    own docstring. The git mirror already holds every commit, so these were a
+    second copy of the same bytes at four times the size (847 MB of tarballs
+    against 214 MB of mirrors). `gitrepo.archive_tgz` rebuilds any one of them
+    on demand. Decision 0009.
+
+    **An archive is only redundant while its mirror is still here.** Measured
+    on production 2026-09-12, one project of four was not: project 3 had no
+    mirror directory, an empty checkout and a remote that needs a credential
+    the platform does not hold, so its stored tarball was the only copy of that
+    tree on the server — and it is the project's current snapshot AND pinned by
+    a production run. Nothing in the app can reach that state (only deleting a
+    project removes a mirror, and that removes the row too), so it arrived from
+    outside and can arrive again. This keeps what it cannot rebuild and reports
+    it by key.
+
+    Keeping any means the job is NOT finished, so the caller must not write its
+    marker: fetching the missing mirror and restarting should then finish it.
+    """
+    from . import gitrepo
+
+    doomed: list[str] = []
+    kept: list[str] = []
+    for key in list_keys("projects/"):
+        if "/snapshots/" not in key or not key.endswith("source.tar.gz"):
+            continue
+        parts = key.split("/")  # projects/<id>/snapshots/<sha>/source.tar.gz
+        try:
+            project_id, sha = int(parts[1]), parts[3]
+        except (IndexError, ValueError):
+            kept.append(key)  # not a key this platform wrote — leave it alone
+            continue
+        (doomed if gitrepo.can_rebuild(project_id, sha) else kept).append(key)
+
+    if kept:
+        log.warning(
+            "storage: keeping %d snapshot archive(s) — no mirror to rebuild them from. "
+            "Fetch the project, then restart to finish the purge. Kept: %s",
+            len(kept), ", ".join(sorted(kept)))
+    if doomed:
+        errors = client().remove_objects(
+            settings.minio_bucket, [DeleteObject(k) for k in doomed]
+        )
+        for _ in errors:
+            pass
+    return len(doomed), not kept
 
 
 def delete_prefix(prefix: str) -> int:

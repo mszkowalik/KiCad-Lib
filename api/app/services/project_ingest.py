@@ -1,6 +1,7 @@
 """Snapshot ingest pipeline.
 
-For a git ref: materialize the tree, back up a tar.gz to MinIO, discover
+For a git ref: materialize the tree from the git mirror (decision 0009 —
+no tarball is stored; the mirror IS the source archive), discover
 KiCad boards (a repo may hold several .kicad_pro), read each board's
 variants (.kicad_pro → schematic.variants, KiCad 10; absent on KiCad 9 →
 single default variant) and layer stack, then extract a grouped BOM per
@@ -26,7 +27,7 @@ from sqlalchemy.orm import selectinload
 
 from .. import models as M
 from ..db import SessionLocal
-from . import gitrepo, project_render, storage
+from . import gitrepo, project_render
 
 log = logging.getLogger(__name__)
 
@@ -282,10 +283,9 @@ def ingest(project_id: int, ref: str, ref_name: str = "", is_tag: bool = False,
         try:
             checkout = gitrepo.materialize(project_id, sha)
 
-            _set_stage(snapshot_id, "archive")
-            archive_key = f"projects/{project_id}/snapshots/{sha}/source.tar.gz"
-            if not storage.exists(archive_key):
-                storage.put_bytes(archive_key, gitrepo.archive_tgz(project_id, sha), "application/gzip")
+            # No source archive is stored. The git mirror at `git/<project>.git`
+            # already holds every commit, delta-compressed, and `archive_tgz`
+            # rebuilds the exact tree from it on demand — see decision 0009.
 
             _set_stage(snapshot_id, "discover")
             boards = discover_boards(checkout)

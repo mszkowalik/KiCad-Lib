@@ -1521,6 +1521,47 @@ class ExchangeRateHistory(Base):
 
 
 # ----------------------------------------------------------------- projects
+class GitCredential(Base):
+    """One git hosting ACCOUNT's access token, shared by every project on it.
+
+    The token used to live on the project row, one copy per project. Three
+    projects pointing at the same GitHub account therefore held three copies of
+    one secret, rotating it meant editing three projects, and nothing compared
+    them — so production carried one project (`CE_Aqua_V2`) whose copy had been
+    revoked while its two siblings worked. It surfaced only as a fetch failing
+    with "could not read Username", which reads like a prompt bug rather than a
+    dead credential, and it went unnoticed long enough that the project also
+    lost its git mirror (decision 0009, 2026-09-12).
+
+    A credential is the account, named by a human. A project points at one.
+    Rotating a token is then one edit in one place, and a token cannot differ
+    between two projects that are supposed to share it, because there is only
+    one row.
+    """
+
+    __tablename__ = "git_credentials"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True)
+    # Informational only — the token is the whole credential. But a list of
+    # secrets with no owner on it is unusable the moment there is more than
+    # one, which is exactly the state this table exists to end.
+    host: Mapped[str] = mapped_column(String(200), default="")
+    username: Mapped[str] = mapped_column(String(200), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    # Fernet-encrypted with SECRET_KEY; never returned by the API.
+    token_enc: Mapped[str] = mapped_column(Text)
+    # Set by the Check action: whether the provider accepted it, and when.
+    # A credential nobody has tested is not claimed to be good.
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    check_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    check_detail: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(100), default="user")
+
+    projects: Mapped[list["Project"]] = relationship(back_populates="git_credential")
+
+
 class Project(Base):
     """A KiCad design project tracked from a git repository."""
 
@@ -1529,7 +1570,16 @@ class Project(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200), unique=True)
     git_url: Mapped[str] = mapped_column(String(500))
-    # Fernet-encrypted with SECRET_KEY; never returned by the API.
+    # The named account this project authenticates as. NULL means it uses its
+    # own `git_token_enc`, or nothing at all for a public repo.
+    git_credential_id: Mapped[int | None] = mapped_column(
+        ForeignKey("git_credentials.id"), nullable=True, index=True
+    )
+    # A token typed on THIS project, for a one-off repo that does not warrant a
+    # named account. Fernet-encrypted with SECRET_KEY; never returned by the
+    # API. `git_credential_id` WINS when both are set — a project shows which
+    # of the two it is using, so the pair can never be ambiguous the way two
+    # silent copies of one secret were (decision 0010).
     git_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     default_branch: Mapped[str] = mapped_column(String(100), default="main")
     # Overrides settings.default_currency for this project's cost totals.
@@ -1537,6 +1587,7 @@ class Project(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    git_credential: Mapped["GitCredential | None"] = relationship(back_populates="projects")
     snapshots: Mapped[list["ProjectSnapshot"]] = relationship(
         back_populates="project", order_by="ProjectSnapshot.created_at.desc()"
     )

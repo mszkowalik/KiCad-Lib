@@ -280,7 +280,7 @@ function ComponentsTab({
     {
       key: "name",
       label: "Component",
-      width: 26,
+      width: 24,
       get: (r) => r.name,
       render: (r) => (
         <>
@@ -300,7 +300,7 @@ function ComponentsTab({
         </>
       ),
     },
-    { key: "category", label: "Category", width: 18, className: "cell-cat", get: (r) => r.category_path },
+    { key: "category", label: "Category", width: 15, className: "cell-cat", get: (r) => r.category_path },
     {
       key: "review",
       label: "Review",
@@ -320,12 +320,14 @@ function ComponentsTab({
     },
     {
       key: "lifecycle",
+      // A pill is inline-block: too narrow cuts "deprecated" in half
+      // rather than shortening it.
       label: "Lifecycle",
-      width: 8,
+      width: 10,
       get: (r) => r.lifecycle,
       render: (r) => <LifecyclePill state={r.lifecycle} />,
     },
-    { key: "used_in", label: "Used in", width: 9, get: (r) => r.used_in.join(", ") },
+    { key: "used_in", label: "Used in", width: 12, get: (r) => r.used_in.join(", ") },
   ];
 
   return (

@@ -73,7 +73,9 @@ const SIGNOFF_TEXT: Record<string, string> = {
 const REVIEW_TEXT: Record<string, string> = {
   checked: "checked",
   partial: "partial",
-  failed: "checks fail",
+  // The word ReviewPill PRINTS for `failed`. It used to read "checks fail"
+  // here, so filtering for what the pill actually says matched nothing.
+  failed: "issues",
   unreviewed: "unreviewed",
 };
 
@@ -282,7 +284,7 @@ export default function Browse() {
     {
       key: "mfg_pn",
       label: COL_LABELS.mfg_pn,
-      width: 12,
+      width: 11,
       get: (c) => c.mfg_pn,
       render: (c) => (
         <Link
@@ -294,9 +296,9 @@ export default function Browse() {
         </Link>
       ),
     },
-    { key: "manufacturer", label: COL_LABELS.manufacturer, width: 10, get: (c) => c.manufacturer },
-    { key: "value", label: COL_LABELS.value, width: 8, className: "mono", get: (c) => c.value },
-    { key: "description", label: COL_LABELS.description, width: 20, get: (c) => c.description },
+    { key: "manufacturer", label: COL_LABELS.manufacturer, width: 11, get: (c) => c.manufacturer },
+    { key: "value", label: COL_LABELS.value, width: 6, className: "mono", get: (c) => c.value },
+    { key: "description", label: COL_LABELS.description, width: 13, get: (c) => c.description },
     { key: "footprint", label: COL_LABELS.footprint, width: 12, className: "mono", get: (c) => c.footprint },
     { key: "lcsc", label: COL_LABELS.lcsc, width: 7, className: "mono", get: (c) => c.lcsc },
     {
@@ -323,16 +325,19 @@ export default function Browse() {
     {
       key: "price_bulk",
       label: COL_LABELS.price_bulk,
-      width: 7,
+      width: 8,
       numeric: true,
       get: (c) => c.price_bulk,
       title: (c) => (c.bulk_qty ? `Unit price at qty ${c.bulk_qty}` : undefined),
     },
-    { key: "category", label: COL_LABELS.category, width: 10, get: (c) => c.category_path },
+    { key: "category", label: COL_LABELS.category, width: 7, get: (c) => c.category_path },
     {
       key: "signoff",
       label: COL_LABELS.signoff,
-      width: 4,
+      // A pill is inline-block, so the column's ellipsis cannot shorten it —
+      // too narrow simply cuts the word in half. 9% fits the longest label
+      // ("not signed"); the review column below is 9% for the same reason.
+      width: 9,
       className: "ctr",
       // Filter on the PRINTED word (typing "re-check" finds the stale rows);
       // sort on rank, worst first.
@@ -343,7 +348,9 @@ export default function Browse() {
     {
       key: "review",
       label: COL_LABELS.review,
-      width: 4,
+      // Wider than sign-off: ReviewPill prints the provenance too
+      // ("checked (agent)"), which is the state most rows are in.
+      width: 10,
       className: "ctr",
       get: (c) => {
         const life =

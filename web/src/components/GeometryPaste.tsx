@@ -9,6 +9,7 @@ import {
   renderTemplateSource,
   type TemplateKind,
 } from "../api";
+import GeometryPreview from "./GeometryPreview";
 import { ErrorBanner } from "./Ui";
 
 /**
@@ -235,9 +236,12 @@ export default function GeometryPaste({
           <h2 className="card-title">
             Preview of the pasted text{stale ? " (out of date — re-render)" : ""}
           </h2>
-          <div className="preview-fill template-preview">
-            <img src={previewUrl} alt={`${noun} preview`} />
-          </div>
+          <GeometryPreview
+            src={previewUrl}
+            alt={`${noun} preview`}
+            className="template-preview"
+            missingText={`Nothing to preview — paste a ${noun} above.`}
+          />
         </div>
       ) : null}
 

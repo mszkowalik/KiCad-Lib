@@ -32,6 +32,7 @@ import ProjectDetail from "./pages/ProjectDetail";
 import Projects from "./pages/Projects";
 import Reviews from "./pages/Reviews";
 import RunDetail from "./pages/RunDetail";
+import Account from "./pages/Account";
 import Setup from "./pages/Setup";
 import Simulator from "./pages/Simulator";
 import Skills from "./pages/Skills";
@@ -120,9 +121,15 @@ function UserMenu() {
   if (!authEnabled || user === null) return null;
   return (
     <span className="topbar-user">
-      <span className="topbar-username" title={`${user.username} (${user.role})`}>
+      {/* The name is the door to the account's own settings — git
+          credentials live there, not on the admin Setup page. */}
+      <Link
+        className="topbar-username"
+        to="/account"
+        title={`${user.username} (${user.role}) — account settings`}
+      >
         {user.display_name || user.username}
-      </span>
+      </Link>
       <button className="btn btn-sm" onClick={() => void signOut()}>
         Log out
       </button>
@@ -212,6 +219,7 @@ function Shell() {
             <Route path="/reviews/checklists" element={<Checklists />} />
           </Route>
           <Route path="/setup" element={<Setup />} />
+          <Route path="/account" element={<Account />} />
           <Route path="/view" element={<FileViewer />} />
 
           {/* Old addresses keep working */}

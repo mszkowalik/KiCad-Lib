@@ -1044,6 +1044,26 @@ export interface PlatformUser {
   httplib_url: string;
 }
 
+// ------------------------------------------------------- own account
+
+/** The signed-in user's own record, tokens revealed. `PlatformUser` already
+ *  describes the shape — this is the same payload the admin endpoints return,
+ *  for one's own row. */
+export function getAccount(signal?: AbortSignal): Promise<PlatformUser> {
+  return request<PlatformUser>("/api/account", { signal });
+}
+
+export function addOwnToken(label = ""): Promise<PlatformUser> {
+  return request<PlatformUser>("/api/account/tokens", {
+    method: "POST",
+    body: JSON.stringify({ label }),
+  });
+}
+
+export function revokeOwnToken(tokenId: number): Promise<PlatformUser> {
+  return request<PlatformUser>(`/api/account/tokens/${tokenId}`, { method: "DELETE" });
+}
+
 export function getUsers(signal?: AbortSignal): Promise<PlatformUser[]> {
   return request("/api/users", { signal });
 }
@@ -1795,11 +1815,70 @@ export interface SnapshotInfo {
   created_at: string;
 }
 
+// ------------------------------------------------------- git credentials
+
+/** A named git ACCOUNT, assignable to any number of projects. The token is
+ *  never returned — only whether one is stored and what the last check said. */
+export interface GitCredential {
+  id: number;
+  name: string;
+  host: string;
+  username: string;
+  description: string;
+  has_token: boolean;
+  checked_at: string | null;
+  /** null = never checked, or checked while no project used it. */
+  check_ok: boolean | null;
+  check_detail: string;
+  created_at: string;
+  created_by: string;
+  projects: { id: number; name: string }[];
+}
+
+export interface GitCredentialCheck extends GitCredential {
+  results: { project: string; project_id: number; ok: boolean; detail: string }[];
+}
+
+export function getGitCredentials(signal?: AbortSignal): Promise<GitCredential[]> {
+  return request<GitCredential[]>("/api/git-credentials", { signal });
+}
+
+export function createGitCredential(body: {
+  name: string; token: string; host?: string; username?: string; description?: string;
+}): Promise<GitCredential> {
+  return request<GitCredential>("/api/git-credentials", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateGitCredential(
+  id: number,
+  body: { name?: string; token?: string; host?: string; username?: string; description?: string },
+): Promise<GitCredential> {
+  return request<GitCredential>(`/api/git-credentials/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteGitCredential(id: number): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>(`/api/git-credentials/${id}`, { method: "DELETE" });
+}
+
+export function checkGitCredential(id: number): Promise<GitCredentialCheck> {
+  return request<GitCredentialCheck>(`/api/git-credentials/${id}/check`, { method: "POST" });
+}
+
 export interface ProjectInfo {
   id: number;
   name: string;
   git_url: string;
   has_token: boolean;
+  /** Which secret is in force: a named account, this project's own, or none. */
+  token_source: "credential" | "project" | "none";
+  git_credential_id: number | null;
+  git_credential: { id: number; name: string } | null;
   default_branch: string;
   display_currency: string | null;
   effective_currency: string;
@@ -1813,6 +1892,7 @@ export interface ProjectInfo {
 export interface ProjectCreate {
   name: string;
   git_url: string;
+  git_credential_id?: number | null;
   git_token?: string | null;
   default_branch?: string;
   display_currency?: string | null;
@@ -1823,6 +1903,8 @@ export interface ProjectPatchBody {
   name?: string;
   git_url?: string;
   /** "" clears the stored token; omit to leave unchanged. */
+  /** 0 unassigns; omit to leave unchanged. */
+  git_credential_id?: number | null;
   git_token?: string;
   default_branch?: string;
   display_currency?: string;

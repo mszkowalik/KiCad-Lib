@@ -17,8 +17,7 @@ import { useDialog } from "../components/Dialog";
 import GeometryPaste from "../components/GeometryPaste";
 import SimLinkCard from "../components/SimLinkCard";
 import { BackLink, ErrorBanner, Spinner } from "../components/Ui";
-import Viewer3D from "../components/Viewer3D";
-import { useStickyState } from "../useStickyState";
+import { FootprintPreview } from "../components/GeometryPreview";
 
 function isKind(k: string | undefined): k is TemplateKind {
   return k === "symbols" || k === "footprints";
@@ -40,8 +39,6 @@ export default function TemplateDetail() {
   const id = Number(idParam);
   const [data, setData] = useState<TemplateDetailT | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [previewFailed, setPreviewFailed] = useState(false);
-  const [mode, setMode] = useStickyState<"2d" | "3d">("template:viewMode", "2d");
   const [nameDraft, setNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [nameNotice, setNameNotice] = useState<string | null>(null);
@@ -78,7 +75,6 @@ export default function TemplateDetail() {
     const ctrl = new AbortController();
     setData(null);
     setError(null);
-    setPreviewFailed(false);
     setNameNotice(null);
     getTemplate(kind, id, ctrl.signal)
       .then((d) => {
@@ -192,63 +188,26 @@ export default function TemplateDetail() {
         ) : null}
 
         <div className="card pad">
-          <div className="panel-head">
-            <h2 className="card-title">Preview</h2>
-            {/* Footprints only: a symbol has no board to render. Same switch,
-                same viewer and same GLB the component page uses — the only
-                difference is that this one addresses the DRAWING rather than a
-                component version that pins it. */}
-            {kind === "footprints" && data.version_no !== null ? (
-              <div className="seg" role="group" aria-label="Footprint view mode">
-                <button
-                  type="button"
-                  className={mode === "2d" ? "on" : ""}
-                  aria-pressed={mode === "2d"}
-                  onClick={() => setMode("2d")}
-                >
-                  2D
-                </button>
-                <button
-                  type="button"
-                  className={mode === "3d" ? "on" : ""}
-                  aria-pressed={mode === "3d"}
-                  onClick={() => setMode("3d")}
-                >
-                  3D
-                </button>
-              </div>
-            ) : null}
-          </div>
-          {kind === "footprints" && mode === "3d" && data.version_no !== null ? (
-            <Viewer3D
-              className="template-preview"
-              src={footprintTemplateGlbUrl(id, data.version_no)}
-              missingText="Nothing to render — this footprint has no published version."
-            />
-          ) : (
-            <div className="preview-fill template-preview">
-              {data.version_no === null ? (
-                // A parent row with no published version: a creation that was
-                // filed as a draft before writes published directly, and never
-                // approved. /preview.svg 404s by design, and without this branch
-                // the <img> onError below called it a render-service outage.
-                <p className="placeholder">
-                  No published version — nothing to preview. Paste the source below to publish
-                  one.
-                </p>
-              ) : previewFailed ? (
-                <p className="placeholder">
-                  Preview unavailable — the render service (kicad-cli) is offline.
-                </p>
-              ) : (
-                <img
-                  src={templatePreviewUrl(kind, id, data.version_id)}
-                  alt={`${data.name} preview`}
-                  onError={() => setPreviewFailed(true)}
-                />
-              )}
-            </div>
-          )}
+          <FootprintPreview
+            title={<h2 className="card-title">Preview</h2>}
+            svgUrl={
+              // A parent row with no published version: a creation filed as a
+              // draft before writes published directly, and never approved.
+              // /preview.svg 404s by design, and the shared viewer says so.
+              data.version_no === null ? null : templatePreviewUrl(kind, id, data.version_id)
+            }
+            // Footprints only: a symbol has no board to render. Same switch,
+            // same viewer and same GLB the component page uses — this one just
+            // addresses the DRAWING rather than a component version pinning it.
+            glbUrl={
+              kind === "footprints" && data.version_no !== null
+                ? footprintTemplateGlbUrl(id, data.version_no)
+                : null
+            }
+            missingText="No published version — nothing to preview. Paste the source below to publish one."
+            stickyKey="template:viewMode"
+            className="template-preview"
+          />
         </div>
 
         <div className="card pad">

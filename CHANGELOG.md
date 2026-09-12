@@ -19,6 +19,135 @@
   rewritten. Measured on the full 2.44 M rows: 0.54 s of DDL and 1.7 s of
   rewrite, which is why it runs at startup rather than in the background.
 
+## 2026-09-12 — The git mirror is the source archive
+
+- **Ingest no longer stores a `source.tar.gz` per snapshot.** It wrote one for
+  every commit and nothing ever read it back. The key appeared twice in the
+  whole codebase: the write, and a line in a docstring.
+- **The mirrors already held the same content, four times smaller.** Measured on
+  the server: 16 stored tarballs came to about 950 MB, which was 68% of the
+  bucket, while the bare mirrors that hold EVERY commit of EVERY project come to
+  214 MB. One project shows the shape of it — 117 MB of mirror against 533 MB of
+  tarballs for 8 commits.
+- **The first start after this deploy removes the stored tarballs**, in the
+  background and behind the marker `maintenance/snapshot-archives-dropped.v1`,
+  the same way the schematic render purge works. The bucket should fall to about
+  450 MB.
+- **`gitrepo.archive_tgz` rebuilds any tree on demand** from the local mirror,
+  with no network call. It is now the only way back to a byte-exact tree.
+- **`DATA_DIR/git` must be in the backup set.** After the purge the mirror and
+  the upstream remote are the only copies of project source. See
+  [decision 0009](docs/decisions/0009-the-git-mirror-is-the-source-archive.md).
+
+## 2026-09-12 — Git tokens belong to an account, not to each project
+
+- **One revoked token was hiding behind three good copies.** Every project kept
+  its own encrypted git token, so four projects on one GitHub account held four
+  independent copies of one secret. Three were live and the fourth had been
+  revoked, and nothing in the platform compared them — the only symptom was one
+  project failing to fetch with `could not read Username`, which reads like a
+  terminal bug rather than a refused credential. Decision 0010.
+- **Credentials are now named accounts.** Add a token once on the new **Account**
+  page — click your name in the top bar — and pick it by name on any project.
+  Rotating it is one edit in one place, and two projects on one account can no
+  longer disagree about the secret.
+- **A project can still carry its own token** for a one-off repository. When both
+  are set the account wins, and the project page says which is in force rather
+  than only "stored (encrypted)" — that wording is how the stale copy hid.
+- **Check tells you whether a credential still works**, before somebody needs it.
+  It runs the same `git ls-remote` a real fetch uses, once per project on that
+  account, and stores the verdict with its date. A credential nobody has checked
+  reads "not checked", never "ok". The refusal message is translated where it is
+  shown: "the remote refused this token (expired, revoked, or no access to this
+  repository)".
+- **The Account page holds everything that is yours, not the deployment's.**
+  Your password, your API tokens (create, revoke, and read the value back), your
+  git credentials, and the four boxes that used to sit on Setup — Effective
+  URLs, the KiCad plugin install, the `.kicad_httplib` download and the Claude
+  Code / MCP settings. Every one of those carries YOUR token, so two people must
+  see two different strings; Setup keeps the deployment's shared configuration
+  and a pointer here.
+- **Existing tokens migrate themselves** on first start. Distinct token values
+  become one credential each, named after the host and numbered when one host has
+  several accounts; rename them to whatever you recognise.
+
+## 2026-09-12 — The snapshot-archive purge checks before it deletes
+
+- **The purge would have destroyed the only copy of one project's source.**
+  Decision 0009 stops storing a `source.tar.gz` per snapshot because the git
+  mirror holds the same commits for a quarter of the space, and a startup purge
+  removes the ones already stored. That is right for three of the four projects
+  on the server. Project 3 had no mirror directory, an empty checkout, and a
+  remote the platform holds no credential for, so its 102.9 MiB archive was the
+  only copy of that tree — and that snapshot is the project's current one and is
+  pinned by a production run.
+- **The purge now verifies the premise per archive.** `gitrepo.can_rebuild`
+  asks whether the commit is still an object in that project's mirror — the
+  directory existing is not enough, because a re-clone of a rewritten remote can
+  lose a commit. What cannot be rebuilt is kept and logged by key, and the
+  completion marker is withheld, so fetching the missing mirror and restarting
+  finishes the job. Dry-run against production: 743.9 MiB deleted, 102.9 MiB
+  kept.
+- **A missing mirror is no longer invisible.** The Projects page announced it
+  only for a project with no snapshot, so one that was ingested and later lost
+  its mirror looked healthy. It now shows a red `no mirror` pill either way —
+  without the mirror nothing can rebuild that tree, and backing up `DATA_DIR/git`
+  does not cover it.
+- **A failed checkout no longer leaves an empty directory behind.**
+  `materialize` created the destination before extracting into it, so a missing
+  mirror left a directory that answers `.exists()` and holds nothing; an audit
+  counted one as a checkout on disk. It now names the missing mirror instead of
+  dying on its `cwd` with a bare `FileNotFoundError`, and removes a half-made
+  checkout.
+
+## 2026-09-12 — One symbol viewer, one footprint viewer, one canvas
+
+- **The review workbench drew symbols and footprints on a white card.** Its
+  preview asked for `background: var(--paper, #fff)` and `--paper` is defined
+  nowhere in the stylesheet, so the fallback always won — in dark theme and in
+  light. kicad-cli renders light strokes on a transparent background, so the
+  picture needs a dark ground under it, which the other previews supplied and
+  this one did not.
+- **Every preview now goes through one component**, `GeometryPreview`. There
+  were six near-identical `<img>` shells across the component page, the template
+  page, the templates list, the review workbench and the paste box, with four
+  different missing/error stories and three different canvas colours. The canvas
+  is now a single palette entry, `--kicad-canvas`, and a caller's class carries
+  the size only.
+- **The 2D/3D footprint switch was written twice** — component page and template
+  page — and the copies had drifted on which state they remembered. One
+  `FootprintPreview` owns it now.
+- **A preview that has nothing to show says what is missing.** The templates
+  list used to render an em dash, and the review workbench a broken-image icon;
+  both now carry the server's own explanation where it sends one.
+
+## 2026-09-12 — Table columns that cut their own pills
+
+- **Every sign-off and review pill in the component browser was cut in half.**
+  The columns were 4% wide each, which is 55 px — a pill is `inline-block`, so
+  the column's ellipsis cannot shorten it and the word is simply clipped:
+  "NOT S…", "CHECK…", "UNREV…". The widths the browser needs were written down
+  once, in `styles.css`, with a comment saying 9% fits "not signed"; when the
+  page moved to the shared `DataTable` the numbers were re-typed as 4 and the
+  CSS was left behind as dead rules. Restored, with the reasoning now next to
+  the numbers.
+- **The bulk sign-off checkbox had an ellipsis stuck to it.** A checkbox is
+  13 px of replaced content in a 3%-wide column with 12 px of padding either
+  side, so it overflowed and `text-overflow: ellipsis` drew a "…" beside every
+  one. Action columns now clip instead of ellipsising, and take 6 px of padding.
+- **Centred columns now have centred headers.** `SIGN-OFF` and `REVIEW` sat
+  left of the pills they name. `DataTable` copies `ctr` onto the header cell.
+- **Nine more tables re-measured.** Reviews (lifecycle, used-in), Orders (net
+  total, invoiced, status), Devices (MAC, project, last seen — and its widths
+  summed to 103%), the project BOM (tier, qty/dev), Stock (written off, paid
+  unit, market unit), the production overview (cost/dev, margin, sale) and the
+  project orders tab (its widths summed to 93%). Every header now fits its
+  column, and the only cells that still truncate are free text — manufacturer
+  names, reference designator lists, repository URLs — where the full value is
+  on hover.
+- **Filtering the browser's review column for "issues" found nothing.** The
+  pill prints "issues" for a failed check; the filter text said "checks fail".
+
 ## 2026-09-12 — Every IC in the library now draws its supply current
 
 - **The amplifiers, comparators and logic gates delivered current to their

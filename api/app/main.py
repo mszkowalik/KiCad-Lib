@@ -9,6 +9,7 @@ from .authgate import AuthGate
 from .config import settings
 from .db import Base, engine
 from .routers import (
+    account,
     agent,
     auth as auth_router,
     categories,
@@ -18,6 +19,7 @@ from .routers import (
     datasheets,
     field_solver,
     flasher,
+    git_credentials,
     import_station,
     jaravis,
     jlc_import,
@@ -93,6 +95,8 @@ app.include_router(import_station.router)
 app.include_router(kicad_http.router)
 app.include_router(view.router)
 app.include_router(projects.router)
+app.include_router(git_credentials.router)
+app.include_router(account.router)
 app.include_router(production_runs.router)
 app.include_router(jlc_stock.router)
 app.include_router(jlc_web.router)
@@ -281,6 +285,19 @@ _PHASE1_DDL = (
      "CREATE INDEX IF NOT EXISTS ix_device_units_state ON device_units (state)"),
     ("ix_device_units_prod_run",
      "CREATE INDEX IF NOT EXISTS ix_device_units_prod_run ON device_units (production_run_id)"),
+    # Decision 0010: a git token belongs to an ACCOUNT, not to each project
+    # that happens to use it. `git_credentials` is a new table and arrives via
+    # create_all; this is the pointer from the existing projects row. The
+    # FK is added separately so a failure to add it cannot cost us the column.
+    ("projects.git_credential_id",
+     "ALTER TABLE projects ADD COLUMN IF NOT EXISTS git_credential_id integer"),
+    ("ix_projects_git_credential",
+     "CREATE INDEX IF NOT EXISTS ix_projects_git_credential ON projects (git_credential_id)"),
+    ("projects.git_credential_id fk",
+     "DO $$ BEGIN "
+     "ALTER TABLE projects ADD CONSTRAINT fk_projects_git_credential "
+     "FOREIGN KEY (git_credential_id) REFERENCES git_credentials (id); "
+     "EXCEPTION WHEN duplicate_object THEN NULL; END $$"),
 )
 
 # name -> "ok" | "failed: ..."; served by GET /api/health/schema.
@@ -749,6 +766,20 @@ def startup() -> None:
     from .services.datasheet_migrate import migrate_to_documents
 
     migrate_to_documents(engine)
+    # Decision 0010: one token per ACCOUNT, not one per project. Needs the
+    # `git_credentials` table (create_all) and `projects.git_credential_id`
+    # (phase-1 DDL), so it runs after both. Idempotent — see the module.
+    try:
+        from .db import SessionLocal as _Session
+        from .services.git_credential_migrate import migrate as _fold_git_tokens
+
+        _db = _Session()
+        try:
+            _fold_git_tokens(_db)
+        finally:
+            _db.close()
+    except Exception as e:  # noqa: BLE001 — never block startup on a migration
+        log.warning(f"git credential fold did not run: {type(e).__name__}: {e}")
     # Drop the surrogate key on `programming_logs` and rewrite the table. Runs
     # here, at startup, because the rewrite holds an ACCESS EXCLUSIVE lock and
     # must not sit under a request or under a live flasher run. Idempotent —
@@ -792,32 +823,52 @@ def startup() -> None:
             db.close()
     except Exception as e:  # noqa: BLE001 — never block startup
         log.warning(f"auth bootstrap did not run: {type(e).__name__}: {e}")
-    # Drop the cached schematic page images, once, on the first start after
-    # the browser took over drawing schematics. Object storage has no
-    # invalidation path for a render nobody asks for any more, so the deploy
-    # that stops writing them is the deploy that has to remove them. In the
-    # background and behind a marker object: on a big bucket the listing is
-    # the slow part, and a deploy must not wait for it.
+    # Objects the platform has stopped writing, removed once on the first start
+    # after the deploy that stopped writing them. Object storage has no
+    # invalidation path for something nobody asks for any more, so the deploy
+    # that ends a write is the deploy that has to clean up after it. In the
+    # background and behind a marker object each: on a big bucket the listing
+    # is the slow part, and a deploy must not wait for it. Separate markers, so
+    # one purge failing never blocks or re-runs the other.
     try:
         import threading
 
         from .services import storage
 
-        def _drop_schematic_renders() -> None:
-            marker = "maintenance/schematic-renders-dropped.v1"
+        def _purge(marker: str, fn, what: str) -> None:
+            """`fn` returns (how many went, whether the job is finished).
+
+            The marker is written only when the job IS finished. A purge that
+            deliberately kept something — an archive with no mirror to rebuild
+            it from — must be able to try again after the mirror is fetched,
+            and a marker written too early would retire it forever.
+            """
             try:
                 if storage.exists(marker):
                     return
-                gone = storage.drop_schematic_renders()
-                storage.put_bytes(marker, b"", "text/plain")
+                gone, complete = fn()
+                if complete:
+                    storage.put_bytes(marker, b"", "text/plain")
                 if gone:
-                    log.info(f"storage: dropped {gone} cached schematic render object(s)")
-            except Exception as e:  # noqa: BLE001 — a cache purge must never block startup
-                log.warning(f"schematic render purge did not run: {type(e).__name__}: {e}")
+                    log.info(f"storage: dropped {gone} {what}")
+            except Exception as e:  # noqa: BLE001 — a purge must never block startup
+                log.warning(f"{what} purge did not run: {type(e).__name__}: {e}")
 
-        threading.Thread(target=_drop_schematic_renders, daemon=True).start()
+        def _storage_purges() -> None:
+            _purge("maintenance/schematic-renders-dropped.v1",
+                   lambda: (storage.drop_schematic_renders(), True),
+                   "cached schematic render object(s)")
+            # Decision 0009: the git mirror IS the source archive. The stored
+            # per-snapshot tarballs were a second copy that nothing read —
+            # except where the mirror is missing, which the purge checks per
+            # archive rather than assuming.
+            _purge("maintenance/snapshot-archives-dropped.v1",
+                   storage.drop_snapshot_archives,
+                   "stored snapshot source archive(s)")
+
+        threading.Thread(target=_storage_purges, daemon=True).start()
     except Exception as e:  # noqa: BLE001 — never block startup
-        log.warning(f"schematic render purge did not start: {type(e).__name__}: {e}")
+        log.warning(f"storage purges did not start: {type(e).__name__}: {e}")
     # Fill `material_sha` on geometry versions published before the sign-off
     # feature existed. Runs in the background: an empty fingerprint blocks a
     # carry rather than granting one, so nothing is wrong while it works.

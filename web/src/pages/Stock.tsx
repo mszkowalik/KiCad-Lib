@@ -232,7 +232,7 @@ export default function Stock() {
     {
       key: "mpn",
       label: COL_LABELS.mpn,
-      width: 20,
+      width: 15,
       get: (r) => r.mpn || r.lcsc || "—",
       title: (r) =>
         (r.mpn || r.lcsc) +
@@ -261,15 +261,15 @@ export default function Stock() {
         </>
       ),
     },
-    { key: "lcsc", label: COL_LABELS.lcsc, width: 9, className: "mono", get: (r) => r.lcsc || "—" },
+    { key: "lcsc", label: COL_LABELS.lcsc, width: 8, className: "mono", get: (r) => r.lcsc || "—" },
     numCol("bought", 7, (r) => <>{qty(r.bought)}</>),
     numCol("drawn", 7, (r) => <>{qty(r.drawn)}</>),
-    numCol("lost", 7, (r) => (r.lost ? <>{qty(r.lost)}</> : <span className="dim">—</span>)),
+    numCol("lost", 9, (r) => (r.lost ? <>{qty(r.lost)}</> : <span className="dim">—</span>)),
     numCol("remaining_qty", 7, (r) => <>{qty(r.remaining_qty)}</>),
-    numCol("held_qty", 7, (r) => <>{r.state === "pool_only" ? "—" : qty(r.held_qty)}</>),
+    numCol("held_qty", 8, (r) => <>{r.state === "pool_only" ? "—" : qty(r.held_qty)}</>),
     numCol("delta_qty", 8, (r) => <DeltaCell r={r} />),
-    numCol("paid_unit_usd", 7, (r) => <>{unitPrice(r.paid_unit_usd)}</>),
-    numCol("market_unit_usd", 7, (r) => <>{unitPrice(r.market_unit_usd)}</>),
+    numCol("paid_unit_usd", 8, (r) => <>{unitPrice(r.paid_unit_usd)}</>),
+    numCol("market_unit_usd", 9, (r) => <>{unitPrice(r.market_unit_usd)}</>),
     numCol("paid_value_usd", 7, (r) => <>{plain(r.paid_value_usd)}</>),
     {
       key: "delta_value_usd",

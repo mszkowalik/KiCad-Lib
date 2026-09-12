@@ -49,7 +49,6 @@ import CommentsPanel from "../components/CommentsPanel";
 import SignoffCard from "../components/SignoffCard";
 import ReviewCard from "../components/ReviewCard";
 import WhereUsedCard from "../components/WhereUsedCard";
-import { useStickyState } from "../useStickyState";
 
 const FP_DATALIST_ID = "fp-options";
 
@@ -122,7 +121,7 @@ function TextLayerTag({
   );
 }
 
-import Viewer3D from "../components/Viewer3D";
+import GeometryPreview, { FootprintPreview } from "../components/GeometryPreview";
 
 /** Renders http(s) values as links (new tab), plain text otherwise. */
 function LinkifyValue({ text }: { text: string }) {
@@ -366,70 +365,6 @@ function fpKey(v: VersionDetail): string {
   return v.footprint ? `${v.footprint.name} v${v.footprint.version_no}` : "not pinned";
 }
 
-// ------------------------------------------------------------ SVG preview
-
-type PreviewState =
-  | { kind: "loading" }
-  | { kind: "ok"; src: string }
-  | { kind: "missing"; message: string }
-  | { kind: "error"; message: string };
-
-/** Fetches an SVG endpoint and shows it via <img>, filling its container.
- *  `url` null means the version has nothing pinned — placeholder, no request. */
-function PreviewFill({ url, missingText }: { url: string | null; missingText: string }) {
-  const [state, setState] = useState<PreviewState>({ kind: "loading" });
-
-  useEffect(() => {
-    if (url === null) return;
-    let objectUrl: string | null = null;
-    const ctrl = new AbortController();
-    setState({ kind: "loading" });
-    fetch(url, { signal: ctrl.signal })
-      .then(async (res) => {
-        if (res.status === 404) {
-          let detail = "";
-          try {
-            const body = (await res.json()) as { detail?: unknown };
-            if (typeof body.detail === "string") detail = body.detail;
-          } catch {
-            // ignore non-JSON body
-          }
-          setState({ kind: "missing", message: detail || missingText });
-          return;
-        }
-        if (!res.ok) {
-          setState({ kind: "error", message: `Preview failed (HTTP ${res.status})` });
-          return;
-        }
-        const blob = await res.blob();
-        objectUrl = URL.createObjectURL(blob);
-        setState({ kind: "ok", src: objectUrl });
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setState({ kind: "error", message: errorMessage(err) });
-      });
-    return () => {
-      ctrl.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [url, missingText]);
-
-  let body;
-  if (url === null) {
-    body = <span className="placeholder">{missingText}</span>;
-  } else if (state.kind === "loading") {
-    body = <Spinner label="Rendering…" />;
-  } else if (state.kind === "ok") {
-    body = <img src={state.src} alt="Preview" />;
-  } else if (state.kind === "missing") {
-    body = <span className="placeholder">{state.message}</span>;
-  } else {
-    body = <span className="placeholder err-text">{state.message}</span>;
-  }
-
-  return <div className="preview-fill">{body}</div>;
-}
-
 /** Raw 3D model files behind the pinned footprint (STEP/WRL from the file
  *  mirror), linked through the /view page — STEP opens with a subelement
  *  tree, WRL with a mesh view. */
@@ -477,7 +412,7 @@ function SymbolPanel({ caption, url }: { caption: string; url: string | null }) 
           {caption}
         </h3>
       </div>
-      <PreviewFill url={url} missingText="No pinned symbol" />
+      <GeometryPreview src={url} alt="Symbol" missingText="No pinned symbol" />
     </section>
   );
 }
@@ -493,40 +428,20 @@ function FootprintPanel({
   compId: number;
   versionNo: number | null;
 }) {
-  const [mode, setMode] = useStickyState<"2d" | "3d">("component:fpMode", "2d");
   return (
     <section className="card preview-panel">
-      <div className="panel-head">
-        <h3 className="card-title panel-cap" title={caption}>
-          {caption}
-        </h3>
-        <div className="seg" role="group" aria-label="Footprint view mode">
-          <button
-            type="button"
-            className={mode === "2d" ? "on" : ""}
-            aria-pressed={mode === "2d"}
-            onClick={() => setMode("2d")}
-          >
-            2D
-          </button>
-          <button
-            type="button"
-            className={mode === "3d" ? "on" : ""}
-            aria-pressed={mode === "3d"}
-            onClick={() => setMode("3d")}
-          >
-            3D
-          </button>
-        </div>
-      </div>
-      {mode === "2d" || versionNo === null ? (
-        <PreviewFill url={svgUrl} missingText="No pinned footprint" />
-      ) : (
-        <>
-          <Viewer3D src={footprintGlbUrl(compId, versionNo)} missingText="No pinned footprint" />
-          <ModelFilesRow compId={compId} versionNo={versionNo} />
-        </>
-      )}
+      <FootprintPreview
+        title={
+          <h3 className="card-title panel-cap" title={caption}>
+            {caption}
+          </h3>
+        }
+        svgUrl={svgUrl}
+        glbUrl={versionNo === null ? null : footprintGlbUrl(compId, versionNo)}
+        missingText="No pinned footprint"
+        stickyKey="component:fpMode"
+        extra={versionNo === null ? null : <ModelFilesRow compId={compId} versionNo={versionNo} />}
+      />
     </section>
   );
 }

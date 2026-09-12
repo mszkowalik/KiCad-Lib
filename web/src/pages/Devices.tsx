@@ -133,7 +133,7 @@ export default function Devices() {
     {
       key: "serial",
       label: "Serial",
-      width: 11,
+      width: 9,
       serverFilter: true,
       className: "mono",
       get: (d) => d.serial || d.mac,
@@ -146,27 +146,27 @@ export default function Devices() {
     {
       key: "tasmota_id",
       label: "Name",
-      width: 12,
+      width: 8,
       serverFilter: true,
       className: "mono dim",
       get: (d) => d.tasmota_id || "—",
     },
-    { key: "mac", label: "MAC", width: 11, serverFilter: true, className: "mono dim", get: (d) => d.mac },
+    { key: "mac", label: "MAC", width: 12, serverFilter: true, className: "mono dim", get: (d) => d.mac },
     { key: "chip", label: "Chip", width: 6, serverFilter: true, get: (d) => d.chip || "—" },
     // Project and batch live on other tables; the server joins them by name so
     // both sort and filter like any other column.
     { key: "project", label: "Project", width: 9, serverFilter: true, get: (d) => d.project.name },
-    { key: "batch", label: "Batch", width: 10, serverFilter: true, get: (d) => d.batch?.label ?? "—" },
+    { key: "batch", label: "Batch", width: 8, serverFilter: true, get: (d) => d.batch?.label ?? "—" },
     {
       key: "state",
       label: "Where",
-      width: 7,
+      width: 8,
       serverFilter: true,
       get: (d) => d.state || "",
       render: (d) => (d.state ? <StatusPill status={d.state} /> : <>—</>),
     },
-    { key: "imei", label: "IMEI", width: 11, serverFilter: true, className: "mono dim", get: (d) => d.imei || "—" },
-    { key: "runs", label: "Runs", width: 4, numeric: true, serverFilter: true, get: (d) => d.runs },
+    { key: "imei", label: "IMEI", width: 8, serverFilter: true, className: "mono dim", get: (d) => d.imei || "—" },
+    { key: "runs", label: "Runs", width: 5, numeric: true, serverFilter: true, get: (d) => d.runs },
     {
       key: "checks",
       label: "Checks",
@@ -177,8 +177,8 @@ export default function Devices() {
     },
     {
       key: "last_status",
-      label: "Last result",
-      width: 7,
+      label: "Result",
+      width: 8,
       serverFilter: true,
       get: (d) => d.last_status ?? "",
       render: (d) => (d.last_status ? <StatusPill status={d.last_status} /> : <>—</>),
@@ -186,7 +186,7 @@ export default function Devices() {
     {
       key: "last_seen",
       label: "Last seen",
-      width: 8,
+      width: 12,
       className: "muted",
       get: (d) => d.last_seen ?? "",
       render: (d) => <>{fmtWhen(d.last_seen)}</>,

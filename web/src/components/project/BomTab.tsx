@@ -330,7 +330,7 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
                 {
                   key: "component",
                   label: "Component",
-                  width: 14,
+                  width: 13,
                   get: (r) =>
                     r.kind === "line"
                       ? r.li.component_name || r.li.symbol_name || "external"
@@ -365,7 +365,7 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
                 {
                   key: "qty_per",
                   label: "Qty/dev",
-                  width: 6,
+                  width: 7,
                   numeric: true,
                   get: (r) => (r.kind === "line" ? r.li.qty_per : r.x.qty_per),
                 },
@@ -390,7 +390,7 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
                 {
                   key: "total",
                   label: "Line total",
-                  width: 11,
+                  width: 10,
                   numeric: true,
                   get: (r) =>
                     r.kind === "line"
@@ -408,7 +408,7 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
                 {
                   key: "tier",
                   label: "Tier",
-                  width: 8,
+                  width: 10,
                   className: "muted",
                   get: (r) =>
                     r.kind === "line"
@@ -424,7 +424,7 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
                 {
                   key: "stock",
                   label: "Stock",
-                  width: 13,
+                  width: 12,
                   numeric: true,
                   interactive: false,
                   get: (r) => (r.kind === "line" ? r.li.stock : null),

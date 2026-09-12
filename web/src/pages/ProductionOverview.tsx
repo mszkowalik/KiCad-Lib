@@ -169,7 +169,7 @@ export default function ProductionOverview() {
   {
     key: "label",
     label: "Batch",
-    width: 16,
+    width: 14,
     get: (r) => r.label,
     render: (r) => (
       <Link className="comp-link" to={`/runs/${r.rid}`} onClick={(e) => e.stopPropagation()}>
@@ -177,7 +177,7 @@ export default function ProductionOverview() {
       </Link>
     ),
   },
-  { key: "project", label: "Project", width: 12, className: "muted", get: (r) => r.project },
+  { key: "project", label: "Project", width: 10, className: "muted", get: (r) => r.project },
   { key: "qty", label: "Units", width: 6, numeric: true, get: (r) => r.qty },
   {
     key: "cost",
@@ -191,7 +191,7 @@ export default function ProductionOverview() {
   {
     key: "cost_dev",
     label: "Cost/dev",
-    width: 7,
+    width: 8,
     numeric: true,
     get: (r) => (r.qty ? r.cost / r.qty : ""),
     render: (r) => <>{r.qty ? plain(r.cost / r.qty) : "—"}</>,
@@ -199,7 +199,7 @@ export default function ProductionOverview() {
   {
     key: "sale",
     label: "Sale",
-    width: 9,
+    width: 11,
     numeric: true,
     interactive: false,
     get: (r) => r.salePrice ?? "",
@@ -234,7 +234,7 @@ export default function ProductionOverview() {
   {
     key: "margin",
     label: "Margin USD",
-    width: 8,
+    width: 9,
     numeric: true,
     get: (r) => r.margin ?? "",
     render: (r) => (
@@ -244,7 +244,7 @@ export default function ProductionOverview() {
   {
     key: "margin_pct",
     label: "Margin %",
-    width: 7,
+    width: 8,
     numeric: true,
     get: (r) => r.marginPct ?? "",
     title: (r) =>
@@ -260,7 +260,7 @@ export default function ProductionOverview() {
   {
     key: "bar",
     label: "cost → revenue",
-    width: 11,
+    width: 10,
     interactive: false,
     get: () => "",
     title: (r) =>

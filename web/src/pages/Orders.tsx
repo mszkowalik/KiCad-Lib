@@ -69,19 +69,19 @@ export default function Orders() {
 
   const columns = useMemo<Column<OrderRow>[]>(
     () => [
-      { key: "order_date", label: "Date", width: 9, get: (o) => o.order_date, className: "mono" },
-      { key: "customer", label: "Customer", width: 16, get: (o) => o.customer },
-      { key: "order_ref", label: "Reference", width: 16, get: (o) => o.order_ref || "—", className: "mono" },
+      { key: "order_date", label: "Date", width: 8, get: (o) => o.order_date, className: "mono" },
+      { key: "customer", label: "Customer", width: 14, get: (o) => o.customer },
+      { key: "order_ref", label: "Reference", width: 13, get: (o) => o.order_ref || "—", className: "mono" },
       {
         key: "products",
         label: "Products",
-        width: 22,
+        width: 16,
         get: (o) => o.lines.map((l) => `${l.qty_ordered} × ${l.product || l.project}`).join(", "),
       },
       {
         key: "shipped",
         label: "Shipped",
-        width: 9,
+        width: 11,
         numeric: true,
         get: (o) => o.qty_shipped,
         render: (o) => (
@@ -93,15 +93,16 @@ export default function Orders() {
       {
         key: "total",
         label: "Net total",
-        width: 11,
+        width: 12,
         numeric: true,
         get: (o) => o.total_net ?? "",
         render: (o) => <>{amount(o.total_net, o.currency)}</>,
       },
       {
         key: "invoiced",
+        // Holds an amount AND an "· n unpaid" tail.
         label: "Invoiced",
-        width: 9,
+        width: 16,
         numeric: true,
         get: (o) => o.invoiced_net ?? "",
         title: (o) =>
@@ -117,8 +118,9 @@ export default function Orders() {
       },
       {
         key: "status",
+        // StatusPill is inline-block — an ellipsis cannot shorten it.
         label: "Status",
-        width: 8,
+        width: 10,
         get: (o) => o.status,
         render: (o) => <StatusPill status={o.status} />,
       },

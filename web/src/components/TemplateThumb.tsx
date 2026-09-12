@@ -1,13 +1,17 @@
 /** Miniature of a symbol / footprint render, with a large preview on hover.
  *
- *  The small image loads lazily (a long list only fetches the visible rows)
- *  and the server caches renders by content hash, so repeat visits are disk
- *  reads. The hover preview is position:fixed and placed from the cell's
- *  bounding box — an absolutely-positioned popup would be clipped by the
- *  table cells' overflow:hidden single-line clamp.
+ *  The drawing itself goes through `GeometryPreview` like every other preview
+ *  in the app, so the miniature and the popup sit on the same canvas as the
+ *  full-size views. This file owns only the list-cell behaviour: lazy loading
+ *  (a long list only fetches the visible rows) and the hover popup, which is
+ *  position:fixed and placed from the cell's bounding box — an absolutely
+ *  positioned one would be clipped by the table cells' single-line
+ *  overflow:hidden clamp.
  */
 import { useState } from "react";
+
 import { templatePreviewUrl, type TemplateKind } from "../api";
+import GeometryPreview from "./GeometryPreview";
 
 const POP_W = 340;
 const POP_H = 260;
@@ -26,9 +30,7 @@ export default function TemplateThumb({
   versionId?: number | null;
 }) {
   const [pop, setPop] = useState<{ x: number; y: number } | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  if (failed) return <span className="dim" title="no published version to preview">—</span>;
+  const url = templatePreviewUrl(kind, id, versionId);
 
   return (
     <span
@@ -42,19 +44,21 @@ export default function TemplateThumb({
       }}
       onMouseLeave={() => setPop(null)}
     >
-      <img
-        className="tpl-thumb"
-        src={templatePreviewUrl(kind, id, versionId)}
-        loading="lazy"
+      <GeometryPreview
+        src={url}
         alt={name}
-        onError={() => setFailed(true)}
+        className="tpl-thumb"
+        missingText="—"
+        lazy
       />
       {pop ? (
-        <img
+        <GeometryPreview
+          src={url}
+          alt={name}
           className="tpl-thumb-pop"
           style={{ left: pop.x, top: pop.y }}
-          src={templatePreviewUrl(kind, id, versionId)}
-          alt={name}
+          missingText="no published version to preview"
+          lazy
         />
       ) : null}
     </span>

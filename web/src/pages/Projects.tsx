@@ -4,8 +4,10 @@ import {
   createProject,
   designBoards,
   errorMessage,
+  getGitCredentials,
   getProjects,
   isAbortError,
+  type GitCredential,
   type ProjectInfo,
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
@@ -25,6 +27,9 @@ export default function Projects() {
   const [name, setName] = useState("");
   const [gitUrl, setGitUrl] = useState("");
   const [token, setToken] = useState("");
+  // "" = use a named account (credId), which is the normal answer.
+  const [credId, setCredId] = useState<number | "">("");
+  const [creds, setCreds] = useState<GitCredential[]>([]);
   const [branch, setBranch] = useState("main");
   const [currency, setCurrency] = useState("");
   const [creating, setCreating] = useState(false);
@@ -47,12 +52,23 @@ export default function Projects() {
     return () => ctrl.abort();
   }, []);
 
+  useEffect(() => {
+    const ctrl = new AbortController();
+    getGitCredentials(ctrl.signal)
+      .then(setCreds)
+      .catch(() => {
+        /* the picker degrades to "none"; creating a project must still work */
+      });
+    return () => ctrl.abort();
+  }, []);
+
   const submit = () => {
     setCreating(true);
     setCreateError(null);
     createProject({
       name: name.trim(),
       git_url: gitUrl.trim(),
+      git_credential_id: credId === "" ? null : credId,
       git_token: token || null,
       default_branch: branch.trim() || "main",
       display_currency: currency.trim() || null,
@@ -83,26 +99,41 @@ export default function Projects() {
         </Link>
       ),
     },
-    { key: "git_url", label: "Repository", width: 26, className: "mono", get: (p) => p.git_url },
+    { key: "git_url", label: "Repository", width: 24, className: "mono", get: (p) => p.git_url },
     {
       key: "snapshot",
       label: "Latest snapshot",
-      width: 18,
+      width: 20,
+      // A MISSING MIRROR IS SHOWN EVEN WHEN A SNAPSHOT EXISTS. It used to be
+      // told only in the no-snapshot branch, so a project that had been
+      // ingested and later lost its mirror looked perfectly healthy — which is
+      // how production carried one for who knows how long (found 2026-09-12).
+      // Without the mirror nothing can rebuild that tree, its checkouts cannot
+      // be re-made, and history, ingest and simulation all fail on it.
       get: (p) =>
-        p.latest_snapshot
+        (p.latest_snapshot
           ? `${p.latest_snapshot.ref_name} ${p.latest_snapshot.status}`
-          : p.has_mirror
-            ? "not ingested"
-            : "not fetched",
-      render: (p) =>
-        p.latest_snapshot ? (
-          <>
-            <span className="mono">{p.latest_snapshot.ref_name}</span>{" "}
-            <StatusPill status={p.latest_snapshot.status} />
-          </>
-        ) : (
-          <span className="muted">{p.has_mirror ? "not ingested" : "not fetched"}</span>
-        ),
+          : "not ingested") + (p.has_mirror ? "" : " no mirror"),
+      render: (p) => (
+        <>
+          {p.latest_snapshot ? (
+            <>
+              <span className="mono">{p.latest_snapshot.ref_name}</span>{" "}
+              <StatusPill status={p.latest_snapshot.status} />
+            </>
+          ) : p.has_mirror ? (
+            <span className="muted">not ingested</span>
+          ) : null}
+          {p.has_mirror ? null : (
+            <>
+              {p.latest_snapshot ? " " : null}
+              <span className="pill err" title="No git mirror on the server — fetch this project. Nothing can rebuild its tree until you do.">
+                no mirror
+              </span>
+            </>
+          )}
+        </>
+      ),
     },
     {
       key: "boards",
@@ -151,8 +182,34 @@ export default function Projects() {
                 <input className="text" value={gitUrl} onChange={(e) => setGitUrl(e.target.value)} placeholder="https://github.com/me/my-board.git" />
               </label>
               <label>
-                Access token <span className="muted">(optional, stored encrypted, write-only)</span>
-                <input className="text" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="PAT / project token" />
+                Git account
+                <select
+                  className="text"
+                  value={credId}
+                  onChange={(e) => setCredId(e.target.value === "" ? "" : Number(e.target.value))}
+                >
+                  <option value="">none — public repo, or a token below</option>
+                  {creds.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {/* The account is the normal answer; this is the escape hatch for
+                  a one-off repository that does not warrant a named one. The
+                  account WINS when both are set, and the project page says so. */}
+              <label>
+                Access token <span className="muted">(only if no account above)</span>
+                <input
+                  className="text"
+                  type="password"
+                  autoComplete="new-password"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  placeholder="PAT for this project alone"
+                  disabled={credId !== ""}
+                />
               </label>
               <label>
                 Default branch

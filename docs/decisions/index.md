@@ -37,6 +37,8 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0006](0006-sync-button-owns-library-updates.md) | Update installed KiCad libraries through the Sync button, and leave the PCM to the plugin | KiCad client, sync plugin, deployment |
 | [0007](0007-built-means-finished-and-passed.md) | Count a batch by the devices that passed, not by the quantity typed on it (overrides item 8 of [0003](0003-orders-shipments-and-device-history.md)) | Backend, frontend, production, flasher |
 | [0008](0008-a-stackup-is-electrical-only.md) | A stackup describes conduction only; appearance and impedance work are project data (extends [0002](0002-field-solver-in-the-platform.md)) | Backend, frontend, field solver, projects |
+| [0009](0009-the-git-mirror-is-the-source-archive.md) | Keep project source in the git mirror only, and stop storing a tarball per snapshot | Backend, projects, storage, deployment |
+| [0010](0010-a-git-token-belongs-to-an-account.md) | A git token belongs to an account, and projects point at it by name | Backend, frontend, projects, access control |
 
 ## Proposed
 

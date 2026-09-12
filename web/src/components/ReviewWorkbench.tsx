@@ -14,6 +14,7 @@ import {
   type VersionDetail,
 } from "../api";
 import ReviewCard from "./ReviewCard";
+import GeometryPreview from "./GeometryPreview";
 import { ErrorBanner, Spinner } from "./Ui";
 import PdfFrame from "./PdfFrame";
 
@@ -108,17 +109,19 @@ export function ComponentWorkbench({
       <div className="workbench-side">
         <div className="workbench-previews">
           {detail.current_version_no !== null && live?.symbol ? (
-            <img
+            <GeometryPreview
               className="workbench-preview"
               src={symbolSvgUrl(compId, detail.current_version_no)}
               alt="symbol"
+              missingText="no symbol render"
             />
           ) : null}
           {live?.footprint ? (
-            <img
+            <GeometryPreview
               className="workbench-preview"
               src={templatePreviewUrl("footprints", live.footprint.id, footprintVersionId)}
               alt="footprint"
+              missingText="no footprint render"
             />
           ) : null}
         </div>
@@ -182,10 +185,11 @@ export function TemplateWorkbench({
         <ReviewCard kind={kind} id={id} onChange={onChanged ? () => onChanged() : undefined} />
       </div>
       <div className="workbench-side">
-        <img
+        <GeometryPreview
           className="workbench-preview workbench-preview-lg"
           src={templatePreviewUrl(kind === "symbol" ? "symbols" : "footprints", id, versionId)}
           alt={name}
+          missingText="no published version to preview"
         />
       </div>
     </div>

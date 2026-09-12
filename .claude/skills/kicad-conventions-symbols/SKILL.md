@@ -2,7 +2,7 @@
 name: kicad-conventions-symbols
 description: "Choosing AND authoring base symbols: pin-type directionality from the component's own viewpoint, V.24 UART and SPI role policy, functional pin grouping, box/pitch geometry formulas, and stacked (shorted) pins. Use when picking a base symbol or writing a propose_symbol_edit."
 ---
-<!-- platform-skill: conventions-symbols v9 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-symbols v10 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Symbol conventions
 
 Every component is built on a **base symbol** — a graphical template with pins.
@@ -170,13 +170,16 @@ Precedent in this library: `SP3485` (RO, RE, DE, DI left; A, B right) and
 - **Box width**: wide enough that pin labels never overlap — ±15.24 mm is the
   house standard for multi-peripheral modules
 
-Box height:
-
-```
-n_slots        = pin count on the longer side, counting gap slots
-box_half_height = ceil(n_slots / 2) x 2.54 + 1.27   # margin
-first_pin_y     = box_half_height - 1.27
-```
+**Box height**: derive it directly from the margin rule above —
+`box_half_height = (distance from centre to the outermost pin) + 1.27`. There
+is no separate slot-counting formula. One used to live here
+(`ceil(n_slots / 2) × 2.54 + 1.27`, `n_slots` = pin count on the longer side
+counting gap slots) and it disagreed with the margin rule for a plain
+symmetric layout: `AT2659` (3 pins/side, centred on y = 0, no gap slot) gave
+6.35 mm from the formula against the 3.81 mm the margin rule requires — a
+full 2.54 mm slot too tall. Removed 2026-09-12 rather than patched: the
+margin rule alone is sufficient, unambiguous, and matches what
+`propose_symbol_edit` has actually published.
 
 ### The grid law
 
@@ -424,8 +427,15 @@ drawing.
   the mirror withholds the Sim fields from every component using it until
   someone re-confirms the map. Re-save the link in the same session; do not
   leave it stale and do not delete it to silence the warning.
-- Pin ELECTRICAL TYPES are part of the link fingerprint too, not just numbers
-  and positions. Changing `passive` to `power_in` flags the link.
+- Pin ELECTRICAL TYPES are part of the link fingerprint too, not just
+  numbers. Changing `passive` to `power_in` flags the link. Pin **POSITION is
+  NOT** part of the fingerprint: moving a pin's `(x, y)` without changing its
+  number or type does not stale the link. Confirmed empirically on
+  `AON7264E` (2026-09-12), whose source/drain pads were repositioned and
+  stacked with no staleness warning and no mirror warning. The precise
+  statement of what the fingerprint covers lives in
+  [[conventions-simulation]]'s "Staleness" section: "the symbol's pin numbers
+  plus electrical types."
 
 The standard for the model itself lives in [[conventions-simulation]].
 

@@ -64,12 +64,12 @@ export default function OrdersTab({ project }: Props) {
   );
 
   const cols: Column<LineRow>[] = [
-    { key: "date", label: "Date", width: 9, className: "mono", get: (r) => r.order.order_date },
-    { key: "customer", label: "Customer", width: 14, get: (r) => r.order.customer },
+    { key: "date", label: "Date", width: 8, className: "mono", get: (r) => r.order.order_date },
+    { key: "customer", label: "Customer", width: 13, get: (r) => r.order.customer },
     {
       key: "ref",
       label: "Reference",
-      width: 15,
+      width: 14,
       className: "mono",
       get: (r) => r.order.order_ref || "—",
       render: (r) => (
@@ -78,7 +78,7 @@ export default function OrdersTab({ project }: Props) {
         </Link>
       ),
     },
-    { key: "product", label: "Product", width: 14, get: (r) => r.line.product || r.line.project },
+    { key: "product", label: "Product", width: 17, get: (r) => r.line.product || r.line.project },
     { key: "ordered", label: "Ordered", width: 8, numeric: true, get: (r) => r.line.qty_ordered },
     { key: "shipped", label: "Shipped", width: 8, numeric: true, get: (r) => r.line.qty_shipped },
     {
@@ -92,7 +92,7 @@ export default function OrdersTab({ project }: Props) {
     {
       key: "price",
       label: "Net unit price",
-      width: 10,
+      width: 11,
       numeric: true,
       get: (r) => r.line.unit_price,
       render: (r) => <>{amount(r.line.unit_price, r.order.currency)}</>,
@@ -100,7 +100,7 @@ export default function OrdersTab({ project }: Props) {
     {
       key: "status",
       label: "Status",
-      width: 8,
+      width: 14,
       get: (r) => r.order.status,
       render: (r) => <StatusPill status={r.order.status} />,
     },

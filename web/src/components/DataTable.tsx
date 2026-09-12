@@ -253,6 +253,16 @@ export default function DataTable<T>({
 
   const clearCol = columns.find((c) => c.interactive === false);
 
+  /** A centred column must be centred in the HEADER too, or the label sits
+   *  left of the pills it names. `ctr` also trims the cell padding, which is
+   *  what stops a 3%-wide checkbox column from cutting off its own header
+   *  checkbox. Only `ctr` travels up: the other body classes (`mono`,
+   *  `muted`, `cell-cat`) describe cell text and would restyle the header. */
+  const headClass = (c: Column<T>) =>
+    [c.numeric ? "num" : "", (c.className ?? "").split(" ").includes("ctr") ? "ctr" : ""]
+      .filter(Boolean)
+      .join(" ") || undefined;
+
   return (
     <table className="data data-fixed">
       <colgroup>
@@ -264,11 +274,11 @@ export default function DataTable<T>({
         <tr>
           {columns.map((c) =>
             c.interactive === false ? (
-              <th key={c.key} className={c.numeric ? "num" : undefined}>
+              <th key={c.key} className={headClass(c)}>
                 {c.label}
               </th>
             ) : (
-              <th key={c.key} className={c.numeric ? "num" : undefined}>
+              <th key={c.key} className={headClass(c)}>
                 <button
                   type="button"
                   className="th-sort"

@@ -63,6 +63,35 @@ component:
   | `onVisibleChange` | the filtered rows, for a toolbar acting on "everything shown" (the browser's bulk sign-off selects the FILTERED set) |
   | `footer` | where a server-paged list puts its own loading sentinel |
 
+- **`width` is a budget, and a pill does not fit in a small one.** The `width`
+  numbers must sum to 100 (they are `<col>` percentages on a
+  `table-layout: fixed` table) and each one has to hold the WIDEST thing the
+  column prints. A `.pill` is `inline-block`, so the column's ellipsis cannot
+  shorten it — too narrow simply cuts the word in half. A sign-off pill needs
+  about 9% of a full-width table ("not signed"), a review pill about 10%
+  (`ReviewPill` prints the provenance too: "checked (agent)"). Free text may
+  truncate, a pill may not.
+
+  Browse is the cautionary tale. Its widths used to live in `styles.css` as
+  `.browse-table th:nth-child(n)` rules, with a comment explaining the 9%. When
+  the page moved to DataTable the numbers were re-typed into `Column.width` as
+  4 and 4, the CSS was left behind as dead rules, and every pill in the
+  component browser read "NOT S…" / "CHECK…" until 2026-09-12. Measure before
+  you change a width: `td.scrollWidth > td.clientWidth` on real rows says
+  which columns clip.
+
+- **Only `ctr` travels from `className` up to the header.** `Column.className`
+  styles body cells. DataTable copies `ctr` (and `numeric`) onto the `<th>` as
+  well, because a centred column whose header is left-aligned reads as broken,
+  and because `ctr` is what trims the 12 px cell padding down to 6 px — without
+  it a 3%-wide checkbox column cuts off its own header checkbox. `mono`,
+  `muted` and `cell-cat` deliberately do NOT travel: they describe cell text.
+
+- **An action column gets `text-overflow: clip`, not `ellipsis`.** A checkbox
+  is 13 px of replaced content, not text; `ellipsis` answers an overflow by
+  drawing a stray "…" beside it. `.data-fixed th.ctr, .data-fixed td.ctr`
+  clips instead.
+
 - **`onVisibleChange` compares CONTENT, and must keep doing so.** `visible` is
   a `useMemo` over `columns` and `group`, and every caller builds both inline —
   so both have a new identity each render, `visible` is a new array each
@@ -192,6 +221,38 @@ Two consequences when you touch this:
   URLs were treated as ours and routed into the local viewer.
 - Show `apiOrigin()`, not `API_URL`, in anything the user reads. `API_URL` is
   `""` for a same-origin build, which reads as a blank in an error message.
+
+### The Account page is the user's own settings; Setup is administration
+
+`/account` is reached by clicking the signed-in name in the top bar, and it
+holds what belongs to whoever is signed in: `AccountSecurityCard` (own password,
+own API tokens), `GitCredentialsCard` (git accounts) and `KicadClientCards`
+(Effective URLs, the PCM install, the `.kicad_httplib` download, Claude Code /
+MCP). Setup stays administration of OTHER people's accounts and the deployment's
+knobs, so a new per-user setting goes here, not there.
+
+**The KiCad boxes moved here because every one of them carries the signed-in
+user's token** — the PCM URL installs a sync plugin with that token inside it,
+and the `.kicad_httplib` embeds it — so they are personal credentials in URL
+form and two people must see two different strings. `GET /api/kicad/config`
+already personalises itself from the caller's session, so the move needed no new
+endpoint. Setup keeps a pointer.
+
+**Changing your own password is `POST /api/auth/password`, which has existed
+since sign-in was built** — it ends every OTHER session and RE-ISSUES this one,
+so the person is not signed out of the tab they are typing in. Do not add a
+second implementation to the account router; the first version of this card did,
+and the copy was worse.
+
+- **A token field says "replace", never "edit".** The API returns only whether
+  one is stored, the same posture as `SettingsCard`'s secrets.
+- **A credential nobody has checked must not read as working.** The Last check
+  pill is `not checked` / `ok` / `failed`, and `check_ok: null` means either
+  never checked or checked while no project used it — never "fine".
+- **A project picks a credential BY NAME, and may still type its own token.**
+  The account wins when both are set, so the project page prints
+  `token_source`, not just "stored (encrypted)" — that wording is exactly how a
+  revoked copy hid on production for weeks (decision 0010).
 
 ### Sign-in: the gate replaces the app, it is not a route
 
@@ -643,6 +704,51 @@ pixels go black, only movement lights up.
   the overlay reports more than moved. The pane SAYS so rather than hiding it;
   it does not arise for the common cases (a pad resize inside an unchanged
   courtyard, a silkscreen width, a text move).
+
+### ONE symbol/footprint viewer, everywhere (`components/GeometryPreview.tsx`)
+
+**Every preview of a KiCad drawing goes through `GeometryPreview`** — the
+component page, the template page, the templates list, the review workbench and
+the paste box. Do not add a seventh `<img>` shell, and do not put a drawing
+behind a bare `<img>` again. (The schematic has its own single renderer,
+`sim/draw/SchematicView` — see "ONE schematic renderer" below. A symbol or a
+footprint is this one.)
+
+There were six shells before, with four different missing/error stories and
+**three different canvas colours**. That is not cosmetic: kicad-cli renders with
+the dark Skyline-7S theme — light strokes on a TRANSPARENT background — and the
+viewer's light/dark preference is never sent to the renderer, so every frame has
+to supply the dark ground itself. One of the six asked for
+`var(--paper, #fff)`, and `--paper` is defined nowhere in the stylesheet, so the
+review workbench drew light strokes on white in both themes.
+
+- **The canvas is `--kicad-canvas`, once, on `:root`,** applied by
+  `.preview-fill`. Keep it equal to `schematic.background` in
+  `api/app/services/themes/Skyline-7S.json`. A caller's own class carries the
+  SIZE and nothing else (`template-preview`, `workbench-preview`, `tpl-thumb`).
+- **`lazy` picks the loading strategy, and the choice is real.** A single large
+  preview `fetch`es, so a 404 can show the server's own sentence ("no published
+  version") instead of a broken-image icon. A LIST of miniatures must not: one
+  fetch per row loads every render at once and defeats `loading="lazy"`.
+- **`FootprintPreview` owns the 2D/3D switch**, because a footprint has a board
+  to render and a symbol does not. It was written twice — component page and
+  template page — and the copies had already drifted on which state they
+  remembered. It takes the two URLs; `glbUrl === null` means no board and no
+  switch.
+
+**A backend SVG cannot be themed by the viewer, and its cache never
+invalidates** (`render.py` keys on `sha256(kind, name, theme, source)` and
+nothing ever deletes from `render_cache_dir`, so changing `symbol_theme` doubles
+the cache instead of clearing it). Measured 2026-09-12 on the running platform:
+a cold kicad-cli render is **410-550 ms**, a warm cache hit 2-3 ms, and the SVG
+is 10.3 kB against a 3.5 kB source. Parsing that symbol into a draw document
+server-side is **0.74 ms** and 4.0 kB. So if these previews ever move off
+kicad-cli, the answer is the hybrid the schematic already uses — parse to JSON
+on the server, draw in `KicadSheet` — and never shipping raw s-expressions to
+the browser, which is the biggest payload of the three AND a second parser to
+keep in step with the Python one. Footprints stay on kicad-cli: nothing in the
+browser parses a `.kicad_mod`, and pad shapes are where a re-implementation
+would be wrong.
 
 ### `components/Viewer3D.tsx` takes a URL, not an entity
 

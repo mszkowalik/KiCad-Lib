@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import os
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -63,6 +64,27 @@ def fetch_mirror(project_id: int, git_url: str, token: str | None) -> None:
 
 def has_mirror(project_id: int) -> bool:
     return mirror_path(project_id).exists()
+
+
+def can_rebuild(project_id: int, sha: str) -> bool:
+    """Is `sha` still reachable in this project's mirror?
+
+    The question `storage.drop_snapshot_archives` must answer before it deletes
+    a stored tree. Decision 0009 rests on the mirror being a second copy of
+    every snapshot; where the mirror is gone the stored tarball is the ONLY
+    copy, and deleting it cannot be undone. Checks the object too, not just the
+    directory: a mirror that was re-cloned from a rewritten remote can exist
+    and still have lost the commit.
+    """
+    if not has_mirror(project_id):
+        return False
+    proc = subprocess.run(
+        ["git", "cat-file", "-e", f"{sha}^{{commit}}"],
+        cwd=mirror_path(project_id),
+        capture_output=True,
+        timeout=60,
+    )
+    return proc.returncode == 0
 
 
 def rev_parse(project_id: int, ref: str) -> str:
@@ -137,26 +159,49 @@ def materialize(project_id: int, sha: str) -> Path:
     marker = dest / ".complete"
     if marker.exists():
         return dest
+    if not has_mirror(project_id):
+        # Say which project and which directory. Without this the subprocess
+        # below dies on its `cwd` with a bare FileNotFoundError, which reads as
+        # a disk fault rather than "this repository was never fetched".
+        raise GitError(
+            f"project {project_id} has no git mirror at {mirror_path(project_id)} — "
+            "fetch the repository before using a snapshot of it")
     dest.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(suffix=".tar") as tf:
-        proc = subprocess.run(
-            ["git", "archive", "--format=tar", sha],
-            cwd=mirror_path(project_id),
-            stdout=tf,
-            stderr=subprocess.PIPE,
-            timeout=600,
-        )
-        if proc.returncode != 0:
-            raise GitError(proc.stderr.decode().strip())
-        tf.seek(0)
-        with tarfile.open(fileobj=tf) as tar:
-            tar.extractall(dest, filter="data")
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".tar") as tf:
+            proc = subprocess.run(
+                ["git", "archive", "--format=tar", sha],
+                cwd=mirror_path(project_id),
+                stdout=tf,
+                stderr=subprocess.PIPE,
+                timeout=600,
+            )
+            if proc.returncode != 0:
+                raise GitError(proc.stderr.decode().strip())
+            tf.seek(0)
+            with tarfile.open(fileobj=tf) as tar:
+                tar.extractall(dest, filter="data")
+    except BaseException:
+        # A half-made checkout must not survive: the marker is what says
+        # "complete", but an EMPTY directory still answers `.exists()`, and on
+        # production one did — `/data/checkouts/3/<sha>/` held zero files while
+        # an audit counted it as a checkout on disk (2026-09-12).
+        shutil.rmtree(dest, ignore_errors=True)
+        raise
     marker.touch()
     return dest
 
 
 def archive_tgz(project_id: int, sha: str) -> bytes:
-    """tar.gz of the tree at sha — stored in MinIO as the snapshot backup."""
+    """tar.gz of the tree at sha, rebuilt from the mirror on demand.
+
+    Nothing stores the result. Ingest used to write one of these per snapshot
+    into MinIO and never read it back: 16 commits cost 950 MB, while the
+    mirrors that hold EVERY commit of EVERY project cost 214 MB, because git
+    stores identical blobs once and packs the rest as deltas. Decision 0009
+    dropped the stored copy and kept this function as the way back to a
+    byte-exact tree.
+    """
     proc = subprocess.run(
         ["git", "archive", "--format=tar.gz", sha],
         cwd=mirror_path(project_id),

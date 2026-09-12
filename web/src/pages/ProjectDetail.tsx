@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import {
   deleteProject,
   designBoards,
   errorMessage,
   fetchProject,
+  getGitCredentials,
   getProject,
   getSnapshots,
   isAbortError,
   updateProject,
+  type GitCredential,
   type ProjectInfo,
+  type ProjectPatchBody,
   type SnapshotInfo,
 } from "../api";
 import { BackLink, ErrorBanner, Spinner } from "../components/Ui";
@@ -50,8 +53,20 @@ export default function ProjectDetail() {
   const [settingsDraft, setSettingsDraft] = useState<{
     name: string; git_url: string; default_branch: string;
     display_currency: string; description: string; token: string;
+    credId: number | "";
   } | null>(null);
+  const [creds, setCreds] = useState<GitCredential[]>([]);
   const [settingsMsg, setSettingsMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    getGitCredentials(ctrl.signal)
+      .then(setCreds)
+      .catch(() => {
+        /* the picker degrades to "none"; editing must still work */
+      });
+    return () => ctrl.abort();
+  }, []);
   const [confirmDelete, setConfirmDelete] = useState("");
 
   const loadProject = useCallback((signal?: AbortSignal) => {
@@ -294,6 +309,7 @@ export default function ProjectDetail() {
                       display_currency: project.display_currency ?? "",
                       description: project.description,
                       token: "",
+                      credId: project.git_credential_id ?? "",
                     })
                   }
                 >
@@ -302,7 +318,26 @@ export default function ProjectDetail() {
                 <dl className="kv">
                   <dt>Default branch</dt><dd className="mono">{project.default_branch}</dd>
                   <dt>Display currency</dt><dd>{project.effective_currency}</dd>
-                  <dt>Token</dt><dd>{project.has_token ? "stored (encrypted)" : "none"}</dd>
+                  <dt>Git account</dt>
+                  <dd>
+                    {project.git_credential ? (
+                      <Link className="comp-link" to="/account">{project.git_credential.name}</Link>
+                    ) : (
+                      <span className="muted">none</span>
+                    )}
+                  </dd>
+                  <dt>Token</dt>
+                  <dd>
+                    {/* Name the SOURCE, not just "stored". A project carrying
+                        both a credential and its own token is legal, and the
+                        credential wins — saying only "stored (encrypted)"
+                        is exactly how a stale copy hid before. */}
+                    {project.token_source === "credential"
+                      ? `from the account "${project.git_credential?.name ?? ""}"`
+                      : project.token_source === "project"
+                        ? "stored on this project (encrypted)"
+                        : "none"}
+                  </dd>
                   <dt>Description</dt><dd>{project.description || <span className="muted">—</span>}</dd>
                 </dl>
               </div>
@@ -320,8 +355,27 @@ export default function ProjectDetail() {
                       onChange={(e) => setSettingsDraft({ ...settingsDraft, git_url: e.target.value })} />
                   </label>
                   <label>
+                    Git account
+                    <select
+                      className="text"
+                      value={settingsDraft.credId}
+                      onChange={(e) =>
+                        setSettingsDraft({
+                          ...settingsDraft,
+                          credId: e.target.value === "" ? "" : Number(e.target.value),
+                        })
+                      }
+                    >
+                      <option value="">none — public repo, or the token below</option>
+                      {creds.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
                     Access token <span className="muted">(blank = keep; "clear" to remove)</span>
-                    <input className="text" type="password" value={settingsDraft.token}
+                    <input className="text" type="password" autoComplete="new-password"
+                      value={settingsDraft.token}
                       onChange={(e) => setSettingsDraft({ ...settingsDraft, token: e.target.value })} />
                   </label>
                   <label>
@@ -344,13 +398,16 @@ export default function ProjectDetail() {
                 <div className="btn-row">
                   <button className="btn btn-primary"
                     onClick={() => {
-                      const body: Record<string, string> = {
+                      const body: ProjectPatchBody = {
                         name: settingsDraft.name,
                         git_url: settingsDraft.git_url,
                         default_branch: settingsDraft.default_branch,
                         display_currency: settingsDraft.display_currency,
                         description: settingsDraft.description,
                       };
+                      // 0 unassigns; the API leaves it alone when absent.
+                      body.git_credential_id =
+                        settingsDraft.credId === "" ? 0 : settingsDraft.credId;
                       if (settingsDraft.token === "clear") body.git_token = "";
                       else if (settingsDraft.token) body.git_token = settingsDraft.token;
                       updateProject(project.id, body)

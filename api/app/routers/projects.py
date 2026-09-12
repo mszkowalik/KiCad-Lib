@@ -36,12 +36,32 @@ def _snapshot(db: Session, snapshot_id: int) -> M.ProjectSnapshot:
 
 
 def _token(p: M.Project) -> str | None:
-    if not p.git_token_enc:
+    """The secret this project authenticates with, or None for a public repo.
+
+    A NAMED CREDENTIAL WINS over the project's own token (decision 0010). Both
+    can be set — a project can be moved onto an account without its old token
+    being cleared first — and a rule that let the project copy win would
+    resurrect the failure the credentials exist to end: a stale secret shadowing
+    the live one, with nothing on screen saying which is in use. `_project_json`
+    reports `token_source` so the answer is always visible.
+    """
+    enc = p.git_credential.token_enc if p.git_credential else p.git_token_enc
+    if not enc:
         return None
     try:
-        return decrypt_token(p.git_token_enc)
+        return decrypt_token(enc)
     except ValueError as e:
         raise HTTPException(500, str(e)) from e
+
+
+def _valid_credential(db: Session, cred_id: int | None) -> int | None:
+    """Refuse an id that names no credential, rather than storing a dangling
+    pointer that silently makes the project authenticate as nobody."""
+    if cred_id is None:
+        return None
+    if db.get(M.GitCredential, cred_id) is None:
+        raise HTTPException(422, f"no git credential with id {cred_id}")
+    return cred_id
 
 
 def _board(snap: M.ProjectSnapshot, board_name: str) -> dict:
@@ -84,7 +104,14 @@ def _project_json(db: Session, p: M.Project) -> dict:
         "id": p.id,
         "name": p.name,
         "git_url": p.git_url,
-        "has_token": bool(p.git_token_enc),
+        "has_token": bool(p.git_credential_id) or bool(p.git_token_enc),
+        # WHICH of the two is in force, so a project can never be ambiguous
+        # about the secret it uses. "credential" | "project" | "none".
+        "token_source": ("credential" if p.git_credential_id
+                         else "project" if p.git_token_enc else "none"),
+        "git_credential_id": p.git_credential_id,
+        "git_credential": ({"id": p.git_credential.id, "name": p.git_credential.name}
+                           if p.git_credential else None),
         "default_branch": p.default_branch,
         "display_currency": p.display_currency,
         "effective_currency": project_bom.display_currency(p),
@@ -101,6 +128,8 @@ def _project_json(db: Session, p: M.Project) -> dict:
 class ProjectIn(BaseModel):
     name: str
     git_url: str
+    # Either a named account (preferred) or a token typed on this project.
+    git_credential_id: int | None = None
     git_token: str | None = None
     default_branch: str = "main"
     display_currency: str | None = None
@@ -110,7 +139,9 @@ class ProjectIn(BaseModel):
 class ProjectPatch(BaseModel):
     name: str | None = None
     git_url: str | None = None
-    # "" clears the stored token; None leaves it unchanged
+    # 0 unassigns the credential; None leaves it unchanged.
+    git_credential_id: int | None = None
+    # "" clears the project's own token; None leaves it unchanged
     git_token: str | None = None
     default_branch: str | None = None
     display_currency: str | None = None
@@ -132,6 +163,7 @@ def create_project(body: ProjectIn, db: Session = Depends(get_db)):
     p = M.Project(
         name=name,
         git_url=body.git_url.strip(),
+        git_credential_id=_valid_credential(db, body.git_credential_id),
         git_token_enc=encrypt_token(body.git_token) if body.git_token else None,
         default_branch=body.default_branch.strip() or "main",
         display_currency=(body.display_currency or "").upper() or None,
@@ -158,6 +190,8 @@ def update_project(project_id: int, body: ProjectPatch, db: Session = Depends(ge
         p.name = body.name.strip()
     if body.git_url is not None and body.git_url.strip():
         p.git_url = body.git_url.strip()
+    if body.git_credential_id is not None:
+        p.git_credential_id = _valid_credential(db, body.git_credential_id or None)
     if body.git_token is not None:
         p.git_token_enc = encrypt_token(body.git_token) if body.git_token else None
     if body.default_branch is not None and body.default_branch.strip():

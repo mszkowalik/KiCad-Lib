@@ -11,6 +11,14 @@
   --muted: #5c6a7b;
   --line: #d7dfe8;
 
+  /* The ground every kicad-cli render sits on, in BOTH themes. kicad-cli
+     draws with the dark Skyline-7S theme — light strokes on a TRANSPARENT
+     background — and the viewer's light/dark choice is never passed to the
+     renderer, so the frame has to supply the matching dark canvas itself.
+     Keep it equal to `schematic.background` in
+     api/app/services/themes/Skyline-7S.json. */
+  --kicad-canvas: #1e2125;
+
   /* trace blue accent */
   --accent: #1f63d6;
   --accent-soft: rgba(31, 99, 214, 0.1);
@@ -518,90 +526,6 @@ table.data {
    MPNs, or component names truncate with an ellipsis instead of forcing the
    table wider than the card — no horizontal scrollbar, no row-height change. */
 
-/* Browse (main components) table: same fixed-width-columns approach as
-   .jlc-stock-table above. This table's container has no max-width cap (it
-   fills whatever space is left beside the sidebar), so percentages — not
-   px — are what guarantee it never needs a horizontal scrollbar, at any
-   viewport width. The `.data.browse-table` compound selector on the
-   nth-child rules outranks `.data th.ctr`'s `width: 1%` (below) so the DS
-   column keeps its intended width regardless of source order. */
-.browse-table {
-  table-layout: fixed;
-}
-
-.browse-table th,
-.browse-table td {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* column 1 is the bulk sign-off checkbox, column 11 the sign-off badge —
-   see Browse.tsx. Widths sum to 100%: this table has no max-width cap, so
-   percentages are what keep it off a horizontal scrollbar at any width. */
-.data.browse-table th:nth-child(1),
-.data.browse-table td:nth-child(1) {
-  width: 3%;
-}
-
-.data.browse-table th:nth-child(2),
-.data.browse-table td:nth-child(2) {
-  width: 11%;
-}
-
-.data.browse-table th:nth-child(3),
-.data.browse-table td:nth-child(3) {
-  width: 12%;
-}
-
-.data.browse-table th:nth-child(4),
-.data.browse-table td:nth-child(4) {
-  width: 6%;
-}
-
-.data.browse-table th:nth-child(5),
-.data.browse-table td:nth-child(5) {
-  width: 14%;
-}
-
-.data.browse-table th:nth-child(6),
-.data.browse-table td:nth-child(6) {
-  width: 11%;
-}
-
-.data.browse-table th:nth-child(7),
-.data.browse-table td:nth-child(7) {
-  width: 7%;
-}
-
-.data.browse-table th:nth-child(8),
-.data.browse-table td:nth-child(8) {
-  width: 4%;
-}
-
-.data.browse-table th:nth-child(9),
-.data.browse-table td:nth-child(9) {
-  width: 6%;
-}
-
-.data.browse-table th:nth-child(10),
-.data.browse-table td:nth-child(10) {
-  width: 8%;
-}
-
-/* Wide enough for the longest pill ("not signed"): a pill is inline-block, so
-   the column's ellipsis cannot shorten it — too narrow simply cuts it off. */
-.data.browse-table th:nth-child(11),
-.data.browse-table td:nth-child(11) {
-  width: 9%;
-}
-
-/* Review (verification) pill — same sizing reasoning as the sign-off column. */
-.data.browse-table th:nth-child(12),
-.data.browse-table td:nth-child(12) {
-  width: 9%;
-}
-
 /* project design-review table (ReviewTab.tsx) */
 .data.project-review-table { table-layout: fixed; }
 .data.project-review-table th:nth-child(1),
@@ -1076,9 +1000,7 @@ dl.kv {
   justify-content: center;
   border: 1px solid var(--line);
   border-radius: 6px;
-  /* dark canvas in BOTH themes — kicad-cli renders with the dark Skyline-7S
-     theme (light strokes, transparent background); #1E2125 is its canvas color */
-  background: #1e2125;
+  background: var(--kicad-canvas);
   padding: 4px;
   overflow: hidden;
 }
@@ -3440,6 +3362,17 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
   white-space: nowrap;
 }
 
+/* Action columns hold a control, not text: a checkbox at 13 px plus the 12 px
+   cell padding does not fit a 3%-wide column, and `text-overflow: ellipsis`
+   answers that by drawing a stray "…" beside every checkbox. Clip instead, and
+   give the control the padding back. */
+.data-fixed th.ctr,
+.data-fixed td.ctr {
+  padding-left: 6px;
+  padding-right: 6px;
+  text-overflow: clip;
+}
+
 /* component price ladder card (manual levels editor) */
 .stock-pools {
   display: flex;
@@ -3864,24 +3797,21 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
    render; hovering pops a large one. The popup is position:fixed because the
    table cells clip overflow for the single-line-row rule. */
 .tpl-thumb-wrap { display: inline-block; }
+/* Both are `.preview-fill` frames (components/GeometryPreview.tsx), so the
+   canvas, border and radius come from there — these carry the size only. */
 .tpl-thumb {
-  display: block;
+  flex: none;
   width: 64px;
   height: 26px;
-  object-fit: contain;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
   border-radius: 4px;
+  padding: 1px;
 }
 .tpl-thumb-pop {
   position: fixed;
   z-index: 40;
+  flex: none;
   width: 340px;
   height: 260px;
-  object-fit: contain;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
   box-shadow: var(--modal-shadow);
   padding: 8px;
   pointer-events: none;
@@ -4459,6 +4389,45 @@ a.check-cell:hover {
 .topbar-username {
   font-size: 12px;
   color: var(--muted);
+  text-decoration: none;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+.topbar-username:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+/* Account page: the git-credential forms. A label above its input, wrapping
+   into as many columns as the card is wide; `cred-wide` spans the row for the
+   fields that hold a long value (a note, a token). */
+.cred-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 10px 0;
+}
+.cred-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 180px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.cred-form label.cred-wide {
+  flex-basis: 100%;
+}
+.cred-detail {
+  padding: 4px 2px 10px;
+}
+.cred-results ul {
+  margin: 8px 0;
+  padding-left: 0;
+  list-style: none;
+}
+.cred-results li {
+  padding: 2px 0;
 }
 
 /* ---------------------------------------------------------------- users card */
@@ -4595,14 +4564,16 @@ a.check-cell:hover {
   top: 8px;
 }
 .workbench-previews { display: flex; gap: 8px; }
+/* A `.preview-fill` frame — it used to be a bare <img> on
+   `background: var(--paper, #fff)`, and `--paper` is defined nowhere, so the
+   fallback always won and the review workbench drew Skyline-7S's light strokes
+   on white. Size only; the canvas belongs to .preview-fill. */
 .workbench-preview {
-  max-width: 48%;
-  max-height: 180px;
-  background: var(--paper, #fff);
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 180px;
 }
-.workbench-preview-lg { max-width: 100%; max-height: 420px; }
+.workbench-preview-lg { height: 420px; }
 .workbench-datasheet {
   width: 100%;
   height: 62vh;
