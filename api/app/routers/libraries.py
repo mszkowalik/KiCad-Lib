@@ -24,7 +24,7 @@ from ..services.geometry_proposals import (
 )
 from ..services.mirror import write_manifest
 from ..services.publish import set_footprint_package_name
-from ..services.render import render_svg
+from ..services.render import render_svg, render_svg_units
 from .util import audit
 
 router = APIRouter(prefix="/api", tags=["libraries"])
@@ -253,6 +253,21 @@ class GeometrySource(BaseModel):
 
     source_text: str
     name: str = ""
+    # Symbols only: which unit to draw, 1-based as KiCad numbers them.
+    unit: int | None = None
+
+
+def _svg_response(svg: bytes, units: int, headers: dict[str, str]) -> Response:
+    """Every symbol/footprint SVG leaves through here.
+
+    `X-Unit-Count` is what lets the viewer draw its unit arrows: kicad-cli
+    plots one file per unit, so only the renderer knows there are ten, and no
+    other call in the app reports it. `main.py` must keep exposing the header
+    through CORS or a cross-origin dev browser cannot read it and every
+    multi-unit symbol silently loses its arrows.
+    """
+    return Response(content=svg, media_type="image/svg+xml",
+                    headers={**headers, "X-Unit-Count": str(units)})
 
 
 def _render_source(kind: str, body: GeometrySource):
@@ -280,11 +295,10 @@ def _render_source(kind: str, body: GeometrySource):
         name = "preview"
     text = set_footprint_header(text, name) if is_fp else set_symbol_entry_name(text, name)
     try:
-        svg = render_svg(kind, name, text)
+        svg, units = render_svg_units(kind, name, text, body.unit)
     except Exception as e:  # noqa: BLE001 — surface render failures to the UI
         raise HTTPException(502, detail={"error": f"render failed: {e}"}) from e
-    return Response(content=svg, media_type="image/svg+xml",
-                    headers={"Cache-Control": "no-cache"})
+    return _svg_response(svg, units, {"Cache-Control": "no-cache"})
 
 
 @router.post("/footprints/preview.svg")
@@ -375,7 +389,8 @@ def delete_footprint(fp_id: int, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------- preview
-def _preview(kind: str, parent, db: Session, v: int | None = None) -> Response:
+def _preview(kind: str, parent, db: Session, v: int | None = None,
+             unit: int | None = None) -> Response:
     """The current version, rendered.
 
     ``v`` is a CACHE KEY, not a selector: it never changes what is rendered.
@@ -398,7 +413,7 @@ def _preview(kind: str, parent, db: Session, v: int | None = None) -> Response:
     if cur is None:
         raise HTTPException(404, "no published version to preview")
     try:
-        svg = render_svg(kind, parent.name, cur.source_text)
+        svg, units = render_svg_units(kind, parent.name, cur.source_text, unit)
     except Exception as e:  # noqa: BLE001 — surface render failures to the UI
         raise HTTPException(502, f"render failed: {e}") from e
     # Immutable ONLY when the caller keyed the URL to the version it wanted and
@@ -406,17 +421,17 @@ def _preview(kind: str, parent, db: Session, v: int | None = None) -> Response:
     # and must never be held.
     fresh = v is not None and v == cur.id
     cache = ("public, max-age=31536000, immutable" if fresh else "no-cache")
-    return Response(content=svg, media_type="image/svg+xml",
-                    headers={"Cache-Control": cache,
-                             "X-Version-Id": str(cur.id)})
+    return _svg_response(svg, units, {"Cache-Control": cache,
+                                      "X-Version-Id": str(cur.id)})
 
 
 @router.get("/symbols/{sym_id}/preview.svg")
-def symbol_preview(sym_id: int, v: int | None = None, db: Session = Depends(get_db)):
+def symbol_preview(sym_id: int, v: int | None = None, unit: int | None = None,
+                   db: Session = Depends(get_db)):
     s = db.get(M.Symbol, sym_id)
     if s is None:
         raise HTTPException(404, "symbol not found")
-    return _preview("symbol", s, db, v)
+    return _preview("symbol", s, db, v, unit)
 
 
 @router.get("/footprints/{fp_id}/preview.svg")
@@ -428,7 +443,8 @@ def footprint_preview(fp_id: int, v: int | None = None, db: Session = Depends(ge
 
 
 # ------------------------------------------------- a NAMED version, rendered
-def _version_preview(kind: str, parent, version_no: int, db: Session) -> Response:
+def _version_preview(kind: str, parent, version_no: int, db: Session,
+                     unit: int | None = None) -> Response:
     """What this template looked like at version N.
 
     The sibling above is deliberately not this: there `v` is a cache key and
@@ -447,12 +463,12 @@ def _version_preview(kind: str, parent, version_no: int, db: Session) -> Respons
     if ver is None:
         raise HTTPException(404, f"{kind} has no version {version_no}")
     try:
-        svg = render_svg(kind, parent.name, ver.source_text)
+        svg, units = render_svg_units(kind, parent.name, ver.source_text, unit)
     except Exception as e:  # noqa: BLE001 — surface render failures to the UI
         raise HTTPException(502, f"render failed: {e}") from e
-    return Response(content=svg, media_type="image/svg+xml",
-                    headers={"Cache-Control": "public, max-age=31536000, immutable",
-                             "X-Version-Id": str(ver.id)})
+    return _svg_response(svg, units,
+                         {"Cache-Control": "public, max-age=31536000, immutable",
+                          "X-Version-Id": str(ver.id)})
 
 
 # The 3D board view of a footprint, on its own. `components` has had one since
@@ -496,11 +512,12 @@ def footprint_version_glb(fp_id: int, version_no: int, db: Session = Depends(get
 
 
 @router.get("/symbols/{sym_id}/versions/{version_no}/preview.svg")
-def symbol_version_preview(sym_id: int, version_no: int, db: Session = Depends(get_db)):
+def symbol_version_preview(sym_id: int, version_no: int, unit: int | None = None,
+                           db: Session = Depends(get_db)):
     s = db.get(M.Symbol, sym_id)
     if s is None:
         raise HTTPException(404, "symbol not found")
-    return _version_preview("symbol", s, version_no, db)
+    return _version_preview("symbol", s, version_no, db, unit)
 
 
 @router.get("/footprints/{fp_id}/versions/{version_no}/preview.svg")

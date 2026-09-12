@@ -21,13 +21,84 @@
  *  row loads every render at once and defeats the point of `loading="lazy"`,
  *  so `lazy` switches to a plain `<img>` that falls back to a placeholder on
  *  error. Pass `lazy` when the preview is one of many.
+ *
+ *  **A multi-unit symbol is paged, not tiled.** `kicad-cli sym export svg`
+ *  plots one file per unit and the platform drew whichever sorted first, so a
+ *  dual op-amp looked single and a 10-bank STM32 showed one bank with nothing
+ *  on screen admitting the rest existed. The server now takes `?unit=N` and
+ *  answers with `X-Unit-Count`; this component reads that header and draws the
+ *  ‹ A · 1/10 › control. No call site passes anything — the count is a fact
+ *  about the drawing, and only the renderer knows it.
  */
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
-import { errorMessage, isAbortError } from "../api";
+import { API_URL, errorMessage, isAbortError } from "../api";
 import { useStickyState } from "../useStickyState";
 import { Spinner } from "./Ui";
 import Viewer3D from "./Viewer3D";
+
+/** KiCad's own unit suffix: 1 -> A, 26 -> Z, 27 -> AA. Mirrors
+ *  `api/app/services/svg_units.py::unit_letter`. */
+function unitLetter(unit: number): string {
+  let out = "";
+  for (let n = unit; n > 0; n = Math.floor((n - 1) / 26)) {
+    out = String.fromCharCode(65 + ((n - 1) % 26)) + out;
+  }
+  return out || "A";
+}
+
+/** `?unit=` is added only past the first, so a single-unit symbol and every
+ *  footprint keep the URL they have always had — and with it their place in
+ *  the browser cache and the server's `immutable` promise. */
+export function unitUrl(src: string, unit: number): string {
+  if (unit <= 1) return src;
+  return `${src}${src.includes("?") ? "&" : "?"}unit=${unit}`;
+}
+
+/** The ‹ A · 1/10 › pager. ONE control for every view of a multi-unit symbol —
+ *  the preview here and the before/after panes in `GeometryDiff` — so the two
+ *  cannot drift on what a unit is called or how far it can be stepped. Renders
+ *  nothing at all below two units, which is most of the library.
+ *
+ *  `className` places it: the preview floats it over the drawing
+ *  (`unit-nav-float`), the diff sits it in the flow under the panes. */
+export function UnitPager({
+  unit,
+  count,
+  onChange,
+  className = "",
+}: {
+  unit: number;
+  count: number;
+  onChange: (unit: number) => void;
+  className?: string;
+}) {
+  if (count <= 1) return null;
+  const step = (by: number) => onChange(Math.min(Math.max(unit + by, 1), count));
+  return (
+    <div className={`seg unit-nav ${className}`.trim()} role="group" aria-label="Symbol unit">
+      <button type="button" onClick={() => step(-1)} disabled={unit <= 1} aria-label="Previous unit">
+        ‹
+      </button>
+      {/* The letter is the half that is usable: KiCad prints the unit after
+          the reference — U7A, U7B — so it is what you look for on a sheet.
+          The fraction says how much of the part is off screen. */}
+      <span className="unit-nav-label">
+        {unitLetter(unit)} · {unit}/{count}
+      </span>
+      <button type="button" onClick={() => step(1)} disabled={unit >= count} aria-label="Next unit">
+        ›
+      </button>
+    </div>
+  );
+}
+
+interface UnitNav {
+  /** The `src` these numbers describe — see the `nav` state. */
+  src: string | null;
+  unit: number;
+  count: number;
+}
 
 type State =
   | { kind: "loading" }
@@ -49,6 +120,14 @@ export interface GeometryPreviewProps {
   style?: CSSProperties;
   /** One of many — use a lazy `<img>` rather than a fetch. See the header. */
   lazy?: boolean;
+  /** CONTROLLED unit paging, for a caller that produced the SVG itself. The
+   *  paste box POSTs unsaved text and hands over a `blob:` URL, and a blob
+   *  carries no response headers — so it has no `X-Unit-Count` to read and
+   *  must be told. Omit all three and the component learns the count from its
+   *  own response, which is what every other call site does. */
+  unitCount?: number;
+  unit?: number;
+  onUnitChange?: (unit: number) => void;
 }
 
 export default function GeometryPreview({
@@ -58,8 +137,18 @@ export default function GeometryPreview({
   className = "",
   style,
   lazy = false,
+  unitCount: controlledCount,
+  unit: controlledUnit,
+  onUnitChange,
 }: GeometryPreviewProps) {
   const [state, setState] = useState<State>({ kind: "loading" });
+  // Which unit is on screen, and how many there are — tagged with the `src`
+  // they were learned from, so pointing the component at another drawing
+  // resets to unit 1 without an effect that would fetch the old unit first.
+  const [nav, setNav] = useState<UnitNav>({ src, unit: 1, count: 1 });
+  const controlled = onUnitChange !== undefined;
+  const unit = controlled ? (controlledUnit ?? 1) : nav.src === src ? nav.unit : 1;
+  const unitCount = controlled ? (controlledCount ?? 1) : nav.src === src ? nav.count : 1;
   const frame = `preview-fill ${className}`.trim();
 
   useEffect(() => {
@@ -67,8 +156,22 @@ export default function GeometryPreview({
     let objectUrl: string | null = null;
     const ctrl = new AbortController();
     setState({ kind: "loading" });
-    fetch(src, { signal: ctrl.signal })
+    // `include`, not the `same-origin` default, for the reason `api.ts` gives:
+    // dev runs the SPA on :5173 and the API on :8020, so every preview request
+    // is cross-origin and the session cookie is left behind. The API is
+    // default-deny, so the panel answered 401 and drew its error story instead
+    // of the symbol.
+    // A controlled caller owns the URL and the count: its `src` is already the
+    // unit it asked for, so neither the query nor the header applies.
+    fetch(controlled ? src : unitUrl(src, unit), { credentials: "include", signal: ctrl.signal })
       .then(async (res) => {
+        // Sent on every symbol render (routers/libraries.py::_svg_response)
+        // and exposed through CORS in main.py. Absent on a footprint, and
+        // absent on an error response — either way the part has one unit.
+        const count = Number(res.headers.get("X-Unit-Count") ?? "1");
+        if (!controlled) {
+          setNav({ src, unit, count: Number.isFinite(count) && count > 0 ? count : 1 });
+        }
         if (res.status === 404) {
           // The endpoints answer 404 with a sentence worth showing — "this
           // version pins no footprint", "no published version". Prefer it.
@@ -97,7 +200,7 @@ export default function GeometryPreview({
       ctrl.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [src, missingText, lazy]);
+  }, [src, missingText, lazy, unit, controlled]);
 
   if (src === null) {
     return (
@@ -117,6 +220,15 @@ export default function GeometryPreview({
             src={src}
             alt={alt}
             loading="lazy"
+            // A cross-origin <img> carries NO cookie, not even a SameSite=lax
+            // one, so under a dev server aimed at the API's own origin every
+            // thumbnail came back 401 and drew the placeholder. This attribute
+            // is what makes the browser attach the session; the API answers
+            // with an explicit origin and allow_credentials (main.py), which is
+            // what a credentialed image load requires. Only when the API is on
+            // another origin — deployed, API_URL is "" and the request is
+            // same-origin, where the attribute would buy nothing.
+            crossOrigin={API_URL ? "use-credentials" : undefined}
             onError={() => setState({ kind: "missing", message: missingText })}
           />
         )}
@@ -133,6 +245,14 @@ export default function GeometryPreview({
   return (
     <div className={frame} style={style}>
       {body}
+      <UnitPager
+        unit={unit}
+        count={unitCount}
+        className="unit-nav-float"
+        onChange={(next) =>
+          controlled ? onUnitChange(next) : setNav({ src, count: unitCount, unit: next })
+        }
+      />
     </div>
   );
 }

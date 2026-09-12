@@ -18,7 +18,7 @@ RUN apt-get update \
     && pip3 install --no-cache-dir --break-system-packages --ignore-installed \
         fastapi "uvicorn[standard]" pydantic
 
-COPY server.py project_ops.py sim_spice.py sim_worker.py board_template.kicad_pcb /srv/
+COPY server.py project_ops.py sim_spice.py sim_worker.py svg_units.py board_template.kicad_pcb /srv/
 # Custom color themes (e.g. Skyline-7S) so themed renders match the desktop.
 # Server runs as root, KiCad 10 config path:
 COPY themes/*.json /root/.config/kicad/10.0/colors/

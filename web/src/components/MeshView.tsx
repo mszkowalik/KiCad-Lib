@@ -123,7 +123,9 @@ function buildOcctObject(result: OcctResult): THREE.Group {
 }
 
 async function loadModel(url: string, format: MeshFormat): Promise<THREE.Object3D> {
-  const res = await fetch(url);
+  // `include`: the /files mirror is behind the default-deny gate, and dev
+  // serves the SPA from another origin than the API (GeometryPreview.tsx).
+  const res = await fetch(url, { credentials: "include" });
   if (!res.ok) throw new Error(`file fetch failed (HTTP ${res.status})`);
   const buf = await res.arrayBuffer();
 

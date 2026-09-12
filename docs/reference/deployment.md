@@ -16,12 +16,15 @@ every push to `main` (pull requests build without pushing);
   reintroduce an absolute default (see `web/CLAUDE.md`).
 - **`compose.yaml` must ask for `target: dev`** on the web service, or dev
   gets the nginx image instead of the Vite server.
-- **`render/` carries copies of four files from `api/app/services/`**
-  (`project_ops.py`, `sim_spice.py`, `board_template.kicad_pcb`,
-  `themes/Skyline-7S.json`). The workflow's `guard` job fails the build when
-  they are not byte-identical, so edit both together. The theme is on that
-  list because kicad-cli renders with it and the browser's own schematic
-  renderer reads the same file through `GET /api/sim/theme`.
+- **`render/` carries copies of five files from `api/app/services/`**
+  (`project_ops.py`, `sim_spice.py`, `svg_units.py`,
+  `board_template.kicad_pcb`, `themes/Skyline-7S.json`). The workflow's `guard`
+  job fails the build when they are not byte-identical, so edit both together.
+  The theme is on that list because kicad-cli renders with it and the browser's
+  own schematic renderer reads the same file through `GET /api/sim/theme`.
+  `svg_units.py` is there because BOTH renderers have to pick a symbol's unit
+  out of the per-unit files kicad-cli writes, and it imports nothing, which is
+  what lets one file be a package module here and a flat module there.
 
 `linux/amd64` only, on purpose: the render image's `kicad/kicad` base is
 published amd64-only, and the api image compiles LibreDWG from source, which

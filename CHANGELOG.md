@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-09-13 — A symbol shows every unit, one at a time
+
+- **A multi-unit symbol drew only its first unit, everywhere.** A dual op-amp
+  looked like a single one and a 10-bank STM32 showed one bank, on the
+  component page, the template page, the review workbench, the change feed and
+  the paste box. `kicad-cli sym export svg` plots ONE FILE PER UNIT and has no
+  switch to write one file, and every preview took the first of those files.
+- **Every symbol preview now carries a ‹ A · 1/10 › pager.** The renderer takes
+  `?unit=N` and answers with an `X-Unit-Count` header; one control, shared by
+  the preview and the before/after diff panes, reads it. The letter is KiCad's
+  own — unit 1 is A, the suffix it prints after the reference as `U7A`.
+- **The paste box pages too**, by re-rendering the unsaved text. A `blob:` URL
+  carries no headers, so there is nothing else it could read the count from.
+- **A single-unit symbol and every footprint are untouched**, URL included:
+  `?unit=` is only added past the first unit, so their renders keep their place
+  in the browser cache and the server's `immutable` promise.
+- **Previews were answering 401 on a dev server.** Only `request()` in `api.ts`
+  asked for the session cookie, so the big preview's own `fetch` — and the
+  thumbnails, and the paste-box render, and the STEP/IGES viewer — were sent
+  cross-origin without it and refused by the default-deny gate. The deployed
+  app is same-origin and never showed this.
+- **The geometry review workbench drew nothing at all.** Its preview pane sat
+  directly in a flex COLUMN, where `.preview-fill`'s `flex: 1` (basis 0) beat
+  the `height: 420px` beside it, so the box collapsed to its own 10px of
+  padding and border. A symbol or footprint review had no drawing to review.
+
 ## 2026-09-13 — Counts stop stacking one digit per line
 
 - **Library health reads again.** Every three-digit count on Reviews → Library

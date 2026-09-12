@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { errorMessage, fetchSvgText, isAbortError } from "../api";
+import { errorMessage, fetchSvgUnits, isAbortError } from "../api";
+import { UnitPager, unitUrl } from "./GeometryPreview";
 import { ErrorBanner, Spinner } from "./Ui";
 
 /** Before, after, and the difference — for a symbol or a land pattern.
@@ -18,7 +19,13 @@ import { ErrorBanner, Spinner } from "./Ui";
  *  reports the whole drawing as moved. That is still the right answer to
  *  "did this change" — it is only an imprecise answer to "where" — and it does
  *  not arise for the common cases (a pad resize inside an unchanged courtyard,
- *  a silkscreen width, a text move). */
+ *  a silkscreen width, a text move).
+ *
+ *  A multi-unit symbol is compared ONE UNIT AT A TIME, through the same
+ *  `UnitPager` the preview uses — kicad-cli renders one unit per file, so
+ *  there is no single picture of the whole part to difference. The count comes
+ *  from the AFTER render: it is the version being reviewed, and a unit the
+ *  edit deleted has no "after" to blend against anyway. */
 
 const STAGE = 190; // px — the difference stage's usable box
 
@@ -60,6 +67,12 @@ export default function GeometryDiff({
   const [after, setAfter] = useState<Dims | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Tagged with the path they belong to, so opening another change starts at
+  // unit 1 instead of inheriting the last one paged to. Same shape as the
+  // preview's `nav` state.
+  const [nav, setNav] = useState({ path: afterPath, unit: 1, count: 1 });
+  const unit = nav.path === afterPath ? nav.unit : 1;
+  const unitCount = nav.path === afterPath ? nav.count : 1;
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -68,12 +81,13 @@ export default function GeometryDiff({
     setBefore(null);
     setAfter(null);
     Promise.all([
-      fetchSvgText(afterPath, ctrl.signal),
-      beforePath ? fetchSvgText(beforePath, ctrl.signal) : Promise.resolve(null),
+      fetchSvgUnits(unitUrl(afterPath, unit), ctrl.signal),
+      beforePath ? fetchSvgUnits(unitUrl(beforePath, unit), ctrl.signal) : Promise.resolve(null),
     ])
       .then(([a, b]) => {
-        setAfter(parseDims(a));
-        setBefore(b === null ? null : parseDims(b));
+        setNav({ path: afterPath, unit, count: a.units });
+        setAfter(parseDims(a.text));
+        setBefore(b === null ? null : parseDims(b.text));
         setLoading(false);
       })
       .catch((err) => {
@@ -82,7 +96,7 @@ export default function GeometryDiff({
         setLoading(false);
       });
     return () => ctrl.abort();
-  }, [beforePath, afterPath]);
+  }, [beforePath, afterPath, unit]);
 
   // One scale for both, so the overlay is a real comparison and not two
   // pictures each fitted to its own box.
@@ -94,9 +108,22 @@ export default function GeometryDiff({
     return Math.min(STAGE / wMm, STAGE / hMm);
   }, [before, after]);
 
-  if (loading) return <Spinner label="rendering both versions" />;
-  if (error !== null) return <ErrorBanner message={error} />;
-  if (after === null) return <div className="muted">This version could not be rendered.</div>;
+  const pager = (
+    <UnitPager
+      unit={unit}
+      count={unitCount}
+      className="unit-nav-row"
+      onChange={(next) => setNav({ path: afterPath, count: unitCount, unit: next })}
+    />
+  );
+
+  // The pager rides along with every outcome: a unit that fails to render must
+  // still leave a way back to one that does.
+  if (loading) return <><Spinner label="rendering both versions" />{pager}</>;
+  if (error !== null) return <><ErrorBanner message={error} />{pager}</>;
+  if (after === null) {
+    return <><div className="muted">This version could not be rendered.</div>{pager}</>;
+  }
 
   const sizeSame =
     before !== null && before.wMm === after.wMm && before.hMm === after.hMm;
@@ -117,6 +144,7 @@ export default function GeometryDiff({
   );
 
   return (
+    <>
     <div className="diff-panes">
       <div className="diff-pane">
         <span className="diff-pane-label">{beforeLabel}</span>
@@ -150,5 +178,9 @@ export default function GeometryDiff({
         </div>
       ) : null}
     </div>
+    {/* Outside `.diff-panes`, which is a flex ROW — inside it the pager became
+        a fourth pane standing beside the Difference one. */}
+    {pager}
+    </>
   );
 }

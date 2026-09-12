@@ -70,6 +70,12 @@ app.add_middleware(
     # never "*" — the CORS spec forbids the two together, and a wildcard here
     # would silently stop the dev login from working.
     allow_credentials=True,
+    # A cross-origin response hands JavaScript only the six CORS-safelisted
+    # headers unless it says otherwise. `X-Unit-Count` is how a symbol preview
+    # learns the drawing has ten units to page through (services/svg_units.py),
+    # so without this line every multi-unit symbol loses its arrows in dev and
+    # keeps them in production — the worst way for a bug to behave.
+    expose_headers=["X-Unit-Count", "X-Version-Id"],
 )
 
 app.include_router(auth_router.router)

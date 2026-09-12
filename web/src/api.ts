@@ -899,16 +899,25 @@ export function deleteSimModel(id: number): Promise<{ ok: true; model: string }>
 }
 
 /** Render UNSAVED geometry so the paste box can show it before filing.
- *  Returns an object URL the caller must revoke. Writes nothing. */
+ *  Returns an object URL the caller must revoke, and the symbol's unit count.
+ *  Writes nothing.
+ *
+ *  `unit` is 1-based, as KiCad numbers them. A blob: URL carries no response
+ *  headers, so the paste box cannot learn the count the way every other
+ *  preview does — it has to come back here, and the caller re-POSTs to page. */
 export async function renderTemplateSource(
   kind: TemplateKind,
   source_text: string,
   signal?: AbortSignal,
-): Promise<string> {
+  unit?: number,
+): Promise<{ url: string; units: number }> {
   const res = await fetch(`${API_URL}/api/${kind}/preview.svg`, {
     method: "POST",
+    // The API is default-deny and a dev server is cross-origin, so the session
+    // cookie has to be asked for — see `request()` above.
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source_text }),
+    body: JSON.stringify({ source_text, unit }),
     signal,
   });
   if (!res.ok) {
@@ -921,7 +930,11 @@ export async function renderTemplateSource(
     }
     throw new ApiError(res.status, detail || `${res.status} ${res.statusText}`);
   }
-  return URL.createObjectURL(await res.blob());
+  const units = Number(res.headers.get("X-Unit-Count") ?? "1");
+  return {
+    url: URL.createObjectURL(await res.blob()),
+    units: Number.isFinite(units) && units > 0 ? units : 1,
+  };
 }
 
 // -------------------------------------------------------------- datasheets
@@ -5352,9 +5365,24 @@ export function templateVersionPreviewUrl(
  *  at one shared scale so a difference overlay lines up. An `<img>` would show
  *  the picture but never tell the page how big the drawing is. */
 export async function fetchSvgText(path: string, signal?: AbortSignal): Promise<string> {
+  return (await fetchSvgUnits(path, signal)).text;
+}
+
+/** The same render, plus how many units the symbol has.
+ *
+ *  `X-Unit-Count` is set by every symbol render (routers/libraries.py) and
+ *  listed in the API's CORS `expose_headers` — without that listing a
+ *  cross-origin dev browser is handed `null` here and every multi-unit symbol
+ *  silently loses its pager in dev while keeping it in production. Anything
+ *  that is not a symbol simply reports 1. */
+export async function fetchSvgUnits(
+  path: string,
+  signal?: AbortSignal,
+): Promise<{ text: string; units: number }> {
   const res = await fetch(`${API_URL}${path}`, { credentials: "include", signal });
   if (!res.ok) throw new ApiError(res.status, `render failed (${res.status})`);
-  return res.text();
+  const units = Number(res.headers.get("X-Unit-Count") ?? "1");
+  return { text: await res.text(), units: Number.isFinite(units) && units > 0 ? units : 1 };
 }
 
 // --------------------------------------------------------------- simulation

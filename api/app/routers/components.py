@@ -22,7 +22,7 @@ from ..services.generator import (
 )
 from ..services import signoff
 from ..services.mirror import top_level_of, update_mirror_symbols
-from ..services.render import render_svg
+from ..services.render import render_svg, render_svg_units
 from .util import (
     actor_of,
     audit,
@@ -494,7 +494,8 @@ def create_version(comp_id: int, body: VersionCreate, request: Request,
 
 
 @router.get("/{comp_id}/versions/{version_no}/symbol.svg")
-def symbol_svg(comp_id: int, version_no: int, db: Session = Depends(get_db)):
+def symbol_svg(comp_id: int, version_no: int, unit: int | None = None,
+               db: Session = Depends(get_db)):
     comp = _get_component(db, comp_id)
     cv = _get_version(comp, version_no)
     if cv.symbol_version is None:
@@ -511,8 +512,12 @@ def symbol_svg(comp_id: int, version_no: int, db: Session = Depends(get_db)):
     )
     sym = build_component_symbol(template, comp.name, props, cv.removed_properties)
     lib_text = build_library_text(meta_lib, [sym])
-    svg = render_svg("symbol", comp.name, lib_text)
-    return Response(content=svg, media_type="image/svg+xml", headers={"Cache-Control": "max-age=300"})
+    # `X-Unit-Count` is how the viewer learns there are ten banks to page
+    # through — see routers/libraries.py::_svg_response.
+    svg, units = render_svg_units("symbol", comp.name, lib_text, unit)
+    return Response(content=svg, media_type="image/svg+xml",
+                    headers={"Cache-Control": "max-age=300",
+                             "X-Unit-Count": str(units)})
 
 
 @router.get("/{comp_id}/versions/{version_no}/footprint.svg")

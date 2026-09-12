@@ -1206,6 +1206,8 @@ dl.kv {
   background: var(--kicad-canvas);
   padding: 4px;
   overflow: hidden;
+  /* the containing block for .unit-nav; .viewer3d-wrap already declared it */
+  position: relative;
 }
 
 .preview-fill img {
@@ -1286,6 +1288,52 @@ dl.kv {
 .seg button.on {
   color: var(--accent);
   background: var(--accent-soft);
+}
+
+.seg button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Unit pager for a multi-unit symbol (components/GeometryPreview.tsx). One
+   control, two placements: `unit-nav-float` rides over the drawing, because
+   the preview frame is sized by its caller and a bar above or below it would
+   change every caller's layout to serve the handful of parts that have more
+   than one unit; `unit-nav-row` sits in the flow under the diff panes, which
+   have no single canvas to float over. */
+.unit-nav {
+  background: var(--surface);
+}
+
+.unit-nav-float {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  opacity: 0.92;
+}
+
+.unit-nav-row {
+  margin: 8px auto 0;
+  width: fit-content;
+}
+
+.unit-nav button {
+  padding: 1px 9px;
+  font-size: 14px;
+  line-height: 1.2;
+  color: var(--text);
+}
+
+.unit-nav-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  padding: 2px 8px;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  align-self: center;
 }
 
 /* 3D viewer (<model-viewer>) */
@@ -4756,7 +4804,17 @@ a.check-cell:hover {
   min-width: 0;
   height: 180px;
 }
-.workbench-preview-lg { height: 420px; }
+/* `flex: none` because `.preview-fill` is `flex: 1` — basis 0 — and this one
+   sits DIRECTLY in `.workbench-side`, a flex COLUMN, where the basis is the
+   height and beats the rule above it. The pane collapsed to its 4px padding
+   plus border (10px measured) and drew nothing at all: a geometry review
+   showed no drawing to review. The pair in `.workbench-previews` is unaffected
+   — that is a flex ROW, where the basis is the width, which is what `flex: 1`
+   is wanted for there. */
+.workbench-preview-lg {
+  height: 420px;
+  flex: none;
+}
 .workbench-datasheet {
   width: 100%;
   height: 62vh;

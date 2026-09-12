@@ -21,6 +21,7 @@ import threading
 from pathlib import Path
 
 import sim_spice
+import svg_units
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from project_ops import OpError, run_op
@@ -78,6 +79,10 @@ class RenderRequest(BaseModel):
     name: str
     source_text: str
     theme: str = ""  # kicad-cli color theme name; "" = default
+    # Symbols only: which unit to send back, 1-based as KiCad numbers them.
+    # None means the first. Out of range is clamped, never an error — see
+    # svg_units.select_unit.
+    unit: int | None = None
 
 
 @app.get("/health")
@@ -119,6 +124,14 @@ def render(req: RenderRequest):
             raise HTTPException(
                 500, f"kicad-cli failed (rc={proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}"
             )
+        # `sym export svg` writes NAME_unit1.svg, NAME_unit2.svg, ... and has
+        # no switch to write one file, so the file list IS the unit count.
+        # X-Unit-Count is how the api learns it (svg_units.py, shared with the
+        # api byte for byte).
+        if req.kind == "symbol":
+            data, count = svg_units.select_unit(outputs, req.unit)
+            return Response(content=data, media_type="image/svg+xml",
+                            headers={"X-Unit-Count": str(count)})
         media = "model/gltf-binary" if req.kind == "footprint3d" else "image/svg+xml"
         return Response(content=outputs[0].read_bytes(), media_type=media)
 

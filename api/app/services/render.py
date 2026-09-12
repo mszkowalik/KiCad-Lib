@@ -4,6 +4,11 @@ Two modes (config RENDER_MODE):
   http   — POST to the render container (compose default)
   local  — invoke kicad-cli directly (dev on the Mac, KICAD_CLI path)
 Results are cached on disk keyed by content hash.
+
+A SYMBOL render also answers "how many units?". kicad-cli plots one file per
+unit and nothing here can merge them, so the caller has to be able to ask for
+unit 3 and to know that there are ten — see `svg_units.py`, and the
+`X-Unit-Count` header the routers put it in.
 """
 from __future__ import annotations
 
@@ -15,38 +20,68 @@ from pathlib import Path
 import httpx
 
 from ..config import settings
+from .svg_units import select_unit
 
 
-def render_svg(kind: str, name: str, source_text: str) -> bytes:
+def render_svg(kind: str, name: str, source_text: str, unit: int | None = None) -> bytes:
     """kind: symbol | footprint (SVG) | footprint3d (binary GLB board view)."""
+    return render_svg_units(kind, name, source_text, unit)[0]
+
+
+def render_svg_units(kind: str, name: str, source_text: str,
+                     unit: int | None = None) -> tuple[bytes, int]:
+    """The render, and how many units the symbol has (1 for anything else).
+
+    The count comes back beside the bytes because only the renderer ever sees
+    it: it is how many files kicad-cli wrote, and nothing in the stored source
+    is a reliable substitute — a `(symbol "X_2_1")` entry may be an empty
+    alternate body style. It is cached with the drawing so a page flip costs
+    the same 2 ms a re-render of unit 1 does.
+    """
     assert kind in ("symbol", "footprint", "footprint3d")
     theme = settings.symbol_theme if kind == "symbol" else settings.footprint_theme
     ext = "glb" if kind == "footprint3d" else "svg"
-    digest = hashlib.sha256(f"{kind}\x00{name}\x00{theme}\x00{source_text}".encode()).hexdigest()
+    # The unit joins the key for a SYMBOL only: two units of one symbol are two
+    # pictures of the same source, and a cache that ignored it would serve
+    # whichever was asked for first for every unit after it. A footprint keeps
+    # the original key so the ~400 ms cold render of every land pattern in the
+    # library is not thrown away for a field that can never apply to it.
+    unit_key = f"unit{unit or 1}\x00" if kind == "symbol" else ""
+    digest = hashlib.sha256(
+        f"{kind}\x00{name}\x00{theme}\x00{unit_key}{source_text}".encode()
+    ).hexdigest()
     cache_file = settings.render_cache_dir / f"{digest}.{ext}"
-    if cache_file.exists():
-        return cache_file.read_bytes()
+    count_file = cache_file.with_suffix(".units")
+    if cache_file.exists() and (kind != "symbol" or count_file.exists()):
+        count = int(count_file.read_text()) if kind == "symbol" else 1
+        return cache_file.read_bytes(), count
 
     if settings.render_mode == "local":
-        data = render_local(kind, name, source_text, settings.kicad_cli, theme,
-                            models_root=str(settings.mirror_dir))
+        data, count = render_local(kind, name, source_text, settings.kicad_cli, theme,
+                                   models_root=str(settings.mirror_dir), unit=unit)
     else:
         resp = httpx.post(
             f"{settings.render_url}/render",
-            json={"kind": kind, "name": name, "source_text": source_text, "theme": theme},
+            json={"kind": kind, "name": name, "source_text": source_text,
+                  "theme": theme, "unit": unit},
             timeout=180,
         )
         resp.raise_for_status()
         data = resp.content
+        count = int(resp.headers.get("X-Unit-Count", "1") or 1)
 
     settings.render_cache_dir.mkdir(parents=True, exist_ok=True)
     cache_file.write_bytes(data)
-    return data
+    if kind == "symbol":
+        count_file.write_text(str(count))
+    return data, count
 
 
 def render_local(kind: str, name: str, source_text: str, kicad_cli: str, theme: str = "",
-                 models_root: str = "") -> bytes:
+                 models_root: str = "", unit: int | None = None) -> tuple[bytes, int]:
     """Shared by the API's local mode and the render container (same logic).
+
+    Returns the bytes and the symbol's unit count (1 for a footprint).
 
     models_root: directory containing 3DModels/ — exported as SEVENSIGMA_DIR so
     kicad-cli resolves the footprints' ${SEVENSIGMA_DIR}/3DModels/... paths.
@@ -88,4 +123,8 @@ def render_local(kind: str, name: str, source_text: str, kicad_cli: str, theme: 
             raise RuntimeError(
                 f"kicad-cli render failed (rc={proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}"
             )
-        return outputs[0].read_bytes()
+        # `sym export svg` writes NAME_unit1.svg, NAME_unit2.svg, … and has no
+        # switch to write one file, so the file list IS the unit count.
+        if kind == "symbol":
+            return select_unit(outputs, unit)
+        return outputs[0].read_bytes(), 1

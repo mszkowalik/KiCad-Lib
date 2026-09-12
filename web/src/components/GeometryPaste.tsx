@@ -54,6 +54,11 @@ export default function GeometryPaste({
   const [previewFor, setPreviewFor] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
+  // A multi-unit symbol renders one unit at a time (services/svg_units.py).
+  // Paging re-POSTs, because a `blob:` URL carries no headers and there is no
+  // saved version to address with `?unit=`.
+  const [unit, setUnit] = useState(1);
+  const [unitCount, setUnitCount] = useState(1);
 
   useEffect(() => {
     setSrc(publishedSource ?? "");
@@ -71,18 +76,21 @@ export default function GeometryPaste({
 
   /** Render the pasted text through kicad-cli without saving anything, so a
    *  mistake is visible before it is published. */
-  const preview = async () => {
+  const preview = async (wantUnit = 1) => {
     if (!src.trim() || rendering) return;
     const ctrl = new AbortController();
     setRendering(true);
     setPreviewError(null);
     try {
-      const url = await renderTemplateSource(kind, src, ctrl.signal);
+      const { url, units } = await renderTemplateSource(kind, src, ctrl.signal, wantUnit);
       setPreviewUrl((old) => {
         if (old) URL.revokeObjectURL(old);
         return url;
       });
       setPreviewFor(src);
+      setUnitCount(units);
+      // Clamped server-side, so this is what actually came back.
+      setUnit(Math.min(Math.max(wantUnit, 1), units));
     } catch (err) {
       if (!isAbortError(err)) setPreviewError(errorMessage(err));
     } finally {
@@ -209,7 +217,7 @@ export default function GeometryPaste({
         >
           {busy ? "Publishing…" : creating ? `Publish new ${noun}` : "Publish version"}
         </button>
-        <button type="button" className="btn" disabled={rendering || !src.trim()} onClick={() => void preview()}>
+        <button type="button" className="btn" disabled={rendering || !src.trim()} onClick={() => void preview(unit)}>
           {rendering ? "Rendering…" : stale ? "Re-render preview" : "Preview"}
         </button>
         {!creating ? (
@@ -241,6 +249,9 @@ export default function GeometryPaste({
             alt={`${noun} preview`}
             className="template-preview"
             missingText={`Nothing to preview — paste a ${noun} above.`}
+            unit={unit}
+            unitCount={unitCount}
+            onUnitChange={(next) => void preview(next)}
           />
         </div>
       ) : null}

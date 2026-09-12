@@ -306,6 +306,34 @@ review workbench drew light strokes on white in both themes.
   preview `fetch`es, so a 404 can show the server's own sentence ("no published
   version") instead of a broken-image icon. A LIST of miniatures must not: one
   fetch per row loads every render at once and defeats `loading="lazy"`.
+- **Every preview request has to ASK for the session.** The API is default-deny
+  and a dev server runs the SPA on another origin than the API, so a plain
+  `fetch` sends no cookie and gets a 401 — which is exactly what happened to
+  the big preview, the paste-box render and the STEP/IGES viewer until
+  2026-09-13, while the deployed same-origin app stayed fine. A `fetch` needs
+  `credentials: "include"`; an `<img>` needs `crossOrigin="use-credentials"`,
+  and it needs it only when `API_URL` is non-empty, because a same-origin image
+  gains nothing from it. A cross-origin `<img>` carries NO cookie otherwise,
+  SameSite=lax included — verified, not assumed.
+- **A multi-unit symbol is PAGED, never tiled.** `kicad-cli sym export svg`
+  writes one file per unit, so the platform drew whichever sorted first and a
+  dual op-amp looked single. The server takes `?unit=N` and answers
+  `X-Unit-Count`; `GeometryPreview` reads that header and draws `UnitPager`,
+  the ONE ‹ A · 1/10 › control, which `GeometryDiff` uses as well so the two
+  cannot disagree about what a unit is called. No call site passes anything —
+  the count is a fact about the drawing and only the renderer knows it. The
+  exception is a caller that renders the SVG ITSELF: the paste box POSTs
+  unsaved text and holds a `blob:` URL, which carries no headers, so it passes
+  `unit` / `unitCount` / `onUnitChange` and re-POSTs to page. A thumbnail
+  (`lazy`) gets no pager: an `<img>` cannot read a header, and arrows do not
+  belong on a miniature.
+- **`.preview-fill` is `flex: 1`, so its `flex-basis` is 0 — and in a flex
+  COLUMN that beats any `height` a caller sets.** The geometry review
+  workbench put one directly in `.workbench-side` and the pane collapsed to its
+  10px of padding and border, showing nothing to review (fixed 2026-09-13 with
+  `flex: none` on `.workbench-preview-lg`). A caller whose frame is a column
+  child must say `flex: none` beside its height. In a flex ROW — the pair in
+  `.workbench-previews` — the basis is the width and `flex: 1` is wanted.
 - **`FootprintPreview` owns the 2D/3D switch**, because a footprint has a board
   to render and a symbol does not. It was written twice — component page and
   template page — and the copies had already drifted on which state they
@@ -313,9 +341,12 @@ review workbench drew light strokes on white in both themes.
   switch.
 
 **A backend SVG cannot be themed by the viewer, and its cache never
-invalidates** (`render.py` keys on `sha256(kind, name, theme, source)` and
-nothing ever deletes from `render_cache_dir`, so changing `symbol_theme` doubles
-the cache instead of clearing it). Measured 2026-09-12 on the running platform:
+invalidates** (`render.py` keys on `sha256(kind, name, theme, unit, source)` —
+the unit for a SYMBOL only, so a footprint keeps the key it has always had —
+and nothing ever deletes from `render_cache_dir`, so changing `symbol_theme`
+doubles the cache instead of clearing it). A ten-unit symbol therefore holds
+ten entries, which is the point: paging to unit 7 is a 2 ms cache hit after
+the first time, not another 500 ms of kicad-cli. Measured 2026-09-12 on the running platform:
 a cold kicad-cli render is **410-550 ms**, a warm cache hit 2-3 ms, and the SVG
 is 10.3 kB against a 3.5 kB source. Parsing that symbol into a draw document
 server-side is **0.74 ms** and 4.0 kB. So if these previews ever move off
@@ -334,10 +365,11 @@ fetches the GLB itself rather than handing `<model-viewer>` a URL, which is
 what gives a clean 404 ("nothing pinned") and a spinner during the slow first
 server render instead of a silently empty canvas.
 
-**`.preview-fill` is `flex: 1`, so it only has a height when its parent gives
-it one.** The component page's preview panel does; a plain card does not, and
-the viewer collapsed to nothing on the template page. Pass a `className` with a
-height (the template page passes `template-preview`).
+**`.preview-fill` only has a height when its caller gives it one** — pass a
+`className` that carries one (the template page passes `template-preview`); a
+plain card gives none and the viewer collapsed to nothing there. The `flex: 1`
+rule behind that, and what it does to a frame inside a flex COLUMN, is under
+`GeometryPreview` above.
 
 
 ## A PDF is framed from a BLOB, never from its URL (`components/PdfFrame.tsx`)

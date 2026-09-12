@@ -90,7 +90,7 @@ Dockerfile, a compose file or the workflow. Four traps it explains:
 - **The deployed UI is same-origin**, so `src/api.ts` must keep defaulting
   `API_URL` to `""`.
 - **`compose.yaml` must ask for `target: dev`** on the web service.
-- **`render/` carries byte-identical copies of four files** from
+- **`render/` carries byte-identical copies of five files** from
   `api/app/services/` — edit both, or the `guard` job fails the build.
 - **The build cache has two halves** (`cache-to` in the workflow, `cache_from`
   in `compose.yaml`). Dropping either brings the 10-minute cold rebuild back.
