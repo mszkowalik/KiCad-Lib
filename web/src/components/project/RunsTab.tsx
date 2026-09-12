@@ -183,7 +183,7 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
 
       {showNew ? (
         <div className="card pad edit-card">
-          <div className="edit-grid">
+          <div className="field-grid">
             <label>
               Label
               <input className="text" value={label} placeholder="Run #1 — prototypes"

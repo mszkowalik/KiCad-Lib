@@ -285,7 +285,7 @@ export default function RunDetail() {
               {actuals && actuals.unknown_rates.length > 0 && (
                 <div className="banner-warn">
                   No stored FX rate for {actuals.unknown_rates.join(", ")} — those amounts are
-                  converted 1:1. Fix it under <Link to="/setup">Setup → Exchange rates</Link>.
+                  converted 1:1. Fix it under <Link to="/admin">Admin → Exchange rates</Link>.
                 </div>
               )}
             </div>
@@ -369,7 +369,7 @@ export default function RunDetail() {
 
         {tab === "devices" && (
           <div className="card pad">
-            <div className="edit-grid">
+            <div className="field-grid">
               <label>
                 Serial numbers <span className="muted">(one per line, saved on Add)</span>
                 <textarea
@@ -536,7 +536,7 @@ function SaleCard({
       {error ? <ErrorBanner message={error} /> : null}
       {saved ? <div className="banner-ok">Saved.</div> : null}
 
-      <div className="edit-grid">
+      <div className="field-grid">
         <label>
           Price per device
           <input
@@ -656,7 +656,7 @@ function SaleCard({
         <div className="banner-warn">
           The sale is in {saleCur} and the cost in {costCur}, and no rate for {saleCur} is
           stored — the margin is left blank rather than converted 1:1. Add the rate under{" "}
-          <Link to="/setup">Setup → Exchange rates</Link>.
+          <Link to="/admin">Admin → Exchange rates</Link>.
         </div>
       ) : null}
       {cost == null && unit != null ? (

@@ -138,7 +138,7 @@ export default function ProductionOverview() {
     if (reg.summary.unknown_rates.length) {
       out.push({
         text: `No exchange rate for ${reg.summary.unknown_rates.join(", ")} — those documents count at face value, so the totals are understated.`,
-        to: "/setup",
+        to: "/admin",
       });
     }
     if (stock) {

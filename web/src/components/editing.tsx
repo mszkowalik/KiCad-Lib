@@ -130,7 +130,7 @@ export function BaseSymbolSelect({
   const inList = pickers !== null && pickers.symbols.some((s) => s.name === value);
   return (
     <select
-      className="sel"
+      className="text mono"
       value={value}
       disabled={pickers === null}
       onChange={(e) => onChange(e.target.value)}
@@ -168,7 +168,7 @@ export function CategorySelect({
   const inList = pickers !== null && value !== "" && pickers.cats.some((c) => c.id === value);
   return (
     <select
-      className="sel"
+      className="text mono"
       value={value === "" ? "" : String(value)}
       disabled={pickers === null}
       onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}

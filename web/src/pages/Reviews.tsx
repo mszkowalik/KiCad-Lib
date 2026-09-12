@@ -672,7 +672,7 @@ function Item({ k, v }: { k: string; v: number }) {
 
 function HealthTab({ health }: { health: ReviewHealth }) {
   return (
-    <div className="edit-grid">
+    <div className="field-grid">
       <CountList title={`Review states (${health.components.total} components)`} counts={health.components.review} />
       <CountList title="Production sign-off" counts={health.components.signoff} />
       <CountList title="Lifecycle" counts={health.components.lifecycle} />

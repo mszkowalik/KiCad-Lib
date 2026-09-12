@@ -49,7 +49,7 @@ export default function KicadClientCards() {
         <h2>Effective URLs</h2>
         <p className="muted">
           Derived from the deployment's <code>Public base URL</code> (an administrator sets it
-          on <Link className="comp-link" to="/setup">Setup</Link>) — these are what KiCad
+          on <Link className="comp-link" to="/admin">Admin</Link>) — these are what KiCad
           clients use. Change the setting and re-download the .kicad_httplib, which
           embeds them.
         </p>

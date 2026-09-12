@@ -27,6 +27,7 @@ import {
   type GitCredential,
   type GitCredentialCheck,
 } from "../api";
+import Field from "./Field";
 import DataTable, { type Column } from "./DataTable";
 import { useDialog } from "./Dialog";
 import { ErrorBanner, Spinner } from "./Ui";
@@ -64,46 +65,41 @@ function CredentialDetail({
   };
 
   return (
-    <div className="cred-detail">
+    <div className="field-stack">
       {error ? <ErrorBanner message={error} /> : null}
 
-      <div className="cred-form">
-        <label>
-          Name
+      <div className="field-row">
+        <Field label="Name">
           <input
             className="row-input"
             value={draft.name}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
           />
-        </label>
-        <label>
-          Host
+        </Field>
+        <Field label="Host">
           <input
             className="row-input"
             placeholder="github.com"
             value={draft.host}
             onChange={(e) => setDraft({ ...draft, host: e.target.value })}
           />
-        </label>
-        <label>
-          Account
+        </Field>
+        <Field label="Account">
           <input
             className="row-input"
             placeholder="the login this token belongs to"
             value={draft.username}
             onChange={(e) => setDraft({ ...draft, username: e.target.value })}
           />
-        </label>
-        <label className="cred-wide">
-          Note
+        </Field>
+        <Field label="Note" wide>
           <input
             className="row-input"
             value={draft.description}
             onChange={(e) => setDraft({ ...draft, description: e.target.value })}
           />
-        </label>
-        <label className="cred-wide">
-          Replace the token
+        </Field>
+        <Field label="Replace the token" wide>
           <input
             className="row-input"
             type="password"
@@ -112,7 +108,7 @@ function CredentialDetail({
             value={token}
             onChange={(e) => setToken(e.target.value)}
           />
-        </label>
+        </Field>
       </div>
 
       <div className="btn-row">
@@ -301,36 +297,32 @@ export default function GitCredentialsCard() {
       </div>
 
       <h3>Add a credential</h3>
-      <div className="cred-form">
-        <label>
-          Name
+      <div className="field-row">
+        <Field label="Name">
           <input
             className="row-input"
             placeholder="GitHub — mszkowalik"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />
-        </label>
-        <label>
-          Host
+        </Field>
+        <Field label="Host">
           <input
             className="row-input"
             placeholder="github.com"
             value={form.host}
             onChange={(e) => setForm({ ...form, host: e.target.value })}
           />
-        </label>
-        <label>
-          Account
+        </Field>
+        <Field label="Account">
           <input
             className="row-input"
             placeholder="optional"
             value={form.username}
             onChange={(e) => setForm({ ...form, username: e.target.value })}
           />
-        </label>
-        <label className="cred-wide">
-          Token
+        </Field>
+        <Field label="Token" wide>
           <input
             className="row-input"
             type="password"
@@ -338,7 +330,7 @@ export default function GitCredentialsCard() {
             value={form.token}
             onChange={(e) => setForm({ ...form, token: e.target.value })}
           />
-        </label>
+        </Field>
       </div>
       <div className="btn-row">
         <button

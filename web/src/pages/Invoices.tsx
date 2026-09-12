@@ -773,7 +773,7 @@ function NewInvoiceCard({
         invoice can pay for several batches, and a position can be split.
       </p>
       {error ? <ErrorBanner message={error} /> : null}
-      <div className="edit-grid">
+      <div className="field-grid">
         <label>
           Supplier
           <input className="text" value={supplier} onChange={(e) => setSupplier(e.target.value)} />

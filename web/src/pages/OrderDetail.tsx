@@ -167,7 +167,7 @@ export default function OrderDetail() {
               {eco && eco.unknown_currencies.length ? (
                 <div className="banner-warn">
                   No exchange rate stored for {eco.unknown_currencies.join(", ")}; those amounts are
-                  not converted. Add it under <Link to="/setup">Setup → Exchange rates</Link>.
+                  not converted. Add it under <Link to="/admin">Admin → Exchange rates</Link>.
                 </div>
               ) : null}
               <p className="muted">
@@ -228,7 +228,7 @@ function HeaderCard({ order, apply }: { order: OrderRow; apply: (w: () => Promis
   return (
     <div className="card pad edit-card">
       <h2 className="card-title">Order</h2>
-      <div className="edit-grid">
+      <div className="field-grid">
         <label className="fw-wide">
           Customer
           <input className="text" list="order-customer-names" value={customer} onChange={(e) => setCustomer(e.target.value)} />
@@ -406,7 +406,7 @@ function LinesCard({
         </table>
       </div>
       {adding ? (
-        <div className="edit-grid">
+        <div className="field-grid">
           <label>
             Project
             <select className="text" value={pid} onChange={(e) => setPid(e.target.value)}>
@@ -558,7 +558,7 @@ function InvoicesCard({ order, apply }: { order: OrderRow; apply: (w: () => Prom
         </div>
       )}
       {adding ? (
-        <div className="edit-grid">
+        <div className="field-grid">
           <label>
             Kind
             <select className="text" value={kind} onChange={(e) => setKind(e.target.value as OrderInvoiceRow["kind"])}>
@@ -809,7 +809,7 @@ function ShipCard({ order, onDone }: { order: OrderRow; onDone: (o: OrderRow) =>
         A batch from before device records offers units “without a serial” instead.
       </p>
       {error ? <ErrorBanner message={error} /> : null}
-      <div className="edit-grid">
+      <div className="field-grid">
         <label>
           Shipped on
           <input className="text" value={date} onChange={(e) => setDate(e.target.value)} />
@@ -876,7 +876,7 @@ function ShipCard({ order, onDone }: { order: OrderRow; onDone: (o: OrderRow) =>
                   </table>
                 </div>
               )}
-              <div className="edit-grid">
+              <div className="field-grid">
                 <label>
                   Quantity (FIFO, {available.toLocaleString()} available)
                   <input className="text num" inputMode="numeric" value={r.qty} onChange={(e) => set(li.id, { qty: e.target.value })} />

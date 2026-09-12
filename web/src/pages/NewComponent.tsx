@@ -86,7 +86,7 @@ export default function NewComponent() {
         {error ? <ErrorBanner message={error} /> : null}
 
         <section className="card pad edit-card">
-          <div className="edit-grid">
+          <div className="field-grid">
             <label>
               Name
               <input

@@ -172,7 +172,7 @@ export default function Projects() {
         {showNew ? (
           <div className="card pad edit-card">
             <div className="card-title">Track a KiCad project from git</div>
-            <div className="edit-grid">
+            <div className="field-grid">
               <label>
                 Name
                 <input className="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="My Board" />

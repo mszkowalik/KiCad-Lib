@@ -22,6 +22,7 @@ import {
   revokeOwnToken,
   type PlatformUser,
 } from "../api";
+import Field from "./Field";
 import { useDialog } from "./Dialog";
 import { ErrorBanner, Spinner } from "./Ui";
 
@@ -69,9 +70,8 @@ export default function AccountSecurityCard() {
       {error ? <ErrorBanner message={error} /> : null}
 
       <h3>Change your password</h3>
-      <div className="cred-form">
-        <label>
-          Current password
+      <div className="field-row">
+        <Field label="Current password">
           <input
             className="row-input"
             type="password"
@@ -79,9 +79,8 @@ export default function AccountSecurityCard() {
             value={pw.current}
             onChange={(e) => setPw({ ...pw, current: e.target.value })}
           />
-        </label>
-        <label>
-          New password
+        </Field>
+        <Field label="New password">
           <input
             className="row-input"
             type="password"
@@ -89,9 +88,8 @@ export default function AccountSecurityCard() {
             value={pw.next}
             onChange={(e) => setPw({ ...pw, next: e.target.value })}
           />
-        </label>
-        <label>
-          Repeat it
+        </Field>
+        <Field label="Repeat it">
           <input
             className="row-input"
             type="password"
@@ -99,7 +97,7 @@ export default function AccountSecurityCard() {
             value={pw.again}
             onChange={(e) => setPw({ ...pw, again: e.target.value })}
           />
-        </label>
+        </Field>
       </div>
       {mismatch ? <p className="err-text">The two new passwords do not match.</p> : null}
       <p className="muted">
@@ -187,16 +185,15 @@ export default function AccountSecurityCard() {
           </tbody>
         </table>
       )}
-      <div className="cred-form">
-        <label>
-          New token label
+      <div className="field-row">
+        <Field label="New token label">
           <input
             className="row-input"
             placeholder="laptop, bench PC…"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
           />
-        </label>
+        </Field>
       </div>
       <div className="btn-row">
         <button

@@ -344,7 +344,7 @@ export function StackupEditor({ stackup, materials, finishes, onClose, onSaved, 
       <div className="fs-modal-box card pad" {...modal.cardProps}>
         <div className="fs-modal-head">
           <b>Stackup</b>
-          <label className="fs-field">
+          <label className="field">
             <span>Name</span>
             <input className="text" value={d.name} onChange={(e) => set({ name: e.target.value })} />
           </label>
@@ -399,7 +399,7 @@ export function StackupEditor({ stackup, materials, finishes, onClose, onSaved, 
                   );
                 if (col === "thickness")
                   return (
-                    <span className="fs-inline">
+                    <span className="field-inline">
                       <SiInput
                         className="fs-num"
                         aria-label="Coating above the substrate"
@@ -590,7 +590,7 @@ export function StackupEditor({ stackup, materials, finishes, onClose, onSaved, 
         />
         <StackupLegend />
 
-        <div className="fs-row">
+        <div className="field-row">
           <button type="button" className="btn btn-sm" onClick={() => addLayer("copper")}>
             + copper layer
           </button>
@@ -752,7 +752,7 @@ export function RulesEditor({ ruleset, finishes, onClose, onSaved, onDeleted }: 
       <div className="fs-modal-box card pad" {...modal.cardProps}>
         <div className="fs-modal-head">
           <b>Production rules</b>
-          <label className="fs-field">
+          <label className="field">
             <span>Name</span>
             <input className="text" value={String(d.name ?? "")} onChange={(e) => setD({ ...d, name: e.target.value })} />
           </label>
@@ -760,7 +760,7 @@ export function RulesEditor({ ruleset, finishes, onClose, onSaved, onDeleted }: 
 
         <div className="fs-rules-grid">
           {groups.map((g) => (
-            <fieldset key={g} className="fs-fieldset">
+            <fieldset key={g} className="fieldset">
               <legend>{g}</legend>
               {RULE_FIELDS.filter((f) => f.group === g).map((f) => (
                 <label key={f.key} className="fs-field-row">
@@ -805,7 +805,7 @@ export function RulesEditor({ ruleset, finishes, onClose, onSaved, onDeleted }: 
               ) : null}
             </fieldset>
           ))}
-          <fieldset className="fs-fieldset fs-span">
+          <fieldset className="fieldset fs-span">
             <legend>Via sizes — the first is the default for every structure</legend>
             <table className="data">
               <thead>

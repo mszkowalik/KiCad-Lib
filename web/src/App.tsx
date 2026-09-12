@@ -33,7 +33,7 @@ import Projects from "./pages/Projects";
 import Reviews from "./pages/Reviews";
 import RunDetail from "./pages/RunDetail";
 import Account from "./pages/Account";
-import Setup from "./pages/Setup";
+import Admin from "./pages/Admin";
 import Simulator from "./pages/Simulator";
 import Skills from "./pages/Skills";
 import Templates from "./pages/Templates";
@@ -122,7 +122,7 @@ function UserMenu() {
   return (
     <span className="topbar-user">
       {/* The name is the door to the account's own settings — git
-          credentials live there, not on the admin Setup page. */}
+          credentials live there, not on the Admin page. */}
       <Link
         className="topbar-username"
         to="/account"
@@ -163,8 +163,8 @@ function Shell() {
             <NavLink to="/reviews" className={navClass}>
               Reviews
             </NavLink>
-            <NavLink to="/setup" className={navClass}>
-              Setup
+            <NavLink to="/admin" className={navClass}>
+              Admin
             </NavLink>
             <UserMenu />
           </nav>
@@ -218,7 +218,7 @@ function Shell() {
             <Route path="/reviews" element={<Reviews />} />
             <Route path="/reviews/checklists" element={<Checklists />} />
           </Route>
-          <Route path="/setup" element={<Setup />} />
+          <Route path="/admin" element={<Admin />} />
           <Route path="/account" element={<Account />} />
           <Route path="/view" element={<FileViewer />} />
 
@@ -234,7 +234,10 @@ function Shell() {
           <Route path="/invoices" element={<Navigate to="/production/invoices" replace />} />
           <Route path="/parts-stock" element={<Navigate to="/production/stock" replace />} />
           <Route path="/jlc-stock" element={<Navigate to="/production/stock" replace />} />
-          <Route path="/kicad" element={<Navigate to="/setup" replace />} />
+          {/* Renamed 2026-09-12 — the page administers the deployment, and the
+              per-user half moved to /account. Both old paths still resolve. */}
+          <Route path="/setup" element={<Navigate to="/admin" replace />} />
+          <Route path="/kicad" element={<Navigate to="/admin" replace />} />
           {/* The approval queue is gone (2026-08-24) — every write publishes.
               Reviews is where a published version is judged now. */}
           <Route path="/proposals" element={<Navigate to="/reviews" replace />} />

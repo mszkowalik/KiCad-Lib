@@ -337,7 +337,7 @@ export default function CostsTab({
         {showCostForm && (
         <div className="card pad edit-card">
         <div className="card-title">{editCostId ? "Edit cost item" : "New cost item"}</div>
-        <div className="edit-grid">
+        <div className="field-grid">
           <label>
             Label
             <input className="text" value={costDraft.label} placeholder="PCB assembly"
@@ -578,7 +578,7 @@ export default function CostsTab({
         {showExtraForm && (
         <div className="card pad edit-card">
         <div className="card-title">{editExtraId ? "Edit extra item" : "New extra item"}</div>
-        <div className="edit-grid">
+        <div className="field-grid">
           <label>
             Label
             <input className="text" value={extraDraft.label} placeholder="SMA – u.FL cable"

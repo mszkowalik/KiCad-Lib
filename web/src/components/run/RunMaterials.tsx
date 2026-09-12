@@ -359,7 +359,7 @@ export default function RunMaterials({
             </button>
           )}
         </div>
-        <div className="edit-grid">
+        <div className="field-grid">
           <label>
             Draw part (MPN)
             <input className="text" value={consMpn} onChange={(e) => setConsMpn(e.target.value)} />

@@ -40,7 +40,7 @@ export default function Account() {
             </dl>
             <p className="muted">
               Other people's accounts are administered on{" "}
-              <Link className="comp-link" to="/setup">
+              <Link className="comp-link" to="/admin">
                 Setup
               </Link>
               {isAdmin ? " → Users." : "."}

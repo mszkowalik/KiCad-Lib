@@ -629,6 +629,128 @@ input.text::placeholder {
   color: var(--muted);
 }
 
+/* ------------------------------------------------------------- form fields */
+
+/* ONE way to label a control. `.field` is a label stacked over its input,
+   `.field-row` puts several side by side, `.fieldset` groups them under a
+   legend, `.field-check` is the checkbox shape. Use the `<Field>` /
+   `<FieldRow>` / `<FieldSet>` components in `components/Field.tsx` rather than
+   the classes directly — see web/CLAUDE.md.
+
+   The two INPUT sizes stay: `.text` is the standard field, `.row-input` the
+   compact one for table rows, filter bars and toolbars, where a full-height
+   input would break the one-line-per-row rule. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 6px 0;
+  min-width: 0;
+}
+.field > span:first-child {
+  color: var(--muted);
+  font-size: 12px;
+}
+/* The hint and the error sit under the control, never beside it: a message
+   that reflows the field it describes moves the thing you are typing into. */
+.field-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+.field-error {
+  color: var(--err);
+  font-size: 12px;
+}
+.field.bad > input,
+.field.bad > select,
+.field.bad > textarea,
+input.text.bad,
+select.text.bad {
+  border-color: var(--err);
+}
+
+.field-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.field-row > .field {
+  flex: 1 1 180px;
+}
+/* A field that holds a long value — a note, a URL, a token — takes the row. */
+.field-row > .field.field-wide {
+  flex-basis: 100%;
+}
+
+/* Many fields at once — an edit form. `.field-row` is for a handful on one
+   line; this one lays out a whole form and reflows by available width rather
+   than at a fixed two columns, which is what `.edit-grid` did and what made a
+   six-field form on a wide page waste half its space. */
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px 14px;
+  align-items: start;
+  margin-bottom: 10px;
+}
+.field-grid > .field.field-wide,
+.field-grid > label.field-wide {
+  grid-column: 1 / -1;
+}
+
+/* A bare <label> inside either container gets the field treatment, so markup
+   written before `<Field>` existed renders identically to markup using it.
+   New code should use the component — see web/CLAUDE.md. */
+.field-row > label,
+.field-grid > label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.field-row > label {
+  flex: 1 1 180px;
+}
+
+.fieldset {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin: 0;
+}
+.fieldset legend {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 4px;
+}
+
+.field-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  cursor: pointer;
+}
+.field-check input {
+  width: auto;
+}
+
+.field-inline {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.field-inline select,
+.field-inline input {
+  flex: 1;
+  min-width: 0;
+}
+
 input.search {
   width: 340px;
   font-family: var(--mono);
@@ -1431,42 +1553,6 @@ dl.kv {
 .edit-card {
   border-color: var(--accent);
   flex-shrink: 0;
-}
-
-.edit-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px 14px;
-  margin-bottom: 10px;
-}
-
-.edit-grid label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  font-family: var(--mono);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--muted);
-}
-
-select.sel {
-  font: inherit;
-  font-family: var(--mono);
-  font-size: 13px;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 6px 8px;
-  max-width: 100%;
-}
-
-select.sel:focus {
-  outline: 2px solid var(--accent-soft);
-  border-color: var(--accent);
 }
 
 .edit-hint {
@@ -2445,9 +2531,13 @@ table.kv.sim-map-table select {
 }
 
 /* ----------------------------------------------------------- kicad page */
-.kicad-page { display: flex; flex-direction: column; gap: 14px; max-width: 860px; }
-.kicad-page h1 { margin: 0 0 2px; }
-.kicad-page h2 { margin: 0 0 6px; font-size: 1.05rem; }
+/* The Admin page. It carried `max-width: 860px` and was the ONE page in the app
+   narrower than `.page` — every other page sits at
+   `min(1680px, max(1100px, 80%))`, and the cap made the same cards render at
+   two different widths depending on which page you opened them from. */
+.admin-page { display: flex; flex-direction: column; gap: 14px; }
+.admin-page h1 { margin: 0 0 2px; }
+.admin-page h2 { margin: 0 0 6px; font-size: 1.05rem; }
 .kicad-steps { margin: 10px 0 0; padding-left: 20px; }
 .kicad-steps li { margin: 3px 0; }
 .btn-primary {
@@ -2483,16 +2573,22 @@ table.kv td:first-child { color: var(--ink-3, #697280); }
    input rendered about 50px wide, showing "http:" and nothing else.
    Fixed layout with explicit columns is the fix — the value column now has a
    width of its own instead of inheriting zero from its content. */
+/* The explanation column is prose and the value column holds one input, so
+   neither wants the whole of a wide page: at 60/40 of 1368px a label and its
+   field ended up half a screen apart (2026-09-12, when the Admin page stopped
+   being capped at 860px). Cap the TABLE rather than the page — the cards below
+   it use the full width legitimately. */
 table.kv.settings-table {
   width: 100%;
+  max-width: 1000px;
   table-layout: fixed;
 }
 table.kv.settings-table td:nth-child(1) {
-  width: 60%;
+  width: 58%;
   padding-right: 24px;
 }
 table.kv.settings-table td:nth-child(2) {
-  width: 40%;
+  width: 42%;
 }
 /* The label line and its pills sit on one row; only the help text wraps. */
 table.kv.settings-table td:nth-child(1) > div:first-child {
@@ -4398,27 +4494,7 @@ a.check-cell:hover {
   background: var(--surface-2);
 }
 
-/* Account page: the git-credential forms. A label above its input, wrapping
-   into as many columns as the card is wide; `cred-wide` spans the row for the
-   fields that hold a long value (a note, a token). */
-.cred-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  margin: 10px 0;
-}
-.cred-form label {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  flex: 1 1 180px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.cred-form label.cred-wide {
-  flex-basis: 100%;
-}
-.cred-detail {
+.field-stack {
   padding: 4px 2px 10px;
 }
 .cred-results ul {
@@ -4488,13 +4564,6 @@ a.check-cell:hover {
    `align-items: end` used to bottom-align items of differing height, which put
    the Role label lower than the other three and left the Create button
    stretched across whatever column the auto-fit happened to give it. */
-.user-form {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 10px 12px;
-  align-items: start;
-  margin-bottom: 12px;
-}
 
 /* The "Add a user" heading sat flush against the table above it. */
 .users-add-heading {
@@ -4502,7 +4571,9 @@ a.check-cell:hover {
   margin-bottom: 10px;
 }
 
-.user-form .user-form-submit {
+/* A submit button inside a `.field-grid` spans the row rather than sitting in
+   a column of its own. */
+.field-grid .field-grid-submit {
   grid-column: 1 / -1;
   justify-self: start;
 }
@@ -4810,7 +4881,6 @@ a.check-cell:hover {
   padding: 0 5px;
   font-size: 0.72rem;
 }
-
 
 /* The change feed's kind filters. A plain row of the same chips as the tabs
    above — NOT a second `.subnav`, which paints a surface bar and a bottom
@@ -5295,7 +5365,6 @@ a.check-cell:hover {
   font-size: 12px;
 }
 
-
 /* ------------------------------------------------------------ field solver */
 .fs-page { display: flex; flex-direction: column; gap: 12px; }
 .fs-board-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -5315,17 +5384,12 @@ a.check-cell:hover {
 @media (max-width: 1000px) { .fs-lower { grid-template-columns: minmax(0, 1fr); } }
 .fs-props { display: flex; flex-direction: column; gap: 10px; }
 .fs-results { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.fs-fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; margin: 0; }
-.fs-fieldset legend { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 4px; }
-.fs-field { display: flex; flex-direction: column; gap: 3px; margin: 6px 0; min-width: 0; }
-.fs-field > span:first-child { color: var(--muted); font-size: 12px; }
+/* Field-solver-specific layout only. The form vocabulary it used to own —
+   `fs-field`, `fs-fieldset`, `fs-row`, `fs-check`, `fs-inline` — was promoted
+   to the shared `.field` family below (2026-09-12): every page had been
+   inventing its own label-and-group wrapper, and the field solver's was simply
+   the one that had been thought about. */
 .fs-field-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; }
-.fs-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
-.fs-row > .fs-field { flex: 1; }
-.fs-inline { display: flex; gap: 6px; align-items: center; }
-.fs-inline select { flex: 1; min-width: 0; }
-.fs-check { display: flex; align-items: center; gap: 8px; margin: 6px 0; cursor: pointer; }
-.fs-check input { width: auto; }
 .fs-sub { margin-left: 18px; padding-left: 10px; border-left: 2px solid var(--line); }
 .fs-num { max-width: 96px; }
 .fs-note { font-size: 12px; }

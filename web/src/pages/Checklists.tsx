@@ -545,7 +545,7 @@ function ResolvedPreview({ kind }: { kind: ReviewKind }) {
       {kind === "component" ? (
         <div className="btn-row">
           <select
-            className="sel"
+            className="text mono"
             value={categoryId === "" ? "" : String(categoryId)}
             onChange={(e) => setCategoryId(e.target.value === "" ? "" : Number(e.target.value))}
           >
@@ -658,7 +658,7 @@ function NewChecklist({
       </div>
       <div className="btn-row">
         <select
-          className="sel"
+          className="text mono"
           value={categoryId === "" ? "" : String(categoryId)}
           onChange={(e) => setCategoryId(e.target.value === "" ? "" : Number(e.target.value))}
         >

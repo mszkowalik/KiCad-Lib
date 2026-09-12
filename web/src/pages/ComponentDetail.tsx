@@ -1501,7 +1501,7 @@ export default function ComponentDetail() {
             {pickerError ? (
               <ErrorBanner message={`Pickers failed to load: ${pickerError}`} />
             ) : null}
-            <div className="edit-grid">
+            <div className="field-grid">
               <label>
                 Base symbol
                 <BaseSymbolSelect

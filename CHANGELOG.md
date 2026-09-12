@@ -39,6 +39,25 @@
   the upstream remote are the only copies of project source. See
   [decision 0009](docs/decisions/0009-the-git-mirror-is-the-source-archive.md).
 
+## 2026-09-12 — One way to label a field, and Setup becomes Admin
+
+- **Setup is now Admin, and it is the same width as every other page.** It
+  carried a 860px cap and was the only page in the app narrower than the rest,
+  so the same card rendered at two sizes depending on how you reached it. The
+  name follows what the page is: administration of the DEPLOYMENT, now that
+  everything belonging to the signed-in person has moved to Account. `/setup`
+  redirects to `/admin`.
+- **Four competing form styles became one.** `edit-grid`, `user-form`,
+  `cred-form` and the field solver's `fs-field` all existed at once, and their
+  labels were mono UPPERCASE 11px in one and sans sentence-case 12px in another
+  — so a form looked different depending on the page it was on. The field
+  solver's shape won, promoted to a shared `<Field>` / `<FieldRow>` /
+  `<FieldSet>` and a `.field` CSS family. Every form in the app now labels the
+  same way.
+- **The two input sizes stay, and are now written down.** `.text` for a standard
+  field, `.row-input` for the compact one inside table rows and toolbars. A
+  duplicate `select.sel` style was folded into the shared one.
+
 ## 2026-09-12 — Git tokens belong to an account, not to each project
 
 - **One revoked token was hiding behind three good copies.** Every project kept

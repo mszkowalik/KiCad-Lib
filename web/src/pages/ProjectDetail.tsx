@@ -343,7 +343,7 @@ export default function ProjectDetail() {
               </div>
             ) : (
               <>
-                <div className="edit-grid">
+                <div className="field-grid">
                   <label>
                     Name
                     <input className="text" value={settingsDraft.name}

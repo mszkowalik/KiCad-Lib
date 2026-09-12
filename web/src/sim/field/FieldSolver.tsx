@@ -575,9 +575,9 @@ export default function FieldSolver() {
       {/* ---------------------------------------------------------- board */}
       <section className="card pad fs-board">
         <div className="fs-board-cards">
-          <label className="fs-field">
+          <label className="field">
             <span>Stackup</span>
-            <span className="fs-inline">
+            <span className="field-inline">
               <select className="text" value={stackupId} onChange={(e) => switchStackup(e.target.value)}>
                 {stackups.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -599,9 +599,9 @@ export default function FieldSolver() {
               {stackup.verified ? "" : " · not published by the fab"}
             </span>
           </label>
-          <label className="fs-field">
+          <label className="field">
             <span>Production rules</span>
-            <span className="fs-inline">
+            <span className="field-inline">
               <select className="text" value={ruleId} onChange={(e) => setRuleId(e.target.value)}>
                 {rules.map((r) => (
                   <option key={r.id} value={r.id}>
@@ -761,9 +761,9 @@ export default function FieldSolver() {
             {profile.name} · {sel.layer}
           </h2>
 
-          <fieldset className="fs-fieldset">
+          <fieldset className="fieldset">
             <legend>1 · Profile</legend>
-            <label className="fs-field">
+            <label className="field">
               <span>Name</span>
               <input
                 className="text"
@@ -775,7 +775,7 @@ export default function FieldSolver() {
                 }}
               />
             </label>
-            <label className="fs-field">
+            <label className="field">
               <span>Signal</span>
               <span className="seg" role="group" aria-label="Signal type">
                 {(["single", "diff"] as const).map((m) => (
@@ -790,7 +790,7 @@ export default function FieldSolver() {
                 ))}
               </span>
             </label>
-            <label className="fs-check">
+            <label className="field-check">
               <input
                 type="checkbox"
                 checked={isCpw(profile)}
@@ -798,8 +798,8 @@ export default function FieldSolver() {
               />
               Side ground on the signal layer (coplanar)
             </label>
-            <div className="fs-row">
-              <label className="fs-field">
+            <div className="field-row">
+              <label className="field">
                 <span>Target Z</span>
                 <NumberInput
                   className="text fs-num"
@@ -808,7 +808,7 @@ export default function FieldSolver() {
                   onChange={(v) => setProfile({ target: v }, false)}
                 />
               </label>
-              <label className="fs-field">
+              <label className="field">
                 <span>Tolerance %</span>
                 <NumberInput
                   className="text fs-num"
@@ -817,7 +817,7 @@ export default function FieldSolver() {
                   onChange={(v) => setProfile({ tolerance: v }, false)}
                 />
               </label>
-              <label className="fs-field">
+              <label className="field">
                 <span>Design f</span>
                 <SiInput
                   className="fs-num"
@@ -837,8 +837,8 @@ export default function FieldSolver() {
             </div>
             <details className="fs-details">
               <summary>Frequency sweep range and resolution</summary>
-              <div className="fs-row">
-                <label className="fs-field">
+              <div className="field-row">
+                <label className="field">
                   <span>Range</span>
                   <select
                     className="text"
@@ -851,7 +851,7 @@ export default function FieldSolver() {
                 </label>
                 {profile.frange === "custom" ? (
                   <>
-                    <label className="fs-field">
+                    <label className="field">
                       <span>from</span>
                       <SiInput
                         className="fs-num"
@@ -863,7 +863,7 @@ export default function FieldSolver() {
                         help={<>Type any unit: 100MHz, 1e8, 0.1GHz. A bare number means Hz.</>}
                       />
                     </label>
-                    <label className="fs-field">
+                    <label className="field">
                       <span>to</span>
                       <SiInput
                         className="fs-num"
@@ -877,7 +877,7 @@ export default function FieldSolver() {
                     </label>
                   </>
                 ) : null}
-                <label className="fs-field">
+                <label className="field">
                   <span>points / decade</span>
                   <NumberInput
                     className="text fs-num"
@@ -895,10 +895,10 @@ export default function FieldSolver() {
             </details>
           </fieldset>
 
-          <fieldset className="fs-fieldset">
+          <fieldset className="fieldset">
             <legend>2 · Layer {sel.layer} and references</legend>
-            <div className="fs-row">
-              <label className="fs-field">
+            <div className="field-row">
+              <label className="field">
                 <span>Top Ref</span>
                 <select
                   className="text"
@@ -914,7 +914,7 @@ export default function FieldSolver() {
                   ))}
                 </select>
               </label>
-              <label className="fs-field">
+              <label className="field">
                 <span>Bottom Ref</span>
                 <select
                   className="text"
@@ -933,7 +933,7 @@ export default function FieldSolver() {
             </div>
           </fieldset>
 
-          <fieldset className="fs-fieldset">
+          <fieldset className="fieldset">
             <legend>3 · Structure</legend>
             <table className="data fs-dims">
               <thead>
@@ -979,7 +979,7 @@ export default function FieldSolver() {
               </tbody>
             </table>
 
-            <label className="fs-field">
+            <label className="field">
               <span>Solder mask over the structure</span>
               <select
                 className="text"
@@ -993,14 +993,14 @@ export default function FieldSolver() {
               </select>
             </label>
 
-            <label className="fs-check">
+            <label className="field-check">
               <input type="checkbox" checked={cell.via_fence} onChange={(e) => setCell({ via_fence: e.target.checked })} />
               Fence vias along the structure
             </label>
             {cell.via_fence ? (
               <div className="fs-sub">
-                <div className="fs-row">
-                  <label className="fs-field">
+                <div className="field-row">
+                  <label className="field">
                     <span>hole</span>
                     <SiInput
                       className="fs-num"
@@ -1010,7 +1010,7 @@ export default function FieldSolver() {
                       help={<>Type any unit: 0.2, 200um, 7.9mil. A bare number means mm.</>}
                     />
                   </label>
-                  <label className="fs-field">
+                  <label className="field">
                     <span>pad ⌀</span>
                     <SiInput
                       className="fs-num"
@@ -1020,7 +1020,7 @@ export default function FieldSolver() {
                       help={<>Type any unit: 0.2, 200um, 7.9mil. A bare number means mm.</>}
                     />
                   </label>
-                  <label className="fs-field">
+                  <label className="field">
                     <span>position</span>
                     <select
                       className="text"
@@ -1032,7 +1032,7 @@ export default function FieldSolver() {
                     </select>
                   </label>
                   {cell.fence_mode === "exact" ? (
-                    <label className="fs-field">
+                    <label className="field">
                       <span>distance</span>
                       <SiInput
                         className="fs-num"
@@ -1044,7 +1044,7 @@ export default function FieldSolver() {
                     </label>
                   ) : null}
                 </div>
-                <div className="fs-row">
+                <div className="field-row">
                   <button
                     type="button"
                     className="btn btn-sm"
@@ -1053,7 +1053,7 @@ export default function FieldSolver() {
                     + extra via row
                   </button>
                   {cell.via_rows.map((r, i) => (
-                    <label key={i} className="fs-field">
+                    <label key={i} className="field">
                       <span>row {i + 2} pitch</span>
                       <SiInput
                         className="fs-num"
@@ -1071,12 +1071,12 @@ export default function FieldSolver() {
               </div>
             ) : null}
 
-            <label className="fs-check">
+            <label className="field-check">
               <input type="checkbox" checked={cell.use_w2} onChange={(e) => setCell({ use_w2: e.target.checked })} />
               Etched trapezoid (top narrower than W1)
             </label>
             {cell.use_w2 ? (
-              <label className="fs-field fs-sub">
+              <label className="field fs-sub">
                 <span>undercut per side</span>
                 <SiInput
                   className="fs-num"
@@ -1093,12 +1093,12 @@ export default function FieldSolver() {
               </label>
             ) : null}
 
-            <label className="fs-check">
+            <label className="field-check">
               <input type="checkbox" checked={cell.use_rough} onChange={(e) => setCell({ use_rough: e.target.checked })} />
               Copper roughness (Hammerstad)
             </label>
             {cell.use_rough ? (
-              <label className="fs-field fs-sub">
+              <label className="field fs-sub">
                 <span>RMS</span>
                 <SiInput
                   className="fs-num"
@@ -1116,10 +1116,10 @@ export default function FieldSolver() {
             ) : null}
           </fieldset>
 
-          <fieldset className="fs-fieldset">
+          <fieldset className="fieldset">
             <legend>4 · Find solutions</legend>
-            <div className="fs-row">
-              <label className="fs-field">
+            <div className="field-row">
+              <label className="field">
                 <span>Snap drawn features to</span>
                 <select
                   className="text"
@@ -1132,7 +1132,7 @@ export default function FieldSolver() {
                   <option value="">no grid (exact)</option>
                 </select>
               </label>
-              <label className="fs-field">
+              <label className="field">
                 <span>Dk model</span>
                 <select className="text" value={epsModel} onChange={(e) => setEpsModel(e.target.value)}>
                   <option value="djordjevic">Djordjevic-Sarkar</option>
@@ -1140,7 +1140,7 @@ export default function FieldSolver() {
                 </select>
               </label>
             </div>
-            <div className="fs-row">
+            <div className="field-row">
               <button type="button" className="btn btn-accent" onClick={runSearch} disabled={job.state.running}>
                 Find solutions
               </button>
@@ -1150,10 +1150,10 @@ export default function FieldSolver() {
             </div>
           </fieldset>
 
-          <fieldset className="fs-fieldset">
+          <fieldset className="fieldset">
             <legend>5 · Resulting dimensions</legend>
-            <div className="fs-row">
-              <label className="fs-field">
+            <div className="field-row">
+              <label className="field">
                 <span>Width W1</span>
                 <SiInput
                   className="fs-num"
@@ -1164,7 +1164,7 @@ export default function FieldSolver() {
                 />
               </label>
               {pair ? (
-                <label className="fs-field">
+                <label className="field">
                   <span>Spacing S</span>
                   <SiInput
                     className="fs-num"
@@ -1176,7 +1176,7 @@ export default function FieldSolver() {
                 </label>
               ) : null}
               {isCpw(profile) ? (
-                <label className="fs-field">
+                <label className="field">
                   <span>Gap</span>
                   <SiInput
                     className="fs-num"
@@ -1193,7 +1193,7 @@ export default function FieldSolver() {
             </button>
           </fieldset>
 
-          <fieldset className="fs-fieldset">
+          <fieldset className="fieldset">
             <legend>Result: transmission line</legend>
             <table className="data fs-kv">
               <tbody>
@@ -1352,7 +1352,7 @@ export default function FieldSolver() {
                   </option>
                 ))}
               </select>
-              <label className="fs-check">
+              <label className="field-check">
                 <input type="checkbox" checked={locked} onChange={(e) => setLocked(e.target.checked)} />
                 lock view
               </label>

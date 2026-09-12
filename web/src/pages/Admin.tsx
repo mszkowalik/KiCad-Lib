@@ -21,19 +21,23 @@ import { ErrorBanner, Spinner } from "../components/Ui";
 
 const POLL_MS = 2000;
 
-/**
+/** Administration of the DEPLOYMENT: its shared configuration, other people's
+ * accounts, and the jobs and health readouts nobody owns personally. It was
+ * called "Setup" until 2026-09-12; anything that belongs to the signed-in user
+ * rather than to the deployment lives on `/account` instead.
+ *
  * One page for everything that is configured once and then only checked:
  * KiCad clients, Claude Code / MCP, the datasheet archive job, exchange
  * rates, and schema health. Previously spread over the KiCad page and a
  * collapsed block at the bottom of Skills.
  */
-export default function Setup() {
+export default function Admin() {
   const { isAdmin } = useAuth();
 
   return (
     <div className="main-solo">
-      <div className="page kicad-page">
-        <h1>Setup</h1>
+      <div className="page admin-page">
+        <h1>Admin</h1>
 
         {/* Configuration first: it is what a visit to this page is usually for. */}
         <SettingsCard />

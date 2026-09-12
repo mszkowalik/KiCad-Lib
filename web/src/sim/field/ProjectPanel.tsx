@@ -183,8 +183,8 @@ export default function ProjectPanel({ stackupKey, profiles, liveResult, initial
   return (
     <section className="card pad">
       <h2 className="card-title">Save to a project</h2>
-      <div className="fs-row">
-        <label className="fs-field">
+      <div className="field-row">
+        <label className="field">
           <span>Project</span>
           <select
             className="text"
@@ -199,7 +199,7 @@ export default function ProjectPanel({ stackupKey, profiles, liveResult, initial
             ))}
           </select>
         </label>
-        <label className="fs-field">
+        <label className="field">
           <span>Commit</span>
           <select
             className="text"
@@ -214,7 +214,7 @@ export default function ProjectPanel({ stackupKey, profiles, liveResult, initial
             ))}
           </select>
         </label>
-        <label className="fs-field">
+        <label className="field">
           <span>Board</span>
           <select className="text" value={board} disabled={!boards.length} onChange={(e) => setBoard(e.target.value)}>
             {boards.map((b) => (
@@ -238,7 +238,7 @@ export default function ProjectPanel({ stackupKey, profiles, liveResult, initial
               <b>Nothing can be saved to this board.</b> It is assigned <b>{assigned}</b> and this page is working on{" "}
               <b>{stackupKey}</b>. A geometry only means anything against the stackup it was solved on, so these
               profiles describe a board that is not this one.
-              <div className="fs-row">
+              <div className="field-row">
                 <button
                   type="button"
                   className="btn btn-sm"
@@ -302,7 +302,7 @@ export default function ProjectPanel({ stackupKey, profiles, liveResult, initial
             </tbody>
           </table>
 
-          <div className="fs-row">
+          <div className="field-row">
             <button
               type="button"
               className="btn btn-sm"

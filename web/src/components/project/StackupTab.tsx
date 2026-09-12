@@ -142,8 +142,8 @@ export default function StackupTab({
 
       <section className="card pad">
         <h2 className="card-title">Stackup</h2>
-        <div className="fs-row">
-          <label className="fs-field">
+        <div className="field-row">
+          <label className="field">
             <span>Assigned to this board</span>
             <select
               className="text"
@@ -170,8 +170,8 @@ export default function StackupTab({
           ) : null}
         </div>
         {palette ? (
-          <div className="fs-row stk-colors">
-            <label className="fs-field">
+          <div className="field-row stk-colors">
+            <label className="field">
               <span>Solder mask colour</span>
               <span className="swatches">
                 {palette.soldermask.map((c) => (
@@ -189,7 +189,7 @@ export default function StackupTab({
                 ))}
               </span>
             </label>
-            <label className="fs-field">
+            <label className="field">
               <span>Silkscreen</span>
               <span className="swatches">
                 {palette.silkscreen.map((c) => (
@@ -243,7 +243,7 @@ export default function StackupTab({
           A profile is built in the field solver — it needs a geometry and a solve — so this is the way across. The
           solver opens on this board's stackup and saves back to this commit.
         </p>
-        <div className="fs-row">
+        <div className="field-row">
           <Link
             className="btn btn-sm btn-accent"
             to={`/sim?tab=field${state.revision?.stackup_key ? `&stackup=${encodeURIComponent(state.revision.stackup_key)}` : ""}&project=${projectId}${

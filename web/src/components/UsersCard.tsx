@@ -343,7 +343,7 @@ export default function UsersCard() {
       </div>
 
       <h3 className="users-add-heading">Add a user</h3>
-      <div className="user-form">
+      <div className="field-grid">
         <label className="login-field">
           <span className="login-label">Username</span>
           <input
@@ -380,7 +380,7 @@ export default function UsersCard() {
           </select>
         </label>
         <button
-          className="btn btn-primary user-form-submit"
+          className="btn btn-primary field-grid-submit"
           disabled={busy || !username.trim() || password.length < 10}
           onClick={() => void add()}
         >

@@ -30,6 +30,43 @@ component:
   works in **both light and dark** (the palette flips via
   `@media (prefers-color-scheme: dark)` and `:root[data-theme=…]`). Prefer
   extending/generalizing an existing class over adding a near-duplicate.
+- **EVERY labelled control goes through `components/Field.tsx`.** `<Field label=…>`
+  wraps any control — `<input className="text">`, `<select className="text">`,
+  `SiInput`, `NumberInput`, a checkbox — with `<FieldRow>` for a few side by
+  side, `<FieldSet legend=…>` for a named group and `<CheckField>` for a
+  checkbox. Never write a page-local label wrapper again: `edit-grid`,
+  `user-form`, `cred-form` and `fs-field` all existed at once, and their labels
+  were mono UPPERCASE 11px in one and sans sentence-case 12px in another, so the
+  same form looked different depending on which page you opened it from
+  (unified 2026-09-12).
+
+  - **`<Field>` wraps the control, it never replaces it.** A special control
+    keeps its own behaviour and only its FRAME is shared. Putting a unit parser
+    behind a project-name field so the boxes match would be a worse kind of
+    uniformity — `SiInput` exists for reasons its own docstring gives (browser
+    locale on `type="number"`, a spinner floating over a narrow field), and
+    those reasons do not apply to a name.
+  - **There are exactly TWO input sizes, and both are needed.** `.text` is the
+    standard form field (7/10px padding); `.row-input` is the compact one
+    (3/8px, 13px) for table rows, filter bars and toolbars, where a full-height
+    input would break the one-line-per-row rule every table here follows. A
+    third size is a bug.
+  - **Containers**: `.field-row` (a handful of fields on one line, wrapping) and
+    `.field-grid` (a whole form, auto-fit columns). A bare `<label>` inside
+    either still renders correctly, so older markup was not all rewritten at
+    once — but new code uses the component.
+  - Modifiers compose onto `.text` rather than replacing it: `num-input`
+    (90px, tabular), `modal-input` (full width in a dialog), `mono`. That is the
+    pattern for anything narrow or special — never a new standalone input class.
+
+- **Every page is `.page` unless it has a reason not to.** `min(1680px,
+  max(1100px, 80%))`. `.page-wide` (the simulator) and the browse sidebar layout
+  are the two deliberate exceptions. The Admin page carried `max-width: 860px`
+  until 2026-09-12 and was the only page in the app at a different width, so the
+  same card rendered at two sizes depending on the route it was reached from.
+  If a card inside a wide page then looks stretched, cap the CARD — as
+  `table.kv.settings-table` does — never the page.
+
 - **Reuse the shared UI atoms** in `src/components/Ui.tsx` instead of
   re-implementing them: `<Spinner label?/>`, `<ErrorBanner message/>`,
   `<StatusPill status/>` (which already maps statuses → ok/warn/err tones — feed

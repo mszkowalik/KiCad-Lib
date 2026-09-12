@@ -273,7 +273,7 @@ export default function RunCosts({
 
         {showDoc && (
           <div className="card pad edit-card">
-            <div className="edit-grid">
+            <div className="field-grid">
               <label>Supplier
                 <input className="text" value={supplier} onChange={(e) => setSupplier(e.target.value)} />
               </label>
@@ -419,7 +419,7 @@ export default function RunCosts({
                   </table>
                 </div>
               )}
-              <div className="edit-grid">
+              <div className="field-grid">
                 <label>Kind
                   <select className="text" value={lineKind}
                     onChange={(e) => setLineKind(e.target.value as CostLineKind)}>

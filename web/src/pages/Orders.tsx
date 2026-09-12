@@ -418,7 +418,7 @@ function NewOrderCard({
     <div className="card pad edit-card">
       <h2 className="card-title">New order</h2>
       {error ? <ErrorBanner message={error} /> : null}
-      <div className="edit-grid">
+      <div className="field-grid">
         <label>
           Customer
           <input className="text" list="customer-names" value={customer} onChange={(e) => setCustomer(e.target.value)} />
