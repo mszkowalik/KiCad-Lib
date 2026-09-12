@@ -7,6 +7,11 @@ The simulator overlay, the scope and the live run. The wider design is in
 and two past audits of this code are in
 [docs/reference/simulator-audits.md](../../../docs/reference/simulator-audits.md).
 
+Every parameter the server gives a unit is drawn by `components/SiInput.tsx`,
+not a plain box — the part inspector, the run bar's analysis fields and the live
+knobs alike. The unit-to-quantity map and the `M`/`MEG` trap are in
+`web/CLAUDE.md` under the style system.
+
 Sub-directories carry their own rules: `draw/` (the schematic renderer), `edit/`
 (the sketch editor), `field/` (the field solver UI).
 

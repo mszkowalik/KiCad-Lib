@@ -214,10 +214,13 @@ p {
   font-variant-numeric: tabular-nums;
 }
 
+/* A number is one token: never let it break across lines. Without this the
+   digits of "162" stacked vertically in a narrow `dl.kv` value column. */
 .num {
   text-align: right;
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .dim {
@@ -1123,7 +1126,13 @@ a.btn:hover {
    50px wide. Keep both selectors element-qualified. */
 dl.kv {
   display: grid;
-  grid-template-columns: 150px minmax(0, 1fr);
+  /* The label track gives way, the value track does not. A fixed 150px label
+     column plus `minmax(0, 1fr)` left the value about one character wide in a
+     `.field-grid` card (tracks are only 200px wide), so counts wrapped one
+     digit per line. Now the label shrinks first and the value keeps its
+     min-content width — long prose values still wrap, because
+     `overflow-wrap: break-word` on `.kv dd` makes their min-content small. */
+  grid-template-columns: minmax(0, 150px) minmax(min-content, 1fr);
   row-gap: 7px;
   column-gap: 16px;
   margin: 0;
@@ -5355,6 +5364,32 @@ a.check-cell:hover {
   flex: 1 1 12rem;
   min-width: 8rem;
   max-width: 22rem;
+}
+
+/* ------------------------------------------------------ simulator unit boxes
+   A parameter the server gave a unit is an `SiInput` (see `si.ts`, SPICE
+   section). It needs more room than the plain box it replaced: it prints the
+   unit INSIDE the frame ("100 nF" where the old field held "100n" with a grey
+   "F" beside it) and the ⓘ marker sits in the same frame when a value was
+   rounded. These widths are the old width plus that. */
+.sim-param-si {
+  flex: 0 0 11.5rem;
+  width: 11.5rem;
+}
+
+.sim-param-si > .text {
+  font-family: var(--mono);
+}
+
+.sim-runbar-si {
+  flex: 0 0 9rem;
+  width: 9rem;
+  min-width: 0;
+}
+
+.sim-knob-si {
+  flex: 0 0 12ch;
+  width: 12ch;
 }
 
 .sim-param-unit {

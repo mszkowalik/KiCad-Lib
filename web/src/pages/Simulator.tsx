@@ -55,6 +55,8 @@ import { readVerdicts } from "../sim/scenario";
 import { FALLBACK_THEME, type LibSymbol, type SchTheme } from "../sim/draw/types";
 import { emptyDoc, type PaletteEntry, type SchDoc } from "../sim/edit/doc";
 import { LiveSession, liveControls, type LiveControl, type LiveState } from "../sim/live";
+import SiInput from "../components/SiInput";
+import { parseSpice, quantityForUnit, toSpice } from "../components/si";
 import {
   decodeSimPayload,
   eng,
@@ -1699,21 +1701,50 @@ function LiveControls({
     if (raw.trim()) onAlter(`alter ${c.ref} = ${raw.trim()}`);
   };
 
-  const knob = (c: LiveControl, zero = false) => (
-    <label key={c.ref} className="sim-knob">
+  /* `LiveControl.unit` is already the symbol the registry keys on — a resistor
+     is Ω, a capacitor F, an inductor H, a source V or A — so a knob is a unit
+     box wherever the part has a unit, and a plain one otherwise.
+
+     `alter` fires on BLUR, never per keystroke: the string goes straight to a
+     running ngspice, and one `alter` per character would flood the socket and
+     step the circuit through every half-typed value on the way. The box keeps
+     the typed number in `values` until focus leaves, exactly as it did. */
+  const knob = (c: LiveControl, zero = false) => {
+    const q = quantityForUnit(c.unit);
+    const raw = values[c.ref] ?? c.value;
+    return (
+    <label
+      key={c.ref}
+      className="sim-knob"
+      onBlur={q ? () => apply(c, values[c.ref] ?? c.value) : undefined}
+    >
       <span className="mono">{c.ref}</span>
-      <input
-        className="text"
-        value={values[c.ref] ?? c.value}
-        disabled={busy}
-        onChange={(e) => setValues((v) => ({ ...v, [c.ref]: e.target.value }))}
-        onBlur={(e) => apply(c, e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") apply(c, (e.target as HTMLInputElement).value); }}
-      />
-      <span className="muted">{c.unit}</span>
+      {q ? (
+        <SiInput
+          quantity={q}
+          value={parseSpice(raw)}
+          onChange={(v) => setValues((vals) => ({ ...vals, [c.ref]: toSpice(v) }))}
+          disabled={busy}
+          aria-label={`${c.ref} value`}
+          className="sim-knob-si"
+        />
+      ) : (
+        <>
+          <input
+            className="text"
+            value={raw}
+            disabled={busy}
+            onChange={(e) => setValues((v) => ({ ...v, [c.ref]: e.target.value }))}
+            onBlur={(e) => apply(c, e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") apply(c, (e.target as HTMLInputElement).value); }}
+          />
+          <span className="muted">{c.unit}</span>
+        </>
+      )}
       {zero ? <button type="button" disabled={busy} onClick={() => apply(c, "0")}>0</button> : null}
     </label>
-  );
+    );
+  };
 
   return (
     <>

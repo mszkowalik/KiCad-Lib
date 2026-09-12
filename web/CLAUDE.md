@@ -67,8 +67,10 @@ component:
     heights, and a fourth is a bug.
 
 - **A value with a UNIT is an `SiInput`, on every page.** Quantities:
-  `length` (base mm), `frequency` (Hz), `resistance` (Ω), `percent`. Adding a
-  field that carries a unit means adding it here, not writing a number box.
+  `length` (base mm), `frequency` (Hz), `resistance` (Ω), `percent`,
+  `capacitance` (F), `inductance` (H), `voltage` (V), `current` (A), `time` (s).
+  Adding a field that carries a unit means adding it here, not writing a number
+  box.
   - **One prefix ladder: print in the prefix that puts 1-999 before the point**
     (user decision 2026-09-12). `0.05 Ω` reads `50 mΩ`, `1560432 Ω` reads
     `1.56 MΩ`. This REPLACED a length-only rule that kept a fab's own spelling
@@ -91,6 +93,20 @@ component:
     spelling before the lowercase one precisely so `10M` is megohms and `10m` is
     milliohms. The number may carry an exponent (`2.4e9`); no unit begins with
     `e`, so taking it greedily is unambiguous.
+  - **The simulator's fields are SPICE strings, and SPICE spells mega
+    differently.** ngspice reads `M` as MILLI and spells mega `MEG`; our boxes
+    read `M` as mega, because that is what a schematic means and what the
+    resistance box beside them does (user decision 2026-09-12). The two
+    directions therefore use different tables: `parseSpice` reads what is
+    already stored with ngspice's rule, `toSpice` writes it back and ALWAYS
+    spells mega `MEG`. Type `1M` into a resistor and the sheet gets `1MEG` —
+    verified end to end against a downloaded `.kicad_sch`. A field the server
+    gave no unit (a gain in `V/V`, a threshold in `x rail`, a point count) stays
+    a plain box: a prefix on a dimensionless number is nonsense.
+  - **`quantityForUnit` is the only place a unit SYMBOL becomes a quantity.**
+    `sch_lib.PARAM_FORMS`, `sim_scenario.ANALYSIS_FORMS` and `LiveControl` all
+    already declare a unit per field, so a new simulator parameter becomes
+    unit-aware with no frontend edit at all.
   - **The ⓘ sits INSIDE the box** and the caller's size class goes on the WRAP
     as well as the input. Beside the box it took 18 px of the field's own width
     and cut `500 um` to `500 u`; capping only the input left the marker floating

@@ -21,6 +21,8 @@ import {
   buildValue, format, fromSlider, readParams, readValue, toSlider, writeParams,
   type ParamField, type ParamForm,
 } from "./params";
+import SiInput from "../../components/SiInput";
+import { parseSpice, quantityForUnit, toSpice } from "../../components/si";
 
 /** A text field that survives a busy page.
  *
@@ -109,12 +111,34 @@ export default function ComponentInspector({
     if (field.live) onLive?.(field, next);
   };
 
-  const row = (field: ParamField, current: string, set: (f: ParamField, v: string) => void) => (
+  /* A field the server gave a unit is a unit box; everything else — a gain, a
+     threshold in "x rail", the raw SPICE escape hatch — stays plain text,
+     because a prefix on a dimensionless number is nonsense.
+
+     The value crossing this boundary is a SPICE string, so it is READ with
+     ngspice's rule (`parseSpice`: `M` is milli) and WRITTEN back with ours
+     (`toSpice`: mega always spells `MEG`). See the SPICE section of `si.ts`. */
+  const row = (field: ParamField, current: string, set: (f: ParamField, v: string) => void) => {
+    const q = field.scale === "text" ? null : quantityForUnit(field.unit);
+    return (
     <div className="sim-param" key={field.key}>
       <label>
         <span>{field.label}</span>
-        <ParamInput value={current} disabled={readOnly} onCommit={(v) => set(field, v)} />
-        {field.unit ? <span className="muted sim-param-unit">{field.unit}</span> : null}
+        {q ? (
+          <SiInput
+            quantity={q}
+            value={parseSpice(current)}
+            onChange={(v) => set(field, toSpice(v))}
+            disabled={readOnly}
+            aria-label={field.label}
+            className="sim-param-si"
+          />
+        ) : (
+          <>
+            <ParamInput value={current} disabled={readOnly} onCommit={(v) => set(field, v)} />
+            {field.unit ? <span className="muted sim-param-unit">{field.unit}</span> : null}
+          </>
+        )}
       </label>
       {field.scale === "text" ? null : (
         <input
@@ -134,7 +158,8 @@ export default function ComponentInspector({
         </span>
       ) : null}
     </div>
-  );
+    );
+  };
 
   return (
     <div className="sim-inspector">

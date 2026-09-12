@@ -1,5 +1,48 @@
 # Changelog
 
+## 2026-09-13 — Counts stop stacking one digit per line
+
+- **Library health reads again.** Every three-digit count on Reviews → Library
+  health wrapped vertically — `162` came out as `1`, `6`, `2` on three lines.
+  The cards sit in a `.field-grid`, whose tracks are 200px wide at their
+  narrowest, and `dl.kv` pinned its label column at a fixed 150px. That left
+  the value column about one character wide, and `overflow-wrap: break-word`
+  on `.kv dd` did the rest.
+- **The label track gives way now, the value track does not.** `dl.kv` is
+  `minmax(0, 150px) minmax(min-content, 1fr)`, so the label shrinks first and a
+  number keeps its width. Long prose values still wrap, because `break-word`
+  keeps their min-content small. `.num` is `white-space: nowrap` as well — a
+  number is one token and must never break.
+
+## 2026-09-13 — The simulator's numbers carry their units
+
+- **Capacitance, inductance, voltage, current and time are unit-aware fields
+  now.** Every ngspice parameter used to be a plain box with its unit printed
+  beside it in grey. A diode's saturation current defaults to `2.5n` and its
+  form allows down to 1e-18; a capacitance goes to 1e-15 and a PULSE edge to
+  1e-12. Typing those as decimals is the defect the length field was built to
+  stop. Nine quantities exist in `si.ts` now, up from four.
+- **Three places changed, and no form definition did.**
+  `sch_lib.PARAM_FORMS`, `sim_scenario.ANALYSIS_FORMS` and `LiveControl`
+  already declared a unit per field, so the part inspector, the run bar and the
+  live knobs are driven from what the server already sends. A new parameter
+  becomes unit-aware with no frontend edit.
+- **ngspice spells mega `MEG`, and a field that ignored that would be wrong by
+  a factor of a billion.** To ngspice, `M` is MILLI. Our boxes read `M` as
+  mega, because that is what a schematic means and what the resistance box
+  beside them already did (user decision). So the two directions use different
+  tables: what is already stored is read with ngspice's rule, and what we write
+  back always spells mega `MEG`. Verified end to end — typing `1M` into a
+  resistor puts `1MEG` in the downloaded `.kicad_sch`.
+- **A field with no unit stays a plain box.** An op-amp's open-loop gain is
+  `V/V`, an inverter's threshold is `x rail`, a sweep is a point count. A
+  prefix on a dimensionless number is nonsense, so `quantityForUnit` returns
+  nothing for them and the old control renders.
+- **Audited every input in the app first**: 379 controls across 73 files, 228
+  of them value fields. The simulator was the whole gap. Copper weight is
+  deliberately untouched — it is a preset list mapping an ounce label to
+  millimetres, not a typed value — and no temperature or mass input exists.
+
 ## 2026-09-12 — The agent instructions moved next to the code they govern
 
 - **`api/CLAUDE.md` was 2764 lines and `web/CLAUDE.md` was 1688.** A `CLAUDE.md`

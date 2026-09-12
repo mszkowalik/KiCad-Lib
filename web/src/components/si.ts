@@ -11,7 +11,16 @@
  *  as "0.2104 mm".
  */
 
-export type Quantity = "length" | "frequency" | "resistance" | "percent";
+export type Quantity =
+  | "length"
+  | "frequency"
+  | "resistance"
+  | "percent"
+  | "capacitance"
+  | "inductance"
+  | "voltage"
+  | "current"
+  | "time";
 
 /** Multipliers onto the base unit — mm for a length, Hz for a frequency. */
 const UNITS: Record<
@@ -96,6 +105,131 @@ const UNITS: Record<
     units: { "": 1, "%": 1, pct: 1, percent: 1 },
     ladder: [["%", 1]],
   },
+  /* ---------------------------------------------------------------- SPICE
+     The five below exist for the simulator, where every part parameter is a
+     number with a unit the server already declares (`sch_lib.PARAM_FORMS`).
+
+     They follow SCHEMATIC spelling, not ngspice's (user decision 2026-09-12):
+     `M` is MEGA and `m` is MILLI, the same rule the resistance box follows, so
+     the two read alike sitting next to each other.
+
+     ngspice disagrees — to it `M` is milli and mega is spelled `MEG` — so a
+     value typed here is written back through `toSpice`, which always spells
+     mega `MEG`. Reading goes the other way through `parseSpice`, which uses
+     ngspice's rule, because whatever is already stored was written for
+     ngspice. Type `1M`, store `1MEG`, read back one megohm; a `1M` that came
+     from somewhere else still reads as one milliohm, which is what the solver
+     will do with it. */
+  capacitance: {
+    base: "F",
+    units: {
+      "": 1, F: 1, f: 1e-15, farad: 1,
+      k: 1e3, K: 1e3,
+      M: 1e6, meg: 1e6, MEG: 1e6,
+      m: 1e-3, mF: 1e-3,
+      u: 1e-6, "\u00b5": 1e-6, "\u03bc": 1e-6, uF: 1e-6, "\u00b5F": 1e-6, "\u03bcF": 1e-6,
+      n: 1e-9, nF: 1e-9,
+      p: 1e-12, pF: 1e-12,
+      fF: 1e-15,
+    },
+    ladder: [
+      ["F", 1],
+      ["mF", 1e-3],
+      ["\u00b5F", 1e-6],
+      ["nF", 1e-9],
+      ["pF", 1e-12],
+      ["fF", 1e-15],
+    ],
+  },
+  inductance: {
+    base: "H",
+    units: {
+      "": 1, H: 1, h: 1, henry: 1,
+      k: 1e3, K: 1e3,
+      M: 1e6, meg: 1e6, MEG: 1e6,
+      m: 1e-3, mH: 1e-3,
+      u: 1e-6, "\u00b5": 1e-6, "\u03bc": 1e-6, uH: 1e-6, "\u00b5H": 1e-6, "\u03bcH": 1e-6,
+      n: 1e-9, nH: 1e-9,
+      p: 1e-12, pH: 1e-12,
+    },
+    ladder: [
+      ["H", 1],
+      ["mH", 1e-3],
+      ["\u00b5H", 1e-6],
+      ["nH", 1e-9],
+      ["pH", 1e-12],
+    ],
+  },
+  voltage: {
+    base: "V",
+    units: {
+      "": 1, V: 1, v: 1, volt: 1, volts: 1,
+      k: 1e3, K: 1e3, kV: 1e3,
+      M: 1e6, meg: 1e6, MEG: 1e6, MV: 1e6,
+      m: 1e-3, mV: 1e-3,
+      u: 1e-6, "\u00b5": 1e-6, "\u03bc": 1e-6, uV: 1e-6, "\u00b5V": 1e-6, "\u03bcV": 1e-6,
+      n: 1e-9, nV: 1e-9,
+    },
+    // "3V3" for 3.3 V is how a rail is named on every schematic and silkscreen.
+    rkm: true,
+    ladder: [
+      ["kV", 1e3],
+      ["V", 1],
+      ["mV", 1e-3],
+      ["\u00b5V", 1e-6],
+      ["nV", 1e-9],
+    ],
+  },
+  current: {
+    base: "A",
+    units: {
+      "": 1, A: 1, a: 1, amp: 1, amps: 1, ampere: 1,
+      k: 1e3, K: 1e3, kA: 1e3,
+      M: 1e6, meg: 1e6, MEG: 1e6,
+      m: 1e-3, mA: 1e-3,
+      u: 1e-6, "\u00b5": 1e-6, "\u03bc": 1e-6, uA: 1e-6, "\u00b5A": 1e-6, "\u03bcA": 1e-6,
+      n: 1e-9, nA: 1e-9,
+      p: 1e-12, pA: 1e-12,
+      f: 1e-15, fA: 1e-15,
+      // A diode's saturation current reaches 1e-18. Nobody types that as a
+      // decimal without losing a zero.
+      atto: 1e-18, aA: 1e-18,
+    },
+    ladder: [
+      ["kA", 1e3],
+      ["A", 1],
+      ["mA", 1e-3],
+      ["\u00b5A", 1e-6],
+      ["nA", 1e-9],
+      ["pA", 1e-12],
+      ["fA", 1e-15],
+      ["aA", 1e-18],
+    ],
+  },
+  time: {
+    base: "s",
+    units: {
+      "": 1, s: 1, sec: 1, secs: 1, second: 1, seconds: 1,
+      // No `M` or `k` entry on purpose. The parser falls back to the lowercase
+      // spelling, so `1M` here reads as one MILLISECOND — the one quantity
+      // where uppercase M does not mean mega, because a megasecond is not a
+      // thing anyone types and milli is certainly what was meant.
+      m: 1e-3, ms: 1e-3, msec: 1e-3,
+      u: 1e-6, "\u00b5": 1e-6, "\u03bc": 1e-6, us: 1e-6, "\u00b5s": 1e-6, "\u03bcs": 1e-6, usec: 1e-6,
+      n: 1e-9, ns: 1e-9, nsec: 1e-9,
+      p: 1e-12, ps: 1e-12, psec: 1e-12,
+      f: 1e-15, fs: 1e-15,
+      min: 60, h: 3600, hr: 3600,
+    },
+    ladder: [
+      ["s", 1],
+      ["ms", 1e-3],
+      ["\u00b5s", 1e-6],
+      ["ns", 1e-9],
+      ["ps", 1e-12],
+      ["fs", 1e-15],
+    ],
+  },
   frequency: {
     base: "Hz",
     units: { hz: 1, khz: 1e3, mhz: 1e6, ghz: 1e9, thz: 1e12, k: 1e3, m: 1e6, g: 1e9 },
@@ -114,6 +248,12 @@ const UNITS: Record<
  *
  *  A bare number is taken as `assume` (or the base unit), which is what makes typing
  *  "0.2" into a millimetre field keep working exactly as it did. */
+/** Multiplying by a prefix leaves floating-point noise — 100 * 1e-9 is
+ *  1.0000000000000001e-7 — which survives into a tooltip that claims more
+ *  precision than the user typed. Twelve significant digits keeps every real
+ *  figure (0.2104 mm stays exact) and drops the noise. */
+const clean = (v: number): number => Number(v.toPrecision(12));
+
 export function parseSi(text: string, q: Quantity, assume?: string): number | null {
   const t = text.trim().replace(",", ".").replace(/\s+/g, "");
   if (!t) return null;
@@ -139,7 +279,7 @@ export function parseSi(text: string, q: Quantity, assume?: string): number | nu
     const mult = UNITS[q].units[rkm[2]] ?? UNITS[q].units[rkm[2].toLowerCase()];
     if (mult !== undefined) {
       const n = Number(`${rkm[1]}.${rkm[3]}`);
-      if (Number.isFinite(n)) return n * mult;
+      if (Number.isFinite(n)) return clean(n * mult);
     }
   }
   // The exponent is part of the NUMBER. Without it "2.4e9" split into 2.4 and
@@ -154,10 +294,10 @@ export function parseSi(text: string, q: Quantity, assume?: string): number | nu
   const table = UNITS[q].units;
   if (!suffix) {
     const a = assume ? table[assume] ?? table[assume.toLowerCase()] : undefined;
-    return n * (a ?? 1);
+    return clean(n * (a ?? 1));
   }
   const mult = table[suffix] ?? table[suffix.toLowerCase()];
-  return mult === undefined ? null : n * mult;
+  return mult === undefined ? null : clean(n * mult);
 }
 
 /** Trim floating-point noise without throwing away a real digit: 0.2104 stays
@@ -242,6 +382,110 @@ export function unitsOf(q: Quantity): string {
   return Object.keys(UNITS[q].units)
     .filter((u) => !/^[μ]/.test(u) && u !== '"')
     .join(", ");
+}
+
+// -------------------------------------------------------------------- SPICE
+/* The simulator stores every parameter as a SPICE string ("100n", "10k") and
+   hands it to ngspice verbatim. Three functions bridge that to the boxes above.
+
+   The one rule worth remembering: ngspice reads `M` as MILLI and spells mega
+   `MEG`. Our fields read `M` as mega, because that is what a schematic means
+   and what the resistance box beside them already does. So the two directions
+   deliberately use different tables — `parseSpice` for what is already stored,
+   `toSpice` for what we write back — and mega always leaves here as `MEG`. */
+
+/** The unit strings the server declares on a parameter field, mapped to the
+ *  quantity that draws it. Anything not here is dimensionless (a gain, a
+ *  count, "x rail") and stays a plain box — a prefix would be nonsense on it. */
+const UNIT_TO_QUANTITY: Record<string, Quantity> = {
+  "\u03a9": "resistance", ohm: "resistance", ohms: "resistance",
+  F: "capacitance", farad: "capacitance",
+  H: "inductance", henry: "inductance",
+  V: "voltage", volt: "voltage",
+  A: "current", amp: "current", ampere: "current",
+  s: "time", sec: "time", second: "time",
+  Hz: "frequency", hz: "frequency",
+  "%": "percent",
+  mm: "length", um: "length", "\u00b5m": "length",
+};
+
+/** Which quantity draws a field the server labelled with this unit, or null
+ *  when the field carries no unit and must stay a plain number box. */
+export function quantityForUnit(unit: string | null | undefined): Quantity | null {
+  if (!unit) return null;
+  const u = unit.trim();
+  return UNIT_TO_QUANTITY[u] ?? UNIT_TO_QUANTITY[u.toLowerCase()] ?? null;
+}
+
+/** ngspice's own suffix table. Case-insensitive, and `meg` must be tried
+ *  before `m` or every megohm becomes a milliohm. Trailing letters after a
+ *  suffix are ignored by ngspice ("10kohm" is 10k), so they are ignored here. */
+const SPICE_SUFFIX: [string, number][] = [
+  ["meg", 1e6],
+  ["mil", 25.4e-6],
+  ["t", 1e12],
+  ["g", 1e9],
+  ["k", 1e3],
+  ["m", 1e-3],
+  ["u", 1e-6],
+  ["n", 1e-9],
+  ["p", 1e-12],
+  ["f", 1e-15],
+];
+
+/** Read a stored SPICE number the way ngspice will read it.
+ *
+ *  Used for what is ALREADY stored, never for what the user types: a `1M` that
+ *  came from a sheet somewhere means one milli to the solver, and showing it as
+ *  one mega would be a lie about what the run is about to do. */
+export function parseSpice(text: string): number | null {
+  const t = String(text ?? "").trim().replace(/\s+/g, "");
+  if (!t) return null;
+  const m = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)(.*)$/.exec(t);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return null;
+  const rest = m[2].toLowerCase();
+  if (!rest) return n;
+  for (const [suffix, mult] of SPICE_SUFFIX) {
+    if (rest.startsWith(suffix)) return clean(n * mult);
+  }
+  // A bare unit letter with no prefix: "10ohm", "5V", "1s".
+  return n;
+}
+
+/** Suffixes `toSpice` may write. Mega is `MEG`, always — the whole point. */
+const SPICE_OUT: [string, number][] = [
+  ["T", 1e12],
+  ["G", 1e9],
+  ["MEG", 1e6],
+  ["k", 1e3],
+  ["", 1],
+  ["m", 1e-3],
+  ["u", 1e-6],
+  ["n", 1e-9],
+  ["p", 1e-12],
+  ["f", 1e-15],
+];
+
+/** Write a base-unit number as a SPICE string ngspice reads as the same value.
+ *
+ *  The unit symbol itself is never emitted: ngspice does not need it, and "F"
+ *  after a number would be read as femto. */
+export function toSpice(v: number | null | undefined): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return "";
+  if (v === 0) return "0";
+  const abs = Math.abs(v);
+  for (const [suffix, mult] of SPICE_OUT) {
+    if (abs >= mult) {
+      const scaled = v / mult;
+      const digits = Number(scaled.toPrecision(10));
+      return `${digits}${suffix}`;
+    }
+  }
+  // Below femto (a diode's saturation current goes to 1e-18): plain exponent
+  // notation, which ngspice accepts and cannot misread.
+  return String(Number(v.toPrecision(10)));
 }
 
 // ------------------------------------------------------------------- copper

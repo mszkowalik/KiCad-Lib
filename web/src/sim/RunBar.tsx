@@ -16,6 +16,8 @@ import { useMemo, useState } from "react";
 import type { SimProgress, SimScenarios } from "../api";
 import { eng } from "./payload";
 import { buildValue, readValue, type ParamForm } from "./edit/params";
+import SiInput from "../components/SiInput";
+import { parseSpice, quantityForUnit, toSpice } from "../components/si";
 import type { Verdicts } from "./scenario";
 import type { LiveState } from "./live";
 
@@ -177,6 +179,17 @@ export default function RunBar({
                 >
                   {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
+              ) : quantityForUnit(f.unit) && f.scale !== "text" ? (
+                /* `.tran` is seconds and `.ac` is hertz — the two fields most
+                   often typed as a decimal with a zero too many. Same SPICE
+                   string convention as the part inspector. */
+                <SiInput
+                  quantity={quantityForUnit(f.unit)!}
+                  value={parseSpice(answers[f.key] ?? f.default)}
+                  onChange={(v) => setAnswer(f.key, toSpice(v))}
+                  aria-label={f.label}
+                  className="sim-runbar-si"
+                />
               ) : (
                 <input
                   className="text"
@@ -188,7 +201,8 @@ export default function RunBar({
                   }}
                 />
               )}
-              {f.unit ? <span className="muted">{f.unit}</span> : null}
+              {f.unit && !(quantityForUnit(f.unit) && f.scale !== "text")
+                ? <span className="muted">{f.unit}</span> : null}
             </label>
           ))}
         </div>
