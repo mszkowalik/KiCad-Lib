@@ -4777,7 +4777,7 @@ export function flasherWsUrl(runId: number): string {
  *
  * - `unreviewed` — nobody looked at this version yet.
  * - `failed`     — a machine check found a concrete violation.
- * - `partial`    — items skipped (unverifiable) or still unanswered.
+ * - `partial`    — checklist items are still unanswered.
  * - `checked`    — every applicable checklist item answered. */
 export type ReviewState = "unreviewed" | "failed" | "partial" | "checked";
 
@@ -4794,7 +4794,8 @@ export interface ChecklistItemDef {
   machine?: boolean;
   /** Present when the item is already answered on the current record. */
   answered?: {
-    result: "checked" | "na" | "skipped" | "failed" | "flagged";
+    /** `skipped` was retired 2026-09-13 and is read-only history. */
+  result: "checked" | "na" | "skipped" | "failed" | "flagged";
     note: string | null;
     actor: string;
     actor_type: ReviewActor;
@@ -4803,7 +4804,8 @@ export interface ChecklistItemDef {
      *  what was flagged. A real finding (flagged/failed) outlives any number
      *  of later routine re-checks. */
     superseded?: {
-      result: "checked" | "na" | "skipped" | "failed" | "flagged";
+      /** `skipped` was retired 2026-09-13 and is read-only history. */
+  result: "checked" | "na" | "skipped" | "failed" | "flagged";
       note?: string | null;
       actor?: string;
       actor_type?: ReviewActor;
@@ -4816,6 +4818,7 @@ export interface ChecklistItemDef {
 export interface ReviewRecordItem {
   key: string;
   text?: string;
+  /** `skipped` was retired 2026-09-13 and is read-only history. */
   result: "checked" | "na" | "skipped" | "failed" | "flagged";
   note?: string | null;
   actor: string;
@@ -4875,14 +4878,16 @@ export function getReviewDetail(kind: ReviewKind, id: number, signal?: AbortSign
 
 export interface ReviewCheckAnswer {
   key: string;
-  /** "flagged" = verified and found wrong, recorded without fixing — note required. */
-  result: "checked" | "na" | "skipped" | "flagged";
+  /** "flagged" = verified and found wrong, recorded without fixing — note required.
+   *  An item nobody could verify is LEFT UNANSWERED; there is no "skipped". */
+  result: "checked" | "na" | "flagged";
   note?: string;
   /** Required for a key the checklist does not define (a custom check added
    *  for this part alone): the record is the only place that wording lives. */
   text?: string;
-  /** Skip only: a structured reason code so the health tab can aggregate WHY
-   *  things are unverifiable ("html_datasheet", "no_land_pattern", …). */
+  /** `na` only, and REQUIRED there above the machine tier: which way the item
+   *  does not apply ("feature_absent", "kind_exempt", "waived", "other"), so
+   *  the health tab can aggregate it instead of re-reading free text. */
   reason?: string;
 }
 
@@ -4977,9 +4982,12 @@ export interface ReviewHealth {
   };
   used_not_signed: string[];
   used_deprecated: string[];
-  top_skipped_items: { key: string; count: number }[];
-  /** WHY items are skipped, from the structured reason a skip can carry. */
-  skip_reasons: { reason: string; count: number }[];
+  top_na_items: { key: string; count: number }[];
+  /** WHICH WAY items do not apply, from the reason code `na` carries. */
+  na_reasons: { reason: string; count: number }[];
+  /** Retired 2026-09-13, still counted: items answered `skipped` on an older
+   *  record, which now read as unanswered and are real open work. */
+  legacy_skipped_items: { key: string; count: number }[];
   /** Machine failures + flags grouped by checklist key — the work plan view:
    *  one systemic fix clears a whole row. */
   failing_keys: Record<ReviewKind, { key: string; count: number }[]>;

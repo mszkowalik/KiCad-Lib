@@ -2,7 +2,7 @@
 name: kicad-conventions-symbols
 description: "Choosing AND authoring base symbols: pin-type directionality from the component's own viewpoint, V.24 UART and SPI role policy, functional pin grouping, box/pitch geometry formulas, and stacked (shorted) pins. Use when picking a base symbol or writing a propose_symbol_edit."
 ---
-<!-- platform-skill: conventions-symbols v11 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-symbols v12 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Symbol conventions
 
 Every component is built on a **base symbol** — a graphical template with pins.
@@ -360,10 +360,25 @@ and the netlist ties all of their pad numbers to the same net.
 
 Two legitimate uses:
 
-1. **Pads that are one net internally** — a MOSFET with several source/drain
-   pads, an IC with redundant GND/VDD pads. Draw one visible pin per net and
-   stack the duplicates hidden on top. Examples in this library: `CSD17577Q3A`
-   (source pads 1/2/3, drain pads 5–9), `LM78L05_SO8`, `ESP32-S3`.
+1. **Pads that are one net internally.** Two cases, and the library owner
+   decided on 2026-09-13 that they are NOT treated the same way.
+
+   **A discrete's multi-pad terminal IS stacked** — a MOSFET whose source or
+   drain is brought out on several pads. Those pads are one terminal of the
+   device, not a rail, and nothing is ever drawn against an individual one.
+   Draw one visible pin per terminal and stack the duplicates hidden on top.
+   Examples: `CSD17577Q3A` (source pads 1/2/3, drain pads 5–9), `AON7264E`.
+
+   **An IC's redundant GND/VDD pads are NOT stacked.** Draw one visible pin per
+   pad. Owner decision, 2026-09-13: the schematic should show how many supply
+   and ground pads the part physically has, and a reader may want to draw a
+   decoupling capacitor against a particular pad. It costs body height and it is
+   accepted. Examples of the intended drawing: `ESP32-C6` (VDDA3P3 on pads 2 and
+   3, both visible), `EG915U` (28 separate GND pins in unit 1).
+
+   `ESP32-S3` and `LM78L05_SO8` stack their redundant supply pads and so predate
+   this decision. They are not evidence for stacking a new one; leave them alone
+   until somebody redraws them deliberately.
 2. **Tying a signal pad to an adjacent datasheet `NC` pad** for a better copper
    shape. An `NC` pad has no internal connection, so shorting it to a signal net
    is electrically safe and gives the layout extra copper. This is a

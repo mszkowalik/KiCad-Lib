@@ -757,8 +757,13 @@ def review_health(db: Session = Depends(get_db)):
     # and make the numbers drift from the queue. Grouping failures by KEY is
     # the work plan: "fp.model3d failing on 61 footprints" is one job, "218
     # failed parts" is a wall.
-    skip_counts: dict[str, int] = {}
-    skip_reasons: dict[str, int] = {}
+    # `na_counts`/`na_reasons` replaced the skip pair on 2026-09-13 when
+    # `skipped` was retired (decision 0011). The retired value is still counted,
+    # under `legacy_skipped`, because 138 rows carry it and reporting them as
+    # nothing would hide work that is still open.
+    na_counts: dict[str, int] = {}
+    na_reasons: dict[str, int] = {}
+    legacy_skipped: dict[str, int] = {}
     fail_keys: dict[str, dict[str, int]] = {"component": {}, "symbol": {}, "footprint": {}}
     for kind, model in (("component", M.Component), ("symbol", M.Symbol),
                         ("footprint", M.Footprint)):
@@ -778,22 +783,28 @@ def review_health(db: Session = Depends(get_db)):
             for item in rec.items or []:
                 key = item.get("key", "?")
                 res = item.get("result")
-                if res == "skipped":
-                    skip_counts[key] = skip_counts.get(key, 0) + 1
+                if res == "na":
+                    na_counts[key] = na_counts.get(key, 0) + 1
                     reason = item.get("reason") or "unstated"
-                    skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
+                    na_reasons[reason] = na_reasons.get(reason, 0) + 1
+                elif res == "skipped":
+                    legacy_skipped[key] = legacy_skipped.get(key, 0) + 1
                 elif res in ("failed", "flagged"):
                     fail_keys[kind][key] = fail_keys[kind].get(key, 0) + 1
-    top_skipped = sorted(skip_counts.items(), key=lambda kv: -kv[1])[:10]
+    top_na = sorted(na_counts.items(), key=lambda kv: -kv[1])[:10]
+    top_legacy = sorted(legacy_skipped.items(), key=lambda kv: -kv[1])[:10]
 
     return {
         "components": {"total": len(comps), "review": review_counts,
                        "signoff": signoff_counts, "lifecycle": lifecycle_counts},
         "used_not_signed": sorted(used_not_signed),
         "used_deprecated": sorted(used_deprecated),
-        "top_skipped_items": [{"key": k, "count": n} for k, n in top_skipped],
-        "skip_reasons": [{"reason": k, "count": n}
-                         for k, n in sorted(skip_reasons.items(), key=lambda kv: -kv[1])],
+        "top_na_items": [{"key": k, "count": n} for k, n in top_na],
+        "na_reasons": [{"reason": k, "count": n}
+                       for k, n in sorted(na_reasons.items(), key=lambda kv: -kv[1])],
+        # Retired 2026-09-13; read as unanswered, still reported so the backlog
+        # of items nobody has actually answered stays visible.
+        "legacy_skipped_items": [{"key": k, "count": n} for k, n in top_legacy],
         "failing_keys": {k: [{"key": key, "count": n}
                              for key, n in sorted(v.items(), key=lambda kv: -kv[1])]
                          for k, v in fail_keys.items()},

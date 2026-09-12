@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-09-13 — A verification has four answers, and "skipped" is not one
+
+- **`skipped` is retired** (decision
+  [0011](docs/decisions/0011-retire-the-skipped-verification-result.md)). It
+  meant "this item applies, but I could not verify it". Everybody read it as
+  "does not apply" — the job `na` already does — so agents used it to mean "I
+  did not re-open the datasheet on this pass", even on items a previous pass had
+  verified and that had not changed since.
+- **An item nobody can verify is now LEFT UNANSWERED**, which produces the same
+  `partial` state `skipped` always did. The verification vocabulary is
+  `checked` | `na` | `failed` | `flagged`.
+- **What it was costing:** 138 stored skips, every single one carrying reason
+  `unstated` because the agent tool never had a reason argument; 45 subjects
+  held at `partial` by one; **38 of those with nothing else open**. Most notes
+  said only that a datasheet was out of scope for that pass, and several added
+  that a prior datasheet-backed check had already confirmed the item.
+- **`na` now requires a reason code** — `feature_absent`, `kind_exempt`,
+  `waived` or `other` — from an agent or a human. `na` is the answer that closes
+  an item, so it is the one that has to justify itself. The machine tier is
+  exempt: the validator answers `na` in a dozen places ("no SMD pads", "no
+  vias") with a note and no code.
+- **Nothing was migrated and no subject changed state.** Stored `skipped` rows
+  keep the value, are read as unanswered, and are reported separately on the
+  health panel as "Left over from the retired skipped answer", so the open work
+  stays visible instead of disappearing.
+- The review card drops its Skip button; the health panel's "why items are
+  skipped" becomes "why items do not apply".
+
 ## 2026-09-13 — A symbol shows every unit, one at a time
 
 - **A multi-unit symbol drew only its first unit, everywhere.** A dual op-amp

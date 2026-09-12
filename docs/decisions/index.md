@@ -39,6 +39,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0008](0008-a-stackup-is-electrical-only.md) | A stackup describes conduction only; appearance and impedance work are project data (extends [0002](0002-field-solver-in-the-platform.md)) | Backend, frontend, field solver, projects |
 | [0009](0009-the-git-mirror-is-the-source-archive.md) | Keep project source in the git mirror only, and stop storing a tarball per snapshot | Backend, projects, storage, deployment |
 | [0010](0010-a-git-token-belongs-to-an-account.md) | A git token belongs to an account, and projects point at it by name | Backend, frontend, projects, access control |
+| [0011](0011-retire-the-skipped-verification-result.md) | Retire the `skipped` verification result; an unverifiable item is left unanswered and `na` carries a reason | Backend, frontend, review axis, agent tools |
 
 ## Proposed
 

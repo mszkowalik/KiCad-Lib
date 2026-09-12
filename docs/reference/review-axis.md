@@ -86,7 +86,7 @@ review axis records who verified each version against its documentation.
   enforced at write time (`record_check`) — a lower tier never overwrites a
   higher tier's answer. `items=None` = a one-click human confirmation.
 - **States are DERIVED, never stored** (`state_from_record`): `unreviewed` |
-  `failed` (a machine item failed) | `partial` (skipped or unanswered items) |
+  `failed` (a machine item failed) | `partial` (items still unanswered) |
   `checked`. A component's effective state is the WEAKEST of its own record
   and its pinned symbol/footprint records (`component_effective` /
   `states_for_components` — always the bulk variant on list surfaces).
@@ -120,13 +120,13 @@ review axis records who verified each version against its documentation.
     state-sorted list hid it; `?snapshot_id=` scopes the whole queue to one
     snapshot's BOM and the drawings it pins (review-before-build). Health adds
     `failing_keys` (machine failures + flags grouped by checklist key — the
-    work-plan view) and `skip_reasons`, both counted over EFFECTIVE records
-    only, so the numbers cannot drift from the queue.
+    work-plan view), `na_reasons` and `legacy_skipped_items`, all counted over
+    EFFECTIVE records only, so the numbers cannot drift from the queue.
   - **A one-click confirmation stores `items=None`, and the card must not read
     its answers off it.** That sentinel is what makes `state_from_record`
     return a full check without measuring completeness, so it cannot be
-    repopulated — a subject with a legitimately skipped item would flip back to
-    partial. But `_detail` read the per-item answers from the effective record
+    repopulated — a subject the person vouched for while an item was still
+    unanswered would flip back to partial. But `_detail` read the per-item answers from the effective record
     alone, so pressing **Mark checked** blanked the whole checklist and threw
     away the visible evidence of what the machine and the agent had verified
     (user report 2026-08-25). The state still comes from `effective_record`;
@@ -203,12 +203,29 @@ review axis records who verified each version against its documentation.
   (consuming `M.Rule` global defaults) — plus **`fp.model3d`: a missing 3D
   model FAILS the check** and stays failed until a human/agent marks the item
   `na` in a follow-up. Machine items answer `checked|failed|na`, never
-  `skipped`; `failed` is machine-only. Agents/humans additionally have
+  `na`; `failed` is machine-only, and the machine is exempt from the `na`
+  reason rule below. Agents/humans additionally have
   **`flagged`** (verified and found WRONG, deliberately not fixed — note
   required, enforced in `record_check`): it ranks like `failed` (state
   "issues") and feeds the second-pass worklist
   (`reviews.flagged_worklist`, surfaced on the health panel). Review-only
   passes use it instead of editing.
+- **There is no `skipped`, since 2026-09-13** (decision
+  [0011](../decisions/0011-retire-the-skipped-verification-result.md)). It meant
+  "applies, but I could not verify it" and read to everybody as "does not
+  apply", which is `na`'s job. An item nobody can verify is now LEFT UNANSWERED,
+  producing the same `partial` state `skipped` always did. The measurement that
+  settled it: 138 stored skips, every one with reason `unstated`, holding 45
+  subjects at `partial` — 38 of them with nothing else open, and most notes
+  saying only that a datasheet was out of scope for that pass. Stored rows keep
+  the value, are read as unanswered, and are reported as `legacy_skipped_items`
+  so the open work stays visible; nothing was migrated.
+- **`na` requires a reason code above the machine tier** — `feature_absent`,
+  `kind_exempt`, `waived` or `other` (`review.NA_REASONS`). `na` is the answer
+  that CLOSES an item, so it is the one that has to justify itself, and a code
+  aggregates where 84 free-text notes do not. The machine tier is exempt:
+  `services/validator.py` answers `na` in a dozen places ("no SMD pads", "no
+  vias") with a note and no code, and requiring one would fail every publish.
 - **A check may answer a key the checklist does not define** — a custom item,
   recorded on that ONE subject. The agent could always do it (any key reaches
   `record_check`); the review card can now too, and both must send the item's

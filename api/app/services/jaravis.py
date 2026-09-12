@@ -1547,8 +1547,9 @@ def get_review_checklist(kind: str, name: str) -> str:
     version (machine checks run automatically on publish; earlier agent/human
     answers are included with their provenance). Call this BEFORE
     record_verification: answer the unanswered items, re-answer what you can
-    improve, and never guess — use result "skipped" with a reason when the
-    documentation does not let you verify an item.
+    improve, and never guess — LEAVE AN ITEM UNANSWERED when the documentation
+    does not let you verify it. An unanswered item keeps the version at
+    "partial", which is the honest state; do not reach for "na" to close it.
 
     Args:
         kind: "component" | "symbol" | "footprint".
@@ -1582,9 +1583,12 @@ def get_review_checklist(kind: str, name: str) -> str:
         return json.dumps({
             "kind": kind, "name": parent.name, "version_id": version_id,
             "state": state["state"], "items": items, "extra_items": extras,
-            "results_allowed": ["checked", "na", "skipped", "flagged"],
+            "results_allowed": ["checked", "na", "flagged"],
+            "na_reasons": list(review_svc.NA_REASONS),
             "note": "machine items are answered automatically; answer the judgment items. "
+                    "'na' = does not apply, and needs a reason from na_reasons. "
                     "'flagged' = verified and found wrong, not fixed (note required). "
+                    "An item you could not verify stays UNANSWERED - do not close it with na. "
                     "Add ad-hoc points with keys like custom:<slug>.",
         })
     finally:
@@ -1598,9 +1602,18 @@ def record_verification(kind: str, name: str, items_json: str, note: str = "") -
     the machine checks and any earlier record; you can NEVER overwrite an item
     a human answered. Every item is {"key", "result", "note"} with result:
     - "checked": verified against the documentation and CORRECT.
-    - "na": does not apply to this part — say why.
-    - "skipped": applies but could not be verified (missing documentation) —
-      say what was missing; the version reads checked-partial.
+    - "na": does NOT APPLY to this part. Requires a "reason" code saying which
+      way: "feature_absent" (the part has not got the thing this checks),
+      "kind_exempt" (the convention excuses this class of part), "waived"
+      (applies, but the owner accepts it as-is), "other" (say what in the note).
+      `na` CLOSES the item, so never reach for it to get rid of a question you
+      could not answer.
+    - AN ITEM YOU COULD NOT VERIFY IS LEFT OUT ENTIRELY. Do not send it. An
+      unanswered item keeps the version at "partial", which is the honest state.
+      (The old "skipped" result was retired on 2026-09-13: it meant "applies but
+      I could not verify it", everybody read it as "does not apply", and agents
+      used it to mean "I did not re-open the PDF on this pass" — which parked 38
+      subjects at partial for no reason.)
     - "flagged": verified and found WRONG, deliberately NOT fixed — the note
       MUST describe the exact discrepancy (e.g. "pad pitch 0.5mm, datasheet
       says 0.65mm"). Flagging puts the part on the issues list for a later
@@ -1691,7 +1704,7 @@ def list_reviews(state: str = "") -> str:
     """Review states across the library: every component's effective state
     (its own record AND its pinned symbol/footprint records — the weakest leg
     wins). States: unreviewed, failed (machine check violations), partial
-    (skipped/unanswered items), checked. Filter with `state`; empty = all.
+    (items still unanswered), checked. Filter with `state`; empty = all.
     Use this to find what still needs verification.
 
     Args:
@@ -2442,9 +2455,10 @@ machine validation; you then verify the version against its documentation with
 get_review_checklist / record_verification, and a human signs it off for production.
 So:
 - Say what you CHANGED, not what you proposed, and name the new version number.
-- Be honest in a verification: `skipped` when the documentation does not let you check an
-  item, `flagged` (note required) when you checked it and found it WRONG but did not fix
-  it, never `checked` on a guess.
+- Be honest in a verification: LEAVE AN ITEM UNANSWERED when the documentation does not
+  let you check it, `na` (reason code required) only when it genuinely does not apply,
+  `flagged` (note required) when you checked it and found it WRONG but did not fix it,
+  never `checked` on a guess.
 - Versions are immutable, so the undo is a new version restoring the old content — say so
   plainly instead of implying a change can be withdrawn.
 - Check component_where_used before editing a part that is in use, and prefer reusing an

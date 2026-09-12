@@ -68,44 +68,50 @@ export default function ReviewCard({
     onChange?.(next);
   };
 
-  // Why a skip happened, as a CODE the health tab can count. 84 free-text
-  // notes saying "datasheet is HTML" in different words were one problem
-  // wearing 84 hats; a reason makes them one number with one fix.
-  const SKIP_REASONS = [
-    ["html_datasheet", "datasheet archived as HTML, not a PDF"],
-    ["no_document", "no datasheet/documentation available"],
-    ["no_land_pattern", "datasheet has no land-pattern drawing"],
-    ["ambiguous_doc", "documentation is ambiguous or contradictory"],
+  // WHICH WAY an item does not apply, as a CODE the health tab can count. The
+  // same argument the retired skip reasons were built on: free-text notes
+  // saying the same thing in 84 different words are one problem wearing 84
+  // hats, and a code makes them one number with one fix.
+  //
+  // `skipped` was retired on 2026-09-13 (decision 0011). It meant "applies,
+  // but I could not verify it" and read to everybody as "does not apply",
+  // which is `na`'s job — so agents reached for it to mean "I did not re-open
+  // the PDF on this pass" and 38 subjects sat at partial for no real reason.
+  // An item nobody can verify is now simply LEFT UNANSWERED.
+  const NA_REASONS = [
+    ["feature_absent", "the part does not have the thing this checks"],
+    ["kind_exempt", "the convention exempts this class of part"],
+    ["waived", "applies, but accepted as-is by the owner"],
     ["other", "other (say what in the note)"],
   ] as const;
 
   const answer = async (
     item: { key: string; text: string },
-    result: "checked" | "na" | "skipped" | "flagged",
+    result: "checked" | "na" | "flagged",
   ) => {
     let itemNote: string | undefined;
     let reason: string | undefined;
-    if (result === "skipped") {
+    if (result === "na") {
       const picked = await dialog.select(
-        `Why can "${item.text}" not be verified?`,
-        SKIP_REASONS.map(([value, label]) => ({ value, label })),
-        { title: "Skipped" },
+        `Why does "${item.text}" not apply?`,
+        NA_REASONS.map(([value, label]) => ({ value, label })),
+        { title: "Does not apply" },
       );
       if (picked === null) return;
       reason = picked;
-      const why = await dialog.prompt("Anything to add? (optional)", { title: "Skipped" });
+      const why = await dialog.prompt("Anything to add? (optional)", {
+        title: "Does not apply",
+      });
       if (why === null) return;
       itemNote = why.trim() || undefined;
-    } else if (result !== "checked") {
+    } else if (result === "flagged") {
       const why = await dialog.prompt(
-        result === "na"
-          ? `Why does "${item.text}" not apply?`
-          : `What is wrong with "${item.text}"? (goes on the second-pass list)`,
-        { title: result === "na" ? "Not applicable" : "Flag an issue" },
+        `What is wrong with "${item.text}"? (goes on the second-pass list)`,
+        { title: "Flag an issue" },
       );
       if (why === null) return;
       itemNote = why.trim() || undefined;
-      if (result === "flagged" && !itemNote) {
+      if (!itemNote) {
         await dialog.alert("A flag needs a note — it IS the second-pass worklist entry.", {
           title: "Flag an issue",
         });
@@ -138,7 +144,7 @@ export default function ReviewCard({
     return key;
   };
 
-  const addCustom = async (result: "checked" | "na" | "skipped" | "flagged") => {
+  const addCustom = async (result: "checked" | "na" | "flagged") => {
     const text = customText.trim();
     if (!text) return;
     await answer({ key: customKey(text), text }, result);
@@ -226,6 +232,7 @@ export default function ReviewCard({
     );
   }
 
+  // A pre-2026-09-13 `skipped` answer reads as "nobody has answered this yet".
   const openCount = detail.items.filter((i) => !i.answered || i.answered.result === "skipped").length;
   // Answers to keys the checklist does not define and the record does not
   // carry yet — they have no row of their own to render in, so they get one.
@@ -358,11 +365,13 @@ export default function ReviewCard({
                     <button type="button" className="btn btn-sm" onClick={() => void answer(item, "checked")}>
                       Checked
                     </button>
-                    <button type="button" className="btn btn-sm" onClick={() => void answer(item, "na")}>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => void answer(item, "na")}
+                      title="Does not apply to this part — asks which way, and closes the item"
+                    >
                       N/A
-                    </button>
-                    <button type="button" className="btn btn-sm" onClick={() => void answer(item, "skipped")}>
-                      Skip
                     </button>
                     <button
                       type="button"
@@ -447,14 +456,6 @@ export default function ReviewCard({
                 </button>
                 <button
                   type="button"
-                  className="btn btn-sm"
-                  disabled={busy || !customText.trim()}
-                  onClick={() => void addCustom("skipped")}
-                >
-                  Skip
-                </button>
-                <button
-                  type="button"
                   className="btn btn-sm btn-danger"
                   disabled={busy || !customText.trim()}
                   onClick={() => void addCustom("flagged")}
@@ -478,7 +479,7 @@ export default function ReviewCard({
 const RESULT_TONE: Record<string, string> = {
   checked: "ok",
   na: "neutral",
-  skipped: "warn",
+  skipped: "warn", // retired 2026-09-13, still rendered on old records
   failed: "err",
   flagged: "err",
 };
@@ -490,7 +491,7 @@ function explain(d: ReviewDetail, openCount: number): string {
         ? "Verified against the documentation, human-confirmed."
         : `Verified against the documentation (${d.provenance ?? "?"}-checked, no human confirmation yet).`;
     case "partial":
-      return `Partially verified — ${d.skipped} skipped, ${openCount} item(s) still open.`;
+      return `Partially verified — ${openCount} item(s) still open.`;
     case "failed":
       return d.flagged
         ? `${d.flagged} item(s) flagged as wrong (second-pass list)${d.failed - d.flagged ? `, ${d.failed - d.flagged} machine check(s) failing` : ""}.`

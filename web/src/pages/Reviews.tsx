@@ -726,11 +726,11 @@ function HealthTab({ health }: { health: ReviewHealth }) {
         )}
       </section>
       <section className="card pad meta-card">
-        <h3 className="card-title">Chronically skipped checklist items</h3>
-        {health.top_skipped_items.length === 0 ? (
-          <p className="muted">Nothing is being skipped.</p>
+        <h3 className="card-title">Items most often marked "does not apply"</h3>
+        {health.top_na_items.length === 0 ? (
+          <p className="muted">Nothing is being closed as inapplicable.</p>
         ) : (
-          <FoldList items={health.top_skipped_items} noun="item">
+          <FoldList items={health.top_na_items} noun="item">
             {(shown) => (
               <dl className="kv">
                 {shown.map((s) => (
@@ -741,13 +741,33 @@ function HealthTab({ health }: { health: ReviewHealth }) {
           </FoldList>
         )}
       </section>
-      {health.skip_reasons.length ? (
+      {health.legacy_skipped_items.length ? (
         <section className="card pad meta-card">
-          <h3 className="card-title">Why items are skipped</h3>
+          <h3 className="card-title">Left over from the retired "skipped" answer</h3>
           <p className="muted">
-            A reason names the fix — "html datasheet" means: archive the real PDF, re-verify.
+            These were answered "skipped" before 2026-09-13, which meant "applies, but I
+            could not verify it". They now read as UNANSWERED and are real open work —
+            most say only that a datasheet was out of scope for that pass.
           </p>
-          <FoldList items={health.skip_reasons} noun="reason">
+          <FoldList items={health.legacy_skipped_items} noun="item">
+            {(shown) => (
+              <dl className="kv">
+                {shown.map((s) => (
+                  <Item key={s.key} k={s.key} v={s.count} />
+                ))}
+              </dl>
+            )}
+          </FoldList>
+        </section>
+      ) : null}
+      {health.na_reasons.length ? (
+        <section className="card pad meta-card">
+          <h3 className="card-title">Why items do not apply</h3>
+          <p className="muted">
+            A reason names the kind of exemption — "kind exempt" means the convention
+            itself excuses this class of part, and the convention is where to check it.
+          </p>
+          <FoldList items={health.na_reasons} noun="reason">
             {(shown) => (
               <dl className="kv">
                 {shown.map((s) => (

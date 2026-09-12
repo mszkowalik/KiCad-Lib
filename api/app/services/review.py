@@ -7,9 +7,16 @@ its documentation and derives every state from the records:
 - ``unreviewed`` — no record on the version.
 - ``failed``     — the newest record carries at least one ``failed`` item
                    (a machine check found a concrete violation).
-- ``partial``    — items were ``skipped`` (applicable but unverifiable) or
-                   checklist items are still unanswered.
+- ``partial``    — checklist items are still unanswered.
 - ``checked``    — every applicable item answered ``checked`` or ``na``.
+
+``skipped`` was RETIRED on 2026-09-13 (owner decision, decision record 0011).
+It meant "applies, but I could not verify it", which read to everybody — its
+own designer included — as "does not apply", the job ``na`` already does. An
+item nobody can verify is now simply left UNMARKED, which produces the same
+``partial`` state it always did. Rows written before that date keep the value
+and are read here as unanswered; nothing rewrites history. ``na`` carries the
+structured reason instead, and now requires one from an agent or a human.
 
 Records are append-only and CUMULATIVE: each new record stores the full merged
 item list, so a follow-up verification (documentation found later, checklist
@@ -38,7 +45,15 @@ KINDS = ("component", "symbol", "footprint")
 # `failed` = a machine rule violation; `flagged` = an agent or human verified
 # an item and found it WRONG, recorded without fixing it (the second-pass
 # list, user design 2026-08-23). Both read as state "failed" ("issues").
-RESULTS = ("checked", "na", "skipped", "failed", "flagged")
+RESULTS = ("checked", "na", "failed", "flagged")
+# Accepted on READ so 2026-09-13's retired value still renders; never written.
+LEGACY_RESULTS = ("skipped",)
+# `na` means "does not apply to this part" and an agent or a human must say
+# WHICH way it does not apply, as a code the health tab can count. The machine
+# tier is exempt: `services/validator.py` answers `na` in a dozen places ("no
+# SMD pads", "no vias") with a free-text note and no code, and requiring one
+# there would fail every publish.
+NA_REASONS = ("feature_absent", "kind_exempt", "waived", "other")
 TIER = {"machine": 0, "agent": 1, "human": 2}
 STATE_RANK = {"failed": 0, "unreviewed": 1, "partial": 2, "checked": 3}
 
@@ -80,8 +95,9 @@ def itemised_record(rows: list[M.ReviewRecord], version_id: int | None) -> M.Rev
 
     So the state still comes from `effective_record` and only the ITEMS come
     from here. Never merge the two into one record: repopulating `items` on the
-    confirmation would make `state_from_record` measure it, and a subject with
-    a legitimately skipped item would flip from checked back to partial.
+    confirmation would make `state_from_record` measure it, and a subject the
+    person vouched for while an item was still unanswered would flip from
+    checked back to partial.
     """
     if version_id is None:
         return None
@@ -143,20 +159,28 @@ def state_from_record(record: M.ReviewRecord | None, checklist_items: list[dict]
     by_key = {i.get("key"): i for i in record.items}
     failed = [k for k, i in by_key.items() if i.get("result") in ("failed", "flagged")]
     flagged = [k for k, i in by_key.items() if i.get("result") == "flagged"]
-    skipped = [k for k, i in by_key.items() if i.get("result") == "skipped"]
+    # Pre-2026-09-13 rows only. `skipped` is read as "nobody has answered this
+    # yet", which is the state it always produced, so retiring the value moved
+    # no subject between states.
+    legacy_skipped = [k for k, i in by_key.items() if i.get("result") == "skipped"]
     expected = [i["key"] for i in (checklist_items or [])]
-    unanswered = [k for k in expected if k not in by_key]
+    real = {k for k, i in by_key.items() if i.get("result") in RESULTS}
+    # A custom key answered `skipped` is not in `expected`, so it has to be
+    # added explicitly or a retired answer on one would read as fully checked.
+    unanswered = ([k for k in expected if k not in real]
+                  + [k for k in legacy_skipped if k not in expected])
     answered = sum(1 for i in by_key.values() if i.get("result") in ("checked", "na"))
 
     if failed:
         state = "failed"
-    elif skipped or unanswered:
+    elif unanswered:
         state = "partial"
     else:
         state = "checked"
     return {"state": state, "provenance": _provenance(record), "record_id": record.id,
             "answered": answered, "total": max(len(expected), len(by_key)),
-            "skipped": len(skipped), "failed": len(failed), "flagged": len(flagged),
+            # legacy only: the count of retired `skipped` answers still stored
+            "skipped": len(legacy_skipped), "failed": len(failed), "flagged": len(flagged),
             "unanswered": unanswered}
 
 
@@ -368,6 +392,17 @@ def record_check(db: Session, kind: str, parent, version_id: int, actor: str,
                 # next person has no idea what to fix.
                 blocked.append(f"{key}: flagged needs a note saying what is wrong")
                 continue
+            reason = str(item.get("reason") or "").strip()
+            if result == "na" and actor_type != "machine":
+                # `na` closes an item for good, so it has to say WHICH way it
+                # does not apply — as a code, not prose. 138 retired `skipped`
+                # answers all carried reason "unstated" because the agent path
+                # never asked for one, and the health tab could only report
+                # them as a single number with no fix attached to it.
+                if reason not in NA_REASONS:
+                    blocked.append(
+                        f"{key}: na needs a reason, one of {', '.join(NA_REASONS)}")
+                    continue
             old = merged.get(key)
             # A key the checklist does not define is a CUSTOM check — one this
             # part needed and no checklist anticipated. It is legal (both the
@@ -404,12 +439,12 @@ def record_check(db: Session, kind: str, parent, version_id: int, actor: str,
             )
             if superseded is not None:
                 entry["superseded"] = superseded
-            # A skip may carry a structured reason ("html_datasheet",
-            # "no_land_pattern", …) so the health tab can aggregate WHY things
-            # are unverifiable instead of re-reading 84 free-text notes. Free
-            # text stays in `note`; the code is optional and skip-only.
-            reason = str(item.get("reason") or "").strip()
-            if reason and result == "skipped":
+            # `na` carries the structured reason ("feature_absent",
+            # "kind_exempt", …) so the health tab can aggregate WHY items are
+            # being closed as inapplicable instead of re-reading free-text
+            # notes. Free text stays in `note`; the code is na-only, and it is
+            # mandatory above the machine tier (validated above).
+            if reason and result == "na":
                 entry["reason"] = reason[:40]
             merged[key] = entry
 
