@@ -79,6 +79,10 @@ class RenderRequest(BaseModel):
     name: str
     source_text: str
     theme: str = ""  # kicad-cli color theme name; "" = default
+    # Footprints only: the layers to plot, comma separated. The api decides
+    # which ones (services/preview_style.PREVIEW_LAYERS) and this only obeys,
+    # so the visibility rule lives in one place. "" plots every layer.
+    layers: str = ""
     # Symbols only: which unit to send back, 1-based as KiCad numbers them.
     # None means the first. Out of range is clamped, never an error — see
     # svg_units.select_unit.
@@ -107,7 +111,9 @@ def render(req: RenderRequest):
             pretty = tmp / "render.pretty"
             pretty.mkdir()
             (pretty / f"{req.name}.kicad_mod").write_text(req.source_text, encoding="utf-8")
-            cmd = [KICAD_CLI, "fp", "export", "svg", "--fp", req.name, *theme_args, "-o", str(out), str(pretty)]
+            layer_args = ["--layers", req.layers] if req.layers else []
+            cmd = [KICAD_CLI, "fp", "export", "svg", "--fp", req.name, *theme_args, *layer_args,
+                   "-o", str(out), str(pretty)]
         else:
             board = tmp / "render.kicad_pcb"
             board.write_text(build_board_text(req.source_text), encoding="utf-8")

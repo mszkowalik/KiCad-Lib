@@ -49,6 +49,7 @@ export default function TemplateThumb({
         alt={name}
         className="tpl-thumb"
         missingText="—"
+        board={kind === "footprints"}
         lazy
       />
       {pop ? (
@@ -58,6 +59,7 @@ export default function TemplateThumb({
           className="tpl-thumb-pop"
           style={{ left: pop.x, top: pop.y }}
           missingText="no published version to preview"
+          board={kind === "footprints"}
           lazy
         />
       ) : null}

@@ -106,7 +106,7 @@
     "drc_exclusion": "rgba(255, 255, 255, 0.800)",
     "drc_warning": "rgba(255, 208, 66, 0.800)",
     "dwgs_user": "rgb(194, 194, 194)",
-    "eco1_user": "rgb(180, 219, 210)",
+    "eco1_user": "rgb(254, 254, 254)",
     "eco2_user": "rgb(216, 200, 82)",
     "edge_cuts": "rgb(208, 210, 205)",
     "f_adhes": "rgb(132, 0, 132)",

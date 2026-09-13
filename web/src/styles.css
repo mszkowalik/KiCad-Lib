@@ -18,6 +18,11 @@
      Keep it equal to `schematic.background` in
      api/app/services/themes/Skyline-7S.json. */
   --kicad-canvas: #1e2125;
+  /* The same fact for a FOOTPRINT, which is plotted with the board half of
+     that theme and so needs the board ground, not the schematic one: a
+     preview is meant to look like KiCad's footprint editor. Keep it equal to
+     `board.background` in the same file. */
+  --kicad-board-canvas: #001023;
 
   /* trace blue accent */
   --accent: #1f63d6;
@@ -1208,6 +1213,10 @@ dl.kv {
   overflow: hidden;
   /* the containing block for .unit-nav; .viewer3d-wrap already declared it */
   position: relative;
+}
+
+.preview-fill.preview-board {
+  background: var(--kicad-board-canvas);
 }
 
 .preview-fill img {

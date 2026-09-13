@@ -10,24 +10,48 @@ unit and nothing here can merge them, so the caller has to be able to ask for
 unit 3 and to know that there are ten — see `svg_units.py`, and the
 `X-Unit-Count` header the routers put it in.
 
-A FOOTPRINT render is annotated: kicad-cli plots no pad numbers, so
-`pad_labels.py` writes them into the source on the way in and lifts them above
-the drill holes on the way out. Both happen here, around whichever renderer
-runs, so the render container needs no copy of the rule and a preview cached
-before the labels existed is keyed differently and re-rendered.
+A FOOTPRINT render is made to look like KiCad's footprint editor rather than
+like a plot: `preview_style.py` writes the pad numbers into the source, names
+the layers the editor shows, and re-stacks the finished SVG. The policy lives
+here, around whichever renderer runs — the render container is told the layers
+in the request and decides nothing — and a preview cached under an older rule
+is keyed differently and re-rendered.
 """
 from __future__ import annotations
 
 import hashlib
 import subprocess
 import tempfile
+from functools import lru_cache
 from pathlib import Path
 
 import httpx
 
 from ..config import settings
-from .pad_labels import raise_pad_labels, with_pad_labels
+from .preview_style import PREVIEW_LAYERS, style_preview_svg, with_pad_labels
 from .svg_units import select_unit
+
+THEMES_DIR = Path(__file__).parent / "themes"
+
+
+@lru_cache(maxsize=8)
+def theme_fingerprint(theme: str) -> str:
+    """A digest of the theme FILE, for the cache key.
+
+    The key names the theme, and the name does not move when a colour in it
+    does — so editing `themes/Skyline-7S.json` used to leave every preview in
+    the cache showing the old palette, on a page that had no way to ask for a
+    re-render. The container carries a byte-identical copy (the `guard` job in
+    `.github/workflows/images.yml`), so hashing ours describes both. An absent
+    file is not an error here: kicad-cli would report it, and a theme may also
+    be one the renderer's own KiCad config provides.
+    """
+    if not theme:
+        return ""
+    path = THEMES_DIR / f"{theme}.json"
+    if not path.exists():
+        return theme
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
 
 
 def render_svg(kind: str, name: str, source_text: str, unit: int | None = None) -> bytes:
@@ -49,8 +73,10 @@ def render_svg_units(kind: str, name: str, source_text: str,
     # The pad numbers go in before the hash: they are part of the picture, so
     # they are part of what identifies it. The 3D board view is left alone —
     # a label is a plot item, and nothing extrudes it.
+    layers = ""
     if kind == "footprint":
         source_text = with_pad_labels(source_text)
+        layers = PREVIEW_LAYERS
     theme = settings.symbol_theme if kind == "symbol" else settings.footprint_theme
     ext = "glb" if kind == "footprint3d" else "svg"
     # The unit joins the key for a SYMBOL only: two units of one symbol are two
@@ -60,7 +86,8 @@ def render_svg_units(kind: str, name: str, source_text: str,
     # library is not thrown away for a field that can never apply to it.
     unit_key = f"unit{unit or 1}\x00" if kind == "symbol" else ""
     digest = hashlib.sha256(
-        f"{kind}\x00{name}\x00{theme}\x00{unit_key}{source_text}".encode()
+        f"{kind}\x00{name}\x00{theme}\x00{theme_fingerprint(theme)}\x00{layers}"
+        f"\x00{unit_key}{source_text}".encode()
     ).hexdigest()
     cache_file = settings.render_cache_dir / f"{digest}.{ext}"
     count_file = cache_file.with_suffix(".units")
@@ -70,12 +97,13 @@ def render_svg_units(kind: str, name: str, source_text: str,
 
     if settings.render_mode == "local":
         data, count = render_local(kind, name, source_text, settings.kicad_cli, theme,
-                                   models_root=str(settings.mirror_dir), unit=unit)
+                                   models_root=str(settings.mirror_dir), unit=unit,
+                                   layers=layers)
     else:
         resp = httpx.post(
             f"{settings.render_url}/render",
             json={"kind": kind, "name": name, "source_text": source_text,
-                  "theme": theme, "unit": unit},
+                  "theme": theme, "unit": unit, "layers": layers},
             timeout=180,
         )
         resp.raise_for_status()
@@ -83,7 +111,7 @@ def render_svg_units(kind: str, name: str, source_text: str,
         count = int(resp.headers.get("X-Unit-Count", "1") or 1)
 
     if kind == "footprint":
-        data = raise_pad_labels(data)
+        data = style_preview_svg(data)
 
     settings.render_cache_dir.mkdir(parents=True, exist_ok=True)
     cache_file.write_bytes(data)
@@ -93,13 +121,16 @@ def render_svg_units(kind: str, name: str, source_text: str,
 
 
 def render_local(kind: str, name: str, source_text: str, kicad_cli: str, theme: str = "",
-                 models_root: str = "", unit: int | None = None) -> tuple[bytes, int]:
+                 models_root: str = "", unit: int | None = None,
+                 layers: str = "") -> tuple[bytes, int]:
     """Shared by the API's local mode and the render container (same logic).
 
     Returns the bytes and the symbol's unit count (1 for a footprint).
 
     models_root: directory containing 3DModels/ — exported as SEVENSIGMA_DIR so
     kicad-cli resolves the footprints' ${SEVENSIGMA_DIR}/3DModels/... paths.
+    layers: comma-separated layer list for a footprint plot (preview_style.
+    PREVIEW_LAYERS); "" plots every layer, which is kicad-cli's own default.
     """
     import os
 
@@ -116,7 +147,9 @@ def render_local(kind: str, name: str, source_text: str, kicad_cli: str, theme: 
             pretty = tmp / "render.pretty"
             pretty.mkdir()
             (pretty / f"{name}.kicad_mod").write_text(source_text, encoding="utf-8")
-            cmd = [kicad_cli, "fp", "export", "svg", "--fp", name, *theme_args, "-o", str(out), str(pretty)]
+            layer_args = ["--layers", layers] if layers else []
+            cmd = [kicad_cli, "fp", "export", "svg", "--fp", name, *theme_args, *layer_args,
+                   "-o", str(out), str(pretty)]
         else:  # footprint3d -> GLB board view
             from .board3d import build_board_text
 

@@ -122,6 +122,7 @@ export function ComponentWorkbench({
               src={templatePreviewUrl("footprints", live.footprint.id, footprintVersionId)}
               alt="footprint"
               missingText="no footprint render"
+              board
             />
           ) : null}
         </div>
@@ -190,6 +191,7 @@ export function TemplateWorkbench({
           src={templatePreviewUrl(kind === "symbol" ? "symbols" : "footprints", id, versionId)}
           alt={name}
           missingText="no published version to preview"
+          board={kind === "footprint"}
         />
       </div>
     </div>

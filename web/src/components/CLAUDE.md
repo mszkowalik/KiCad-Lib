@@ -302,6 +302,12 @@ review workbench drew light strokes on white in both themes.
   `.preview-fill`. Keep it equal to `schematic.background` in
   `api/app/services/themes/Skyline-7S.json`. A caller's own class carries the
   SIZE and nothing else (`template-preview`, `workbench-preview`, `tpl-thumb`).
+- **A FOOTPRINT is drawn on the BOARD ground, not that one** — pass `board`.
+  It is plotted with the board half of the same theme, so the frame owes it
+  `--kicad-board-canvas` (= `board.background`); on the schematic grey the
+  navy-and-red picture sat in a box KiCad never shows. `FootprintPreview`
+  passes it for you; a caller that reaches for `GeometryPreview` directly with
+  a footprint URL has to say so itself (`board={kind === "footprints"}`).
 - **`lazy` picks the loading strategy, and the choice is real.** A single large
   preview `fetch`es, so a 404 can show the server's own sentence ("no published
   version") instead of a broken-image icon. A LIST of miniatures must not: one

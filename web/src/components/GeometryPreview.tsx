@@ -120,6 +120,11 @@ export interface GeometryPreviewProps {
   style?: CSSProperties;
   /** One of many — use a lazy `<img>` rather than a fetch. See the header. */
   lazy?: boolean;
+  /** This drawing is a FOOTPRINT: put it on the board ground rather than the
+   *  schematic one. A footprint is plotted with the board half of the theme —
+   *  red copper, yellow silk, navy background — so the frame has to match, or
+   *  the picture sits in a grey box KiCad never shows. */
+  board?: boolean;
   /** CONTROLLED unit paging, for a caller that produced the SVG itself. The
    *  paste box POSTs unsaved text and hands over a `blob:` URL, and a blob
    *  carries no response headers — so it has no `X-Unit-Count` to read and
@@ -137,6 +142,7 @@ export default function GeometryPreview({
   className = "",
   style,
   lazy = false,
+  board = false,
   unitCount: controlledCount,
   unit: controlledUnit,
   onUnitChange,
@@ -149,7 +155,7 @@ export default function GeometryPreview({
   const controlled = onUnitChange !== undefined;
   const unit = controlled ? (controlledUnit ?? 1) : nav.src === src ? nav.unit : 1;
   const unitCount = controlled ? (controlledCount ?? 1) : nav.src === src ? nav.count : 1;
-  const frame = `preview-fill ${className}`.trim();
+  const frame = `preview-fill ${board ? "preview-board " : ""}${className}`.trim();
 
   useEffect(() => {
     if (src === null || lazy) return;
@@ -321,7 +327,7 @@ export function FootprintPreview({
           {extra}
         </>
       ) : (
-        <GeometryPreview src={svgUrl} missingText={missingText} alt="Footprint" className={className} />
+        <GeometryPreview src={svgUrl} missingText={missingText} alt="Footprint" className={className} board />
       )}
     </>
   );

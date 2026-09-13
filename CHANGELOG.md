@@ -1,5 +1,36 @@
 # Changelog
 
+## 2026-09-13 — A footprint preview looks like the footprint editor
+
+The pad numbers landed earlier today on a plot: every layer visible, mask and
+paste washing the copper mauve, and the numbers in whatever colour was spare.
+A preview is meant to be recognisable as the thing KiCad shows, so the render
+now matches the footprint editor's own palette and layer visibility.
+
+- **Mask, paste and adhesive are no longer drawn.** They are translucent
+  washes over the copper and they turned KiCad's red pads into mauve ones.
+  The visible set is the editor's default, passed to `kicad-cli --layers`.
+- **Pad numbers are white, holes are the editor's cyan, and the canvas is the
+  board background.** A footprint preview now sits on navy, not on the
+  schematic grey a symbol uses.
+- **Both renderers are told the same thing.** The layer list is decided by the
+  api and travels in the render request, so the container obeys and decides
+  nothing.
+- **`footprint_theme` is `Skyline-7S` instead of empty.** With no theme named,
+  kicad-cli falls back to "footprint editor settings" — whatever KiCad config
+  the renderer happens to carry — and the hole colour really did differ
+  between a developer's Mac and the server.
+- **Editing a theme file now re-renders.** The preview cache keyed on the
+  theme's NAME, so a colour change left every cached picture showing the old
+  palette with no way to ask for a new one. The key carries a digest of the
+  theme file.
+- **Trap worth knowing: KiCad discards a pure-white layer colour.** A layer
+  set to `rgb(255,255,255)` plots in a fallback grey instead. The label layer
+  is `rgb(254,254,254)`.
+
+`services/pad_labels.py` is now `services/preview_style.py`: it owns the pad
+numbers, the layer list and the re-stacking together.
+
 ## 2026-09-13 — A footprint preview prints its pad numbers
 
 Every 2D footprint preview — the footprint page, the component page, the

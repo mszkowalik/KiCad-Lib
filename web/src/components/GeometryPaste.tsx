@@ -249,6 +249,7 @@ export default function GeometryPaste({
             alt={`${noun} preview`}
             className="template-preview"
             missingText={`Nothing to preview — paste a ${noun} above.`}
+            board={kind === "footprints"}
             unit={unit}
             unitCount={unitCount}
             onUnitChange={(next) => void preview(next)}

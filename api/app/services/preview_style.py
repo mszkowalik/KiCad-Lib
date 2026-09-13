@@ -1,28 +1,39 @@
-"""Pad numbers on the footprint preview.
+"""How a footprint preview looks: pad numbers, layer visibility, hole colour.
 
-KiCad's own footprint editor prints each pad's number on the pad. `kicad-cli
-fp export svg` does NOT: pad numbers are a canvas display option, not a
-plotted item, so every preview in this platform showed anonymous copper and a
-reviewer had to count pins to find pad 1. The one switch kicad-cli offers,
-`--sketch-pads-on-fab-layers`, is not it — it redraws every pad as a fab-layer
-outline as well, which buries the land pattern under a second copy of itself.
+The target is **KiCad's own footprint editor**, because that is the picture
+every user already knows. `kicad-cli fp export svg` is a PLOTTER, not the
+editor, and differs from it in three ways that this module undoes.
 
-So the numbers are drawn the way KiCad draws anything: as footprint text.
-`with_pad_labels` returns a COPY of the source with one `fp_text user` per
-numbered pad, centred on the pad and sized to fit it, and `raise_pad_labels`
-lifts the plotted result above the drill holes. Nothing is stored — the text
-exists for the length of one render, and `services/render.py` hashes the
-annotated text, so a preview cached before this existed is not served in its
-place.
+1. **It prints no pad numbers.** They are a canvas display option, not a
+   plotted item, so a preview showed anonymous copper and reading a pinout
+   meant counting pins from the pin-1 mark. The one switch kicad-cli offers,
+   `--sketch-pads-on-fab-layers`, is not it — it redraws every pad as a
+   fab-layer outline as well, which buries the land pattern under a second
+   copy of itself. So `with_pad_labels` writes one `fp_text` per numbered pad
+   into a COPY of the source and lets KiCad draw it.
+2. **It plots every layer, mask and paste included.** Two translucent washes
+   over the copper turn KiCad's red pads into mauve ones. `PREVIEW_LAYERS` is
+   the editor's own default visibility, passed to `--layers`.
+3. **It plots holes last, in the paper colour, over everything.** A pad number
+   at the centre of a through-hole pad came out as two crescents of a digit
+   (`USB_B_SOFNG_USB-B01`). `style_preview_svg` re-stacks the finished SVG —
+   no layer can be plotted after the holes, the order is KiCad's, not a
+   setting — and paints the holes in the editor's plated-hole cyan.
 
-Four decisions, each forced by a footprint in this library:
+Nothing here is stored. The text exists for the length of one render, and
+`services/render.py` hashes the annotated source, so a preview cached before a
+rule changed is not served in its place.
 
-- **`Eco1.User`, not `F.Fab`.** The label has to be legible ON a pad, so it
-  needs a colour no other layer in a footprint uses: in KiCad's default board
-  theme Eco1.User is pale mint (#B4DBD2) against red copper, magenta
-  courtyard, yellow silk and grey fab. A footprint that carries real
-  Eco1.User geometry would mix with the labels — no library footprint does,
-  and a preview-only layer beats a preview-only hack on the SVG.
+**The colours below are the theme's, and the pair has to stay a pair.**
+`settings.footprint_theme` names `themes/Skyline-7S.json`; `_LABEL_COLOUR` is
+its `board.eco1_user` and `_HOLE_COLOUR` its `board.plated_hole`, because the
+finished SVG carries colours, not layer names — it is how a group is found
+again. Change one of them in the theme and change it here. The canvas the
+browser paints behind the drawing is the same fact once more: it is
+`board.background`, as `--kicad-board-canvas` in `web/src/styles.css`.
+
+Four sizing rules, each forced by a footprint in this library:
+
 - **The long axis wins.** A 0.25 x 0.875 mm pin pad fits "12" only along its
   length, so the text turns 90 degrees when the pad is taller than it is wide,
   exactly as the editor does it. The pad's own rotation is added on top.
@@ -30,12 +41,12 @@ Four decisions, each forced by a footprint in this library:
   is the anchor, which is routinely 0.14 mm on a corner pad whose real land is
   ten times that (`QFN-28_4x4mm_P0.5mm` pads 1, 7, 8, 14 ...). Sizing from the
   anchor produced invisible labels.
-- **One label per number per land.** `..._ThermalVias` footprints stack nine
-  via pads inside the exposed pad and give every one of them the pad's own
-  number: nine copies of "17" on top of each other. A pad whose centre sits
-  inside a larger pad of the SAME number is left to that pad. Two DIFFERENT
-  numbers on one land is a real thing (USB-C A1/B12 share a pad centre) and
-  those labels are spread along the pad instead of stacked.
+- **One label per number per land.** `..._ThermalVias` footprints stack via
+  pads inside the exposed pad and give every one of them the pad's own number.
+  A pad whose centre sits inside a larger pad of the SAME number is left to
+  that pad.
+- **Two numbers on one land are spread, not stacked.** A USB-C receptacle
+  gives A1 and B12 the same pad centre.
 """
 from __future__ import annotations
 
@@ -44,14 +55,36 @@ import re
 
 from ..util.sexpr import _norm, find_node, iter_nodes, parse_sexpr
 
-# The layer the labels are plotted on, and the colour kicad-cli gives it. The
-# two are ONE fact: the colour is Eco1.User in KiCad's built-in board theme,
-# which is what `settings.footprint_theme = ""` selects. Point footprint
-# renders at a theme of our own and this colour has to be re-read from it
-# (`raise_pad_labels` finds the labels by it), or the labels stop being lifted
-# above the holes.
+# What the footprint editor shows by default. Mask, paste and adhesive are the
+# ones left out on purpose: they are translucent washes over the copper, and
+# with them the pads read mauve instead of KiCad's red. An unknown name in the
+# list is ignored by kicad-cli rather than refused, so the User.n range costs
+# nothing on a footprint that uses none of it.
+PREVIEW_LAYERS = ",".join([
+    "F.Cu", "B.Cu",
+    "F.SilkS", "B.SilkS",
+    "F.Fab", "B.Fab",
+    "F.CrtYd", "B.CrtYd",
+    "Edge.Cuts", "Margin",
+    "Dwgs.User", "Cmts.User", "Eco1.User", "Eco2.User",
+    *[f"User.{n}" for n in range(1, 10)],
+])
+
+# The layer the labels are drawn on, and the colour the theme gives it — see
+# the docstring: these two are one fact, and `style_preview_svg` finds the
+# labels in the finished SVG by the colour.
+#
+# NOT rgb(255,255,255): KiCad discards a pure-white layer colour and plots the
+# layer in its fallback grey (#C2C2C2) instead, which is also Dwgs.User's
+# colour, so the labels both looked wrong and could not be told apart again.
+# 254 is white to the eye and survives.
 _LABEL_LAYER = "Eco1.User"
-_LABEL_COLOUR = "#B4DBD2"
+_LABEL_COLOUR = "#FEFEFE"
+# `board.plated_hole` in the theme. kicad-cli plots a drill as a disc in the
+# paper colour — white inside a pad, black where the hole has no copper — and
+# the editor draws both in this cyan.
+_HOLE_COLOUR = "#1AC4D2"
+_PLOTTED_HOLES = ("#FFFFFF", "#000000")
 
 # How a label is proportioned inside its pad. 0.8 of the short axis leaves a
 # margin; 0.78 per character is a little wider than KiCad's stroke font
@@ -89,36 +122,53 @@ def with_pad_labels(source_text: str) -> str:
     return source_text[:cut] + "\n".join(labels) + "\n" + source_text[cut:]
 
 
-def raise_pad_labels(svg: bytes) -> bytes:
-    """Move the label groups to the end of the SVG, above the drill holes.
+def style_preview_svg(svg: bytes) -> bytes:
+    """Paint the holes the editor's colour, then lift the labels above them.
 
-    kicad-cli plots holes LAST, as white discs over everything, so a label at
-    the centre of a through-hole pad came out as two crescents of a digit
-    (`USB_B_SOFNG_USB-B01`). No layer can be plotted after them — the order is
-    KiCad's, not a setting — so the finished SVG is re-stacked instead: every
-    top-level group drawn in the label colour is moved to just before
-    `</svg>`, which is what the editor's own canvas shows.
-
-    Anything unexpected leaves the SVG exactly as it came: labels under the
-    holes are a worse picture, not a failed render.
+    Both steps work on top-level groups: kicad-cli writes one per plotted
+    layer plus one for the holes, and each states its colour in the opening
+    tag. Anything unexpected leaves the SVG exactly as it came — a plainer
+    picture is not a failed render.
     """
     try:
         text = svg.decode("utf-8")
     except UnicodeDecodeError:
         return svg
-    groups = [g for g in _top_level_groups(text) if _LABEL_COLOUR in text[g[0]:g[1]].split(">", 1)[0]]
+    groups = _top_level_groups(text)
     if not groups or "</svg>" not in text:
         return svg
-    moved = "".join(text[start:stop] for start, stop in groups)
-    kept = []
+
+    # Holes first, so the rewrite cannot move the label spans out from under
+    # the offsets collected above.
+    pieces: list[str] = []
+    labels: list[str] = []
     cursor = 0
     for start, stop in groups:
-        kept.append(text[cursor:start])
-        cursor = stop
-    kept.append(text[cursor:])
-    rebuilt = "".join(kept)
+        block = text[start:stop]
+        head = block.split(">", 1)[0]
+        if f"stroke:{_LABEL_COLOUR}" in head:
+            pieces.append(text[cursor:start])
+            labels.append(block)
+            cursor = stop
+        elif _is_hole_group(head):
+            pieces.append(text[cursor:start])
+            for plotted in _PLOTTED_HOLES:
+                block = block.replace(plotted, _HOLE_COLOUR)
+            pieces.append(block)
+            cursor = stop
+    if not labels and cursor == 0:
+        return svg
+    pieces.append(text[cursor:])
+    rebuilt = "".join(pieces)
     end = rebuilt.rfind("</svg>")
-    return (rebuilt[:end] + moved + rebuilt[end:]).encode("utf-8")
+    return (rebuilt[:end] + "".join(labels) + rebuilt[end:]).encode("utf-8")
+
+
+def _is_hole_group(head: str) -> bool:
+    """A hole is FILLED and strokes nothing. The plot's outer group is black
+    too but strokes black, and a label strokes its colour over `fill:none` —
+    so the fill/stroke pair, not the colour alone, is what identifies one."""
+    return "stroke:none" in head and any(f"fill:{c}" in head for c in _PLOTTED_HOLES)
 
 
 def _top_level_groups(text: str) -> list[tuple[int, int]]:

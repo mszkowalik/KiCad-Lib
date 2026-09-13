@@ -43,7 +43,13 @@ class Settings(BaseSettings):
     # (mac: ~/Library/Preferences/kicad/10.0/colors/, container: baked in
     # from render/themes/). Empty string = KiCad default theme.
     symbol_theme: str = "Skyline-7S"
-    footprint_theme: str = ""  # board previews already use KiCad Default (dark)
+    # ONE theme for both, and named rather than left empty: with no theme
+    # kicad-cli falls back to "footprint editor settings", which are whatever
+    # KiCad config the renderer happens to carry — the hole colour differed
+    # between a developer's Mac and the container. The board half of
+    # Skyline-7S is KiCad's default board palette with one change, the label
+    # layer, which `services/preview_style.py` pairs with its own constant.
+    footprint_theme: str = "Skyline-7S"
 
     # Public URL of this API as seen by KiCad users — used to build links to
     # locally stored datasheets injected into generated symbols.
