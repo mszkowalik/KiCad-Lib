@@ -72,10 +72,16 @@ a better way, and the rule it stated is reversed.
   `6.5V` breakdown minimum and `10nA` leakage maximum all hold. Note for later
   passes, recorded on the part: the PROSE in section 7.3.5 contradicts that
   table, quoting 6 V and 5 V. The table is the authority.
-- **The multi-channel ESD array description template hard-coded "4-Channel".**
-  Right for the one part on the row, and a false channel count on the first
-  6-channel sibling. `conventions-library` v32 makes the count a literal written
-  per part, the way the SMAJ row already treats the direction word.
+- **Three corrections to the description templates**, `conventions-library`
+  v33. The multi-channel ESD array row hard-coded "4-Channel" — right for the
+  one part on the row, and a false channel count on the first 6-channel
+  sibling; the count is now a literal written per part, the way the SMAJ row
+  already treats the direction word, checked against the datasheet's pin table.
+  The simple 2-pin TVS clamp row now says why it carries no direction word
+  where the SMAJ row below calls that word mandatory: the row is scoped to the
+  `D_TVS_Bi` symbol, so every part on it is bidirectional. And the Transistors
+  alternation gained `PNP`, which it had never offered; no PNP part is in the
+  library yet, so nothing was mis-described.
 - **The synced KiCad library is a working copy.** A symbol drawn in the PCM
   package on disk is replaced by the next **Sync 7Sigma Library**, and nothing
   said so. [docs/reference/kicad-integration.md](docs/reference/kicad-integration.md)
