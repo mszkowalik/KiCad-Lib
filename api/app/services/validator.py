@@ -29,6 +29,8 @@ MIN_VIA_DRILL = 0.3
 MIN_TH_PAD = 0.6
 FAB_WIDTH = 0.1
 SILK_WIDTH = 0.1
+#: A single F.SilkS polarity mark may be this wide instead — see _width_items.
+POLARITY_MARK_WIDTH = 0.2
 CRTYD_WIDTH = 0.05
 PIN_GRID = 1.27
 
@@ -158,11 +160,31 @@ def _iter_pad_blocks(content: str):
         yield content[start:i + 1]
 
 
-def _width_items(entries: list[dict], layer: str, want: float, key: str) -> dict:
+def _width_items(entries: list[dict], layer: str, want: float, key: str,
+                 allow_one: float | None = None) -> dict:
+    """Every line on `layer` is `want` mm wide.
+
+    `allow_one` permits a SINGLE line at a second width. That is the cathode
+    bar: `F.SilkS` is 0.1 mm, and one polarity mark may be 0.2 mm because a
+    thin bar does not read beside the pads (Mateusz Kowalik, 2026-09-13). One,
+    not many — a footprint drawn wholly at 0.2 mm is still wrong, which is what
+    this count catches.
+    """
     ours = [e for e in entries if e["layer"] == layer and e["width"] is not None]
     if not ours:
         return _item(key, "na", f"no {layer} graphics with a width")
-    bad = sorted({e["width"] for e in ours if abs(e["width"] - want) > 0.001})
+    off = [e for e in ours if abs(e["width"] - want) > 0.001]
+    if allow_one is not None:
+        marks = [e for e in off if abs(e["width"] - allow_one) > 0.001]
+        if not marks and len(off) <= 1:
+            note = (f"one {allow_one} mm polarity mark, the rest {want} mm"
+                    if off else "")
+            return _item(key, "checked", note)
+        if not marks:
+            return _item(key, "failed",
+                         f"{len(off)} lines at {allow_one} mm on {layer} — only ONE "
+                         f"polarity mark may be {allow_one} mm, the rest must be {want} mm")
+    bad = sorted({e["width"] for e in off})
     if bad:
         return _item(key, "failed", f"{layer} line width {bad} — should be {want} mm")
     return _item(key, "checked")
@@ -192,7 +214,8 @@ def validate_footprint(db: Session, version: M.FootprintVersion) -> list[dict]:
     items.append(_item("fp.fab_outline", "checked" if fab else "failed",
                        "" if fab else "no F.Fab body outline"))
     items.append(_width_items(graphics, "F.Fab", FAB_WIDTH, "fp.fab_width"))
-    items.append(_width_items(graphics, "F.SilkS", SILK_WIDTH, "fp.silk_width"))
+    items.append(_width_items(graphics, "F.SilkS", SILK_WIDTH, "fp.silk_width",
+                              allow_one=POLARITY_MARK_WIDTH))
 
     # SMD pad shape: roundrect, exposed/heatsink pads exempt (stock EPs are
     # rect, and a roundrect EP clips corner thermal vias).

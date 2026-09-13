@@ -32,6 +32,94 @@ production sign-off anyway.
   at their next update from the schematic.
 - Reasoning, and the three rejected alternatives:
   [docs/decisions/0012](docs/decisions/0012-rename-a-footprint-or-base-symbol-in-place.md).
+
+## 2026-09-13 — A cathode bar is one straight line, and the validator decides its width
+
+- **The 0.2 mm polarity mark is no longer an accepted FAILURE.** It was a rule
+  an agent had to remember, and one had already broken it by narrowing
+  `D_SOD-123FL`'s bar. `fp.silk_width` now passes exactly **one** `F.SilkS` line
+  at 0.2 mm and fails the rest, so a footprint drawn wholly at 0.2 mm is still
+  caught. Both 0.1 mm and 0.2 mm are legal for the mark itself.
+- **A cathode bar is a single straight line** — never a C-shaped bracket — with
+  both endpoints on the 0.1 mm grid, on or within the courtyard, and at least
+  0.1 mm clear of pad copper. Its stroke may overhang the courtyard outline,
+  which is thinner; only the line's position matters.
+- **Nine footprints corrected.** `D_0402`, `LED_0402`, `LED_0603` and
+  `LED_Silverlight_M3535N1` were C-shaped, and the Silverlight bar was two
+  overlapping segments. `D_SOD-323` sat off-grid at x = −1.61. `D_SOD-323`,
+  `D_SOD-123FL`, `LED_OSRAM_SFH4725AS` and `LED_Silverlight` had bars hanging
+  outside the courtyard. `D_0402` and `LED_0402` had endpoints at y = ±0.45.
+  Widths were left as drawn.
+
+## 2026-09-13 — Verifying a land: JLC beats a dimension read off a drawing
+
+- **`conventions-footprints` §1 now covers CHECKING a footprint, not only
+  creating one.** A pass read "0.60 x 1.40" off a scanned XKB drawing and
+  changed `USB_C_Receptacle_XKB`'s rear shield slot to a 1.4 mm drill. The JLC
+  land for the same LCSC code uses 1.2999974 — what the footprint already had.
+  Reverted. One `easyeda2kicad --lcsc_id=` call answers the whole question, and
+  when a scan and JLC disagree, JLC wins.
+- **The origin follows the vendor land, not the body centre**, for a connector
+  or switch whose body overhangs its pads. Six footprints on this BOM anchor
+  that way, from −4.495 mm on the RJ45 to +0.060 mm on the nanoSIM. The
+  `fp.origin` checklist item still says "centred on the body" and is what made a
+  pass flag a correct footprint.
+- **The platform copy and the installed copy use different variables.**
+  `${SEVENSIGMA_DIR}/3DModels/…` on the platform is rewritten at PCM package
+  time to `${KICAD10_3RD_PARTY}/3dmodels/com_sevensigma_models3d/…`. Converting
+  between them is expected in both directions — it is not KiCad corrupting the
+  path on save.
+- **`CJIANG` is the canonical manufacturer**, added to the table in
+  `conventions-library`. `L_Changjiang_FTC404030S` was renamed in place to
+  `L_CJIANG_FTC404030S`, carrying its verification across.
+- **Accepted deviations recorded rather than "corrected":** the SOT-23 family's
+  1.00 mm pitch, the `Crystal_SMD_3225` pads at y = ±0.90, the house chip lands
+  under Tier 0 names, and `TS24CA`'s contact placement — all deliberate, all
+  now carrying the numbers that prove a later pass does not need to re-derive
+  them.
+
+## 2026-09-13 — Every footprint on CE_Dongle_V3 is verified, and a 3D model can finally be measured
+
+All 38 distinct footprints on the CE_Dongle_V3 BOM were checked against their
+documentation. Twenty had never been verified at all. Machine-item failures on
+that BOM went from nine to zero.
+
+- **`fp.model_fit` is no longer unverifiable.** Every pass before today recorded
+  it `skipped`, for want of a tool. `scripts/model-bbox.py` measures a STEP
+  model from its own coordinates, and `scripts/footprint-render.py` renders a
+  footprint in 3D with `kicad-cli` so a model can be judged by eye. Both are
+  now required by `conventions-footprints` v31.
+- **Measure vertices, not every point.** A bounding box over every
+  `CARTESIAN_POINT` is invalid: a STEP `LINE` carries a reference point that can
+  sit far out along its own infinite line. That error produced four false model
+  defects in this sweep — a −3578 mm enclosure, an 80 % oversize switch, a 58 mm
+  RJ45 and a lightpipe said to have no clearance. All four were withdrawn.
+- **Thermal vias were eating their exposed pads.** `VQFN-40` (ESP32-C6) had
+  0.00 mm of EP copper outside the via ring, against the 0.2 mm minimum;
+  `QFN-16`, both `QFN-56` variants and `QFN-68` were 0.05 mm or less. Cause: the
+  via was enlarged to the house 0.6 mm on a 0.3 mm drill while keeping the via
+  centres KiCad stock drew for its smaller 0.5/0.2 vias. Rings pulled inward;
+  `VQFN-40` also gained the back-side `B.Cu` land that stock carries.
+- **Mechanical pads no longer carry pin numbers.** The support tabs on
+  `SW_Push…TS24CA` and the steel bracket feet on `SW_Push…TC-6615` are now named
+  `MP` instead of `3` and `4`. The bracket numbering is what made SW2 on
+  CE_Dongle_V3 electrically dead. No net changes on any existing board.
+- **`RJ45_RCH_RC01812`'s model** sat 4.1 mm inside the board. Z offset set to 0.
+- **The SOT-23 1.00 mm pitch is a decided house choice**, not the defect three
+  separate passes filed it as. Recorded in `conventions-footprints` v31.
+- **Section 8 of the footprint conventions was wrong.** It told agents to omit
+  `F.CrtYd` on non-electrical parts, relying on a
+  `footprint_style.exempt_base_components` list that does not exist in the code.
+  `validate_footprint` fails `fp.courtyard_present` unconditionally and never
+  reads the rule block. Two agents followed the old text and published
+  footprints that failed validation. Corrected in v29.
+- **The validator had never run on most of these footprints.** Their versions
+  predate the 2026-08-24 validation subsystem, so their twelve machine items
+  read as unanswered, which is easy to mistake for passed. Backfilled by
+  republishing identical drawings with `force`. Library-wide, 89 of 213
+  footprints would fail a machine item today; 76 of those on
+  `fp.courtyard_grid`.
+
 ## 2026-09-13 — A verification has four answers, and "skipped" is not one
 
 - **`skipped` is retired** (decision

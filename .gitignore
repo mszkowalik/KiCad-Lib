@@ -24,3 +24,7 @@ jlcpcb_invoives/
 # this one pattern covers it. Geometry that survives review is proposed to the
 # platform, never committed from here.
 easyeda_tmp.*
+
+# scripts/footprint-render.py writes PNGs here. They are throwaway evidence for
+# one verification pass, not artefacts: re-run the script to get them back.
+renders/

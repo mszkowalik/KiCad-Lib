@@ -2,7 +2,7 @@
 name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints, and the naming standard: the KLC tier rule (Tier 0 stock names are frozen), the twelve-slot field order, decided spellings (_HandSoldering, vendor tokens, no rotation in names), the 7Sigma: namespace, validator-enforced pad/silk/fab/courtyard style, the 0.1mm grid, NPTH mechanical holes, thermal vias, non-electrical parts, and why connector pad numbering always follows the datasheet. Use when naming, picking or authoring any footprint."
 ---
-<!-- platform-skill: conventions-footprints v28 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v34 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 Footprints live in the `7Sigma:` namespace and are always referenced as
@@ -210,6 +210,40 @@ be "corrected" toward either. Keep this list current as more are confirmed:
 When a house-prepared land disagrees with JLC, say so in the verification note and
 leave it alone unless the user asks.
 
+### Verifying an existing land: JLC beats a dimension read off a drawing
+
+This section says to START from the JLC land when you create a footprint. The
+same authority applies when you CHECK one. **If a measurement you read off a
+vendor drawing disagrees with the JLC land for that exact LCSC code, pull the JLC
+land and diff it before you change anything — and when they disagree, JLC wins.**
+
+A vendor's recommended-layout page is often a scan, its dimensions sit in stacked
+chains, and a 1.30 and a 1.40 look alike at raster resolution. JLC's land is a
+machine-readable file for the exact orderable part, and it is what the
+assembler's process is actually built around.
+
+This is not hypothetical. On 2026-09-13 a verification pass read "0.60 x 1.40"
+off the XKB drawing for `USB_C_Receptacle_XKB_U262-161N-4BVC11`, reported the
+library's 1.299997 mm rear shield slot as "the only hole undersized in its long
+axis", and the land was changed to a 1.4 mm drill. `easyeda2kicad
+--lcsc_id=C319148` then showed the JLC land uses 1.2999974 — exactly what the
+footprint had carried before. Every other pad matched ours to the last decimal.
+The change was reverted in v5. It would otherwise have reached fab. Mateusz
+Kowalik called it: "check footprint from EASYeda libary — if theirs matches ours,
+then its ok. JLC has pretty good libs."
+
+The diff is one command and it answers the whole question at once:
+
+```
+easyeda2kicad --lcsc_id=C<number> --footprint --output ./easyeda_tmp
+```
+
+The same diff also settles a disagreement with KiCad stock. On that USB-C land
+our contact row sits 0.175 mm closer to the shell legs than stock places it;
+EasyEDA agrees with US on all three features, so stock was the outlier and no
+change was needed.
+
+
 ### Then check the mechanics
 
 - Find existing candidates with `list_footprints` (it shows each one's pad count)
@@ -286,6 +320,45 @@ candidate adoptions failed exactly this check — one of them (`TDSON-8`) had di
 Never mint a name equal to a stock filename unless the copper matches. If it differs, change
 a real field — add the vendor prefix, or record the true measured value. Never disambiguate
 with a counter (`_2`, `ThermalVias2`).
+
+**A stock name already minted over different copper is ABANDONED, not kept.** The freeze
+protects a true Tier 0 adoption. It does not protect a name that was wrong when it was
+minted — that name claims byte-identity our copper does not have, which is worse than any
+spelling drift. Diff the copper first: if it matches stock, the name is frozen and you leave
+it; if it differs, rename to Tier 2 (vendor prefix + the package or MPN). Worked example
+2026-09-13: `L_Changjiang_FTC404030S` is a KiCad stock filename, and our pads sit at ±1.4 mm
+against stock ±1.35 mm. It became `L_CJIANG_FTC404030S`, which fixes the false Tier 0 claim
+and the vendor token in one move.
+
+### Renaming a footprint
+
+`rename_footprint(name, new_name, comment)` — and `rename_base_symbol` for a base symbol.
+Landed 2026-09-13
+([decision 0012](https://github.com/mszkowalik/KiCad-Lib/blob/main/docs/decisions/0012-rename-a-footprint-or-base-symbol-in-place.md)).
+Before it existed, a wrong name was permanent: there was no rename, and delete is refused
+while any component version references the row.
+
+One call publishes one version carrying the new name, republishes every component that
+references the footprint with the reference rewritten, and moves the `.kicad_mod` in the
+mirror. Four things to know:
+
+1. **It is not a way to correct a drawing.** The only change in the new version is the name.
+   Use `propose_footprint_edit` for geometry, and do it as a separate version.
+2. **Verification and sign-off CARRY.** The land pattern, the pinned geometry and the part
+   are unchanged, so nothing a verification measured moved. This is the exception, not the
+   rule: a `Footprint` reference and a `base_component` are otherwise MATERIAL, and so is a
+   `Manufacturer 1` value — correcting a manufacturer NAME on the component still costs the
+   verification, even when the rename that prompted it did not.
+3. **History keeps the old name.** Superseded versions are immutable and go on saying what
+   they published under. That is correct, not a bug to clean up.
+4. **Boards already laid out keep the old library id** until their owner updates the project
+   from the schematic. Nothing breaks — the geometry lives in the board file — but KiCad
+   reports the old id as missing until then. Say so when you report a rename.
+
+**Only two things justify a rename**: the vendor token is not the canonical manufacturer
+name from [[conventions-library]], or the name equals a KiCad stock filename while the
+copper differs (above). A name that is merely ugly, long, or not what you would have chosen
+is not a reason — every rename costs somebody a board update.
 
 ### Field order — twelve slots, never reordered
 
@@ -470,22 +543,29 @@ block — a footprint that breaks them raises validator warnings.
 | `F.CrtYd` courtyard | required, closed, line width `0.05 mm` |
 | Header prefix | no `easyeda2kicad:` prefix — the internal `(footprint "NAME")` must equal the filename, unprefixed |
 
-### The one decided exception: a polarity mark may be 0.2 mm
+### The cathode bar
 
-**A cathode bar, or the equivalent orientation mark on any part that needs
-one, is drawn at 0.2 mm on purpose.** Decided by Mateusz Kowalik on
-2026-08-25, on `D_SOD-123FL` v5: some marks have to stay readable beside the
-pads, and 0.1 mm does not.
+A polarity mark is a **single straight line**. Four rules, all enforced or
+checkable:
 
-`fp.silk_width` still FAILS on such a footprint. **That failure is expected,
-not a defect to fix.** Accept the item on the footprint's checklist with a
-note naming the mark, and move on.
+- **Never a C.** No arms, no bracket, no diagonals joining it to the body
+  outline. One line. Corrected across the library on 2026-09-13: `D_0402`,
+  `LED_0402`, `LED_0603` and `LED_Silverlight_M3535N1` were C-shaped, and the
+  Silverlight bar was additionally drawn as two overlapping segments.
+- **0.1 mm or 0.2 mm, both legal.** A thin bar does not read beside the pads on
+  a larger body, so the mark may be 0.2 mm where the rest of `F.SilkS` is 0.1.
+  `fp.silk_width` allows exactly ONE line at 0.2 mm and fails the rest — a
+  footprint drawn wholly at 0.2 mm is still wrong. Leave an existing width
+  alone; both are within limits and neither is worth a version on its own.
+- **On the 0.1 mm grid**, both endpoints, not just the x position.
+- **Endpoints on or within the courtyard**, and at least 0.1 mm clear of pad
+  copper. The bar's STROKE may overhang the courtyard outline, which is thinner
+  — only the line's position has to sit on or inside it. Sitting exactly on the
+  courtyard edge is the normal result and is correct.
 
-**Never narrow a 0.2 mm polarity mark to 0.1 mm.** That is exactly what
-`D_SOD-123FL` v4 did — an agent read the 0.2 mm bar the user had drawn in v3
-as house-style drift and "corrected" it, citing this very section. Everything
-else on `F.SilkS` — body outlines, corner brackets, pin-1 indicators — stays
-at 0.1 mm, so a footprint drawn wholly at 0.2 mm is still wrong.
+Decided by Mateusz Kowalik on 2026-09-13, replacing the old "one decided
+exception" wording that made 0.2 mm an accepted `fp.silk_width` FAILURE. The
+validator now decides it, so nothing has to be remembered per part.
 
 Plus the conventions the validator can't check:
 
@@ -497,6 +577,18 @@ Plus the conventions the validator can't check:
 - `F.SilkS` carries a partial outline that never overlaps pad copper, plus a
   pin-1 indicator. Silkscreen may be omitted on very fine pitch (≤ 0.4 mm) where
   it cannot be drawn clear of the pads; `F.Fab` is still required.
+- **Where the origin goes.** Centred on the body for a package whose body and
+  pads share a centre — chips, QFNs, SOICs, SOTs. **For a connector or switch
+  whose body overhangs its pads, the origin follows the vendor and JLC land, not
+  the body centre.** On `USB_C_Receptacle_XKB_U262-161N-4BVC11` the body centre
+  sits 1.385 mm from the origin and that is CORRECT: the origin is JLC's, to the
+  last decimal. Six footprints on the CE_Dongle_V3 BOM anchor this way —
+  `RJ45_RCH_RC01812` at −4.495 mm, `SW_Push…TC-6615` at +3.400,
+  `USB_C_Receptacle_XKB` at +1.385, `SW_Push…TS24CA` at −0.750, the Xinlaiya
+  terminal block at −0.250, `nanoSIM_ShouHan` at +0.060. Moving one to its body
+  centre puts the land out of step with the assembler for no gain. The
+  `fp.origin` checklist item still reads "centred on the body", which is why a
+  pass flagged the USB-C land as defective on 2026-09-13; it was not.
 - **`Cmts.User` carries a pin-1 mark — always.** Every footprint that has a
   pad `1` (or `A1`) gets a 0.1 mm radius circle (`fp_circle`, 0.2 mm stroke,
   no fill) on `Cmts.User` at pin 1: centred on the pad for 2-pad chip
@@ -529,8 +621,7 @@ Plus the conventions the validator can't check:
 **Fix every validator warning by default** — including ones that were already
 there before you touched the footprint. Only stop to ask if the fix is
 non-obvious (would need the symbol's pin layout changed, or a body outline
-redrawn by hand) or could break correctness. The standing exception is the
-0.2 mm polarity mark above: leave it alone and record why.
+redrawn by hand) or could break correctness.
 
 ### 3D model path
 
@@ -593,6 +684,69 @@ An upload is live immediately — models carry no draft gate — and re-uploadin
 the same `rel_path` REPLACES the file. That is how a wrong model is corrected:
 same path, new bytes, never a second path.
 
+### Measure the model — never record `fp.model_fit` as "skipped"
+
+Every verification pass before 2026-09-13 recorded `fp.model_fit` as `skipped`
+with the reason "no tool here renders or measures STEP geometry". **That reason
+is wrong.** STEP (ISO 10303-21) is a text format with explicit millimetre
+coordinates, so a model can be measured with no CAD library at all.
+
+```
+export KICAD_MCP_TOKEN=<your personal token>
+python3 scripts/model-bbox.py Diode_SMD.3dshapes/D_SMA.step
+```
+
+Pass the path as it appears after `3DModels/` in the `(model ...)` line.
+
+**Measure vertices, not every point.** The script bounds only the
+`CARTESIAN_POINT`s that a `VERTEX_POINT` refers to, and prints the all-point box
+beside it for comparison. Use the vertex column. A naive box over every
+`CARTESIAN_POINT` is **not** a valid measurement, because a STEP `LINE` carries a
+reference point that can sit far out along its own infinite line, nowhere near
+the bounded edge it supports. That is not a rare edge case: on the first real
+sweep it inflated an enclosure's Z floor to −3578 mm, a SIM socket's height to
+17.8 mm, an RJ45 to 58 mm wide, and a tact switch's body to 80 % oversize. All
+four were reported as model defects. All four were the tool's fault, and had to
+be withdrawn.
+
+Check three things, then answer `checked` or `flagged`:
+
+1. **Size** — X and Y equal the datasheet body, leads included.
+2. **Seating** — Z starts at 0.00 and the Z size equals the datasheet height. A
+   negative Z floor is correct for a through-hole part, whose leads go below the
+   board, and for an enclosure, which surrounds the PCB.
+3. **Registration** — the model centre matches the footprint origin and the lead
+   ends fall inside the pad copper.
+
+Apply the `(model ...)` line's own offset, scale and rotation before comparing.
+A non-zero offset or a scale other than 1 is itself worth reporting: on
+`RJ45_RCH_RC01812` the model sits correctly at Z 0 on its own, and a `-4.1 mm`
+Z offset in the footprint sinks it into the board.
+
+**When a measurement says a model is wrong, RENDER IT before you flag it.**
+
+```
+python3 scripts/footprint-render.py <footprint name>
+```
+
+It builds a one-part board and renders the front, the right and an isometric
+view with `kicad-cli`, which answers what no bounding box can: does the body sit
+on the board, do the leads land on the pads, is the apparent error really the
+model. On the first sweep three models were reported defective from measurement
+alone and rendering withdrew two of them — a lightpipe said to sit flat was at
+its required z = 1.0 mm, and a tact switch said to be 80 % oversize was correct.
+The third, an RJ45 sunk 4.1 mm into the board, was real and obvious on sight.
+
+Two more traps from that first sweep:
+
+- **A surface of revolution reads as a radius.** Its vertices lie in one
+  half-plane, so a radial axis gives half the diameter. Double it. The
+  `FIX-LEMB2-4.8V0-F` lightpipe measures 1.15 mm on that axis against a
+  documented 2.30 mm head.
+- **A body centred on z = 0 instead of sitting on it.** `L_0603_1608Metric`
+  points at `easyeda2kicad.3dshapes/L0603_L1.6-W0.8-H0.5_BEAD.step`, whose
+  0.5 mm body spans −0.25 to +0.25, so half the bead is inside the board.
+
 **Which folder.** Three rules, first match wins:
 
 1. The folder the footprint's CURRENT model uses. Replacing a model must not
@@ -640,6 +794,25 @@ sixth of the overlap, while a 0.7 mm tact-switch foot on a 1.4 mm pad has
 0.3 mm to spare on each side. Mateusz Kowalik corrected it on 2026-09-10: the
 family now sits at ±2.3, outward per the rule above. Before invoking the
 exception, check the pitch — below 1 mm it may apply, above it does not.
+
+**The SOT-23 family is a DECIDED case: 0.95 mm pitch is drawn at 1.00 mm, on
+purpose. Do not flag it.** `SOT-23-3`, `SOT-23-5` and `SOT-23-6` place their
+pads at y = ±1.00 where the datasheets and JEDEC MO-178 give 0.95 mm, so each
+outer lead sits 0.05 mm off its pad centre. Mateusz Kowalik decided this on
+2026-09-13: "i moved it to 1mm to match 0.1mm snap grid. its intentional." A
+0.6 mm pad against a 0.3–0.5 mm lead absorbs the offset. Three separate
+verification passes have now re-discovered these numbers and filed them as a
+defect; they are not one. The same decision closes the Tier 0 naming question
+on all three — house copper under a stock name, exactly as on
+`SOIC-8_3.9x4.9mm_P1.27mm`.
+
+This is the second decided case where the 0.1 mm grid beats the datasheet
+pitch. **The pitch alone does not decide it — the overlap does.** Ask what
+fraction of the pad-to-lead overlap a 0.05 mm shift costs: on a 0.5 mm-pitch
+0.3 mm lead it is a sixth and the exception holds; on a SOT-23 or a tact switch
+there is 0.1 mm or more of spare on each side and the drawing gets snapped.
+When the answer is not obvious, ask rather than assume — both decided cases
+above reached the user as a flag first.
 
 ## 6. Mechanical holes must be NPTH
 
@@ -722,17 +895,46 @@ footprint**, not something baked into the part:
 
 - **3D model** — build the STEP with the post bottom at z = 1.0 mm so the 3D
   viewer shows the required gap.
-- **Footprint** — omit `F.CrtYd` entirely, and omit the mounting through-hole
-  pad. The PCB designer drills the hole separately from the documented OD.
-  The base component must be in the rule block's
-  `footprint_style.exempt_base_components` list so the validator skips the
-  `F.CrtYd` presence and width checks.
+- **Footprint** — omit the mounting through-hole pad. The PCB designer drills
+  the hole separately from the documented OD. **Draw `F.CrtYd` and `F.Fab`
+  anyway** — see the correction below.
 - **Document the constraint** — a `Cmts.User` text note ("Min 1mm clearance
   below") plus a dashed `Dwgs.User` circle at the head OD, so PCB designers see
   it without it being enforced as a courtyard.
 
-The pad-shape, silkscreen-width and no-`easyeda2kicad:`-prefix rules still apply
-to exempted parts.
+### There is NO courtyard exemption — every footprint needs `F.CrtYd` and `F.Fab`
+
+**Until v29 this section told you to omit `F.CrtYd` on a non-electrical part,
+and said the base component must sit in the rule block's
+`footprint_style.exempt_base_components` list so the validator skips the
+courtyard checks. That list does not exist.** Corrected 2026-09-13, after two
+agents in one sweep followed the old text and published a footprint that failed
+machine validation.
+
+What the code actually does, verified in `api/app/services/validator.py`:
+
+- `validate_footprint` answers `fp.courtyard_present` `failed` whenever the
+  source has no `F.CrtYd`, with no exemption of any kind.
+- It never reads the rule block. `_global_rules` is called only from
+  `validate_component`, and `VALIDATOR_GLOBAL_DEFAULTS` has no `footprint_style`
+  key at all.
+- `validate_footprint` is not even passed the component, so it *cannot* know
+  which base component a footprint belongs to.
+
+So a lightpipe, standoff or enclosure footprint carries the same geometry as any
+other part:
+
+- `F.Fab` — the body outline at the real datasheet dimension (the head OD for a
+  lightpipe, the case outline for an enclosure).
+- `F.CrtYd` — the body plus the standard 0.25 mm clearance, snapped to the
+  0.1 mm grid like every other courtyard.
+
+The 1 mm lightpipe clearance is still a **layout constraint**, carried by the
+`Cmts.User` note, the dashed `Dwgs.User` circle and the 3D model's z offset. The
+courtyard does not express it and never did.
+
+The pad-shape, silkscreen-width and no-`easyeda2kicad:`-prefix rules apply to
+these parts too.
 
 ## 9. JLC pick-and-place rotation offsets
 

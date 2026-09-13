@@ -2,8 +2,7 @@
 name: kicad-conventions-library
 description: "House style for component data: canonical manufacturer names (with the full raw-to-canonical lookup table), ki_description {Key} templating per category, the Value field rule, and category-placement rules. Read before proposing a new component or editing an existing one's properties."
 ---
-<!-- platform-skill: conventions-library v27 — source of truth is the platform; check with list_skills, refresh with get_skill -->
-
+<!-- platform-skill: conventions-library v30 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Library conventions
 
 This is the house style for component **data**: manufacturer naming,
@@ -149,6 +148,7 @@ alphabetically by canonical value.)
 | Bat Wireless | BAT WIRELESS |
 | BHFUSE | (none — all-caps genuine brand, see exceptions above) |
 | Bourns | BOURNS |
+| CJIANG | SZ CJIANG TECHNOLOGY CO.,LTD (the letterhead on all 61 pages of the FTC-series datasheet), cjiang (LCSC's brand field), Changjiang, Changjiang Microelectronics Technology (both earlier house guesses, now wrong). Decided by Mateusz Kowalik on 2026-09-13. All-caps genuine brand, like BHFUSE. The footprint vendor token is `CJIANG`. Both sides are now consistent: `FTC404030S4R7MGCA` carries `Manufacturer 1 = CJIANG`, and the footprint was renamed `L_Changjiang_FTC404030S` -> `L_CJIANG_FTC404030S` on 2026-09-13 — the first use of the platform's rename, which also retired a false Tier 0 claim (see [[conventions-footprints]], "Renaming a footprint") |
 | Ckmtw | (none; full form "Ckmtw(Shenzhen Cankemeng)" also seen) |
 | DEGSON | Degson |
 | Diodes Incorporated | Diodes Inc, DIODES — the LCSC/JLC feed shouts "DIODES"; "Diodes Inc" was an earlier house form, already normalized to the full legal name on AP63357QZV-7 and the Diodes transistors. The footprint vendor token is `DiodesIncorporated` |
