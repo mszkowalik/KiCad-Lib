@@ -360,7 +360,17 @@ export default function ReviewCard({
                     {a.superseded.note ? ` — ${a.superseded.note}` : ""}
                   </p>
                 ) : null}
-                {verifying && (!item.machine || a?.result === "failed") ? (
+                {/* A machine item is normally the validator's to answer, so a
+                    passing one offers no buttons. A FINDING is different: it is
+                    a worklist entry addressed to a person, and until 2026-09-13
+                    only `failed` could be closed here. An agent's `flagged` on a
+                    machine item — `cmp.datasheet_text` is the one that reaches
+                    this state in practice — rendered read-only with no way to
+                    accept, waive or re-check it (user report 2026-09-13). The
+                    backend never forbade it: `record_check` lets a human answer
+                    over an agent on any key, and keeps the old answer as
+                    `superseded`. */}
+                {verifying && (!item.machine || a?.result === "failed" || a?.result === "flagged") ? (
                   <div className="btn-row">
                     <button type="button" className="btn btn-sm" onClick={() => void answer(item, "checked")}>
                       Checked

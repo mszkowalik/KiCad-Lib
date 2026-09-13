@@ -69,6 +69,15 @@ sign-off states to `STATUS_TONES`.
   Escape handler sits on the backdrop's `onKeyDown`, which never fires while
   focus is on `document.body`, so without that focus the dialog could not be
   dismissed by keyboard at all. Any new overlay built this way needs the same.
+- **`.pill` carries `align-self: center`, and that stays.** A pill lands in
+  flex rows as often as in prose. A flex parent with no `align-items` stretches
+  it to the tallest sibling, which is how the lifecycle pill came to be drawn
+  twice the height of the three pills beside it (fixed 2026-09-13). There is
+  ONE pill component per state — `StatusPill`, `SignoffPill`, `ReviewPill`,
+  `LifecyclePill` — so a row must never resize one. A pill paired with a
+  control gets its own inline-flex wrapper (`.lifecycle-control`), not
+  `.btn-row`: `btn-row` brings `margin: 8px 0`, which lifts the pair out of
+  line with the pills next to it.
 - **A pill is `inline-block`, so a column's ellipsis cannot shorten it** — too
   narrow simply cuts it off with no visual hint. The browse table's sign-off
   column is sized for the longest label. Check the rendered width when you add

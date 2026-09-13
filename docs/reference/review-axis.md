@@ -163,6 +163,16 @@ review axis records who verified each version against its documentation.
     routine re-checks. `_detail` must include `superseded` in the projection it
     builds for `answered` — a fixed key list there is exactly what hid it the
     first time.
+  - **A machine item carrying a FINDING is answerable by hand** (2026-09-13).
+    The card hides the Checked / N/A / Flag buttons on `machine: true` items,
+    because the validator owns them — but a `failed` or `flagged` answer is a
+    worklist entry addressed to a person, so those two open the buttons. The
+    gate used to name `failed` only, which left an agent's `flagged` on a
+    machine key read-only: `cmp.datasheet_text` reaches that state on any part
+    whose archived PDF is partly image-only, and nothing in the UI could
+    accept, waive or re-check it. The backend never forbade it — the tier rule
+    lets a human answer over an agent on any key. A machine item nobody has
+    answered YET is still read-only in the card; see the backfill trap above.
   - **A skip may carry a structured `reason`** (`html_datasheet`,
     `no_document`, …) — `record_check` stores it skip-only, capped at 40
     chars; the ReviewCard offers the presets. Free text stays in `note`.

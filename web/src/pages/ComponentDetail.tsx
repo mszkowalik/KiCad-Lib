@@ -769,7 +769,7 @@ function LifecycleSelect({
   };
 
   return (
-    <span className="btn-row">
+    <span className="lifecycle-control">
       <LifecyclePill
         state={detail.lifecycle}
         title="Usage fitness — released on first human sign-off; deprecated/obsolete are hidden from KiCad"

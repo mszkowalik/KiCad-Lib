@@ -1,5 +1,58 @@
 # Changelog
 
+## 2026-09-13 — A flagged machine item can be answered
+
+An `auto` checklist item that an agent flagged as wrong rendered read-only in
+the verification card. There was no way to accept it, waive it or re-check it
+by hand, so the finding sat on the part for ever.
+
+- **The Checked / N/A / Flag buttons now appear on any machine item that
+  carries a finding**, `failed` or `flagged`. Before, the card offered them on
+  `failed` alone. A machine item that PASSED still offers none — the validator
+  owns those.
+- **`cmp.datasheet_text` is the item this shows up on.** An agent flags it when
+  the archived PDF is only partly searchable, which is a judgement a person has
+  to close, not a rule the validator can re-run.
+- **Nothing changed in the API.** A human answer has always outranked an
+  agent's on any key, and the answer it replaces is still kept as `superseded`,
+  so accepting a flag does not erase the description of what was found.
+- **A machine item nobody has answered yet is still read-only.** Backfilling
+  one still needs the API.
+- **The lifecycle pill is drawn the same size as the pills beside it.** It sat
+  in a button row, which stretched it to the height of the select next to it
+  and pushed the pair out of line. The component detail header also wraps now
+  instead of letting a long part number push the pills on top of each other.
+
+## 2026-09-13 — The nano-SIM socket is drawn the size it really is
+
+`7Sigma:nanoSIM_ShouHan_TL6P-H1.35` published an outline of 11.18 x 12.82 mm
+for a part that measures 11.00 x 12.30, sitting 0.06 mm off centre. Version 7
+redraws it. No copper moved.
+
+- **`F.Fab` and `F.SilkS` now trace the part.** Body 10.0 x 10.4 mm with the
+  top-left corner chamfered, four corner legs out to y +/-6.15, two shell tabs
+  out to x +/-5.5. The silk used to stand visibly outside the connector in a
+  3D render; it no longer does.
+- **Two sources agree on the size to a hundredth of a millimetre.** The STEP
+  model's own vertices, and the vendor drawing measured at 600 dpi with the
+  scale taken from the two mounting-hole centres. The old outline's own commit
+  message quoted 11.0 x 12.3 and then published 11.18 x 12.82.
+- **The courtyard is symmetric again**, x +/-6.1 by y +/-6.9, and never larger
+  than before in any direction, so it cannot raise a new clearance violation on
+  a board already laid out.
+- **The `F.Fab` pin-1 circle moved inside the outline**, from (2.5, 6.0) to
+  (2.5, 4.9).
+- **Boards keep their own copy until they are updated from the schematic.**
+  CE_Dongle_V3 carries this part; nothing breaks, and the board shows the old
+  silkscreen until its owner refreshes it.
+- **The land pattern was verified, not changed.** Pad sizes match the drawing
+  exactly; every pad and hole position is within 0.10 mm of it, which is the
+  0.1 mm grid the house convention asks for. The part's own leads sit inside
+  their pads with at least 0.16 mm to spare.
+- **`conventions-footprints` v35 drops this footprint from its origin-offset
+  list.** The +0.060 recorded there was the centre of the wrong outline, not
+  the centre of the part.
+
 ## 2026-09-13 — A footprint preview looks like the footprint editor
 
 The pad numbers landed earlier today on a plot: every layer visible, mask and

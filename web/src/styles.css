@@ -1028,8 +1028,20 @@ a.btn:hover {
 .detail-header {
   display: flex;
   align-items: center;
+  /* Four pills and the lifecycle select next to a long MPN run past a narrow
+     column, and without a wrap they overlapped each other. */
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 10px;
+}
+
+/* Pill + select, one control. `btn-row` was doing this job and brought its own
+   `margin: 8px 0` with it, which lifted the pair out of line with the pills
+   beside it. */
+.lifecycle-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .comp-name {
@@ -2470,6 +2482,12 @@ table.kv.sim-map-table select {
 
 .pill {
   display: inline-block;
+  /* The pill sits in flex rows as often as in prose, and a flex parent with no
+     `align-items` stretches it to the tallest sibling — a select or a button —
+     which drew the lifecycle pill twice the height of the three beside it
+     (user report 2026-09-13). `align-self` keeps that off the callers: there is
+     one pill component, and no row it lands in can resize it. */
+  align-self: center;
   font-family: var(--mono);
   font-size: 11px;
   text-transform: uppercase;
