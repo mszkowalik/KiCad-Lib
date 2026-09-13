@@ -541,16 +541,22 @@ def carry_geometry(db: Session, kind: str, parent, old_version, new_version) -> 
     return {"carried": True, "record_id": record.id}
 
 
-def carry_component(db: Session, comp: M.Component, old_cv, new_cv) -> dict | None:
+def carry_component(db: Session, comp: M.Component, old_cv, new_cv,
+                    rename: tuple[str, str, str] | None = None) -> dict | None:
     """Carry a component's own verification record across a data-preserving
-    publish (repoints, non-material edits). Uses the sign-off leg rules."""
+    publish (repoints, non-material edits). Uses the sign-off leg rules.
+
+    ``rename`` is passed only by `services/rename.py` — see
+    `signoff.data_carries`. A rename changes the NAME of the template the
+    component points at and nothing a verification measured, so the record
+    carries."""
     if old_cv is None or new_cv is None or old_cv.id == new_cv.id:
         return None
     rows = records_for(db, "component", comp.id)
     prev = effective_record(rows, old_cv.id)
     if prev is None or effective_record(rows, new_cv.id) is not None:
         return None
-    ok, why = signoff.data_carries(old_cv, new_cv)
+    ok, why = signoff.data_carries(old_cv, new_cv, rename)
     if not ok:
         return {"carried": False, "reason": f"component data: {why}"}
     # A verification says "the data matches the documentation". Unchanged data
@@ -568,7 +574,8 @@ def carry_component(db: Session, comp: M.Component, old_cv, new_cv) -> dict | No
         checklist_version_id=prev.checklist_version_id,
         checklist_items=prev.checklist_items,  # a carry measures against the same list
         items=prev.items,
-        note=f"Carried from v{old_cv.version_no}: component data unchanged",
+        note=(f"Carried from v{old_cv.version_no}: component data unchanged"
+              + (f" ({rename[0]} renamed {rename[1]} to {rename[2]})" if rename else "")),
         created_by="review", actor_type=prev.actor_type,
     )
     db.add(record)

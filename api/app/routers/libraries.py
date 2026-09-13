@@ -24,6 +24,7 @@ from ..services.geometry_proposals import (
 )
 from ..services.mirror import write_manifest
 from ..services.publish import set_footprint_package_name
+from ..services.rename import RenameError, rename_geometry
 from ..services.render import render_svg, render_svg_units
 from .util import audit
 
@@ -327,6 +328,41 @@ def set_footprint_display_name(fp_id: int, body: FootprintMeta, db: Session = De
     if f is None:
         raise HTTPException(404, "footprint not found")
     return set_footprint_package_name(db, settings, f, body.display_name)
+
+
+class GeometryRename(BaseModel):
+    """A new name for a footprint or a base symbol, plus why."""
+
+    name: str
+    comment: str = ""
+
+
+def _rename(kind: str, parent_id: int, body: GeometryRename, db: Session):
+    """Both rename routes. The service owns the transaction and the mirror."""
+    model = M.Footprint if kind == "footprint" else M.Symbol
+    parent = db.get(model, parent_id)
+    if parent is None:
+        raise HTTPException(404, f"{kind} not found")
+    try:
+        return rename_geometry(db, settings, kind, parent, body.name,
+                               actor="user", comment=body.comment)
+    except RenameError as e:
+        raise HTTPException(400, detail={"error": str(e)}) from e
+
+
+@router.post("/footprints/{fp_id}/rename")
+def rename_footprint(fp_id: int, body: GeometryRename, db: Session = Depends(get_db)):
+    """Rename a footprint and move every reference to it.
+
+    See `services/rename.py`. A rename is NOT a way to correct a drawing: it
+    publishes one version whose only change is the name."""
+    return _rename("footprint", fp_id, body, db)
+
+
+@router.post("/symbols/{sym_id}/rename")
+def rename_symbol(sym_id: int, body: GeometryRename, db: Session = Depends(get_db)):
+    """Rename a base symbol and move every reference to it (see above)."""
+    return _rename("symbol", sym_id, body, db)
 
 
 @router.delete("/footprints/{fp_id}")

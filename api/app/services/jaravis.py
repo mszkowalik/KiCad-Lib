@@ -2309,6 +2309,76 @@ def sim_run_scenario(snapshot_id: int = 0, board: str = "", upload_id: str = "",
         return json.dumps({"error": f"{e}"})
 
 
+@beta_tool
+def rename_footprint(name: str, new_name: str, comment: str = "") -> str:
+    """Rename a footprint and move every reference to it in one operation.
+
+    This is NOT a way to correct a drawing. It publishes ONE version whose only
+    change is the name, republishes every component that references the
+    footprint with the reference rewritten, and moves the .kicad_mod in the
+    mirror. Verification and production sign-off CARRY: nothing reaching a
+    board changed.
+
+    Rename only when the NAME is wrong. Two cases that qualify: the vendor
+    token is not the canonical manufacturer name, or the name equals a KiCad
+    stock filename while our copper does NOT match the stock land pattern.
+    Diff the copper before you claim either.
+
+    History keeps the old name. Superseded versions are immutable and go on
+    saying what they published under, which is correct.
+
+    A schematic or board already placed keeps the old library id until its
+    owner updates the project from the schematic. The geometry is embedded in
+    the board file, so nothing breaks, but KiCad reports the old id as missing
+    until then. Say so when you report a rename.
+
+    Args:
+        name: Current footprint name, WITHOUT the 7Sigma: prefix.
+        new_name: The new name, WITHOUT the 7Sigma: prefix.
+        comment: Why the name was wrong. Recorded on the version and the audit row.
+    """
+    return _rename_tool("footprint", name, new_name, comment)
+
+
+@beta_tool
+def rename_base_symbol(name: str, new_name: str, comment: str = "") -> str:
+    """Rename a base symbol and move every reference to it (see rename_footprint).
+
+    A base symbol is referenced by NAME on every component version that uses
+    it, so this republishes one component version per user. One symbol in this
+    library serves ~95 components — check `get_symbol` first and expect the
+    change feed to fill up.
+
+    Args:
+        name: Current base symbol name.
+        new_name: The new name.
+        comment: Why the name was wrong.
+    """
+    return _rename_tool("symbol", name, new_name, comment)
+
+
+def _rename_tool(kind: str, name: str, new_name: str, comment: str) -> str:
+    from ..config import settings
+    from .rename import RenameError, rename_geometry
+
+    model = M.Footprint if kind == "footprint" else M.Symbol
+    db = SessionLocal()
+    try:
+        parent = db.query(model).filter_by(name=(name or "").strip()).first()
+        if parent is None:
+            lister = "list_footprints()" if kind == "footprint" else "list_base_symbols()"
+            return json.dumps({"error": f"{kind} {name!r} not found",
+                               "hint": f"{lister} shows the exact names; "
+                                       "do not include the 7Sigma: prefix"})
+        return json.dumps(rename_geometry(db, settings, kind, parent, new_name,
+                                          actor="jaravis", comment=comment))
+    except RenameError as e:
+        db.rollback()
+        return json.dumps({"error": str(e)})
+    finally:
+        db.close()
+
+
 TOOLS = [
     # library reads
     search_components, get_component, list_categories, list_base_symbols,
@@ -2327,6 +2397,7 @@ TOOLS = [
     propose_new_component, propose_component_edit,
     propose_symbol_edit, propose_footprint_edit, propose_skill_update,
     set_footprint_package_name,
+    rename_footprint, rename_base_symbol,
     # simulation models
     list_sim_models, get_sim_model, propose_sim_model_edit, set_symbol_sim_link,
     # running a simulation

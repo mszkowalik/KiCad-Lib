@@ -100,22 +100,48 @@ def live_signoff(rows: list[M.ComponentSignoff], version_id: int | None) -> M.Co
     )
 
 
-def _material_props(cv: M.ComponentVersion) -> dict[str, tuple[str | None, bool]]:
+def _apply_rename(value: str | None, kind: str, rename: tuple[str, str, str] | None) -> str | None:
+    """Map one renamed template's old name to its new one. See `data_carries`."""
+    if rename is None or value is None or rename[0] != kind:
+        return value
+    _, old_name, new_name = rename
+    if kind == "symbol":
+        return new_name if value == old_name else value
+    return f"7Sigma:{new_name}" if value == f"7Sigma:{old_name}" else value
+
+
+def _material_props(cv: M.ComponentVersion,
+                    rename: tuple[str, str, str] | None = None) -> dict[str, tuple[str | None, bool]]:
     return {
-        p.key: (p.value, p.is_null)
+        p.key: (_apply_rename(p.value, "footprint", rename) if p.key == "Footprint" else p.value,
+                p.is_null)
         for p in cv.properties
         if not _is_non_material(p.key)
     }
 
 
-def data_carries(old_cv: M.ComponentVersion, new_cv: M.ComponentVersion) -> tuple[bool, str]:
-    """Did the component's own data stay the same part?"""
-    if old_cv.base_component != new_cv.base_component:
+def data_carries(old_cv: M.ComponentVersion, new_cv: M.ComponentVersion,
+                 rename: tuple[str, str, str] | None = None) -> tuple[bool, str]:
+    """Did the component's own data stay the same part?
+
+    ``rename`` is ``(kind, old_name, new_name)`` and is passed by ONE caller,
+    `services/rename.py`. It does not widen `NON_MATERIAL_KEYS`: the base
+    symbol and the `Footprint` reference stay material for every other caller.
+    It maps the one pair being renamed on the OLD side before the comparison,
+    so a version that differs only because the template it names was renamed
+    reads as unchanged — which it is. The pinned geometry does not move in a
+    rename, so nothing reaching the board changed.
+
+    A mapping, never a wildcard: a real footprint change made in the same
+    version would still differ after the map and would still cost the carry.
+    """
+    old_base = _apply_rename(old_cv.base_component, "symbol", rename)
+    if old_base != new_cv.base_component:
         return False, f"the base symbol changed ({old_cv.base_component} to {new_cv.base_component})"
     if old_cv.category_id != new_cv.category_id:
         return False, "the component moved to another category"
 
-    old_p, new_p = _material_props(old_cv), _material_props(new_cv)
+    old_p, new_p = _material_props(old_cv, rename), _material_props(new_cv)
     added = sorted(set(new_p) - set(old_p))
     removed = sorted(set(old_p) - set(new_p))
     changed = sorted(k for k in set(old_p) & set(new_p) if old_p[k] != new_p[k])
@@ -288,13 +314,16 @@ def revoke(db: Session, row: M.ComponentSignoff, actor: str, reason: str) -> M.C
     return row
 
 
-def carry_on_publish(db: Session, comp: M.Component, old_cv, new_cv) -> dict | None:
+def carry_on_publish(db: Session, comp: M.Component, old_cv, new_cv,
+                     rename: tuple[str, str, str] | None = None) -> dict | None:
     """Move the sign-off from the outgoing version to the one being published.
 
     Call this INSIDE the approve transaction, before `current_version_id` is
     repointed or after — it reads `old_cv` and `new_cv` explicitly and never
     the component's pointer. Returns a summary for the approve response, or
     None when there was nothing to carry.
+
+    ``rename`` is passed only by `services/rename.py` — see `data_carries`.
     """
     if old_cv is None or new_cv is None or old_cv.id == new_cv.id:
         return None
@@ -308,7 +337,7 @@ def carry_on_publish(db: Session, comp: M.Component, old_cv, new_cv) -> dict | N
     reasons: list[str] = []
     modes: list[str] = []
 
-    ok, why = data_carries(old_cv, new_cv)
+    ok, why = data_carries(old_cv, new_cv, rename)
     if not ok:
         return {"carried": False, "reason": f"component data: {why}"}
     reasons.append("component data unchanged")

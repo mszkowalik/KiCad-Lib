@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-09-13 — A footprint or a base symbol can be renamed
+
+Until now a name chosen wrongly was permanent. There was no rename, and
+delete-and-recreate was refused while any component version referenced the row
+— and would have discarded the version history, the review record and the
+production sign-off anyway.
+
+- **Rename moves the name AND every reference to it, in one transaction.** One
+  new geometry version carrying the new name, one republished component
+  version per component that references it, the `.kicad_mod` moved in the
+  mirror, and the stale entries in `categories.defaults` rewritten. On the
+  footprint page, under "Rename this footprint"; as the agent tools
+  `rename_footprint` and `rename_base_symbol`; over HTTP as
+  `POST /api/{footprints,symbols}/{id}/rename`.
+- **A rename costs no verification and no sign-off.** The land pattern, the pin
+  map, the pinned geometry and the part are unchanged, so both carry. The
+  `Footprint` property and `base_component` stay material for every other kind
+  of edit — the exemption is a mapping on the one pair being renamed, and it
+  has one caller.
+- **History keeps the old name.** Superseded versions are immutable and go on
+  saying what they published under.
+- **A board already laid out keeps the old library id** until its owner updates
+  the project from the schematic. The geometry lives in the board file, so
+  nothing breaks, but KiCad reports the old id as missing until then.
+- **`L_Changjiang_FTC404030S` is now `L_CJIANG_FTC404030S`.** `CJIANG` is the
+  canonical manufacturer name decided on 2026-09-13. The old name was also a
+  KiCad **stock** filename while our land is not the stock land — stock pads sit
+  at ±1.35 mm and ours at ±1.4 mm — so it claimed a Tier 0 identity the copper
+  does not support. Affects `CE_Dongle_V3` (L4, L5) and `EVSE_20_CTRL` (L8, L9)
+  at their next update from the schematic.
+- Reasoning, and the three rejected alternatives:
+  [docs/decisions/0012](docs/decisions/0012-rename-a-footprint-or-base-symbol-in-place.md).
 ## 2026-09-13 — A verification has four answers, and "skipped" is not one
 
 - **`skipped` is retired** (decision

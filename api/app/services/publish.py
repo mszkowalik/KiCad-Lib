@@ -29,11 +29,16 @@ from .mirror import top_level_of, update_mirror_footprint, update_mirror_symbols
 
 
 def publish_component_version(db: Session, comp: M.Component, cv: M.ComponentVersion,
-                              actor: str, approved_by: str | None = None) -> dict:
+                              actor: str, approved_by: str | None = None,
+                              rename: tuple[str, str, str] | None = None) -> dict:
     """Publish one component version. Caller owns the transaction.
 
     Returns {old_cv, tops, signoff, review_carry} for the caller's response
     and mirror refresh.
+
+    ``rename`` is ``(kind, old_name, new_name)`` and is passed by ONE caller,
+    `services/rename.py`. It reaches the two carries only — see
+    `signoff.data_carries` for why a rename must not cost a verification.
     """
     old_cv = next((v for v in comp.versions if v.id == comp.current_version_id), None) \
         if comp.current_version_id else None
@@ -51,8 +56,8 @@ def publish_component_version(db: Session, comp: M.Component, cv: M.ComponentVer
     db.add(M.AuditLog(actor=actor, action="publish", entity_type="component_version",
                       entity_id=str(cv.id),
                       details={"component": comp.name, "version_no": cv.version_no}))
-    carried = signoff.carry_on_publish(db, comp, old_cv, cv)
-    review_carry = review.carry_component(db, comp, old_cv, cv)
+    carried = signoff.carry_on_publish(db, comp, old_cv, cv, rename)
+    review_carry = review.carry_component(db, comp, old_cv, cv, rename)
     # Machine validation AFTER the carry, so its answers merge on top of the
     # carried record instead of replacing it.
     review.machine_check_on_publish(db, "component", comp, cv, comp)

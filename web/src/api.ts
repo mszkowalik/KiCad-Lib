@@ -583,6 +583,48 @@ export function saveFootprintDisplayName(
   });
 }
 
+/** What a rename did: the new name, and every component republished to follow it. */
+export interface RenameResult {
+  ok: true;
+  kind: "footprint" | "symbol";
+  id: number;
+  old_name: string;
+  new_name: string;
+  version_no: number;
+  components: {
+    component: string;
+    version_no: number;
+    signoff: { carried: boolean; reason?: string } | null;
+    review_carry: { carried: boolean; reason?: string } | null;
+  }[];
+  categories_updated: string[];
+  mirror_file_removed: boolean;
+  rebuilt_libraries: string[];
+  mirror_warnings: string[];
+}
+
+/**
+ * Renames a footprint or a base symbol and moves every reference with it.
+ *
+ * NOT a way to correct a drawing: it publishes one version whose only change is
+ * the name, and republishes each component that references it. Verification and
+ * sign-off carry, because nothing reaching a board changed. A board already laid
+ * out keeps the OLD library id until its owner updates the project from the
+ * schematic.
+ */
+export function renameTemplate(
+  kind: TemplateKind,
+  id: number,
+  name: string,
+  comment: string,
+): Promise<RenameResult> {
+  return request(`/api/${kind}/${id}/rename`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, comment }),
+  });
+}
+
 /** Retire a footprint, all its versions and its mirror file. The server
  *  refuses (409) if ANY component version — including historical ones —
  *  pins it, so history stays reproducible. */

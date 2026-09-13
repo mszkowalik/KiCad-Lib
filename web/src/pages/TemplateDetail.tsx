@@ -6,6 +6,7 @@ import {
   getTemplate,
   isAbortError,
   footprintTemplateGlbUrl,
+  renameTemplate,
   saveFootprintDisplayName,
   templatePreviewUrl,
   type TemplateDetail as TemplateDetailT,
@@ -43,6 +44,10 @@ export default function TemplateDetail() {
   const [savingName, setSavingName] = useState(false);
   const [nameNotice, setNameNotice] = useState<string | null>(null);
   const [retiring, setRetiring] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameWhy, setRenameWhy] = useState("");
+  const [renaming, setRenaming] = useState(false);
+  const [renameNotice, setRenameNotice] = useState<string | null>(null);
   const navigate = useNavigate();
   const dialog = useDialog();
 
@@ -76,10 +81,13 @@ export default function TemplateDetail() {
     setData(null);
     setError(null);
     setNameNotice(null);
+    setRenameNotice(null);
     getTemplate(kind, id, ctrl.signal)
       .then((d) => {
         setData(d);
         setNameDraft(d.display_name ?? "");
+        setRenameDraft(d.name);
+        setRenameWhy("");
       })
       .catch((err) => {
         if (!isAbortError(err)) setError(errorMessage(err));
@@ -88,6 +96,46 @@ export default function TemplateDetail() {
   }, [kind, id]);
 
   const noun = kind === "footprints" ? "footprint" : "symbol";
+
+  /** Rename the template itself. Every component that references it is
+   *  republished with the reference rewritten, in one transaction on the
+   *  server. Verification and sign-off carry — nothing reaching a board
+   *  changes — but a board already laid out keeps the OLD library id until its
+   *  owner updates the project from the schematic, so the confirm says so. */
+  const rename = async () => {
+    if (data === null || renaming || !isKind(kind)) return;
+    const users = data.used_by.length;
+    const ok = await dialog.confirm(
+      `Rename ${noun} ${data.name} to ${renameDraft.trim()}?\n\n` +
+        (users
+          ? `${users} component${users === 1 ? "" : "s"} will be republished with the new ` +
+            `reference: ${data.used_by.map((u) => u.name).join(", ")}.\n\n`
+          : "No component references it yet.\n\n") +
+        "Boards already laid out keep the old library id until their owner updates the " +
+        "project from the schematic. Nothing breaks — the geometry lives in the board file " +
+        "— but KiCad reports the old id as missing until then.",
+      { title: `Rename ${noun}`, confirmLabel: "Rename" },
+    );
+    if (!ok) return;
+    setRenaming(true);
+    setRenameNotice(null);
+    try {
+      const res = await renameTemplate(kind, id, renameDraft, renameWhy);
+      const kept = res.components.filter((c) => c.review_carry?.carried).length;
+      setData({ ...data, name: res.new_name });
+      setRenameWhy("");
+      setRenameNotice(
+        `Renamed to ${res.new_name} as v${res.version_no}. ` +
+          `${res.components.length} component${res.components.length === 1 ? "" : "s"} ` +
+          `republished, ${kept} kept ${kept === 1 ? "its" : "their"} verification.` +
+          (res.mirror_warnings.length ? ` Warnings: ${res.mirror_warnings.join("; ")}` : ""),
+      );
+    } catch (err) {
+      setRenameNotice(errorMessage(err));
+    } finally {
+      setRenaming(false);
+    }
+  };
 
   const saveName = async () => {
     if (data === null || savingName) return;
@@ -152,6 +200,50 @@ export default function TemplateDetail() {
             <span className="toolbar-total">v{data.version_no}</span>
           ) : null}
         </div>
+
+        <details className="card pad">
+          <summary>Rename this {noun}</summary>
+          <div className="skill-desc">
+            <input
+              className="text"
+              value={renameDraft}
+              maxLength={200}
+              placeholder={`Full ${noun} name, without the 7Sigma: prefix`}
+              onChange={(e) => setRenameDraft(e.target.value)}
+              aria-label={`New ${noun} name`}
+              spellCheck={false}
+            />
+            <input
+              className="text"
+              value={renameWhy}
+              maxLength={500}
+              placeholder="Why the current name is wrong"
+              onChange={(e) => setRenameWhy(e.target.value)}
+              aria-label="Reason for the rename"
+              spellCheck={false}
+            />
+            <span className="rail-hint">
+              Moves the name and every reference to it in one step: one new version
+              carrying the new name, one republished version per component using it, and
+              the mirror file. Verification and sign-off carry — nothing reaching a board
+              changes. History keeps the old name. This is not a way to correct a drawing;
+              paste a new version below for that.
+            </span>
+          </div>
+          <div className="btn-row">
+            <button
+              type="button"
+              className="btn btn-accent"
+              disabled={
+                renaming || !renameDraft.trim() || renameDraft.trim() === data.name
+              }
+              onClick={() => void rename()}
+            >
+              {renaming ? "Renaming…" : `Rename ${noun}`}
+            </button>
+            {renameNotice ? <span className="muted rail-hint">{renameNotice}</span> : null}
+          </div>
+        </details>
 
         {noun === "footprint" ? (
           <div className="card pad">

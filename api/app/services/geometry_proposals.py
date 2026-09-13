@@ -59,6 +59,20 @@ def set_footprint_header(text: str, name: str) -> str:
     return text[:lead + m.start(1)] + f'"{esc}"' + text[lead + m.end(1):]
 
 
+def set_footprint_value(text: str, old_name: str, new_name: str) -> str:
+    """Rewrite the footprint's `Value` property when it echoes the old name.
+
+    KiCad seeds `Value` with the footprint's own name, so a rename leaves it
+    naming a footprint that no longer exists. It is rewritten ONLY when it
+    still equals `old_name`: a Value somebody set on purpose to something else
+    is theirs, not a stale copy of the header.
+    """
+    esc_old = re.escape(old_name)
+    pat = re.compile(r'(\(\s*property\s+"Value"\s+)"' + esc_old + r'"')
+    esc_new = new_name.replace("\\", "\\\\").replace('"', '\\"')
+    return pat.sub(lambda m: f'{m.group(1)}"{esc_new}"', text, count=1)
+
+
 def set_symbol_entry_name(text: str, name: str) -> str:
     """Rename a `.kicad_sym` library's first symbol AND its unit entries.
 

@@ -40,6 +40,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0009](0009-the-git-mirror-is-the-source-archive.md) | Keep project source in the git mirror only, and stop storing a tarball per snapshot | Backend, projects, storage, deployment |
 | [0010](0010-a-git-token-belongs-to-an-account.md) | A git token belongs to an account, and projects point at it by name | Backend, frontend, projects, access control |
 | [0011](0011-retire-the-skipped-verification-result.md) | Retire the `skipped` verification result; an unverifiable item is left unanswered and `na` carries a reason | Backend, frontend, review axis, agent tools |
+| [0012](0012-rename-a-footprint-or-base-symbol-in-place.md) | Rename a footprint or a base symbol in place, and rewrite every reference with it | Backend, frontend, KiCad output, review axis, agent tools |
 
 ## Proposed
 

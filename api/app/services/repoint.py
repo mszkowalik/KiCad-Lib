@@ -48,7 +48,7 @@ def _current(parent) -> object | None:
     return next((v for v in parent.versions if v.id == parent.current_version_id), None)
 
 
-def _clone_properties(db: Session, src: M.ComponentVersion, dst: M.ComponentVersion) -> None:
+def clone_properties(db: Session, src: M.ComponentVersion, dst: M.ComponentVersion) -> None:
     """Copy the property rows in full fidelity.
 
     `hide`, `show_name` and `layout` are copied deliberately. The agent tool
@@ -168,7 +168,7 @@ def repoint_for(db: Session, kind: str, parent) -> dict:
         )
         db.add(cv)
         db.flush()
-        _clone_properties(db, live, cv)
+        clone_properties(db, live, cv)
         publish_component_version(db, comp, cv, actor=AUTO_ACTOR)
         published.append(comp.name)
 

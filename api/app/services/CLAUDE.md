@@ -14,6 +14,7 @@ in one document. Open the document before you change the module.
 | Datasheet identity, fetch, classification, page index | `datasheet_store.py`, `datasheet_pages.py`, `datasheet_migrate.py` | [docs/reference/datasheets.md](../../../docs/reference/datasheets.md) |
 | Cost plans, invoices, stock, orders, sales | `cost_state.py`, `material.py`, `stock.py`, `orders.py` | [docs/reference/production-economics.md](../../../docs/reference/production-economics.md) |
 | Sign-off, verification, the review record | `signoff.py`, `review.py`, `material.py` | [docs/reference/review-axis.md](../../../docs/reference/review-axis.md) |
+| Renaming a footprint or a base symbol | `rename.py` | [docs/decisions/0012](../../../docs/decisions/0012-rename-a-footprint-or-base-symbol-in-place.md) |
 | Projects, git mirrors, snapshots, exports | `gitrepo.py`, `project_ops.py`, `git_credential_migrate.py` | [docs/reference/projects-module.md](../../../docs/reference/projects-module.md) |
 | Simulation models and composition | `simmodel.py`, `sim_store.py`, `simcompose.py` | [docs/reference/simulation-models.md](../../../docs/reference/simulation-models.md) |
 | SPICE runs, netlists, harnesses, the live sketch | `sim_spice.py`, `project_ops.py`, `sch_lib.py`, `sim_scenario.py` | [docs/reference/spice-runs.md](../../../docs/reference/spice-runs.md) |
@@ -89,6 +90,16 @@ version row and call `publish_geometry_version` + `refresh_mirror_for_geometry`
 — or better, go through `services/geometry_proposals.py`, which owns the
 parsing, the model-path rules and the repoint. Skills:
 `publish.publish_skill_version`.
+
+**A NAME is a reference, not a label.** `ComponentVersion.base_component` holds
+a base symbol's name as a string and a component's `Footprint` property holds
+`7Sigma:<footprint name>`. Neither is a foreign key, so a template row's `name`
+is never assigned directly — `services/rename.py` owns it, and it moves the
+geometry version, every referencing component version, the mirror file and the
+stale `categories.defaults` entries in one transaction. It is also the ONE
+caller allowed to pass `rename` to `signoff.data_carries`, which is what lets a
+rename keep a verification; see the note there on why that is a mapping and not
+a new entry in `NON_MATERIAL_KEYS`.
 
 Never set `status` or move `current_version_id` by hand: those two lines are
 what the publish functions exist to own, and a path that writes them itself
