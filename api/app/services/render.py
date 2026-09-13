@@ -9,6 +9,12 @@ A SYMBOL render also answers "how many units?". kicad-cli plots one file per
 unit and nothing here can merge them, so the caller has to be able to ask for
 unit 3 and to know that there are ten — see `svg_units.py`, and the
 `X-Unit-Count` header the routers put it in.
+
+A FOOTPRINT render is annotated: kicad-cli plots no pad numbers, so
+`pad_labels.py` writes them into the source on the way in and lifts them above
+the drill holes on the way out. Both happen here, around whichever renderer
+runs, so the render container needs no copy of the rule and a preview cached
+before the labels existed is keyed differently and re-rendered.
 """
 from __future__ import annotations
 
@@ -20,6 +26,7 @@ from pathlib import Path
 import httpx
 
 from ..config import settings
+from .pad_labels import raise_pad_labels, with_pad_labels
 from .svg_units import select_unit
 
 
@@ -39,6 +46,11 @@ def render_svg_units(kind: str, name: str, source_text: str,
     the same 2 ms a re-render of unit 1 does.
     """
     assert kind in ("symbol", "footprint", "footprint3d")
+    # The pad numbers go in before the hash: they are part of the picture, so
+    # they are part of what identifies it. The 3D board view is left alone —
+    # a label is a plot item, and nothing extrudes it.
+    if kind == "footprint":
+        source_text = with_pad_labels(source_text)
     theme = settings.symbol_theme if kind == "symbol" else settings.footprint_theme
     ext = "glb" if kind == "footprint3d" else "svg"
     # The unit joins the key for a SYMBOL only: two units of one symbol are two
@@ -69,6 +81,9 @@ def render_svg_units(kind: str, name: str, source_text: str,
         resp.raise_for_status()
         data = resp.content
         count = int(resp.headers.get("X-Unit-Count", "1") or 1)
+
+    if kind == "footprint":
+        data = raise_pad_labels(data)
 
     settings.render_cache_dir.mkdir(parents=True, exist_ok=True)
     cache_file.write_bytes(data)

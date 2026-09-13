@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-09-13 — A footprint preview prints its pad numbers
+
+Every 2D footprint preview — the footprint page, the component page, the
+paste box, both panes of a geometry diff — now carries the pad number on each
+pad, the way KiCad's own footprint editor draws it. Reading a pinout off a
+preview no longer means counting pins from the pin-1 mark.
+
+- **The numbers are drawn, not guessed.** `kicad-cli` plots no pad numbers, so
+  the render path writes one `fp_text` per pad into a COPY of the source and
+  renders that. Nothing is stored: the `.kicad_mod` in the mirror, the file
+  KiCad downloads and the version history are untouched. A preview is
+  therefore no longer a byte-faithful plot of the stored source — read
+  `api/app/services/pad_labels.py` before comparing one against it.
+- **One number per land.** An exposed pad and its thermal vias share a number
+  and are labelled once. Two numbers on one land (USB-C A1/B12) are spread
+  along the pad rather than written over each other.
+- **Through-hole numbers sit on top of the hole.** KiCad plots drill holes
+  last, over everything, so the finished SVG is re-stacked to put the labels
+  above them.
+- **Existing previews re-render once.** The cache key includes the labels, so
+  the first view of each footprint after the update costs one kicad-cli run.
+
 ## 2026-09-13 — A footprint or a base symbol can be renamed
 
 Until now a name chosen wrongly was permanent. There was no rename, and

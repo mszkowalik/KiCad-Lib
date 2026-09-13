@@ -24,6 +24,7 @@ in one document. Open the document before you change the module.
 | The 2D field solver | `fieldsolver/` | `fieldsolver/CLAUDE.md` |
 | Production programming | `flasher/` | `flasher/CLAUDE.md` |
 | The KiCad sync plugin this packages | `pcm_plugin/` | `pcm_plugin/CLAUDE.md` |
+| Previews, and the pad numbers a footprint preview ADDS to the source | `render.py`, `pad_labels.py` | the `pad_labels.py` docstring |
 
 ## The versioning + publish model (core invariant)
 
