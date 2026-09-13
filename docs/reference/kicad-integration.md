@@ -14,6 +14,15 @@ Full reasoning in [docs/decisions/0006](../decisions/0006-sync-button-owns-libra
   editor. A sync records the two content packages in the PCM as current and
   pinned, so the PCM offers no library update and Update All skips them. The
   plugin cannot update itself, so its own PCM entry is left alone.
+- **The synced library files are a WORKING COPY, and a sync overwrites them.**
+  The PCM package on disk
+  (`~/Documents/KiCad/<ver>/3rdparty/symbols/com_sevensigma_library/7Sigma_Base.kicad_sym`
+  on macOS) is generated from the platform. Drawing a symbol there in the KiCad
+  editor works and is a good way to design one — KiCad writes a `.bak` beside
+  it — but the next **Sync 7Sigma Library** replaces the file and the edit is
+  gone. Publish the drawing with `propose_symbol_edit` before syncing. The same
+  holds for footprints. Recorded 2026-09-13, after a symbol was redrawn locally
+  and nearly lost.
 - **KiCad re-reads a changed library on its next use, no restart.** The
   footprint, symbol and 3D caches check file modification times (verified in
   the 10.0 source). Parts already placed are copies: Tools → Update Footprints

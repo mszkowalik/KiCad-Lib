@@ -49,7 +49,8 @@ MACHINE_KEYS: dict[str, tuple[str, ...]] = {
         "fp.fab_width", "fp.silk_width", "fp.smd_pad_shape", "fp.min_drill",
         "fp.min_th_pad", "fp.via_dims", "fp.model3d",
     ),
-    "symbol": ("sym.parse", "sym.fields", "sym.pins_grid", "sym.sim_link"),
+    "symbol": ("sym.parse", "sym.fields", "sym.pins_grid", "sym.pin_length",
+               "sym.sim_link"),
     "component": (
         "cmp.required_props", "cmp.footprint_ref", "cmp.lcsc_format",
         "cmp.manufacturer", "cmp.templates", "cmp.datasheet_text",
@@ -318,9 +319,15 @@ def validate_symbol(db: Session, version: M.SymbolVersion) -> list[dict]:
         items.append(_item("sym.fields", "failed", "missing field(s): " + ", ".join(missing)))
 
     # Pin positions from (pin ... (at x y angle) ...) blocks.
+    blocks = _symbol_pin_blocks(content)
     off_grid = []
-    ats = re.findall(r"\(pin\s+\w+\s+\w+\s*\n?\s*\(at\s+([-\d.]+)\s+([-\d.]+)", content)
-    for x, y in ats:
+    ats = []
+    for block in blocks:
+        m = re.search(r"\(at\s+([-\d.]+)\s+([-\d.]+)", block)
+        if m is None:
+            continue
+        x, y = m.group(1), m.group(2)
+        ats.append((x, y))
         for coord in (float(x), float(y)):
             if abs(coord / PIN_GRID - round(coord / PIN_GRID)) > 1e-4:
                 off_grid.append((x, y))
@@ -333,8 +340,48 @@ def validate_symbol(db: Session, version: M.SymbolVersion) -> list[dict]:
     else:
         items.append(_item("sym.pins_grid", "checked"))
 
+    items.append(_pin_length_item(blocks))
     items.append(_sim_link_item(db, version))
     return items
+
+
+#: Start of one `(pin <type> <shape> ...)` block. Anchored to the start of a
+#: line, because `(pin` also occurs mid-line inside property text — `A_S-1WR3`
+#: has "5-pin SIP (pin 3 absent)" in its Description and it matched the
+#: unanchored form. The child tokens are NOT in a fixed order: `LAN8671`
+#: carries `(hide yes)` BEFORE `(at ...)`, which an `(at ...)`-then-`(length
+#: ...)` regex skips silently, so split into blocks first and search each one.
+_PIN_BLOCK_RE = re.compile(r"^[\t ]*\(pin\s+\w+\s+\w+", re.M)
+
+
+def _symbol_pin_blocks(content: str) -> list[str]:
+    """The source text of every pin, one string each."""
+    starts = [m.start() for m in _PIN_BLOCK_RE.finditer(content)]
+    return [content[a:b] for a, b in zip(starts, starts[1:] + [len(content)])]
+
+
+def _pin_length_item(blocks: list[str]) -> dict:
+    """`sym.pin_length` — one stub length across the whole symbol.
+
+    The ABSOLUTE length is a judgment call and stays on `sym.geometry`: the
+    house default is 2.54 mm, but a symbol whose pin numbers run to three or
+    more characters needs 5.08 mm for the number to sit on its stub, and a
+    drawing may legitimately carry another length. What is mechanical, and
+    what actually goes wrong, is MIXING lengths inside one drawing — it puts
+    the pin ends on two different vertical lines and no wire grid can hide it.
+    """
+    lengths = []
+    for block in blocks:
+        m = re.search(r"\(length\s+([\d.]+)\)", block)
+        if m is not None:
+            lengths.append(float(m.group(1)))
+    if not lengths:
+        return _item("sym.pin_length", "na", "no pins found")
+    distinct = sorted(set(lengths))
+    if len(distinct) > 1:
+        counts = ", ".join(f"{v:g} mm on {lengths.count(v)} pin(s)" for v in distinct)
+        return _item("sym.pin_length", "failed", f"mixed pin stub lengths: {counts}")
+    return _item("sym.pin_length", "checked", f"all pins {distinct[0]:g} mm")
 
 
 def _sim_link_item(db: Session, version: M.SymbolVersion) -> dict:

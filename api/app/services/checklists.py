@@ -55,12 +55,15 @@ SEED_ITEMS: dict[str, list[dict]] = {
         {"key": "sym.parse", "text": "Symbol source parses as a valid .kicad_sym library", "machine": True},
         {"key": "sym.fields", "text": "Reference and Value fields are present", "machine": True},
         {"key": "sym.pins_grid", "text": "All pins sit on the 1.27 mm grid", "machine": True},
+        {"key": "sym.pin_length", "text": "Every pin uses the same stub length", "machine": True},
         {"key": "sym.pinout", "text": "Pin numbers and names match the datasheet pinout",
          "hint": "Check every pin against the datasheet pinout table, including NC pins."},
         {"key": "sym.pin_types",
          "text": "Pin electrical types are correct from the component's own viewpoint"},
         {"key": "sym.grouping", "text": "Pins are grouped by functional block with 2.54 mm gaps"},
-        {"key": "sym.geometry", "text": "Box size and pin pitch follow the geometry formulas"},
+        {"key": "sym.geometry", "text": "Box size, pin pitch and stub length follow the geometry rules",
+         "hint": "Stub length is 2.54 mm unless a pin number runs to three or more characters, "
+                 "which needs 5.08 mm to fit the number on the stub."},
         {"key": "sym.stacked", "text": "Shorted pins are stacked per the convention (where applicable)"},
     ],
     "component": [

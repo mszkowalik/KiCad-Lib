@@ -2,7 +2,8 @@
 name: kicad-conventions-library
 description: "House style for component data: canonical manufacturer names (with the full raw-to-canonical lookup table), ki_description {Key} templating per category, the Value field rule, and category-placement rules. Read before proposing a new component or editing an existing one's properties."
 ---
-<!-- platform-skill: conventions-library v30 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-library v32 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+
 # Library conventions
 
 This is the house style for component **data**: manufacturer naming,
@@ -346,9 +347,9 @@ one, the rename costs the verification.
 | Diodes / Schottky | `Schottky Diode {Maximum Reverse Voltage} {Forward Voltage} {Continuous Current} {Footprint_Name}` |
 | Diodes / Zener (BZT52Cxx, BZX84Cxx) | `Zenner Diode {Zenner Voltage} {Power} {Footprint_Name}` — spelling "Zenner" is intentional, see property-key quirks above |
 | Diodes / TVS simple 2-pin clamp (D_TVS_Bi) | `TVS Diode {Reverse Stand-Off Voltage} {Footprint_Name}` |
-| Diodes / TVS surge-rated SMAJ series | `TVS Diode {Reverse Stand-Off Voltage}WM {Clamping Voltage}C {Footprint_Name}` |
+| Diodes / TVS surge-rated SMAJ series | `{Unidirectional\|Bidirectional} TVS Diode {Reverse Stand-Off Voltage}WM {Clamping Voltage}C {Footprint_Name}` — the direction word is a LITERAL you write per part, not a property lookup. Read it off the part number: both the Littelfuse and the MDD datasheet break the code as `SMAJ` \| `XXX` \| `C` \| `A`, with the `C` field labelled BI-DIRECTIONAL, so an A-suffix part carrying no `C` is unidirectional. **It is not optional.** Without it `SMAJ24A` and `SMAJ24CA` render the byte-identical BOM line "TVS Diode 24VWM 38.9VC SMA", and a unidirectional TVS fitted where a bidirectional one belongs conducts like a forward diode on the negative half cycle — nothing on the schematic or in the BOM would show the substitution |
 | Diodes / General Purpose rectifier | `General Purpose Diode {Maximum Reverse Voltage} {Continuous Current} {Footprint_Name}` |
-| Diodes / Multi-channel ESD protection array | `4-Channel ESD Protection Array {Reverse Stand-Off Voltage}WM {Footprint_Name}` |
+| Diodes / Multi-channel ESD protection array | `{n}-Channel ESD Protection Array {Reverse Stand-Off Voltage}WM {Footprint_Name}` — the channel COUNT is a literal you write per part, the same way the direction word is on the SMAJ row, and it is the number of protected I/O pins the datasheet's pin table lists, not the number in the part name. `TPD4E05U06DQAR` renders "4-Channel ESD Protection Array 5.5VWM USON-10". The row used to hard-code `4-Channel`, which was right for the only part on it and would have printed a false channel count on the first 6-channel sibling (`TPD6E05U06`); corrected 2026-09-13 |
 | Diodes / Photodiode PIN (moved here from ICs) | `Photodiode PIN {Peak Wavelength} {Footprint_Name}` |
 | Transistors | `{N-MOS\|P-MOS\|NPN} {Vds or Vce} {Id or Ic} {Power} {ShortFootprintName}` — hand-composed per subtype (MOSFETs and BJTs use different property key names, so one literal placeholder string can't cover the whole category); verified word-for-word conformant across the entire category |
 | Inductors (fixed/power) | `{Value} {Rated_Current} {Tolerance} {Footprint_Name}` — the real property key is `Rated_Current`, not `Current` |
@@ -491,7 +492,7 @@ Decide in this order:
 | Inductors (fixed/power) | Inductance | number + `nH`/`uH` | `2.2nH`, `470nH`, `10uH` |
 | Inductors / Ferrite Bead | Impedance at its test frequency (the `Impedance` property) | `<Z>@<f>` | `100Ω@100MHz` |
 | Diodes / Zener | Zener voltage | RKM-style `V` code | `3V3`, `5V1`, `8V2`, `12V` |
-| Diodes / TVS + ESD clamp | Reverse stand-off voltage | same | `5V`, `12V`, `5.5V`, `12V / -7V` (asymmetric parts) |
+| Diodes / TVS + ESD clamp | Reverse stand-off voltage | same | `5V`, `12V`, `5.5V`, `12V / -7V` (asymmetric parts). A unidirectional and a bidirectional part of the same rating SHARE a `Value` — `SMAJ24A` and `SMAJ24CA` are both `24V`. That is correct: `Value` carries the rating, and the direction word lives in `ki_description`, which is what the BOM line renders |
 | Diodes / Schottky, general-purpose rectifier, photodiode | MPN | verbatim | `SS34`, `1N5819WS`, `VBPW34FAS` |
 | Timing_Components / Crystal, Oscillator | Nominal frequency | number + `MHz`/`kHz` | `12MHz`, `25MHz`, `40MHz` |
 | Circuit_Protection / Polyfuse | Hold current | number + `mA`/`A` | `50mA`, `500mA`, `1.1A` |
@@ -539,6 +540,24 @@ open deliberately:
   `Manufacturer Part Number 1` rows. The duplicates were dropped in its
   backfill draft. If duplicate keys show up elsewhere, drop them the same way —
   `propose_component_edit` rejects duplicate keys outright.
+
+**RESOLVED 2026-09-13 — the SMAJ family takes the rating, not the MPN.** All
+five SMAJ parts carried `Value = <MPN>` against the TVS row above, which says
+stand-off voltage. The deviation was deliberate and recorded, not an oversight:
+`SMAJ24A` v1 wrote "Value = MPN follows the four existing SMAJ parts, not the
+TVS row of conventions-library (which says stand-off voltage)" and left it for a
+decision. The decision went to the rule. `SMAJ28A` moved first (v12, by
+Mateusz Kowalik), then `SMAJ12A`, `SMAJ24A`, `SMAJ24CA` and `SMAJ28CA` followed
+in one pass; the family now reads `12V` / `24V` / `24V` / `28V` / `28V`. **Do
+not re-litigate this by pointing at the siblings** — that is the argument that
+kept the whole family off-rule, because each part justified itself by the other
+four. The MPN is not lost: it stays on `Manufacturer Part Number 1`, which is
+what the BOM draws from.
+
+The general lesson, which is why this is written down rather than just fixed:
+**a family-wide deviation defends itself.** When every sibling is wrong the same
+way, consistency reads as evidence. Check a new part against the RULE, not
+against what its neighbours do.
 
 ## 4. Category placement — check the source catalog's own category field
 

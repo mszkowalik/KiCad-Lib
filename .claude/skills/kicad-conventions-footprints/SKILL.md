@@ -2,7 +2,7 @@
 name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints, and the naming standard: the KLC tier rule (Tier 0 stock names are frozen), the twelve-slot field order, decided spellings (_HandSoldering, vendor tokens, no rotation in names), the 7Sigma: namespace, validator-enforced pad/silk/fab/courtyard style, the 0.1mm grid, NPTH mechanical holes, thermal vias, non-electrical parts, and why connector pad numbering always follows the datasheet. Use when naming, picking or authoring any footprint."
 ---
-<!-- platform-skill: conventions-footprints v34 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v36 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 Footprints live in the `7Sigma:` namespace and are always referenced as
@@ -549,7 +549,10 @@ A polarity mark is a **single straight line**. Four rules, all enforced or
 checkable:
 
 - **Never a C.** No arms, no bracket, no diagonals joining it to the body
-  outline. One line. Corrected across the library on 2026-09-13: `D_0402`,
+  outline. One line. **This rule is about the FOOTPRINT's `F.SilkS` polarity
+  mark and stops there** — a zener or TVS glyph inside a SYMBOL keeps its
+  flagged bar, where the bent ends are the glyph's meaning and not decoration
+  (see [[conventions-symbols]] §5). Corrected across the library on 2026-09-13: `D_0402`,
   `LED_0402`, `LED_0603` and `LED_Silverlight_M3535N1` were C-shaped, and the
   Silverlight bar was additionally drawn as two overlapping segments.
 - **0.1 mm or 0.2 mm, both legal.** A thin bar does not read beside the pads on
@@ -582,13 +585,23 @@ Plus the conventions the validator can't check:
   whose body overhangs its pads, the origin follows the vendor and JLC land, not
   the body centre.** On `USB_C_Receptacle_XKB_U262-161N-4BVC11` the body centre
   sits 1.385 mm from the origin and that is CORRECT: the origin is JLC's, to the
-  last decimal. Six footprints on the CE_Dongle_V3 BOM anchor this way —
+  last decimal. Five footprints on the CE_Dongle_V3 BOM anchor this way —
   `RJ45_RCH_RC01812` at −4.495 mm, `SW_Push…TC-6615` at +3.400,
-  `USB_C_Receptacle_XKB` at +1.385, `SW_Push…TS24CA` at −0.750, the Xinlaiya
-  terminal block at −0.250, `nanoSIM_ShouHan` at +0.060. Moving one to its body
+  `USB_C_Receptacle_XKB` at +1.385, `SW_Push…TS24CA` at −0.750 and the Xinlaiya
+  terminal block at −0.250. Moving one to its body
   centre puts the land out of step with the assembler for no gain. The
   `fp.origin` checklist item still reads "centred on the body", which is why a
   pass flagged the USB-C land as defective on 2026-09-13; it was not.
+
+  **Measure the PART before you add a footprint to that list — never the drawn
+  `F.Fab`.** `nanoSIM_ShouHan_TL6P-H1.35` was a sixth entry, at +0.060, until
+  2026-09-13. That figure was the centre of its own `F.Fab` polygon, and the
+  polygon was wrong: 11.18 × 12.82 mm published against a part that measures
+  11.00 × 12.30 and is symmetric. Its body centre is on the origin, so the
+  footprint never belonged in the list. An offset is real only when the vendor
+  drawing or the STEP model says so. A drawn outline proves nothing about the
+  part, and quoting one back as a decided number turns one drawing defect into
+  a convention that the next agent reads as fact.
 - **`Cmts.User` carries a pin-1 mark — always.** Every footprint that has a
   pad `1` (or `A1`) gets a 0.1 mm radius circle (`fp_circle`, 0.2 mm stroke,
   no fill) on `Cmts.User` at pin 1: centred on the pad for 2-pad chip

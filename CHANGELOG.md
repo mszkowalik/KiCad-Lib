@@ -1,5 +1,219 @@
 # Changelog
 
+## 2026-09-13 — `LSM6DS3` redrawn to the house geometry
+
+The symbol put VDDIO and VDD on the top edge and both GND pads on the bottom
+edge, which §3 of `conventions-symbols` forbids on anything that is not one of
+the §5.6 digital blocks. It was also the first symbol the new `sym.pin_length`
+check failed. Published as v5; `LSM6DS3TR-C` was repointed automatically and
+starts unreviewed.
+
+No pin number, name, electrical type or count changed — only positions, stub
+lengths and visibility. Five defects:
+
+- **Supplies and grounds moved to the left edge**, supplies in the top two
+  slots and GND 6 and 7 in the bottom two, so a ground symbol drops straight
+  into them instead of turning back under the box.
+- **Pins 10 and 11 were 3.81 mm stubs** against 2.54 mm on the other twelve.
+- **Pins 10 and 11 also ended 3.81 mm INSIDE the body.** Their connection
+  points sat at x = 12.7, which is the body outline itself, so the stub ran
+  inward. §4 requires the tip to land on the outline.
+- **GND 6 and 7 were a coincident stacked pair with neither hidden** — the
+  open finding from v3. They are now two separate visible pins.
+- **NC 10 and 11 were hidden.** They are not a stack, so nothing justified it,
+  and a hidden `no_connect` pin cannot be given the X marker §2 requires.
+
+Grouping follows the §3 right-side order and was checked against ST
+DocID030071 Rev 3 Table 2 (p.20): host serial interface (CS, SCL, SDA,
+SDO/SA0), then the sensor-hub master I²C that Table 2 gives as MSCL/MSDA
+(SCX, SDX), then the interrupts. One blank slot between groups. Still one unit.
+
+**The NC pads sit on the LEFT edge, above the grounds** (owner instruction).
+They carry no net, so they cost nothing there, and moving them off the right
+edge drops it from 13 slots to 10. Both edges now span the same height and the
+body is 27.94 mm instead of 33.02 mm.
+
+`CS` keeps the plain `line` pin style on purpose. The inverted-bubble rule is
+scoped to §5.6 digital blocks, and Table 2 gives CS as an I²C/SPI **mode
+select** (1 = I²C enabled, 0 = SPI), not a plain active-low strobe.
+
+`Crystal_GND24_Small` (0.635 mm and 1.27 mm stubs) is the remaining
+`sym.pin_length` failure and is untouched.
+
+## 2026-09-13 — A dead pad is stacked, not drawn twice
+
+Three hours after the section above was written, the library owner drew the part
+a better way, and the rule it stated is reversed.
+
+- **A straight-through routing pad is now STACKED hidden on the pin it faces.**
+  The symbol draws one pin per channel, and the netlist carries BOTH pads on
+  that channel's net, so pcbnew raises the ratsnest and DRC does not pass until
+  the straight-through trace is drawn. The earlier rule drew the dead pads as
+  separate visible pins and trusted the designer to remember the wire across the
+  body. `conventions-symbols` v17 states the new rule in section 2.1.
+- **`no_connect` on a stacked pin is worse than wrong, it is silent.** Measured
+  on KiCad 10.0.5 with a netlist export: KiCad DROPS a hidden `no_connect` pin
+  out of the stack, gives its pad a private `unconnected-…` net and warns
+  `no_connect_connected`. A drawing that looks like it carries the signal
+  across the package carries nothing. `free` carries the pad and stays quiet
+  when a design leaves the pads open.
+- **Small parts may hide a duplicate power pad again.** The "redundant GND/VDD
+  pads are NOT stacked" rule was written for large ICs and was being enforced on
+  four-pin parts. It now says what it meant: a symbol split into units never
+  hides a power pin; a small part may, with a REASON written in the version
+  comment and the `sym.stacked` note; and on the boundary the author asks the
+  user, while a reviewer records `custom:stacked-power-pad` so the question
+  reaches the Reviews queue.
+- **The symbol is published and verified.** `TPD4E05U06` v6 carries the owner's
+  drawing — four TVS glyphs on a common ground rail, the straight-through pads
+  stacked hidden and typed `free`, GND pad 8 hidden on pad 3 — and every
+  checklist item on it is answered. `TPD4E05U06DQAR` was verified against the
+  section 6.6 table of SLVSBO7L Rev. L at the same time: `5.5V` stand-off,
+  `6.5V` breakdown minimum and `10nA` leakage maximum all hold. Note for later
+  passes, recorded on the part: the PROSE in section 7.3.5 contradicts that
+  table, quoting 6 V and 5 V. The table is the authority.
+- **The multi-channel ESD array description template hard-coded "4-Channel".**
+  Right for the one part on the row, and a false channel count on the first
+  6-channel sibling. `conventions-library` v32 makes the count a literal written
+  per part, the way the SMAJ row already treats the direction word.
+- **The synced KiCad library is a working copy.** A symbol drawn in the PCM
+  package on disk is replaced by the next **Sync 7Sigma Library**, and nothing
+  said so. [docs/reference/kicad-integration.md](docs/reference/kicad-integration.md)
+  now does.
+- **"A cathode bar is never a C" is a footprint rule.** It lives in a
+  validator-enforced section with no domain stated, and a symbol's zener glyph
+  is a C on purpose. `conventions-footprints` v36 says which layer it governs.
+- **Cite an artifact, not a memory.** The skill had named `TPD4E05U06` as the
+  precedent for a stacked `NC` pad; a pass that could not find the stack in any
+  published version struck it out as fiction. The platform drawing had never
+  carried it and the intent had. A precedent now has to name the symbol AND the
+  version it was checked against.
+
+## 2026-09-13 — Pin stub length follows the pin NUMBER, not the pin count
+
+`USB_C_Receptacle_USB2.0_16P` kept failing its `sym.geometry` check. It is a
+verbatim stock KiCad `Connector:` drawing with 5.08 mm pin stubs, and the
+`conventions-symbols` rule said 2.54 mm with one exception, "very high pin
+count", recorded against `STM32H573IITxQ` (176 pins). A 17-pin connector did
+not qualify, so every verification pass flagged a symbol that was correct.
+
+The rule was keyed on the wrong thing. KiCad draws the pin NUMBER along the
+stub, so the stub is the space the number has. Measured with
+`kicad-cli sym export svg`, which reports each string's plotted width, at the
+1.27 mm house font:
+
+| Pin number | Width | Against a 2.54 mm stub |
+|---|---|---|
+| `A` | 1.29 mm | fits |
+| `B1` | 2.68 mm | 0.14 mm over — accepted |
+| `A12` | 3.71 mm | 1.17 mm over — prints into the body |
+
+A survey of all 198 base symbols confirmed pin count was never the driver: 58
+carry a length other than 2.54 mm, including `XC6206PxxxMR` (3 pins) and
+`LD1117S` (4 pins) at 5.08 mm, and every `Conn_*` symbol at 3.81 mm.
+
+- **`conventions-symbols` v16** replaces the pin-count exception with a
+  pin-number-width one: 2.54 mm by default, 5.08 mm when any pin number runs
+  to three or more characters — alphanumeric connector designators (`A12`,
+  `B12`), BGA coordinates, three-digit numbers. `USB_C_Receptacle_USB2.0_16P`
+  is now correct as drawn and no longer needs a geometry finding.
+- **New machine check `sym.pin_length`**: every pin in a symbol uses the same
+  stub length. The absolute value stays a judgment call on `sym.geometry`,
+  where the new three-character rule is now a hint; mixing lengths inside one
+  drawing is purely mechanical, and it is what actually goes wrong. Across the
+  library it finds two: `LSM6DS3` (2.54 mm on 12 pins, 3.81 mm on 2) and
+  `Crystal_GND24_Small` (0.635 mm and 1.27 mm). Neither is changed here.
+- **The `sym.pins_grid` check was reading past pins.** Both symbol checks now
+  split the source into pin blocks instead of matching `(at …)` straight after
+  the `(pin …)` header. The child tokens are not in a fixed order — `LAN8671`
+  carries `(hide yes)` before `(at …)`, and that pin was skipped silently, so
+  an off-grid hidden pin could have passed. The block scanner is also anchored
+  to the start of a line, because `A_S-1WR3` has the text "5-pin SIP (pin 3
+  absent)" in its Description and the old shape matched it.
+
+`sym.pin_length` is seeded for new installations. Adding it to the live base
+checklist is a manual step in the Skills → Checklists view, and it un-answers
+the item on every existing symbol with no backfill, exactly as
+`cmp.datasheet_text` did on 2026-08-25.
+
+## 2026-09-13 — A straight-through routing pad is not a `no_connect`
+
+`TPD4E05U06` reported an ERC error as soon as the schematic wired its right-hand
+pads. TI builds the TPD family for flow-through routing: pads 6, 7, 9 and 10 of
+the DQA package carry no internal connection and sit directly opposite the pin
+whose trace they continue, so the board runs one straight trace onto the signal
+pad and off the dead pad facing it (1-10, 2-9, 4-7, 5-6). The datasheet says so
+in the description column of the pin table, not in the `NC` name alone —
+"Not connected; Used for optional straight-through routing. Can be left floating
+or grounded" (SLVSBO7L Rev. L p.5) — and draws it in the layout example on p.16.
+
+- **The four pads are now electrical type `free`, not `no_connect`.**
+  `no_connect` tells KiCad the pad must never be connected, so the designer's
+  pass-through wire raises `no_connect_connected`. Measured on KiCad 10.0.5:
+  `no_connect` errors when a wire lands on it, `passive` errors with
+  `pin_not_connected` when the design leaves the pads open, and `free` is clean
+  both ways. The pass-through is optional per design, so both cases happen and
+  `free` is the only correct type. Pin numbers, names, positions and count are
+  unchanged. The symbol now verifies `checked` on every item.
+- **The rule is written up as `conventions-symbols` v15, section 2.1.** The
+  same reading applies to the rest of the TPD family and to any package a
+  datasheet calls flow-through. **Superseded the same day** — v15 asked for the
+  dead pads to be drawn as separate visible pins, and v17 stacks them instead;
+  see the section above.
+- **The pin-1 circle came off the symbol.** A symbol carries no pin-1 marker
+  since the house rule of 2026-09-13. Pin 1 is named by its printed number, and
+  the orientation marker is a footprint job.
+
+## 2026-09-13 — The SMAJ TVS family reads one way
+
+Verifying `SMAJ28A` turned up four things the family had been carrying, none
+of them a defect in the part in front of us.
+
+- **Four SMAJ parts printed a part number where the rule asks for a rating.**
+  `Value` plus the reference designator is the only part identity printed next
+  to a symbol on a schematic sheet, and the house rule sends a TVS to its
+  reverse stand-off voltage. `SMAJ28A` had been moved to `28V` on 2026-09-13;
+  `SMAJ12A`, `SMAJ24A`, `SMAJ24CA` and `SMAJ28CA` still read as their MPN.
+  They now read `12V`, `24V`, `24V` and `28V`. The MPN is untouched on
+  `Manufacturer Part Number 1`, which is what the BOM draws from.
+  **`SMAJ24CA` is fitted on CE_Aqua_V2 at D12, D13 and D19**, so those three
+  refs will print `24V` after the next library sync. Same symbol, same land,
+  same netlist, same part ordered.
+- **Two TVS base symbols offered through-hole footprints.** `SMAJxxA` and
+  `D_TVS_Bi` both carried `ki_fp_filters "TO-???* *_Diode_* *SingleDiode* D_*"`
+  on twelve components that are surface-mount without exception. The filter is
+  what narrows the footprint chooser, so naming a package the part is not made
+  in turns the one control meant to prevent a wrong land into a source of them.
+  Both now read `D_*`, which covers every land actually in use — `D_SMA`,
+  `D_SOD-123FL`, `D_SOD-323`, `D_0402_1005Metric` — and every stock KiCad
+  diode footprint. No pin, graphic or geometry change, so every verification
+  carried.
+- **`SMAJ12A` simulated a clamp 21% above the part's guaranteed maximum.** Its
+  `Sim.Params` carried `RS=0.5`, where the datasheet clamping point (19.9 V at
+  20.1 A, breakdown 14.0 V) gives 0.29 Ω — so the model clamped at 24.05 V
+  against a guaranteed 19.9 V. `RS=0.3` now puts it at 20.03 V, 0.7% high, and
+  back in line with how its siblings were derived (`SMAJ24A` derives 1.05 and
+  stores 1.2; `SMAJ28A` derives 1.44 and stores 1.5 — round up, so the model
+  errs pessimistic). `CJ` is deliberately untouched on all three: the SMAJ
+  datasheet states no junction capacitance, so there is nothing to check the
+  existing estimate against and a replacement would be a guess.
+- **Both TVS symbols are now findable by what they do.** `D_TVS_Bi` still
+  carried `ki_keywords "diode TVS thyrector"` — no unabbreviated
+  "transient voltage suppressor", no direction, and no "ESD" or "clamp" even
+  though five of its seven components are ESD protection diodes. It now reads
+  `diode TVS transient voltage suppressor bidirectional bipolar ESD clamp
+  thyrector`, matching the widening `SMAJxxA` got in 2026-08. Direction is the
+  word that most needs indexing here: the library holds both kinds on lookalike
+  SMAJ part numbers.
+
+`conventions-library` v31 records the direction word as part of the SMAJ
+`ki_description` template — all five parts had carried `Unidirectional` /
+`Bidirectional` since 2026-08, but the skill's table still showed the row
+without it, so the next standardization pass would have stripped it back out.
+It also closes the `Value` question with the reason it went unfixed for so
+long: a family-wide deviation defends itself, because when every sibling is
+wrong the same way, consistency reads as evidence.
+
 ## 2026-09-13 — A flagged machine item can be answered
 
 An `auto` checklist item that an agent flagged as wrong rendered read-only in
