@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-14 — Changing a check changes the lists, without a restart
+
+Editing a checklist re-fingerprints every subject it reaches, but nothing acted
+on that: list surfaces read the cache without re-checking the fingerprint, and a
+detail page worked out the new answer and then threw it away. So a check edited
+on the platform changed nothing anybody could see until the API happened to
+restart. Found by shipping the new checks to production and watching the
+numbers not move.
+
+Saving a checklist now re-evaluates that kind in the background, and the pages
+that recompute keep what they worked out. Revoke a standing decision and the
+list of parts failing that check reports it on the next request.
+
 ## 2026-09-14 — Fix: an empty table took the page down
 
 Any list with a default sort crashed when it had no rows. The sort asks the

@@ -206,7 +206,37 @@ def summary(items: list[dict] | None) -> dict:
     }
 
 
-def warm_all(db: Session) -> dict:
+def warm_in_background(kinds: tuple[str, ...] = ("component", "symbol", "footprint")) -> None:
+    """Re-evaluate the library on its own thread, after something INVALIDATED it.
+
+    A checklist save changes the digest of every subject it reaches, and a
+    granted exception changes one. Until 2026-09-14 nothing acted on that: a
+    list surface reads `cached` WITHOUT validating the digest, and a detail read
+    recomputed but never committed, so the whole library stayed stale until the
+    next restart. Editing a check and seeing nothing change is the opposite of
+    what `0017` promises.
+
+    Fire-and-forget, exactly like the startup warm-up: nothing depends on it
+    finishing, it is safe to run twice, and a failure leaves a stale cache
+    rather than a broken request.
+    """
+    import threading
+
+    from ..db import SessionLocal
+
+    def _run() -> None:
+        db = SessionLocal()
+        try:
+            warm_all(db, kinds)
+        except Exception:  # noqa: BLE001 — a warm-up must never break a request
+            pass
+        finally:
+            db.close()
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def warm_all(db: Session, kinds: tuple[str, ...] = ("component", "symbol", "footprint")) -> dict:
     """Evaluate every live version whose cache is missing or stale.
 
     Runs in a background thread from startup, for the same reason the
@@ -218,6 +248,8 @@ def warm_all(db: Session) -> dict:
     done = {"component": 0, "symbol": 0, "footprint": 0, "unchanged": 0}
     for kind, model in (("component", M.Component), ("symbol", M.Symbol),
                         ("footprint", M.Footprint)):
+        if kind not in kinds:
+            continue
         for parent in db.query(model).filter(model.current_version_id.isnot(None)).all():
             version = next((v for v in parent.versions
                             if v.id == parent.current_version_id), None)

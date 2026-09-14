@@ -211,7 +211,15 @@ def _detail(db: Session, kind: str, parent) -> dict:
 @router.get("/reviews/{kind}/{parent_id}")
 def review_detail(kind: str, parent_id: int, db: Session = Depends(get_db)):
     parent = _parent_or_404(db, kind, parent_id)
-    return _detail(db, kind, parent)
+    out = _detail(db, kind, parent)
+    # A GET that writes, on purpose. `_detail` goes through `conformance.get`,
+    # which recomputes when the digest has moved — and without this commit the
+    # recompute was thrown away every time, so the cache only ever changed at
+    # startup and every LIST surface disagreed with the page you had just
+    # opened. Committing a cache row is cheap and it cannot lose anything: the
+    # digest decides whether the row is used at all.
+    db.commit()
+    return out
 
 
 @router.post("/reviews/{kind}/{parent_id}/check")
@@ -416,7 +424,11 @@ def grant_exception(kind: str, parent_id: int, body: ExceptionIn, request: Reque
     # is why revoking one used to leave the item unanswered.
     db.commit()
     db.expire_all()
-    return {"exception": exceptions_svc.json_of(exc, facts), **_detail(db, kind, parent)}
+    # `_detail` below recomputes and writes the cache; the commit at the
+    # end of this request is what makes the LIST surfaces agree with it.
+    out = {"exception": exceptions_svc.json_of(exc, facts), **_detail(db, kind, parent)}
+    db.commit()  # persist the recompute `_detail` just did, or the lists lag
+    return out
 
 
 @router.delete("/reviews/{kind}/{parent_id}/exceptions/{exc_id}")
@@ -436,7 +448,11 @@ def revoke_exception(kind: str, parent_id: int, exc_id: int, request: Request,
     # conformance, so withdrawing it changes the next read with nothing to undo.
     db.commit()
     db.expire_all()
-    return _detail(db, kind, parent)
+    # `_detail` below recomputes and writes the cache; the commit at the
+    # end of this request is what makes the LIST surfaces agree with it.
+    out = _detail(db, kind, parent)
+    db.commit()  # persist the recompute `_detail` just did, or the lists lag
+    return out
 
 
 @router.post("/reviews/{kind}/{parent_id}/revoke")
@@ -767,6 +783,7 @@ def save_checklist_scope(body: ScopeSaveIn, request: Request, db: Session = Depe
             db.query(M.ChecklistVersion).filter_by(checklist_id=cl.id).delete()
             db.delete(cl)
             db.commit()
+            conformance_svc.warm_in_background((body.kind,))
         db.expire_all()
         return _scope_payload(db, body.kind, body.category_id)
 
@@ -797,6 +814,11 @@ def save_checklist_scope(body: ScopeSaveIn, request: Request, db: Session = Depe
     audit(db, "checklist.publish", "checklist", cl.id,
           {"checklist": cl.name, "version_no": cv.version_no, "items": len(items)}, actor=actor)
     db.commit()
+    # Every subject of this kind now has a different digest. Neither a list read
+    # nor a detail read PERSISTS a recompute, so without this the whole library
+    # stays stale until a restart and editing a check appears to do nothing —
+    # measured on production, 2026-09-14.
+    conformance_svc.warm_in_background((body.kind,))
     # `expire_on_commit=False`: without this the response describes the
     # checklist as it was BEFORE the save. Same trap as `services/repoint.py`.
     db.expire_all()
@@ -1195,6 +1217,7 @@ def save_checklist(cl_id: int, body: ChecklistSaveIn, request: Request,
     audit(db, "checklist.publish", "checklist", cl.id,
           {"checklist": cl.name, "version_no": new_no, "items": len(items)}, actor=actor)
     db.commit()
+    conformance_svc.warm_in_background((cl.subject_kind,))
     # The session is `expire_on_commit=False` and the version row added above is
     # not appended to the already-loaded `cl.versions`, so re-reading without
     # this returns the checklist as it was BEFORE the save: version_no null,
