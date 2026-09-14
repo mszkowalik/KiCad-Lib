@@ -342,6 +342,9 @@ FACTS: tuple[dict, ...] = (
     #: outline, pitch, courtyard and pad count all still agree — and only the
     #: numbers are wrong, which is why one shipped. Reported as a CORNER rather
     #: than a boolean so the rule that reads it stays in the checklist.
+    {"name": "$footprint_smd_rratio_off", "kinds": ("component", "footprint"), "lazy": True,
+     "noun": "count of roundrect pads off the house corner ratio",
+     "what": "roundrect SMD pads whose rratio is not 0.25"},
     {"name": "$footprint_pin1_corner", "kinds": ("component", "footprint"), "lazy": True,
      "noun": "corner pad 1 sits in",
      "what": "where pad 1 sits: top-left, top-right, bottom-left, bottom-right, "
@@ -744,6 +747,28 @@ def _footprint_providers(source_of) -> dict:
                 n += 1
         return str(n)
 
+    def rratio_off():
+        """Roundrect SMD pads whose corner ratio is not the house 0.25.
+
+        `conventions-footprints` §4 listed this under "the validator enforces
+        these" and nothing did — measured 2026-09-14, 36 of 212 footprints
+        carry another value.
+        """
+        if not pads():
+            return None
+        n = 0
+        for pad in pads():
+            if pad.get("type") != "smd" or pad.get("shape") != "roundrect":
+                continue
+            got = pad.get("roundrect_rratio")
+            try:
+                value = float(got[0][0]) if got else None
+            except (TypeError, ValueError, IndexError):
+                value = None
+            if value is None or abs(value - 0.25) > 1e-6:
+                n += 1
+        return str(n)
+
     def pin1_corner():
         one = next((p for p in pads() if str(p.get("number")) == "1"), None)
         return _corner_of(one.get("at") if one else None) or None
@@ -837,6 +862,7 @@ def _footprint_providers(source_of) -> dict:
         "$footprint_npth_pads": of_type("np_thru_hole"),
         "$footprint_zero_annulus_pads": zero_annulus,
         "$footprint_off_grid_pads": off_grid,
+        "$footprint_smd_rratio_off": rratio_off,
         "$footprint_pin1_corner": pin1_corner,
         "$footprint_numbering": numbering,
     }
