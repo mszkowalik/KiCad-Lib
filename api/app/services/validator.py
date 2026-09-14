@@ -954,7 +954,15 @@ def describe_assert(spec: dict) -> str:
         return claim if str(spec["equals"]).lower() == "true" else _negate(claim)
     if "one_of" in spec:
         values = spec["one_of"] or []
-        return f"The {fact} is one of: {', '.join(map(str, values)) or 'nothing'}"
+        if not values:
+            return f"The {fact} is one of: nothing"
+        # A long list is DATA, not a sentence. The canonical manufacturer list
+        # is 81 names, and printing them all made a review card unreadable and
+        # a checklist row 900 characters wide. The list itself is on the item,
+        # one click away, and the editor shows it in full.
+        if len(values) > 6:
+            return f"The {fact} is one of the {len(values)} values this check lists"
+        return f"The {fact} is one of: {', '.join(map(str, values))}"
     if "matches" in spec:
         return f"The {fact} matches {spec['matches']}"
     if "equals" in spec:
