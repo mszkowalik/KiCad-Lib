@@ -265,6 +265,10 @@ review axis records who verified each version against its documentation.
     every correct QFN as mirrored.
     **A pad on an axis has no corner.** A two-pad chip sits at y = 0, so a
     `y < 0` test invents "bottom-left"; `_corner_of` reports `left`.
+    `absent` is the one assertion a MISSING fact satisfies, and it is judged
+    BEFORE the missing-fact rule for that reason. It is how a rule says "there
+    must be no X" — a misspelt property key, a pad that should not be plated —
+    which `at_most 0` cannot express, because a count has to exist first.
   - **Several items may share a key as named VARIANTS, and the constraint is
     what removes the ordering question.** `variant: "NMOS"` is the identity
     (stable under reordering, which an index is not) and the label — the editor
