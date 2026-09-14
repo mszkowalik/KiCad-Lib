@@ -395,6 +395,16 @@ review axis records who verified each version against its documentation.
   The digest reads facts through their own KEYS, never by iterating the mapping:
   `subject_facts` is lazy, and iterating it would compute every derived fact on
   every digest.
+  **A change has to WARM the cache, and a read has to PERSIST what it
+  recomputed.** The digest makes the cache honest, but `cached` deliberately
+  does not validate it, and until 2026-09-14 a detail read recomputed and never
+  committed — so nothing outside the startup warm-up ever wrote a row. Editing a
+  check on production changed no list at all until the API restarted, which is
+  the opposite of what 0017 promises. A checklist save now fires
+  `conformance.warm_in_background(kind)`, and the read paths commit the row they
+  worked out. A GET that writes a cache row is cheap and cannot lose anything:
+  the digest decides whether the row is used. Measured: revoke an exception and
+  the failing-key list reports it on the next request.
   Three consequences to hold on to: `state_from_record` IGNORES machine answers
   stored in records (2,442 of them, kept as history, never deleted) and measures
   completeness over judgment items only; a one-click human confirmation can no
