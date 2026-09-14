@@ -2,7 +2,7 @@
 name: kicad-conventions-library
 description: "House style for component data: canonical manufacturer names (with the full raw-to-canonical lookup table), ki_description {Key} templating per category, the Value field rule, and category-placement rules. Read before proposing a new component or editing an existing one's properties."
 ---
-<!-- platform-skill: conventions-library v34 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-library v36 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Library conventions
 
@@ -319,6 +319,12 @@ instead of being silently changed:
   re-introduce the double "n" on a new part, and do not "correct" the
   spelling back to match a sibling.
 
+  **Backfilled on 2026-09-14.** All six parts were republished with the
+  property key, `comp_type` and the template word moved together — they have to
+  move together, or `cmp.templates` fails on the dangling `{Zenner Voltage}`.
+  No `Zenner` remains on any live version. The six lost their verification, as
+  a property edit always does.
+
   Six published parts still carry the old spelling — `BZT52C3V3`,
   `BZT52C5V1`, `BZT52C5V6`, `BZX384-C12,115`, `BZX384-C3V6,115`,
   `BZX84C8V2LT1G`. Renaming a property key on a published part is a MATERIAL
@@ -358,7 +364,7 @@ one, the rename costs the verification.
 | Capacitor (ceramic MLCC/general) | `{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}` |
 | Capacitor (polarized: Aluminum Electrolytic / Tantalum) | same template as above, extending the `{Dielectric}` slot: `Al Elec` for aluminum electrolytics, `Tantalum` for tantalum caps |
 | Diodes / Schottky | `Schottky Diode {Maximum Reverse Voltage} {Forward Voltage} {Continuous Current} {Footprint_Name}` |
-| Diodes / Zener (BZT52Cxx, BZX84Cxx) | `Zener Diode {Zener Voltage} {Power} {Footprint_Name}` — ONE "n". The six published siblings still carry `Zenner Voltage` and render "Zenner Diode"; that is the old spelling awaiting a backfill pass, not the standard. See the property-key note above |
+| Diodes / Zener (BZT52Cxx, BZX84Cxx) | `Zener Diode {Zener Voltage} {Power} {Footprint_Name}` — ONE "n". Backfilled on all six on 2026-09-14: the property key, `comp_type` and the template word moved together, and no `Zenner` remains on any live version |
 | Diodes / TVS simple 2-pin clamp (D_TVS_Bi) | `TVS Diode {Reverse Stand-Off Voltage} {Footprint_Name}` — no direction word, deliberately: this row is scoped to the `D_TVS_Bi` symbol, whose drawing is bidirectional, so every part on it is. A unidirectional 2-pin clamp belongs on `SMAJxxA` and takes the row below, where the word is mandatory |
 | Diodes / TVS surge-rated SMAJ series | `{Unidirectional\|Bidirectional} TVS Diode {Reverse Stand-Off Voltage}WM {Clamping Voltage}C {Footprint_Name}` — the direction word is a LITERAL you write per part, not a property lookup. Read it off the part number: both the Littelfuse and the MDD datasheet break the code as `SMAJ` \| `XXX` \| `C` \| `A`, with the `C` field labelled BI-DIRECTIONAL, so an A-suffix part carrying no `C` is unidirectional. **It is not optional.** Without it `SMAJ24A` and `SMAJ24CA` render the byte-identical BOM line "TVS Diode 24VWM 38.9VC SMA", and a unidirectional TVS fitted where a bidirectional one belongs conducts like a forward diode on the negative half cycle — nothing on the schematic or in the BOM would show the substitution |
 | Diodes / General Purpose rectifier | `General Purpose Diode {Maximum Reverse Voltage} {Continuous Current} {Footprint_Name}` |
@@ -474,6 +480,18 @@ Also never acceptable: `~`, `N/A`, `-`, an unresolved `{Template}` placeholder,
 or a copy of `ki_description` (the description is a separate, longer field).
 
 ### The rule
+
+> **The platform checks this**, per category. `cmp.value_placeholder` refuses an
+> empty Value, `~`, `N/A`, `-`, an unresolved `{Template}` or a copy of
+> `ki_description`. `cmp.value_field` then applies one variant per category
+> shape: the RKM code for Resistors, the unit format for Capacitors and
+> Timing_Components, the manufacturer part number verbatim for ICs, Transistors,
+> Buttons, LEDs, Relays and Connectors, and the component's own name for
+> Mechanical_7S and TestPoints. A category no variant covers falls through to the
+> same human question as before.
+> The deviations listed below are recorded as standing exceptions on those six
+> parts, so they are not re-discovered — do not re-litigate them and do not
+> re-file them.
 
 > `Value` is the **shortest string that identifies this part on a schematic
 > sheet**.

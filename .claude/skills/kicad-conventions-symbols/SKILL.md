@@ -2,7 +2,7 @@
 name: kicad-conventions-symbols
 description: "Choosing AND authoring base symbols: pin-type directionality from the component's own viewpoint, V.24 UART and SPI role policy, functional pin grouping, box/pitch geometry formulas, and stacked (shorted) pins. Use when picking a base symbol or writing a propose_symbol_edit."
 ---
-<!-- platform-skill: conventions-symbols v17 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-symbols v18 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Symbol conventions
 
 Every component is built on a **base symbol** — a graphical template with pins.
@@ -202,6 +202,11 @@ wherever its pin number falls — see the top of this section.
 
 ### Nothing electrical on the top edge
 
+> **The platform checks this**, as a warning: `sym.top_edge` counts signal and
+> supply pins on the top edge. It is a warning because 22 symbols in the library
+> predate the rule, and because §5.6 is a real exception the check cannot see.
+> Do not hand-verify it; act on it when it fires.
+
 Do not put power pins or signal pins on the **top edge** of a rectangular body.
 Keep them on the left and the right. The one exception is §5.6 — basic digital
 parts, where the top and bottom edges carry the asynchronous controls.
@@ -228,6 +233,9 @@ Precedent in this library: `SP3485` (RO, RE, DE, DI left; A, B right) and
 - **Pin stub length**: 2.54 mm (100 mil) is the default. The drawing families
   in §5 make it mandatory: the pin must end exactly on the body outline, with
   no stub inside the body and no gap outside it.
+  **The platform checks that one drawing does not MIX stub lengths**
+  (`sym.pin_length`). The absolute length is still a judgment call on the
+  geometry; mixing is the mechanical half.
 - **Exception — a pin number of three or more characters**: use 5.08 mm
   (200 mil), uniform across every pin of the symbol.
 

@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-09-14 — The conventions point at the checks, and Zener has one n
+
+**Four skill documents were republished** so an agent stops hand-verifying what
+the platform already decides. `platform-workflow` v11 was the urgent one: it
+still told agents to answer `skipped`, retired in September, and still described
+the automatic checks as something recorded on publish. It now says what the
+platform does — checks are worked out on read, "does not apply" is a standing
+exception that outlives the version and needs a note, notes are capped, a
+warning does not fail a part, and a switched-off check is not the same as one
+that is not about this part.
+
+The three convention skills now mark the rules the platform enforces —
+`fp.quad_numbering`, `fp.zero_annulus`, `sym.top_edge`, `sym.pin_length`,
+`cmp.value_placeholder` and `cmp.value_field` — and keep the prose, which says
+why the mistake happens and what to do when a check fires. A check cannot
+explain itself.
+
+**Zener is spelled with one n, everywhere.** All six Zener diodes were
+republished: the property key `Zenner Voltage`, `comp_type=ZENNER` and the
+template word "Zenner Diode" all moved together, because they have to — a
+dangling `{Zenner Voltage}` fails the template check. No `Zenner` remains on any
+live version. The six lost their verification, as a property edit always does.
+
+**The Diodes Value rule is now three rules.** The base list splits on category
+and cannot reach inside one, so the Diodes category carries its own variants
+split on `comp_type`: the reverse stand-off voltage for a TVS, an RKM V code for
+a Zener, the part number for a rectifier.
+
+It found two parts carrying their MPN where the stand-off voltage belongs —
+`SMF28A` and `SMF6V0A-E3-08`, now `28V` and `6V`. Both were read off each part's
+own **Reverse Stand-Off Voltage** property, not decoded from the part number.
+The work list had recorded seven such parts; there were two.
+
 ## 2026-09-14 — Changing a check changes the lists, without a restart
 
 Editing a checklist re-fingerprints every subject it reaches, but nothing acted

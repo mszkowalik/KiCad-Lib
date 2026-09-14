@@ -2,7 +2,7 @@
 name: kicad-platform-workflow
 description: "How changes become library: every write publishes immediately (no draft gate, no Proposals view), a publish regenerates the KiCad libraries and file mirror with no manual build, geometry publishes repoint the components on them, which changes carry a verification across a new version and which strip it, what mirror warnings mean, where the retired YAML pipeline went, and who handles platform setup. Use when asked how to publish, rebuild or regenerate."
 ---
-<!-- platform-skill: platform-workflow v10 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: platform-workflow v11 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Platform workflow — how changes become library
 
 Postgres is the source of truth. Every symbol, footprint, component and skill is
@@ -36,40 +36,90 @@ are changing what every later run is told, with nobody between you and it.
 
 ## The review axis: machine → agent → human
 
-Every published version starts a verification trail:
+Every published version starts a verification trail.
 
-1. **Machine** — the validator runs inside every publish and records the
-   mechanical checklist items (courtyard/fab/silk widths, pad shapes, drill
-   minimums, property rules — and a **required 3D model**: a footprint without
-   one reads `failed` until a human or agent marks the item n/a with a reason).
-2. **Agent** — after publishing, verify against the documentation:
-   `get_review_checklist` returns the resolved checklist merged with what is
-   already answered; `record_verification` records your answers. Be honest:
-   `checked` only for what you actually compared against the datasheet,
-   `na` (with a reason) for items that do not apply, `skipped` (with a reason)
-   for items the documentation does not let you verify, and **`flagged`**
-   (note required) for an item you verified and found WRONG without fixing
-   it. A flag puts the part on the "issues" list and the second-pass
-   worklist on the health panel — use it for review-only passes ("go over
-   the library and list what needs fixing") and for defects whose fix needs
-   the user's decision. Do not silently fix AND flag — one or the other.
-   You can never overwrite an item a human answered.
-3. **Human** — the user works the **Reviews** queue and the per-component
-   verification card, and separately signs off parts for production. The first
-   human sign-off promotes a component's lifecycle to `released`.
+1. **Machine** — the automatic checks. They are **worked out when something
+   asks, not recorded on publish** (changed 2026-09-14). Edit a check and the
+   whole library re-reads itself; nothing has to be re-run and there is no
+   button to press. So do not try to refresh them, and do not answer them: they
+   answer themselves, on every read, from the live checklist.
+2. **Agent** — after publishing, verify against the documentation.
+   `get_review_checklist` returns the resolved checklist with everything already
+   answered, and marks each item so you can tell what is left for you.
+   `record_verification` records your answers.
+3. **Human** — the user works the **Reviews** queue and the per-component card,
+   and separately signs off parts for production. The first human sign-off
+   promotes a component's lifecycle to `released`.
 
-States are derived, never stored: `unreviewed` → `partial` (skipped or
-unanswered items) → `checked`; `failed` when a machine check found a violation.
-A component's effective state is the WEAKEST of its own record and its pinned
-symbol and footprint records. Verifications are cumulative — a follow-up (the
-datasheet turned up, the checklist grew) starts from everything already
-answered.
+### What you may answer, and what each answer means
 
-**Carry rules:** a new version that changes nothing that reaches the board
-(equal material fingerprint), or whose change was explicitly waived as minor
-(`minor_change=true` on the geometry tools — use it ONLY for genuinely cosmetic
-cleanups), inherits the previous verification and sign-off. Anything else
-starts unreviewed again, on purpose.
+| Result | Means |
+|---|---|
+| `checked` | You compared it against the documentation and it is correct. |
+| `flagged` | You verified it and it is WRONG, and you are not fixing it. The note is required and IS the second-pass worklist entry. |
+| `na` | This check is not about this part. **It is a standing exception, not an answer on this version.** |
+
+**An item you could not verify is LEFT OUT entirely.** Do not send it. It keeps
+the version at `partial`, which is the honest state. (`skipped` was retired on
+2026-09-13: it meant "applies, but I could not verify it", everybody read it as
+"does not apply", and agents used it to mean "I did not re-open the PDF on this
+pass" — which parked 38 subjects at partial for no reason. Stored rows keep the
+value and are read as unanswered.)
+
+**`na` outlives the version.** Since 2026-09-14 it does not write an answer: it
+records a standing exception on the PART, pinned to the drawing or to the
+component's own data, so it survives the next publish and dies only when the
+thing it was granted against changes. It needs a reason code —
+`feature_absent`, `kind_exempt`, `waived`, `other` — **and a note**. An agent
+can never grant one that holds for every future version; only a person can, from
+the review card, where the scope is asked explicitly.
+
+Never reach for `na` to get rid of a question you could not answer. It closes
+the item for everybody who comes after you.
+
+### Keep every note short
+
+A note is capped at **400 characters** and a custom item's own text at 200; the
+overall note on a pass is capped at 300 and is a CITATION of what you read, not
+a summary of the findings. An over-long note is refused and comes back in
+`blocked_items`, so the answer is lost.
+
+Measured before the cap: a person writes 31 characters in a note, an agent's
+median is 367 and the longest in the library was 3,316 — about 500 words on one
+checklist item. Nobody reads that, so the finding inside it is lost anyway. Say
+what you compared, what you found and where: *"pad pitch 0.5 mm, datasheet p4
+table 2 says 0.65 mm"*.
+
+### Not every check applies to every part
+
+The resolved checklist reports three groups, and they mean different things:
+
+- **items** — what this subject is measured against.
+- **switched_off** — the owner decided this check does not apply here. Not your
+  work; do not re-raise it.
+- **inapplicable** — the check is not ABOUT parts like this one, because its
+  `when` predicate does not match. Also not your work.
+
+### A failure is not always a defect
+
+Every check carries a severity. A **warning**-level failure is shown and counted
+and never makes a part read as failed — that is what lets a new check ship at
+all. An **error** does. `ignore` means the check does not run here.
+
+### The state is three facts, not one word
+
+`conforms` is what the code can see; `judged n of m` is what a person or an
+agent has confirmed; sign-off is separate again. The single word — `unreviewed`
+/ `partial` / `checked` / `failed` — is the aggregate a list sorts by, and a
+component's is the WEAKEST of its own and those of the symbol and footprint it
+pins. An item closed by a standing exception LEAVES the denominator: an
+exception says the question is not about this part, never that somebody looked.
+
+**Carry rules:** a new version that changes nothing reaching the board (equal
+material fingerprint), or whose change was explicitly waived as minor
+(`minor_change=true` on the geometry tools — ONLY for genuinely cosmetic
+cleanups), inherits the previous verification and sign-off. Anything else starts
+unreviewed again, on purpose.
 
 **The fingerprint is computed for you, so do not reach for `minor_change`
 first.** The platform hashes the subset of a drawing a fab or a netlist acts on
@@ -154,6 +204,16 @@ the item is refused, because the record is the only place that wording lives).
 It is recorded on that ONE part and does not change the checklist every other
 part is measured against. People can add the same thing from the review card in
 the web UI.
+
+**Use it sparingly, and look first.** Measured 2026-09-14: the library carries
+**251 distinct custom keys**, most of them used exactly once, every one written
+by an agent. They accumulated because there was nowhere durable to record a
+finding — a waiver died with the version, so people invented a private key
+instead. That is fixed: a decision goes in a standing exception and a defect
+goes in `flagged`, both of which outlive the version and both of which somebody
+can find again. A custom key is for a real check the checklist has no key for,
+and when you write the third one of the same shape, say so in your report
+instead: it is a check that should exist.
 
 ## Production runs warn, they never block
 

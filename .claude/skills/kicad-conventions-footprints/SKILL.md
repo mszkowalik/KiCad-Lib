@@ -2,7 +2,7 @@
 name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints, and the naming standard: the KLC tier rule (Tier 0 stock names are frozen), the twelve-slot field order, decided spellings (_HandSoldering, vendor tokens, no rotation in names), the 7Sigma: namespace, validator-enforced pad/silk/fab/courtyard style, the 0.1mm grid, NPTH mechanical holes, thermal vias, non-electrical parts, and why connector pad numbering always follows the datasheet. Use when naming, picking or authoring any footprint."
 ---
-<!-- platform-skill: conventions-footprints v36 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v37 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 Footprints live in the `7Sigma:` namespace and are always referenced as
@@ -441,6 +441,13 @@ them, the numbering is wrong.
 
 ### Quad packages are always counter-clockwise — a mirrored one is always a bug
 
+> **The platform checks this.** `fp.quad_numbering` reads the direction the
+> numbered pads trace and fails anything but counter-clockwise, on any footprint
+> whose name carries a QFN / QFP / DFN / SOIC / SSOP / MSOP / SON / LGA / LFCSP
+> token. Connectors are deliberately excluded — their numbering follows the
+> datasheet. Do not re-verify it by hand; read the rest of this section for what
+> to do when it fires, and why the mistake is so easy to make.
+
 **QFN, QFP, TQFP, LQFP, VQFN, DFN and SOIC number counter-clockwise when seen
 from the TOP, starting at the pin nearest the pin-1 mark.** There is no
 clockwise variant and no mirrored variant. Every datasheet pinout figure is a
@@ -828,6 +835,10 @@ When the answer is not obvious, ask rather than assume — both decided cases
 above reached the user as a flag first.
 
 ## 6. Mechanical holes must be NPTH
+
+> **The platform checks half of this.** `fp.zero_annulus` counts plated holes
+> whose copper does not exceed their drill and fails if there is one. It cannot
+> tell you that a hole SHOULD have been mechanical — that is the judgment below.
 
 Mounting holes, locating pegs and body-clearance holes are mechanical, not
 electrical: use `np_thru_hole`, never `thru_hole`.
