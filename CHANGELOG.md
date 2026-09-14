@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-09-14 — Two convention documents audited against what actually runs
+
+Neither footprint nor symbol conventions turned out to be compressible: they are
+almost entirely authoring instructions — how to draw a cathode bar, how to size
+a box, how to measure a 3D model — and 44 and 31 table rows between them. There
+was no data to move into a check. What the audit found instead was worse than
+bulk.
+
+**The footprint style section claimed the validator enforced eight rules. It
+enforced four.** Auditing the other four found that two of them are wrong:
+
+- "SMD pads carry F.Cu, F.Paste and F.Mask, all three" — 25 footprints differ
+  and every one is an exposed pad, which legitimately has no paste or a
+  separate aperture.
+- "Through-hole pads are circle or oval" — 25 differ and every one is a pin-1
+  pad, rectangular by KiCad convention.
+
+The third, the roundrect corner ratio 0.25, is real: 36 of 212 footprints carry
+another value. `fp.smd_rratio` checks it now, as a warning, because most of the
+36 are stock lands the tier rule freezes. The fourth — the internal footprint
+name matching the filename — is satisfied on all 212.
+
+The section now names the check that holds each rule and says plainly which two
+were wrong. A document that claims the machine checks something it does not is
+worse than one that stays silent: the reader stops checking it too.
+
+**The symbol grid law does not match the library.** It states 2.54 mm in both
+axes as absolute; the check enforces 1.27 mm and nothing violates it, while 61
+of 206 symbols are off 2.54 — `RPi_CM5` with 200 pins, `ZED-F9P` with 102, every
+large STM32. Dense parts do not fit on 2.54 mm. The claim that an off-grid pin
+"cannot be wired on a default sheet" is also not so; KiCad's default grid
+includes 50 mil. Recorded as an open decision rather than resolved either way.
+
 ## 2026-09-14 — A rule leaves a skill only when a check has it
 
 An earlier pass today removed 42 KB from the component-conventions document on

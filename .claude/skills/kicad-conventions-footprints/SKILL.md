@@ -2,7 +2,7 @@
 name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints, and the naming standard: the KLC tier rule (Tier 0 stock names are frozen), the twelve-slot field order, decided spellings (_HandSoldering, vendor tokens, no rotation in names), the 7Sigma: namespace, validator-enforced pad/silk/fab/courtyard style, the 0.1mm grid, NPTH mechanical holes, thermal vias, non-electrical parts, and why connector pad numbering always follows the datasheet. Use when naming, picking or authoring any footprint."
 ---
-<!-- platform-skill: conventions-footprints v37 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v38 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 Footprints live in the `7Sigma:` namespace and are always referenced as
@@ -534,21 +534,40 @@ A footprint with no package name contributes nothing, so a component whose
 description references `{Footprint_Name}` reports an unresolved template. The
 fix is to name the footprint, not to patch the component.
 
-## 4. Style rules (the validator enforces these)
+## 4. Style rules
 
-These are the machine-checked rules in the platform's `footprint_style` rule
-block — a footprint that breaks them raises validator warnings.
+**Audited against the running checks on 2026-09-14.** This section used to be
+headed "the validator enforces these" and to name a `footprint_style` rule block
+that no longer exists. Four of its eight rules were not enforced by anything, and
+auditing those four found that two of them are wrong as written. A skill that
+claims the machine checks something it does not is worse than one that stays
+silent, because the reader stops checking it too.
 
-| Property | Rule |
-|---|---|
-| SMD pad type | `roundrect` |
-| `roundrect_rratio` | `0.25` |
-| SMD pad layers | `"F.Cu" "F.Paste" "F.Mask"` (all three) |
-| Through-hole pad type | `thru_hole circle` or `thru_hole oval` |
-| `F.Fab` outline | required, line width `0.1 mm` |
-| `F.SilkS` line width | `0.1 mm` |
-| `F.CrtYd` courtyard | required, closed, line width `0.05 mm` |
-| Header prefix | no `easyeda2kicad:` prefix — the internal `(footprint "NAME")` must equal the filename, unprefixed |
+| Rule | Enforced by | State |
+|---|---|---|
+| SMD pads are `roundrect` (exposed/heatsink pads exempt) | `fp.smd_pad_shape` | |
+| `roundrect_rratio` is `0.25` | `fp.smd_rratio` (warning) | 36 of 212 differ — most are stock lands the tier rule freezes |
+| `F.Fab` outline present, line width `0.1 mm` | `fp.fab_outline`, `fp.fab_width` | |
+| `F.SilkS` line width `0.1 mm` | `fp.silk_width` | one polarity mark may be 0.2 mm |
+| `F.CrtYd` present, line width `0.05 mm` | `fp.courtyard_present`, `fp.courtyard_width` | "closed" is not checked |
+| Courtyard on the 0.1 mm grid | `fp.courtyard_grid` | |
+| No drill below 0.3 mm, no TH pad below 0.6 mm, vias at or above 0.3/0.3 | `fp.min_drill`, `fp.min_th_pad`, `fp.via_dims` | thresholds are on the checks, editable per scope |
+| No plated hole with a zero annular ring | `fp.zero_annulus` | |
+| Quad packages number counter-clockwise | `fp.quad_numbering` | connectors excluded |
+
+### Two rules this section used to state, which are wrong
+
+- **"SMD pads carry `F.Cu`, `F.Paste` and `F.Mask`, all three."** They do not.
+  25 footprints differ and every one is an exposed pad, which legitimately
+  carries no paste or a separate paste aperture. There is no check and there
+  should not be one in that form.
+- **"Through-hole pads are `circle` or `oval`."** They are not. 25 footprints
+  differ and every one is a pin-1 pad, rectangular by KiCad convention so the
+  first pin is identifiable on the board.
+
+**The internal `(footprint "NAME")` must equal the filename**, with no
+`easyeda2kicad:` prefix. Not checked, and satisfied on all 212 — an import is
+where it would break.
 
 ### The cathode bar
 

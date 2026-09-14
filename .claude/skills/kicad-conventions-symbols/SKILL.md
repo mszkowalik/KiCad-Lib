@@ -2,7 +2,7 @@
 name: kicad-conventions-symbols
 description: "Choosing AND authoring base symbols: pin-type directionality from the component's own viewpoint, V.24 UART and SPI role policy, functional pin grouping, box/pitch geometry formulas, and stacked (shorted) pins. Use when picking a base symbol or writing a propose_symbol_edit."
 ---
-<!-- platform-skill: conventions-symbols v18 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-symbols v19 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Symbol conventions
 
 Every component is built on a **base symbol** — a graphical template with pins.
@@ -300,12 +300,25 @@ margin rule alone is sufficient, unambiguous, and matches what
 ### The grid law
 
 **Every pin connection point must be a multiple of 2.54 mm in BOTH axes**, and
-the pin tip must land exactly on the body outline. A pin off that grid cannot
-be wired on a default sheet.
+the pin tip must land exactly on the body outline.
 
 The two rules fight each other, and the geometry decides the winner. Work the
 arithmetic **before** you choose a body size, not after. §5.5 lists the
 constraints this produces for each family.
+
+> **The check enforces 1.27 mm, not 2.54 — and the library does not meet 2.54.**
+> Measured 2026-09-14: `sym.pins_grid` uses a 1.27 mm grid and **no symbol
+> violates it**, while **61 of 206 symbols** have pins off the 2.54 mm grid —
+> `RPi_CM5` (200 pins), `ZED-F9P` (102), `DF40C-100DS` (100), every large STM32.
+> High pin counts do not fit on 2.54 mm.
+>
+> This section also used to say a pin off the 2.54 grid "cannot be wired on a
+> default sheet", which is not so: KiCad's default schematic grid includes
+> 50 mil (1.27 mm).
+>
+> So 2.54 mm reads as the rule for a symbol that can afford it, and 1.27 mm as
+> the floor. **Which of the two is the house rule has not been decided** — ask
+> before tightening the check or re-drawing a dense part.
 
 ## 5. Drawing families
 
