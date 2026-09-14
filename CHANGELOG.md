@@ -1,5 +1,42 @@
 # Changelog
 
+## 2026-09-14 — A rule leaves a skill only when a check has it
+
+An earlier pass today removed 42 KB from the component-conventions document on
+the assumption the new checks held that data. Audited line by line, they did
+not: the rule that an RF part spells the key `VSWR` and never `V.S.W.R` had no
+check at all, 15 of 31 description templates were in no check, and a decision
+rule - "a family-wide deviation defends itself" - was deleted outright. That
+pass was reverted.
+
+Redone against a mechanical test: a row leaves only when a check holds its data
+AND the row carries nothing else. That removed **60 of 81** manufacturer rows
+(a spelling plus a list of feed misspellings, and the check holds the spelling)
+and **9 of 31** template rows. The other 21 and 22 stayed, because each carries
+a decision, a reason, or has no check.
+
+51 KB to 47 KB. That is the compression actually available: the bulk of that
+document is reasoning, and reasoning is what a check cannot hold.
+
+### New
+
+**`absent`** - the assertion for a rule that says there must be no X. Every
+other assertion reads a value, so a subject without one is answered "does not
+apply" before the assertion runs, which made "this key must not exist"
+inexpressible. `cmp.vswr_key` is the first to use it.
+
+[what-a-check-can-hold.md](docs/reference/what-a-check-can-hold.md) records the
+mapping and the order - build the check, measure it, then cut.
+
+### Found, not fixed
+
+`Inductors`, `RF` and `Circuit_Protection` carry no `comp_type`, so their Value
+and description rules cannot become checks: a fixed inductor, a ferrite bead and
+a LAN transformer are three rules sharing one category with nothing in the data
+to tell them apart. `Connectors` has the same problem differently - `Pluggable
+terminal block; {Pitch}` and `Pluggable terminal block; 3.5mm` coexist in one
+family. Work list row 24.
+
 ## 2026-09-14 — The conventions point at the checks, and Zener has one n
 
 **Four skill documents were republished** so an agent stops hand-verifying what

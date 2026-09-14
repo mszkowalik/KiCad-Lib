@@ -2,7 +2,7 @@
 name: kicad-conventions-library
 description: "House style for component data: canonical manufacturer names (with the full raw-to-canonical lookup table), ki_description {Key} templating per category, the Value field rule, and category-placement rules. Read before proposing a new component or editing an existing one's properties."
 ---
-<!-- platform-skill: conventions-library v38 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-library v39 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Library conventions
 
@@ -137,92 +137,40 @@ Everything else defaults to normal Title Case / proper legal-name casing
 `Analog Devices`, `Winbond`, `AMD/Xilinx`, `Hammond Manufacturing`,
 `Samsung Electro-Mechanics`).
 
-### Canonical manufacturer table
-(Raw/messy forms seen in feeds -> canonical value to use. Sorted
-alphabetically by canonical value.)
+### The 81 spellings live in the check
 
-| Canonical value | Messy forms seen |
+**`cmp.manufacturer_canonical` holds every canonical spelling** and compares
+`Manufacturer 1` on each purchasable part. A warning, not an error: an off-list
+name usually means the LIST is short, and adding the spelling there is the fix.
+Measured 2026-09-14: 59 parts carry 31 names it has not got.
+
+The rows below are the ones that cost a judgment. The other sixty were a
+spelling and a list of feed misspellings, and the check holds the spelling.
+
+### The twenty-one that were decided
+
+| Canonical value | Why, and what it is not |
 |---|---|
 | 8devices | 8Devices, 8 DEVICES, 8-Devices (distributor/catalog re-casing; the module is sold through CODICO, whose own datasheet cover never states a manufacturer name — verified against 8devices.com directly) |
-| AMD/Xilinx | Xilinx, AMD/XILINX, XILINX |
-| Analog Devices | ANALOG DEVICES, ADI |
-| Bat Wireless | BAT WIRELESS |
-| BHFUSE | (none — all-caps genuine brand, see exceptions above) |
-| Bourns | BOURNS |
 | CJIANG | SZ CJIANG TECHNOLOGY CO.,LTD (the letterhead on all 61 pages of the FTC-series datasheet), cjiang (LCSC's brand field), Changjiang, Changjiang Microelectronics Technology (both earlier house guesses, now wrong). Decided by Mateusz Kowalik on 2026-09-13. All-caps genuine brand, like BHFUSE. The footprint vendor token is `CJIANG`. Both sides are now consistent: `FTC404030S4R7MGCA` carries `Manufacturer 1 = CJIANG`, and the footprint was renamed `L_Changjiang_FTC404030S` -> `L_CJIANG_FTC404030S` on 2026-09-13 — the first use of the platform's rename, which also retired a false Tier 0 claim (see [[conventions-footprints]], "Renaming a footprint") |
-| Ckmtw | (none; full form "Ckmtw(Shenzhen Cankemeng)" also seen) |
-| DEGSON | Degson |
 | Diodes Incorporated | Diodes Inc, DIODES — the LCSC/JLC feed shouts "DIODES"; "Diodes Inc" was an earlier house form, already normalized to the full legal name on AP63357QZV-7 and the Diodes transistors. The footprint vendor token is `DiodesIncorporated` |
-| Dorabo | DORABO |
 | ECS Inc. | ECS — note: ECS's own materials are internally inconsistent ("ECS Inc. International" in press releases, "ECS International" on an About page); "ECS Inc." was picked as house standard because it matches both the company's own site `<title>` and DigiKey's distributor listing |
-| Espressif Systems | Espressif, ESPRESSIF, Espresiff (typo) |
-| FH (Guangdong Fenghua Advanced Tech) | FH |
-| FIX&fasten | FIX&FASTEN (distributor shout-case seen on TME/X-ON/FindIC) |
-| G-Switch | (none) |
-| Guangdong Hottech | GUANGDONG HOTTECH, Hottech |
 | Hammond Manufacturing | missing entirely on some sibling components; also seen corrupted/garbled, e.g. "FIX&Hammond Mfg" |
-| Hanxia | hanxia |
 | Hirose | HRS, HRS (Hirose) — HRS is only Hirose's part-number abbreviation/trademark code, not a display brand form |
-| HCTL | (none — all-caps genuine brand, see exceptions above) |
 | Infineon Technologies | Infineon (LCSC's short feed form) — the company's own datasheet legal text uses "Infineon Technologies" in running prose and "Infineon Technologies AG" as the publisher; the AG is the legal-entity suffix and is dropped, as with other Co./Ltd. suffixes in this table |
-| ISSI | (none — all-caps genuine brand, see exceptions above) |
-| Jushuo | JUSHUO |
-| Kangnex | KANGNEX |
-| KEMET | (none — all-caps is the genuine brand form; do not Title-Case to "Kemet") |
-| Kinghelm | kinghelm — ⚠ conflicts with "Shenzhen Kinghelm Elec" below, see Open items |
 | Kongshen | kangshen (LCSC's own romanization of 康深; the company writes "Kongshen" itself) |
 | Linekey | (none — Shanghai Linekey Technology Co., Ltd.; confirmed via the company's own English-language site, en.linekey.cn) |
-| Lite-On | LITEON, LITE-ON |
-| MaxLinear | (none — internal capital, see exceptions above) |
-| MDD (Microdiode Semiconductor) | MDD, Microdiode, Microdiode Semiconductor |
-| MEAN WELL | Mean Well |
 | MyAntenna | (none — internal capital A is the company's own form: "MyAntenna RF Technology Co., Ltd" on its datasheet letterhead and legal line, and LCSC's brand page reads the same. Do not write "Myantenna" or "My Antenna". Shenzhen antenna and RF-cable maker, imyantenna.com; first used on AEWW031, 2026-09-06; the ACA-* pigtail this line originally claimed alongside it did not exist until ACA-RFSMA-K TO IPEX1 001 was added 2026-09-10) |
 | Murata | muRata, MURATA, Murata Electronics (a regional-subsidiary name mistakenly applied library-wide by a prior pass — always normalize back to plain "Murata") |
 | OMRON | Omron Electronics, OMRON (raw feed value — previously misjudged as distributor-shout and wrongly Title-Cased when it was actually already correct) |
-| onsemi | ON Semiconductor, ONSEMI, On Semiconductor |
 | OptoSupply | OPTOSUPPLY, Optosupply (wrong casing applied by an earlier automated pass — re-fix if seen again) |
-| OSRAM | (none — all-caps is the genuine brand form; do not Title-Case to "Osram") |
-| Panasonic | PANASONIC |
 | Phoenix Contact | PhoenixContact (no space, in footprint names only — component Manufacturer 1 should still read "Phoenix Contact") |
-| RCH | (none — all-caps genuine brand, see exceptions above) |
-| Renata | RENATA |
 | RESI | (none — all-caps genuine brand, see exceptions above; "Resistor Today" appears in LCSC product URLs but is not the brand form) |
-| Ronghe | ronghe |
-| Samsung Electro-Mechanics | Samsung |
-| Samwha Capacitor | SAMWHA |
-| SCTF | (none — all-caps genuine brand; resolves former open item) |
-| Semtech | SEMTECH |
-| Shenzhen Kinghelm Elec | kinghelm, KINGHELM — ⚠ conflicts with "Kinghelm" above, see Open items |
-| Shikues | (none seen; already correct as stored) |
-| Shou Han | SHOU HAN |
-| Silverlight | (none) |
-| Sinhoo | (none) |
-| Slkor | SLKOR, Slkor Microelectronics, Shenzhen Slkor Micro Semicon |
-| STMicroelectronics | ST, STMICROELECTRONICS, STM |
-| TAKACHI | Takachi |
 | TDK | (none — all-caps genuine brand, see exceptions above; distinct from "TDK InvenSense" below) |
-| TDK InvenSense | (none — joint TDK/InvenSense brand, distinct from plain "TDK" above) |
-| TDSEMIC | (none — all-caps genuine brand, see exceptions above) |
 | Telit Cinterion | (none — standard capitalization, two words, no hyphen; official name since the Feb 2023 rebrand) |
-| Texas Instruments | TI, TEXAS INSTRUMENTS |
-| TOGNJING | (none — all-caps, lower confidence, see exceptions above) |
-| u-blox | ublox, U-BLOX, U-Blox |
 | UMW (Youtai Semiconductor Co., Ltd.) | UMW — the UMW PCF8574 datasheet footer instead reads "UTD Semiconductor Co.,Limited", same umw-ic.com site. Raised 2026-08-20 and DECIDED: keep this form. Do not re-open on the strength of that footer. |
-| UNI-ROYAL(Uniroyal Elec) | Uni-Royal, UNI-ROYAL, UNIROYAL |
-| Vishay | VISHAY, Vishay Intertechnology |
 | Vishay Semiconductors | (none — distinct business-unit brand from plain "Vishay", used for Vishay's optoelectronics/photodiode parts; don't collapse to plain "Vishay") |
 | Walter Electronic | WALTER ELECTRONIC (the company's own datasheet letterhead and its legal text, e.g. "WALTER ELECTRONIC CO., LTD." on page 8 of the MSH2512 specification), Walter Elec (LCSC's truncated feed form), WalterFuse (the company's fuse brand and domain, not its name). **NOT an all-caps exception**: its own site prints "(C)2023 Suzhou Walter Electronic Co" in running body text, so the KEMET/OSRAM test fails and normal Title Case applies. Taiwanese fuse and current-sense-resistor maker, founded 1968; footprint vendor token `WalterElectronic` |
-| WCH(Jiangsu Qin Heng) | WCH |
-| Winbond | WINBOND |
-| Worldsemi | WORLDSEMI, WorldSemi, World Semi |
-| XFCN | (none — all-caps genuine brand; resolves former open item) |
-| XINGLIGHT | (none — all-caps genuine brand, see exceptions above) |
-| Xinlaiya | XINLAIYA |
-| XR | (none — all-caps genuine brand, see exceptions above) |
-| Xunpu | XUNPU |
-| Yageo | YAGEO |
-| Yajingxin | TAE |
-| YLPTEC | (none — all-caps genuine brand, see exceptions above) |
 | YXC | YXC Crystal Oscillators — the "Crystal Oscillators" suffix is LCSC brand-page title padding, not part of the brand name (same pattern as Vishay Intertechnology -> Vishay) |
 
 ### Open items — could not confidently resolve, do not guess
@@ -339,6 +287,10 @@ instead of being silently changed:
 If a maintainer wants either renamed, do it as one dedicated base-symbol pass
 across every affected sibling at once, not piecemeal.
 
+**`cmp.vswr_key` enforces this since 2026-09-14** — an `absent` assertion on the
+misspelt key, built because this rule lived only in prose and nothing stopped a
+new RF part re-introducing it.
+
 **RESOLVED 2026-09-11 — `VSWR`, not `V.S.W.R`.** RF carried both spellings for
 the same quantity: four on-board antennas on `V.S.W.R` (`ACS0301U`,
 `BWGNSCNX9-9W2`, `GPS1003`, `KH5220-A36`) and four cabled parts on `VSWR`
@@ -355,28 +307,28 @@ unsigned, and no `ki_description` referenced the key, so the pass cost nothing.
 **Check both of those before renaming a key on a signed part** — on a verified
 one, the rename costs the verification.
 
-### Templates already standardized
+### Templates
+
+**`cmp.description` holds the allowed templates for the seven parametric
+categories** (Capacitor, Resistor, Timing_Components, LEDs, Circuit_Protection,
+Inductors, Diodes) and those rows are gone from here. `ki_description` is stored
+as the TEMPLATE, so the check compares template against template.
+
+Everywhere else `cmp.description` is a JUDGMENT check — 66 distinct descriptions
+across 107 ICs — so the rows below are authoring guidance, not an enforced rule.
+Do not force a template onto a sub-family of one.
 
 | Category / sub-family | Template |
 |---|---|
-| Resistor (general purpose, thick film) | `{Value} {Power} {Tolerance} {Footprint_Name}` |
 | Resistor (precision thin film, tempco specified) | `{Value} {Power} {Tolerance} {Tempco} {Footprint_Name}` — adds the `Tempco` property (format `10ppm/°C`, `25ppm/°C`). Use this variant only when the part is bought FOR its temperature coefficient. Without it a 10ppm and a 25ppm part of the same value, size and tolerance describe identically, and the library already holds both: `RT0402BRB071KL` (1K, 0.1%, 10ppm) sits beside the thick-film 1% `0402WGF1001TCE`, both `Value = 1K` |
-| Capacitor (ceramic MLCC/general) | `{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}` |
 | Capacitor (polarized: Aluminum Electrolytic / Tantalum) | same template as above, extending the `{Dielectric}` slot: `Al Elec` for aluminum electrolytics, `Tantalum` for tantalum caps |
-| Diodes / Schottky | `Schottky Diode {Maximum Reverse Voltage} {Forward Voltage} {Continuous Current} {Footprint_Name}` |
 | Diodes / Zener (BZT52Cxx, BZX84Cxx) | `Zener Diode {Zener Voltage} {Power} {Footprint_Name}` — ONE "n". Backfilled on all six on 2026-09-14: the property key, `comp_type` and the template word moved together, and no `Zenner` remains on any live version |
 | Diodes / TVS simple 2-pin clamp (D_TVS_Bi) | `TVS Diode {Reverse Stand-Off Voltage} {Footprint_Name}` — no direction word, deliberately: this row is scoped to the `D_TVS_Bi` symbol, whose drawing is bidirectional, so every part on it is. A unidirectional 2-pin clamp belongs on `SMAJxxA` and takes the row below, where the word is mandatory |
-| Diodes / TVS surge-rated SMAJ series | `{Unidirectional\|Bidirectional} TVS Diode {Reverse Stand-Off Voltage}WM {Clamping Voltage}C {Footprint_Name}` — the direction word is a LITERAL you write per part, not a property lookup. Read it off the part number: both the Littelfuse and the MDD datasheet break the code as `SMAJ` \| `XXX` \| `C` \| `A`, with the `C` field labelled BI-DIRECTIONAL, so an A-suffix part carrying no `C` is unidirectional. **It is not optional.** Without it `SMAJ24A` and `SMAJ24CA` render the byte-identical BOM line "TVS Diode 24VWM 38.9VC SMA", and a unidirectional TVS fitted where a bidirectional one belongs conducts like a forward diode on the negative half cycle — nothing on the schematic or in the BOM would show the substitution |
-| Diodes / General Purpose rectifier | `General Purpose Diode {Maximum Reverse Voltage} {Continuous Current} {Footprint_Name}` |
+| Diodes / TVS surge-rated SMAJ series | `{Unidirectional\ |
 | Diodes / Multi-channel ESD protection array | `{n}-Channel ESD Protection Array {Reverse Stand-Off Voltage}WM {Footprint_Name}` — the channel COUNT is a literal you write per part, the same way the direction word is on the SMAJ row. Count the protected I/O pins in the datasheet's pin table — for the TPD family the digit in the part name agrees (`TPD4E05U06` has four, `TPD6E05U06` six), but the pin table is what you check. `TPD4E05U06DQAR` renders "4-Channel ESD Protection Array 5.5VWM USON-10". The row used to hard-code `4-Channel`, which was right for the only part on it and would have printed a false channel count on the first 6-channel sibling (`TPD6E05U06`); corrected 2026-09-13 |
-| Diodes / Photodiode PIN (moved here from ICs) | `Photodiode PIN {Peak Wavelength} {Footprint_Name}` |
-| Transistors | `{N-MOS\|P-MOS\|NPN\|PNP} {Vds or Vce} {Id or Ic} {Power} {ShortFootprintName}` — hand-composed per subtype (MOSFETs and BJTs use different property key names, so one literal placeholder string can't cover the whole category); verified word-for-word conformant across the entire category |
+| Transistors | `{N-MOS\ |
 | Inductors (fixed/power) | `{Value} {Rated_Current} {Tolerance} {Footprint_Name}` — the real property key is `Rated_Current`, not `Current` |
 | Inductors / Ferrite Bead | `Ferrite Bead {Impedance} {Rated_Current} {Footprint_Name}` — its own sub-family template, uses `Impedance` (the electrically meaningful ferrite-bead rating) instead of `Value`/`Tolerance` |
-| LEDs / single-die indicator (colored/UV/IR) | `{Color} LED {Wavelength} {Forward Current} {Forward Voltage} {Footprint_Name}` |
-| LEDs / Addressable RGB LED, integrated driver (Worldsemi WS2812/WS2816, moved here from ICs) | `{PWM Resolution} Addressable RGB LED {Voltage Range} {Footprint_Name}` |
-| Timing_Components / Crystal | `Crystal {Value} {Tolerance} {Load Capacitance} {Footprint_Name}` |
-| Circuit_Protection / Polyfuse | `Resettable Fuse {Value} {Voltage_Max} {Footprint_Name}` |
 | Mechanical_7S / LightPipe (FIX&fasten FIX-LEMB series) | `Transparent PC light pipe, L={Length}, head ⌀{Head Diameter}, post ⌀{Post Diameter} in ⌀{Mounting Hole Diameter} mounting hole, 60° conical lens ({Manufacturer 1} {Manufacturer Part Number 1})` |
 | Connectors / Terminal block plug (generic invisible footprint) | `Pluggable terminal block plug; {Pitch}` |
 | Connectors / Terminal block base/header (real threaded-flange footprint) | `Pluggable terminal block; {Pitch}` |
