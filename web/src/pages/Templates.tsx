@@ -161,6 +161,7 @@ function SimModelPaste({ onFiled }: { onFiled: () => void }) {
           className="text"
           placeholder="Where the numbers come from"
           value={comment}
+          maxLength={600}
           onChange={(e) => setComment(e.target.value)}
           aria-label="Version comment"
         />

@@ -24,8 +24,40 @@ from sqlalchemy.orm import Session
 
 from .. import models as M
 from ..config import Settings
-from . import review, signoff
+from . import conformance, review, signoff
 from .mirror import top_level_of, update_mirror_footprint, update_mirror_symbols
+
+
+#: How long a version's change comment may be, in characters.
+#:
+#: Measured 2026-09-14 over what is already stored:
+#:
+#: ===================  ======  ========  ======
+#: row                  count   median    max
+#: ===================  ======  ========  ======
+#: ComponentVersion      2,448      150   3,984
+#: SymbolVersion           207      876   3,334
+#: FootprintVersion        478       96   4,087
+#: SkillVersion             79      736   3,132
+#: ===================  ======  ========  ======
+#:
+#: A change comment is the drawing's commit message: what changed and why. Four
+#: thousand characters is not that — it is a working note nobody will ever read
+#: through, and the reason for the change is buried somewhere inside it.
+#: Deliberately larger than `review.TEXT_LIMITS["item_note"]`, because one edit
+#: can legitimately touch several things and each needs a line.
+CHANGE_COMMENT_LIMIT = 600
+
+
+def check_comment(comment: str | None) -> None:
+    """Refuse an over-long change comment. Raises ValueError; every publish path
+    already turns one into a 422 the caller can read."""
+    text = (comment or "").strip()
+    if len(text) > CHANGE_COMMENT_LIMIT:
+        raise ValueError(
+            f"the change comment is {len(text)} characters, and the limit is "
+            f"{CHANGE_COMMENT_LIMIT}. Say what changed and why — the working notes "
+            f"behind it belong in the reply, not in the version history.")
 
 
 def publish_component_version(db: Session, comp: M.Component, cv: M.ComponentVersion,
@@ -40,6 +72,7 @@ def publish_component_version(db: Session, comp: M.Component, cv: M.ComponentVer
     `services/rename.py`. It reaches the two carries only — see
     `signoff.data_carries` for why a rename must not cost a verification.
     """
+    check_comment(cv.comment)
     old_cv = next((v for v in comp.versions if v.id == comp.current_version_id), None) \
         if comp.current_version_id else None
     if old_cv is None and comp.current_version_id:
@@ -58,9 +91,12 @@ def publish_component_version(db: Session, comp: M.Component, cv: M.ComponentVer
                       details={"component": comp.name, "version_no": cv.version_no}))
     carried = signoff.carry_on_publish(db, comp, old_cv, cv, rename)
     review_carry = review.carry_component(db, comp, old_cv, cv, rename)
-    # Machine validation AFTER the carry, so its answers merge on top of the
-    # carried record instead of replacing it.
-    review.machine_check_on_publish(db, "component", comp, cv, comp)
+    # Conformance is COMPUTED, not recorded (decision 0017). Nothing is written
+    # here any more: the machine tier is a pure function of the version and the
+    # resolved checklist, and `services/conformance.py` caches it against a
+    # digest of both. Warm it now so the first reader does not pay for it, and
+    # so a publish still surfaces a new failure immediately.
+    conformance.get(db, "component", comp, cv)
 
     tops = {top_level_of(cv.category).name}
     if old_cv is not None:
@@ -99,6 +135,7 @@ def publish_skill_version(db: Session, skill: M.Skill, content: str, actor: str,
     """
     if not content.strip():
         raise ValueError("skill content must not be empty")
+    check_comment(comment)
     numbers = [n for (n,) in db.query(M.SkillVersion.version_no).filter_by(skill_id=skill.id)]
     sv = M.SkillVersion(skill_id=skill.id, version_no=max(numbers, default=0) + 1,
                         content=content, status="published", created_by=actor,
@@ -123,6 +160,7 @@ def publish_geometry_version(db: Session, kind: str, parent, version, actor: str
     fresh look even on an identical drawing. None = nobody was asked; the
     material fingerprint decides.
     """
+    check_comment(version.comment)
     old_version = next((v for v in parent.versions if v.id == parent.current_version_id), None)
 
     version.status = "published"
@@ -138,7 +176,7 @@ def publish_geometry_version(db: Session, kind: str, parent, version, actor: str
                       entity_id=str(version.id),
                       details={kind: parent.name, "version_no": version.version_no}))
     review_carry = review.carry_geometry(db, kind, parent, old_version, version)
-    review.machine_check_on_publish(db, kind, parent, version)
+    conformance.get(db, kind, parent, version)
     return {"old_version": old_version, "review_carry": review_carry}
 
 

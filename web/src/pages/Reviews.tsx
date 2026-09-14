@@ -13,12 +13,25 @@ import {
   type ReviewQueueComponent,
   type ReviewQueueTemplate,
   type ReviewState,
+  listAllReviewExceptions,
+  revokeReviewException,
+  type ReviewExceptionRow,
+  getFailingSubjects,
+  type FailingSubjects,
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
 import { useDialog } from "../components/Dialog";
 import ChangesFeed from "../components/ChangesFeed";
 import { ComponentWorkbench, TemplateWorkbench } from "../components/ReviewWorkbench";
-import { ErrorBanner, FoldList, LifecyclePill, ReviewPill, SignoffPill, Spinner } from "../components/Ui";
+import {
+  ErrorBanner,
+  FoldList,
+  LifecyclePill,
+  ReviewPill,
+  SignoffPill,
+  Spinner,
+  stateFacts,
+} from "../components/Ui";
 
 /** The review queue: what still needs verification, ranked by LEVERAGE — a
  * failed symbol pinning 30 components outranks a failed one pinning none —
@@ -28,7 +41,8 @@ import { ErrorBanner, FoldList, LifecyclePill, ReviewPill, SignoffPill, Spinner 
 
 const STATE_RANK: Record<string, number> = { failed: 0, unreviewed: 1, partial: 2, checked: 3 };
 
-const TABS = ["changes", "components", "symbols", "footprints", "flagged", "health"] as const;
+const TABS = ["changes", "components", "symbols", "footprints", "flagged",
+              "exceptions", "health"] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABEL: Record<Tab, string> = {
   changes: "Recent changes",
@@ -36,6 +50,7 @@ const TAB_LABEL: Record<Tab, string> = {
   symbols: "Symbols",
   footprints: "Footprints",
   flagged: "Flagged",
+  exceptions: "Exceptions",
   health: "Library health",
 };
 
@@ -177,6 +192,10 @@ export default function Reviews() {
         {tab === "changes" ? (
           // Its own data, its own paging — it must not wait on the queue.
           <ChangesFeed />
+        ) : tab === "exceptions" ? (
+          // Same: standing decisions are their own list and the queue says
+          // nothing about them.
+          <ExceptionsTab />
         ) : !queue ? (
           <Spinner label="Loading review states" />
         ) : tab === "components" ? (
@@ -308,7 +327,12 @@ function ComponentsTab({
       // Worst first — sorting this column means "what still needs looking at".
       get: (r) => r.review_state,
       sortValue: (r) => STATE_RANK[r.review_state] ?? 9,
-      render: (r) => <ReviewPill state={r.review_state} provenance={r.provenance} />,
+      // The facts go in the TOOLTIP, not beside the pill: a queue row is one
+      // line tall and must never wrap (components/CLAUDE.md), so three pills
+      // in this cell would break the table instead of informing anybody.
+      render: (r) => (
+        <ReviewPill state={r.review_state} provenance={r.provenance} title={stateFacts(r)} />
+      ),
     },
     { key: "why", label: "Why", width: 20, get: (r) => r.blockers.join("; ") },
     {
@@ -460,7 +484,12 @@ function TemplatesTab({
       width: 14,
       get: (r) => r.review_state,
       sortValue: (r) => STATE_RANK[r.review_state] ?? 9,
-      render: (r) => <ReviewPill state={r.review_state} provenance={r.provenance} />,
+      // The facts go in the TOOLTIP, not beside the pill: a queue row is one
+      // line tall and must never wrap (components/CLAUDE.md), so three pills
+      // in this cell would break the table instead of informing anybody.
+      render: (r) => (
+        <ReviewPill state={r.review_state} provenance={r.provenance} title={stateFacts(r)} />
+      ),
     },
     {
       key: "used_by",
@@ -646,6 +675,159 @@ function FlaggedTab({ health }: { health: ReviewHealth }) {
   );
 }
 
+//: Where a subject of each kind lives. Symbols and footprints share one route.
+const LINK_FOR: Record<string, (id: number) => string> = {
+  component: (id) => `/library/components/${id}`,
+  symbol: (id) => `/library/templates/symbols/${id}`,
+  footprint: (id) => `/library/templates/footprints/${id}`,
+};
+
+/** Every standing decision in the library, in one table.
+ *
+ *  Until 2026-09-14 an exception was visible ONLY on its own subject's review
+ *  card, so nothing in the platform could answer "what have we excused, and
+ *  does it still hold". Decision 0016 calls an `always`-scoped one "a real
+ *  loaded gun" — a register is what lets somebody see the guns.
+ *
+ *  A STALE row is the point of the screen, not an error state: an exception
+ *  whose pinned fact has moved has quietly stopped applying, and the check it
+ *  used to excuse is failing again somewhere nobody is looking.
+ */
+function ExceptionsTab() {
+  const [rows, setRows] = useState<ReviewExceptionRow[] | null>(null);
+  const [showRevoked, setShowRevoked] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const dialog = useDialog();
+
+  const load = useCallback((signal?: AbortSignal) => {
+    listAllReviewExceptions(showRevoked, signal)
+      .then(setRows)
+      .catch((err) => {
+        if (!isAbortError(err)) setError(errorMessage(err));
+      });
+  }, [showRevoked]);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setRows(null);
+    load(ctrl.signal);
+    return () => ctrl.abort();
+  }, [load]);
+
+  const revoke = async (row: ReviewExceptionRow) => {
+    const why = await dialog.prompt(
+      `Why is the exception on "${row.key}" for ${row.subject_name} being withdrawn?`,
+      { title: "Revoke exception" },
+    );
+    if (why === null) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await revokeReviewException(row.subject_kind, row.subject_id, row.id, why.trim());
+      load();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const columns: Column<ReviewExceptionRow>[] = [
+    { key: "kind", label: "Kind", width: 8, get: (r) => r.subject_kind },
+    {
+      key: "subject", label: "Subject", width: 20, className: "mono",
+      get: (r) => r.subject_name ?? "(deleted)",
+      render: (r) =>
+        r.subject_gone ? (
+          <span className="muted">(deleted)</span>
+        ) : (
+          <Link to={LINK_FOR[r.subject_kind](r.subject_id)}>{r.subject_name}</Link>
+        ),
+    },
+    {
+      key: "key", label: "Check", width: 18, className: "mono",
+      get: (r) => (r.variant ? `${r.key} · ${r.variant}` : r.key),
+    },
+    { key: "reason", label: "Why", width: 10, get: (r) => r.reason },
+    { key: "scope", label: "Holds for", width: 14, get: (r) => r.scope },
+    {
+      key: "state", label: "State", width: 12,
+      get: (r) => (r.revoked_at ? "revoked" : r.stale_reason ? "stale" : "in force"),
+      render: (r) => (
+        <span
+          className={`pill ${r.revoked_at ? "neutral" : r.stale_reason ? "warn" : "ok"}`}
+          title={r.stale_reason ?? r.revoke_reason ?? undefined}
+        >
+          {r.revoked_at ? "revoked" : r.stale_reason ? "stale" : "in force"}
+        </span>
+      ),
+    },
+    { key: "by", label: "Decided by", width: 12, get: (r) => r.created_by },
+    {
+      key: "act", label: "", width: 6, interactive: false,
+      get: () => "",
+      render: (r) =>
+        r.revoked_at ? null : (
+          <button
+            type="button"
+            className="btn btn-sm btn-danger"
+            disabled={busy}
+            onClick={() => void revoke(r)}
+          >
+            Revoke
+          </button>
+        ),
+    },
+  ];
+
+  if (rows === null) return <Spinner label="Loading standing decisions" />;
+  const stale = rows.filter((r) => !r.revoked_at && r.stale_reason).length;
+  return (
+    <>
+      {error ? <ErrorBanner message={error} /> : null}
+      <p className="muted">
+        Every check somebody has decided does not apply to one subject, and whether that
+        decision still holds. An exception dies when a fact it NAMED changes — so a{" "}
+        <strong>stale</strong> row is a decision that has quietly stopped applying, and the
+        check it excused is failing again.{" "}
+        {stale ? <strong>{stale} stale.</strong> : null}
+      </p>
+      <div className="btn-row">
+        <button type="button" className="btn btn-sm" onClick={() => setShowRevoked((v) => !v)}>
+          {showRevoked ? "Hide revoked" : "Show revoked too"}
+        </button>
+      </div>
+      <DataTable
+        columns={columns}
+        rows={rows}
+        rowKey={(r) => r.id}
+        persistKey="review-exceptions"
+        defaultSort={{ key: "state", dir: "asc" }}
+        empty="No standing decisions yet. One is recorded from a check's Does-not-apply button."
+        expand={(r) => (
+          <div className="check-detail-panel">
+            <p>{r.note}</p>
+            {r.evidence ? <p className="muted">{r.evidence}</p> : null}
+            {r.stale_reason ? (
+              <p className="muted">No longer applies: {r.stale_reason}</p>
+            ) : null}
+            {r.revoke_reason ? (
+              <p className="muted">Revoked: {r.revoke_reason}</p>
+            ) : null}
+            <p className="muted dim">
+              {Object.keys(r.depends_on).length
+                ? `Pinned to ${Object.keys(r.depends_on).join(", ")}`
+                : "Pinned to nothing — this holds for every future version of the part."}
+              {r.created_at ? ` · ${new Date(r.created_at).toLocaleString()}` : ""}
+            </p>
+          </div>
+        )}
+      />
+    </>
+  );
+}
+
 function CountList({ title, counts }: { title: string; counts: Record<string, number> }) {
   return (
     <section className="card pad meta-card">
@@ -658,6 +840,78 @@ function CountList({ title, counts }: { title: string; counts: Record<string, nu
           ))}
       </dl>
     </section>
+  );
+}
+
+/** One failing key, and the parts it fails on.
+ *
+ *  The count was dead text until 2026-09-14. Grouping by KEY is already the
+ *  right shape — "fp.courtyard_grid on 76 footprints" is one job and "218
+ *  failed parts" is a wall — but a number nobody can open sends people back to
+ *  the per-part queue, which is the wall it was meant to replace.
+ *
+ *  The list is fetched only when a key is opened, so a health page with
+ *  fourteen rows still costs one request. */
+function FailingKey({
+  kind,
+  itemKey,
+  count,
+}: {
+  kind: ReviewKind;
+  itemKey: string;
+  count: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<FailingSubjects | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || rows !== null) return;
+    const ctrl = new AbortController();
+    getFailingSubjects(kind, itemKey, ctrl.signal)
+      .then(setRows)
+      .catch((err) => {
+        if (!isAbortError(err)) setError(errorMessage(err));
+      });
+    return () => ctrl.abort();
+  }, [open, rows, kind, itemKey]);
+
+  return (
+    <>
+      <dt>
+        <button
+          type="button"
+          className="linklike"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? "▾" : "▸"} {itemKey}
+        </button>
+      </dt>
+      <dd className="num">{count}</dd>
+      {open ? (
+        <dd className="kv-span">
+          {error ? <ErrorBanner message={error} /> : null}
+          {rows === null ? (
+            <Spinner label={`Loading the ${itemKey} worklist`} />
+          ) : (
+            <ul className="notes-list">
+              {rows.subjects.map((sub) => (
+                <li key={sub.id} className="note">
+                  <div className="note-head">
+                    <Link to={LINK_FOR[kind](sub.id)}>{sub.name}</Link>
+                    {sub.severity === "warning" ? (
+                      <span className="pill warn">warning only</span>
+                    ) : null}
+                  </div>
+                  {sub.note ? <p className="muted">{sub.note}</p> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </dd>
+      ) : null}
+    </>
   );
 }
 
@@ -680,12 +934,14 @@ function HealthTab({ health }: { health: ReviewHealth }) {
         health.failing_keys[kind]?.length ? (
           <section key={kind} className="card pad meta-card">
             <h3 className="card-title">Failing {kind} checks, by item</h3>
-            <p className="muted">One systemic fix clears a whole row.</p>
+            <p className="muted">
+              One systemic fix clears a whole row. Open a key to see every {kind} it fails on.
+            </p>
             <FoldList items={health.failing_keys[kind]} noun="item">
               {(shown) => (
                 <dl className="kv">
                   {shown.map((f) => (
-                    <Item key={f.key} k={f.key} v={f.count} />
+                    <FailingKey key={f.key} kind={kind} itemKey={f.key} count={f.count} />
                   ))}
                 </dl>
               )}

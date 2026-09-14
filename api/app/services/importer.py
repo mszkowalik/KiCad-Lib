@@ -32,27 +32,6 @@ from .parse_cache import footprint_parsed, symbol_parsed
 # Copied VERBATIM from kicad_lib/kicad/validator.py::_load_config (the config
 # file it optionally reads does not exist in the repo, so these hardcoded
 # defaults ARE today's canonical global ruleset).
-VALIDATOR_GLOBAL_DEFAULTS = {
-    "required_properties": ["Footprint", "ki_description"],
-    "non_empty_properties": ["Footprint", "ki_description"],
-    "property_patterns": {"Footprint": "^7Sigma:", "LCSC Part": "^C\\d+$"},
-    "max_property_length": 200,
-    "manufacturer_properties": [
-        "Manufacturer 1",
-        "Manufacturer Part Number 1",
-        "Supplier 1",
-        "Supplier Part Number 1",
-    ],
-    "footprint_dimensions": {
-        "min_drill_diameter": 0.3,
-        "min_via_size": 0.3,
-        "min_via_drill": 0.3,
-        "min_pad_size": 0.6,
-        "thermal_via_warning_only": True,
-    },
-    "footprint_required": True,
-}
-
 IMPORT_STATE: dict = {"running": False, "stage": "", "report": None, "error": None, "started_at": None}
 _lock = threading.Lock()
 
@@ -185,16 +164,13 @@ def run_import() -> dict:
         report["categories"] = len(categories)
 
         _stage("seeding rules")
-        db.add(M.Rule(name="global defaults", scope="global", block=VALIDATOR_GLOBAL_DEFAULTS))
-        rule_count = 1
-        for lib in libraries:
-            block = lib.get("validation_rules")
-            if block:
-                db.add(M.Rule(name=f"{lib['_lib_name']} rules", scope="library",
-                              library_name=lib["_lib_name"], block=block))
-                rule_count += 1
-        db.commit()
-        report["rules"] = rule_count
+        # Validation rules are NOT rows any more: they are `params` on the
+        # checklist item of the check that uses them, and a category states its
+        # own on a category-scoped component checklist
+        # (`checklists.migrate_rules_onto_items`). The YAML blocks are still
+        # read here so the import reports what it saw, and the migration folds
+        # anything already in `rules` into the checklists on the next start.
+        report["rules"] = sum(1 for lib in libraries if lib.get("validation_rules"))
 
         _stage("seeding skills")
         skill_count = 0

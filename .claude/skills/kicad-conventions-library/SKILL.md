@@ -2,7 +2,7 @@
 name: kicad-conventions-library
 description: "House style for component data: canonical manufacturer names (with the full raw-to-canonical lookup table), ki_description {Key} templating per category, the Value field rule, and category-placement rules. Read before proposing a new component or editing an existing one's properties."
 ---
-<!-- platform-skill: conventions-library v33 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-library v34 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Library conventions
 
@@ -307,11 +307,24 @@ internally consistent across every affected sibling and don't cause wrong
 data — renaming a property key is a bigger, base-symbol-wide change than a
 description-templating pass, so they were left alone and are recorded here
 instead of being silently changed:
-- **Diodes / Zener sub-family** uses the property key `Zenner Voltage` and
-  `comp_type=ZENNER` (extra "n") on every BZT52Cxx/BZX84Cxx sibling. The
-  Zener-family `ki_description` template intentionally keeps the same
-  spelling to match the key name — this is a deliberate consistency choice,
-  not an uncaught typo.
+- **Diodes / Zener — spell it with ONE "n". Reversed by the library owner on
+  2026-09-14.** The property key `Zenner Voltage`, `comp_type=ZENNER` and the
+  template word "Zenner Diode" all carry an extra "n" on every BZT52Cxx and
+  BZX84Cxx sibling, and this section used to record that as a deliberate
+  consistency choice. It was not — it was a typo that propagated, and the
+  owner has said so: **"from now on we should use 'Zener' with one n,
+  previously it was a mistake."**
+
+  Going forward: `Zener Voltage`, `comp_type=ZENER`, "Zener Diode". Do not
+  re-introduce the double "n" on a new part, and do not "correct" the
+  spelling back to match a sibling.
+
+  Six published parts still carry the old spelling — `BZT52C3V3`,
+  `BZT52C5V1`, `BZT52C5V6`, `BZX384-C12,115`, `BZX384-C3V6,115`,
+  `BZX84C8V2LT1G`. Renaming a property key on a published part is a MATERIAL
+  edit, so it strips each one's verification; the backfill is therefore a
+  deliberate pass rather than something to do in passing. Until it runs,
+  expect both spellings in the library and treat the single "n" as correct.
 - **Transistors / BJTs** (`BC817-40-7-F`, `BC847CLT1G`, `MMBT3904,215`) use
   the property key `Continuous Drain Current` for what is actually collector
   current — a copy-paste leftover from the NMOS/PMOS base template. The
@@ -345,7 +358,7 @@ one, the rename costs the verification.
 | Capacitor (ceramic MLCC/general) | `{Value} {Voltage} {Dielectric} {Tolerance} {Footprint_Name}` |
 | Capacitor (polarized: Aluminum Electrolytic / Tantalum) | same template as above, extending the `{Dielectric}` slot: `Al Elec` for aluminum electrolytics, `Tantalum` for tantalum caps |
 | Diodes / Schottky | `Schottky Diode {Maximum Reverse Voltage} {Forward Voltage} {Continuous Current} {Footprint_Name}` |
-| Diodes / Zener (BZT52Cxx, BZX84Cxx) | `Zenner Diode {Zenner Voltage} {Power} {Footprint_Name}` — spelling "Zenner" is intentional, see property-key quirks above |
+| Diodes / Zener (BZT52Cxx, BZX84Cxx) | `Zener Diode {Zener Voltage} {Power} {Footprint_Name}` — ONE "n". The six published siblings still carry `Zenner Voltage` and render "Zenner Diode"; that is the old spelling awaiting a backfill pass, not the standard. See the property-key note above |
 | Diodes / TVS simple 2-pin clamp (D_TVS_Bi) | `TVS Diode {Reverse Stand-Off Voltage} {Footprint_Name}` — no direction word, deliberately: this row is scoped to the `D_TVS_Bi` symbol, whose drawing is bidirectional, so every part on it is. A unidirectional 2-pin clamp belongs on `SMAJxxA` and takes the row below, where the word is mandatory |
 | Diodes / TVS surge-rated SMAJ series | `{Unidirectional\|Bidirectional} TVS Diode {Reverse Stand-Off Voltage}WM {Clamping Voltage}C {Footprint_Name}` — the direction word is a LITERAL you write per part, not a property lookup. Read it off the part number: both the Littelfuse and the MDD datasheet break the code as `SMAJ` \| `XXX` \| `C` \| `A`, with the `C` field labelled BI-DIRECTIONAL, so an A-suffix part carrying no `C` is unidirectional. **It is not optional.** Without it `SMAJ24A` and `SMAJ24CA` render the byte-identical BOM line "TVS Diode 24VWM 38.9VC SMA", and a unidirectional TVS fitted where a bidirectional one belongs conducts like a forward diode on the negative half cycle — nothing on the schematic or in the BOM would show the substitution |
 | Diodes / General Purpose rectifier | `General Purpose Diode {Maximum Reverse Voltage} {Continuous Current} {Footprint_Name}` |

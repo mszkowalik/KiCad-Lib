@@ -259,8 +259,15 @@ function VerificationSection({
   version: VersionDetail;
   onChanged: () => void;
 }) {
-  const [open, setOpen] = useState<"component" | "symbol" | "footprint" | null>(null);
   const parts = detail.review?.parts ?? {};
+  // A failing row opens itself. Three folds stood between a red pill and the
+  // control that answers it — this one, the card's checklist, and Verify… —
+  // and a user with a failing check in front of them reported there was no way
+  // to excuse it (2026-09-14). Only one row opens at a time by design: the
+  // three are read one after another, not side by side.
+  const firstFailing = (["component", "symbol", "footprint"] as const)
+    .find((k) => parts[k]?.state === "failed") ?? null;
+  const [open, setOpen] = useState<"component" | "symbol" | "footprint" | null>(firstFailing);
   const rows: { key: "component" | "symbol" | "footprint"; label: string; id: number | null }[] = [
     { key: "component", label: "Component data", id: detail.id },
     ...(version.symbol
@@ -282,14 +289,22 @@ function VerificationSection({
       <ul className="notes-list">
         {rows.map((r) => (
           <li key={r.key} className="note">
-            <div className="note-head">
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={() => setOpen(open === r.key ? null : r.key)}
-              >
-                {open === r.key ? "▾" : "▸"}
-              </button>{" "}
+            {/* The whole head is the target, not just the caret. A 20px
+                triangle beside a clickable-looking label that did nothing is
+                how the cards below read as absent. */}
+            <div
+              className="note-head clickable"
+              role="button"
+              tabIndex={0}
+              onClick={() => setOpen(open === r.key ? null : r.key)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setOpen(open === r.key ? null : r.key);
+                }
+              }}
+            >
+              <span aria-hidden>{open === r.key ? "▾" : "▸"}</span>{" "}
               <span>{r.label}</span>{" "}
               <ReviewPill
                 state={parts[r.key]?.state}

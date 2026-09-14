@@ -135,23 +135,110 @@ const REVIEW_TONES: Record<string, [string, string]> = {
   unreviewed: ["neutral", "unreviewed"],
 };
 
+/** The review state, and — when the caller has them — the two facts underneath.
+ *
+ *  One word was doing three jobs. `partial` meant "nobody has looked", "a
+ *  question was added last week" and "one item is still open"; `unreviewed`
+ *  showed on a subject whose every check had just been decided, because
+ *  completeness is measured over JUDGMENT items and a part can have none left.
+ *  132 of 212 footprints read `unreviewed` — a queue signal wearing a quality
+ *  signal's clothes.
+ *
+ *  KiCad reports "0 errors, 12 warnings, 3 excluded" and has no aggregate state
+ *  at all. This keeps the aggregate, because sorting and filtering need one
+ *  value, and prints the facts beside it: **conforms** is what the code can
+ *  see, **judged n of m** is what a person has confirmed. Pass `detail` and
+ *  they show; leave it off and the pill is what it always was.
+ */
 export function ReviewPill({
   state,
   provenance,
   title,
+  detail,
 }: {
   state: string | null | undefined;
   provenance?: string | null;
   title?: string;
+  /** The state object from the API. `conforms: null` means "not evaluated" and
+   *  must never print as "conforms". */
+  detail?: {
+    conforms?: boolean | null;
+    answered?: number;
+    total?: number;
+    excused?: number;
+    warnings?: number;
+  } | null;
 }) {
   const [tone, label] = REVIEW_TONES[(state ?? "").toLowerCase()] ?? ["neutral", "unreviewed"];
   const suffix = state === "checked" && provenance && provenance !== "human" ? ` (${provenance})` : "";
-  return (
+  const pill = (
     <span className={`pill ${tone}`} title={title}>
       {label}
       {suffix}
     </span>
   );
+  if (!detail) return pill;
+  const { conforms, answered = 0, total = 0, excused = 0, warnings = 0 } = detail;
+  return (
+    <span className="state-facts">
+      {pill}
+      <span
+        className={`pill ${conforms === null || conforms === undefined ? "neutral" : conforms ? "ok" : "err"}`}
+        title={
+          conforms === null || conforms === undefined
+            ? "The automatic checks have not been worked out for this version yet"
+            : conforms
+              ? "Every automatic check passes"
+              : "An automatic check is failing"
+        }
+      >
+        {conforms === null || conforms === undefined ? "not evaluated" : conforms ? "conforms" : "fails"}
+      </span>
+      <span
+        className="pill neutral"
+        title="Items a person or an agent has answered, out of the ones this subject is asked"
+      >
+        judged {answered}/{total}
+      </span>
+      {excused ? (
+        <span className="pill neutral" title="Closed by a standing decision, not by a verification">
+          {excused} excused
+        </span>
+      ) : null}
+      {warnings ? (
+        <span className="pill warn" title="Warning-level failures. They do not fail the subject.">
+          {warnings} warning{warnings === 1 ? "" : "s"}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** The three facts as one line of text, for a place that cannot hold pills.
+ *
+ *  The queue is a DataTable, and every row there is exactly one line tall with
+ *  no wrapping (`web/src/components/CLAUDE.md`), so three pills in a cell would
+ *  break the table rather than inform anybody. The tooltip carries them
+ *  instead, which keeps the one-word state sortable and still lets somebody
+ *  find out what it means. */
+export function stateFacts(detail: {
+  conforms?: boolean | null;
+  judged?: number;
+  judged_of?: number;
+  excused?: number;
+  warnings?: number;
+}): string {
+  const parts = [
+    detail.conforms === null || detail.conforms === undefined
+      ? "automatic checks not worked out yet"
+      : detail.conforms
+        ? "conforms"
+        : "an automatic check fails",
+    `judged ${detail.judged ?? 0} of ${detail.judged_of ?? 0}`,
+  ];
+  if (detail.excused) parts.push(`${detail.excused} excused by a standing decision`);
+  if (detail.warnings) parts.push(`${detail.warnings} warning(s)`);
+  return parts.join(" · ");
 }
 
 /** Usage-fitness lifecycle — what the part may be used for, not whether it was

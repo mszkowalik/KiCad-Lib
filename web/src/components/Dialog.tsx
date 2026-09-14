@@ -31,6 +31,11 @@ export interface PromptOptions {
   initial?: string;
   placeholder?: string;
   confirmLabel?: string;
+  /** Hard cap, in characters, with a live count once the text gets close.
+   *  Every explanation the review axis stores has one — a note nobody reads
+   *  loses the finding inside it, and the backend refuses an over-long one, so
+   *  stopping the typing here beats rejecting the save. */
+  maxLength?: number;
 }
 
 export interface SelectOptions {
@@ -162,9 +167,18 @@ function DialogBox({ req, onDone }: { req: Request; onDone: () => void }) {
               type="text"
               className="text modal-input"
               value={value}
+              maxLength={req.opts.maxLength}
               placeholder={req.opts.placeholder}
               onChange={(e) => setValue(e.target.value)}
             />
+            {/* The counter appears only in the last quarter. Shown always it
+                reads as a target to fill; shown near the end it reads as the
+                limit it is. */}
+            {req.opts.maxLength && value.length > req.opts.maxLength * 0.75 ? (
+              <p className="muted dim">
+                {value.length} / {req.opts.maxLength} characters
+              </p>
+            ) : null}
           </form>
         ) : null}
         <div className="btn-row modal-actions">

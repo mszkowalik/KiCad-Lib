@@ -2106,6 +2106,14 @@ input.filter-input {
   color: var(--muted);
 }
 
+/* A note head that FOLDS something. The whole row is the target, not the
+   caret beside it — a caret-only target reads as no target at all. */
+.note-head.clickable {
+  cursor: pointer;
+  user-select: none;
+}
+.note-head.clickable:hover { color: var(--fg); }
+
 .note-author {
   color: var(--copper);
 }
@@ -4773,16 +4781,141 @@ a.check-cell:hover {
   width: 100%;
   table-layout: fixed;
 }
-.data.checklist-table th:nth-child(1),
-.data.checklist-table td:nth-child(1) { width: 20%; }
-.data.checklist-table th:nth-child(2),
-.data.checklist-table td:nth-child(2) { width: 34%; }
-.data.checklist-table th:nth-child(3),
-.data.checklist-table td:nth-child(3) { width: 26%; }
-.data.checklist-table th:nth-child(4),
-.data.checklist-table td:nth-child(4) { width: 6%; }
-.data.checklist-table th:nth-child(5),
-.data.checklist-table td:nth-child(5) { width: 14%; white-space: nowrap; }
+/* A card whose body folds: the caret, the title and a one-line summary of what
+   is inside, so a folded section still says whether it is worth opening.
+   A <button> rather than a clickable <div> — it has to reach the keyboard, and
+   `aria-expanded` has to have something to sit on. */
+.fold-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fold-head .card-title {
+  margin: 0;
+}
+.fold-head:hover .card-title {
+  color: var(--accent);
+}
+
+/* The draft row that adds a check: the same seven columns, filled in place, so
+   a new check is defined where every existing one is read. Tinted because it is
+   a form pretending to be a row, and a reader has to see that before typing. */
+.draft-row > td {
+  background: var(--accent-soft);
+}
+
+/* The expanded panel under a check: its settings, its `when` predicate and, for
+   a judgment check, its wording. DataTable owns the row; this is only the
+   panel's own breathing room. */
+.check-detail-panel {
+  padding: 4px 0 10px;
+}
+.check-detail-panel .check-params {
+  border-top: 0;
+  margin-top: 4px;
+  padding-top: 0;
+}
+
+/* One table for every check, folded to the three facts you scan for: caret,
+   key, what it checks, where it comes from, whether it runs. Everything a check
+   carries — thresholds, property lists, patterns, the wording of a judgment
+   check — is in the `.check-detail` row behind the caret, because one check can
+   hold four regular expressions and a screenful of those cannot be read. */
+.data.check-table {
+  width: 100%;
+  table-layout: fixed;
+}
+.data.check-table th:nth-child(1),
+.data.check-table td:nth-child(1) { width: 38px; }
+.data.check-table th:nth-child(2),
+.data.check-table td:nth-child(2) { width: 20%; }
+.data.check-table th:nth-child(3),
+.data.check-table td:nth-child(3) { width: auto; white-space: normal; }
+.data.check-table th:nth-child(4),
+.data.check-table td:nth-child(4) { width: 14%; }
+.data.check-table th:nth-child(5),
+.data.check-table td:nth-child(5) { width: 245px; white-space: nowrap; }
+.data.check-table .seg { display: inline-flex; }
+.data.check-table td.ctr { padding-left: 6px; padding-right: 6px; }
+.check-detail td {
+  white-space: normal;
+  background: var(--surface-2);
+  border-top: 0;
+  padding-bottom: 12px;
+}
+.check-detail .check-params {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+/* Two shapes on the OLD checklist editor tables, kept for anything still using
+   them. `cols-3` is key / what it checks / switch; `cols-4` adds the hint
+   column and the reorder+delete group. */
+.data.checklist-table.cols-3 th:nth-child(1),
+.data.checklist-table.cols-3 td:nth-child(1) { width: 22%; }
+.data.checklist-table.cols-3 th:nth-child(2),
+.data.checklist-table.cols-3 td:nth-child(2) { width: auto; white-space: normal; }
+/* Wide enough for the longest switch this table draws — "Inherit (on) |
+   Override | Off". A clipped switch hides the option you came for. */
+.data.checklist-table.cols-3 th:nth-child(3),
+.data.checklist-table.cols-3 td:nth-child(3) { width: 245px; white-space: nowrap; }
+
+.data.checklist-table.cols-4 th:nth-child(1),
+.data.checklist-table.cols-4 td:nth-child(1) { width: 20%; }
+.data.checklist-table.cols-4 th:nth-child(2),
+.data.checklist-table.cols-4 td:nth-child(2) { width: 34%; }
+.data.checklist-table.cols-4 th:nth-child(3),
+.data.checklist-table.cols-4 td:nth-child(3) { width: 28%; }
+.data.checklist-table.cols-4 th:nth-child(4),
+.data.checklist-table.cols-4 td:nth-child(4) { width: 18%; white-space: nowrap; }
+
+/* What an automatic check measures against, under the sentence it produces.
+   Auto-fit rather than a fixed count: one check carries a single threshold and
+   another carries two lists and a pattern map. */
+.check-params {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 6px 12px;
+  align-items: start;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+.check-params .field {
+  grid-column: span 1;
+}
+.check-params .field:has(.param-pattern) {
+  grid-column: 1 / -1;
+}
+.param-pattern {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.param-pattern .text:first-child {
+  flex: 0 0 30%;
+  min-width: 0;
+}
+/* `.text` is `width: 100%`, which contributes nothing to a flex row's intrinsic
+   size — the same trap `table.kv.settings-table` documents. */
+.param-pattern .text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The switch is a control inside a cell, not a cell-wide band. */
+.data.checklist-table .seg { display: inline-flex; }
+/* An automatic check's own wording wraps rather than being clipped — it is the
+   whole content of its cell, and a truncated rule reads as a different rule. */
+.data.checklist-table td { white-space: normal; }
 
 /* ---- review workbench (Reviews page inline expansion) ---- */
 /* Checklist beside the thing it is checked against: cards left, datasheet +
@@ -6158,4 +6291,33 @@ a.check-cell:hover {
   /* 100, so THREE fit across the 340 px panel (3x100 + two 8 px gaps = 316).
      At 110 the third wrapped and "Design f" dropped to a line of its own. */
   flex: 1 1 100px;
+}
+
+/* A `dl.kv` row whose body spans BOTH columns — a fold opened under one
+   key/value pair. Without it the panel is squeezed into the value column. */
+.kv .kv-span {
+  grid-column: 1 / -1;
+  margin: 0 0 8px;
+}
+/* A button that reads as a link. Used where a fold's handle is a whole label
+   rather than a caret, so the target is the text people aim at. */
+.linklike {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.linklike:hover { color: var(--copper); }
+
+/* The review state and the facts underneath it, on one line. One word was
+   doing three jobs; these are the jobs. Wraps rather than pushing a card
+   wider, because it sits inside headings of very different widths. */
+.state-facts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
 }

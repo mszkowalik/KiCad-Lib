@@ -4,12 +4,27 @@ import {
   getReviewDetail,
   isAbortError,
   recordReviewCheck,
+  grantReviewException,
   revokeReviewCheck,
+  revokeReviewException,
   type ReviewCheckAnswer,
   type ReviewDetail,
   type ReviewKind,
 } from "../api";
 import { useDialog } from "./Dialog";
+/** Mirror of `review.TEXT_LIMITS` and `exceptions.TEXT_LIMITS` in the backend,
+ *  in characters. The server REFUSES an over-long explanation, so these stop
+ *  the typing rather than the save — change one and change the other, because a
+ *  UI cap above the server's lets somebody write a note that is then thrown
+ *  away.
+ *
+ *  The numbers came from measuring what is already stored: a person writes 31
+ *  characters here, an agent's median is 367 and its longest is 3,316. Nobody
+ *  reads 3,316 characters on one checklist item, so the finding inside it is
+ *  lost exactly as surely as if it had never been written. */
+const LIMITS = { note: 400, passNote: 300, revokeReason: 300 } as const;
+
+
 import { ErrorBanner, ReviewPill, Spinner } from "./Ui";
 
 /** Documentation verification for one component / symbol / footprint.
@@ -56,7 +71,13 @@ export default function ReviewCard({
     setVerifying(false);
     setAnswers({});
     getReviewDetail(kind, id, ctrl.signal)
-      .then(setDetail)
+      .then((d) => {
+        setDetail(d);
+        // A failing card opens ON its findings. They are why anybody opened it,
+        // and a fold over them is how "there is no way to excuse this check"
+        // happens (user report 2026-09-14).
+        if (d.state === "failed") setShowItems(true);
+      })
       .catch((err) => {
         if (!isAbortError(err)) setLoadError(errorMessage(err));
       });
@@ -78,6 +99,13 @@ export default function ReviewCard({
   // which is `na`'s job — so agents reached for it to mean "I did not re-open
   // the PDF on this pass" and 38 subjects sat at partial for no real reason.
   // An item nobody can verify is now simply LEFT UNANSWERED.
+  //
+  // `na` stopped being an ANSWER on 2026-09-14. It is a standing exception, and
+  // "Does not apply…" grants one. The two said the same thing and only one of
+  // them lasted: the library held 314 live `na` answers, 312 of them written by
+  // agents, none with a reason, every one due to expire at the next version
+  // bump — while the table built to hold such decisions held ZERO rows. These
+  // codes live on as the exception's `reason`.
   const NA_REASONS = [
     ["feature_absent", "the part does not have the thing this checks"],
     ["kind_exempt", "the convention exempts this class of part"],
@@ -87,24 +115,10 @@ export default function ReviewCard({
 
   const answer = async (
     item: { key: string; text: string },
-    result: "checked" | "na" | "flagged",
+    result: "checked" | "flagged",
   ) => {
     let itemNote: string | undefined;
-    let reason: string | undefined;
-    if (result === "na") {
-      const picked = await dialog.select(
-        `Why does "${item.text}" not apply?`,
-        NA_REASONS.map(([value, label]) => ({ value, label })),
-        { title: "Does not apply" },
-      );
-      if (picked === null) return;
-      reason = picked;
-      const why = await dialog.prompt("Anything to add? (optional)", {
-        title: "Does not apply",
-      });
-      if (why === null) return;
-      itemNote = why.trim() || undefined;
-    } else if (result === "flagged") {
+    if (result === "flagged") {
       const why = await dialog.prompt(
         `What is wrong with "${item.text}"? (goes on the second-pass list)`,
         { title: "Flag an issue" },
@@ -120,8 +134,86 @@ export default function ReviewCard({
     }
     setAnswers((prev) => ({
       ...prev,
-      [item.key]: { key: item.key, result, note: itemNote, text: item.text, reason },
+      [item.key]: { key: item.key, result, note: itemNote, text: item.text },
     }));
+  };
+
+  /** The scopes an exception may be pinned to, for THIS kind of subject.
+   *
+   *  A component's `$material_sha` is its symbol's and its footprint's joined
+   *  together, so "while the drawing is unchanged" says nothing at all about
+   *  the component's own fields — `$property_sha` is what covers those. Offer
+   *  the wrong one and a waiver on a Value or a datasheet silently outlives
+   *  the edit that changed it, which is the exact failure the scope question
+   *  exists to prevent.
+   */
+  const SCOPES: { value: string; label: string; pin?: string[] }[] =
+    kind === "component"
+      ? [
+          { value: "property", label: "While this component's own data is unchanged", pin: ["$property_sha"] },
+          { value: "drawing", label: "While the symbol and footprint are unchanged" },
+          { value: "always", label: "Always — this is about the part, whatever it is drawn as" },
+        ]
+      : [
+          { value: "drawing", label: "While the drawing is unchanged — dies if the copper moves" },
+          { value: "always", label: "Always — this is about the part, not this drawing" },
+        ];
+
+  /** Grant a standing exception straight from the finding it excuses.
+   *
+   *  The only way in used to be Verify… → N/A → "keep this decision?" — three
+   *  dialogs deep, gated on entering verify mode, and never once using the
+   *  word "exception". A user looking at a red check reported there was no way
+   *  to excuse it (2026-09-14), which is what a hidden control looks like from
+   *  the outside.
+   *
+   *  It needs no verify mode and stages nothing: conformance is computed on
+   *  read and an exception is an OVERLAY on it (decision 0017), so the finding
+   *  changes the moment this returns. There is no Save to forget.
+   */
+  const excuse = async (item: { key: string; text: string; variant?: string }) => {
+    const picked = await dialog.select(
+      `Why is "${item.text}" excused on this ${kind}?`,
+      NA_REASONS.map(([value, label]) => ({ value, label })),
+      { title: "Does not apply" },
+    );
+    if (picked === null) return;
+    const why = await dialog.prompt("Why? The next reviewer has nothing else to go on.", {
+      title: "Does not apply",
+      maxLength: LIMITS.note,
+    });
+    if (why === null) return;
+    if (!why.trim()) {
+      await dialog.alert(
+        "A standing exception needs a note — it is the only place the reason will ever live.",
+        { title: "Does not apply" },
+      );
+      return;
+    }
+    const scope = await dialog.select(
+      `How long does this decision hold for "${detail?.name ?? "this subject"}"?`,
+      SCOPES.map(({ value, label }) => ({ value, label })),
+      { title: "Does not apply" },
+    );
+    if (scope === null) return;
+    const chosen = SCOPES.find((s) => s.value === scope);
+    setBusy(true);
+    setActionError(null);
+    try {
+      apply(
+        await grantReviewException(kind, id, {
+          key: item.key,
+          variant: item.variant,
+          reason: picked,
+          note: why.trim(),
+          ...(chosen?.pin ? { pin: chosen.pin } : { scope: scope as "drawing" | "always" }),
+        }),
+      );
+    } catch (err) {
+      setActionError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
   };
 
   /** `custom.<slug>`, unique against the checklist, the recorded extras and
@@ -144,7 +236,10 @@ export default function ReviewCard({
     return key;
   };
 
-  const addCustom = async (result: "checked" | "na" | "flagged") => {
+  /** A check this part needed that no checklist anticipated. There is no "does
+   *  not apply" here on purpose: inventing a check and excusing it in the same
+   *  gesture records nothing anybody can use. */
+  const addCustom = async (result: "checked" | "flagged") => {
     const text = customText.trim();
     if (!text) return;
     await answer({ key: customKey(text), text }, result);
@@ -199,9 +294,37 @@ export default function ReviewCard({
     }
   };
 
+  /* "Re-run auto checks" was removed on 2026-09-14 (decision 0017).
+     Conformance is computed on read and its cache is keyed on a digest of the
+     checklist, the subject's facts and the live exceptions — so there is
+     nothing to re-run. The button existed because machine answers used to be
+     stored and could go stale. */
+
+
+  /** Withdraw a standing decision. The check comes straight back — an answer
+   *  written by an exception dies with it (`review.record_check`), so this is
+   *  not a button that half works. */
+  const revokeException = async (excId: number, key: string) => {
+    const why = await dialog.prompt(`Why is the exception on "${key}" being withdrawn?`, {
+      title: "Revoke exception",
+      maxLength: LIMITS.revokeReason,
+    });
+    if (why === null) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      apply(await revokeReviewException(kind, id, excId, why.trim()));
+    } catch (err) {
+      setActionError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const revoke = async () => {
     const reason = await dialog.prompt("Why is the verification being taken back?", {
       title: "Revoke verification",
+      maxLength: LIMITS.revokeReason,
     });
     if (reason === null || !reason.trim()) return;
     setBusy(true);
@@ -243,7 +366,10 @@ export default function ReviewCard({
     <section className="card pad meta-card">
       <h3 className="card-title">
         {label ?? "Verification"}{" "}
-        <ReviewPill state={detail.state} provenance={detail.provenance} />
+        {/* The aggregate AND the two facts under it. One word could not say
+            "the code is happy" and "a person has looked at 3 of 9" at once,
+            and the card is where both matter most. */}
+        <ReviewPill state={detail.state} provenance={detail.provenance} detail={detail} />
       </h3>
 
       <p className="muted">{explain(detail, openCount)}</p>
@@ -276,9 +402,19 @@ export default function ReviewCard({
             >
               Mark checked
             </button>
+            {/* Named in full because the exception rows below carry their own
+                Revoke, and two identical red buttons a few pixels apart is a
+                mis-click waiting to happen — this one withdraws the whole
+                verification, that one withdraws one standing decision. */}
             {detail.record ? (
-              <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void revoke()}>
-                Revoke
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                disabled={busy}
+                onClick={() => void revoke()}
+                title="Withdraw the whole verification record for this version"
+              >
+                Revoke verification
               </button>
             ) : null}
           </>
@@ -288,6 +424,7 @@ export default function ReviewCard({
               className="text row-input"
               value={note}
               disabled={busy}
+              maxLength={LIMITS.passNote}
               placeholder="What documentation was used (optional)"
               onChange={(e) => setNote(e.target.value)}
             />
@@ -310,6 +447,40 @@ export default function ReviewCard({
         )}
       </div>
 
+      {/* Standing decisions live OUTSIDE the checklist fold. They are few, they
+          are the reason a check is quiet, and burying them behind "Checklist
+          (16)" means granting one and then being unable to find it again. */}
+      {(detail.exceptions ?? []).length ? (
+        <ul className="notes-list">
+          {(detail.exceptions ?? []).map((exc) => (
+          <li key={`exc-${exc.id}`} className="note">
+            <div className="note-head">
+              <span>{exc.key}</span>{" "}
+              <span
+                className={`pill ${exc.stale_reason ? "warn" : "neutral"}`}
+                title={exc.stale_reason ?? `Granted by ${exc.created_by}`}
+              >
+                {exc.stale_reason ? "exception stale" : `exception · ${exc.scope}`}
+              </span>
+              <button
+                type="button"
+                className="btn btn-sm btn-danger"
+                disabled={busy}
+                onClick={() => void revokeException(exc.id, exc.key)}
+                title="Withdraw this decision — the check it excuses answers again on the next read"
+              >
+                Revoke exception
+              </button>
+            </div>
+            <p className="muted">
+              {exc.note}
+              {exc.stale_reason ? ` — no longer applies: ${exc.stale_reason}` : ""}
+            </p>
+          </li>
+        ))}
+        </ul>
+      ) : null}
+
       {showItems ? (
         <ul className="notes-list">
           {detail.items_carried ? (
@@ -321,6 +492,20 @@ export default function ReviewCard({
           {detail.items.map((item) => {
             const pending = answers[item.key];
             const a = item.answered;
+            const finding = a?.result === "failed" || a?.result === "flagged";
+            const excused = a?.exception_id != null;
+            // A machine item is normally the validator's to answer, so a
+            // passing one offers no buttons. A FINDING is different: it is a
+            // worklist entry addressed to a person.
+            const canAnswer = verifying && !excused && (!item.machine || finding);
+            // "Does not apply" is available on ANY judgment item, answered or
+            // not, and on a machine FINDING. Saying a check is not about this
+            // part does not require running it first — it is the only honest
+            // way to close such an item, and refusing it on an open item was
+            // what left `na` in place as a second, weaker way to say the same
+            // thing. It needs no verify mode: an exception stages nothing and
+            // saves nothing (decision 0017).
+            const canExcuse = !excused && !pending && (!item.machine || finding);
             return (
               <li key={item.key} className="note">
                 <div className="note-head">
@@ -345,6 +530,13 @@ export default function ReviewCard({
                       auto
                     </span>
                   ) : null}
+                  {/* A warning-level failure is worth seeing and does NOT fail
+                      the part — say so on the row, or it reads as a defect. */}
+                  {a?.severity === "warning" && (a.result === "failed" || a.result === "flagged") ? (
+                    <span className="pill warn" title="A failure here does not fail the part">
+                      warning only
+                    </span>
+                  ) : null}
                 </div>
                 {a?.note && !pending ? <p className="muted">{a.note}</p> : null}
                 {/* What this answer replaced. Accepting a flag keeps the flag
@@ -360,42 +552,72 @@ export default function ReviewCard({
                     {a.superseded.note ? ` — ${a.superseded.note}` : ""}
                   </p>
                 ) : null}
-                {/* A machine item is normally the validator's to answer, so a
-                    passing one offers no buttons. A FINDING is different: it is
-                    a worklist entry addressed to a person, and until 2026-09-13
-                    only `failed` could be closed here. An agent's `flagged` on a
-                    machine item — `cmp.datasheet_text` is the one that reaches
-                    this state in practice — rendered read-only with no way to
-                    accept, waive or re-check it (user report 2026-09-13). The
-                    backend never forbade it: `record_check` lets a human answer
-                    over an agent on any key, and keeps the old answer as
-                    `superseded`. */}
-                {verifying && (!item.machine || a?.result === "failed" || a?.result === "flagged") ? (
+                {/* Until 2026-09-13 only `failed` could be closed here. An
+                    agent's `flagged` on a machine item — `cmp.datasheet_text`
+                    is the one that reaches this state in practice — rendered
+                    read-only with no way to accept, waive or re-check it (user
+                    report 2026-09-13). The backend never forbade it:
+                    `record_check` lets a human answer over an agent on any key,
+                    and keeps the old answer as `superseded`. */}
+                {canAnswer || canExcuse ? (
                   <div className="btn-row">
-                    <button type="button" className="btn btn-sm" onClick={() => void answer(item, "checked")}>
-                      Checked
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => void answer(item, "na")}
-                      title="Does not apply to this part — asks which way, and closes the item"
-                    >
-                      N/A
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-danger"
-                      onClick={() => void answer(item, "flagged")}
-                      title="Verified and found wrong — record the defect without fixing it"
-                    >
-                      Flag
-                    </button>
+                    {canAnswer ? (
+                      <>
+                        <button type="button" className="btn btn-sm" onClick={() => void answer(item, "checked")}>
+                          Checked
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-danger"
+                          onClick={() => void answer(item, "flagged")}
+                          title="Verified and found wrong — record the defect without fixing it"
+                        >
+                          Flag
+                        </button>
+                      </>
+                    ) : null}
+                    {canExcuse ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        disabled={busy}
+                        onClick={() => void excuse(item)}
+                        title="This check is not about this part — records a standing decision that survives the next version, and shows on the card until somebody revokes it"
+                      >
+                        Does not apply…
+                      </button>
+                    ) : null}
                   </div>
                 ) : null}
               </li>
             );
           })}
+          {(detail.inapplicable ?? []).map((item) => (
+            <li key={item.key} className="note muted">
+              <div className="note-head">
+                <span>{item.text}</span>{" "}
+                <span
+                  className="pill neutral"
+                  title={`Not about parts like this one: ${Object.entries(item.when)
+                    .map(([f, p]) => `${f} matches ${p}`)
+                    .join(" and ")}`}
+                >
+                  n/a here
+                </span>
+              </div>
+            </li>
+          ))}
+          {(detail.switched_off ?? []).map((item) => (
+            <li key={item.key} className="note muted">
+              <div className="note-head">
+                <span>{item.text}</span>{" "}
+                <span className="pill neutral" title="Switched off in the checklist for this subject">
+                  off
+                </span>
+                {item.machine ? <span className="badge">auto</span> : null}
+              </div>
+            </li>
+          ))}
           {detail.extra_items.map((item) => (
             <li key={item.key} className="note">
               <div className="note-head">
@@ -458,14 +680,6 @@ export default function ReviewCard({
                 </button>
                 <button
                   type="button"
-                  className="btn btn-sm"
-                  disabled={busy || !customText.trim()}
-                  onClick={() => void addCustom("na")}
-                >
-                  N/A
-                </button>
-                <button
-                  type="button"
                   className="btn btn-sm btn-danger"
                   disabled={busy || !customText.trim()}
                   onClick={() => void addCustom("flagged")}
@@ -494,19 +708,40 @@ const RESULT_TONE: Record<string, string> = {
   flagged: "err",
 };
 
+/** Warnings are counted SEPARATELY and never change the state — that is the
+ *  whole point of the severity. Printing them on the end of every line keeps
+ *  them visible without letting them read as failures. */
+function warningSuffix(d: ReviewDetail): string {
+  return d.warnings ? ` ${d.warnings} warning(s).` : "";
+}
+
+/** "and 2 excused" — never folded into the verified count. An exception says
+ *  the question is not about this part; it does not say anybody looked. */
+function excusedSuffix(d: ReviewDetail): string {
+  return d.excused ? ` ${d.excused} item(s) excused by a standing decision.` : "";
+}
+
 function explain(d: ReviewDetail, openCount: number): string {
   switch (d.state) {
     case "checked":
-      return d.provenance === "human"
-        ? "Verified against the documentation, human-confirmed."
-        : `Verified against the documentation (${d.provenance ?? "?"}-checked, no human confirmation yet).`;
+      return (
+        (d.provenance === "human"
+          ? "Verified against the documentation, human-confirmed."
+          : `Verified against the documentation (${d.provenance ?? "?"}-checked, no human confirmation yet).`) +
+        warningSuffix(d) + excusedSuffix(d)
+      );
     case "partial":
-      return `Partially verified — ${openCount} item(s) still open.`;
+      return `Partially verified — ${openCount} item(s) still open.` + warningSuffix(d) + excusedSuffix(d);
     case "failed":
-      return d.flagged
-        ? `${d.flagged} item(s) flagged as wrong (second-pass list)${d.failed - d.flagged ? `, ${d.failed - d.flagged} machine check(s) failing` : ""}.`
-        : `${d.failed} machine check(s) failing — fix the data and republish, or review the items.`;
+      return (
+        (d.flagged
+          ? `${d.flagged} item(s) flagged as wrong (second-pass list)${d.failed - d.flagged ? `, ${d.failed - d.flagged} machine check(s) failing` : ""}.`
+          : `${d.failed} machine check(s) failing.`) +
+        " Fix the data and republish, or mark the check as not applying to this part below." +
+        warningSuffix(d) + excusedSuffix(d)
+      );
     default:
-      return "This version has not been verified against its documentation yet.";
+      return "This version has not been verified against its documentation yet." +
+        warningSuffix(d) + excusedSuffix(d);
   }
 }

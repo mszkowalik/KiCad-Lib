@@ -4834,20 +4834,36 @@ export interface ChecklistItemDef {
   text: string;
   hint?: string;
   machine?: boolean;
-  /** Present when the item is already answered on the current record. */
+  /** The named variant of `key` that this subject resolved to. Part of an
+   *  exception's identity, so a waiver on the NMOS rule does not excuse the
+   *  PNP one. */
+  variant?: string;
+  /** Answered by the RECORD for a judgment item, and by computed conformance
+   *  for a machine one — the card merges the two for display and the shapes
+   *  must match. Add a field here whenever `_detail` starts sending one: a
+   *  type that is behind is how `superseded` stayed invisible for a week. */
   answered?: {
     /** `skipped` was retired 2026-09-13 and is read-only history. */
-  result: "checked" | "na" | "skipped" | "failed" | "flagged";
+    result: "checked" | "na" | "skipped" | "failed" | "flagged";
     note: string | null;
     actor: string;
     actor_type: ReviewActor;
-    at: string;
+    at: string | null;
+    /** The severity the check carried when this was answered. A `failed` at
+     *  `warning` is worth seeing and does not fail the part. Absent on rows
+     *  written before 2026-09-14, read as `error`. */
+    severity?: "error" | "warning" | "ignore";
+    /** Why it does not apply, as a code — `waived`, `feature_absent`, … */
+    reason?: string | null;
+    /** Set when a standing exception is what closed this item. The row offers
+     *  no second exception while it holds. */
+    exception_id?: number | null;
     /** The answer this one replaced, kept so accepting a flag never erases
      *  what was flagged. A real finding (flagged/failed) outlives any number
      *  of later routine re-checks. */
     superseded?: {
       /** `skipped` was retired 2026-09-13 and is read-only history. */
-  result: "checked" | "na" | "skipped" | "failed" | "flagged";
+      result: "checked" | "na" | "skipped" | "failed" | "flagged";
       note?: string | null;
       actor?: string;
       actor_type?: ReviewActor;
@@ -4863,6 +4879,12 @@ export interface ReviewRecordItem {
   /** `skipped` was retired 2026-09-13 and is read-only history. */
   result: "checked" | "na" | "skipped" | "failed" | "flagged";
   note?: string | null;
+  /** The severity the check carried WHEN THIS WAS ANSWERED, stamped on the
+   *  answer. Re-reading today's checklist instead would let an edit silently
+   *  rewrite what a past record means — the same reason a record snapshots the
+   *  list it was measured against. Absent on rows written before 2026-09-14,
+   *  which are read as `error`. */
+  severity?: "error" | "warning" | "ignore";
   actor: string;
   actor_type: ReviewActor;
   at: string;
@@ -4895,6 +4917,14 @@ export interface ReviewStateDetail {
   failed: number;
   /** Items verified and found WRONG, deliberately not fixed (subset of failed). */
   flagged?: number;
+  /** Failures of WARNING-severity checks. Worth seeing; they do not make the
+   *  subject failed, which is what lets a new check ship at all. */
+  warnings?: number;
+  /** Judgment items a standing exception closes. They LEAVE the denominator —
+   *  `total` does not include them — because an exception says the question is
+   *  not about this part, never that somebody looked. Reported on its own so a
+   *  part closed by exceptions never reads like a part that was judged. */
+  excused?: number;
   unanswered: string[];
 }
 
@@ -4909,6 +4939,17 @@ export interface ReviewDetail extends ReviewStateDetail {
    *  a one-click "Mark checked" carries no item breakdown of its own. */
   items_carried?: boolean;
   extra_items: ReviewRecordItem[];
+  /** Checks the owner switched OFF for this subject in the checklist. Not run,
+   *  not measured, and not work for anybody — shown so "why is this not
+   *  checked" has an answer on the card. */
+  switched_off?: { key: string; text: string; machine: boolean }[];
+  /** Not switched off — not about parts like this one. Its `when` predicate
+   *  did not match. A different statement, and never shown as the other. */
+  inapplicable?: { key: string; text: string; when: Record<string, string> }[];
+  /** Standing decisions in force on this subject. Reported even when stale,
+   *  with the reason — an exception that has quietly stopped applying is
+   *  exactly what somebody needs to see. */
+  exceptions?: ReviewException[];
   record: ReviewRecordRow | null;
   history: ReviewRecordRow[];
   blocked_items?: string[];
@@ -4921,15 +4962,23 @@ export function getReviewDetail(kind: ReviewKind, id: number, signal?: AbortSign
 export interface ReviewCheckAnswer {
   key: string;
   /** "flagged" = verified and found wrong, recorded without fixing — note required.
-   *  An item nobody could verify is LEFT UNANSWERED; there is no "skipped". */
+   *  An item nobody could verify is LEFT UNANSWERED; there is no "skipped".
+   *
+   *  `na` is still ACCEPTED by the API and is how an agent says "does not
+   *  apply", but it is no longer stored as an answer: since 2026-09-14 the
+   *  backend converts it into a standing exception pinned to the drawing (or,
+   *  for a component, to its own fields), so it needs a `reason` AND a `note`
+   *  and it outlives the version. The review card does not send it — it calls
+   *  `grantReviewException` directly, where the scope can be asked. */
   result: "checked" | "na" | "flagged";
   note?: string;
   /** Required for a key the checklist does not define (a custom check added
    *  for this part alone): the record is the only place that wording lives. */
   text?: string;
   /** `na` only, and REQUIRED there above the machine tier: which way the item
-   *  does not apply ("feature_absent", "kind_exempt", "waived", "other"), so
-   *  the health tab can aggregate it instead of re-reading free text. */
+   *  does not apply ("feature_absent", "kind_exempt", "waived", "other"). It
+   *  becomes the exception's reason, so the health tab can aggregate it
+   *  instead of re-reading free text. */
   reason?: string;
 }
 
@@ -4977,6 +5026,16 @@ export interface ReviewQueueComponent {
   review_state: ReviewState;
   provenance: ReviewActor | null;
   blockers: string[];
+  /** The facts under the one-word state. `conforms: null` means the automatic
+   *  checks have not been worked out for this version yet — never "conforms".
+   *  `judged`/`judged_of` counts JUDGMENT items only; an excused item leaves
+   *  the denominator, because an exception says the question is not about this
+   *  subject, never that somebody looked. */
+  conforms: boolean | null;
+  judged: number;
+  judged_of: number;
+  excused: number;
+  warnings: number;
   signoff_state: SignoffState;
   lifecycle: LifecycleState;
   used_in: string[];
@@ -4993,6 +5052,17 @@ export interface ReviewQueueTemplate {
   skipped: number;
   failed: number;
   unanswered: number;
+  /** The facts under the one-word state. `conforms: null` means the automatic
+   *  checks have not been worked out for this version yet — never "conforms".
+   *  `judged`/`judged_of` counts JUDGMENT items only; an excused item leaves
+   *  the denominator, because an exception says the question is not about this
+   *  subject, never that somebody looked. */
+  conforms: boolean | null;
+  judged: number;
+  judged_of: number;
+  excused: number;
+  warnings: number;
+
   /** Cache key for templatePreviewUrl — see that function. */
   version_id: number | null;
   /** Live components pinning this drawing — on a non-checked row, the number
@@ -5111,6 +5181,61 @@ export interface ChecklistSummary {
   item_count: number;
 }
 
+export type CheckParamValue = number | boolean | string | string[] | Record<string, string>;
+
+export interface ChecklistItem {
+  key: string;
+  text: string;
+  hint?: string;
+  machine?: boolean;
+  /** What this automatic check measures against, on the check that uses it.
+   *  Versioned with the checklist and snapshotted into the review record, so a
+   *  past verification says what it was measured against. The item's `text` is
+   *  written from these, so the sentence and the comparison cannot disagree.
+   *  The DEFAULT's type is the parameter's type: a positive number, a switch,
+   *  a name, a list of property names, or property -> regular expression. */
+  params?: Record<string, CheckParamValue>;
+  /** Which subjects this check is ABOUT. Every entry must match (AND), each
+   *  value a regular expression over one fact. A bare name is a component
+   *  property (`comp_type`); a `$` name is a structural fact
+   *  (`$category`, `$base_symbol`, `$purchasable`, …). An item whose predicate
+   *  a part does not satisfy is not expected of it at all — which is NOT the
+   *  same as being switched off, and the card says which. */
+  when?: Record<string, string>;
+  /** Several items may share a key only as distinct NAMED variants. The name is
+   *  the variant's identity — stable under reordering, unlike a list index —
+   *  and its label: the Scope column reads `Transistors.NMOS` from it. A key
+   *  with variants must split on ONE field with distinct literal values plus at
+   *  most one variant with no `when` (the fallback), which is what lets
+   *  resolution avoid an ordering rule and a sorted table avoid lying about
+   *  precedence. */
+  variant?: string;
+  /** A DECLARATIVE check: one fact, one assertion. The validator answers any
+   *  item carrying it, whatever its key — the second door to `machine: true`,
+   *  since an author-chosen key cannot be in `validator.MACHINE_KEYS`. Its
+   *  `text` is generated from it, so the sentence cannot disagree with the
+   *  rule. The ceiling is deliberate: one assertion, no booleans, no arithmetic
+   *  between facts. Needing more means it has become a rules language. */
+  assert?: {
+    fact: string;
+    one_of?: string[];
+    matches?: string;
+    equals?: string;
+    at_least?: number;
+    at_most?: number;
+    present?: boolean;
+  };
+  /** What a FAILURE of this check means, and — at `ignore` — whether it runs
+   *  here at all. One control with three values, not a switch beside a
+   *  severity. It applies at this level AND BELOW, which is how a category list
+   *  says a base check does not apply to its parts; the merge is otherwise
+   *  additive. `error` is the default and is not stored. */
+  severity?: "error" | "warning" | "ignore";
+  /** Retired spelling of `severity: "ignore"`, still READ on rows written
+   *  before 2026-09-14. Never written. */
+  disabled?: boolean;
+}
+
 export interface ChecklistDetail {
   id: number;
   name: string;
@@ -5118,8 +5243,107 @@ export interface ChecklistDetail {
   category_id: number | null;
   description: string;
   version_no: number | null;
-  items: { key: string; text: string; hint?: string; machine?: boolean }[];
+  items: ChecklistItem[];
+  /** What a category-scoped list inherits from the lists above it, each item
+   *  tagged with the list it came from. Empty for a base list. */
+  inherited: (ChecklistItem & { from: string })[];
   history: { version_no: number; created_at: string; created_by: string; comment: string | null; item_count: number }[];
+}
+
+/** One editing SCOPE — a (kind, category) pair — whether or not a checklist row
+ *  exists for it yet. The editor is three sidebar entries and a category
+ *  picker, so a category that has never stated anything still has to show what
+ *  it inherits; the row is created on the first save, not by opening a
+ *  dropdown. */
+export interface ChecklistScope {
+  id: number | null;
+  name: string;
+  subject_kind: ReviewKind;
+  category_id: number | null;
+  category_path: string | null;
+  description: string;
+  version_no: number | null;
+  items: ChecklistItem[];
+  inherited: (ChecklistItem & { from: string })[];
+  /** False when this scope states nothing yet. */
+  exists: boolean;
+  history: ChecklistDetail["history"];
+}
+
+/** Every scope with the items it STATES — the one-table editor's data. Not the
+ *  cross product of every check with every scope: a category contributes only
+ *  what it changes, which is also the answer to "what does this category do
+ *  differently". */
+export interface ChecklistScopeRows {
+  scopes: {
+    id: number;
+    name: string;
+    subject_kind: ReviewKind;
+    category_id: number | null;
+    category_path: string | null;
+    version_no: number | null;
+    items: ChecklistItem[];
+  }[];
+}
+
+/** How the live parts in a scope fall across one key's variants. A non-zero
+ *  `no_match` on a settled category means the discriminator is not reliable —
+ *  `comp_type` is free text and already carries a misspelling — and that
+ *  category wants a subcategory rather than a predicate. */
+export interface VariantCoverage {
+  key: string;
+  category_id: number | null;
+  total: number;
+  counts: { variant: string; count: number }[];
+  no_match: number;
+}
+
+export function getChecklistCoverage(
+  kind: ReviewKind,
+  key: string,
+  categoryId: number | null,
+  signal?: AbortSignal,
+): Promise<VariantCoverage> {
+  const q = categoryId === null ? "" : `&category_id=${categoryId}`;
+  return request(`/api/checklists/coverage?kind=${kind}&key=${encodeURIComponent(key)}${q}`, {
+    signal,
+  });
+}
+
+export function getAllChecklists(signal?: AbortSignal): Promise<ChecklistScopeRows> {
+  return request("/api/checklists/all", { signal });
+}
+
+export function getChecklistScope(
+  kind: ReviewKind,
+  categoryId: number | null,
+  signal?: AbortSignal,
+): Promise<ChecklistScope> {
+  const q = categoryId === null ? "" : `&category_id=${categoryId}`;
+  return request(`/api/checklists/scope?kind=${kind}${q}`, { signal });
+}
+
+/** Publish this scope's checklist, creating it if it is the first thing the
+ *  scope has stated. Saving an EMPTY list on a category DELETES the row — "adds
+ *  nothing" and "has an empty list" must not be two states. */
+export function saveChecklistScope(
+  kind: ReviewKind,
+  categoryId: number | null,
+  items: ChecklistItem[],
+  comment?: string,
+  description?: string,
+): Promise<ChecklistScope> {
+  return request("/api/checklists/scope", {
+    method: "PUT",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({
+      kind,
+      category_id: categoryId,
+      items,
+      comment: comment ?? null,
+      description: description ?? null,
+    }),
+  });
 }
 
 export function listChecklists(signal?: AbortSignal): Promise<ChecklistSummary[]> {
@@ -5149,6 +5373,42 @@ export interface ChecklistMeta {
    *  on anything else makes an item nobody can ever answer — the API refuses it
    *  and the editor greys the flag out. */
   machine_keys: Record<string, string[]>;
+  /** The CATALOGUE of automatic checks — `validator.MACHINE_CHECKS`. The
+   *  validator owns an automatic check's wording, so the editor renders these
+   *  read-only with an on/off switch, and the API rewrites the stored text from
+   *  here on every save. */
+  machine_checks: Record<
+    string,
+    {
+      key: string;
+      text: string;
+      hint?: string;
+      /** Present only for a check that takes settings. */
+      params?: Record<string, CheckParamValue>;
+      /** `services/validator.py`'s own values, so a changed one shows as changed. */
+      defaults?: Record<string, CheckParamValue>;
+    }[]
+  >;
+  /** The fact vocabulary, per subject kind — what a `when` predicate or an
+   *  `assert` may name besides a component property. The editor held its own
+   *  copy of this list until 2026-09-14, which is how a fact could exist in
+   *  the backend and be unselectable in the UI. */
+  facts: Record<string, ChecklistFact[]>;
+  /** The assertions a declarative check may make, from the validator. */
+  assertions: string[];
+}
+
+/** One entry in the fact vocabulary. `$`-prefixed, unlike a component property,
+ *  so a misspelling is REFUSED on save instead of silently matching nothing. */
+export interface ChecklistFact {
+  name: string;
+  /** One line saying what it reads. Shown beside the name in the picker. */
+  what: string;
+  /** Which subject kinds carry it. */
+  kinds: string[];
+  /** True when it is computed from a drawing on demand rather than read off
+   *  the row. Costs nothing until a check names it. */
+  lazy?: boolean;
 }
 
 export function getChecklistMeta(signal?: AbortSignal): Promise<ChecklistMeta> {
@@ -5160,7 +5420,10 @@ export interface ResolvedChecklist {
   category_id: number | null;
   /** `from` names the checklist an item came from — the base one, or the
    *  category-scoped list that overrode it. */
-  items: { key: string; text: string; hint?: string; machine?: boolean; from: string }[];
+  items: (ChecklistItem & { from: string })[];
+  /** Switched off somewhere on the path — shown, not hidden, so "why does this
+   *  part not get that check" is answerable from the same screen. */
+  disabled: (ChecklistItem & { from: string })[];
 }
 
 /** What a subject of this kind (in this category) is actually measured
@@ -5213,6 +5476,163 @@ export function createChecklist(body: {
 export function deleteChecklist(id: number): Promise<{ ok: true; deleted: string }> {
   return request(`/api/checklists/${id}`, { method: "DELETE" });
 }
+
+export interface ComponentRuleSet {
+  required_properties?: string[] | null;
+  non_empty_properties?: string[] | null;
+  manufacturer_properties?: string[] | null;
+  property_patterns?: Record<string, string> | null;
+}
+
+export interface ComponentRules {
+  category_id: number | null;
+  /** What a component in this scope is actually measured against. */
+  effective: ComponentRuleSet;
+  /** What it would be if this scope stated nothing — the parent category, or
+   *  the library-wide block. */
+  inherited: ComponentRuleSet;
+  /** What THIS scope states for itself. A key absent here is inherited. */
+  own: ComponentRuleSet;
+  has_row: boolean;
+}
+
+/** The property rules a component is measured against, for one scope. Omit the
+ *  category for the library-wide block every category starts from. */
+export function getComponentRules(
+  categoryId: number | null,
+  signal?: AbortSignal,
+): Promise<ComponentRules> {
+  const q = categoryId === null ? "" : `?category_id=${categoryId}`;
+  return request(`/api/component-rules${q}`, { signal });
+}
+
+/** A key sent as `null` stops being stated at this scope, so it inherits again.
+ *  A key sent as a value REPLACES the whole list for this scope. */
+export function saveComponentRules(
+  categoryId: number | null,
+  body: ComponentRuleSet,
+): Promise<ComponentRules> {
+  return request("/api/component-rules", {
+    method: "PUT",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ ...body, category_id: categoryId }),
+  });
+}
+
+
+/** A standing decision that one check does not apply to this subject.
+ *
+ *  The durable half of an `na` answer: answering `na` closes the item on ONE
+ *  version, and a pad move takes it with it. An exception outlives the version
+ *  and dies only when it is revoked or when a fact it NAMED changes. */
+export interface ReviewException {
+  id: number;
+  subject_kind: ReviewKind;
+  subject_id: number;
+  key: string;
+  variant: string | null;
+  reason: string;
+  note: string;
+  evidence: string | null;
+  /** The facts it was granted against, `{fact: value}`. Empty means "this part,
+   *  always"; `{$material_sha: …}` means "this drawing only". */
+  depends_on: Record<string, string>;
+  scope: string;
+  created_by: string;
+  actor_type: ReviewActor;
+  created_at: string | null;
+  revoked_at: string | null;
+  revoked_by: string | null;
+  revoke_reason: string | null;
+  /** Why it no longer applies, or null while it holds. */
+  stale_reason: string | null;
+}
+
+export function listReviewExceptions(
+  kind: ReviewKind,
+  id: number,
+  signal?: AbortSignal,
+): Promise<ReviewException[]> {
+  return request(`/api/reviews/${kind}/${id}/exceptions`, { signal });
+}
+
+/** `scope`: "drawing" pins the material fingerprint and dies when the copper
+ *  moves; "always" pins nothing and is a decision about the part itself. The
+ *  choice is asked rather than inferred — a blanket waiver silently covering a
+ *  future edit is the failure this is designed to prevent.
+ *
+ *  `pin` overrides the preset with an explicit fact list, for the case neither
+ *  fits. A COMPONENT is the case: its `$material_sha` is the symbol's and the
+ *  footprint's, so "while the drawing is unchanged" says nothing about the
+ *  component's own fields — `["$property_sha"]` is what pins those. */
+export function grantReviewException(
+  kind: ReviewKind,
+  id: number,
+  body: { key: string; reason: string; note: string; scope?: "drawing" | "always";
+          pin?: string[]; variant?: string; evidence?: string },
+): Promise<ReviewDetail & { exception: ReviewException }> {
+  return request(`/api/reviews/${kind}/${id}/exceptions`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+/** One standing exception, with the subject it is on. The register's row. */
+export interface ReviewExceptionRow extends ReviewException {
+  subject_name: string | null;
+  /** The subject has been deleted. The row is still reported: a decision with
+   *  nothing left to apply to is exactly what a register exists to surface. */
+  subject_gone: boolean;
+}
+
+/** Every standing decision in the library. An exception was visible only on its
+ *  own subject's card until 2026-09-14, so nothing could answer "what have we
+ *  excused, and does it still hold". */
+export function listAllReviewExceptions(
+  includeRevoked = false,
+  signal?: AbortSignal,
+): Promise<ReviewExceptionRow[]> {
+  return request(`/api/reviews/exceptions?include_revoked=${includeRevoked}`, { signal });
+}
+
+/** Every subject one check currently fails. The health panel groups failures by
+ *  KEY because that is the work plan — "fp.model3d on 61 footprints" is one job
+ *  and "218 failed parts" is a wall — and this is what a number opens. */
+export interface FailingSubjects {
+  kind: ReviewKind;
+  key: string;
+  subjects: {
+    id: number;
+    name: string;
+    kind: ReviewKind;
+    note: string | null;
+    severity: "error" | "warning" | "ignore";
+    text: string;
+    variant: string | null;
+  }[];
+}
+
+export function getFailingSubjects(
+  kind: ReviewKind,
+  key: string,
+  signal?: AbortSignal,
+): Promise<FailingSubjects> {
+  return request(`/api/reviews/failing/${kind}/${encodeURIComponent(key)}`, { signal });
+}
+
+export function revokeReviewException(
+  kind: ReviewKind,
+  id: number,
+  excId: number,
+  reason: string,
+): Promise<ReviewDetail> {
+  return request(
+    `/api/reviews/${kind}/${id}/exceptions/${excId}?reason=${encodeURIComponent(reason)}`,
+    { method: "DELETE" },
+  );
+}
+
 
 // project design review
 

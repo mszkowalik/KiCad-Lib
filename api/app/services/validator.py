@@ -23,45 +23,231 @@ from .generator import build_excluded, off_board
 from .mirror import top_level_of
 from .templates import TEMPLATE_RE
 
-MIN_DRILL = 0.3
-MIN_VIA_SIZE = 0.3
-MIN_VIA_DRILL = 0.3
-MIN_TH_PAD = 0.6
-FAB_WIDTH = 0.1
-SILK_WIDTH = 0.1
-#: A single F.SilkS polarity mark may be this wide instead — see _width_items.
-POLARITY_MARK_WIDTH = 0.2
-CRTYD_WIDTH = 0.05
-PIN_GRID = 1.27
-
 MANUFACTURER_PROPS = ("Manufacturer 1", "Manufacturer Part Number 1",
                       "Supplier 1", "Supplier Part Number 1")
 
-# Every checklist key THIS module answers, per subject kind. A checklist item
-# marked `machine: true` whose key is not here is answered by nobody: it stays
-# unanswered for ever and holds the subject at "partial". The checklist editor
-# reads this list to refuse exactly that, so keep it in step when you add or
-# remove a check below — `GET /api/checklists/meta` serves it verbatim.
-MACHINE_KEYS: dict[str, tuple[str, ...]] = {
+# ------------------------------------------------------------- the parameters
+# EVERY NUMBER, LIST AND PATTERN THIS MODULE MEASURES AGAINST LIVES ON THE
+# CHECKLIST ITEM OF THE CHECK THAT USES IT (`params`), and the spec below is the
+# fallback for an item that states none.
+#
+# It used to live in a `rules` row — one library-wide JSON block holding the
+# numbers for eleven different checks, plus 15 category rows that NOTHING read.
+# Three things were wrong with that and all three are fixed by the move:
+# a reader of "F.Fab line width is 0.1 mm" had to know which block key produced
+# it; the document that says whether a check runs said nothing about what it
+# runs against; and a category could state a rule that was never applied. On the
+# item the parameters version with the checklist, carry the comment saying why
+# they changed, land in `ReviewRecord.checklist_items` so a past verification
+# says what it was measured against, and — for components — inherit through
+# category-scoped checklists with no second merge engine (user decision
+# 2026-09-14). `models.Rule` is dormant history; nothing reads it.
+
+
+def check_params(kind: str, items: dict | None = None) -> dict:
+    """The parameters each automatic check of this kind runs with.
+
+    ``items`` is the RESOLVED checklist, keyed by item key. A check's numbers
+    are stored on its own checklist item — so they are versioned with the
+    checklist, they appear next to the switch that turns the check on, and the
+    review record's `checklist_items` snapshot says what a past verification was
+    measured against. An item that states none, or is absent, falls back to the
+    spec default below.
+
+    Returns ``{check key: {param: value}}``.
+    """
+    out: dict[str, dict] = {}
+    for spec in _CHECK_SPECS.get(kind, ()):
+        params = dict(spec.get("params") or {})
+        if not params:
+            continue
+        stated = ((items or {}).get(spec["key"]) or {}).get("params") or {}
+        for name, value in stated.items():
+            if name in params:
+                params[name] = value
+        out[spec["key"]] = params
+    return out
+
+# ------------------------------------------------------- the check registry
+# THE CATALOGUE OF AUTOMATIC CHECKS. This module — not the checklist document —
+# owns which automatic checks exist, and what each one says.
+#
+# A checklist item marked `machine: true` whose key is not here is answered by
+# nobody: it stays unanswered for ever and holds the subject at "partial". That
+# used to be preventable only by the editor greying a checkbox out, which meant
+# the WORDING of an automatic item was typed by hand into the checklist and
+# could drift from what the code actually does. Now the checklist stores only
+# whether each of these runs, the editor renders them read-only from here, and
+# `routers/reviews._validate_items` rewrites their text and hint from this table
+# on every save. To add an automatic check, add the entry here AND the branch
+# below; `GET /api/checklists/meta` serves this verbatim.
+_CHECK_SPECS: dict[str, tuple[dict, ...]] = {
     "footprint": (
-        "fp.parse", "fp.courtyard_present", "fp.courtyard_width", "fp.courtyard_grid",
-        "fp.fab_outline",
-        "fp.fab_width", "fp.silk_width", "fp.smd_pad_shape", "fp.min_drill",
-        "fp.min_th_pad", "fp.via_dims", "fp.model3d",
+        {"key": "fp.parse", "text": "Footprint source parses as a valid .kicad_mod"},
+        {"key": "fp.courtyard_present", "text": "F.CrtYd courtyard outline is present"},
+        {"key": "fp.courtyard_width",
+         "text": "Courtyard line width is {crtyd_line_width_mm} mm",
+         "params": {"crtyd_line_width_mm": 0.05}},
+        {"key": "fp.courtyard_grid",
+         "text": "Courtyard coordinates sit on the {coordinate_grid_mm} mm grid",
+         "params": {"coordinate_grid_mm": 0.1}},
+        {"key": "fp.fab_outline", "text": "F.Fab body outline is present"},
+        {"key": "fp.fab_width", "text": "F.Fab line width is {fab_line_width_mm} mm",
+         "params": {"fab_line_width_mm": 0.1}},
+        {"key": "fp.silk_width", "text": "F.SilkS line width is {silk_line_width_mm} mm",
+         "hint": "One polarity mark may be {silk_polarity_mark_width_mm} mm instead.",
+         "params": {"silk_line_width_mm": 0.1, "silk_polarity_mark_width_mm": 0.2}},
+        {"key": "fp.smd_pad_shape",
+         "text": "SMD pads are roundrect (exposed/heatsink pads exempt)"},
+        {"key": "fp.min_drill", "text": "No drill hole below {min_drill_diameter} mm",
+         "params": {"min_drill_diameter": 0.3}},
+        {"key": "fp.min_th_pad", "text": "No through-hole pad below {min_pad_size} mm",
+         "hint": "A footprint carrying the text 'validation: ignore_min_pad_size' "
+                 "suppresses this on itself.",
+         "params": {"min_pad_size": 0.6}},
+        {"key": "fp.via_dims",
+         "text": "Via size and drill at or above {min_via_size}/{min_via_drill} mm",
+         "hint": "A thermal via field may go below it while "
+                 "thermal_via_warning_only is on.",
+         "params": {"min_via_size": 0.3, "min_via_drill": 0.3,
+                    "thermal_via_warning_only": True}},
+        {"key": "fp.model3d",
+         "text": "A 3D model is referenced and present in the library",
+         "hint": "Fails until a human or agent marks it n/a for a part that "
+                 "genuinely needs no model."},
     ),
-    "symbol": ("sym.parse", "sym.fields", "sym.pins_grid", "sym.pin_length",
-               "sym.sim_link"),
+    "symbol": (
+        {"key": "sym.parse", "text": "Symbol source parses as a valid .kicad_sym library"},
+        {"key": "sym.fields", "text": "Reference and Value fields are present"},
+        {"key": "sym.pins_grid", "text": "All pins sit on the {pin_grid_mm} mm grid",
+         "params": {"pin_grid_mm": 1.27}},
+        {"key": "sym.pin_length", "text": "Every pin uses the same stub length",
+         "hint": "The absolute length is a judgment call on sym.geometry. What is "
+                 "mechanical is MIXING lengths inside one drawing."},
+        {"key": "sym.sim_link",
+         "text": "The simulation pin map still fits this version's pins",
+         "hint": "n/a when no sim model is linked."},
+    ),
     "component": (
-        "cmp.required_props", "cmp.footprint_ref", "cmp.lcsc_format",
-        "cmp.manufacturer", "cmp.templates", "cmp.datasheet_text",
-        "cmp.sim_params",
+        {"key": "cmp.required_props",
+         "text": "The properties this category requires are present and filled in",
+         "hint": "required: {required_properties} · must not be empty: "
+                 "{non_empty_properties}",
+         "params": {"required_properties": ["Footprint", "ki_description"],
+                    "non_empty_properties": ["Footprint", "ki_description"]}},
+        {"key": "cmp.footprint_ref",
+         "text": "Footprint uses the {namespace} namespace and exists in the library",
+         "params": {"namespace": "7Sigma:"}},
+        {"key": "cmp.lcsc_format", "text": "LCSC Part matches {pattern}",
+         "params": {"pattern": r"^C\d+$"}},
+        {"key": "cmp.manufacturer", "text": "Manufacturer information is filled in",
+         "hint": "Any ONE of {manufacturer_properties} carrying a value passes. "
+                 "An empty list exempts the category.",
+         "params": {"manufacturer_properties": list(MANUFACTURER_PROPS)}},
+        # A check ON THE COMPONENT that examines the SYMBOL it pins. A symbol's
+        # own checks cannot be scoped to a category — it carries none, one base
+        # symbol is shared across categories, and a symbol nothing uses yet
+        # resolves to nothing — so a per-category symbol rule is answered here,
+        # where the category is the component's own and is exact (user decision
+        # 2026-09-14).
+        {"key": "cmp.base_symbol_allowed",
+         "text": "The base symbol is one this category allows",
+         "hint": "Allowed: {allowed_base_symbols}. n/a when the category allows any.",
+         "params": {"allowed_base_symbols": []}},
+        {"key": "cmp.property_values",
+         "text": "Property values match the patterns this category sets",
+         "hint": "One regular expression per property: {patterns}. "
+                 "n/a when the category sets none.",
+         "params": {"patterns": {}}},
+        {"key": "cmp.templates", "text": "Every {Key} template reference resolves"},
+        {"key": "cmp.datasheet_text",
+         "text": "The archived datasheet is a searchable PDF, not a scan",
+         "hint": "A document with no text layer cannot be searched, and read_datasheet "
+                 "returns empty pages for it. Replace it with the manufacturer's text PDF."},
+        {"key": "cmp.sim_params",
+         "text": "Every Sim.Params key is declared by the linked simulation model",
+         "hint": "n/a when the component carries no Sim.Params."},
     ),
 }
-# NOTE on the two sim keys: they are answered on every publish (na when no
-# link / no Sim.Params), but they are deliberately NOT seeded into the base
-# checklists yet. Adding a machine item to a live base checklist un-answers it
-# on every existing subject with no backfill (see the cmp.datasheet_text
-# incident, 2026-08-25) — that call belongs to the user, not to this change.
+
+#: Just the keys, per kind — the shape most callers want, and the one thing
+#: about the catalogue that does not depend on the rule block.
+MACHINE_KEYS: dict[str, tuple[str, ...]] = {
+    kind: tuple(c["key"] for c in checks) for kind, checks in _CHECK_SPECS.items()
+}
+
+#: A `{name}` a threshold can fill. Anything else — `{Key}` in cmp.templates —
+#: is left exactly as written, which is why this is a targeted substitution and
+#: not `str.format`.
+_PLACEHOLDER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
+
+
+def _fill(text: str, numbers: dict) -> str:
+    return _PLACEHOLDER_RE.sub(
+        lambda m: _fmt(numbers[m.group(1)]) if m.group(1) in numbers else m.group(0), text)
+
+
+def _fmt(value) -> str:
+    """A parameter as a person writes it, not as Python repr()s it: `0.3` rather
+    than `0.30000000000000004`, `Value, Voltage` rather than
+    `['Value', 'Voltage']`, and a pattern map by the properties it covers."""
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, (int, float)):
+        return f"{value:g}"
+    if isinstance(value, dict):
+        return ", ".join(value) or "none"
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v) for v in value) or "none"
+    return str(value)
+
+
+def machine_checks(db: Session, items: dict | None = None,
+                   kind: str | None = None) -> dict[str, list[dict]]:
+    """THE CATALOGUE OF AUTOMATIC CHECKS, worded with the LIVE thresholds.
+
+    This module — not the checklist document — owns which automatic checks exist
+    and what each one says. A checklist item marked `machine: true` whose key is
+    not here is answered by nobody: it stays unanswered for ever and holds the
+    subject at "partial". The checklist stores only the key, the flag and
+    whether the check runs; `routers/reviews._validate_items` rewrites its text
+    from here on every save, and `GET /api/checklists/meta` serves this verbatim.
+
+    A check's TEXT is built from the parameters that check will actually run
+    with — `items` is the resolved checklist, so the sentence a reviewer reads
+    and the number the code compares against cannot disagree. Pass no `items`
+    and every check is worded with its spec default.
+
+    `params` rides along on each row so the editor can draw a box per number
+    without a second call, and `defaults` so it can mark one as changed.
+
+    To add an automatic check: add the entry to `_CHECK_SPECS` AND the branch
+    that answers it.
+    """
+    out: dict[str, list[dict]] = {}
+    for this_kind, checks in _CHECK_SPECS.items():
+        if kind is not None and this_kind != kind:
+            continue
+        resolved = check_params(this_kind, items if kind is None or this_kind == kind else None)
+        rows = []
+        for c in checks:
+            params = resolved.get(c["key"], {})
+            row = {"key": c["key"], "text": _fill(c["text"], params)}
+            if c.get("hint"):
+                row["hint"] = _fill(c["hint"], params)
+            if c.get("params"):
+                row["params"] = params
+                row["defaults"] = dict(c["params"])
+            rows.append(row)
+        out[this_kind] = rows
+    return out
+
+
+def machine_check(db: Session, kind: str, key: str, items: dict | None = None) -> dict | None:
+    """The registry entry for one automatic check, or None if this module does
+    not answer that key."""
+    return next((c for c in machine_checks(db, items, kind).get(kind, ())
+                 if c["key"] == key), None)
 
 
 def _item(key: str, result: str, note: str = "") -> dict:
@@ -123,8 +309,8 @@ def _off_grid(value: float, grid: float = 0.1) -> bool:
     return abs(scaled - round(scaled)) > 1e-3
 
 
-def _courtyard_grid_item(entries: list[dict]) -> dict:
-    """`fp.courtyard_grid`: every courtyard coordinate on the 0.1 mm grid.
+def _courtyard_grid_item(entries: list[dict], grid: float) -> dict:
+    """`fp.courtyard_grid`: every courtyard coordinate on the configured grid.
 
     The courtyard is the clearance envelope other footprints are placed
     against, so an off-grid corner quietly poisons every board-level spacing
@@ -192,7 +378,9 @@ def _width_items(entries: list[dict], layer: str, want: float, key: str,
 
 
 # ------------------------------------------------------------------ footprint
-def validate_footprint(db: Session, version: M.FootprintVersion) -> list[dict]:
+def validate_footprint(db: Session, version: M.FootprintVersion,
+                       items: dict | None = None) -> list[dict]:
+    p = check_params("footprint", items)
     content = version.source_text or ""
     items: list[dict] = []
 
@@ -207,16 +395,21 @@ def validate_footprint(db: Session, version: M.FootprintVersion) -> list[dict]:
     has_crtyd = bool(re.search(r"F\.CrtYd", content))
     items.append(_item("fp.courtyard_present", "checked" if has_crtyd else "failed",
                        "" if has_crtyd else "no F.CrtYd courtyard outline"))
-    items.append(_width_items(graphics, "F.CrtYd", CRTYD_WIDTH, "fp.courtyard_width"))
+    items.append(_width_items(graphics, "F.CrtYd",
+                              p["fp.courtyard_width"]["crtyd_line_width_mm"],
+                              "fp.courtyard_width"))
 
-    items.append(_courtyard_grid_item(graphics))
+    items.append(_courtyard_grid_item(
+        graphics, p["fp.courtyard_grid"]["coordinate_grid_mm"]))
 
     fab = [e for e in graphics if e["layer"] == "F.Fab"]
     items.append(_item("fp.fab_outline", "checked" if fab else "failed",
                        "" if fab else "no F.Fab body outline"))
-    items.append(_width_items(graphics, "F.Fab", FAB_WIDTH, "fp.fab_width"))
-    items.append(_width_items(graphics, "F.SilkS", SILK_WIDTH, "fp.silk_width",
-                              allow_one=POLARITY_MARK_WIDTH))
+    items.append(_width_items(graphics, "F.Fab", p["fp.fab_width"]["fab_line_width_mm"],
+                              "fp.fab_width"))
+    items.append(_width_items(graphics, "F.SilkS",
+                              p["fp.silk_width"]["silk_line_width_mm"], "fp.silk_width",
+                              allow_one=p["fp.silk_width"]["silk_polarity_mark_width_mm"]))
 
     # SMD pad shape: roundrect, exposed/heatsink pads exempt (stock EPs are
     # rect, and a roundrect EP clips corner thermal vias).
@@ -241,12 +434,13 @@ def validate_footprint(db: Session, version: M.FootprintVersion) -> list[dict]:
     # Drills and through-hole pad sizes, from the parsed pad cache.
     pads = (version.parsed or {}).get("pads") or []
     drills = [p["drill"] for p in pads if isinstance(p.get("drill"), (int, float))]
-    small_drills = [d for d in drills if d < MIN_DRILL]
+    min_drill = p["fp.min_drill"]["min_drill_diameter"]
+    small_drills = [d for d in drills if d < min_drill]
     if not drills:
         items.append(_item("fp.min_drill", "na", "no drilled pads"))
     elif small_drills:
         items.append(_item("fp.min_drill", "failed",
-                           f"{len(small_drills)} drill(s) below {MIN_DRILL} mm "
+                           f"{len(small_drills)} drill(s) below {_fmt(min_drill)} mm "
                            f"(smallest {min(small_drills)} mm)"))
     else:
         items.append(_item("fp.min_drill", "checked"))
@@ -254,13 +448,15 @@ def validate_footprint(db: Session, version: M.FootprintVersion) -> list[dict]:
     ignore_pad_size = "validation: ignore_min_pad_size" in content.lower()
     th_sizes = [min(p["size"]) for p in pads
                 if p.get("type") == "thru_hole" and isinstance(p.get("size"), list) and p["size"]]
-    small_pads = [s for s in th_sizes if s < MIN_TH_PAD]
+    min_th_pad = p["fp.min_th_pad"]["min_pad_size"]
+    small_pads = [s for s in th_sizes if s < min_th_pad]
     if ignore_pad_size or not th_sizes:
         items.append(_item("fp.min_th_pad", "na",
                            "suppressed in the footprint" if ignore_pad_size else "no through-hole pads"))
     elif small_pads:
         items.append(_item("fp.min_th_pad", "failed",
-                           f"{len(small_pads)} through-hole pad(s) below {MIN_TH_PAD} mm "
+                           f"{len(small_pads)} through-hole pad(s) below "
+                           f"{_fmt(min_th_pad)} mm "
                            f"(smallest {min(small_pads)} mm)"))
     else:
         items.append(_item("fp.min_th_pad", "checked"))
@@ -268,13 +464,18 @@ def validate_footprint(db: Session, version: M.FootprintVersion) -> list[dict]:
     vias = re.findall(r"\(via\s+\([^)]*\)\s+\(size\s+([\d.]+)\)\s+\(drill\s+([\d.]+)\)", content)
     is_thermal = "thermalvias" in (version.footprint.name if version.footprint else "").lower() \
         or "thermal" in content.lower()
+    via = p["fp.via_dims"]
     bad_vias = [(float(s), float(d)) for s, d in vias
-                if float(s) < MIN_VIA_SIZE or float(d) < MIN_VIA_DRILL]
+                if float(s) < via["min_via_size"] or float(d) < via["min_via_drill"]]
+    # A thermal-via field is a deliberate array of small vias under a pad, so
+    # the fab minimum does not apply to it — unless the checklist item says it does.
+    thermal_warn_only = bool(via.get("thermal_via_warning_only", True))
     if not vias:
         items.append(_item("fp.via_dims", "na", "no vias"))
-    elif bad_vias and not is_thermal:
+    elif bad_vias and not (is_thermal and thermal_warn_only):
         items.append(_item("fp.via_dims", "failed",
-                           f"{len(bad_vias)} via(s) below {MIN_VIA_SIZE}/{MIN_VIA_DRILL} mm"))
+                           f"{len(bad_vias)} via(s) below "
+                           f"{_fmt(via['min_via_size'])}/{_fmt(via['min_via_drill'])} mm"))
     else:
         note = f"{len(bad_vias)} small thermal via(s) — allowed" if bad_vias else ""
         items.append(_item("fp.via_dims", "checked", note))
@@ -300,7 +501,9 @@ def validate_footprint(db: Session, version: M.FootprintVersion) -> list[dict]:
 
 
 # --------------------------------------------------------------------- symbol
-def validate_symbol(db: Session, version: M.SymbolVersion) -> list[dict]:
+def validate_symbol(db: Session, version: M.SymbolVersion,
+                    items: dict | None = None) -> list[dict]:
+    p = check_params("symbol", items)
     content = version.source_text or ""
     items: list[dict] = []
 
@@ -329,14 +532,17 @@ def validate_symbol(db: Session, version: M.SymbolVersion) -> list[dict]:
         x, y = m.group(1), m.group(2)
         ats.append((x, y))
         for coord in (float(x), float(y)):
-            if abs(coord / PIN_GRID - round(coord / PIN_GRID)) > 1e-4:
+            grid = p["sym.pins_grid"]["pin_grid_mm"]
+            if abs(coord / grid - round(coord / grid)) > 1e-4:
                 off_grid.append((x, y))
                 break
     if not ats:
         items.append(_item("sym.pins_grid", "na", "no pins found"))
     elif off_grid:
         items.append(_item("sym.pins_grid", "failed",
-                           f"{len(off_grid)} pin(s) off the {PIN_GRID} mm grid, e.g. at {off_grid[0]}"))
+                           f"{len(off_grid)} pin(s) off the "
+                           f"{_fmt(p['sym.pins_grid']['pin_grid_mm'])} mm grid, "
+                           f"e.g. at {off_grid[0]}"))
     else:
         items.append(_item("sym.pins_grid", "checked"))
 
@@ -454,17 +660,9 @@ def _sim_link_item(db: Session, version: M.SymbolVersion) -> dict:
 
 
 # ------------------------------------------------------------------ component
-def _global_rules(db: Session) -> dict:
-    row = db.query(M.Rule).filter_by(scope="global", enabled=True).first()
-    if row is not None and row.block:
-        return row.block
-    from .importer import VALIDATOR_GLOBAL_DEFAULTS
-
-    return VALIDATOR_GLOBAL_DEFAULTS
-
-
-def validate_component(db: Session, cv: M.ComponentVersion, comp: M.Component) -> list[dict]:
-    rules = _global_rules(db)
+def validate_component(db: Session, cv: M.ComponentVersion, comp: M.Component,
+                       checklist: dict | None = None) -> list[dict]:
+    cp = check_params("component", checklist)
     props: dict[str, str | None] = {}
     for p in cv.properties:
         props[p.key] = None if p.is_null else p.value
@@ -498,7 +696,7 @@ def validate_component(db: Session, cv: M.ComponentVersion, comp: M.Component) -
     elif sim_only or off_board_part:
         why = ("simulation-only part — excluded from the board" if sim_only
                else "off-board part — no land pattern, base symbol declares on_board no")
-        required = [k for k in rules.get("required_properties", ["Footprint", "ki_description"])
+        required = [k for k in cp["cmp.required_props"]["required_properties"]
                     if k != "Footprint"]
         missing = [k for k in required if k not in props]
         if missing:
@@ -507,9 +705,9 @@ def validate_component(db: Session, cv: M.ComponentVersion, comp: M.Component) -
             items.append(_item("cmp.required_props", "checked"))
         items.append(_item("cmp.footprint_ref", "na", why))
     else:
-        required = rules.get("required_properties", ["Footprint", "ki_description"])
+        required = cp["cmp.required_props"]["required_properties"]
         missing = [k for k in required if k not in props]
-        empty = [k for k in rules.get("non_empty_properties", [])
+        empty = [k for k in cp["cmp.required_props"]["non_empty_properties"]
                  if k in props and props[k] is not None and not str(props[k]).strip()]
         if missing or empty:
             note = "; ".join(filter(None, [
@@ -520,12 +718,13 @@ def validate_component(db: Session, cv: M.ComponentVersion, comp: M.Component) -
         else:
             items.append(_item("cmp.required_props", "checked"))
 
+        namespace = str(cp["cmp.footprint_ref"]["namespace"])
         fp_value = (props.get("Footprint") or "").strip()
         if not fp_value:
             items.append(_item("cmp.footprint_ref", "failed", "no Footprint property"))
-        elif not fp_value.startswith("7Sigma:"):
+        elif not fp_value.startswith(namespace):
             items.append(_item("cmp.footprint_ref", "failed",
-                               f"{fp_value!r} is not in the 7Sigma: namespace"))
+                               f"{fp_value!r} is not in the {namespace} namespace"))
         else:
             fp = db.query(M.Footprint).filter_by(name=fp_value.split(":", 1)[1]).first()
             if fp is None or fp.current_version_id is None:
@@ -535,7 +734,7 @@ def validate_component(db: Session, cv: M.ComponentVersion, comp: M.Component) -
                 items.append(_item("cmp.footprint_ref", "checked"))
 
     lcsc = props.get("LCSC Part")
-    pattern = (rules.get("property_patterns") or {}).get("LCSC Part", r"^C\d+$")
+    pattern = str(cp["cmp.lcsc_format"]["pattern"])
     if lcsc is None or "LCSC Part" not in props:
         items.append(_item("cmp.lcsc_format", "na", "no LCSC Part"))
     elif re.match(pattern, str(lcsc)):
@@ -544,10 +743,18 @@ def validate_component(db: Session, cv: M.ComponentVersion, comp: M.Component) -
         items.append(_item("cmp.lcsc_format", "failed",
                            f"LCSC Part {lcsc!r} does not match {pattern}"))
 
+    mfr_props = cp["cmp.manufacturer"]["manufacturer_properties"]
     if not comp.purchasable:
         items.append(_item("cmp.manufacturer", "na", "virtual part — never bought"))
+    elif not mfr_props:
+        # An EMPTY list is the category saying the check does not apply — it is
+        # how `Mechanical_7S` and `TestPoints` exempt themselves. Read as "none
+        # of these properties is filled in" it fails every part in those
+        # categories instead, which is the opposite of what the list says (14 of
+        # them, measured 2026-09-14 when the category rules were first wired in).
+        items.append(_item("cmp.manufacturer", "na",
+                           "the category asks for no manufacturer properties"))
     else:
-        mfr_props = rules.get("manufacturer_properties", list(MANUFACTURER_PROPS))
         has_info = any(str(props.get(k) or "").strip() for k in mfr_props)
         any_defined = any(k in props for k in mfr_props)
         if has_info:
@@ -556,6 +763,54 @@ def validate_component(db: Session, cv: M.ComponentVersion, comp: M.Component) -
             items.append(_item("cmp.manufacturer", "na", "manufacturer fields explicitly null"))
         else:
             items.append(_item("cmp.manufacturer", "failed", "no manufacturer information"))
+
+    # The base symbol this component pins, against the set its category allows.
+    # `cv.base_component` is a NAME, not a foreign key (see services/rename.py),
+    # so this compares strings — which is also what the allow-list is written in.
+    allowed = cp["cmp.base_symbol_allowed"]["allowed_base_symbols"]
+    base_name = (cv.base_component or "").strip()
+    if not allowed:
+        items.append(_item("cmp.base_symbol_allowed", "na",
+                           "this category allows any base symbol"))
+    elif not base_name:
+        items.append(_item("cmp.base_symbol_allowed", "na", "no base symbol"))
+    elif base_name in allowed:
+        items.append(_item("cmp.base_symbol_allowed", "checked", base_name))
+    else:
+        items.append(_item("cmp.base_symbol_allowed", "failed",
+                           f"base symbol {base_name!r} is not one this category allows: "
+                           + ", ".join(allowed)))
+
+    # Property VALUES against the patterns the category sets. Category-scoped
+    # checklists are what make this per-category: `Capacitor` states a Value and
+    # a Voltage pattern on its own copy of this item, everything else inherits
+    # an empty map and answers `na`.
+    patterns = cp["cmp.property_values"]["patterns"] or {}
+    bad: list[str] = []
+    tested = 0
+    for prop, expr in patterns.items():
+        value = props.get(prop)
+        if prop not in props or value is None or not str(value).strip():
+            continue  # absent or null is `cmp.required_props`' business, not this one
+        tested += 1
+        try:
+            ok = re.match(str(expr), str(value)) is not None
+        except re.error as e:
+            bad.append(f"{prop}: the pattern does not compile ({e})")
+            continue
+        if not ok:
+            bad.append(f"{prop} = {value!r} does not match {expr}")
+    if not patterns:
+        items.append(_item("cmp.property_values", "na",
+                           "this category sets no value patterns"))
+    elif bad:
+        items.append(_item("cmp.property_values", "failed", "; ".join(bad)))
+    elif tested:
+        items.append(_item("cmp.property_values", "checked",
+                           f"{tested} value(s) against {len(patterns)} pattern(s)"))
+    else:
+        items.append(_item("cmp.property_values", "na",
+                           "none of the patterned properties is filled in"))
 
     # Is the archived datasheet searchable? A document with no text layer is
     # not a cosmetic problem: text search misses it, and the agent's
@@ -655,9 +910,137 @@ def _sim_params_item(db: Session, cv: M.ComponentVersion, props: dict) -> dict:
     return _item("cmp.sim_params", "checked", f"{len(given)} parameter(s) against {model.name}")
 
 
-def validate(db: Session, kind: str, version, comp: M.Component | None = None) -> list[dict]:
+# ------------------------------------------------------- declarative checks
+#: The assertions an `assert` block may make about one fact. Closed on purpose:
+#: this expresses ONE fact and ONE assertion, and that ceiling is the design.
+#: The first time it needs two assertions joined by a boolean, or arithmetic
+#: between two facts, it has stopped being a check and become a rules language —
+#: which is what `models.Rule` was, and what this platform spent 2026-09-14
+#: deleting. Reconsider at that point rather than adding `any_of`.
+ASSERTIONS = ("one_of", "matches", "equals", "at_least", "at_most", "present")
+
+
+#: Turning a claim into its opposite. Deliberately tiny: a claim is authored
+#: beside its fact, so the only shapes that reach here are the ones written
+#: there, and a general negator would be a grammar engine.
+def _negate(claim: str) -> str:
+    for verb in (" is ", " are ", " has "):
+        if verb in claim:
+            return claim.replace(verb, verb.rstrip() + " not ", 1)
+    return f"not: {claim}"
+
+
+def describe_assert(spec: dict) -> str:
+    """The sentence a declarative check prints, built from what it will do.
+
+    Generated rather than authored for the same reason a parameterised check's
+    text is (decision 0014): a sentence typed beside a rule can disagree with
+    it, and the reviewer believes the sentence.
+    """
+    from . import checklists
+
+    #: A fact may carry a `noun` — the phrase that reads as the subject of a
+    #: sentence. Without it the name is de-`$`-ed and de-underscored, which
+    #: gives "The footprint zero annulus pads is at most 0": correct, and not a
+    #: sentence anybody wants to read on a review card.
+    entry = checklists.FACTS_BY_NAME.get(str(spec.get("fact", "")), {})
+    fact = entry.get("noun") or str(spec.get("fact", "?")).lstrip("$").replace("_", " ")
+    #: A boolean fact carries a `claim` — the sentence it asserts when true.
+    #: Without it `equals: "true"` prints "The Value against the manufacturer
+    #: part number is true", which is a description of the comparison rather
+    #: than of the rule.
+    claim = entry.get("claim")
+    if claim and "equals" in spec and str(spec["equals"]).lower() in ("true", "false"):
+        return claim if str(spec["equals"]).lower() == "true" else _negate(claim)
+    if "one_of" in spec:
+        values = spec["one_of"] or []
+        return f"The {fact} is one of: {', '.join(map(str, values)) or 'nothing'}"
+    if "matches" in spec:
+        return f"The {fact} matches {spec['matches']}"
+    if "equals" in spec:
+        return f"The {fact} is {spec['equals']}"
+    if "at_least" in spec:
+        return f"The {fact} is at least {_fmt(spec['at_least'])}"
+    if "at_most" in spec:
+        return f"The {fact} is at most {_fmt(spec['at_most'])}"
+    return f"The {fact} is present"
+
+
+def evaluate_assert(key: str, spec: dict, facts: dict | None) -> dict:
+    """Answer one declarative check.
+
+    A fact the subject has not got answers `na`, never `failed`: "this part has
+    no symbol reference" is not the same statement as "its reference is wrong",
+    and a checklist that conflates them sends somebody to fix the wrong thing.
+    """
+    fact = str(spec.get("fact", ""))
+    value = (facts or {}).get(fact)
+    if value is None or str(value) == "":
+        return _item(key, "na", f"this subject has no {fact}")
+    value = str(value)
+
+    if "one_of" in spec:
+        allowed = [str(v) for v in (spec["one_of"] or [])]
+        if not allowed:
+            return _item(key, "na", "no values are listed, so nothing is required")
+        return (_item(key, "checked", value) if value in allowed else
+                _item(key, "failed", f"{fact} is {value!r}, not one of: " + ", ".join(allowed)))
+    if "matches" in spec:
+        try:
+            ok = re.match(str(spec["matches"]), value) is not None
+        except re.error as e:
+            return _item(key, "failed", f"the pattern does not compile ({e})")
+        return (_item(key, "checked", value) if ok else
+                _item(key, "failed", f"{fact} is {value!r}, which does not match "
+                                     f"{spec['matches']}"))
+    if "equals" in spec:
+        want = str(spec["equals"])
+        return (_item(key, "checked", value) if value == want else
+                _item(key, "failed", f"{fact} is {value!r}, not {want!r}"))
+    for name, ok in (("at_least", lambda a, b: a >= b), ("at_most", lambda a, b: a <= b)):
+        if name in spec:
+            try:
+                got, want = float(value), float(spec[name])
+            except (TypeError, ValueError):
+                return _item(key, "na", f"{fact} is {value!r}, which is not a number")
+            word = "at least" if name == "at_least" else "at most"
+            return (_item(key, "checked", value) if ok(got, want) else
+                    _item(key, "failed", f"{fact} is {_fmt(got)}, not {word} {_fmt(want)}"))
+    return _item(key, "checked", value)
+
+
+def validate(db: Session, kind: str, version, comp: M.Component | None = None,
+             checklist: dict | None = None, only: set[str] | None = None,
+             facts: dict | None = None) -> list[dict]:
+    """Answer this module's checks for one version.
+
+    ``checklist`` is the RESOLVED checklist keyed by item key. It carries both
+    halves of an automatic check's configuration: whether it runs, and the
+    numbers it runs with (`params` on the item). Pass none and every check runs
+    with its spec default.
+
+    ``only`` is the set of keys the checklist has switched ON — pass it and an
+    answer for any other key is dropped. Dropped, not skipped: the branch still
+    executes, and the filter is about what gets RECORDED. That is what makes
+    switching a check off real, because a machine answer for a key the checklist
+    does not carry is stored as a CUSTOM item and a `failed` one still holds the
+    whole subject at "issues".
+    """
     if kind == "footprint":
-        return validate_footprint(db, version)
-    if kind == "symbol":
-        return validate_symbol(db, version)
-    return validate_component(db, version, comp)
+        answers = validate_footprint(db, version, checklist)
+    elif kind == "symbol":
+        answers = validate_symbol(db, version, checklist)
+    else:
+        answers = validate_component(db, version, comp, checklist)
+    # Declarative checks: any item carrying an `assert` block, whatever its key.
+    # Their keys are author-chosen, so they cannot be in `MACHINE_KEYS` — the
+    # second door to `machine: true`, guaranteeing the same thing (something
+    # answers this) by a different route.
+    for item in (checklist or {}).values():
+        spec = item.get("assert")
+        if spec:
+            answers.append(evaluate_assert(item["key"], spec, facts))
+
+    if only is None:
+        return answers
+    return [i for i in answers if i["key"] in only]

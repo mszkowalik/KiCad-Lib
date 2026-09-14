@@ -3,7 +3,11 @@
 Every page draws from here. Read `web/CLAUDE.md` first: it holds the style
 system, the class inventory, and the three rules that decide what a new
 component may look like — one CSS rule draws every text control, a value with a
-unit is an `SiInput`, and a labelled control goes through `Field.tsx`.
+unit is an `SiInput`, and a labelled control goes through `Field.tsx`
+(`Field`, `FieldRow` for a few controls on one line, `FieldGrid` for a whole
+form, `FieldSet` for a named group, `CheckField` for a checkbox — both
+containers have been classes in `styles.css` since the 2026-09-12
+unification).
 
 A component in this directory is used by more than one page. If you are about to
 write a page-local copy of something here, extend the shared one instead.
@@ -208,6 +212,20 @@ await dialog.alert(errorMessage(err), { title: "Adding the file failed" });
 - Styling lives in `styles.css` under the “modals” section (`.modal-backdrop`,
   `.modal-card`, …) using the `--scrim` / `--modal-shadow` palette variables;
   reuse the same classes for any future overlay instead of new ones.
+
+## Count the folds between a state and the control that changes it
+
+A red pill with no visible way to act on it reads as "the platform cannot do
+this", and users report it as a missing feature. `ReviewCard` reached three
+folds deep — the verification row, the checklist, then Verify… — before the
+control that excuses a failing check appeared, and the standing-exception
+feature was reported missing the day after it shipped (2026-09-14).
+
+Two rules came out of it. **A row that folds something makes its whole head the
+target** (`.note-head.clickable`) — a caret-only target beside a label that
+looks clickable reads as no target. And **a section that is showing a problem
+opens itself**: `ReviewCard` unfolds its checklist when the state is `failed`,
+and `VerificationSection` opens the first failing row.
 
 ## Every table: fixed layout, no horizontal scroll, single-line rows
 

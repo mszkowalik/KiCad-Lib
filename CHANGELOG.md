@@ -1,5 +1,460 @@
 # Changelog
 
+## 2026-09-14 — An explanation has a length now
+
+Every field that holds a written reason is capped, and an over-long one is
+refused rather than quietly cut.
+
+| Field | Limit |
+|---|---|
+| a note on a checklist item | 400 |
+| a custom check's own wording | 200 |
+| the note on a verification pass | 300 |
+| an exception's note | 400 |
+| an exception's evidence | 600 |
+| a revoke reason | 300 |
+| a version's change comment | 600 |
+
+The numbers come from what was already stored. A person writes **31**
+characters in a note. An agent's median is **367**, and the longest in the
+library is **3,316** - about 500 words on one checklist item. Nobody reads that,
+so the finding inside it is lost as surely as if it had never been written.
+Version comments were worse: symbol edits ran to a median of 876 and a maximum
+of 4,087.
+
+Refused, not truncated. A cut-off sentence teaches nobody; the refusal names the
+length, the limit and what to write instead - "say what is wrong and how you
+know, in a few sentences". A refused item comes back on the blocked list and the
+rest of the save goes through.
+
+In the web UI the box simply stops accepting text, with a counter that appears
+in the last quarter, so nobody writes three paragraphs and then loses them.
+
+Nothing already stored was changed. The limits apply to what is written from
+now on.
+
+## 2026-09-14 — Standing decisions have a register, and a failing check has a worklist
+
+**Reviews → Exceptions** lists every standing decision in the library: the
+subject, the check, why, how long it holds, who made it, and whether it still
+applies. An exception was visible only on its own component's card before this,
+so nothing could answer "what have we excused". A decision that pins nothing
+holds for every future version of a part, and now somebody can see which ones
+those are.
+
+A **stale** row is the point of the screen. An exception dies when a fact it
+named changes, and one that has quietly stopped applying means the check it
+excused is failing again somewhere nobody is looking.
+
+**A failing check opens.** The library-health panel already grouped failures by
+check rather than by part, because "fp.courtyard_grid on 76 footprints" is one
+job and "218 failed parts" is a wall. The numbers were dead text. Click one and
+it lists every part it fails on, with each part's own note and a link to it.
+
+**The review state is three facts, not one word.** A card now reads
+`ISSUES · FAILS · JUDGED 10/11` instead of `ISSUES` alone. "Partial" used to
+mean "nobody has looked", "a question was added last week" and "one item is
+still open" all at once, and a footprint could read "unreviewed" straight after
+somebody decided every check on it. The queue keeps the single word, because a
+list has to sort by something, and carries the facts in the tooltip.
+
+### Fixed
+
+A verification saved after **Mark checked** discarded every answer underneath
+it. The one-click confirmation is stored with no item breakdown by design, and
+the next save was seeded from it, so a part went from twelve recorded answers to
+one. Found 2026-08-25, fixed today. Answers now survive the sequence.
+
+The library-health panel counted some failures twice — once from the agent's
+flag and once from the machine's finding — reporting `cmp.datasheet_text` on 47
+components where 27 carry it.
+
+## 2026-09-14 — Eight convention rules are checks now, not prose
+
+Rules that lived as paragraphs in the skill documents, for an agent to read and
+re-read on every part, are checks the platform runs itself:
+
+| Check | From | Finds today |
+|---|---|---|
+| `fp.zero_annulus` | footprints section 6 | 0 |
+| `fp.quad_numbering` | footprints section 2 | 0 |
+| `sym.top_edge` | symbols section 3 | 24 (warning) |
+| `sym.pin_length` | symbols section 4 | 2 |
+| `cmp.value_placeholder` | library section 3 | 0 |
+| `cmp.pins_to_pads` | - | 0 |
+| `cmp.pads_to_pins` | - | 13 (warning) |
+| `cmp.value_field` | library section 3 | 0 |
+
+Across all 857 subjects the eight add **two** error-level failures, both in
+`sym.pin_length`: `Crystal_GND24_Small` mixes 0.635 mm and 1.27 mm stubs,
+`LSM6DS3` mixes 2.54 mm and 3.81 mm. Nothing else turned red. That is what
+severity and computed conformance were built for.
+
+**The Value rule is now seven rules under one key.** A resistor's Value is
+checked against the RKM code, a capacitor's against the unit format, an IC's
+against its part number verbatim, a test point's against its own name. A
+category no rule covers yet falls through to the same human question as before,
+so nothing was lost. The Checks page shows them as `BASE.Resistance`,
+`BASE.MPN`, `BASE.Component name` and so on, each with the condition it applies
+under.
+
+`fp.quad_numbering` catches the mirrored-footprint defect the skill records as
+having shipped once. It reads the direction the pads trace in number order:
+every one of the 48 IC packages in the library runs counter-clockwise, and the
+seven parts that run the other way are all connectors, whose numbering follows
+the datasheet and which the check deliberately does not cover.
+
+**Six parts carry a standing exception instead of a recurring finding.** The
+four `15EDGKNM` connectors, `KEYS2466` and `RPi_CM5` are the deviations the
+library conventions already document. Each now holds a recorded decision with
+the reason on it, so the rule stands for everything else and nobody re-discovers
+them.
+
+## 2026-09-14 — A check can read the drawing
+
+Checks could only ask about a component: its category, its base symbol, its
+fields. A symbol or a footprint carried three facts - its kind, its name and a
+fingerprint - so every geometry rule stayed prose in a skill document for an
+agent to read and re-read.
+
+They now carry their own. A footprint check can ask for the pad count, the lead
+pitch, how many pads sit off the 0.1 mm grid, which corner pad 1 is in, and
+whether a quad package numbers counter-clockwise. A symbol check can ask for the
+pin count, the distinct pin numbers, the unit count and which electrical pin
+types are present.
+
+Three facts compare two things, which no single assertion can do:
+
+- **`$pins_without_pads`** - symbol pins whose number has no pad. A signal with
+  nowhere to land.
+- **`$pads_without_pins`** - pads the symbol does not draw. Usually an exposed
+  thermal pad or an NC lead.
+- **`$value_is_mpn` / `$value_is_name` / `$value_placeholder`** - the three
+  shapes the Value rule takes.
+
+Measured over all 439 components: **13 parts** have a gap between symbol and
+footprint, and **every one of them is a pad the symbol does not draw** - an
+exposed pad or an NC lead. Not one part has a pin with nowhere to go. Splitting
+the one "mismatch" number in two is what made that readable.
+
+Two counting errors are fixed with it. The pad count used to include paste
+apertures and thermal vias, so a QFN-16 with an exposed pad reported 26 pads
+instead of 17. And a two-pad chip resistor was reported as having pad 1 in the
+"bottom-left" corner; it has no corner, and now reads "left".
+
+The Checks page reads the fact list from the platform instead of holding its
+own copy, so a footprint rule is never offered a component fact.
+
+## 2026-09-14 — "Does not apply" is one decision, and it lasts
+
+N/A is gone as an answer. The button on a check now reads **Does not apply...**
+and it records a standing decision instead of a note on one version.
+
+The two used to say the same thing, and only the throwaway one got used: 314
+live N/A answers, 312 of them written by agents, not one with a reason on it,
+every one due to expire at the next version bump - against zero rows in the
+table built to hold such decisions. The reason was simple. N/A was the button on
+the row.
+
+Three things change for you:
+
+- **You can say it about a check nobody has run.** Every judgment item offers
+  it, not only a failing one. A check that is not about this part does not need
+  running first.
+- **It asks three questions**: which way it does not apply, why in your own
+  words, and how long the decision holds. The note is required, because it is
+  the only place the reason will ever live.
+- **Excused items leave the count.** A card reads "judged 3 of 9" with "2
+  item(s) excused by a standing decision" beside it. An exception says the
+  question is not about this part. It never says somebody looked.
+
+An earlier bug is fixed with it: granting an exception on an item nobody had
+answered yet did nothing at all until an unrelated save happened to run. It now
+takes effect on the response.
+
+The library health panel also reports automatic failures again - `fp.courtyard_grid`
+on 76 footprints, `cmp.datasheet_text` on 47 components. Those went invisible
+when automatic checks stopped being written into records.
+
+Agents keep working. The API still accepts "na" and turns it into a pinned
+exception, so an agent cannot record a blanket waiver over every future version
+of a part - only a person can, in the review card. An agent's decision must now
+carry a note.
+
+Decision record
+[0018](docs/decisions/0018-does-not-apply-is-an-exception-not-an-answer.md).
+
+## 2026-09-14 — Excusing a check takes one button
+
+A standing exception was already in the platform, but nothing said so. The only
+way in was Verify... then N/A then "keep this decision?", and that chain sat
+under three folds: the verification row, the checklist, and verify mode. A
+failing check in front of you looked like something you could only fix or
+ignore.
+
+Now a failing row carries an **Excuse...** button. It asks three things - why,
+a note, and how long the decision holds - and it needs no verify mode, because
+an exception is not an answer and stages nothing.
+
+Four smaller changes in the same place:
+
+- A part with a failing check opens on that check. The row and its checklist
+  are unfolded for you.
+- Clicking the row LABEL opens it. Before, only the small triangle worked.
+- Standing decisions list above the checklist, so one you grant can be found
+  again. Each has its own **Revoke exception**.
+- The card's own Revoke is now **Revoke verification**. Two identical red
+  buttons a few pixels apart withdrew very different things.
+
+A component can now pin an exception to its own fields - "while this
+component's own data is unchanged". Its `$material_sha` is the symbol's and the
+footprint's joined together, so the drawing scope said nothing about a Value or
+a datasheet. The scope label reads what was actually pinned.
+
+## 2026-09-14 — Automatic checks are worked out, not remembered
+
+Change a check and the whole library re-reads itself. There is no "Re-run auto
+checks" button and no "Apply to existing parts" button, because there is nothing
+left to re-run: the automatic answers are computed when something asks for them,
+and cached against a fingerprint of the checklist, the part and its exceptions.
+Edit any of those and the fingerprint changes, so the next read works it out
+again.
+
+Measured: tightening the drill minimum from 0.3 mm to 0.45 mm reported 19
+failing footprints across all 212 immediately — no republish, no backfill.
+Publishing a check used to do the opposite: adding one moved 418 components to
+"partial" in a single publish, and the only ways out were a mass republish or
+answering them by hand.
+
+Two smaller effects worth knowing. Completeness is now measured over the
+judgment items only, so a machine check can never sit "unanswered". And "Mark
+checked" no longer hides a failing automatic check — it vouches for the
+judgment, not for what the code can still see.
+
+Decision record
+[0017](docs/decisions/0017-conformance-is-computed-not-recorded.md).
+
+## 2026-09-14 — Warnings, and decisions that last
+
+**A check now has a severity** — error, warning or ignore. A warning-level
+failure is shown and counted but never makes a part read as failed, which is
+what lets a new check ship at all: publishing one used to re-open the whole
+library, and four checks were seeded *switched off* to avoid it. Those four are
+now warnings, which is what "off" always meant. The severity is recorded on the
+answer, so editing a checklist never rewrites what a past review meant.
+
+`Ignore` replaces the old on/off switch: one control with three values instead
+of a switch beside a severity.
+
+**And a decision can be kept.** Answer a check N/A on the review card and it now
+asks whether to keep it — for this drawing, or for this part always. A standing
+exception outlives the version, so a pad move no longer takes it with it. The
+part lists its exceptions with who granted each one, why, and what it is pinned
+to; revoking one brings the check straight back.
+
+This is the fix for something the numbers made plain: the library held **zero**
+waivers, while agents had invented **188 different `custom:` check names**, 150
+used exactly once. Nobody was refusing to record decisions — a waiver died with
+the version, so nobody wrote one.
+
+An exception scoped to the drawing dies the moment the copper moves, and one
+pinned to a fact the part has not got is refused rather than being quietly
+stale. Both halves are copied from KiCad's own DRC model, which has carried a
+severity per rule and a list of excluded findings for years. Decision record
+[0016](docs/decisions/0016-severity-and-standing-exceptions.md).
+
+## 2026-09-14 — Checks you write instead of code
+
+A check can now be **declarative**: pick a fact about the part, pick one
+assertion, and the validator answers it. No new code per rule.
+
+```
+$symbol_reference   is one of    J
+$symbol_pin_count   is at least  1        when $symbol_on_board ^true$
+$footprint_pad_count is at least 2
+```
+
+Facts are the same vocabulary `when` reads — properties, `$category`,
+`$base_symbol`, `$purchasable` — plus new ones derived from the drawings a
+component pins: `$symbol_reference`, `$symbol_pin_count`, `$symbol_unit_count`,
+`$symbol_on_board`, `$symbol_sim_link`, `$footprint_pad_count`,
+`$footprint_has_model3d`. They are computed only when a check reads one, so a
+checklist mentioning none costs nothing.
+
+Assertions: is one of · matches · is exactly · is at least · is at most · is
+present. Exactly one per check — the wording is written from it, so the sentence
+a reviewer reads cannot disagree with the rule.
+
+This is what makes symbol rules per component category possible: a symbol has no
+category, but the component pinning it does, so the check lives on the
+component. Trialled on Connectors: `$symbol_reference is one of J` found six
+parts drawn as USB, CN, CN, BAT, BAT and FPC, and `$symbol_pin_count is at least
+1`, narrowed to board parts, correctly passed over the seventeen off-board
+terminal-block plugs instead of failing them.
+
+## 2026-09-14 — One check, several variants
+
+A check can now be stated more than once for one scope, as named **variants**:
+`Transistors.NMOS` requires `Drain Source Voltage`, `Transistors.NPN` requires
+`Collector-Emitter Voltage`, and both are `cmp.required_props`. That was the one
+thing a `when` predicate alone could not do, and it is what
+`conditional_required_properties` has been asking for since the original YAML
+import.
+
+The Scope column reads `Category.VARIANT`, so filtering `Scope` for
+`Transistors.` gives you every sub-type rule at once.
+
+**No ordering to remember.** A key with several variants must split on ONE field
+with distinct values, plus at most one variant with no condition — the fallback.
+At most one can match, so nothing depends on the order they are written in, and
+a sorted table cannot contradict the effective rule. The save path refuses a
+variant nothing can reach: a condition matching everything, a duplicate
+condition, a second fallback, or a split across two fields.
+
+A disabled variant falls through to the next one; disabling every variant is
+what switches the check off. A category restating a key replaces its whole
+group.
+
+**And the fragility is now countable.** Open a varied check and it prints how
+the live parts fall: `14 part(s) in scope · NMOS 7 · NPN 3 · other 4`. A
+non-zero "no match" means the field you are splitting on is not reliable — which
+is the honest signal that the category wants a subcategory instead of a
+predicate.
+
+## 2026-09-14 — Every check in one table
+
+Reviews → Checklists is now a single `DataTable` of every check in the
+platform — one row per scope and check, with a filter on every column. Filter
+**Scope** to see what one category does differently, **Applies when** to find
+the conditional ones, **Runs** for what is switched off; sort by **Key** and a
+check lines up with every override of it, so `cmp.required_props` across
+fifteen categories reads as fifteen adjacent rows.
+
+A new check is added in the first row of the table: pick its scope, type its
+key and what it asks, press Add. There is no separate form.
+
+Rows are what a scope STATES, not the cross product — a category contributes
+only what it changes, which is the same question answered from the other side.
+Open a row to edit its settings, its `when` predicate, or a judgment check's
+wording.
+
+Publishing is per scope and the button says how many: a checklist version
+belongs to one scope, so editing rows from three scopes publishes three
+versions, and both the toolbar and the confirmation name them.
+
+## 2026-09-14 — A check says which parts it is about
+
+A checklist item can now carry a **`when` predicate**: "apply this check to
+components where `comp_type` matches `^TVS$`", or `$category`, `$base_symbol`,
+`$purchasable` — a bare name is a property, a `$` name is a structural fact the
+API validates. Every condition must match. Edit it under the caret on any
+check; a row that has one is badged `when`. Decision record
+[0015](docs/decisions/0015-a-check-says-which-subjects-it-is-about.md).
+
+This is what `conditional_required_properties` has been waiting for since the
+original YAML import — it has sat in the Diodes and Transistors rule blocks
+since the beginning with no check implementing it.
+
+A check whose predicate a part does not satisfy is reported as **n/a here**, not
+as switched off. Those are different statements — one says the check is not
+about parts like this one, the other says the owner turned it off — and the
+review card prints them separately.
+
+One caution, recorded in the decision: a predicate over a PROPERTY is only as
+stable as the property. A category is a row; `comp_type` is free text, and the
+library already carries the `ZENNER` spelling the conventions skill flags. An
+edit there silently stops the check running.
+
+## 2026-09-14 — A check carries its own settings, and the rules table is gone
+
+**Reviews → Checklists is one tab per kind now**, not one entry per checklist.
+Components, Symbols, Footprints in the sidebar; the scope is a dropdown in the
+header, with a dot against each category that already states something. A
+category's list is created the first time you save one and removed when it
+states nothing, so the sidebar cannot fill with empty lists.
+
+**Every check is one row, folded.** Key, what it checks, where it comes from,
+whether it runs — and the caret opens the rest: the thresholds, the property
+lists, the patterns, the wording of a judgment check. Filter by Stated here /
+Automatic / Judgment / Switched off, or search by key.
+
+Every number, list and pattern the validator measures against now lives on the
+checklist item of the check that uses it, under the sentence it produces.
+Reviews → Checklists → any list, **Automatic checks**: the drill minimum sits
+under "No drill hole below 0.3 mm", the courtyard width under its own check, and
+a component's required properties under `cmp.required_props`. Decision record
+[0014](docs/decisions/0014-a-check-carries-its-own-configuration.md).
+
+**Fifteen per-category rule sets started working.** They were seeded from the
+YAML libraries at the original import and **nothing had ever read them**, so
+"a Capacitor carries Value and Voltage" had never been enforced on a single
+part. Each one is now a category-scoped component checklist you can edit, and
+the merge that was already there does the scoping. Measured over 439
+components: **189 now have their property values checked where nothing checked
+them before**; 13 fail the new `cmp.property_values` and 11 fail
+`cmp.required_props` on rules their own category had always stated. Nothing
+already recorded moved — a part picks the rules up on its next publish or its
+next "Re-run auto checks".
+
+**Two new checks, both per-category.** `cmp.property_values` applies a
+category's value patterns. `cmp.base_symbol_allowed` is the first SYMBOL rule
+scoped to a component category: a symbol carries no category, one base symbol
+is shared across categories, and a symbol nothing uses yet has none at all — so
+the check is answered on the COMPONENT, where the category is exact. List the
+base symbols a category allows and a part pointing at the wrong one fails
+mechanically instead of waiting for somebody to notice. Both are switched OFF
+on the base list with an empty set, so no part gained an unanswered item; fill a
+set in on a category to turn one on. (Dry run: allowing only `R` for Resistor
+flags `NCP15XH103F03RC`, which is drawn as `Thermistor_NTC`.)
+
+The `rules` table is dormant; a startup migration folded it into the
+checklists and reports the keys nothing consumes rather than dropping them
+(`conditional_required_properties` on Diodes and Transistors is the one real
+rule still unimplemented).
+
+Two fixes fell out of it. An empty manufacturer list now means the check does
+not apply, which is what `Mechanical_7S` and `TestPoints` were saying — read as
+"none of these is filled in" it failed all 14 of those parts. And a parameter
+is refused on save unless it fits its type: a threshold above zero, a pattern
+that compiles.
+
+## 2026-09-13 — An automatic check is switched on or off, not typed out
+
+The checklist editor no longer asks anybody to write down what an automatic
+check does. `services/validator.py` now carries the catalogue — key, text and
+hint for every check it answers — and the editor renders that catalogue
+read-only with one switch per row. Saving rewrites a machine item's wording from
+the code, so an automatic item can no longer describe a rule the validator does
+not apply. Decision record
+[0013](docs/decisions/0013-the-validator-owns-the-automatic-checks.md).
+
+**A category checklist can now modify what it inherits.** It always merged on
+top of the base list, but additively: it could add a check and reword one, and
+it could never say "the base list asks for this and my parts have not got the
+thing it asks about". The category editor now lists every inherited item with
+three choices — inherit it, override its wording here, or switch it off for this
+category. `Reviews → Checklists → New category checklist` creates one.
+
+**Switching a check off turns it off, and the card says so.** The resolved
+checklist is now the validator's switchboard: a switched-off key is not run into
+the record, an answer it already had is dropped from the next record for that
+subject, and the review card and the agent's `get_review_checklist` report it
+under `switched_off` rather than leaving the question unexplained. Both kinds of
+switch only reach COMPONENT checks per category — symbols and footprints have no
+category, so their checks switch on their base list, for every part at once.
+
+**Two new ways to re-run the automatic checks without publishing.** "Re-run auto
+checks" on a review card does one subject; "Apply to existing parts" on a
+checklist does every subject that list governs. Until now the validator ran only
+inside a publish, so refreshing the machine answers meant publishing again —
+which drops every agent answer the new version cannot carry. A re-run writes at
+the machine tier only: it cannot overwrite a human or agent answer, and it
+closes no queued review request.
+
+Two automatic checks that were built but never seeded — `sym.sim_link` and
+`cmp.sim_params` — now appear in the editor switched off, so the deferred
+decision is one click away instead of invisible.
+
 ## 2026-09-13 — `LSM6DS3` redrawn to the house geometry
 
 The symbol put VDDIO and VDD on the top edge and both GND pads on the bottom

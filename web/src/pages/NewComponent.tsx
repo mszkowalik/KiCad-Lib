@@ -143,6 +143,7 @@ export default function NewComponent() {
               className="text comment"
               placeholder="comment (optional)"
               value={comment}
+              maxLength={600}
               onChange={(e) => setComment(e.target.value)}
             />
             <button

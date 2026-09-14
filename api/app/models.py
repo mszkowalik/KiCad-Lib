@@ -782,6 +782,123 @@ class Comment(Base):
 
 
 # ------------------------------------------------------------ production sign-off
+class Conformance(Base):
+    """What the machine tier says about one version — a DERIVED CACHE.
+
+    Machine answers used to be written into `ReviewRecord` like any other
+    verification, and that one choice caused most of the review axis's pain.
+    Measured 2026-09-14: **2,442 of 6,819 stored answers were machine answers**,
+    recomputable in milliseconds, yet written on every publish, copied forward by
+    **675 carry records**, and impossible to backfill — which is why publishing
+    `cmp.datasheet_text` moved **418 components** from checked to partial at
+    once, and why "Re-run auto checks" and "Apply to existing parts" had to
+    exist at all.
+
+    They are not a verification. Nobody looked at anything; the code did, and it
+    will say the same thing again in a millisecond. So this table is a CACHE, in
+    the same sense `FootprintVersion.material_sha` is: safe to be missing, safe
+    to delete, never migrated, never carried.
+
+    **`digest` is what makes it self-invalidating.** It covers everything the
+    answers depend on — the resolved checklist (so editing a check re-evaluates
+    the whole library with no backfill), the subject's facts, and the live
+    exceptions. A row whose digest no longer matches is recomputed on the next
+    read. Nothing has to remember to invalidate it, which is the only kind of
+    cache worth having here.
+
+    Judgment answers — agent and human — stay in `ReviewRecord`, because those
+    ARE verifications: somebody looked, and no amount of recomputation will
+    reproduce that.
+    """
+
+    __tablename__ = "conformance"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    subject_kind: Mapped[str] = mapped_column(String(20))
+    subject_version_id: Mapped[int] = mapped_column(Integer)
+    #: sha of (resolved checklist + subject facts + live exception ids).
+    digest: Mapped[str] = mapped_column(String(64))
+    items: Mapped[list] = mapped_column(JSONB, default=list)
+    #: JUDGMENT items closed by a standing exception, in answer shape. They are
+    #: computed here for the same reason the machine answers are: an exception
+    #: is a decision about the PART, so writing its effect into a per-version
+    #: record made granting one on an open item do nothing at all until some
+    #: unrelated save picked it up (measured 2026-09-14: `fp.model_fit` granted,
+    #: item still open, 0/6 answered). Excused items leave the denominator —
+    #: they are not work for anybody — and are counted separately, so a part
+    #: closed by exceptions never looks like a part that was judged.
+    excused: Mapped[list] = mapped_column(JSONB, default=list)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("subject_kind", "subject_version_id", name="uq_conformance_subject"),
+    )
+
+
+class ReviewException(Base):
+    """A standing decision that one check does not apply to one subject.
+
+    **The point is that it outlives the version.** A `na (waived)` answer is an
+    answer on ONE version, so a pad move refuses the carry and the decision is
+    gone. Measured 2026-09-14: the library held **zero** waivers, while agents
+    had invented 188 distinct `custom:` keys — people were recording decisions
+    wherever they could, because the place meant for them did not last.
+
+    The shape is KiCad's, which has shipped `drc_exclusions` for years: an
+    exclusion names the RULE and the ITEMS it fired on, carries a comment, and
+    survives every edit that does not touch those items.
+
+    - **`subject_id` is the PART, never a version.** That is the whole change.
+    - **`depends_on` is what it was granted against**, as `{fact: value}` taken
+      at grant time (`checklists.subject_facts`). The exception is live while
+      every one of them still holds. An empty map means "this part, always" —
+      a decision about the part itself rather than about the drawing.
+      `{"$material_sha": "…"}` means "this drawing only", and dies the moment
+      the copper changes. Choosing which is the whole safety question: a
+      blanket waiver that silently covers a future edit is the failure mode,
+      and naming the dependency is what prevents it.
+    - **`note` is required.** An exception nobody explained is one nobody can
+      review, and it is the only place the reason will ever live.
+    - **Append-only**, like `component_signoffs`: revoking stamps `revoked_at`,
+      granting again adds a row, and there is deliberately no unique
+      constraint. The live exception is the newest non-revoked row for
+      (subject, key, variant).
+
+    Applied in ONE place — `review.record_check`, after the tier merge — so the
+    validator, the agent and the review card are all covered by one rule, and
+    the finding it replaces is kept in the answer's `superseded`.
+    """
+
+    __tablename__ = "review_exceptions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    subject_kind: Mapped[str] = mapped_column(String(20))
+    subject_id: Mapped[int] = mapped_column(Integer)
+    key: Mapped[str] = mapped_column(String(120))
+    #: Which VARIANT of the key, when it has several. Empty means the key as a
+    #: whole, which is also what a key with no variants always uses.
+    variant: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    #: One of `review.NA_REASONS`. `waived` is the usual one — "applies, but
+    #: accepted as-is by the owner".
+    reason: Mapped[str] = mapped_column(String(40))
+    note: Mapped[str] = mapped_column(Text)
+    #: A datasheet page, a decision record, an LCSC code — where the reasoning
+    #: can be checked. Optional, unlike the note.
+    evidence: Mapped[str] = mapped_column(Text, default="", server_default="")
+    depends_on: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+    created_by: Mapped[str] = mapped_column(String(120))
+    actor_type: Mapped[str] = mapped_column(String(20), default="human")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    revoke_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_review_exceptions_subject", "subject_kind", "subject_id"),
+    )
+
+
 class ComponentSignoff(Base):
     """A human's record that they checked a component before production.
 
@@ -1036,16 +1153,37 @@ class SnapshotReview(Base):
 
 # --------------------------------------------------------------------- rules
 class Rule(Base):
-    """Declarative validation rules, seeded at import from the validator's
-    hardcoded global defaults and each library's validation_rules block.
-    The rules engine (Phase 05) consumes these."""
+    """DORMANT since 2026-09-14 — nothing reads this table.
+
+    It held the validator's configuration as JSON blocks: one `global` row with
+    the numbers for eleven different checks, and one `library` row per top-level
+    category seeded from the YAML `validation_rules`. The category rows were
+    never read by anything, so a category could state that a Capacitor carries
+    Value and Voltage and no part was ever measured against it.
+
+    Every one of those settings is now `params` on the checklist item of the
+    check that uses it (`validator._CHECK_SPECS`,
+    `checklists.migrate_rules_onto_items`, decision record 0014). The rows are
+    kept because the migration reads them and because they are the only record
+    of what the YAML libraries declared — including
+    `conditional_required_properties`, which no check implements yet. Do not add
+    a reader; put the setting on the check.
+    """
 
     __tablename__ = "rules"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200), unique=True)
     scope: Mapped[str] = mapped_column(String(20))  # "global" | "library"
+    #: The YAML library this row came from — a top-level category's name, kept
+    #: as written. `category_id` is what RESOLUTION uses; this stays so the
+    #: provenance of an imported row is still readable.
     library_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    #: The category a `library` row applies to, it and everything under it.
+    #: Backfilled from `library_name` at startup (`_PHASE1_DDL`). A name is not
+    #: a reference: resolving by it would break the moment a category is
+    #: renamed, and would never reach a sub-category at all.
+    category_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     block: Mapped[dict] = mapped_column(JSONB)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

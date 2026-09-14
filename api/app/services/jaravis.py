@@ -778,6 +778,7 @@ def propose_skill_update(skill_name: str, content: str, comment: str) -> str:
         skill_name: Exact skill name to update.
         content: The complete new markdown content of the skill.
         comment: What changed and why (kept in the version history).
+            Max 600 characters — a commit message, not the working notes.
     """
     db = SessionLocal()
     try:
@@ -1237,6 +1238,7 @@ def propose_new_component(
         properties_json: JSON array of {"key": ..., "value": ...} in display order.
         datasheet_url: Optional datasheet URL.
         comment: Short note recorded on the published version.
+            Max 600 characters.
     """
     db = SessionLocal()
     try:
@@ -1348,6 +1350,7 @@ def propose_component_edit(
         name: Exact name of the existing component.
         properties_json: COMPLETE JSON array of {"key": ..., "value": ...} in display order.
         comment: What changed and why (recorded on the published version).
+            Max 600 characters — a commit message, not the working notes.
         base_component: Optional new base symbol; empty = keep current.
         category: Optional new category name/path (moves the component); empty = keep current.
     """
@@ -1424,6 +1427,7 @@ def propose_symbol_edit(name: str, source_text: str, comment: str,
         name: Base symbol name. Existing name = edit; new name = creation.
         source_text: The complete .kicad_sym file text with the symbol drawing.
         comment: What changed and why (recorded on the published version).
+            Max 600 characters — a commit message, not the working notes.
         minor_change: True ONLY for a change that genuinely needs no
             re-verification (cosmetic cleanup) — it carries verifications and
             production sign-offs across the changed drawing, with your name
@@ -1469,6 +1473,7 @@ def propose_footprint_edit(name: str, source_text: str, comment: str,
         name: Footprint name WITHOUT the 7Sigma: prefix. Existing = edit; new = creation.
         source_text: The complete .kicad_mod file text.
         comment: What changed and why (recorded on the published version).
+            Max 600 characters — a commit message, not the working notes.
         minor_change: True ONLY for a change that genuinely needs no
             re-verification — it carries verifications and production
             sign-offs across the changed drawing. When unsure, leave False.
@@ -1556,6 +1561,7 @@ def get_review_checklist(kind: str, name: str) -> str:
         name: The exact name.
     """
     from . import checklists as checklists_svc
+    from . import conformance as conformance_svc
     from . import review as review_svc
 
     db = SessionLocal()
@@ -1563,11 +1569,23 @@ def get_review_checklist(kind: str, name: str) -> str:
         parent, version_id, err = _review_subject(db, kind, name)
         if err:
             return json.dumps({"error": err})
+        from . import exceptions as exceptions_svc
+
         cat_id = review_svc._category_of(db, kind, parent)
-        resolved = checklists_svc.resolve(db, kind, cat_id)
+        facts = checklists_svc.subject_facts(db, kind, parent, version_id)
+        resolved = checklists_svc.resolve(db, kind, cat_id, facts)
         rows = review_svc.records_for(db, kind, parent.id)
         record = review_svc.effective_record(rows, version_id)
         answered = {i["key"]: i for i in (record.items or [])} if record else {}
+        version = next((v for v in getattr(parent, "versions", [])
+                        if v.id == version_id), None)
+        conf_items, excused = conformance_svc.get(db, kind, parent, version)
+        # An excused item is a closed decision, not open work. Showing it as
+        # unanswered is how the same finding gets re-raised on every pass — the
+        # SOT-23 pitch was re-filed as a defect by three separate verification
+        # runs before standing exceptions existed.
+        excused_by_key = {e["key"]: e for e in excused}
+        conf_by_key = {i["key"]: i for i in conf_items}
         items = []
         for item in resolved["items"]:
             merged = dict(item)
@@ -1575,21 +1593,57 @@ def get_review_checklist(kind: str, name: str) -> str:
             if prev:
                 merged["answered"] = {k: prev.get(k) for k in
                                       ("result", "note", "actor", "actor_type", "at")}
+            auto = conf_by_key.get(item["key"])
+            if auto is not None:
+                merged["answered"] = {k: auto.get(k) for k in
+                                      ("result", "note", "reason", "severity")}
+                merged["answered"]["actor_type"] = "machine"
+            exc = excused_by_key.get(item["key"])
+            if exc is not None:
+                merged["answered"] = {"result": "na", "reason": exc.get("reason"),
+                                      "note": exc.get("note"), "actor": exc.get("actor"),
+                                      "actor_type": exc.get("actor_type"),
+                                      "at": exc.get("at")}
+                merged["excused"] = True
             items.append(merged)
+        # A key SWITCHED OFF in the checklist is not an "extra item" the agent
+        # should look at: the owner decided it does not apply here. The stored
+        # answer survives only until the next record drops it
+        # (`review.record_check`), so filtering it out here is what stops an
+        # agent re-raising a check nobody asked for.
+        switched_off = {i["key"] for i in resolved["disabled"]} | \
+            {i["key"] for i in resolved["inapplicable"]}
         extras = [i for k, i in answered.items()
-                  if k not in {it["key"] for it in resolved["items"]}]
-        state = review_svc.state_from_record(record, resolved["items"] if record and
-                                             record.items is not None else None)
+                  if k not in {it["key"] for it in resolved["items"]}
+                  and k not in switched_off]
+        state = review_svc.state_from_record(record, resolved["items"], conf_items, excused)
         return json.dumps({
             "kind": kind, "name": parent.name, "version_id": version_id,
             "state": state["state"], "items": items, "extra_items": extras,
+            "switched_off": [{"key": i["key"], "text": i.get("text", "")}
+                             for i in resolved["disabled"]],
+            "exceptions": [{"key": e.key, "reason": e.reason, "note": e.note,
+                            "by": e.created_by,
+                            "scope": exceptions_svc.scope_label(e.depends_on)}
+                           for e in exceptions_svc.live_for(
+                               db, kind, parent.id, facts).values()],
             "results_allowed": ["checked", "na", "flagged"],
             "na_reasons": list(review_svc.NA_REASONS),
             "note": "machine items are answered automatically; answer the judgment items. "
-                    "'na' = does not apply, and needs a reason from na_reasons. "
+                    "'na' = does not apply. It is a STANDING EXCEPTION, not an answer on "
+                    "this version: it needs a reason from na_reasons AND a note, it "
+                    "outlives the version, and it is pinned so it dies if the drawing or "
+                    "the component data changes. Do not use it for something you simply "
+                    "did not check. "
                     "'flagged' = verified and found wrong, not fixed (note required). "
                     "An item you could not verify stays UNANSWERED - do not close it with na. "
-                    "Add ad-hoc points with keys like custom:<slug>.",
+                    "Add ad-hoc points with keys like custom:<slug>. "
+                    "switched_off lists checks the owner turned off for this subject - "
+                    "do not answer or re-raise them. exceptions lists STANDING "
+                    "decisions already recorded on this part: the item is closed, the "
+                    "reason is given, and re-raising one is re-opening a settled "
+                    "question. If you believe an exception is wrong, say so in your "
+                    "report - do not answer over it.",
         })
     finally:
         db.close()
@@ -1607,7 +1661,9 @@ def record_verification(kind: str, name: str, items_json: str, note: str = "") -
       "kind_exempt" (the convention excuses this class of part), "waived"
       (applies, but the owner accepts it as-is), "other" (say what in the note).
       `na` CLOSES the item, so never reach for it to get rid of a question you
-      could not answer.
+      could not answer. It is a STANDING EXCEPTION, not an answer on this
+      version: it needs a note as well as a reason, it outlives the version,
+      and it is pinned so it dies if the drawing or the component data changes.
     - AN ITEM YOU COULD NOT VERIFY IS LEFT OUT ENTIRELY. Do not send it. An
       unanswered item keeps the version at "partial", which is the honest state.
       (The old "skipped" result was retired on 2026-09-13: it meant "applies but
@@ -1629,12 +1685,21 @@ def record_verification(kind: str, name: str, items_json: str, note: str = "") -
     It is recorded on this part alone and does not change the checklist. The
     review card in the web UI adds them the same way.
 
+    KEEP EVERY NOTE SHORT. A note is capped at 400 characters and an item's own
+    text at 200; an over-long one is REFUSED and comes back in blocked_items,
+    so the answer is lost. Say what you compared, what you found, and where —
+    "pad pitch 0.5mm, datasheet p4 table 2 says 0.65mm" — in a few sentences.
+    A person writes 31 characters here. Agents have written up to 3,316, and
+    nobody reads those, so the finding inside them is lost anyway.
+
     Args:
         kind: "component" | "symbol" | "footprint".
         name: The exact name.
         items_json: JSON array of {"key", "result", "note"} answers
-            (plus "text" for a custom key).
-        note: Optional overall note (what documentation was used).
+            (plus "text" for a custom key). Note max 400 characters,
+            text max 200.
+        note: Optional overall note — a CITATION of what documentation this
+            pass used, max 300 characters. Not a place to restate the findings.
     """
     from . import review as review_svc
 
@@ -1654,8 +1719,12 @@ def record_verification(kind: str, name: str, items_json: str, note: str = "") -
             return json.dumps({"error": "result 'failed' is reserved for machine checks — "
                                         "use 'flagged' with a note describing the defect "
                                         "(second-pass list), or fix the data and re-publish"})
-        res = review_svc.record_check(db, kind, parent, version_id, actor="jaravis",
-                                      actor_type="agent", items=items, note=note or None)
+        try:
+            res = review_svc.record_check(db, kind, parent, version_id, actor="jaravis",
+                                          actor_type="agent", items=items,
+                                          note=note or None)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
         db.commit()
         return json.dumps({"ok": True, "kind": kind, "name": parent.name,
                            "state": res["state"], "blocked_items": res["blocked"]})
@@ -1805,6 +1874,7 @@ def propose_sim_model_edit(name: str, source_text: str, comment: str, kind: str 
         name: Model name, e.g. "sigma_opamp". Existing name = edit.
         source_text: The complete .subckt block.
         comment: What changed and why (recorded on the published version).
+            Max 600 characters — a commit message, not the working notes.
         kind: "primitive" or "part"; empty keeps the current kind
             (new models default to "part").
     """
@@ -2335,7 +2405,8 @@ def rename_footprint(name: str, new_name: str, comment: str = "") -> str:
     Args:
         name: Current footprint name, WITHOUT the 7Sigma: prefix.
         new_name: The new name, WITHOUT the 7Sigma: prefix.
-        comment: Why the name was wrong. Recorded on the version and the audit row.
+        comment: Why the name was wrong. Max 600 characters. Recorded on the version and the audit
+            row. Max 600 characters.
     """
     return _rename_tool("footprint", name, new_name, comment)
 
@@ -2352,7 +2423,7 @@ def rename_base_symbol(name: str, new_name: str, comment: str = "") -> str:
     Args:
         name: Current base symbol name.
         new_name: The new name.
-        comment: Why the name was wrong.
+        comment: Why the name was wrong. Max 600 characters.
     """
     return _rename_tool("symbol", name, new_name, comment)
 

@@ -185,7 +185,7 @@ export default function GeometryPaste({
         <input
           className="text"
           value={comment}
-          maxLength={2000}
+          maxLength={600}
           placeholder="What changed and why — kept in the version history"
           aria-label="Version comment"
           onChange={(e) => setComment(e.target.value)}

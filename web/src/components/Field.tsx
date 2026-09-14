@@ -67,6 +67,23 @@ export function FieldRow({
   return <div className={`field-row ${className}`.trim()}>{children}</div>;
 }
 
+/** A whole form: auto-fit columns, every field starting at the same line.
+ *
+ *  The other container, `<FieldRow>`, is a wrapping FLEX row — right for a
+ *  handful of controls on one line, wrong for a form, because a field whose
+ *  label wraps to two lines pushes its own box down out of step with the row.
+ *  Both class names have been in `styles.css` since the 2026-09-12 unification;
+ *  this is the second one's component. */
+export function FieldGrid({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return <div className={`field-grid ${className}`.trim()}>{children}</div>;
+}
+
 /** A named group of fields. `legend` is the group's name, printed like a
  *  column header so it reads as structure rather than as another label. */
 export function FieldSet({

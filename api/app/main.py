@@ -157,6 +157,21 @@ _DEDUP_INDEXES = (
 # transaction each, and `GET /api/health/schema` reports which landed — a
 # migration that half-applies must be visible, not inferred from a later crash.
 _PHASE1_DDL = (
+    # A rule row scoped to a CATEGORY, not to a YAML library name. The 15 rows
+    # the import seeded carried `library_name` only and nothing resolved them,
+    # so every per-category property rule ("a Capacitor carries Value and
+    # Voltage") had never been enforced. A name also cannot reach a
+    # sub-category and breaks on a rename, which is the same reason
+    # `services/rename.py` exists.
+    ("rules.category_id",
+     "ALTER TABLE rules ADD COLUMN IF NOT EXISTS category_id integer"),
+    # Match each seeded row to the top-level category of the same name. A row
+    # whose library has no category left simply stays unresolved and inert,
+    # which is what it already was.
+    ("rules.category_id backfill",
+     "UPDATE rules SET category_id = c.id FROM categories c "
+     "WHERE rules.scope = 'library' AND rules.category_id IS NULL "
+     "AND c.parent_id IS NULL AND c.name = rules.library_name"),
     # WHY a line is charged to nobody. `excluded` is a legal bucket in the
     # conservation identity, so the $14,443 incident passed every check.
     ("run_cost_lines.exclude_reason",
@@ -261,6 +276,12 @@ _PHASE1_DDL = (
     # rather than being given an opinion nobody recorded.
     ("review_records.checklist_items",
      "ALTER TABLE review_records ADD COLUMN IF NOT EXISTS checklist_items jsonb"),
+    # Judgment items closed by a standing exception, computed beside the machine
+    # answers. Cache columns, so an empty default is correct and a NULL row just
+    # recomputes on the next read — no backfill.
+    ("conformance.excused",
+     "ALTER TABLE conformance ADD COLUMN IF NOT EXISTS excused jsonb "
+     "NOT NULL DEFAULT '[]'::jsonb"),
     # Which archived datasheets are searchable PDFs and which are pure scans.
     # The searchable-PDF classification (text_layer, page_count, text_pages)
     # and the page-index marker used to be columns here on datasheet_versions.
@@ -888,17 +909,56 @@ def startup() -> None:
     # no base checklist yet get one).
     try:
         from .db import SessionLocal
-        from .services.checklists import seed_checklists
+        from .services.checklists import (
+            migrate_rules_onto_items,
+            migrate_severities,
+            seed_checklists,
+        )
 
         db = SessionLocal()
         try:
             seeded = seed_checklists(db)
             if seeded:
                 log.info(f"checklists: seeded {seeded}")
+            # Validation rules used to be JSON blocks in a `rules` table, and
+            # the 15 per-category rows there were never read by anything. They
+            # are now `params` on the check that uses them. Idempotent.
+            moved = migrate_rules_onto_items(db)
+            if moved["published"]:
+                log.info(f"checklists: rules moved onto the items — {moved['published']}")
+            if moved["unused"]:
+                log.info(f"checklists: rule keys no check consumes — {moved['unused']}")
+            # `disabled: true` -> `severity`. Idempotent; see the docstring for
+            # why the four seeded-off checks become warnings rather than ignore.
+            sev = migrate_severities(db)
+            if sev:
+                log.info(f"checklists: severities set — {sev}")
         finally:
             db.close()
     except Exception as e:  # noqa: BLE001 — never block startup
         log.warning(f"checklist seed did not run: {type(e).__name__}: {e}")
+    # Conformance is computed on read and cached against a digest of its
+    # inputs. Warming it in the background is what keeps list surfaces fast on a
+    # cold database; nothing depends on it finishing (decision 0017).
+    try:
+        import threading
+
+        from .db import SessionLocal as _SL
+        from .services.conformance import warm_all
+
+        def _warm() -> None:
+            db = _SL()
+            try:
+                log.info(f"conformance: warmed {warm_all(db)}")
+            except Exception as e:  # noqa: BLE001 — never block startup
+                log.warning(f"conformance warm-up did not finish: {type(e).__name__}: {e}")
+            finally:
+                db.close()
+
+        threading.Thread(target=_warm, name="conformance-warm", daemon=True).start()
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"conformance warm-up did not start: {type(e).__name__}: {e}")
+
     if settings.datasheet_autofetch:
         # Fetch missing datasheet PDFs in the background (idempotent —
         # only datasheets without a local copy are downloaded).

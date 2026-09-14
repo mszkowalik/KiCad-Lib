@@ -242,10 +242,12 @@ def _unchanged(kind: str, parent, source_text: str) -> dict | None:
     is worse than no guard.
 
     `force=True` on the caller skips this. It exists because re-publishing
-    identical source was a usable escape hatch: `machine_check_on_publish` is
-    the ONLY caller of the validator, so republishing was the one way to
-    re-run it after a checklist gained a machine item (see the note in
-    api/CLAUDE.md about checklist v2 un-answering all 418 components). Keep
+    identical source used to be the only way to re-run the validator: the
+    machine tier was written on publish and nothing else could refresh it, so a
+    checklist that gained a machine item left 418 components stale. That reason
+    is GONE since 2026-09-14 — conformance is computed on read
+    (`services/conformance.py`) and re-evaluates itself when a check changes —
+    but the flag stays for the other escape hatches it serves. Keep
     the no-op the default and the force explicit.
 
     Returns the no-op payload, or None when this really is a new drawing.

@@ -41,6 +41,12 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0010](0010-a-git-token-belongs-to-an-account.md) | A git token belongs to an account, and projects point at it by name | Backend, frontend, projects, access control |
 | [0011](0011-retire-the-skipped-verification-result.md) | Retire the `skipped` verification result; an unverifiable item is left unanswered and `na` carries a reason | Backend, frontend, review axis, agent tools |
 | [0012](0012-rename-a-footprint-or-base-symbol-in-place.md) | Rename a footprint or a base symbol in place, and rewrite every reference with it | Backend, frontend, KiCad output, review axis, agent tools |
+| [0013](0013-the-validator-owns-the-automatic-checks.md) | The validator owns the automatic checks, and a checklist switches them on or off per category | Backend, frontend, review axis, agent tools |
+| [0014](0014-a-check-carries-its-own-configuration.md) | A check carries its own configuration, and the rules table is retired (completes [0013](0013-the-validator-owns-the-automatic-checks.md)) | Backend, frontend, review axis |
+| [0015](0015-a-check-says-which-subjects-it-is-about.md) | A check says which subjects it is about — a `when` predicate that NARROWS, plus named variants on one discriminator (completes [0014](0014-a-check-carries-its-own-configuration.md)) | Backend, frontend, review axis, agent tools |
+| [0016](0016-severity-and-standing-exceptions.md) | A check has a severity, and a subject can carry a standing exception — both copied from KiCad's DRC/ERC model | Backend, frontend, review axis, agent tools |
+| [0017](0017-conformance-is-computed-not-recorded.md) | Conformance is computed on read and cached against a digest of its inputs, never recorded on publish | Backend, frontend, review axis |
+| [0018](0018-does-not-apply-is-an-exception-not-an-answer.md) | "Does not apply" is a standing exception, not a per-version `na` answer — one control, and it works on an item nobody has answered | Backend, frontend, review axis, agent tools |
 
 ## Proposed
 

@@ -39,7 +39,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from .. import models as M
-from . import checklists, signoff
+from . import checklists, exceptions, signoff
 
 KINDS = ("component", "symbol", "footprint")
 # `failed` = a machine rule violation; `flagged` = an agent or human verified
@@ -55,6 +55,60 @@ LEGACY_RESULTS = ("skipped",)
 # there would fail every publish.
 NA_REASONS = ("feature_absent", "kind_exempt", "waived", "other")
 TIER = {"machine": 0, "agent": 1, "human": 2}
+
+#: How long a written explanation may be, in characters. Enforced where the
+#: text is WRITTEN, not where it is shown.
+#:
+#: Measured 2026-09-14 over 21,064 stored notes:
+#:
+#: ==========  ======  ========  ======  ======
+#: writer      count   median    p90     max
+#: ==========  ======  ========  ======  ======
+#: human           13       31      115     115
+#: machine      1,304       17       27      93
+#: agent       19,747      367    1,055   3,316
+#: ==========  ======  ========  ======  ======
+#:
+#: An agent writes twelve times what a person writes, and the tail runs to
+#: 3,316 characters — about 500 words on ONE checklist item. Nobody reads that,
+#: so the finding inside it is lost exactly as surely as if it had not been
+#: written. A limit is the only thing that makes the habit change: 45% of
+#: current agent notes exceed `ITEM_NOTE`, which is the point of the number.
+#:
+#: The item note is the largest because it is where a real finding goes. A pass
+#: note is a citation and a revoke reason is one sentence, so both are smaller.
+#: A custom item's `text` is a check SENTENCE and has to stay one line.
+TEXT_LIMITS = {
+    "item_note": 400,      # ~3 sentences. What is wrong, and how it was found.
+    "item_text": 200,      # a custom check's question, in one line
+    "record_note": 300,    # what documentation this pass used
+    "revoke_reason": 300,
+}
+
+#: What to write instead. A bare "too long" tells somebody to cut without
+#: telling them what to keep, and the second attempt comes back nearly as long.
+_ADVICE = {
+    "item_note": ("Say what is wrong and how you know, in a few sentences — "
+                  "\"pad pitch 0.5 mm, datasheet p4 table 2 says 0.65 mm\"."),
+    "item_text": "A check is one question, in one line.",
+    "record_note": ("This is a CITATION of what the pass used, not a summary of "
+                    "the findings — each of those has its own note."),
+    "revoke_reason": "One sentence saying why it is being taken back.",
+}
+
+
+def too_long(value: str | None, limit_key: str) -> str | None:
+    """The message to report, or None when the text fits.
+
+    Reports the ACTUAL length beside the limit: "too long" with no number
+    leaves the writer guessing how much to cut, and an agent guessing tends to
+    resend something nearly as long.
+    """
+    text = (value or "").strip()
+    limit = TEXT_LIMITS[limit_key]
+    if len(text) <= limit:
+        return None
+    return f"{len(text)} characters, and the limit is {limit}. {_ADVICE[limit_key]}"
 STATE_RANK = {"failed": 0, "unreviewed": 1, "partial": 2, "checked": 3}
 
 
@@ -137,41 +191,126 @@ def _provenance(record: M.ReviewRecord) -> str:
     return best
 
 
-def state_from_record(record: M.ReviewRecord | None, checklist_items: list[dict] | None) -> dict:
-    """Derive one version's state from its effective record.
+def _weakest_actor(entries: list[dict]) -> str | None:
+    """The LOWEST tier among these entries, or None for an empty list.
+
+    Weakest, not strongest, because this answers "how much is this subject
+    vouched for". One agent decision among ten human ones still means an agent
+    closed a question nobody re-read.
+    """
+    tiers = [TIER[e["actor_type"]] for e in entries if e.get("actor_type") in TIER]
+    if not tiers:
+        return None
+    return next(k for k, v in TIER.items() if v == min(tiers))
+
+
+def state_from_record(record: M.ReviewRecord | None, checklist_items: list[dict] | None,
+                      conformance: list[dict] | None = None,
+                      excused: list[dict] | None = None) -> dict:
+    """Derive one version's state: the JUDGMENT record, plus computed conformance.
 
     ``checklist_items`` is the resolved checklist to measure completeness
     against — pass the record's own checklist version items so a later
     checklist edit never silently flips history; the caller separately reports
     how far the current checklist has moved on.
+
+    Two things changed on 2026-09-14 and both are load-bearing:
+
+    **Machine answers stored in the record are IGNORED.** The machine tier is
+    computed now (`services/conformance.py`), so a stored one is history — 2,442
+    of them, written before the change. Counting both would double-count, and
+    the stored copy is the stale one. They are deliberately not deleted: they are
+    what a past record said, and rewriting history is the one thing this axis
+    never does.
+
+    **Completeness is measured over JUDGMENT items only.** A machine item is
+    always answered, by definition, so counting it as "unanswered" was only ever
+    an artefact of nobody having published since the check was added. That is
+    what moved 418 components to partial in one publish, and it cannot happen
+    again.
+
+    ``conformance`` is this version's computed machine answers, or None for a
+    caller that has not got them — a list surface reading from cache before the
+    cache is warm. None means "not evaluated", never "conforms".
+
+    ``excused`` is the judgment items a standing exception closes, also computed
+    (`services/conformance.py`). **They leave the denominator rather than
+    counting as answered.** An exception says the question is not about this
+    part; it does not say anybody looked. A part whose whole checklist is
+    excused must not read like a part somebody judged, which is why `excused`
+    is reported as its own number instead of being folded into `answered`.
     """
+    from . import conformance as conformance_svc
+
+    conf = conformance_svc.summary(conformance) if conformance is not None else None
+    conf_failed = conf["failed"] if conf else 0
+    conf_warnings = conf["warnings"] if conf else 0
+    excused = list(excused or [])
+    excused_keys = {e.get("key") for e in excused}
+
     if record is None:
-        return {"state": "unreviewed", "provenance": None, "record_id": None,
-                "answered": 0, "total": 0, "skipped": 0, "failed": 0, "flagged": 0,
-                "unanswered": []}
+        judgment = [i["key"] for i in (checklist_items or [])
+                    if not i.get("machine") and i["key"] not in excused_keys]
+        # Every judgment item excused and none judged is still a decided
+        # subject: an exception carries an actor, a date and a note, so the
+        # provenance comes from the weakest of them rather than reading as a
+        # verification nobody made.
+        prov = _weakest_actor(excused) if (excused and not judgment) else None
+        return {"state": "failed" if conf_failed else
+                ("unreviewed" if judgment else "checked"),
+                "provenance": prov, "record_id": None,
+                "answered": 0, "total": len(judgment), "skipped": 0,
+                "failed": conf_failed, "flagged": 0, "warnings": conf_warnings,
+                "excused": len(excused),
+                "conforms": None if conf is None else conf["conforms"],
+                "unanswered": judgment}
 
     if record.items is None:
-        # One-click human confirmation: no item breakdown, full check.
-        return {"state": "checked", "provenance": "human", "record_id": record.id,
-                "answered": 0, "total": 0, "skipped": 0, "failed": 0, "flagged": 0,
+        # One-click human confirmation: no item breakdown, full check. It
+        # vouches for the JUDGMENT, not for conformance — a person cannot
+        # confirm away a machine failure, and pretending otherwise would let one
+        # click hide a defect the code can still see.
+        return {"state": "failed" if conf_failed else "checked",
+                "provenance": "human", "record_id": record.id,
+                "answered": 0, "total": 0, "skipped": 0,
+                "failed": conf_failed, "flagged": 0, "warnings": conf_warnings,
+                "excused": len(excused),
+                "conforms": None if conf is None else conf["conforms"],
                 "unanswered": []}
 
-    by_key = {i.get("key"): i for i in record.items}
-    failed = [k for k, i in by_key.items() if i.get("result") in ("failed", "flagged")]
+    # Machine answers in the record are history; conformance is computed.
+    by_key = {i.get("key"): i for i in record.items
+              if i.get("actor_type") != "machine"}
+    # A WARNING-level failure is worth seeing and does not make the subject
+    # failed (2026-09-14). Without the split, every check moved out of the
+    # convention skills would turn the library red on the day it landed, which
+    # is why four of them shipped switched off instead of on.
+    # An excused key cannot still be a finding: the decision closed it. Without
+    # this an old `flagged` answer would hold the subject at "issues" for ever
+    # while the card showed the item as excused.
+    broke = [k for k, i in by_key.items()
+             if i.get("result") in ("failed", "flagged") and k not in excused_keys]
+    failed = [k for k in broke if by_key[k].get("severity", "error") != "warning"]
+    warnings = [k for k in broke if by_key[k].get("severity", "error") == "warning"]
     flagged = [k for k, i in by_key.items() if i.get("result") == "flagged"]
     # Pre-2026-09-13 rows only. `skipped` is read as "nobody has answered this
     # yet", which is the state it always produced, so retiring the value moved
     # no subject between states.
     legacy_skipped = [k for k, i in by_key.items() if i.get("result") == "skipped"]
-    expected = [i["key"] for i in (checklist_items or [])]
+    # An excused item leaves the denominator entirely. It is not open work and
+    # it is not an answer — it is a recorded decision that the question is not
+    # about this part.
+    expected = [i["key"] for i in (checklist_items or [])
+                if not i.get("machine") and i["key"] not in excused_keys]
     real = {k for k, i in by_key.items() if i.get("result") in RESULTS}
     # A custom key answered `skipped` is not in `expected`, so it has to be
     # added explicitly or a retired answer on one would read as fully checked.
     unanswered = ([k for k in expected if k not in real]
                   + [k for k in legacy_skipped if k not in expected])
-    answered = sum(1 for i in by_key.values() if i.get("result") in ("checked", "na"))
+    answered = sum(1 for i in by_key.values()
+                   if i.get("result") in ("checked", "na") and i.get("key") not in excused_keys)
 
-    if failed:
+    if failed or conf_failed:
         state = "failed"
     elif unanswered:
         state = "partial"
@@ -180,7 +319,10 @@ def state_from_record(record: M.ReviewRecord | None, checklist_items: list[dict]
     return {"state": state, "provenance": _provenance(record), "record_id": record.id,
             "answered": answered, "total": max(len(expected), len(by_key)),
             # legacy only: the count of retired `skipped` answers still stored
-            "skipped": len(legacy_skipped), "failed": len(failed), "flagged": len(flagged),
+            "skipped": len(legacy_skipped), "failed": len(failed) + conf_failed,
+            "flagged": len(flagged), "warnings": len(warnings) + conf_warnings,
+            "excused": len(excused),
+            "conforms": None if conf is None else conf["conforms"],
             "unanswered": unanswered}
 
 
@@ -220,10 +362,19 @@ def _checklist_version_items(db: Session, version_id: int) -> list[dict]:
 
 
 def version_state(db: Session, kind: str, subject_id: int, version_id: int | None,
-                  rows: list[M.ReviewRecord] | None = None) -> dict:
+                  rows: list[M.ReviewRecord] | None = None,
+                  conformance: list[dict] | None = None) -> dict:
+    """One subject's state. Pass `conformance` when you have it; a caller that
+    does not gets the judgment half and `conforms: None`, which reads as "not
+    evaluated" and never as "conforms"."""
+    from . import conformance as conformance_svc
+
     rows = records_for(db, kind, subject_id) if rows is None else rows
     record = effective_record(rows, version_id)
-    return state_from_record(record, _checklist_items_of(db, record))
+    excused: list[dict] = []
+    if conformance is None:
+        conformance, excused = conformance_svc.cached(db, kind, version_id)
+    return state_from_record(record, _checklist_items_of(db, record), conformance, excused)
 
 
 # --------------------------------------------------- component aggregate state
@@ -304,23 +455,45 @@ def states_for_components(db: Session, comps: list[M.Component],
     sym_rows = _bulk("symbol", set(sym_parent.values()))
     fp_rows = _bulk("footprint", set(fp_parent.values()))
 
+    # Conformance from the CACHE, in one query per kind. Evaluating it here
+    # would be ~20 ms per subject — nine seconds for this library — which is the
+    # whole reason `models.Conformance` exists. A row the cache has not got
+    # yields `conforms: None`, which reads as "not evaluated" and never as
+    # "conforms"; the detail view recomputes.
+    def _conf(kind: str, version_ids: set[int]) -> dict[int, tuple[list[dict], list[dict]]]:
+        if not version_ids:
+            return {}
+        return {r.subject_version_id: (list(r.items or []), list(r.excused or []))
+                for r in db.query(M.Conformance).filter(
+                    M.Conformance.subject_kind == kind,
+                    M.Conformance.subject_version_id.in_(version_ids))}
+
+    comp_conf = _conf("component", {cv.id for cv in cvs.values() if cv})
+    sym_conf = _conf("symbol", sym_ver_ids)
+    fp_conf = _conf("footprint", fp_ver_ids)
+
     out: dict[int, dict] = {}
     for c in comps:
         cv = cvs.get(c.id)
         if cv is None:
             out[c.id] = {"state": "unreviewed", "parts": {}, "blockers": [], "provenance": None}
             continue
+        crec = effective_record(comp_rows.get(c.id, []), cv.id)
+        c_items, c_exc = comp_conf.get(cv.id, (None, []))
         parts = {"component": state_from_record(
-            effective_record(comp_rows.get(c.id, []), cv.id),
-            _checklist_items_of(db, effective_record(comp_rows.get(c.id, []), cv.id)))}
+            crec, _checklist_items_of(db, crec), c_items, c_exc)}
         if cv.symbol_version_id and cv.symbol_version_id in sym_parent:
             rec = effective_record(sym_rows.get(sym_parent[cv.symbol_version_id], []),
                                    cv.symbol_version_id)
-            parts["symbol"] = state_from_record(rec, _checklist_items_of(db, rec))
+            s_items, s_exc = sym_conf.get(cv.symbol_version_id, (None, []))
+            parts["symbol"] = state_from_record(rec, _checklist_items_of(db, rec),
+                                                s_items, s_exc)
         if cv.footprint_version_id and cv.footprint_version_id in fp_parent:
             rec = effective_record(fp_rows.get(fp_parent[cv.footprint_version_id], []),
                                    cv.footprint_version_id)
-            parts["footprint"] = state_from_record(rec, _checklist_items_of(db, rec))
+            f_items, f_exc = fp_conf.get(cv.footprint_version_id, (None, []))
+            parts["footprint"] = state_from_record(rec, _checklist_items_of(db, rec),
+                                                   f_items, f_exc)
         worst = min(parts.values(), key=lambda p: STATE_RANK[p["state"]])
         blockers = [f"{name}: {p['state']}" for name, p in parts.items() if p["state"] != "checked"]
         provs = [p["provenance"] for p in parts.values() if p["provenance"]]
@@ -362,7 +535,7 @@ def _notable(candidate: dict | None, inherited: dict | None) -> dict | None:
 
 def record_check(db: Session, kind: str, parent, version_id: int, actor: str,
                  actor_type: str, items: list[dict] | None, note: str | None = None,
-                 record_kind: str = "check") -> dict:
+                 record_kind: str = "check", close_requests: bool = True) -> dict:
     """Write a verification record, merged on top of the previous one.
 
     ``items=None`` with ``actor_type='human'`` is the one-click confirmation.
@@ -372,14 +545,54 @@ def record_check(db: Session, kind: str, parent, version_id: int, actor: str,
     """
     assert kind in KINDS
     rows = records_for(db, kind, parent.id)
-    prev = effective_record(rows, version_id)
-    resolved = checklists.resolve(db, kind, _category_of(db, kind, parent))
+    # The pass note is a CITATION — "checked against the SMAJ datasheet, p4" —
+    # not a place to restate the findings, which already have their own notes.
+    over = too_long(note, "record_note")
+    if over is not None:
+        raise ValueError(f"the note on this verification is {over}")
+    # Seeded from the newest record that HAS an item breakdown, not from the
+    # effective one.
+    #
+    # A one-click "Mark checked" is stored with `items=None` on purpose — it
+    # vouches for the whole subject and records no breakdown. Seeding from the
+    # effective record meant that the moment somebody pressed it, the NEXT save
+    # started from an empty dict and silently discarded every answer underneath.
+    # Reproduced on `PESD1CAN,215`: 12 answers down to 1 (2026-08-25).
+    #
+    # The STATE still comes from `effective_record` — `state_from_record` reads
+    # the `items=None` sentinel as a full check. Only the items come from here,
+    # which is the same split `_detail` makes for display.
+    prev = itemised_record(rows, version_id)
+    # Resolved FOR THIS SUBJECT: a `when` predicate is judged against the part
+    # in hand, so an item that is not about parts like this one is not expected
+    # of it and never reaches the record.
+    facts = checklists.subject_facts(db, kind, parent, version_id)
+    resolved = checklists.resolve(db, kind, _category_of(db, kind, parent), facts)
     text_by_key = {i["key"]: i.get("text", "") for i in resolved["items"]}
+    switched_off = {i["key"] for i in resolved["disabled"]}
 
     blocked: list[str] = []
     merged: dict[str, dict] | None = None
     if items is not None:
         merged = {i["key"]: dict(i) for i in (prev.items or [])} if prev else {}
+        # A check switched OFF in the checklist loses the answer it already had.
+        # Records are cumulative, so without this a `failed` answer recorded
+        # before somebody switched the check off would be copied forward for
+        # ever and hold the subject at "issues" — switching a check off would
+        # stop new failures and leave the old one on screen with no way to
+        # clear it. The audit trail and the superseded record keep the history.
+        for key in switched_off & set(merged):
+            del merged[key]
+        # LEGACY ONLY. Exceptions stopped writing answers on 2026-09-14 — they
+        # are applied by `conformance.evaluate` now — but rows written before
+        # that carry `exception_id`, and one whose exception has since been
+        # revoked would otherwise be copied forward for ever. Nothing writes a
+        # new row of this shape, so this loop empties itself over time.
+        live_ids = {e.id for e in exceptions.live_for(db, kind, parent.id, facts).values()}
+        for key, entry in list(merged.items()):
+            exc_id = entry.get("exception_id")
+            if exc_id is not None and exc_id not in live_ids:
+                del merged[key]
         now = _utcnow().isoformat()
         for item in items:
             key = str(item.get("key", "")).strip()
@@ -392,17 +605,64 @@ def record_check(db: Session, kind: str, parent, version_id: int, actor: str,
                 # next person has no idea what to fix.
                 blocked.append(f"{key}: flagged needs a note saying what is wrong")
                 continue
+            # Length is checked at the WRITE, for every tier. The machine's own
+            # notes are 17 characters and a person's are 31; an agent's median
+            # is 367 and its tail is 3,316, which is where this came from.
+            over = too_long(item.get("note"), "item_note")
+            if over is not None:
+                blocked.append(f"{key}: the note is {over}")
+                continue
+            over = too_long(item.get("text"), "item_text")
+            if over is not None:
+                blocked.append(f"{key}: the check's own wording is {over}")
+                continue
+            if key in switched_off:
+                # Not a custom item: this key IS on the checklist, switched off
+                # for this subject. Storing it anyway would put the check back
+                # on screen for one part and make "off" mean nothing.
+                blocked.append(f"{key}: switched off in the checklist for this subject")
+                continue
             reason = str(item.get("reason") or "").strip()
             if result == "na" and actor_type != "machine":
-                # `na` closes an item for good, so it has to say WHICH way it
-                # does not apply — as a code, not prose. 138 retired `skipped`
-                # answers all carried reason "unstated" because the agent path
-                # never asked for one, and the health tab could only report
-                # them as a single number with no fix attached to it.
+                # `na` IS a standing exception now, not an answer (2026-09-14).
+                #
+                # The two said the same thing and only one of them lasted. An
+                # `na` answer lived on ONE version, so a pad move refused the
+                # carry and took the decision away: measured that day, the
+                # library held 314 live `na` answers, 312 of them written by
+                # agents, not one with a reason recorded, every one due to
+                # expire at the next version bump — while the table built to
+                # hold such decisions held ZERO rows.
+                #
+                # So this path GRANTS one instead of writing an answer. The
+                # item leaves the checklist denominator through
+                # `conformance.evaluate`, not through a record, which is what
+                # makes granting one on an item nobody has answered yet work at
+                # all.
                 if reason not in NA_REASONS:
                     blocked.append(
                         f"{key}: na needs a reason, one of {', '.join(NA_REASONS)}")
                     continue
+                note = str(item.get("note") or "").strip()
+                if not note:
+                    # The note is the ONLY place the reason will ever live, and
+                    # this answer now outlives the version it was written on.
+                    blocked.append(
+                        f"{key}: na is a standing exception now, so it needs a note "
+                        f"saying why — it outlives this version")
+                    continue
+                over = too_long(note, "item_note")
+                if over is not None:
+                    blocked.append(f"{key}: the exception note is {over}")
+                    continue
+                if (key, "") in exceptions.live_for(db, kind, parent.id, facts):
+                    continue  # already decided; re-stating it is not a new decision
+                pin = exceptions.DEFAULT_PIN.get(kind, ())
+                depends_on = {f: facts.get(f) for f in pin if facts.get(f) is not None}
+                exceptions.grant(
+                    db, kind, parent, key, reason=reason, note=note,
+                    actor=actor, actor_type=actor_type, depends_on=depends_on)
+                continue
             old = merged.get(key)
             # A key the checklist does not define is a CUSTOM check — one this
             # part needed and no checklist anticipated. It is legal (both the
@@ -417,10 +677,18 @@ def record_check(db: Session, kind: str, parent, version_id: int, actor: str,
             if old is not None and TIER.get(old.get("actor_type", "machine"), 0) > TIER.get(actor_type, 0):
                 blocked.append(f"{key}: already answered by {old.get('actor_type')}")
                 continue
+            # The severity the check carried WHEN IT WAS ANSWERED, stamped on
+            # the answer. The state has to distinguish an error from a warning,
+            # and re-reading today's checklist to find out would let an edit
+            # silently rewrite what a past record means — the same reason the
+            # record snapshots the list it was measured against.
+            severity = checklists.severity_of(
+                next((x for x in resolved["items"] if x["key"] == key), {}))
             entry = {
                 "key": key,
                 "text": text,
                 "result": result,
+                "severity": severity,
                 "note": (item.get("note") or "").strip() or None,
                 "actor": actor,
                 "actor_type": actor_type,
@@ -448,10 +716,33 @@ def record_check(db: Session, kind: str, parent, version_id: int, actor: str,
                 entry["reason"] = reason[:40]
             merged[key] = entry
 
+    # ---------------------------------------------------------- exceptions
+    # Applied by `conformance.evaluate`, NOT here. Until 2026-09-14 this
+    # function wrote an `na` answer for every live exception, which had two
+    # consequences worth remembering:
+    #
+    # 1. Granting one on an item nobody had answered yet did NOTHING until some
+    #    unrelated save happened to run this code. Measured: `fp.model_fit`
+    #    granted on footprint 117, item still open, 0/6 answered.
+    # 2. The answer it wrote had to be dropped BEFORE the incoming merge when
+    #    the exception was revoked, because it was written at the human tier
+    #    and the tier rule then blocked the machine from replacing it.
+    #
+    # Both problems are the same mistake: a decision about the PART stored on
+    # one VERSION. Computed, it applies the moment it is granted and stops the
+    # moment it is revoked, and neither needs a write.
+    applied: list[dict] = []
+
     # A verification — whoever wrote it — answers any open agent request for
     # this subject. Marking rather than deleting keeps "when did I ask" cheap.
-    for req in db.query(M.ReviewRequest).filter_by(
-            subject_kind=kind, subject_id=parent.id, done_at=None):
+    #
+    # `close_requests=False` exists for any writer that verifies nothing new —
+    # closing a queued request with one would delete somebody's ask and tell
+    # them it had been answered. Nothing passes it today; it stays because the
+    # next automated writer will need it.
+    for req in (db.query(M.ReviewRequest).filter_by(
+            subject_kind=kind, subject_id=parent.id, done_at=None)
+            if close_requests else []):
         req.done_at = _utcnow()
         req.done_by = actor
 
@@ -478,30 +769,27 @@ def record_check(db: Session, kind: str, parent, version_id: int, actor: str,
         details={"subject": getattr(parent, "name", parent.id), "record_id": record.id,
                  "actor_type": actor_type,
                  "items": len(items) if items is not None else None,
-                 "blocked": blocked or None},
+                 "blocked": blocked or None,
+                 "exceptions_applied": applied or None},
     ))
-    state = state_from_record(record, resolved["items"] if record.items is not None else None)
+    # The state MUST be read back through conformance: a `na` in this save has
+    # just become a standing exception, and the caller has to see the item
+    # closed rather than still open. `get` recomputes because the exception id
+    # is in the digest.
+    from . import conformance as conformance_svc
+
+    version = next((v for v in getattr(parent, "versions", []) if v.id == version_id), None)
+    conf_items, excused = conformance_svc.get(db, kind, parent, version)
+    state = state_from_record(record, resolved["items"], conf_items, excused)
     return {"record": record_json(record), "state": state, "blocked": blocked}
 
 
-def machine_check_on_publish(db: Session, kind: str, parent, version,
-                             comp: M.Component | None = None) -> dict | None:
-    """Run the validator on a just-published version and record the answers.
-
-    Called inside the publish transaction. Never raises — a broken validator
-    must not block a publish; it logs into the audit trail instead.
-    """
-    from . import validator
-
-    try:
-        items = validator.validate(db, kind, version, comp)
-    except Exception as e:  # noqa: BLE001 — validation must never block a publish
-        db.add(M.AuditLog(actor="validator", action="review.machine_error",
-                          entity_type=f"{kind}_version", entity_id=str(version.id),
-                          details={"error": f"{type(e).__name__}: {e}"}))
-        return None
-    return record_check(db, kind, parent, version.id, actor="validator",
-                        actor_type="machine", items=items, note=None)
+# `machine_check_on_publish` and `recheck_machine_tier` were DELETED on
+# 2026-09-14 (decision 0017). They existed to write the machine tier into a
+# record and then to un-stale it afterwards; conformance is computed now
+# (`services/conformance.py`), so there is nothing to write and nothing to
+# refresh. If you find yourself re-adding either, the question to ask first is
+# why a recomputable answer is being stored.
 
 
 def carry_geometry(db: Session, kind: str, parent, old_version, new_version) -> dict | None:

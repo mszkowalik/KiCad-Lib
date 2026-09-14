@@ -264,6 +264,7 @@ export default function SimModelDetail() {
               className="text"
               placeholder="What changed, and against which datasheet"
               value={comment}
+              maxLength={600}
               onChange={(e) => setComment(e.target.value)}
               aria-label="Version comment"
             />
