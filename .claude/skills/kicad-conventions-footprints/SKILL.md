@@ -2,7 +2,7 @@
 name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints, and the naming standard: the KLC tier rule (Tier 0 stock names are frozen), the twelve-slot field order, decided spellings (_HandSoldering, vendor tokens, no rotation in names), the 7Sigma: namespace, validator-enforced pad/silk/fab/courtyard style, the 0.1mm grid, NPTH mechanical holes, thermal vias, non-electrical parts, and why connector pad numbering always follows the datasheet. Use when naming, picking or authoring any footprint."
 ---
-<!-- platform-skill: conventions-footprints v38 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v39 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 Footprints live in the `7Sigma:` namespace and are always referenced as
@@ -72,6 +72,9 @@ If the land genuinely does not fit the new part, that is a **new footprint**, no
 edit to the old one.
 
 ### One land per standard package — never multiply pad locations
+
+> Asked on every footprint as **`fp.one_land_per_package`**.
+
 
 **Decided by Mateusz Kowalik on 2026-09-06.** When a new part comes in a
 package the library already holds a land for — a 6x6 mm SMD tactile switch,
@@ -291,6 +294,10 @@ that our copper matches stock, not a licence to make our copper *be* stock.
 
 ### Run this test in order, stop at the first Yes
 
+> Asked as **`fp.tier`**, which also covers verifying the copper before a
+> Tier 0 claim.
+
+
 | # | Question | Result |
 |---|---|---|
 | 1 | Does KiCad stock ship a footprint whose land pattern **and pad numbering** match ours? | **Tier 0** — adopt its filename byte-for-byte. Stop. |
@@ -362,6 +369,9 @@ is not a reason — every rename costs somebody a board update.
 
 ### Field order — twelve slots, never reordered
 
+> Asked as **`fp.field_order`**.
+
+
 ```
 [<Family>[_<Function>]_] [<Vendor>_] [<Series>_] <Package|MPN>
    [-<pins>[-<n>EP|-<n>MP|-<n>SH]] | [_<rows>x<pos>] | [-<n>Pin]
@@ -378,12 +388,22 @@ is not a reason — every rename costs somebody a board update.
 
 ### Global spellings — decided, do not re-litigate
 
-| Rule | Decision |
-|---|---|
-| Hand-solder variants | **`_HandSoldering`** (matches KLC F2.1 #10). Never `_HandSolder`/`_Handsoldering` for house-minted names. Tier 0 stock names keep their own spelling, so `_HandSolder` will legitimately appear on adopted stock footprints — that is correct, not drift. |
-| Vendor token | Canonical manufacturer name from the library conventions table, **spaces and dots removed, casing kept, never abbreviated or truncated**: `MEAN WELL`→`MEANWELL`, `Texas Instruments`→`TexasInstruments`, `Diodes Incorporated`→`DiodesIncorporated`, `OSRAM`→`OSRAM`. Tier 0 exempt. |
-| Rotation / origin | **Never encoded in a name.** A rotated or mis-origined import is a *geometry* defect to fix, not a fact to record in the string. |
-| Character set | `A-Z a-z 0-9 _ . , + -` only. No spaces ever. Commas only to reproduce a vendor's own comma-decimal MPN (`MC_1,5`). |
+**`fp.name_charset` and `fp.name_spellings` enforce these**, and both are clean
+across all 212 footprints today.
+
+- `_HandSoldering`, matching KLC F2.1 #10 — never `_HandSolder` or
+  `_Handsoldering` on a house-minted name. A Tier 0 stock name keeps its own
+  spelling, so `_HandSolder` will legitimately appear on an adopted stock
+  footprint and wants a standing exception, not a rename.
+- **Vendor token**: the canonical manufacturer name with spaces and dots
+  removed, casing kept, never abbreviated — `MEAN WELL`→`MEANWELL`,
+  `Diodes Incorporated`→`DiodesIncorporated`. Tier 0 exempt. Not checkable:
+  the token is only correct relative to the manufacturer the part actually has.
+- **Rotation is never encoded in a name.** A rotated or mis-origined import is
+  a geometry defect to fix, not a fact to record in the string.
+- Character set `A-Z a-z 0-9 _ . , + -`, no spaces. A comma only reproduces a
+  vendor's own comma-decimal part number (`MC_1,5`).
+
 
 ### One family, two family words — verify against the stock filenames
 
@@ -571,6 +591,11 @@ where it would break.
 
 ### The cathode bar
 
+> The width is machine-checked; the ORIENTATION is asked as
+> **`fp.cathode_bar`**, because a mirrored bar passes every width and layer
+> check there is.
+
+
 A polarity mark is a **single straight line**. Four rules, all enforced or
 checkable:
 
@@ -672,10 +697,11 @@ redrawn by hand) or could break correctness.
 )
 ```
 
-Always the `${SEVENSIGMA_DIR}` variable — never a hardcoded path, never
-`${KIPRJMOD}`, never a folder in your home directory. A footprint that names a
-path outside `${SEVENSIGMA_DIR}/3DModels/` is REFUSED, so the file must be in
-the library before the footprint points at it.
+**`fp.model_path` enforces the prefix.** Always the `${SEVENSIGMA_DIR}`
+variable — never a hardcoded path, never `${KIPRJMOD}`, never a folder in your
+home directory. A footprint that names a path outside
+`${SEVENSIGMA_DIR}/3DModels/` is REFUSED, so the file must be in the library
+before the footprint points at it.
 
 **Every footprint carries a model — no exceptions.** A footprint proposed with
 no `(model ...)` line is incomplete, even when nothing suitable is stored yet,
@@ -855,6 +881,11 @@ above reached the user as a flag first.
 
 ## 6. Mechanical holes must be NPTH
 
+> `fp.zero_annulus` catches the plated hole with no annular ring.
+> **`fp.npth_mechanical`** asks the half it cannot: whether a hole that IS
+> plated should have been.
+
+
 > **The platform checks half of this.** `fp.zero_annulus` counts plated holes
 > whose copper does not exceed their drill and fails if there is one. It cannot
 > tell you that a hole SHOULD have been mechanical — that is the judgment below.
@@ -879,6 +910,9 @@ If a hole genuinely should be plated and netted, give it a real ring
 (size ≥ drill + 0.3 mm) and a pad number instead.
 
 ## 7. Thermal vias under exposed pads
+
+> Asked as **`fp.thermal_vias`**.
+
 
 KiCad has no via primitive inside a footprint — thermal vias are **thru-hole
 pads sharing the exposed pad's number**, so they inherit its net.

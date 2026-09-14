@@ -292,6 +292,18 @@ FACTS: tuple[dict, ...] = (
     {"name": "$symbol_bottom_edge_pins", "kinds": ("component", "symbol"), "lazy": True,
      "noun": "count of signal or supply pins on the bottom edge",
      "what": "signal or supply pins on the BOTTOM edge"},
+    #: Stacking shows two pin NUMBERS shorted at one point, so it is counted by
+    #: POSITION. 185 of 207 symbols have none, and the question was being asked
+    #: of every one of them — 136 carried a hand-written `na` saying so.
+    {"name": "$symbol_power_pins", "kinds": ("component", "symbol"), "lazy": True,
+     "noun": "count of supply pins", "what": "pins typed power_in or power_out"},
+    {"name": "$symbol_pin_names_hidden", "kinds": ("component", "symbol"), "lazy": True,
+     "noun": "the symbol's hidden-pin-names flag",
+     "claim": "The symbol hides its pin names",
+     "what": "true when (pin_names (hide yes)) is set on the symbol"},
+    {"name": "$symbol_stacked_pins", "kinds": ("component", "symbol"), "lazy": True,
+     "noun": "count of stacked pins",
+     "what": "pins sharing a position with another pin in the same unit"},
     {"name": "$symbol_stub_lengths", "kinds": ("component", "symbol"), "lazy": True,
      "noun": "count of different pin stub lengths",
      "what": "how many DISTINCT pin stub lengths the drawing mixes — more than one is the defect"},
@@ -342,6 +354,9 @@ FACTS: tuple[dict, ...] = (
     #: outline, pitch, courtyard and pad count all still agree — and only the
     #: numbers are wrong, which is why one shipped. Reported as a CORNER rather
     #: than a boolean so the rule that reads it stays in the checklist.
+    {"name": "$footprint_models_offpath", "kinds": ("component", "footprint"), "lazy": True,
+     "noun": "count of 3D references outside the library path",
+     "what": "model paths that do not start ${SEVENSIGMA_DIR}/3DModels/"},
     {"name": "$footprint_smd_rratio_off", "kinds": ("component", "footprint"), "lazy": True,
      "noun": "count of roundrect pads off the house corner ratio",
      "what": "roundrect SMD pads whose rratio is not 0.25"},
@@ -357,6 +372,9 @@ FACTS: tuple[dict, ...] = (
     #: between two facts belongs HERE, in Python, and never in a boolean
     #: assertion language. The fact vocabulary is the extension point; the
     #: assertion vocabulary stays closed.
+    {"name": "$electrical_props", "kinds": ("component",), "lazy": True,
+     "noun": "count of the part's own electrical properties",
+     "what": "properties that are not identity, sourcing, KiCad fields or simulation"},
     {"name": "$pins_match_pads", "kinds": ("component",), "lazy": True,
      "noun": "pin set against the pad set",
      "claim": "The symbol's pin numbers and the footprint's pad numbers are the same set",
@@ -477,6 +495,7 @@ def subject_facts(db: Session, kind: str, parent, version_id: int | None) -> dic
         else:
             providers["$footprint_has_model3d"] = lambda v=version: (
                 "true" if (v.models or []) else "false")
+            providers["$footprint_models_offpath"] = lambda v=version: _models_offpath(v)
         return _LazyFacts(facts, providers)
     cv = db.get(M.ComponentVersion, version_id) if version_id else None
     if cv is None:
@@ -550,6 +569,7 @@ def _derived_providers(db: Session, cv: M.ComponentVersion) -> dict:
 
     out["$symbol_sim_link"] = sim_link
     out["$footprint_has_model3d"] = has_model
+    out["$footprint_models_offpath"] = lambda: _models_offpath(cv.footprint_version)
 
     # ---------------------------------------------------------- cross-fact
     # A comparison between two facts, in Python. `assert` is deliberately one
@@ -584,6 +604,32 @@ def _derived_providers(db: Session, cv: M.ComponentVersion) -> dict:
         if not pin_nums or not pad_nums:
             return None, None
         return pin_nums, pad_nums
+
+    #: Keys every component carries as housekeeping — identity, sourcing, the
+    #: KiCad fields and the simulation block. What is left is the part's own
+    #: electrical data, which is what `cmp.electrical` is about.
+    HOUSEKEEPING = {"Value", "Footprint", "Datasheet", "ki_description",
+                    "ki_keywords", "ki_fp_filters", "comp_type", "LCSC Part"}
+    HOUSEKEEPING_PREFIXES = ("Manufacturer", "Supplier", "Sim.")
+
+    def electrical_props():
+        """How many properties are the part's OWN data rather than housekeeping.
+
+        `cmp.electrical` asks whether the electrical values match the datasheet,
+        and 109 components carry no such value at all — a mounting hole, a logo,
+        a test-point pad. The question is not about them, and 45 of them carried
+        a hand-written "no discrete electrical properties" answer saying so.
+        A category that REQUIRES a property still has `cmp.required_props`, so
+        nothing is hidden by this: the two compose.
+        """
+        n = 0
+        for prop in cv.properties:
+            if prop.is_null or prop.value in (None, ""):
+                continue
+            if prop.key in HOUSEKEEPING or prop.key.startswith(HOUSEKEEPING_PREFIXES):
+                continue
+            n += 1
+        return str(n)
 
     def pins_match_pads():
         pin_nums, pad_nums = _number_sets()
@@ -642,6 +688,7 @@ def _derived_providers(db: Session, cv: M.ComponentVersion) -> dict:
             return "true"
         return "false"
 
+    out["$electrical_props"] = electrical_props
     out["$pins_match_pads"] = pins_match_pads
     out["$pins_without_pads"] = pins_without_pads
     out["$pads_without_pins"] = pads_without_pins
@@ -914,6 +961,52 @@ def _symbol_providers(source_of) -> dict:
                            if edge_of(p) == edge and p.get("type") in _ELECTRICAL))
         return fn
 
+    #: Pin types that carry a supply rail. `power_out` is included: a regulator's
+    #: output is a rail on the symbol that draws it.
+    _RAILS = {"power_in", "power_out"}
+
+    def power_pins():
+        """How many supply pins the symbol draws.
+
+        What the rail-marking rules are about: a symbol with no rails cannot
+        have a rail drawn the wrong way round.
+        """
+        if not pins():
+            return None
+        return str(sum(1 for p in pins() if p.get("type") in _RAILS))
+
+    def pin_names_hidden():
+        """Whether the symbol hides its pin names.
+
+        `(pin_names (hide yes))` is set on the SYMBOL — KiCad silently drops a
+        per-pin `(hide yes)` inside a name, so this is the only place the flag
+        can live, and it is the flag the triangle families depend on.
+        """
+        src = source_of() or ""
+        if "(pin_names" not in src:
+            return "false"
+        return "true" if re.search(r"\(pin_names[^)]*\(?hide\s+yes", src) else "false"
+
+    def stacked_pins():
+        """Pins sharing a position with another pin in the same unit.
+
+        Stacking is how a symbol shows two pin NUMBERS shorted at one point, so
+        it is detected by POSITION, never by number — the numbers differ, which
+        is the whole point of it. Counting shared numbers instead reports zero
+        on this library while 22 symbols really do stack.
+        """
+        if not pins():
+            return None
+        seen: dict = {}
+        for pin in pins():
+            at = pin.get("at") or []
+            if len(at) < 2:
+                continue
+            spot = (round(float(at[0]), 4), round(float(at[1]), 4),
+                    (pin.get("unit") or [0])[0])
+            seen[spot] = seen.get(spot, 0) + 1
+        return str(sum(c - 1 for c in seen.values() if c > 1))
+
     def stub_lengths():
         """How many DISTINCT stub lengths the drawing mixes.
 
@@ -928,6 +1021,9 @@ def _symbol_providers(source_of) -> dict:
         "$symbol_reference": reference,
         "$symbol_top_edge_pins": on_edge("top"),
         "$symbol_bottom_edge_pins": on_edge("bottom"),
+        "$symbol_power_pins": power_pins,
+        "$symbol_pin_names_hidden": pin_names_hidden,
+        "$symbol_stacked_pins": stacked_pins,
         "$symbol_stub_lengths": stub_lengths,
         "$symbol_pin_count": lambda: str(len(pins())) if pins() else None,
         # DISTINCT numbers, which is what compares against a pad set: stacked
@@ -944,6 +1040,26 @@ def _symbol_providers(source_of) -> dict:
         "$symbol_on_board": lambda: "false" if re.search(
             r"\(on_board\s+no\)", source_of() or "") else "true",
     }
+
+
+#: Where a 3D model reference has to point. The path is KiCad's own variable
+#: form, so it resolves for every user without a per-machine setting.
+MODEL_PREFIX = "${SEVENSIGMA_DIR}/3DModels/"
+
+
+def _models_offpath(version) -> str | None:
+    """How many of this footprint's 3D references sit outside the library path."""
+    if version is None:
+        return None
+    models = version.models or []
+    if not models:
+        return None
+    n = 0
+    for entry in models:
+        path = entry if isinstance(entry, str) else (entry or {}).get("path") or ""
+        if path and not str(path).startswith(MODEL_PREFIX):
+            n += 1
+    return str(n)
 
 
 def when_matches(when: dict | None, facts: dict | None) -> bool:

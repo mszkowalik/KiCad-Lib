@@ -2,7 +2,7 @@
 name: kicad-conventions-symbols
 description: "Choosing AND authoring base symbols: pin-type directionality from the component's own viewpoint, V.24 UART and SPI role policy, functional pin grouping, box/pitch geometry formulas, and stacked (shorted) pins. Use when picking a base symbol or writing a propose_symbol_edit."
 ---
-<!-- platform-skill: conventions-symbols v19 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-symbols v20 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Symbol conventions
 
 Every component is built on a **base symbol** — a graphical template with pins.
@@ -188,6 +188,9 @@ Separate consecutive groups with one blank pin slot (one 2.54 mm step).
 
 ### Ground goes at the bottom of the left side
 
+> Asked as **`sym.ground_placement`**.
+
+
 Put every supply pin at the top of the left side. Put every GND pin at the
 bottom of the left side. Do not place ground directly below the main supply.
 
@@ -214,6 +217,9 @@ parts, where the top and bottom edges carry the asynchronous controls.
 House rule from the library owner, recorded 2026-08-27.
 
 ### Two-sided bus parts: logic left, bus right
+
+> Asked as **`sym.bus_sides`**.
+
 
 A differential bus transceiver has two distinct faces, the host logic side and
 the bus side. Put the host logic pins (TXD, RXD, mode control) on the **left**
@@ -316,11 +322,22 @@ constraints this produces for each family.
 > default sheet", which is not so: KiCad's default schematic grid includes
 > 50 mil (1.27 mm).
 >
-> So 2.54 mm reads as the rule for a symbol that can afford it, and 1.27 mm as
-> the floor. **Which of the two is the house rule has not been decided** — ask
-> before tightening the check or re-drawing a dense part.
+> **The two reconcile as spacing versus grid.** Every off-2.54 symbol inspected
+> has correct 2.54 mm pin-to-pin SPACING and sits on 1.27 only because it is
+> centred on the origin with an even pin count — `Conn_01x06` at ±1.27 / ±3.81 /
+> ±6.35 is exactly 2.54 apart, `WS2812` at ±1.27 likewise. Centring an even-pin
+> symbol on the origin makes the absolute 2.54 grid unreachable, and KiCad's own
+> library does the same.
+>
+> So: **pin-to-pin spacing 2.54 mm, absolute grid 1.27 mm.** Nothing in the
+> library violates that, and `sym.pins_grid` already enforces it.
+> **Not yet confirmed by the library owner** — do not re-centre a symbol to
+> chase the absolute grid until it is.
 
 ## 5. Drawing families
+
+> Asked as **`sym.drawing_family`**.
+
 
 Three families, decided by the library owner on 2026-08-27 and applied across
 the library. Follow the family, not your own taste.
@@ -364,8 +381,15 @@ Precedent: `74LVC1G14`, `74LVC1G17`, `74LVC1G125`, `74LVC2G34`.
 
 ### 5.3 Hidden pin names and orange markers
 
+> Asked as **`sym.hidden_names`**.
+
+
 On **both** triangle families, set `(pin_names (hide yes))` on the symbol. Mark
 the pins with bold graphic text instead:
+
+> The rail rules below are asked as **`sym.rail_polarity`**,
+> **`sym.rail_negative_mark`** and **`sym.rail_marks_not_names`**, on the 116
+> symbols that actually draw supply pins.
 
 - Inverting input `-` at `(-6.35, 2.54)`, non-inverting `+` at `(-6.35, -2.54)`
   — analog family only.
@@ -481,6 +505,11 @@ Precedent: `74LVC1G125` (`OE`), `74LVC1G17` (`NC`). Both are SC-70-5, so pin 1
 sits in the same place on both drawings.
 
 ## 6. Stacked (shorted) pins
+
+> **`sym.stacked` is only asked of a symbol that actually stacks pins** —
+> 22 of 207 do. Stacking is detected by POSITION, since the whole point is
+> two different numbers shorted at one point.
+
 
 KiCad shorts pads **inside the symbol** by stacking pins: two or more pins at
 the *identical* `(at x y angle)` with the *same name* form one electrical node.
