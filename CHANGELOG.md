@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-14 — Fix: an empty table took the page down
+
+Any list with a default sort crashed when it had no rows. The sort asks the
+first row what type it holds to decide between numeric and text ordering, and
+on an empty list there is no first row, so the question threw and the whole
+page went blank.
+
+It surfaced on Reviews -> Exceptions, which is the first list that is
+legitimately empty on a library with no standing decisions recorded yet. It
+worked in testing because the test library had six.
+
 ## 2026-09-14 — An explanation has a length now
 
 Every field that holds a written reason is capped, and an over-long one is

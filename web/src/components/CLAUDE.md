@@ -227,6 +227,19 @@ looks clickable reads as no target. And **a section that is showing a problem
 opens itself**: `ReviewCard` unfolds its checklist when the state is `failed`,
 and `VerificationSection` opens the first failing row.
 
+## A table with no rows still runs its sort
+
+`DataTable` decides numeric-versus-text ordering by asking the FIRST ROW what
+type the sort column holds. On an empty list there is no first row, so a `get`
+that reaches into it throws and takes the page down — a blank screen, not an
+empty table.
+
+It shipped to production on 2026-09-14 and broke Reviews → Exceptions, the
+first list that is legitimately empty. It passed every local test because the
+dev library had six rows. **When a list can be empty in the real world, test it
+empty** — filtering every row out is enough, and it is one line in a browser
+check.
+
 ## Every table: fixed layout, no horizontal scroll, single-line rows
 
 This is a hard rule for **all** tables in the platform — not just BOM/costs or

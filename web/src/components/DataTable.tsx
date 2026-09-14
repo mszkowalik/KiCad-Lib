@@ -165,7 +165,13 @@ export default function DataTable<T>({
       );
     }
     const col = sort !== null && !serverSort ? columns.find((c) => c.key === sort.key) : undefined;
-    if (sort !== null && col !== undefined) {
+    // `out.length > 0` is load-bearing: the numeric probe below reads the FIRST
+    // ROW, and on an empty table that is `undefined`, so any `get` that reaches
+    // into the row throws and takes the whole page with it. It crashed the
+    // Exceptions tab on production, where the list is legitimately empty, while
+    // working locally where it had six rows (2026-09-14). Sorting nothing is
+    // also simply pointless.
+    if (sort !== null && col !== undefined && out.length > 0) {
       const mul = sort.dir === "asc" ? 1 : -1;
       const key = col.sortValue ?? col.get;
       // A `sortValue` returning a number sorts numerically even when the column
