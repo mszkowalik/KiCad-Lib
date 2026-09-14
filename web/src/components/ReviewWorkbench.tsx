@@ -14,20 +14,23 @@ import {
   type VersionDetail,
 } from "../api";
 import ReviewCard from "./ReviewCard";
+import ReviewSubjectRows from "./ReviewSubjectRows";
 import GeometryPreview from "./GeometryPreview";
 import { ErrorBanner, Spinner } from "./Ui";
-import PdfFrame from "./PdfFrame";
 
 /**
  * The verification workbench — everything a check needs, in one expansion row.
  *
  * Verifying used to mean: queue → component page → three cards → the datasheet
  * on another screen → back → next row, four hundred times. This puts the
- * checklist and the thing it is checked AGAINST side by side: the archived
- * datasheet renders in place (verification IS comparison), the symbol and
- * footprint render beside it, and the ReviewCards write the same records the
- * component page writes. Prev/next walk the filtered queue without closing
- * the bench.
+ * checklist and the drawings it is checked against side by side, and the
+ * ReviewCards write the same records the component page writes. Prev/next walk
+ * the filtered queue without closing the bench.
+ *
+ * The datasheet is a LINK, not a frame (user request 2026-09-14). It used to
+ * render in place, and a 40-page viewer with its own scroll, zoom and page
+ * state pushed the checks off the screen they were meant to sit beside. In a
+ * tab it can go on a second monitor, which is how it is actually read.
  */
 export function ComponentWorkbench({
   compId,
@@ -40,7 +43,6 @@ export function ComponentWorkbench({
   const [detail, setDetail] = useState<ComponentDetail | null>(null);
   const [version, setVersion] = useState<VersionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [dsIndex, setDsIndex] = useState(0);
   // The pinned footprint's LIVE version id — the preview URL's cache key, so a
   // freshly pushed land pattern shows the new drawing rather than the picture
   // the browser already has. The component's own version tells us which
@@ -52,7 +54,6 @@ export function ComponentWorkbench({
     setDetail(null);
     setVersion(null);
     setError(null);
-    setDsIndex(0);
     setFootprintVersionId(null);
     getComponent(compId, ctrl.signal)
       .then(async (d) => {
@@ -77,7 +78,6 @@ export function ComponentWorkbench({
   const live = detail.versions.find((v) => v.version_no === detail.current_version_no) ?? null;
   // the KiCad-native datasheet first, then anything with an archived file
   const sheets: DatasheetRow[] = (version?.datasheets ?? []).filter((d) => d.has_file);
-  const sheet = sheets[dsIndex] ?? null;
 
   return (
     <div className="workbench">
@@ -88,23 +88,28 @@ export function ComponentWorkbench({
           </Link>{" "}
           <span className="muted mono">v{detail.current_version_no ?? "?"}</span>
         </div>
-        <ReviewCard kind="component" id={compId} label="Component data" onChange={onChanged ? () => onChanged() : undefined} />
-        {live?.symbol ? (
-          <ReviewCard
-            kind="symbol"
-            id={live.symbol.id}
-            label={`Symbol — ${live.symbol.name}`}
-            onChange={onChanged ? () => onChanged() : undefined}
-          />
-        ) : null}
-        {live?.footprint ? (
-          <ReviewCard
-            kind="footprint"
-            id={live.footprint.id}
-            label={`Footprint — ${live.footprint.name}`}
-            onChange={onChanged ? () => onChanged() : undefined}
-          />
-        ) : null}
+        {/* One fold per subject, same component as the component page. The
+            three cards used to be stacked OPEN, so the checklist somebody came
+            for started below two other subjects' checks (user report
+            2026-09-14). */}
+        <ReviewSubjectRows
+          rows={[
+            { key: "component", label: "Component data", id: compId },
+            ...(live?.symbol
+              ? [{ key: "symbol" as const, label: `Symbol — ${live.symbol.name}`, id: live.symbol.id }]
+              : []),
+            ...(live?.footprint
+              ? [{
+                  key: "footprint" as const,
+                  label: `Footprint — ${live.footprint.name}`,
+                  id: live.footprint.id,
+                }]
+              : []),
+          ]}
+          parts={detail.review?.parts ?? {}}
+          onChanged={onChanged ? () => onChanged() : undefined}
+          storageKey={`workbench:${compId}`}
+        />
       </div>
       <div className="workbench-side">
         <div className="workbench-previews">
@@ -126,28 +131,28 @@ export function ComponentWorkbench({
             />
           ) : null}
         </div>
-        {sheet ? (
-          <>
-            {sheets.length > 1 ? (
-              <div className="btn-row">
-                {sheets.map((d, i) => (
-                  <button
-                    key={d.id}
-                    type="button"
-                    className={"btn btn-sm" + (i === dsIndex ? " btn-primary" : "")}
-                    onClick={() => setDsIndex(i)}
-                  >
-                    {d.label || `Datasheet ${i + 1}`}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            <PdfFrame
-              className="workbench-datasheet"
-              src={datasheetFileUrl(sheet.id)}
-              title={sheet.label || "datasheet"}
-            />
-          </>
+        {/* A LINK, not an embedded viewer (user request 2026-09-14). The
+            bench renders the drawings because they are small and there is no
+            other way to see them beside the checklist; a datasheet is 40 pages
+            in a viewer with its own scroll, zoom and page state, and it pushed
+            the checks off the screen it was meant to sit beside. Opened in a
+            tab it can live on a second monitor, which is how it is actually
+            read. */}
+        {sheets.length ? (
+          <div className="btn-row">
+            {sheets.map((d, i) => (
+              <a
+                key={d.id}
+                className="btn btn-sm"
+                href={datasheetFileUrl(d.id)}
+                target="_blank"
+                rel="noreferrer"
+                title="Opens in a new tab"
+              >
+                {d.label || `Datasheet ${i + 1}`} ↗
+              </a>
+            ))}
+          </div>
         ) : (
           <p className="muted">
             No archived datasheet to compare against — items that need one are honest skips

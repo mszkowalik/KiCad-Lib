@@ -35,6 +35,7 @@ import RunDetail from "./pages/RunDetail";
 import Account from "./pages/Account";
 import Admin from "./pages/Admin";
 import Simulator from "./pages/Simulator";
+import useScrollRestore from "./scrollRestore";
 import Skills from "./pages/Skills";
 import Templates from "./pages/Templates";
 import TemplateDetail from "./pages/TemplateDetail";
@@ -140,6 +141,10 @@ function UserMenu() {
 /** The app itself. Rendered only AFTER the gate has a signed-in user, so no
  *  screen and no background fetch here ever runs anonymously. */
 function Shell() {
+  // Sitewide: every scroll position survives a reload and back/forward. The
+  // browser cannot do it here — it restores the WINDOW, and this layout scrolls
+  // `.main` / `.main-solo` inside a full-height shell. See `scrollRestore.ts`.
+  useScrollRestore();
   return (
     <DialogProvider>
       <div className="app">

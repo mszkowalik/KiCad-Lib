@@ -307,8 +307,15 @@ def state_from_record(record: M.ReviewRecord | None, checklist_items: list[dict]
     # added explicitly or a retired answer on one would read as fully checked.
     unanswered = ([k for k in expected if k not in real]
                   + [k for k in legacy_skipped if k not in expected])
-    answered = sum(1 for i in by_key.values()
-                   if i.get("result") in ("checked", "na") and i.get("key") not in excused_keys)
+    # Counted over `expected` ONLY. An answer on a `custom:` key is real work and
+    # is shown on the card, but it is not one of the questions this subject is
+    # measured against, and counting it made the fraction contradict the state:
+    # `SMAJ24CA` read "13/13" beside "partial" with four checklist items open,
+    # because four custom answers filled the places of four unanswered ones
+    # (2026-09-14). `total` is the denominator, not the larger of two numbers.
+    expected_set = set(expected)
+    answered = sum(1 for k, i in by_key.items()
+                   if k in expected_set and i.get("result") in ("checked", "na"))
 
     if failed or conf_failed:
         state = "failed"
@@ -317,13 +324,35 @@ def state_from_record(record: M.ReviewRecord | None, checklist_items: list[dict]
     else:
         state = "checked"
     return {"state": state, "provenance": _provenance(record), "record_id": record.id,
-            "answered": answered, "total": max(len(expected), len(by_key)),
+            "answered": answered, "total": len(expected),
             # legacy only: the count of retired `skipped` answers still stored
             "skipped": len(legacy_skipped), "failed": len(failed) + conf_failed,
             "flagged": len(flagged), "warnings": len(warnings) + conf_warnings,
             "excused": len(excused),
             "conforms": None if conf is None else conf["conforms"],
             "unanswered": unanswered}
+
+
+def _expected_of(db: Session, record: M.ReviewRecord | None,
+                 judgment: list[dict] | None) -> list[dict] | None:
+    """What a LIVE state is measured against: TODAY's judgment items.
+
+    A current version's state is not history. A list row used to measure it
+    against `_checklist_items_of` — the record's own snapshot — so a subject
+    answered under an older, shorter checklist read `checked` on the row and
+    `partial` the moment you opened it, the two contradicting each other on
+    screen (user report 2026-09-14). Measured on
+    `VQFN-40-1EP_5x5mm_P0.4mm_EP3.3x3.3mm_ThermalVias`: 7/7 against the snapshot,
+    7/14 against the checklist that actually applies.
+
+    The snapshot stays right for HISTORY — what a past record was measured
+    against — which is `_checklist_items_of` and the history list, not this.
+
+    `judgment` comes from the conformance cache, which is keyed on a digest that
+    already covers the resolved checklist. None means the cache has not reached
+    this subject yet, and then the snapshot is the best available answer.
+    """
+    return _checklist_items_of(db, record) if judgment is None else judgment
 
 
 def _checklist_items_of(db: Session, record: M.ReviewRecord | None) -> list[dict] | None:
@@ -372,9 +401,11 @@ def version_state(db: Session, kind: str, subject_id: int, version_id: int | Non
     rows = records_for(db, kind, subject_id) if rows is None else rows
     record = effective_record(rows, version_id)
     excused: list[dict] = []
+    judgment: list[dict] | None = None
     if conformance is None:
-        conformance, excused = conformance_svc.cached(db, kind, version_id)
-    return state_from_record(record, _checklist_items_of(db, record), conformance, excused)
+        conformance, excused, judgment = conformance_svc.cached(db, kind, version_id)
+    return state_from_record(record, _expected_of(db, record, judgment),
+                             conformance, excused)
 
 
 # --------------------------------------------------- component aggregate state
@@ -460,10 +491,13 @@ def states_for_components(db: Session, comps: list[M.Component],
     # whole reason `models.Conformance` exists. A row the cache has not got
     # yields `conforms: None`, which reads as "not evaluated" and never as
     # "conforms"; the detail view recomputes.
-    def _conf(kind: str, version_ids: set[int]) -> dict[int, tuple[list[dict], list[dict]]]:
+    def _conf(kind: str, version_ids: set[int]
+              ) -> dict[int, tuple[list[dict], list[dict], list[dict] | None]]:
         if not version_ids:
             return {}
-        return {r.subject_version_id: (list(r.items or []), list(r.excused or []))
+        return {r.subject_version_id: (
+                    list(r.items or []), list(r.excused or []),
+                    None if r.judgment is None else list(r.judgment))
                 for r in db.query(M.Conformance).filter(
                     M.Conformance.subject_kind == kind,
                     M.Conformance.subject_version_id.in_(version_ids))}
@@ -479,20 +513,20 @@ def states_for_components(db: Session, comps: list[M.Component],
             out[c.id] = {"state": "unreviewed", "parts": {}, "blockers": [], "provenance": None}
             continue
         crec = effective_record(comp_rows.get(c.id, []), cv.id)
-        c_items, c_exc = comp_conf.get(cv.id, (None, []))
+        c_items, c_exc, c_judg = comp_conf.get(cv.id, (None, [], None))
         parts = {"component": state_from_record(
-            crec, _checklist_items_of(db, crec), c_items, c_exc)}
+            crec, _expected_of(db, crec, c_judg), c_items, c_exc)}
         if cv.symbol_version_id and cv.symbol_version_id in sym_parent:
             rec = effective_record(sym_rows.get(sym_parent[cv.symbol_version_id], []),
                                    cv.symbol_version_id)
-            s_items, s_exc = sym_conf.get(cv.symbol_version_id, (None, []))
-            parts["symbol"] = state_from_record(rec, _checklist_items_of(db, rec),
+            s_items, s_exc, s_judg = sym_conf.get(cv.symbol_version_id, (None, [], None))
+            parts["symbol"] = state_from_record(rec, _expected_of(db, rec, s_judg),
                                                 s_items, s_exc)
         if cv.footprint_version_id and cv.footprint_version_id in fp_parent:
             rec = effective_record(fp_rows.get(fp_parent[cv.footprint_version_id], []),
                                    cv.footprint_version_id)
-            f_items, f_exc = fp_conf.get(cv.footprint_version_id, (None, []))
-            parts["footprint"] = state_from_record(rec, _checklist_items_of(db, rec),
+            f_items, f_exc, f_judg = fp_conf.get(cv.footprint_version_id, (None, [], None))
+            parts["footprint"] = state_from_record(rec, _expected_of(db, rec, f_judg),
                                                    f_items, f_exc)
         worst = min(parts.values(), key=lambda p: STATE_RANK[p["state"]])
         blockers = [f"{name}: {p['state']}" for name, p in parts.items() if p["state"] != "checked"]
@@ -779,7 +813,7 @@ def record_check(db: Session, kind: str, parent, version_id: int, actor: str,
     from . import conformance as conformance_svc
 
     version = next((v for v in getattr(parent, "versions", []) if v.id == version_id), None)
-    conf_items, excused = conformance_svc.get(db, kind, parent, version)
+    conf_items, excused, _judgment = conformance_svc.get(db, kind, parent, version)
     state = state_from_record(record, resolved["items"], conf_items, excused)
     return {"record": record_json(record), "state": state, "blocked": blocked}
 

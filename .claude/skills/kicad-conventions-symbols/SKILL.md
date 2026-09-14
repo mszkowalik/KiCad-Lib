@@ -1,654 +1,125 @@
 ---
 name: kicad-conventions-symbols
-description: "Choosing AND authoring base symbols: pin-type directionality from the component's own viewpoint, V.24 UART and SPI role policy, functional pin grouping, box/pitch geometry formulas, and stacked (shorted) pins. Use when picking a base symbol or writing a propose_symbol_edit."
+description: "Choosing AND authoring base symbols: how to publish one, and the index of every symbol rule with the check that now holds it. The rules themselves live in the symbol checklist — read them with get_review_checklist('symbol'). Use when picking a base symbol or writing a propose_symbol_edit."
 ---
-<!-- platform-skill: conventions-symbols v20 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-symbols v22 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Symbol conventions
 
+**The rules are checks now, not prose.** Every convention this document used to
+state is a checklist item on the symbol base checklist, and the item carries the
+data: the pin-type table, the grouping lists, the geometry figures, the three
+drawing families with their coordinates, and the stacking decisions. Read them
+with `get_review_checklist("symbol")` — once, before you author or verify — and
+answer them when you publish.
+
+What is left here is what a check cannot hold: how to publish, and which check
+to open for which question.
+
+## Publishing
+
 Every component is built on a **base symbol** — a graphical template with pins.
-You can both *choose* an existing one and *author* a new or revised one:
 `propose_symbol_edit(name, source_text, comment)` takes a complete `.kicad_sym`
 library text and **publishes it immediately** (existing name = edit, new name =
-creation). There is no draft gate and no Proposals view. Get it right before you
-call it.
-
-Never hand-write a symbol from scratch when a similar one exists: call
-`get_symbol` first, take its `source`, and edit that.
-
-## 1. Choosing a base symbol
-
-- List candidates with `list_base_symbols` (it shows each one's pin count).
-- Pick the template whose **pin count and function** match the part: a two-pin
-  passive for a resistor/capacitor, the right pin count for an IC or connector.
-- The base symbol's pin count should match the chosen footprint's pad count
-  ([[conventions-footprints]]). A mismatch means the wrong template or the wrong
-  footprint — resolve it before proposing anything.
-- Prefer reusing a template over creating one. Create a new base symbol only
-  when no existing template has the right pin set; a part forced onto a symbol
-  that does not fit produces a wrong netlist, not a cosmetic problem.
-
-## 2. Pin types (directionality)
-
-KiCad pin types describe signal direction **from this component's own point of
-view** — what the part drives or receives, not what the board around it does.
-Use the most specific type that is correct: it is what lets ERC catch wiring
-mistakes.
-
-| Type | When to use |
-|---|---|
-| `power_in` | Pins that consume power: VDD, VCC supply inputs, **GND** |
-| `power_out` | Pins that supply power to other devices: regulator outputs, module-generated rails (a cellular module's `SIM_VCC`, a `VDD_IO`) |
-| `input` | A digital signal this component receives and never drives |
-| `output` | A digital signal this component drives unidirectionally |
-| `bidirectional` | Driven or received depending on configuration: GPIO, I²C (open-drain), USB data lines, SPI when the master/slave role is configurable |
-| `passive` | No defined direction: RF/antenna connections, crystal pins, resistor/capacitor pads |
-| `no_connect` | Pins the datasheet FORBIDS connecting: reserved and future-use pads. KiCad raises `no_connect_connected` the moment a wire lands on one, so never use it for a pad the layout is meant to tie to a net — see §2.1 |
-| `free` | A pad with NO internal connection that may be tied to anything, or left open: straight-through routing pads (§2.1). Raises no ERC violation either way |
-| `open_collector` | Open-drain / open-collector outputs (rare — use `output` if unsure) |
-| `open_emitter` | Open-emitter outputs (rare) |
-
-Worked examples of "from this component's viewpoint":
-
-- A cellular module's `SIM_VCC` is `power_out` — the module drives VCC into the
-  SIM card. It is **not** `passive`.
-- An MCU's `VDDA` is `power_in` — the MCU consumes it.
-- A USB transceiver's `D+`/`D-` are `bidirectional`.
-- A UART `TXD` **on a module** is `output` (the module transmits); the host
-  `TXD` arriving at that module is `input` on the module side.
-
-### 2.1 Straight-through routing pads
-
-Some parts put an electrically DEAD pad directly opposite each live pin so the
-protected trace can cross the package in a straight line instead of turning
-around it. TI calls it flow-through routing and builds the whole TPDxE05U06 ESD
-family around it; the datasheet names those pads `NC` and says "Not connected;
-Used for optional straight-through routing. Can be left floating or grounded"
-(SLVSBO7L Rev. L p.5), and its layout example (p.16) draws one trace running
-onto the signal pad and off the dead pad facing it.
-
-**Type them `free`, never `no_connect`.** The board puts pad 1 and pad 10 on the
-SAME net, so the pad is meant to be connected. Verified on KiCad 10.0.5:
-
-| Type | Wire lands on it | Left open |
-|---|---|---|
-| `no_connect` | ERC **error** `no_connect_connected` | clean |
-| `passive` | clean | ERC **error** `pin_not_connected` |
-| `free` | clean | clean |
-
-`free` is the only type correct both ways, and the pass-through is optional per
-design, so both ways happen.
-
-The rest of the rule:
-
-- **Keep the datasheet name** (`NC`) on the hidden pin, even though it is
-  stacked on a pin named `D1+`. It is what the pinout table and the layout
-  figure call the pad, it keeps `sym.pinout` answerable against the datasheet,
-  and the netlist node then reads exactly right: an `NC` pad sitting on a live
-  net is dead copper that the BOARD carries. This is the one place §6's
-  same-name rule is deliberately not followed; say so in the version comment.
-- **Stack each one hidden onto the pin it faces** (§6). The symbol then draws
-  one pin per channel, and the netlist carries BOTH pads on that channel's net.
-  pcbnew shows a ratsnest from the live pad to the dead pad, and DRC does not
-  pass until the straight-through trace is drawn — the layout TI asks for,
-  enforced by the tool instead of by memory. Owner decision, 2026-09-13.
-- **The TYPE is what makes the stack work.** Measured on KiCad 10.0.5 with a
-  netlist export: a hidden `no_connect` pin is DROPPED out of the stack — its
-  pad lands on its own `unconnected-(D1-NC-Pad10)` net and ERC raises
-  `no_connect_connected` as well, so the pass-through the drawing appears to
-  promise does not exist. `free` and `passive` both carry the pad onto the net.
-  `free` is the one that also stays silent when a design leaves the pads open.
-- Do not reach for KiCad's `jumper_pin_groups` here. The stack already does the
-  job, and the group is a board-level jumper, which this is not.
-
-Precedent: `TPD4E05U06` — pads 6, 7, 9 and 10 stacked hidden on pads 5, 4, 2
-and 1, the pairs the DQA ballout puts opposite each other. The same reading
-applies to every TPD part and to any package the datasheet describes as
-flow-through or straight-through. An earlier pass typed these four pads
-`no_connect` from the bare word `NC` in the pinout table: READ THE DESCRIPTION
-COLUMN AND THE LAYOUT EXAMPLE before you decide an `NC` pad is one KiCad's
-`no_connect` describes.
-
-### V.24 / DCE UART naming
-
-Telit and other cellular-module vendors label UART pins with ITU-T V.24 circuit
-designations, which are written from the *DTE* (host) perspective — so they
-invert when applied to the module symbol:
-
-- **C103** "Transmitted Data" (from DTE) → arrives at the module → `input`
-- **C104** "Received Data" (from DTE) → sent by the module → `output`
-- **C105** "Request to Send" (from DTE) → received by the module → `input`
-- **C106** "Clear to Send" (from DCE) → driven by the module → `output`
-
-### SPI role policy
-
-When a part's SPI role is configurable or the datasheet does not fix it, make
-all four SPI pins `bidirectional`. Only when the role is guaranteed:
-
-- SPI slave: MOSI=`input`, MISO=`output`, CLK=`input`, CS=`input`
-- SPI master: MOSI=`output`, MISO=`input`, CLK=`output`, CS=`output`
-
-### ERC notes
-
-- **Never leave `passive` on a pin that has a defined direction.** `passive`
-  silently defeats ERC — it is the single most common way a symbol looks fine
-  and catches nothing.
-- **GND is `power_in`**, even though it reads as a return path. KiCad treats
-  ground as a power net and expects `power_in` on ICs, `power_out` on power
-  symbols (PWR_FLAG, VCC).
-- `no_connect` pins need an X marker in the schematic or ERC warns. A `free`
-  pin needs none — that is the difference between the two types.
-
-## 3. Pin grouping
-
-Group pins by **functional block** or by pad order. Which one is right is a
-decision you make per symbol, and you must say which you chose and why in the
-proposal comment, so the next reader does not "correct" a deliberate layout.
-Never order alphabetically — that carries no information at any size.
-
-- **Functional grouping is REQUIRED** on a part with many pins and several
-  distinct blocks: a large MCU, an SoC, a radio module, a multi-peripheral IC.
-  There the pad order tells the reader nothing, the left and right lists below
-  apply in full, and a functional layout is the only way the sheet stays
-  readable.
-- **Pad order is ACCEPTABLE** on a small connector or socket, where the pin
-  numbers are themselves what a reader checks against the datasheet and the
-  mating part. Six SIM contacts read straight down the left edge as C1, C2, C3,
-  C5, C6, C7 are easier to verify against the ISO contact numbering than the
-  same six pins split into supply, ground and signal groups. Recorded precedent:
-  `SIM_NANO_Socket`. House rule from the library owner, recorded 2026-09-13,
-  replacing an earlier absolute ban on pad order.
-
-When you choose pad order, the two lists below and the ground-at-the-bottom
-rule do NOT apply — the pin numbers set the sequence, and forcing ground to the
-bottom would break the very numbering the layout exists to show.
-
-The lists below describe the FUNCTIONAL layout.
-
-Within a group, order by signal role (clock before data, enable before data).
-
-**Left side** — supplies at the top, ground at the bottom:
-1. Main power supply (VBATT, VCC, VIO — every rail the part consumes)
-2. SIM / other slow external interfaces
-3. Reserved / NC
-4. Ground — all GND pins together, in the bottom slot or slots
-
-**Right side** — host interfaces and control:
-1. RF / antenna
-2. USB
-3. UART (primary, then auxiliary)
-4. SPI
-5. I²C
-6. GPIO / analog (ADC)
-7. Control & status (power on/off, shutdown, status outputs)
-8. Miscellaneous outputs (LED, VDD_IO)
-9. Antenna Tuning Controller (ATC)
-10. Reserved / NC
-
-Separate consecutive groups with one blank pin slot (one 2.54 mm step).
-
-### Ground goes at the bottom of the left side
-
-> Asked as **`sym.ground_placement`**.
-
-
-Put every supply pin at the top of the left side. Put every GND pin at the
-bottom of the left side. Do not place ground directly below the main supply.
-
-The reason is wire geometry on the sheet. A ground symbol points down. A GND
-pin partway down the left edge forces the wire to turn back underneath the box
-to reach that symbol. A GND pin in the bottom slot drops straight into it.
-
-This is a house rule from the library owner, recorded 2026-08-24. It changes
-placement only. GND stays `power_in` (§2). It applies to a symbol laid out by
-FUNCTIONAL BLOCK. A small connector laid out in pad order keeps its ground
-wherever its pin number falls — see the top of this section.
-
-### Nothing electrical on the top edge
-
-> **The platform checks this**, as a warning: `sym.top_edge` counts signal and
-> supply pins on the top edge. It is a warning because 22 symbols in the library
-> predate the rule, and because §5.6 is a real exception the check cannot see.
-> Do not hand-verify it; act on it when it fires.
-
-Do not put power pins or signal pins on the **top edge** of a rectangular body.
-Keep them on the left and the right. The one exception is §5.6 — basic digital
-parts, where the top and bottom edges carry the asynchronous controls.
-
-House rule from the library owner, recorded 2026-08-27.
-
-### Two-sided bus parts: logic left, bus right
-
-> Asked as **`sym.bus_sides`**.
-
-
-A differential bus transceiver has two distinct faces, the host logic side and
-the bus side. Put the host logic pins (TXD, RXD, mode control) on the **left**
-with the supplies. Put the bus pair alone on the **right**. Do not apply the
-right-side list above to the logic pins of such a part.
-
-The bus pair then routes straight out to the connector without crossing the
-logic nets. Place each bus pin level with the logic pin it serves, so the
-transmit path reads across the box.
-
-Precedent in this library: `SP3485` (RO, RE, DE, DI left; A, B right) and
-`TCAN3413` (VCC, VIO, TXD, RXD, STB left; CANH, CANL right; GND bottom left).
-
-## 4. Box and layout geometry
-
-- **Pin pitch**: 2.54 mm
-- **Pin stub length**: 2.54 mm (100 mil) is the default. The drawing families
-  in §5 make it mandatory: the pin must end exactly on the body outline, with
-  no stub inside the body and no gap outside it.
-  **The platform checks that one drawing does not MIX stub lengths**
-  (`sym.pin_length`). The absolute length is still a judgment call on the
-  geometry; mixing is the mechanical half.
-- **Exception — a pin number of three or more characters**: use 5.08 mm
-  (200 mil), uniform across every pin of the symbol.
-
-  KiCad draws the pin NUMBER along the stub, so the stub is the space the
-  number has. Measured from `kicad-cli sym export svg`, which reports each
-  string's width, at the 1.27 mm house font:
-
-  | Pin number | Width | Fits a 2.54 mm stub |
-  |---|---|---|
-  | `A` | 1.29 mm | yes |
-  | `B1` | 2.68 mm | 0.14 mm over — accepted |
-  | `A12` | 3.71 mm | **1.17 mm over** |
-
-  Three characters is where it stops being marginal and starts printing into
-  the body outline and across the neighbouring pin. Alphanumeric connector
-  designators (`A12`, `B12`), BGA coordinates (`AC7`) and three-digit numbers
-  all reach it.
-
-  Verified precedents: `USB_C_Receptacle_USB2.0_16P` (`A12`, `B12`, `SH`) and
-  `STM32H573IITxQ` (176 pins, numbers up to three characters). Both are stock
-  KiCad drawings that already carry 5.08 mm, and KiCad's own `Connector:`
-  library uses 5.08 mm on **every** USB-C symbol for this reason.
-
-  This replaces an earlier "very high pin count" exception, recorded against
-  `STM32H573IITxQ` alone and written as if 176 pins were the trigger. It was
-  wrong: a survey of all 198 base symbols on 2026-09-13 found 58 at other
-  lengths, including `XC6206PxxxMR` (3 pins) and `LD1117S` (4 pins) at
-  5.08 mm. Pin-number WIDTH was always the driver, not pin count.
-- **One length across the whole symbol.** Never mix stub lengths in one
-  drawing — it puts the pin ends on two different vertical lines and no wire
-  grid hides it. Machine-checked as `sym.pin_length` on every publish, so a
-  mixed drawing fails before anyone reviews it.
-- **Group separator**: one extra 2.54 mm slot, so spacing across a group
-  boundary is 5.08 mm
-- **Box margin**: 1.27 mm above the topmost pin and below the bottommost pin
-- **Reference label**: 1.27 mm above the box top edge
-- **Value label**: 1.27 mm below the box bottom edge
-- **Pin-1 indicator**: none. A symbol carries NO pin-1 marker. Pin 1 is
-  identified by its printed pin number, which is already on every pin.
-  Marking pin 1 is a FOOTPRINT job, because it is the board and the assembly
-  drawing that need the orientation — see [[conventions-footprints]], which
-  requires a `Cmts.User` pin-1 circle on every footprint and governs the
-  `F.SilkS` marker and the `F.Fab` chamfer with it. House rule from the library
-  owner, recorded 2026-09-13. An earlier version of this section asked for a
-  0.38 mm circle inside the box at the pin-1 corner. It was removed, not
-  relaxed: the rule lived in two documents at once, which the repository
-  forbids, and the footprint is the document that owns it.
-- **Box width**: wide enough that pin labels never overlap — ±15.24 mm is the
-  house standard for multi-peripheral modules
-
-**Box height**: derive it directly from the margin rule above —
-`box_half_height = (distance from centre to the outermost pin) + 1.27`. There
-is no separate slot-counting formula. One used to live here
-(`ceil(n_slots / 2) × 2.54 + 1.27`, `n_slots` = pin count on the longer side
-counting gap slots) and it disagreed with the margin rule for a plain
-symmetric layout: `AT2659` (3 pins/side, centred on y = 0, no gap slot) gave
-6.35 mm from the formula against the 3.81 mm the margin rule requires — a
-full 2.54 mm slot too tall. Removed 2026-09-12 rather than patched: the
-margin rule alone is sufficient, unambiguous, and matches what
-`propose_symbol_edit` has actually published.
-
-### The grid law
-
-**Every pin connection point must be a multiple of 2.54 mm in BOTH axes**, and
-the pin tip must land exactly on the body outline.
-
-The two rules fight each other, and the geometry decides the winner. Work the
-arithmetic **before** you choose a body size, not after. §5.5 lists the
-constraints this produces for each family.
-
-> **The check enforces 1.27 mm, not 2.54 — and the library does not meet 2.54.**
-> Measured 2026-09-14: `sym.pins_grid` uses a 1.27 mm grid and **no symbol
-> violates it**, while **61 of 206 symbols** have pins off the 2.54 mm grid —
-> `RPi_CM5` (200 pins), `ZED-F9P` (102), `DF40C-100DS` (100), every large STM32.
-> High pin counts do not fit on 2.54 mm.
->
-> This section also used to say a pin off the 2.54 grid "cannot be wired on a
-> default sheet", which is not so: KiCad's default schematic grid includes
-> 50 mil (1.27 mm).
->
-> **The two reconcile as spacing versus grid.** Every off-2.54 symbol inspected
-> has correct 2.54 mm pin-to-pin SPACING and sits on 1.27 only because it is
-> centred on the origin with an even pin count — `Conn_01x06` at ±1.27 / ±3.81 /
-> ±6.35 is exactly 2.54 apart, `WS2812` at ±1.27 likewise. Centring an even-pin
-> symbol on the origin makes the absolute 2.54 grid unreachable, and KiCad's own
-> library does the same.
->
-> So: **pin-to-pin spacing 2.54 mm, absolute grid 1.27 mm.** Nothing in the
-> library violates that, and `sym.pins_grid` already enforces it.
-> **Not yet confirmed by the library owner** — do not re-centre a symbol to
-> chase the absolute grid until it is.
-
-## 5. Drawing families
-
-> Asked as **`sym.drawing_family`**.
-
-
-Three families, decided by the library owner on 2026-08-27 and applied across
-the library. Follow the family, not your own taste.
-
-### 5.1 Comparators and amplifiers — the 15.24 mm triangle
-
-Body: a triangle through `(-7.62, 7.62)`, `(7.62, 0)`, `(-7.62, -7.62)`,
-stroke 0.254, fill `background`.
-
-| Pin | Position |
-|---|---|
-| Inverting input | `(-10.16, 2.54, 0)` |
-| Non-inverting input | `(-10.16, -2.54, 0)` |
-| Output | `(10.16, 0, 180)` |
-| Positive rail | `(-2.54, 7.62, 270)` |
-| Negative rail | `(-2.54, -7.62, 90)` |
-| Spare pin (NC, SHDN) | `(2.54, ±5.08)` |
-
-**The inverting input goes on top.** This is the house rule. It is arbitrary in
-the abstract, but a library that mixes the two orders is a wiring error waiting
-to happen. `LTC6268xS8-10` was the one part drawn the other way and was
-corrected.
-
-Precedent: `TLV7022` (dual, two units), `TLV3201`, `TLV9061XDBV`,
-`OPA991XDBV`, `OPA354AXDBV`, `LTC6268xS8-10`.
-
-### 5.2 Logic gates — the 10.16 mm triangle
-
-Body: a triangle through `(-5.08, 5.08)`, `(5.08, 0)`, `(-5.08, -5.08)`.
-
-| Pin | Position |
-|---|---|
-| Input | `(-7.62, 0, 0)` |
-| Output | `(7.62, 0, 180)` |
-| Positive rail | `(0, 5.08, 270)` |
-| Negative rail | `(0, -5.08, 90)` |
-
-The smaller body keeps gates visually distinct from analog parts.
-
-Precedent: `74LVC1G14`, `74LVC1G17`, `74LVC1G125`, `74LVC2G34`.
-
-### 5.3 Hidden pin names and orange markers
-
-> Asked as **`sym.hidden_names`**.
-
-
-On **both** triangle families, set `(pin_names (hide yes))` on the symbol. Mark
-the pins with bold graphic text instead:
-
-> The rail rules below are asked as **`sym.rail_polarity`**,
-> **`sym.rail_negative_mark`** and **`sym.rail_marks_not_names`**, on the 116
-> symbols that actually draw supply pins.
-
-- Inverting input `-` at `(-6.35, 2.54)`, non-inverting `+` at `(-6.35, -2.54)`
-  — analog family only.
-- **Rail polarity on every symbol that has rails.** Put `+` beside the positive
-  rail and `-` beside the negative rail, **outside** the body, offset 1.27 mm to
-  the right of the rail pin and level with the middle of its stub. On the
-  15.24 body that is `(-1.27, ±6.35)`; on the 10.16 body, `(1.27, ±3.81)`.
-- Use `-` on the negative rail **even when the pin is a ground**. The reader
-  needs to know which rail is which, not what it is called.
-
-Text style: `(size 1.27 1.27) (thickness 0.254) (bold yes) (color 200 130 75 1)`.
-
-Two hard-won facts about this:
-
-- **KiCad cannot hide a pin name individually.** `(hide yes)` inside a pin's
-  name effects is silently dropped on save and the name still draws. Visibility
-  is all-or-nothing per symbol. So any pin whose name carries real information
-  needs a graphic text of its own — `LTC6268xS8-10` keeps a visible `SHDN`
-  label, `74LVC1G125` keeps `OE`. `NC` pins need none; they carry no net.
-- **Text colour must go inside the `font` node**:
-  `(effects (font (size ...) (color 200 130 75 1)))`. Putting `(color ...)` as a
-  sibling of `(font ...)` makes the whole library fail to load. The value is the
-  `pin_name` colour of the owner's `Skyline-7S` theme, so the markers match the
-  pin names. It is baked into the symbol and does not follow a theme change.
-
-### 5.4 The comparator glyph
-
-A **comparator** carries a small step glyph on the triangle centroid, points
-`(-4.445, -1.27) (-2.54, -1.27) (-2.54, 1.27) (-0.635, 1.27)`, stroke 0.254.
-It reads as the transfer characteristic: the output slams to a rail at the
-threshold.
-
-An **amplifier carries nothing.** A plain triangle is already the universal
-amplifier symbol, so absence is the marking. An earlier draft gave amplifiers a
-ramp glyph; it was removed because it was an invented code nobody could read
-without being told.
-
-Keep vendor qualifying glyphs that already mean something: the Schmitt
-hysteresis marking and the IEC `&`. Draw the Schmitt glyph in the **rising**
-form — low on the left, step up, high on the right — on inverting and
-non-inverting parts alike. Inversion belongs on the output bubble, not in a
-mirrored glyph. `74LVC1G14` and `74LVC1G17` were mirror images of each other
-until this was fixed.
-
-### 5.5 Grid constraints you cannot argue with
-
-A vertical pin on a sloped edge must satisfy the grid law (§4) **and** land on
-the edge. Only some body sizes allow it at all:
-
-| Triangle body | Legal x for a vertical rail |
-|---|---|
-| 15.24 mm | −7.62, **−2.54**, +2.54, +7.62 |
-| 10.16 mm | −5.08, **0**, +5.08 |
-| 12.70 mm | **none — do not use this size** |
-
-The two families therefore share **no** common rail position. Do not try to
-standardise one across both; it is arithmetically impossible while the bodies
-differ in size.
-
-For a rectangular body: **the half-height must itself be a multiple of 2.54**,
-or every pin on the top and bottom edges lands off-grid. A half-height of
-6.35 mm puts them on 8.89 mm, which looks plausible and is wrong.
-
-For a gate with **four inputs symmetric about the output axis**: a 2.54 mm
-pitch forces them onto ±1.27 and ±3.81, all off-grid. A **5.08 mm pitch** puts
-them on ±2.54 and ±7.62, on-grid and still symmetric, but needs a 20.32 mm tall
-body. `SN74HC21` keeps its compact off-grid drawing by an explicit decision of
-the library owner on 2026-08-27, who judged the taller symbol worse. Record the
-same choice explicitly if you meet it again.
-
-### 5.6 Digital blocks — flip-flops, registers, gate arrays
-
-These stay **rectangles with visible pin names**. Do not hide names and do not
-put `±` markers on them; name the power pins `VCC` and `GND`.
-
-They are the **one exception** to "nothing electrical on the top edge" (§3): a
-flip-flop puts its asynchronous controls on the top and bottom edges, because
-that is the drawing everyone recognises.
-
-The canonical D flip-flop, which is what makes the function readable at a
-glance:
-
-- `D` upper left, `CLK` lower left with the KiCad `clock` pin style — the wedge
-  is what separates an edge-triggered flip-flop from a level-sensitive latch.
-- `Q` upper right, `Q̅` directly below it, so the complementary pair reads as a
-  pair.
-- `PRE` on the top edge, `CLR` on the bottom edge.
-- Supplies on the **left**, ground at the bottom of the left side (§3).
-
-**Draw every active-low pin with the `inverted` pin style.** An overbar in the
-name disappears at normal sheet zoom; a bubble does not. `SN74LVC1G74` had
-`PRE`, `CLR` and `Q̅` on plain `line` style and read as fully active-high until
-you zoomed in.
-
-A part that is not a flip-flop does not get the exception. `SN74LVC1G123` is a
-monostable, so it keeps everything on the left and right, with the `Rext/Cext`
-timing pair together on the right, away from the logic.
-
-Precedent: `SN74LVC1G74`, `74LVC1G175GW,125`, `SN74LVC1G123`.
-
-### 5.7 The angled-leader slot
-
-When a spare control pin (`OE`, `NC`) has nowhere on-grid to enter a small
-triangle, put it below the output and join it to the sloped edge with a graphic
-polyline. KiCad pins snap to 0/90/180/270, so a genuinely angled pin does not
-exist; the leader is how you fake one.
-
-On the 10.16 body: pin at `(5.08, -5.08, 90)`, leader from `(5.08, -2.54)` to
-`(3.81, -0.635)`, which is exactly on the lower edge. The connection point
-lands under the output pin and stays on-grid.
-
-Precedent: `74LVC1G125` (`OE`), `74LVC1G17` (`NC`). Both are SC-70-5, so pin 1
-sits in the same place on both drawings.
-
-## 6. Stacked (shorted) pins
-
-> **`sym.stacked` is only asked of a symbol that actually stacks pins** —
-> 22 of 207 do. Stacking is detected by POSITION, since the whole point is
-> two different numbers shorted at one point.
-
-
-KiCad shorts pads **inside the symbol** by stacking pins: two or more pins at
-the *identical* `(at x y angle)` with the *same name* form one electrical node.
-Make one visible and mark every other `(hide yes)` — the symbol draws one pin,
-and the netlist ties all of their pad numbers to the same net.
-
-Two legitimate uses:
-
-1. **Pads that are one net internally.** Two cases, and the library owner
-   decided on 2026-09-13 that they are NOT treated the same way.
-
-   **A discrete's multi-pad terminal IS stacked** — a MOSFET whose source or
-   drain is brought out on several pads. Those pads are one terminal of the
-   device, not a rail, and nothing is ever drawn against an individual one.
-   Draw one visible pin per terminal and stack the duplicates hidden on top.
-   Examples: `CSD17577Q3A` (source pads 1/2/3, drain pads 5–9), `AON7264E`.
-
-   **A LARGE IC's redundant GND/VDD pads are NOT stacked.** Draw one visible pin
-   per pad. Owner decision, 2026-09-13: the schematic should show how many supply
-   and ground pads the part physically has, and a reader may want to draw a
-   decoupling capacitor against a particular pad. It costs body height and it is
-   accepted. Examples of the intended drawing: `ESP32-C6` (VDDA3P3 on pads 2 and
-   3, both visible), `EG915U` (28 separate GND pins in unit 1).
-
-   **A symbol SPLIT INTO UNITS never hides a power pin.** That is the hard half
-   of the rule: the reader has to see which unit each supply belongs to, and a
-   hidden pin makes that unanswerable.
-
-   **A SMALL part MAY hide a duplicate pad, power and ground included.** Owner
-   decision, 2026-09-13, correcting how the paragraph above was being applied:
-   it was written for large ICs and was being enforced on parts it was never
-   meant for. It is permission, not licence — the stack needs a REASON and the
-   reason must be written down. A symbol that reads better, or a ground that is
-   easier to wire around on the sheet, both qualify. Put it in the
-   `propose_symbol_edit` comment AND in the `sym.stacked` verification note.
-   Precedent: `TPD4E05U06` — GND pad 8 hidden on pad 3, because one ground stub
-   under a four-channel array reads better than two and the pads are the same
-   net inside the package.
-
-   **On the boundary between the two, ASK — do not decide it quietly.** There is
-   no pin count that separates a small part from a large IC, and there is not
-   going to be one. If you are AUTHORING the symbol, put the question to the
-   user before you publish. If you are REVIEWING one, record it as an open point
-   rather than passing it: `custom:stacked-power-pad` with a `text` naming the
-   pads and saying why the call is borderline. It then reaches the user in the
-   Reviews queue, where a version comment would not.
-
-   `ESP32-S3` and `LM78L05_SO8` stack their redundant supply pads and so predate
-   this decision. They are not evidence for stacking a new one; leave them alone
-   until somebody redraws them deliberately.
-2. **Tying a signal pad to an adjacent datasheet `NC` pad** for a better copper
-   shape. An `NC` pad has no internal connection, so shorting it to a signal net
-   is electrically safe and gives the layout extra copper. This is a
-   **layout-driven decision**: only do it when the board designer asks for that
-   specific short, and confirm the pad really is `NC` in the datasheet first.
-   Do not confuse it with a **straight-through routing pad** (§2.1), which is
-   also stacked but for a different reason and by a standing rule, not per
-   board: there the datasheet itself offers the pad for carrying the signal
-   across the package, and every design that places the part inline uses it.
-   Case 2 is the other thing — a dead pad borrowed purely for copper area, on
-   one board, because the designer asked.
-
-   History worth keeping, because it cost two passes: this section used to cite
-   `TPD4E05U06` as the precedent for case 2. A 2026-09-13 pass could not find
-   the stack in any published version of that symbol and struck the example out
-   as fiction. Both were half right — the platform drawing had never carried it,
-   the owner's intent had, and the drawing now stacks those pads under §2.1.
-   **Cite an artifact, not a memory:** name the symbol AND the version you
-   checked, or the next reader deletes a good rule as invention.
-
-Rules for a stacked pin:
-
-- Same `(at …)` coordinates and orientation as the visible pin it stacks onto.
-- Same `name` as the visible pin. This is a house rule for readability, NOT an
-  ERC consequence: KiCad 10.0.5 raised no warning at all for a hidden `NC`
-  stacked on a visible `D1+` (measured with `kicad-cli sch erc`). The netlist is
-  where it shows — the node prints the hidden pin's name against a live net.
-- A pin type compatible with the visible one (usually `passive`, or `free` for a
-  dead pad). **Never `no_connect` on a stacked pin**: KiCad drops it out of the
-  stack, gives its pad a private `unconnected-…` net and warns
-  `no_connect_connected`, so the short the drawing promises is not in the
-  netlist. An `NC` pad that gets shorted stops being `no_connect` and becomes
-  whatever the net is (§2.1).
-- `(hide yes)` on every pin except the one visible one.
-
-Two coincident pins with **neither** hidden overprint their numbers. Known open
-case: `LTC6268xS8-10` pads 1 and 4.
-
-**Publishing a symbol version also files the component repoints.** A component
-pins the symbol *version* it was drawn against, so the platform opens a new
-component version for every part using this base symbol, pinned to the new
-drawing with properties unchanged. See [[platform-workflow]].
+creation). There is no draft gate. Get it right before you call it.
+
+Never hand-write a symbol when a similar one exists: `get_symbol` first, take
+its `source`, edit that.
+
+**Render it before you believe it.** `kicad-cli sym export svg -s <name> -o
+<dir> <lib>` draws exactly what KiCad will draw, and `kicad-cli sym upgrade`
+proves the file parses. Both have caught real defects that reading the
+s-expression did not.
+
+**Publishing files the component repoints.** A component pins the symbol
+*version* it was drawn against, so the platform opens a new component version
+for every part on this base symbol, pinned to the new drawing with properties
+unchanged. See [[platform-workflow]].
 
 **`minor_change` is a waiver, not a convenience.** It carries verifications and
 production sign-offs across the changed drawing with your name on it. A moved
-pin, a changed unit count and a changed electrical type are all material —
-pass `False`. Reserve `True` for cosmetic cleanup that could not alter what a
+pin, a changed unit count and a changed electrical type are all material — pass
+`False`. Reserve `True` for cosmetic cleanup that could not alter what a
 reviewer checked.
 
-## 7. Before you propose
+**Renaming** is `rename_base_symbol(name, new_name, comment)`, the same call
+shape and the same four consequences as a footprint rename — see
+[[conventions-footprints]].
 
-- `get_symbol` → edit its `source` → `propose_symbol_edit`. It publishes at
-  once, so check the drawing first.
-- Render it before you believe it. `kicad-cli sym export svg -s <name> -o <dir>
-  <lib>` draws exactly what KiCad will draw, and `kicad-cli sym upgrade` proves
-  the file parses. Both caught real defects that reading the s-expression
-  did not.
-- Pin count still matches the footprint's pad count ([[conventions-footprints]]).
-- Every pin has the most specific correct type from §2 — no lazy `passive`.
-- Every connection point is on the 2.54 grid in both axes, and every pin tip
-  lands on the body outline (§4).
-- Groups follow §3, geometry follows §4, and the drawing follows its family
-  in §5.
-- **Never change a pin number.** The number is the netlist. Pin names and types
-  are fixable toward the datasheet; numbers, count and unit assignment are not.
+## Choosing one
+
+- `list_base_symbols` lists candidates with each one's pin count.
+- Pick the template whose **pin count and function** match the part.
+- The pin count should match the chosen footprint's pad count
+  ([[conventions-footprints]]). A mismatch means the wrong template or the wrong
+  footprint — resolve it before proposing anything.
+- Prefer reusing a template over creating one. A part forced onto a symbol that
+  does not fit produces a wrong netlist, not a cosmetic problem.
+
+## Where each rule lives
+
+| Question | Check |
+|---|---|
+| Do the pin numbers and names match the datasheet? | `sym.pinout` |
+| Is every pin the most specific correct type, from the part's own viewpoint? Including V.24 UART and SPI roles | `sym.pin_types` |
+| Is a datasheet `NC` pad `free` or `no_connect` — and what about straight-through routing? | `sym.nc_pads` |
+| Functional grouping or pad order, and did the comment say which? | `sym.pad_order_declared` |
+| Are the groups in the right order, with 2.54 mm gaps? | `sym.grouping` |
+| Supplies at the top of the left side, grounds at the bottom | `sym.ground_placement` |
+| Host logic left, bus pair right, on a two-sided transceiver | `sym.bus_sides` |
+| Anything electrical on the top edge? | `sym.top_edge` |
+| Box height, margins, label offsets, and the grid law | `sym.geometry` |
+| Are all pins on the grid? Do they mix stub lengths? | `sym.pins_grid`, `sym.pin_length` |
+| Does a three-character pin number get its 5.08 mm stub? | `sym.stub_length` |
+| Is the drawing its family — the 15.24 mm triangle, the 10.16 mm gate, or the box? Glyphs, grid constraints, the angled leader, digital blocks | `sym.drawing_family` |
+| Are pin names hidden where the family says so? | `sym.hidden_names` |
+| Is the family drawn to the house coordinates — body, pin positions, polarity marks? (automatic) | `sym.family_drawing` |
+| Is the `−` on the rail that is actually negative? | `sym.rail_negative_mark` |
+| Is an active-low pin drawn with the bubble, not just an overbar? | `sym.inverted_style` |
+| Are shorted pins stacked correctly, and does a hidden supply pad have a written reason? | `sym.stacked` |
+| Does the drawn topology and polarity match the datasheet? | `sym.topology` |
+| Checked against the EasyEDA symbol for the exact LCSC part? | `sym.easyeda_diff` |
+| Did a pin number, the pin count or a unit assignment change since the previous version? (automatic) | `sym.pin_numbers_unchanged` |
+| Does the simulation pin map still fit? | `sym.sim_link` |
+
+**The triangle families are a table of numbers, and it is measured.**
+`sym.family_drawing` compares the body vertices, the pin positions and the
+polarity-mark positions against the house coordinates for the 15.24 mm
+amplifier and the 10.16 mm one-input gate. It replaced six judgment checks that
+asked a reader to compare coordinates by eye and had been answered zero times
+between them (audit 2026-09-14). A **multi-input** gate is absent from it: the
+house has written down the one-input geometry only, so it refuses to judge
+rather than invent a rule. What needs the datasheet stays judgment —
+`sym.rail_negative_mark`, `sym.inverting_on_top`, `sym.comparator_glyph`.
+
+**`ki_fp_filters` is retired.** It filtered the footprint chooser, and every
+curated path already carries the footprint — the HTTP catalog does not send the
+field and a generated component symbol has `Footprint` set. The publish
+sanitizer removes it.
+
+## The line runs through the pin
+
+**Never change a pin number.** The number is the netlist. Pin names and
+electrical types are fixable toward the datasheet; numbers, count and unit
+assignment are not. This is the one rule that stays here as well as on
+`sym.pin_numbers_unchanged`, because it governs what you do before any check
+runs.
+
+**The check is automatic since 2026-09-14** — it diffs this version's pin
+numbers and unit assignments against the previous version's, so a change you
+did not intend is a finding rather than something a reviewer has to notice. A
+deliberate change, such as splitting one box into gate units, still has to be
+answered: say which pins moved and why, or grant a standing exception. Unit 0
+means "common to every unit", so moving a shared power pin out of it is a
+real change and is counted.
+
+## Simulation
+
+A symbol is what a simulation model attaches to, and the link is keyed on the
+symbol rather than the component, so one link covers every part built from this
+drawing. **Creating a symbol, or editing one with no link: ask the user whether
+to add simulation capability — do not add one unasked.** Everything else about
+staleness is on `sym.sim_link`; the standard for the model itself is in
+[[conventions-simulation]].
 
 See [[add-component]] for where symbol choice fits in the full part-creation
 procedure, and [[platform-workflow]] for what happens after publishing.
-
-## 8. Simulation
-
-A symbol is what a simulation model attaches to — the link is keyed on the
-symbol, not on the component, so one link covers every part built from this
-drawing.
-
-- **Creating a symbol, or editing one that has no link:** ask the user
-  whether to add simulation capability. Do not add one unasked.
-- **Editing the PINS of a symbol that has a link:** the link goes stale, and
-  the mirror withholds the Sim fields from every component using it until
-  someone re-confirms the map. Re-save the link in the same session; do not
-  leave it stale and do not delete it to silence the warning.
-- Pin ELECTRICAL TYPES are part of the link fingerprint too, not just
-  numbers. Changing `passive` to `power_in` flags the link. Pin **POSITION is
-  NOT** part of the fingerprint: moving a pin's `(x, y)` without changing its
-  number or type does not stale the link. Confirmed empirically on
-  `AON7264E` (2026-09-12), whose source/drain pads were repositioned and
-  stacked with no staleness warning and no mirror warning. The precise
-  statement of what the fingerprint covers lives in
-  [[conventions-simulation]]'s "Staleness" section: "the symbol's pin numbers
-  plus electrical types."
-
-The standard for the model itself lives in [[conventions-simulation]].

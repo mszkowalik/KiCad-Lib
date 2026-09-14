@@ -289,25 +289,31 @@ def list_base_symbols(query: str = "") -> str:
 
 _FP_DESCR_RE = re.compile(r'\(descr\s+"((?:[^"\\]|\\.)*)"')
 _FP_TAGS_RE = re.compile(r'\(tags\s+"((?:[^"\\]|\\.)*)"')
-_FP_EQUIV_RE = re.compile(r'\(property\s+"Equivalent Packages"\s+"((?:[^"\\]|\\.)*)"')
 
 
 def _footprint_aliases(source_text: str | None) -> dict:
-    """The three places a footprint records which packages it serves.
+    """The two places a footprint records which packages it serves.
 
     A land that fits several vendor designations (QFN-16 / WQFN-16 / LFCSP-16
-    on one 3x3 mm 0.5 mm copper) carries them in its ``tags``, in a hidden
-    ``Equivalent Packages`` property and in ``descr`` — see conventions-
-    footprints §1 "One land per standard package". The search below matches
-    on all three so an agent looking for "WQFN-16" finds the QFN-16 land
+    on one 3x3 mm 0.5 mm copper) carries them in its ``tags`` and in ``descr``
+    — see conventions-footprints, `fp.shared_land_record`. The search below
+    matches on both, so an agent looking for "WQFN-16" finds the QFN-16 land
     instead of minting a duplicate.
+
+    **These two fields, and no third one.** A hidden ``Equivalent Packages``
+    property used to carry the same designations plus the evidence for each.
+    It was dropped on 2026-09-14: KiCad's own footprint chooser searches the
+    name, ``descr`` and ``tags`` and nothing else, so the property was only
+    ever readable HERE — one reader for a field that cost a footprint version
+    and a repoint of every component on the land whenever it was edited. The
+    shipped KiCad 10 library makes the same judgement: 15,462 footprints use
+    five property names between them, and a custom one appears twice.
     """
     src = source_text or ""
-    m_d, m_t, m_e = _FP_DESCR_RE.search(src), _FP_TAGS_RE.search(src), _FP_EQUIV_RE.search(src)
+    m_d, m_t = _FP_DESCR_RE.search(src), _FP_TAGS_RE.search(src)
     return {
         "descr": m_d.group(1) if m_d else "",
         "tags": m_t.group(1) if m_t else "",
-        "equivalent_packages": m_e.group(1) if m_e else "",
     }
 
 
@@ -317,12 +323,11 @@ def list_footprints(query: str = "") -> str:
 
     Args:
         query: Optional case-insensitive filter. Matched against the NAME and
-            also against the footprint's ``tags``, ``descr`` and hidden
-            ``Equivalent Packages`` property, so a search for a vendor
-            package designation ("WQFN-16", "LFCSP-16", "RTE") returns the
-            shared land that serves it. A hit made through one of those
-            fields carries ``matched_on`` and the field's text, so you can
-            see WHY the land is offered before you reuse it.
+            also against the footprint's ``tags`` and ``descr``, so a search
+            for a vendor package designation ("WQFN-16", "LFCSP-16", "RTE")
+            returns the shared land that serves it. A hit made through one of
+            those fields carries ``matched_on`` and the field's text, so you
+            can see WHY the land is offered before you reuse it.
     """
     db = SessionLocal()
     try:
@@ -333,7 +338,7 @@ def list_footprints(query: str = "") -> str:
             row = {"name": f.name, "pads": (cur.parsed or {}).get("pad_count") if cur else None}
             if q and q not in f.name.lower():
                 aliases = _footprint_aliases(cur.source_text if cur else "")
-                hit = next((k for k in ("equivalent_packages", "tags", "descr") if q in aliases[k].lower()), None)
+                hit = next((k for k in ("tags", "descr") if q in aliases[k].lower()), None)
                 if hit is None:
                     continue
                 row["matched_on"] = hit
@@ -1579,7 +1584,7 @@ def get_review_checklist(kind: str, name: str) -> str:
         answered = {i["key"]: i for i in (record.items or [])} if record else {}
         version = next((v for v in getattr(parent, "versions", [])
                         if v.id == version_id), None)
-        conf_items, excused = conformance_svc.get(db, kind, parent, version)
+        conf_items, excused, _judgment = conformance_svc.get(db, kind, parent, version)
         # An excused item is a closed decision, not open work. Showing it as
         # unanswered is how the same finding gets re-raised on every pass — the
         # SOT-23 pitch was re-filed as a defect by three separate verification

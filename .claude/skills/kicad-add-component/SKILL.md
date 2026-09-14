@@ -2,7 +2,7 @@
 name: kicad-add-component
 description: "Full procedure for adding a part to the 7Sigma library: duplicate check, LCSC metadata lookup, category/base-symbol/footprint selection, property construction, the per-category rules a version must satisfy BEFORE you publish it (nothing gates a bad one), and what still has to be done by hand afterwards. Use when adding, editing or publishing any component."
 ---
-<!-- platform-skill: add-component v17 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: add-component v18 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Add a component
 
 End-to-end procedure for adding a part to the 7Sigma library. Every write
@@ -293,35 +293,29 @@ Before editing a part that may already be placed on a board, check
 
 ## Get these right BEFORE you publish
 
-Validation runs server-side against the platform's rule set; you don't run it.
-Since 2026-08-23 there is nothing to fail: a write that breaks these rules
-**publishes anyway** and hands back warnings on a version that is already live.
-So this is not a gate you can lean on — it is a list to satisfy first.
+Validation runs server-side; you do not run it. Since 2026-08-23 there is
+nothing to fail: a write that breaks a rule **publishes anyway** and hands back
+warnings on a version that is already live. So this is not a gate you can lean
+on — it is a list to satisfy first, and the list is the component checklist:
+`get_review_checklist("component")`.
 
-- **Required, non-empty properties** — per category. Globally: `Footprint` and
-  `ki_description`. Resistors additionally: `Value`, `Power`, `Tolerance`.
-  Mirror a sibling with `get_component` rather than guessing which apply.
-- **Manufacturer/supplier set** — `Manufacturer 1`, `Manufacturer Part Number 1`,
-  `Supplier 1`, `Supplier Part Number 1` are the tracked identity properties.
-- **Property patterns** — values must match the category's format:
-  - `Value` → `5K1`, `100R`, `4M7` (digits + `R`/`K`/`M` multiplier)
-  - `Power` → `63mW`, `0.25W`
-  - `Tolerance` → `1%`, `0.1%`
-  - `Footprint` → must start `7Sigma:` and the footprint must exist
-  - `LCSC Part` → `C` followed by digits
-- **Property length** — 200 characters max.
-- **Template expressions** — every `{Key}` inside a value (typically in
-  `ki_description`) must resolve to another property **on the same component**.
-  Resolution is order-independent: a `{Key}` may reference a property defined
-  anywhere in the list. An unresolved `{Key}` comes back as a mirror warning on
-  publish and means the property genuinely isn't there — add it, or for
-  `{Footprint_Name}` give the footprint a package name
-  ([[conventions-footprints]] §3). A footprint you created yourself has no
-  package name until you set one, so this warning is the DEFAULT outcome of
-  pairing a new component with a new footprint, not a rare mistake.
+The machine half is `cmp.required_props`, `cmp.property_values`,
+`cmp.value_field`, `cmp.power_format`, `cmp.lcsc_format`, `cmp.footprint_ref`,
+`cmp.property_length` and `cmp.templates`. Each carries its own numbers and its
+own reasoning; do not keep a second copy of them here.
 
-When unsure what a category needs, copy the shape from an existing component in
-it — never invent a property key.
+Three facts the checks cannot tell you:
+
+- **Mirror a sibling rather than guessing** which properties a category needs.
+  `get_component` on an existing part in the category shows the shape. Never
+  invent a property key.
+- **Template resolution is order-independent.** A `{Key}` may reference a
+  property defined anywhere in the list, so the order you write them in does
+  not matter.
+- **An unresolved `{Footprint_Name}` is the DEFAULT outcome** of pairing a new
+  component with a new footprint, not a rare mistake: a footprint you created
+  has no package name until you set one. Name the footprint
+  ([[conventions-footprints]], `fp.package_name`) — never patch the component.
 
 ## Simulation: ask once, then fill the params
 
@@ -344,6 +338,12 @@ linked model declares, or the validator rejects the version.
 
 This applies to editing too. Adding `Sim.Params` to an existing part is
 usually the highest-value edit you can make to it.
+
+What the row must satisfy is asked of every component that carries one:
+`cmp.sim_params` (every key is declared by the linked model),
+`cmp.sim_numbers_read` (each figure from THIS part's datasheet, with its
+condition), `cmp.sim_iq_per_channel`, `cmp.sim_supply_current` and
+`cmp.sim_limitations`.
 
 ## Related
 

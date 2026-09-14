@@ -828,6 +828,20 @@ class Conformance(Base):
     #: they are not work for anybody — and are counted separately, so a part
     #: closed by exceptions never looks like a part that was judged.
     excused: Mapped[list] = mapped_column(JSONB, default=list)
+    #: The JUDGMENT items TODAY's checklist expects of this subject — key and
+    #: text only, no hint. Cached here because resolving a checklist per subject
+    #: costs 33 ms, and a list surface showing 862 of them cannot pay 28 s.
+    #:
+    #: A list row used to measure completeness against the RECORD's own snapshot
+    #: of the checklist, so a subject answered under an older, shorter list read
+    #: `checked` while opening it read `partial` — the row and the card
+    #: contradicting each other on screen (user report 2026-09-14). The snapshot
+    #: is right for rendering HISTORY and wrong for the live state of a current
+    #: version: adding a judgment check genuinely re-opens the parts it reaches.
+    #:
+    #: It rides on the same `digest` as `items`, which already covers the
+    #: resolved checklist, so it invalidates itself the moment a check changes.
+    judgment: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (

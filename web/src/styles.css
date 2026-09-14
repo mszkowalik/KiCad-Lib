@@ -4975,13 +4975,6 @@ a.check-cell:hover {
   height: 420px;
   flex: none;
 }
-.workbench-datasheet {
-  width: 100%;
-  height: 62vh;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #fff;
-}
 
 /* dialog.select: a short fixed set of radio choices */
 .modal-options {
@@ -5224,10 +5217,68 @@ a.check-cell:hover {
 
 /* The answer a checklist item's current answer replaced. Accepting a flag has
    to keep the flag readable — clearing a defect must never mean deleting the
-   only description of it. */
+   only description of it.
+
+   FOLDED, because a finding is longer than the answer that settles it: an open
+   one buried the current answer under the item's own history (user request
+   2026-09-14). The summary keeps the result and the author, so the fold hides
+   the reasoning, never the fact that there was one. */
 .superseded {
   margin-top: 2px;
   font-size: 0.8rem;
+}
+
+details.superseded > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+details.superseded > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* The caret is drawn rather than inherited, so it sits on the text baseline at
+   this size instead of on the browser's own marker box. */
+details.superseded > summary::before {
+  content: "▸";
+  display: inline-block;
+  width: 1em;
+  transition: transform 0.12s ease;
+}
+
+details.superseded[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+details.superseded > p {
+  margin: 2px 0 0 1em;
+}
+
+/* "Not about parts like this one" and "switched off here". Both are real
+   information — a scope that is wrong is found by reading them — and neither is
+   what anybody opened the card for, so both fold. Same caret as .superseded. */
+details.not-here > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+details.not-here > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.not-here > summary::before {
+  content: "▸";
+  display: inline-block;
+  width: 1em;
+  transition: transform 0.12s ease;
+}
+
+details.not-here[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+details.not-here > .notes-list {
+  margin-left: 1em;
 }
 
 /* ============================================================== simulator */
@@ -6135,6 +6186,11 @@ a.check-cell:hover {
   z-index: 60;
   width: 300px;
   max-width: min(300px, calc(100vw - 16px));
+  /* A long hint gets a scrollbar rather than running off the window. The
+     height itself is set by `InfoTip`, which knows how much room is on the
+     side it opened to. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 7px 10px;
   background: var(--surface);
   color: var(--text);
@@ -6155,6 +6211,55 @@ a.check-cell:hover {
   visibility: visible;
 }
 .si-tip-bad { display: block; color: var(--err); margin-bottom: 4px; }
+
+/* The review card's state sentence and the buttons that act on it, on ONE line.
+   The sentence gives way first: it is the half a reader can finish from the
+   pills above it, and the note input must keep a usable width. */
+.review-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+.review-actions > p {
+  margin: 0;
+  flex: 1 1 12ch;
+  min-width: 0;
+}
+.review-actions > .btn-row {
+  margin: 0;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+/* The pass-note box has no width of its own — it is an <input>, so it sizes to
+   the browser's 20-character default and wrapped the Save button onto a second
+   line inside the row. It takes the slack instead. */
+.review-actions > .btn-row > input.row-input {
+  flex: 1 1 10ch;
+  min-width: 8ch;
+}
+
+/* The inline ⓘ (`components/InfoTip.tsx`). It borrows `.si-tip` for the bubble
+   and only positions the marker differently: SiInput's sits absolutely inside
+   an input box, this one sits in a line of text.
+   NO transform here either — see the note on `.si-help`. */
+.info-tip {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  line-height: 14px;
+  text-align: center;
+  font-size: 11px;
+  cursor: help;
+  color: var(--muted);
+  vertical-align: baseline;
+}
+.info-tip:hover, .info-tip:focus-visible { color: var(--accent); outline: none; }
+/* The hint is several sentences with its own line breaks, so it wraps as
+   written rather than collapsing to one paragraph. */
+.info-tip > .si-tip { white-space: pre-line; }
 /* the derived half of a pair: reads as a sentence beside its box, never as a field */
 .stk .stk-derived { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 

@@ -18,6 +18,7 @@ in one document. Open the document before you change the module.
 | Projects, git mirrors, snapshots, exports | `gitrepo.py`, `project_ops.py`, `git_credential_migrate.py` | [docs/reference/projects-module.md](../../../docs/reference/projects-module.md) |
 | Simulation models and composition | `simmodel.py`, `sim_store.py`, `simcompose.py` | [docs/reference/simulation-models.md](../../../docs/reference/simulation-models.md) |
 | SPICE runs, netlists, harnesses, the live sketch | `sim_spice.py`, `project_ops.py`, `sch_lib.py`, `sim_scenario.py` | [docs/reference/spice-runs.md](../../../docs/reference/spice-runs.md) |
+| What a publish CORRECTS for you, before it parses | `geometry_proposals.py` | [docs/reference/publish-sanitization.md](../../../docs/reference/publish-sanitization.md) |
 | The agent tool surface | `jaravis.py` | [docs/reference/jaravis.md](../../../docs/reference/jaravis.md) |
 | PCM package retention and the personal repository | `pcm.py` | [docs/reference/pcm-packaging.md](../../../docs/reference/pcm-packaging.md) |
 | The HTTP catalog and KiCad field visibility | `generator.py`, `mirror.py` | [docs/reference/kicad-integration.md](../../../docs/reference/kicad-integration.md) |
@@ -108,7 +109,6 @@ skips the datasheet pins, the sign-off carry, the review carry and the machine
 validation. Audit actions in use: `publish`, `review.check`, `review.revoke`,
 `signoff.*`, `import`. (`proposal.create` / `proposal.approve` /
 `proposal.reject` appear in history only.)
-
 
 ## Importing from YAML — two modes
 

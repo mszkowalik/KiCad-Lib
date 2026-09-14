@@ -221,11 +221,101 @@ folds deep — the verification row, the checklist, then Verify… — before th
 control that excuses a failing check appeared, and the standing-exception
 feature was reported missing the day after it shipped (2026-09-14).
 
-Two rules came out of it. **A row that folds something makes its whole head the
-target** (`.note-head.clickable`) — a caret-only target beside a label that
-looks clickable reads as no target. And **a section that is showing a problem
-opens itself**: `ReviewCard` unfolds its checklist when the state is `failed`,
-and `VerificationSection` opens the first failing row.
+The rule that came out of it: **a row that folds something makes its whole head
+the target** (`.note-head.clickable`) — a caret-only target beside a label that
+looks clickable reads as no target.
+
+**Count the folds, do not automate them.** The first fix was to open things by
+themselves — `ReviewCard` unfolded its checklist when the state was `failed`,
+and `VerificationSection` opened the first failing row. Both were reverted the
+same day, because auto-opening treats the symptom: it guesses which row the
+reader came for, and guesses wrong on every card that is merely `partial`.
+
+**Two axes, one word on the row.** `result` and `severity` are separate
+(decision 0016): a warning-level failure means the rule IS broken and the
+breakage does NOT fail the part — `state_from_record` gives such a subject
+`checked` with `warnings: 1`. Printing both axes raw put `failed (machine)` and
+`warning only` beside each other on one row, which reads as a contradiction and
+was reported as a broken check (2026-09-14). The row now says `warning`; the
+stored `result` is untouched and the row's `title` still names it.
+
+**The same rule applies sideways, not only downwards.** A standing exception
+used to render in a block of its own above the checklist, which put the reason a
+check is quiet — and the only button that withdraws it — several rows from the
+check itself, under a bare key (`fp.npth_mechanical`) nobody reads as the
+question it answers (user report 2026-09-14). It is now drawn ON the row it
+excuses: the pill in the head, `Revoke exception` in the row's own `.btn-row`.
+
+Two things that keeps working, and must keep working:
+
+- **`answered.exception_id` is the link, not the key.** An exception carries a
+  `variant`, so a waiver on the NMOS rule must not excuse the PNP one.
+- **An exception with no row keeps a block of its own.** Its check can be scoped
+  out, switched off, or gone from the checklist since the decision was made, and
+  a STALE one has stopped closing its item altogether. Drop that fallback and
+  the exception becomes impossible to withdraw.
+
+What shipped instead (2026-09-14, user request):
+
+- **`ReviewCard` has no checklist fold at all.** Opening a subject row shows
+  every check and every control on it.
+- **`VerificationSection`'s three rows all start closed**, whatever the state.
+  One click now reaches the same place the three folds used to.
+- **A replaced answer (`superseded`) IS folded**, with its result and author in
+  the summary. A finding is longer than the answer that settles it, so an open
+  one buried the current answer under the item's own history.
+- **"Not about parts like this one" and "switched off here" ARE folded**, behind
+  a count. Printed open, five checks a MOSFET can never answer — "IQ is per
+  CHANNEL", "the exposed pad is documented" — sat in the middle of its checklist
+  and read as work. They are kept, not dropped: reading them is how somebody
+  finds out a scope is wrong.
+
+**A fold is worth having only when the hidden thing is usually NOT what the
+reader came for.** That is the test — not the subject's state.
+
+## A `title` attribute is not a hint (`components/InfoTip.tsx`)
+
+`title` waits about a second before it appears, gives no sign that it exists,
+and renders as the browser's own grey box with no line breaks. A checklist
+item's hint is several sentences and the ONLY explanation of what the check
+means, and it was invisible behind one (user request 2026-09-14).
+
+**Wherever text is worth reading, draw an ⓘ and show it on pointer-enter.**
+`InfoTip` is that marker. It reuses `.si-tip` for the bubble and differs from
+`SiInput`'s only in where the marker sits: that one is absolutely positioned
+INSIDE an input box and shares itself with the rounding notice, this one sits in
+a line of text. Keep `title` for the machine-readable extra — `ReviewCard` still
+puts the item's KEY there.
+
+Same constraint as `SiInput`: **the tip is `position: fixed`, placed from the
+marker's box by JS, and nothing in its ancestry may carry a `transform`.**
+
+**A tip opens to whichever side has more room, and is capped to that room.** The
+first version asked whether 160 px fitted below the marker, which is true almost
+everywhere, so the long hints — `fp.shared_land_record` is 2,265 characters,
+about 45 lines in the 300 px column — opened downwards and lost two thirds of
+themselves off the bottom edge (user report 2026-09-14). `InfoTip` sets
+`maxHeight` from the measured gap and `.si-tip` carries `overflow-y: auto`, so
+the overflow scrolls. **The tip must stay a CHILD of the marker** for that: the
+pointer moving onto it to scroll would otherwise leave the element whose
+`onMouseLeave` closes it.
+
+## The review card has no edit mode
+
+Answering a check used to need "Verify…" first — a click that carries no
+decision and hides every control behind it. Every row is answerable now, and
+**Save / Cancel appear at the top the moment an answer is staged** (user request
+2026-09-14).
+
+Two rules follow from it:
+
+- **Work sorts to the top.** `attentionRank` orders the list findings, then
+  warnings, then open, then excused, then checked. A reader scans downward for
+  what to do next, and a passing machine item is never that.
+- **The rank reads the SAVED answer, never a staged one.** Ranking a staged
+  answer would re-sort the list while somebody is working down it, moving rows
+  out from under the cursor. It re-sorts on the next load, once the answer is
+  real.
 
 ## A table with no rows still runs its sort
 
@@ -431,8 +521,11 @@ exactly why it went unnoticed.
 `PdfFrame` fetches the bytes and frames a `blob:` URL instead: a blob the page
 created carries no HTTP headers, so there is no `X-Frame-Options` to honour,
 and same-origin credentials still apply to the fetch so the file stays behind
-the auth gate. Both call sites go through it (`ReviewWorkbench`, `FileViewer`).
-Never "simplify" one back to a plain `src`. The alternative fix — scoping the
+the auth gate. `FileViewer` is the only call site left — `ReviewWorkbench`
+stopped embedding its datasheet on 2026-09-14 and links to it instead. Never
+"simplify" the remaining one back to a plain `src`, and use `PdfFrame` for any
+new preview: a plain `<a target="_blank">` is fine, because DENY forbids
+FRAMING, not navigation. The alternative fix — scoping the
 header to SAMEORIGIN for `/lib/` — means editing an nginx config shared with
 unrelated services, and nginx's `add_header` in a nested block replaces every
 inherited one, so it would silently drop the other two security headers.

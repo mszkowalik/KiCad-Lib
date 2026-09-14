@@ -46,9 +46,11 @@ and the copy was worse.
   to `/components/...`, `/invoices`, `/parts-stock`, `/kicad`, `/proposals` in
   new code — use the new paths.
 - **The Reviews queue is a workbench, not just a table.** A row expands
-  inline (`components/ReviewWorkbench.tsx`): ReviewCards on the left, the
-  archived datasheet in an iframe plus the symbol/footprint renders on the
-  right, Prev/Next walking the FILTERED list. Links inside a row must
+  inline (`components/ReviewWorkbench.tsx`): one collapsible row per subject on
+  the left (`ReviewSubjectRows`, shared with the component page), the
+  symbol/footprint renders on the right, Prev/Next walking the FILTERED list.
+  The datasheet is a LINK that opens in a tab, never a frame — it was embedded
+  until 2026-09-14 and pushed the checks off the screen. Links inside a row must
   `stopPropagation()` — the row itself is the expand toggle. The template
   tabs sort by `used_by` (leverage) before name; keep that ordering, it is
   the point of the column. "Queue shown → agent" files review requests;

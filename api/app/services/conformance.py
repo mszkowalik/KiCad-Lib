@@ -35,6 +35,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime, timezone
+from functools import lru_cache
 
 from sqlalchemy.orm import Session
 
@@ -48,6 +49,34 @@ RESULTS = ("checked", "na", "failed")
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+@lru_cache(maxsize=1)
+def _validator_revision() -> str:
+    """A hash of `validator.py` itself, folded into every digest.
+
+    The digest covers the resolved checklist, the facts and the exceptions —
+    which is enough for a DECLARATIVE check, because editing one changes the
+    item. It is not enough for a check written in Python: `fp.via_dims` was
+    re-aimed from a `(via ...)` regex to the thru_hole pads that actually carry
+    a thermal via, and 15 footprints went on serving `na — no vias` from the
+    cache because no fact and no item had moved (measured 2026-09-14).
+
+    So the code is an input too. Editing this module invalidates the whole
+    library exactly once, and the warm-up refills it — which is the behaviour
+    `0017` promises and only half delivered.
+
+    Read once per process. The file cannot change under a running container
+    without a reload, and a reload builds a new process.
+    """
+    try:
+        from pathlib import Path
+
+        from . import validator
+
+        return hashlib.sha256(Path(validator.__file__).read_bytes()).hexdigest()[:16]
+    except Exception:  # noqa: BLE001 — a digest must never break a read
+        return "unknown"
 
 
 def _digest(resolved: dict, facts: dict | None, exc_ids: list[int]) -> str:
@@ -66,16 +95,20 @@ def _digest(resolved: dict, facts: dict | None, exc_ids: list[int]) -> str:
                    i.get("assert"), i.get("when")] for i in resolved["items"]],
         "facts": {f: (facts or {}).get(f) for f in used},
         "exceptions": sorted(exc_ids),
+        "validator": _validator_revision(),
     }
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
 
 
-def evaluate(db: Session, kind: str, parent, version) -> tuple[list[dict], list[dict], str]:
-    """Everything computed for this version. Returns (items, excused, digest).
+def evaluate(db: Session, kind: str, parent, version) -> tuple[list[dict], list[dict], list[dict], str]:
+    """Everything computed for this version. Returns (items, excused, judgment, digest).
 
-    ``items`` is the machine tier. ``excused`` is the JUDGMENT items a standing
-    exception closes — computed here rather than written into a record, because
+    ``items`` is the machine tier. ``judgment`` is what TODAY's checklist expects
+    a PERSON to answer — cached so a list row measures completeness against the
+    same checklist the detail card does, instead of against the record's own
+    older snapshot. ``excused`` is the JUDGMENT items a standing exception
+    closes — computed here rather than written into a record, because
     an exception is a decision about the PART and a record is about one version.
     Writing it meant granting an exception on an open judgment item did nothing
     at all until some unrelated save picked it up (measured 2026-09-14).
@@ -103,6 +136,10 @@ def evaluate(db: Session, kind: str, parent, version) -> tuple[list[dict], list[
     except Exception as e:  # noqa: BLE001 — a broken check must not break a read
         items = [{"key": "validator", "result": "failed",
                   "note": f"the validator raised {type(e).__name__}: {e}"}]
+    # Key and text only. A hint is prose for a person about to answer, and this
+    # is a denominator — carrying it would triple the row for nothing.
+    judgment = [{"key": i["key"], "text": i.get("text", i["key"])}
+                for i in resolved["items"] if not i.get("machine")]
 
     out: list[dict] = []
     for item in items:
@@ -142,10 +179,10 @@ def evaluate(db: Session, kind: str, parent, version) -> tuple[list[dict], list[
             "exception_id": exc.id,
             "severity": checklists.severity_of(spec),
         })
-    return out, excused, digest
+    return out, excused, judgment, digest
 
 
-def get(db: Session, kind: str, parent, version) -> tuple[list[dict], list[dict]]:
+def get(db: Session, kind: str, parent, version) -> tuple[list[dict], list[dict], list[dict]]:
     """This version's machine answers and excused judgment items, from the cache
     when it is still valid.
 
@@ -154,40 +191,49 @@ def get(db: Session, kind: str, parent, version) -> tuple[list[dict], list[dict]
     a cache and is why nothing here is careful about committing.
     """
     if version is None:
-        return [], []
+        return [], [], []
     row = (db.query(M.Conformance)
            .filter_by(subject_kind=kind, subject_version_id=version.id).first())
-    items, excused, digest = evaluate(db, kind, parent, version)
+    items, excused, judgment, digest = evaluate(db, kind, parent, version)
     if row is None:
         db.add(M.Conformance(subject_kind=kind, subject_version_id=version.id,
-                             digest=digest, items=items, excused=excused))
-    elif row.digest != digest:
+                             digest=digest, items=items, excused=excused,
+                             judgment=judgment))
+    elif row.digest != digest or row.judgment is None:
+        # `judgment is None` covers the rows written before the column existed:
+        # their digest is still valid, so nothing else would refresh them.
         row.digest = digest
         row.items = items
         row.excused = excused
+        row.judgment = judgment
         row.computed_at = _utcnow()
-    return items, excused
+    return items, excused, judgment
 
 
-def cached(db: Session, kind: str, version_id: int | None) -> tuple[list[dict] | None, list[dict]]:
+def cached(db: Session, kind: str, version_id: int | None
+           ) -> tuple[list[dict] | None, list[dict], list[dict] | None]:
     """Whatever the cache holds, WITHOUT validating the digest.
 
     For list surfaces, where re-running the validator once per row is the
     difference between a page and a minute. A stale row is still a better answer
     than no answer, and the detail view recomputes.
 
-    Returns ``(items, excused)``. ``items`` is None when the cache has no row —
+    Returns ``(items, excused, judgment)``. ``judgment`` is None when this row
+    predates the column or has never been computed, and the caller then falls
+    back to the record's own checklist snapshot. ``items`` is None when the
+    cache has no row —
     which reads as "not evaluated", never as "conforms". ``excused`` is empty in
     that case, which is the safe way to be wrong: an item wrongly counted as
     open is visible work, an item wrongly excused is a question nobody asks.
     """
     if version_id is None:
-        return None, []
+        return None, [], None
     row = (db.query(M.Conformance)
            .filter_by(subject_kind=kind, subject_version_id=version_id).first())
     if row is None:
-        return None, []
-    return list(row.items or []), list(row.excused or [])
+        return None, [], None
+    return (list(row.items or []), list(row.excused or []),
+            None if row.judgment is None else list(row.judgment))
 
 
 def summary(items: list[dict] | None) -> dict:

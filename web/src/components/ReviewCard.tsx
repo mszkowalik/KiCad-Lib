@@ -7,11 +7,14 @@ import {
   grantReviewException,
   revokeReviewCheck,
   revokeReviewException,
+  type ChecklistItemDef,
   type ReviewCheckAnswer,
   type ReviewDetail,
+  type ReviewException,
   type ReviewKind,
 } from "../api";
 import { useDialog } from "./Dialog";
+import InfoTip from "./InfoTip";
 /** Mirror of `review.TEXT_LIMITS` and `exceptions.TEXT_LIMITS` in the backend,
  *  in characters. The server REFUSES an over-long explanation, so these stop
  *  the typing rather than the save — change one and change the other, because a
@@ -53,10 +56,8 @@ export default function ReviewCard({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [verifying, setVerifying] = useState(false);
   const [answers, setAnswers] = useState<Record<string, ReviewCheckAnswer>>({});
   const [note, setNote] = useState("");
-  const [showItems, setShowItems] = useState(false);
   // A check this part needed that no checklist anticipated. It lives in this
   // subject's record only — the checklist document is untouched, which is what
   // makes it safe to add one without deciding it applies to every part.
@@ -68,16 +69,9 @@ export default function ReviewCard({
     setDetail(null);
     setLoadError(null);
     setActionError(null);
-    setVerifying(false);
     setAnswers({});
     getReviewDetail(kind, id, ctrl.signal)
-      .then((d) => {
-        setDetail(d);
-        // A failing card opens ON its findings. They are why anybody opened it,
-        // and a fold over them is how "there is no way to excuse this check"
-        // happens (user report 2026-09-14).
-        if (d.state === "failed") setShowItems(true);
-      })
+      .then((d) => setDetail(d))
       .catch((err) => {
         if (!isAbortError(err)) setLoadError(errorMessage(err));
       });
@@ -257,7 +251,6 @@ export default function ReviewCard({
     try {
       const next = await recordReviewCheck(kind, id, { items, note: note.trim() || undefined });
       apply(next);
-      setVerifying(false);
       setAnswers({});
       setNote("");
       setCustomText("");
@@ -361,6 +354,47 @@ export default function ReviewCard({
   // carry yet — they have no row of their own to render in, so they get one.
   const known = new Set([...detail.items.map((i) => i.key), ...detail.extra_items.map((i) => i.key)]);
   const pendingCustom = Object.values(answers).filter((a) => !known.has(a.key));
+  const dirty = Object.keys(answers).length > 0;
+
+  // Work first, settled last. The card is read top-down by somebody looking for
+  // what to do next, and a checked machine item is never that (user request
+  // 2026-09-14).
+  //
+  // The rank comes from the SAVED answer, never from a staged one, so answering
+  // a row does not make it jump out from under the cursor. It re-sorts on the
+  // next load, once the answer is real.
+  const sorted = detail.items
+    .map((item, index) => ({ item, index, rank: attentionRank(item) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((row) => row.item);
+
+  // A standing decision is drawn ON the row of the check it excuses (user
+  // request 2026-09-14). It used to sit in a block of its own above the
+  // checklist, which put the reason a check is quiet — and the only button that
+  // undoes it — several rows away from the check itself, under a bare key
+  // nobody reads as the question it answers.
+  //
+  // `answered.exception_id` is the exact link and is preferred. The key match
+  // is the fallback for a STALE exception: it has stopped closing its item, so
+  // the item is open again and carries no id, and it still has to be visible.
+  const exceptions = detail.exceptions ?? [];
+  const excFor = (item: ChecklistItemDef): ReviewException | undefined => {
+    const id = item.answered?.exception_id;
+    if (id != null) {
+      const exact = exceptions.find((e) => e.id === id);
+      if (exact) return exact;
+    }
+    return exceptions.find(
+      (e) => e.key === item.key && (!e.variant || !item.variant || e.variant === item.variant),
+    );
+  };
+  const attached = new Set(
+    sorted.map((item) => excFor(item)?.id).filter((x): x is number => x != null),
+  );
+  // Whatever has no row keeps a block of its own: a check can be scoped out,
+  // switched off, or dropped from the checklist since the decision was made,
+  // and an exception with no Revoke button is an exception nobody can withdraw.
+  const looseExceptions = exceptions.filter((e) => !attached.has(e.id));
 
   return (
     <section className="card pad meta-card">
@@ -372,27 +406,49 @@ export default function ReviewCard({
         <ReviewPill state={detail.state} provenance={detail.provenance} detail={detail} />
       </h3>
 
-      <p className="muted">{explain(detail, openCount)}</p>
-
       {actionError ? <ErrorBanner message={actionError} /> : null}
 
+      {/* The sentence and the buttons that act on it share ONE line (user
+          request 2026-09-14). They are the same statement — what state this
+          subject is in, and what you can do about it — and stacking them put
+          two lines of chrome above every checklist. The line wraps at narrow
+          widths rather than squeezing the note input. */}
+      <div className="review-actions">
+        <p className="muted">{explain(detail, openCount)}</p>
+
+      {/* SAVE AND CANCEL ONLY WHEN THERE IS SOMETHING TO SAVE. There used to be
+          a "Verify…" button that switched the card into an edit mode before any
+          row would answer, which is a click that carries no decision — the card
+          is the edit mode now, and this row appears the moment an answer is
+          staged (user request 2026-09-14). */}
       <div className="btn-row">
-        <button type="button" className="btn btn-sm" onClick={() => setShowItems((v) => !v)}>
-          {showItems ? "Hide checklist" : `Checklist (${detail.items.length})`}
-        </button>
-        {!verifying ? (
+        {dirty ? (
           <>
+            <input
+              className="text row-input"
+              value={note}
+              disabled={busy}
+              maxLength={LIMITS.passNote}
+              placeholder="What documentation was used (optional)"
+              onChange={(e) => setNote(e.target.value)}
+            />
+            <button type="button" className="btn btn-ok btn-sm" disabled={busy} onClick={() => void save()}>
+              Save ({Object.keys(answers).length})
+            </button>
             <button
               type="button"
-              className="btn btn-primary btn-sm"
-              disabled={busy || detail.version_id === null}
+              className="btn btn-sm"
+              disabled={busy}
               onClick={() => {
-                setVerifying(true);
-                setShowItems(true);
+                setAnswers({});
+                setCustomText("");
               }}
             >
-              Verify…
+              Cancel
             </button>
+          </>
+        ) : (
+          <>
             <button
               type="button"
               className="btn btn-ok btn-sm"
@@ -418,41 +474,15 @@ export default function ReviewCard({
               </button>
             ) : null}
           </>
-        ) : (
-          <>
-            <input
-              className="text row-input"
-              value={note}
-              disabled={busy}
-              maxLength={LIMITS.passNote}
-              placeholder="What documentation was used (optional)"
-              onChange={(e) => setNote(e.target.value)}
-            />
-            <button type="button" className="btn btn-ok btn-sm" disabled={busy} onClick={() => void save()}>
-              Save ({Object.keys(answers).length})
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              disabled={busy}
-              onClick={() => {
-                setVerifying(false);
-                setAnswers({});
-                setCustomText("");
-              }}
-            >
-              Cancel
-            </button>
-          </>
         )}
+        </div>
       </div>
 
-      {/* Standing decisions live OUTSIDE the checklist fold. They are few, they
-          are the reason a check is quiet, and burying them behind "Checklist
-          (16)" means granting one and then being unable to find it again. */}
-      {(detail.exceptions ?? []).length ? (
+      {/* Only the decisions with no check to sit on. Every other one is drawn
+          on its own row below — see `excFor`. */}
+      {looseExceptions.length ? (
         <ul className="notes-list">
-          {(detail.exceptions ?? []).map((exc) => (
+          {looseExceptions.map((exc) => (
           <li key={`exc-${exc.id}`} className="note">
             <div className="note-head">
               <span>{exc.key}</span>{" "}
@@ -481,224 +511,334 @@ export default function ReviewCard({
         </ul>
       ) : null}
 
-      {showItems ? (
-        <ul className="notes-list">
-          {detail.items_carried ? (
-            <li className="note muted dim">
-              These answers were recorded before the confirmation that set this state — the
-              confirmation vouches for the subject as a whole and records no items of its own.
-            </li>
-          ) : null}
-          {detail.items.map((item) => {
-            const pending = answers[item.key];
-            const a = item.answered;
-            const finding = a?.result === "failed" || a?.result === "flagged";
-            const excused = a?.exception_id != null;
-            // A machine item is normally the validator's to answer, so a
-            // passing one offers no buttons. A FINDING is different: it is a
-            // worklist entry addressed to a person.
-            const canAnswer = verifying && !excused && (!item.machine || finding);
-            // "Does not apply" is available on ANY judgment item, answered or
-            // not, and on a machine FINDING. Saying a check is not about this
-            // part does not require running it first — it is the only honest
-            // way to close such an item, and refusing it on an open item was
-            // what left `na` in place as a second, weaker way to say the same
-            // thing. It needs no verify mode: an exception stages nothing and
-            // saves nothing (decision 0017).
-            const canExcuse = !excused && !pending && (!item.machine || finding);
-            return (
-              <li key={item.key} className="note">
-                <div className="note-head">
-                  <span title={item.hint ?? item.key}>{item.text}</span>{" "}
-                  {pending ? (
-                    <span className="pill ok" title="unsaved answer">
-                      {pending.result} ✎
-                    </span>
-                  ) : a ? (
-                    <span
-                      className={`pill ${RESULT_TONE[a.result] ?? "neutral"}`}
-                      title={`${a.actor_type} · ${a.actor}${a.note ? ` — ${a.note}` : ""}`}
-                    >
-                      {a.result}
-                      {a.actor_type !== "human" ? ` (${a.actor_type})` : ""}
-                    </span>
-                  ) : (
-                    <span className="pill neutral">open</span>
-                  )}
-                  {item.machine ? (
-                    <span className="badge" title="answered automatically on publish">
-                      auto
-                    </span>
-                  ) : null}
-                  {/* A warning-level failure is worth seeing and does NOT fail
-                      the part — say so on the row, or it reads as a defect. */}
-                  {a?.severity === "warning" && (a.result === "failed" || a.result === "flagged") ? (
-                    <span className="pill warn" title="A failure here does not fail the part">
-                      warning only
-                    </span>
-                  ) : null}
-                </div>
-                {a?.note && !pending ? <p className="muted">{a.note}</p> : null}
-                {/* What this answer replaced. Accepting a flag keeps the flag
-                    readable — otherwise clearing a defect means deleting the
-                    only description of it. */}
-                {a?.superseded && !pending ? (
-                  <p className="muted dim superseded">
-                    was{" "}
-                    <span className={`pill ${RESULT_TONE[a.superseded.result] ?? "neutral"}`}>
-                      {a.superseded.result}
-                    </span>
-                    {a.superseded.actor ? ` by ${a.superseded.actor}` : ""}
-                    {a.superseded.note ? ` — ${a.superseded.note}` : ""}
-                  </p>
-                ) : null}
-                {/* Until 2026-09-13 only `failed` could be closed here. An
-                    agent's `flagged` on a machine item — `cmp.datasheet_text`
-                    is the one that reaches this state in practice — rendered
-                    read-only with no way to accept, waive or re-check it (user
-                    report 2026-09-13). The backend never forbade it:
-                    `record_check` lets a human answer over an agent on any key,
-                    and keeps the old answer as `superseded`. */}
-                {canAnswer || canExcuse ? (
-                  <div className="btn-row">
-                    {canAnswer ? (
-                      <>
-                        <button type="button" className="btn btn-sm" onClick={() => void answer(item, "checked")}>
-                          Checked
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-danger"
-                          onClick={() => void answer(item, "flagged")}
-                          title="Verified and found wrong — record the defect without fixing it"
-                        >
-                          Flag
-                        </button>
-                      </>
-                    ) : null}
-                    {canExcuse ? (
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        disabled={busy}
-                        onClick={() => void excuse(item)}
-                        title="This check is not about this part — records a standing decision that survives the next version, and shows on the card until somebody revokes it"
-                      >
-                        Does not apply…
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </li>
-            );
-          })}
-          {(detail.inapplicable ?? []).map((item) => (
-            <li key={item.key} className="note muted">
-              <div className="note-head">
-                <span>{item.text}</span>{" "}
-                <span
-                  className="pill neutral"
-                  title={`Not about parts like this one: ${Object.entries(item.when)
-                    .map(([f, p]) => `${f} matches ${p}`)
-                    .join(" and ")}`}
-                >
-                  n/a here
-                </span>
-              </div>
-            </li>
-          ))}
-          {(detail.switched_off ?? []).map((item) => (
-            <li key={item.key} className="note muted">
-              <div className="note-head">
-                <span>{item.text}</span>{" "}
-                <span className="pill neutral" title="Switched off in the checklist for this subject">
-                  off
-                </span>
-                {item.machine ? <span className="badge">auto</span> : null}
-              </div>
-            </li>
-          ))}
-          {detail.extra_items.map((item) => (
+      {/* The checklist is ALWAYS open. It used to be behind a fold that opened
+          itself on a failing card; the fold only ever hid the thing somebody
+          opened the card to read, and a collapsed finding is how "there is no
+          way to excuse this check" happens (user reports 2026-09-14). */}
+      <ul className="notes-list">
+        {detail.items_carried ? (
+          <li className="note muted dim">
+            These answers were recorded before the confirmation that set this state — the
+            confirmation vouches for the subject as a whole and records no items of its own.
+          </li>
+        ) : null}
+        {sorted.map((item) => {
+          const pending = answers[item.key];
+          const a = item.answered;
+          const finding = a?.result === "failed" || a?.result === "flagged";
+          const excused = a?.exception_id != null;
+          const exc = excFor(item);
+          // A machine item is normally the validator's to answer, so a
+          // passing one offers no buttons. A FINDING is different: it is a
+          // worklist entry addressed to a person.
+          const canAnswer = !excused && (!item.machine || finding);
+          // "Does not apply" is available on ANY judgment item, answered or
+          // not, and on a machine FINDING. Saying a check is not about this
+          // part does not require running it first — it is the only honest
+          // way to close such an item, and refusing it on an open item was
+          // what left `na` in place as a second, weaker way to say the same
+          // thing. It needs no verify mode: an exception stages nothing and
+          // saves nothing (decision 0017).
+          const canExcuse = !excused && !pending && (!item.machine || finding);
+          return (
             <li key={item.key} className="note">
               <div className="note-head">
-                <span>{item.text}</span>{" "}
-                <span className={`pill ${RESULT_TONE[item.result] ?? "neutral"}`}>{item.result}</span>
-                <span className="badge" title={`Added for this ${detail.kind} only — ${item.key}`}>
-                  custom
-                </span>
+                <span title={item.key}>{item.text}</span>{" "}
+                {item.hint ? (
+                  <InfoTip label={`What "${item.text}" asks`}>{item.hint}</InfoTip>
+                ) : null}{" "}
+                {pending ? (
+                  <span className="pill ok" title="unsaved answer">
+                    {pending.result} ✎
+                  </span>
+                ) : a ? (
+                  <span
+                    className={`pill ${resultTone(a)}`}
+                    title={`${a.actor_type} · ${a.actor}${
+                      isWarning(a) ? ` — recorded as ${a.result}, at warning severity` : ""
+                    }${a.note ? ` — ${a.note}` : ""}`}
+                  >
+                    {isWarning(a) ? "warning" : a.result}
+                    {a.actor_type !== "human" ? ` (${a.actor_type})` : ""}
+                  </span>
+                ) : (
+                  <span className="pill neutral">open</span>
+                )}
+                {item.machine ? (
+                  <span className="badge" title="answered automatically on publish">
+                    auto
+                  </span>
+                ) : null}
+                {exc ? (
+                  <span
+                    className={`pill ${exc.stale_reason ? "warn" : "neutral"}`}
+                    title={exc.stale_reason ?? `Granted by ${exc.created_by}`}
+                  >
+                    {exc.stale_reason ? "exception stale" : `exception · ${exc.scope}`}
+                  </span>
+                ) : null}
               </div>
-              {item.note ? <p className="muted">{item.note}</p> : null}
+              {a?.note && !pending ? <p className="muted">{a.note}</p> : null}
+              {/* The decision's own words, printed only when the answer did not
+                  already carry them — an excused item's note IS the reason. */}
+              {exc && (!a?.note || pending) ? <p className="muted">{exc.note}</p> : null}
+              {exc?.stale_reason ? (
+                <p className="muted">No longer applies: {exc.stale_reason}</p>
+              ) : null}
+              {exc ? (
+                <div className="btn-row">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-danger"
+                    disabled={busy}
+                    onClick={() => void revokeException(exc.id, exc.key)}
+                    title="Withdraw this decision — the check it excuses answers again on the next read"
+                  >
+                    Revoke exception
+                  </button>
+                </div>
+              ) : null}
+              {/* What this answer replaced. Accepting a flag keeps the flag
+                  readable — otherwise clearing a defect means deleting the
+                  only description of it.
+
+                  FOLDED, and open on request (user request 2026-09-14). The
+                  old finding is longer than the answer that replaced it — a
+                  flag says what is wrong and why, a "checked" says it is
+                  settled — so printing it open buried the current answer under
+                  the history of the item. The summary still names WHAT it was
+                  and who wrote it, which is the part worth seeing at a glance;
+                  only the note is behind the fold. */}
+              {a?.superseded && !pending ? (
+                <SupersededRow was={a.superseded} />
+              ) : null}
+              {/* Until 2026-09-13 only `failed` could be closed here. An
+                  agent's `flagged` on a machine item — `cmp.datasheet_text`
+                  is the one that reaches this state in practice — rendered
+                  read-only with no way to accept, waive or re-check it (user
+                  report 2026-09-13). The backend never forbade it:
+                  `record_check` lets a human answer over an agent on any key,
+                  and keeps the old answer as `superseded`. */}
+              {canAnswer || canExcuse ? (
+                <div className="btn-row">
+                  {canAnswer ? (
+                    <>
+                      <button type="button" className="btn btn-sm" onClick={() => void answer(item, "checked")}>
+                        Checked
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-danger"
+                        onClick={() => void answer(item, "flagged")}
+                        title="Verified and found wrong — record the defect without fixing it"
+                      >
+                        Flag
+                      </button>
+                    </>
+                  ) : null}
+                  {canExcuse ? (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={busy}
+                      onClick={() => void excuse(item)}
+                      title="This check is not about this part — records a standing decision that survives the next version, and shows on the card until somebody revokes it"
+                    >
+                      Does not apply…
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </li>
-          ))}
-          {pendingCustom.map((a) => (
-            <li key={a.key} className="note">
-              <div className="note-head">
-                <span>{a.text}</span>{" "}
-                <span className="pill ok" title="unsaved answer">
-                  {a.result} ✎
-                </span>
-                <span className="badge">custom</span>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  disabled={busy}
-                  onClick={() =>
-                    setAnswers((prev) => {
-                      const next = { ...prev };
-                      delete next[a.key];
-                      return next;
-                    })
-                  }
-                >
-                  Remove
-                </button>
-              </div>
-              {a.note ? <p className="muted">{a.note}</p> : null}
-            </li>
-          ))}
-          {verifying ? (
-            <li className="note">
-              <div className="note-head">
-                <input
-                  className="text row-input"
-                  value={customText}
-                  maxLength={200}
-                  disabled={busy}
-                  placeholder="Add a check of your own — what did you verify?"
-                  aria-label="Custom check"
-                  onChange={(e) => setCustomText(e.target.value)}
-                />
-              </div>
-              <div className="btn-row">
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  disabled={busy || !customText.trim()}
-                  onClick={() => void addCustom("checked")}
-                >
-                  Checked
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-danger"
-                  disabled={busy || !customText.trim()}
-                  onClick={() => void addCustom("flagged")}
-                  title="Verified and found wrong — record the defect without fixing it"
-                >
-                  Flag
-                </button>
-                <span className="rail-hint">
-                  Recorded on this {detail.kind} alone — it does not change the checklist
-                  every other part is measured against.
-                </span>
-              </div>
-            </li>
-          ) : null}
-        </ul>
-      ) : null}
+          );
+        })}
+        {/* FOLDED. These are checks that are NOT ABOUT parts like this one, and
+            printing them open put five questions a MOSFET can never answer —
+            "IQ is per CHANNEL", "the exposed pad is documented" — in the middle
+            of its checklist, where they read as work (user report 2026-09-14).
+            Kept, because "this check exists and does not apply here" is how
+            somebody finds out a scope is wrong; a count in the summary is
+            enough to say so. */}
+        {detail.inapplicable?.length ? (
+          <li className="note muted">
+            <details className="not-here">
+              <summary>
+                {detail.inapplicable.length} check
+                {detail.inapplicable.length === 1 ? "" : "s"} not about parts like this one
+              </summary>
+              <ul className="notes-list">
+                {detail.inapplicable.map((item) => (
+                  <li key={item.key} className="note muted">
+                    <div className="note-head">
+                      <span>{item.text}</span>{" "}
+                      <span
+                        className="pill neutral"
+                        title={`Not about parts like this one: ${Object.entries(item.when)
+                          .map(([f, p]) => `${f} matches ${p}`)
+                          .join(" and ")}`}
+                      >
+                        n/a here
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </li>
+        ) : null}
+        {detail.switched_off?.length ? (
+          <li className="note muted">
+            <details className="not-here">
+              <summary>
+                {detail.switched_off.length} check
+                {detail.switched_off.length === 1 ? "" : "s"} switched off for this subject
+              </summary>
+              <ul className="notes-list">
+                {detail.switched_off.map((item) => (
+                  <li key={item.key} className="note muted">
+                    <div className="note-head">
+                      <span>{item.text}</span>{" "}
+                      <span className="pill neutral" title="Switched off in the checklist for this subject">
+                        off
+                      </span>
+                      {item.machine ? <span className="badge">auto</span> : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </li>
+        ) : null}
+        {detail.extra_items.map((item) => (
+          <li key={item.key} className="note">
+            <div className="note-head">
+              <span>{item.text}</span>{" "}
+              <span className={`pill ${RESULT_TONE[item.result] ?? "neutral"}`}>{item.result}</span>
+              <span className="badge" title={`Added for this ${detail.kind} only — ${item.key}`}>
+                custom
+              </span>
+            </div>
+            {item.note ? <p className="muted">{item.note}</p> : null}
+          </li>
+        ))}
+        {pendingCustom.map((a) => (
+          <li key={a.key} className="note">
+            <div className="note-head">
+              <span>{a.text}</span>{" "}
+              <span className="pill ok" title="unsaved answer">
+                {a.result} ✎
+              </span>
+              <span className="badge">custom</span>
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={busy}
+                onClick={() =>
+                  setAnswers((prev) => {
+                    const next = { ...prev };
+                    delete next[a.key];
+                    return next;
+                  })
+                }
+              >
+                Remove
+              </button>
+            </div>
+            {a.note ? <p className="muted">{a.note}</p> : null}
+          </li>
+        ))}
+        {(
+          <li className="note">
+            <div className="note-head">
+              <input
+                className="text row-input"
+                value={customText}
+                maxLength={200}
+                disabled={busy}
+                placeholder="Add a check of your own — what did you verify?"
+                aria-label="Custom check"
+                onChange={(e) => setCustomText(e.target.value)}
+              />
+            </div>
+            <div className="btn-row">
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={busy || !customText.trim()}
+                onClick={() => void addCustom("checked")}
+              >
+                Checked
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-danger"
+                disabled={busy || !customText.trim()}
+                onClick={() => void addCustom("flagged")}
+                title="Verified and found wrong — record the defect without fixing it"
+              >
+                Flag
+              </button>
+              <span className="rail-hint">
+                Recorded on this {detail.kind} alone — it does not change the checklist
+                every other part is measured against.
+              </span>
+            </div>
+          </li>
+        )}
+      </ul>
     </section>
   );
 }
+
+/** The answer a current one replaced — folded, with what it WAS in the summary.
+ *
+ *  A disclosure arrow that opens onto nothing is a lie, so an answer with no
+ *  note stays a plain line. */
+function SupersededRow({ was }: { was: NonNullable<NonNullable<ChecklistItemDef["answered"]>["superseded"]> }) {
+  const head = (
+    <>
+      was <span className={`pill ${RESULT_TONE[was.result] ?? "neutral"}`}>{was.result}</span>
+      {was.actor ? ` by ${was.actor}` : ""}
+    </>
+  );
+  if (!was.note) return <p className="muted dim superseded">{head}</p>;
+  return (
+    <details className="muted dim superseded">
+      <summary>{head}</summary>
+      <p>{was.note}</p>
+    </details>
+  );
+}
+
+/** How much attention a checklist row needs, lowest first.
+ *
+ *  Read off the SAVED answer only. Ranking a staged answer would re-sort the
+ *  list while somebody is working down it. */
+function attentionRank(item: ChecklistItemDef): number {
+  const a = item.answered;
+  if (!a) return 2; // nobody has answered it
+  if (a.exception_id != null) return 3; // a standing decision closed it
+  if (a.result === "failed" || a.result === "flagged") {
+    return a.severity === "warning" ? 1 : 0;
+  }
+  return 4; // checked, or na
+}
+
+/** A warning-level failure says `warning`, not `failed`.
+ *
+ *  `result` and `severity` are two axes (decision 0016): the rule IS broken, and
+ *  the breakage does not fail the part — `state_from_record` gives such a
+ *  subject `checked` with `warnings: 1`. Printing both axes raw put `failed
+ *  (machine)` and `warning only` side by side on one row, which reads as a
+ *  contradiction and got reported as a broken check (2026-09-14).
+ *
+ *  The word shown changes; the stored `result` does not. The row's `title`
+ *  still names it, so nothing is hidden from somebody who looks. */
+const isWarning = (a: { result: string; severity?: string }) =>
+  a.severity === "warning" && (a.result === "failed" || a.result === "flagged");
+
+const resultTone = (a: { result: string; severity?: string }) =>
+  isWarning(a) ? "warn" : (RESULT_TONE[a.result] ?? "neutral");
 
 const RESULT_TONE: Record<string, string> = {
   checked: "ok",

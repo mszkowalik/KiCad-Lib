@@ -148,6 +148,114 @@ def slice_node(text: str, tag: str) -> str | None:
         return None  # unbalanced from here on — let the parser report it
 
 
+# --------------------------------------------------------------------------
+# sanitization — what a publish corrects for you
+#
+# TWO RULES, and both are load-bearing (user design 2026-09-14).
+#
+# 1. ONLY WHAT THE MATERIAL FINGERPRINT EXCLUDES. `services/material.py` leaves
+#    out `descr`, `tags` and the `property` fields, so rewriting one of those
+#    carries verification and production sign-off automatically, and the copper
+#    a reviewer diffed against JLC is untouched. Nothing here may go near a
+#    pad, a pin, a courtyard or an `attr` — a silent edit there is the one
+#    thing that could scrap a board.
+#
+# 2. ONLY WHERE THE CORRECT VALUE IS DERIVABLE. If the right answer has to be
+#    guessed, it is a CHECK, not a sanitizer. That is why `tags` and
+#    `descr` are not touched: their content is written, not computed.
+#
+# And two properties it must keep: IDEMPOTENT, or the `force=False` no-op
+# detection breaks and every KiCad re-save mints a version; and REPORTED, so an
+# author is never surprised by an edit they did not make — every caller returns
+# the notes in `sanitized`.
+
+_FP_VALUE_RE = re.compile(r'(\(property\s+"Value"\s+")((?:[^"\\]|\\.)*)(")')
+_SYM_FP_DEFAULT_RE = re.compile(r'(\(property\s+"Footprint"\s+")((?:[^"\\]|\\.)*)(")')
+_KI_FP_FILTERS_RE = re.compile(r'\(property\s+"ki_fp_filters"\s+"')
+
+
+def _drop_property(text: str, start: int) -> str:
+    """Cut the balanced ``(property ...)`` block that begins at `start`,
+    together with its own line and the blank space after it."""
+    depth, k = 0, start
+    while k < len(text):
+        if text[k] == "(":
+            depth += 1
+        elif text[k] == ")":
+            depth -= 1
+            if depth == 0:
+                break
+        k += 1
+    head = text.rfind("\n", 0, start) + 1
+    tail = k + 1
+    while tail < len(text) and text[tail] == "\n":
+        tail += 1
+    return text[:head] + text[tail:]
+
+
+def sanitize_footprint(text: str, name: str | None) -> tuple[str, list[str]]:
+    """Correct a footprint's derivable metadata. Returns (text, notes).
+
+    ONE RULE TODAY: the hidden ``Value`` field is the footprint's own name.
+    KiCad writes it that way, `fp.one_land_per_package` already tells an author
+    to change it when copying a land, and 74 of 213 footprints still carried an
+    EasyEDA string (`SW-SMD_4P-L6.0-W6.0-P4.50-LS9.0-H5.0`) or a bare MPN when
+    this was added. The name is the only correct value, so nothing is guessed.
+    """
+    notes: list[str] = []
+    if not name:
+        return text, notes
+    m = _FP_VALUE_RE.search(text)
+    if m and m.group(2) != name:
+        notes.append(f'Value field set to the footprint name (was "{m.group(2)}")')
+        text = text[:m.start()] + m.group(1) + name + m.group(3) + text[m.end():]
+    return text, notes
+
+
+def sanitize_symbol(text: str) -> tuple[str, list[str]]:
+    """Correct a base symbol's derivable metadata. Returns (text, notes).
+
+    TWO RULES TODAY.
+
+    ``ki_fp_filters`` is REMOVED. It filters the footprint chooser and nothing
+    else, and every curated path already carries the footprint: the HTTP
+    catalog does not send the field at all (`routers/kicad_http.py`), and a
+    generated component symbol has its `Footprint` set. A wrong filter is worse
+    than none — 19 symbols carried stock KiCad globs like `Connector*:*_1x??_*`
+    whose library prefix can never match our `7Sigma:` namespace, so the
+    chooser hid the very land the part is built on. Removing outright is safe
+    here because NO component carries its own `ki_fp_filters` row, so no
+    component field loses inherited position or effects.
+
+    A ``Footprint`` default that is not ours is EMPTIED, not removed — that one
+    is a displayed field, and every component inherits its position and effects
+    from the base symbol (the trap `LCSC Part` taught on 2026-09-14). A
+    `PCM_7Sigma:` reference names our own footprint wearing the client-side
+    nickname, so it is rewritten rather than cleared.
+    """
+    notes: list[str] = []
+    while True:
+        m = _KI_FP_FILTERS_RE.search(text)
+        if not m:
+            break
+        text = _drop_property(text, m.start())
+        if not notes or not notes[-1].startswith("ki_fp_filters"):
+            notes.append("ki_fp_filters removed — the chooser filter is not the choice")
+    m = _SYM_FP_DEFAULT_RE.search(text)
+    if m:
+        was = m.group(2)
+        new = None
+        if was.startswith("PCM_7Sigma:"):
+            new = "7Sigma:" + was.split(":", 1)[1]
+        elif was and not was.startswith("7Sigma:"):
+            new = ""
+        if new is not None:
+            notes.append(f'Footprint default {"rewritten" if new else "cleared"}'
+                         f' (was "{was}")')
+            text = text[:m.start()] + m.group(1) + new + m.group(3) + text[m.end():]
+    return text, notes
+
+
 def normalize_footprint_text(text: str) -> str:
     """Reduce a pasted payload to a bare ``(footprint ...)`` body.
 
@@ -294,6 +402,10 @@ def propose_footprint_version(
     if not name or not source_text.strip():
         return {"error": "name and source_text must not be empty"}
     source_text = normalize_footprint_text(source_text)
+    # Before the parse AND before the no-op comparison: sanitizing afterwards
+    # would make a re-publish of already-clean text read as a change, and every
+    # KiCad re-save would mint a version.
+    source_text, sanitized = sanitize_footprint(source_text, (name or "").strip())
     if slice_node(source_text, "footprint") is None:
         return {"error": "this is not a whole footprint — the text contains no (footprint ...) "
                          "block. A canvas selection is not enough: copy the footprint itself, "
@@ -348,6 +460,10 @@ def propose_footprint_version(
     else:
         noop = None if force else _unchanged("footprint", fp, source_text)
         if noop is not None:
+            # "reported on every path": a caller must be able to read
+            # `sanitized` without knowing which branch it came back from.
+            noop["sanitized"] = sanitized
+        if noop is not None:
             return noop
         cur = next((v for v in fp.versions if v.id == fp.current_version_id), None)
         old_pads = (cur.parsed or {}).get("pad_count") if cur else None
@@ -372,13 +488,13 @@ def propose_footprint_version(
         return {
             "ok": True, "proposal_id": fv.id, "footprint": name, "version_no": new_no,
             "is_new_footprint": is_new, "pad_count": pads, "previous_pad_count": old_pads,
-            "warnings": warnings,
+            "warnings": warnings, "sanitized": sanitized,
             "status": "draft — awaiting user approval in the Proposals view",
         }
     return _publish_geometry(db, "footprint", fp, fv, actor, minor_change, comment, {
         "ok": True, "proposal_id": fv.id, "footprint": name, "version_no": new_no,
         "is_new_footprint": is_new, "pad_count": pads, "previous_pad_count": old_pads,
-        "warnings": warnings,
+        "warnings": warnings, "sanitized": sanitized,
     })
 
 
@@ -400,6 +516,8 @@ def propose_symbol_version(
     if not name or not source_text.strip():
         return {"error": "name and source_text must not be empty"}
     source_text = normalize_symbol_text(source_text)
+    # See the footprint side on why this runs before the no-op comparison.
+    source_text, sanitized = sanitize_symbol(source_text)
     if slice_node(source_text, "symbol") is None:
         return {"error": "this is not a whole symbol — the text contains no (symbol ...) block. "
                          "A canvas selection is not enough: copy the symbol itself, or paste "
@@ -446,6 +564,10 @@ def propose_symbol_version(
     else:
         noop = None if force else _unchanged("symbol", sym, source_text)
         if noop is not None:
+            # "reported on every path": a caller must be able to read
+            # `sanitized` without knowing which branch it came back from.
+            noop["sanitized"] = sanitized
+        if noop is not None:
             return noop
         cur = next((v for v in sym.versions if v.id == sym.current_version_id), None)
         old_pins = (cur.parsed or {}).get("pin_count") if cur else None
@@ -468,13 +590,13 @@ def propose_symbol_version(
         return {
             "ok": True, "proposal_id": sv.id, "symbol": name, "version_no": new_no,
             "is_new_symbol": is_new, "pin_count": pins, "previous_pin_count": old_pins,
-            "warnings": warnings,
+            "warnings": warnings, "sanitized": sanitized,
             "status": "draft — awaiting user approval in the Proposals view",
         }
     return _publish_geometry(db, "symbol", sym, sv, actor, minor_change, comment, {
         "ok": True, "proposal_id": sv.id, "symbol": name, "version_no": new_no,
         "is_new_symbol": is_new, "pin_count": pins, "previous_pin_count": old_pins,
-        "warnings": warnings,
+        "warnings": warnings, "sanitized": sanitized,
     })
 
 

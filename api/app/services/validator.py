@@ -90,6 +90,11 @@ _CHECK_SPECS: dict[str, tuple[dict, ...]] = {
          "params": {"crtyd_line_width_mm": 0.05}},
         {"key": "fp.courtyard_grid",
          "text": "Courtyard coordinates sit on the {coordinate_grid_mm} mm grid",
+         "hint": "The courtyard is the envelope other footprints are placed "
+                 "against, so an off-grid corner poisons every board-level "
+                 "spacing decision made from it. Two different figures: the "
+                 "line WIDTH is 0.05 mm, the coordinate GRID is 0.1 mm. Do not "
+                 "read one as the other.",
          "params": {"coordinate_grid_mm": 0.1}},
         {"key": "fp.fab_outline", "text": "F.Fab body outline is present"},
         {"key": "fp.fab_width", "text": "F.Fab line width is {fab_line_width_mm} mm",
@@ -113,20 +118,64 @@ _CHECK_SPECS: dict[str, tuple[dict, ...]] = {
                     "thermal_via_warning_only": True}},
         {"key": "fp.model3d",
          "text": "A 3D model is referenced and present in the library",
-         "hint": "Fails until a human or agent marks it n/a for a part that "
-                 "genuinely needs no model."},
+         "hint": "Every footprint carries a model. One proposed with no "
+                 "(model ...) line is incomplete even when nothing suitable is "
+                 "stored yet; check list_models3d first, and mark it n/a only for "
+                 "a part with no physical body.\n"
+                 "PATH: always the ${SEVENSIGMA_DIR} variable — never a hardcoded "
+                 "path, ${KIPRJMOD} or a home directory. Anything outside "
+                 "${SEVENSIGMA_DIR}/3DModels/ is refused, so the file must reach "
+                 "the library first.\n"
+                 "THREE DOORS, one store. The KiCad *Push 7Sigma changes* button "
+                 "(point the footprint at the file wherever it is, save, push — it "
+                 "uploads, rewrites the reference and repoints your copy; needs "
+                 "plugin 1.4.0 or newer). upload_model3d(file_path, rel_path) over "
+                 "MCP. POST /api/models3d/upload?rel_path=<folder>/<NAME>.step.\n"
+                 "CORRECTING A MODEL: re-upload the SAME rel_path. Never a second "
+                 "path. The replacement is not private — every footprint on that "
+                 "path gets the new solid, which is the point.\n"
+                 "WHICH FOLDER, first match wins: the folder the current model "
+                 "uses (replacing must not move it); the source file\'s own "
+                 "*.3dshapes directory, so a model from KiCad\'s tree keeps "
+                 "KiCad\'s category; otherwise 7Sigma.3dshapes/. Never loose at "
+                 "the root of 3DModels/. Look in KiCad\'s own 3dmodels/ tree "
+                 "first — a Tier 0 adoption inherits its stock model, and a "
+                 "_ThermalVias variant points at the plain STEP."},
     ),
     "symbol": (
-        {"key": "sym.parse", "text": "Symbol source parses as a valid .kicad_sym library"},
+        {"key": "sym.parse", "text": "Symbol source parses as a valid .kicad_sym library",
+         "hint": "kicad-cli sym upgrade proves the file parses before you publish. "
+                 "One trap accounts for most failures here: a (color ...) node "
+                 "placed as a SIBLING of (font ...) rather than inside it makes "
+                 "the whole library fail to load."},
         {"key": "sym.fields", "text": "Reference and Value fields are present"},
         {"key": "sym.pins_grid", "text": "All pins sit on the {pin_grid_mm} mm grid",
          "params": {"pin_grid_mm": 1.27}},
-        {"key": "sym.pin_length", "text": "Every pin uses the same stub length",
-         "hint": "The absolute length is a judgment call on sym.geometry. What is "
-                 "mechanical is MIXING lengths inside one drawing."},
+        {"key": "sym.pin_length", "text": "Every pin on one edge uses the same stub length",
+         "hint": "The absolute length is a judgment call and belongs to "
+                 "sym.geometry. What is mechanical is mixing lengths on ONE "
+                 "EDGE, which puts the connection points of pins that should "
+                 "line up at different coordinates.\n"
+                 "PER EDGE, not per symbol. A glyph whose body is not square "
+                 "needs different lengths on different edges for every pin tip "
+                 "to land on the drawing — KiCad's own Crystal_GND24_Small puts "
+                 "1.27 mm on its left and right terminals and 0.635 mm on its "
+                 "top and bottom grounds, because the body is 1.5 mm wide and "
+                 "3.0 mm tall."},
         {"key": "sym.sim_link",
-         "text": "The simulation pin map still fits this version's pins",
-         "hint": "n/a when no sim model is linked."},
+         "text": "The simulation pin map still fits this version\'s pins",
+         "hint": "n/a when no sim model is linked. The link is keyed on the "
+                 "SYMBOL, so one link covers every component built from the "
+                 "drawing.\n"
+                 "THE FINGERPRINT is the pin NUMBERS plus their ELECTRICAL TYPES. "
+                 "Changing passive to power_in stales the link; moving a pin\'s "
+                 "(x, y) does not.\n"
+                 "A stale link makes the mirror withhold the Sim fields from every "
+                 "component using it. Re-save the link in the same session — do "
+                 "not leave it stale, and do not delete it to silence the "
+                 "warning.\n"
+                 "Creating a symbol, or editing one with no link: ASK whether to "
+                 "add simulation capability. Do not add one unasked."},
     ),
     "component": (
         {"key": "cmp.required_props",
@@ -165,8 +214,14 @@ _CHECK_SPECS: dict[str, tuple[dict, ...]] = {
          "hint": "A document with no text layer cannot be searched, and read_datasheet "
                  "returns empty pages for it. Replace it with the manufacturer's text PDF."},
         {"key": "cmp.sim_params",
-         "text": "Every Sim.Params key is declared by the linked simulation model",
-         "hint": "n/a when the component carries no Sim.Params."},
+         "text": "Every name in Sim.Params is one the simulation model accepts",
+         "hint": "Sim.Params holds name=value pairs. Each name must be a "
+                 "parameter the linked model declares.\n"
+                 "A name the model does not know is IGNORED, and no error "
+                 "appears. The part then simulates with the model's own default "
+                 "instead of your value, and nothing says so.\n"
+                 "This check is automatic. It does not apply to a component "
+                 "with no Sim.Params."},
     ),
 }
 
@@ -461,12 +516,39 @@ def validate_footprint(db: Session, version: M.FootprintVersion,
     else:
         items.append(_item("fp.min_th_pad", "checked"))
 
-    vias = re.findall(r"\(via\s+\([^)]*\)\s+\(size\s+([\d.]+)\)\s+\(drill\s+([\d.]+)\)", content)
+    # A VIA IN A FOOTPRINT IS A PAD, NOT A `(via ...)`. That element exists only
+    # in a .kicad_pcb — a `.kicad_mod` has no via primitive at all — so the regex
+    # this used to run matched nothing in the entire library, and the check
+    # answered "na — no vias" on all 212 footprints while 19 of them carried a
+    # real thermal-via field. `VQFN-40-1EP_5x5mm_P0.4mm_EP3.3x3.3mm_ThermalVias`
+    # has 16 (user report 2026-09-14).
+    #
+    # KiCad draws a thermal via as a `thru_hole` pad carrying the EXPOSED PAD's
+    # own number, which is what stitches it to that copper. So a through-hole
+    # pad is a via when its number also appears on an smd pad, or when it has no
+    # number at all (a bare stitch). Everything else is a component lead, and
+    # `fp.min_th_pad` is the rule for those.
+    smd_numbers = {str(pad.get("number") or "").strip() for pad in pads
+                   if pad.get("type") == "smd" and str(pad.get("number") or "").strip()}
+
+    def _is_via(pad: dict) -> bool:
+        if pad.get("type") != "thru_hole":
+            return False
+        number = str(pad.get("number") or "").strip()
+        return not number or number in smd_numbers
+
+
+    # `version.parsed` stores `drill` as a plain number, not a list — the same
+    # shape `fp.min_drill` reads a few lines above.
+    vias = [(min(float(x) for x in pad["size"]), float(pad["drill"]))
+            for pad in pads
+            if _is_via(pad) and isinstance(pad.get("drill"), (int, float))
+            and isinstance(pad.get("size"), list) and pad["size"]]
     is_thermal = "thermalvias" in (version.footprint.name if version.footprint else "").lower() \
         or "thermal" in content.lower()
     via = p["fp.via_dims"]
-    bad_vias = [(float(s), float(d)) for s, d in vias
-                if float(s) < via["min_via_size"] or float(d) < via["min_via_drill"]]
+    bad_vias = [(size, drill) for size, drill in vias
+                if size < via["min_via_size"] or drill < via["min_via_drill"]]
     # A thermal-via field is a deliberate array of small vias under a pad, so
     # the fab minimum does not apply to it — unless the checklist item says it does.
     thermal_warn_only = bool(via.get("thermal_via_warning_only", True))
@@ -477,7 +559,9 @@ def validate_footprint(db: Session, version: M.FootprintVersion,
                            f"{len(bad_vias)} via(s) below "
                            f"{_fmt(via['min_via_size'])}/{_fmt(via['min_via_drill'])} mm"))
     else:
-        note = f"{len(bad_vias)} small thermal via(s) — allowed" if bad_vias else ""
+        note = (f"{len(bad_vias)} small thermal via(s) — allowed" if bad_vias
+                else f"{len(vias)} via(s), smallest {_fmt(min(s for s, _ in vias))}"
+                     f"/{_fmt(min(d for _, d in vias))} mm")
         items.append(_item("fp.via_dims", "checked", note))
 
     # 3D model: required by default; deferrable only by a human/agent marking
@@ -567,27 +651,49 @@ def _symbol_pin_blocks(content: str) -> list[str]:
 
 
 def _pin_length_item(blocks: list[str]) -> dict:
-    """`sym.pin_length` — one stub length across the whole symbol.
+    """`sym.pin_length` — one stub length PER EDGE.
 
     The ABSOLUTE length is a judgment call and stays on `sym.geometry`: the
-    house default is 2.54 mm, but a symbol whose pin numbers run to three or
-    more characters needs 5.08 mm for the number to sit on its stub, and a
-    drawing may legitimately carry another length. What is mechanical, and
-    what actually goes wrong, is MIXING lengths inside one drawing — it puts
-    the pin ends on two different vertical lines and no wire grid can hide it.
+    house default is 2.54 mm, a symbol whose pin numbers run to three or more
+    characters needs 5.08 mm, and a drawing may legitimately carry another.
+
+    What is mechanical is mixing lengths on ONE EDGE, because that puts the
+    connection points of pins that should line up at different coordinates and
+    no wire grid hides it.
+
+    PER EDGE, not per symbol. A glyph whose body is not square needs different
+    lengths on different edges for every pin tip to land on the drawing: KiCad's
+    own `Device:Crystal_GND24_Small` puts 1.27 mm on its left and right
+    terminals and 0.635 mm on its top and bottom grounds, because the body is
+    1.5 mm wide and 3.0 mm tall. Comparing across the whole symbol failed that
+    drawing byte-for-byte as adopted from stock, which is the check being wrong
+    rather than the drawing.
     """
-    lengths = []
+    #: The pin angle names the edge its body runs toward: 0 is the LEFT edge,
+    #: 180 the right, 270 the top, 90 the bottom.
+    by_edge: dict[str, list[float]] = {}
     for block in blocks:
         m = re.search(r"\(length\s+([\d.]+)\)", block)
-        if m is not None:
-            lengths.append(float(m.group(1)))
-    if not lengths:
+        at = re.search(r"\(at\s+-?[\d.]+\s+-?[\d.]+\s+(-?[\d.]+)\)", block)
+        if m is None:
+            continue
+        angle = int(round(float(at.group(1)))) % 360 if at else -1
+        by_edge.setdefault({0: "left", 90: "bottom", 180: "right",
+                            270: "top"}.get(angle, "?"), []).append(float(m.group(1)))
+    if not by_edge:
         return _item("sym.pin_length", "na", "no pins found")
-    distinct = sorted(set(lengths))
-    if len(distinct) > 1:
-        counts = ", ".join(f"{v:g} mm on {lengths.count(v)} pin(s)" for v in distinct)
-        return _item("sym.pin_length", "failed", f"mixed pin stub lengths: {counts}")
-    return _item("sym.pin_length", "checked", f"all pins {distinct[0]:g} mm")
+    bad = []
+    for edge, lengths in sorted(by_edge.items()):
+        distinct = sorted(set(lengths))
+        if len(distinct) > 1:
+            bad.append(f"{edge}: " + ", ".join(
+                f"{v:g} mm on {lengths.count(v)} pin(s)" for v in distinct))
+    if bad:
+        return _item("sym.pin_length", "failed",
+                     "mixed pin stub lengths on one edge — " + "; ".join(bad))
+    shown = ", ".join(f"{edge} {sorted(set(v))[0]:g} mm"
+                      for edge, v in sorted(by_edge.items()))
+    return _item("sym.pin_length", "checked", shown)
 
 
 def _sim_link_item(db: Session, version: M.SymbolVersion) -> dict:
@@ -930,6 +1036,18 @@ def _negate(claim: str) -> str:
     return f"not: {claim}"
 
 
+def _fact_noun(fact: str) -> str:
+    """The phrase a fact reads as in a sentence, or the fact name tidied up.
+
+    Shared by `describe_assert` (the rule) and `evaluate_assert` (the note), so
+    the two never name the same quantity differently.
+    """
+    from . import checklists
+
+    entry = checklists.FACTS_BY_NAME.get(fact, {})
+    return entry.get("noun") or fact.lstrip("$").replace("_", " ")
+
+
 def describe_assert(spec: dict) -> str:
     """The sentence a declarative check prints, built from what it will do.
 
@@ -972,6 +1090,14 @@ def describe_assert(spec: dict) -> str:
     if "at_least" in spec:
         return f"The {fact} is at least {_fmt(spec['at_least'])}"
     if "at_most" in spec:
+        #: `at_most 0` is not a threshold, it is "there must be none" — the
+        #: shape 14 of the 15 at_most checks take. Printing it as a comparison
+        #: gave "The count of sourcing defaults stored on the drawing is at
+        #: most 0", which a user read as a broken rule rather than a rule
+        #: (report 2026-09-14). Every counting fact's `noun` starts "count of",
+        #: so dropping those two words leaves the sentence already written.
+        if _fmt(spec["at_most"]) == "0" and fact.startswith("count of "):
+            return f"No {fact[len('count of '):]}"
         return f"The {fact} is at most {_fmt(spec['at_most'])}"
     return f"The {fact} is present"
 
@@ -986,6 +1112,11 @@ def evaluate_assert(key: str, spec: dict, facts: dict | None) -> dict:
     fact = str(spec.get("fact", ""))
     value = (facts or {}).get(fact)
     missing = value is None or str(value) == ""
+    #: The note is the only sentence a person reads when a check fails, and it
+    #: used to name the FACT: "$symbol_sourcing_defaults is 1, not at most 0",
+    #: which reads as a broken rule (user report 2026-09-14). A fact already
+    #: carries the phrase to use instead.
+    noun = _fact_noun(fact)
 
     # `absent` is judged BEFORE the missing-fact rule below, because absence is
     # exactly what it asserts. Every other assertion reads a value, so a subject
@@ -996,13 +1127,13 @@ def evaluate_assert(key: str, spec: dict, facts: dict | None) -> dict:
     if "absent" in spec:
         want_absent = bool(spec["absent"])
         if want_absent:
-            return (_item(key, "checked", f"no {fact}, as required") if missing else
-                    _item(key, "failed", f"{fact} must not be set here, and it is {str(value)!r}"))
-        return (_item(key, "failed", f"{fact} is missing, and it is required") if missing else
+            return (_item(key, "checked", f"no {noun}, as required") if missing else
+                    _item(key, "failed", f"the {noun} must not be set here, and it is {str(value)!r}"))
+        return (_item(key, "failed", f"the {noun} is missing, and it is required") if missing else
                 _item(key, "checked", str(value)))
 
     if missing:
-        return _item(key, "na", f"this subject has no {fact}")
+        return _item(key, "na", f"this subject has no {noun}")
     value = str(value)
 
     if "one_of" in spec:
@@ -1010,28 +1141,35 @@ def evaluate_assert(key: str, spec: dict, facts: dict | None) -> dict:
         if not allowed:
             return _item(key, "na", "no values are listed, so nothing is required")
         return (_item(key, "checked", value) if value in allowed else
-                _item(key, "failed", f"{fact} is {value!r}, not one of: " + ", ".join(allowed)))
+                _item(key, "failed", f"the {noun} is {value!r}, not one of: " + ", ".join(allowed)))
     if "matches" in spec:
         try:
             ok = re.match(str(spec["matches"]), value) is not None
         except re.error as e:
             return _item(key, "failed", f"the pattern does not compile ({e})")
         return (_item(key, "checked", value) if ok else
-                _item(key, "failed", f"{fact} is {value!r}, which does not match "
+                _item(key, "failed", f"the {noun} is {value!r}, which does not match "
                                      f"{spec['matches']}"))
     if "equals" in spec:
         want = str(spec["equals"])
         return (_item(key, "checked", value) if value == want else
-                _item(key, "failed", f"{fact} is {value!r}, not {want!r}"))
+                _item(key, "failed", f"the {noun} is {value!r}, not {want!r}"))
     for name, ok in (("at_least", lambda a, b: a >= b), ("at_most", lambda a, b: a <= b)):
         if name in spec:
             try:
                 got, want = float(value), float(spec[name])
             except (TypeError, ValueError):
-                return _item(key, "na", f"{fact} is {value!r}, which is not a number")
+                return _item(key, "na", f"the {noun} is {value!r}, which is not a number")
+            if ok(got, want):
+                return _item(key, "checked", value)
+            # "must be none" again, said as a finding: how many were found,
+            # and of what. "3 found: silk lines crossing pad copper".
+            if name == "at_most" and want == 0 and noun.startswith("count of "):
+                return _item(key, "failed",
+                             f"{_fmt(got)} found: {noun[len('count of '):]}")
             word = "at least" if name == "at_least" else "at most"
-            return (_item(key, "checked", value) if ok(got, want) else
-                    _item(key, "failed", f"{fact} is {_fmt(got)}, not {word} {_fmt(want)}"))
+            return _item(key, "failed",
+                         f"the {noun} is {_fmt(got)}, not {word} {_fmt(want)}")
     return _item(key, "checked", value)
 
 

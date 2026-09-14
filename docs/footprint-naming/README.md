@@ -138,12 +138,12 @@ their own spelling.
 Six proposed names corrected. Using the *full* canonical name also dissolves the
 `Diodes` vendor-vs-category ambiguity, so no family-word prefix is needed.
 
-**D2 — `_HandSoldering`.** Matches KLC F2.1 #10 verbatim. `_HandSolder` and
-`_Handsoldering` are never minted here. The library has **0** footprints with either
-spelling today, so nothing changes now. Going forward: stock footprints adopted at Tier 0
-keep `_HandSolder` (108 shipped files use it, against 86 for `_HandSoldering`), while
-house-authored variants use `_HandSoldering`. Both will legitimately coexist — that is
-intended, not drift.
+**D2 — the hand-solder token is RETIRED** (2026-09-14, superseding the original D2,
+which adopted `_HandSoldering` and was never used). The house mints no `_HandSoldering`,
+no `_HandSolder` and no `_Soldering`. A stock name adopted at Tier 0 keeps whatever
+spelling it ships with — 194 shipped files end in `_HandSolder` — so nothing bans the
+token; a ban would collide with the Tier 0 freeze. `fp.name_spellings` no longer looks
+for it.
 
 **D3 — Rotation is never encoded in a name.** Names come from datasheet nominal; a rotated
 or mis-origined import is a geometry defect for the validator, not a fact for the string.

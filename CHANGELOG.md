@@ -1,5 +1,706 @@
 # Changelog
 
+## 2026-09-14 (`_HandSoldering` and `_Soldering` are retired)
+
+**The house mints no hand-solder token** (user decision 2026-09-14). Not
+`_HandSoldering`, not `_HandSolder`, not `_Soldering`.
+
+- **One footprint carried one**, and it is renamed:
+  `Pin_D0.7mm_Pad1.4mm_Soldering` → **`Pin_D0.7mm_Pad1.4mm`**. The token said
+  nothing the name did not — it is a single thru-hole pad and `Pad1.4mm` was
+  already in the name. Renamed through `services/rename.py`, so the one
+  component on it (`Pin_0.7mm_Soldering_Pin`) was republished with its
+  verification carried, the `.kicad_mod` moved in the mirror and the Connectors
+  library rebuilt.
+- **`fp.name_spellings` no longer looks for the token.** Its pattern drops the
+  `_HandSolder` / `_Handsoldering` clauses and keeps the rotation ban, which is
+  the rest of what it always did. All 213 footprints pass.
+- **Nothing BANS the token, and that is deliberate.** KiCad ships **194**
+  footprints whose filename ends in `_HandSolder`, and a Tier 0 adoption keeps a
+  stock filename character for character. A ban would collide with that freeze
+  the moment one of those lands is adopted. What changed is that the house does
+  not mint one — a tier question, not a spelling rule.
+
+**The naming standard contradicted itself on this, which is the best argument
+for dropping it.** `docs/footprint-naming/01-standard.md` pinned `HandSolder` as
+"the house spelling — never `HandSoldering`" in §3.8, while D2 in the same
+document pinned `_HandSoldering` and said `_HandSolder` is "never minted here".
+The stock library splits 108 / 86 / 28 across three spellings, and KLC F2.1
+rule 10 disagrees with KLC F3.3's own example. D2 is superseded, §3.8 drops
+`HandSolder` from the option vocabulary, and the claim that the house "pins one
+answer" no longer lists it.
+
+Footprint checklist **v29**; `conventions-footprints` **v45**. Also updated:
+`docs/footprint-naming/README.md` and `05-sources.md`.
+
+## 2026-09-14 (the checklist audit, and a sanitizer on publish)
+
+An audit of every judgment check — asked of how many subjects, answered how
+many times — drove three changes. Machine checks were excluded from the count:
+conformance is computed, not recorded, so a zero there means nothing.
+
+**`sym.fp_filters` is retired** (severity `ignore`). Asked of 194 symbols,
+answered **2** times. `ki_fp_filters` filters the footprint chooser and nothing
+else, and every curated path already carries the footprint: the HTTP catalog
+does not send the field at all, and a generated component symbol has `Footprint`
+set. Not one of its 16 findings could reach a board.
+
+**`fp.naming` asks the rename decision and nothing else.** Its text claimed the
+twelve-slot order, which is `fp.field_order`'s job, so the name was covered
+twice and a reviewer could not tell the two rows apart. The name is already
+fully covered by `fp.tier`, `fp.field_order`, `fp.name_charset` and
+`fp.name_spellings`; what is left here is the two reasons that justify a rename
+and the rule that "ugly" is not one. The 292 existing `checked` answers are
+kept: the hint they were read against was already the rename policy — the text
+was the part that disagreed with it.
+
+**Six glyph checks became one measurement — `sym.family_drawing`.**
+`sym.triangle_body`, `sym.gate_body`, `sym.triangle_pins`, `sym.input_marks`,
+`sym.rail_polarity` and `sym.rail_marks_not_names` all compared a drawing
+against coordinates the hints quote to the 0.01 mm, and between them had been
+answered **zero times in the library's history**. A coordinate comparison is not
+a judgement. The new fact `$symbol_family_drawing_off` counts body vertices, pin
+positions and polarity marks that are off the house table. Result: **10 checked,
+1 na**, no findings — it is a regression guard, and the ten are exactly the
+parts the hints name as precedent.
+
+Two false positives the dry run caught before it shipped, both mine:
+
+- **The angled-leader slot was missing from the gate table.** `74LVC1G125`
+  (`~{OE}`) and `74LVC1G17` (`NC`) put a spare pin at (5.08, −5.08) with a short
+  leader drawn to it — which is what `sym.angled_leader` describes. Both read as
+  defects until the slot was added.
+- **A multi-input gate has no documented geometry.** `SN74HC21`, a dual 4-input
+  AND, measured **15 elements off** against the one-input table. It is drawn as
+  the IEC body with an `&`, and the house has never written its numbers down. So
+  the fact is now ABSENT there rather than inventing a rule — `sym.drawing_family`
+  owns the undocumented case.
+
+What needs the datasheet stays judgment: which rail is actually negative
+(`sym.rail_negative_mark`), which input the datasheet calls inverting
+(`sym.inverting_on_top`), and comparator vs amplifier (`sym.comparator_glyph`).
+
+### A publish sanitizes before it parses
+
+`sanitize_footprint` / `sanitize_symbol` correct derivable metadata on every
+publish, through every door. Full rules in `api/app/services/CLAUDE.md`; the
+short form is that a rule may only touch what the material fingerprint excludes,
+and only where the correct value is derivable rather than guessed.
+
+| Rule | Corrects today |
+|---|---|
+| A footprint's hidden `Value` takes the footprint's own name | **74** of 213 |
+| `ki_fp_filters` is removed from a symbol | **149** of 207 |
+| A `Footprint` default that is not `7Sigma:` is emptied | 9 |
+
+- **Idempotent, and verified across all 420 drawings.** It runs before the
+  `force=False` no-op comparison — sanitize afterwards and every KiCad re-save
+  would mint a version. A re-publish of sanitized text still returns
+  `unchanged: True`.
+- **Non-material, and verified across all 420 drawings**: not one material
+  fingerprint changes and not one drawing stops parsing.
+- **Reported** on every return path, in `sanitized`.
+- `ki_fp_filters` is deleted outright because **no component carries its own**.
+  A `Footprint` default is **emptied, not deleted** — that one is displayed, and
+  every component inherits its position and effects from the base symbol. Same
+  trap `LCSC Part` taught this morning.
+
+Checklists: symbol **v33**, footprint **v28**. `conventions-symbols` **v22**,
+`conventions-footprints` **v44**. Conformance recomputed across 862 subjects, no
+validator errors; symbol findings 77 → 62.
+
+## 2026-09-14 (`sym.pin_numbers_unchanged` is automatic)
+
+**"No pin numbers changed since the previous version"** is now a machine check.
+The new fact `$symbol_pins_changed` diffs this version's pins against the
+previous version's and counts numbers **added, removed, or moved to a different
+unit**.
+
+As a human question it was not working: answered **twice** in the whole library,
+and asked of **71 symbols that have no previous version**, where the only honest
+answer is "does not apply" and the hint never said so. Comparing two sets of
+`(number, unit)` pairs is what a machine does better than a person reading a
+diff.
+
+- **A first version answers `na`.** The fact is ABSENT rather than `0` — "nothing
+  has been compared" is not the statement "nothing changed".
+- **Unit 0 is not a unit**, it means "common to every unit". Moving a shared
+  power pin out of it makes that pin appear on unit A alone, so it counts.
+- **A duplicated number is not a change.** Stacked power pins share one number,
+  so the fact compares the SET of units each number sits in.
+- The fact lives beside `$symbol_sim_link` rather than in `_symbol_providers`,
+  because it is the one symbol fact that needs more than the source text — the
+  predecessor has to be fetched — and the one that is about a CHANGE rather than
+  a state, which is why it has no meaning on the component page.
+
+Result across 207 symbols: **71 na, 132 checked, 4 findings.** No validator
+errors. Every finding is a real unit reassignment, hand-checked:
+
+| Symbol | | What moved |
+|---|---|---|
+| `KSZ8864CNX` v2 | 40 pins | Deliberate: split into 5 units, one per block |
+| `TLV7022` v3 | 3 pins | Deliberate: one 8-pin box → two comparator units |
+| `74LVC2G34` v3 | 2 pins | Deliberate: one 6-pin box → two buffer units |
+| `SN74HC21` v4 | 2 pins | **Pins 7 and 14 moved out of unit 0 into unit 1** — the shared power pins now appear on unit A alone. The version comment reads "Edited in the KiCad footprint editor" and says nothing about it. |
+
+The three deliberate re-splits need an answer or a standing exception; the
+`SN74HC21` one looks unintended and is worth a look. The hint says what to do in
+either case.
+
+- `conventions-symbols` **v21**; symbol checklist **v31**.
+
+## 2026-09-14 (19 base symbols stop carrying a part number)
+
+**`sym.sourcing_defaults` passes on all 207 symbols.** Every base symbol that
+stored an `LCSC Part` value now stores an empty one.
+
+- **The value is emptied, the key is kept** — and the key is not decoration.
+  `generator.schematic_field_visibility` reads the base symbol for each field's
+  POSITION and EFFECTS, and every component that has its own value inherits
+  them. Deleting the property drops each component's own field to `(at 0 0 0)`
+  with the default font: a diff on every generated symbol for no gain. Emptying
+  the value changes **nothing** — proven by generating each affected component's
+  symbol both ways and diffing: **0 of 19 differ**.
+- **This is already the house pattern.** 16 base symbols carried an empty
+  `LCSC Part` before today; these 19 now match them.
+- **Published as minor changes, so verification carried** — 19 `carry` records,
+  "nothing that reaches the board changed", none lost. Mirror rebuilt: 16 symbol
+  libraries, 442 components, 213 footprints, 0 warnings.
+
+| | |
+|---|---|
+| Symbols fixed | `AP6335XQ` `BSC0702LS` `CH340B` `Conn_01x06` `Conn_01x22` `DF40C-100DS` `ESP32-C6` `FPC-05F-24PH20` `HU2032-LF` `LM2594M-XX` `NCP115ASN` `STM32C071G8U6` `STM32G031G8U6` `TLV62585DRLR` `TPS62826DMQR` `TPS6302X` `USB-B01` `WS2816C-1313/4P` `ZED-F9P` |
+| Components affected | 0 — each already carried its own identical code |
+
+- **The hint gave the wrong fix and is rewritten.** It said "Fix by REMOVING the
+  property from the symbol", which is the change that moves every component's
+  field. It now says to empty the value, shows the edit, and explains why the
+  key stays. Symbol checklist **v30**.
+
+## 2026-09-14 (a warning says warning)
+
+- **A warning-level failure said `failed (machine)` and `warning only` on the
+  same row**, which reads as a contradiction and was reported as a broken check
+  (user report 2026-09-14). The row now says **`warning`**.
+- `result` and `severity` are two axes
+  ([decision 0016](docs/decisions/0016-severity-and-standing-exceptions.md)):
+  the rule IS broken, and the breakage does not fail the part —
+  `state_from_record` gives such a subject `checked` with `warnings: 1`. Only
+  the word shown changes. The stored `result` is untouched, and the row's
+  `title` still names it, so nothing is hidden from somebody who looks.
+- The now-redundant "warning only" badge is gone.
+
+## 2026-09-14 (a check that must find none says so)
+
+- **"The count of sourcing defaults stored on the drawing is at most 0" reads
+  as a broken rule, not a rule** (user report 2026-09-14). `at_most 0` is not a
+  threshold — it is "there must be none", and it is the shape **14 of the 15**
+  `at_most` checks take. Every counting fact's `noun` starts "count of", so
+  dropping those two words leaves the sentence already written:
+
+  | was | now |
+  |---|---|
+  | The count of silk lines crossing pad copper is at most 0 | No silk lines crossing pad copper |
+  | The count of thermal vias outside their own pad is at most 0 | No thermal vias outside their own pad |
+  | The count of sourcing defaults stored on the drawing is at most 0 | No sourcing defaults stored on the drawing |
+
+- **The failure note was worse than the rule**, because it named the fact:
+  `$symbol_sourcing_defaults is 1, not at most 0`. Notes now use the same noun
+  the rule does — `_fact_noun` is shared by `describe_assert` and
+  `evaluate_assert`, so the two can never name one quantity two ways. A
+  must-find-none failure reports what was found: **"1 found: sourcing defaults
+  stored on the drawing"**.
+- **Two facts carried their own negative**, which the new phrasing doubled up.
+  `$footprint_zero_annulus_pads` is now "plated holes whose copper is no wider
+  than the drill" and `$pins_without_pads` is "symbol pins the footprint has no
+  pad for" — read as "No plated holes with no annular ring" before.
+- **A stale text on `cmp.value_field` surfaced and is corrected.** All six
+  variants stored *"Value is the component's own name"*, which is the rule for
+  exactly one of them: a TVS showed that sentence while the check tested
+  `^[0-9]+(\.[0-9]+)?V…$`. Regenerating from each variant's own `assert` fixed
+  it — the drift [decision 0014](docs/decisions/0014-a-check-carries-its-own-configuration.md)
+  exists to prevent.
+- Checklists: component **v27**, symbol **v29**, footprint **v27**. Machine
+  answers recomputed across 862 subjects, no validator errors.
+
+### `sym.sourcing_defaults` is correct, and 19 symbols trip it
+
+Verified against the ESP32-C6 base symbol behind
+`VQFN-40-1EP_5x5mm_P0.4mm_EP3.3x3.3mm_ThermalVias`: the drawing carries
+`(property "LCSC Part" "C5364646")`. `generator.apply_properties` starts from
+`{p.key: p.value for p in symbol.properties}` and lets the component override,
+so a base-symbol default that a component does not override ships to KiCad on
+that component.
+
+**Nothing is broken today** — each of the 18 symbols with a component is
+overridden by that component's own identical code, and `WS2816C-1313/4P` has no
+component yet. It is a latent defect, which is what `warning` says. The ones
+that will actually be reused are the templates: `Conn_01x06`, `Conn_01x22`,
+`DF40C-100DS`, `FPC-05F-24PH20`, `LM2594M-XX` and `TPS6302X` — the last two are
+named for families, and the next part built on either inherits one specific
+orderable code.
+
+## 2026-09-14 (a standing decision sits on the check it excuses)
+
+- **The exception moved onto its item's row** (user request 2026-09-14). It used
+  to render in a block of its own above the checklist, so the reason a check was
+  quiet — and the only button that withdraws it — sat several rows from the
+  check, under a bare key (`fp.npth_mechanical`) that reads as nothing. The row
+  now carries the `exception · this part, always` pill beside its state, the
+  reason beneath it, and `Revoke exception` in the row's own button row.
+- **Linked by `answered.exception_id`, not by key**, because an exception
+  carries a `variant` and a waiver on the NMOS rule must not excuse the PNP one.
+- **An exception with no row keeps a block of its own.** Its check can be scoped
+  out, switched off, or dropped from the checklist since the decision was made,
+  and a stale one has stopped closing its item — without that fallback it would
+  become impossible to withdraw.
+
+## 2026-09-14 (the third place is gone)
+
+**A shared land records its other package names in `tags` and `descr`, and
+nowhere else.** The hidden `Equivalent Packages` property is removed (user
+decision 2026-09-14, after asking why only 1 of 213 footprints carried one).
+
+Why it never earned its place:
+
+- **Nothing read it.** KiCad's footprint chooser searches the name, `descr` and
+  `tags` — not arbitrary properties. In the shipped KiCad 10.0.5 library, 15,462
+  footprints use five property names between them (`Reference`, `Value`,
+  `KiLib_Generator`, `Description`, `Datasheet`); a custom one appears **twice**.
+- **One reader in the whole platform**: `jaravis._footprint_aliases`, feeding
+  `list_footprints`. Nothing in the web UI or the mirror touched it.
+- **Writing one was expensive.** The property lives in `source_text`, so editing
+  it mints a footprint version and publishes a new component version for every
+  part on that land — for a metadata note. (Verification and sign-off do carry:
+  `services/material.py` excludes `descr`, `tags` and `property` fields from the
+  material fingerprint.)
+
+What changed:
+
+- `fp.shared_land_record` is now **"Other vendor names for this same land are
+  listed in tags and descr"**, and the hint says why those two and no third:
+  they are the only fields KiCad itself searches. It also says not to
+  reintroduce a property for this.
+- `list_footprints(query)` matches the name, `tags` and `descr`. `matched_on`
+  still says which field answered.
+- `QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm_ThermalVias` — the only footprint that
+  had one — lost the property. Every designation and vendor code it carried is
+  in `tags` and `descr`; its `descr` now reads "…QFN, VQFN, WQFN (TI RGT and
+  RTE), LFCSP (ADI CP-16-22), JEDEC MO-220 VGGD." Published as a minor change,
+  so the five components on the land (`PCF8574RGTR`, `ADA4945-1ACPZ-R7`,
+  `74HC123LQ/TR`, `74HC138LQ/TR`, `TPS65135RTER`) were repointed with their
+  verification intact.
+- **Two retired lands lost a dangling pointer.** `LFCSP-16-1EP_3x3mm_P0.5mm_EP1.6x1.6mm_ThermalVias` and
+  `WQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm_ThermalVias` both said "see its
+  Equivalent Packages property" in their `descr`. They now point at the
+  survivor's `tags` and `descr`. No components on either, so nothing moved.
+- Footprint base checklist **v26**; `conventions-footprints` **v43**.
+
+The measured deltas the property carried are preserved here, because this is
+now their only record:
+
+> VQFN-16 3x3 P0.5 (TI RGT, PCF8574RGTR on this land since import) ; WQFN-16
+> 3x3 P0.5 (TI RTE, TPS65135RTER on this land since import; KiCad stock
+> WQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm from ti.com tlv9064 p.44 draws pads
+> 0.835x0.25 at +/-1.4575 and EP 1.68: 0.005 mm centre, 0.01 mm length, 0.02 mm
+> EP from this land) ; LFCSP-16 3x3 P0.5 (ADI CP-16-22, ADA4945-1ACPZ-R7
+> repointed 2026-09-07; KiCad stock LFCSP-16-1EP_3x3mm_P0.5mm_EP1.6x1.6mm from
+> analog.com CP_16_22.pdf draws pads 0.875x0.25 at +/-1.4375 and EP 1.6:
+> 0.025 mm centre, 0.05 mm length, 0.1 mm EP from this land) ; JEDEC MO-220 VGGD
+
+## 2026-09-14 (`fp.tier` says one thing, and the second thing got its own check)
+
+- **"The name follows the right rule for this package, and a KiCad name means
+  identical copper" asked two questions in one**, so CHECKED could not mean one
+  thing (user report 2026-09-14). The naming half keeps the key: *"The name
+  follows the first of the four naming rules that applies"*.
+- **The anti-shadowing half became `fp.stock_name_diffed`** — *"A name copied
+  from KiCad's own library sits on copper identical to KiCad's"*. DOES NOT APPLY
+  on any footprint whose name is not a stock filename, which the hint says
+  outright, and which is **110 of 213** footprints.
+- **The hint is written for somebody VERIFYING a name, not authoring one.** The
+  old one was a naming procedure, so a reader holding a finished footprint had
+  to invert every step. It now says: work the four questions yourself, see which
+  rule you land on, then ask whether the name came from that rule. It names the
+  common miss — question 3 answered with a bare package designation while our
+  copper deviates from generic, which needs the vendor in front.
+- **`fp.stock_name_diffed` carries the command that answers it.** The shipped
+  library is on disk, so the hint gives the `find` over
+  `KiCad.app/Contents/SharedSupport/footprints`. No hit means the name is not a
+  stock name, which is DOES NOT APPLY.
+- Footprint base checklist **v25**; `conventions-footprints` **v42**.
+
+### What the new check is worth: 103 of 213 names ARE stock filenames
+
+Diffed against the KiCad 10.0.5 library installed on this machine — pad numbers,
+positions and sizes. **43 of the 103 differ from stock.** Most are the
+house-prepared families the skill already declares deliberate (the chip
+passives, the SOIC and SOT lands), where the difference is the point. Four are
+not, and are the case this check exists for:
+
+| Footprint | Ours | KiCad stock |
+|---|---|---|
+| `ublox_ZED` | 102 numbered pads | **55** |
+| `VSON-8_3.3x3.3mm_P0.65mm_NexFET` | numbers 1–10 | 6 distinct, no 6–9 |
+| `DFN-8-1EP_3x2mm_P0.5mm_EP1.36x1.46mm` | no pad numbered 9 | exposed pad **is** 9 |
+| `Osram_BPW34S-SMD` | 2 pads | 3, one unnumbered |
+
+A name that matches KiCad's while the numbering does not is the silent failure:
+the symbol's pins map to the wrong pads and nothing warns. These are reported,
+not changed — a rename repoints every component on the footprint.
+
+## 2026-09-14 (`fp.shared_land_record` says what it means)
+
+- **"Every package designation this land serves is recorded in all three
+  places" never said which three places.** The reader had to open the hint to
+  learn what the item even asked. The text now names them: *"Other vendor names
+  for this same land are listed in tags, descr and Equivalent Packages"* (user
+  report 2026-09-14).
+- **The hint states when the answer is DOES NOT APPLY**, which it is for most
+  footprints. The old hint said a land serving one package "is trivially yes",
+  so the same fact could be recorded as `checked` or as `na` depending on who
+  read it. The rule is now explicit: one name = does not apply, several names
+  all written down = checked, a name missing = flagged, and say which name and
+  which field.
+- **It also explains WHY the item exists**, with the case that motivates it:
+  one 3x3 mm 16-lead land is QFN-16, VQFN-16, LFCSP-16 and RTE to four vendors.
+  KiCad has no footprint alias, so a name nobody wrote down is a name the next
+  person cannot search — and they draw a second copy of copper we already have.
+- **Still asked of every footprint, still a warning.** Nothing in the file says
+  whether a land serves more than one name, so the question cannot be scoped
+  away — the same reason `fp.thermal_vias` is not scoped on `pad_prop_heatsink`.
+- **The procedure for retiring a duplicate land moved to
+  `fp.one_land_per_package`**, which is the item about duplicates. Its hint
+  already said "the two have to be merged deliberately" and stopped there; it
+  now carries the merge steps, because a delete is refused while any historical
+  component version still pins the loser.
+- Footprint base checklist **v24**; `conventions-footprints` **v41**, where two
+  index rows had fallen behind the checks they point at.
+- **A long hint no longer runs off the bottom of the window.** The ⓘ tip asked
+  whether 160 px fitted below the marker, which is true almost everywhere, so a
+  45-line hint opened downwards and lost two thirds of itself past the edge with
+  no scrollbar to get it back. It now opens to whichever side has more room, is
+  capped to that room, and scrolls.
+
+## 2026-09-14 (two checks became automatic)
+
+- **`fp.thermal_vias` is a machine check.** "Thermal vias share the exposed
+  pad's number and sit inside it" is geometry, and the new fact
+  `$footprint_vias_outside_ep` measures it: a through-hole pad carrying an smd
+  pad's number whose copper is not wholly inside that land. **Two footprints
+  fail** — `TexasInstruments_VSON-14-1EP_4x3mm_P0.5mm_ThermalVias` and
+  `SON-12-1EP_2.5x4mm_P0.4mm_ThermalVias`, four vias each. On the SON-12 the
+  land is 1.0 x 1.0 mm and four vias reach y = ±1.2: they stitch the heat path
+  to nothing. `VQFN-40-1EP_5x5mm_P0.4mm_EP3.3x3.3mm_ThermalVias` passes and is
+  the reference.
+  - **Scoped on the vias, not on `pad_prop_heatsink`.** Both failing footprints
+    have no heatsink property either, so scoping on it made the check blind to
+    exactly the parts that got the construction wrong. A check must not need
+    the thing it is looking for to be declared correctly.
+  - The five companion changes — paste stripped from the EP, windowed
+    apertures, the back-side land, `zone_connect 2`, the name suffix — stay in
+    the hint and are NOT measured. The hint says so.
+- **`fp.silk_clear` split in two.** The silk-over-copper half is now automatic
+  (`$footprint_silk_over_pads`) and finds **3 footprints**: a fuse holder, an
+  RJ45 and a nanoSIM socket, where a silk line runs straight through pad
+  copper. Ink between a pad and its solder is a contaminated joint and the
+  assembler's optical inspection reads it as one.
+  - **What it does not see is stated in the hint**: straight edges only, so 0
+    means no STRAIGHT silk crosses copper. An arc is not tested.
+  - The other half became **`fp.pin1_placed`** — is the mark against the pad
+    the DATASHEET calls pin 1, and can somebody placing the part see it. That
+    is the part no machine can judge; `fp.pin1_mark` already counts the
+    Cmts.User circle mechanically.
+
+## 2026-09-14 (navigation) — a reload puts you back where you were
+
+- **Scroll position survives a reload and back/forward, on every page.** The
+  browser cannot do it here: `history.scrollRestoration` restores the window,
+  and this app scrolls a pane inside a full-height shell. Positions are stored
+  per URL and re-applied until they stick.
+  - **The scrollers are discovered, not listed** — `.main` on browse,
+    `.main-solo` on the review queue, `.detail-left` on a component, and the
+    component page scrolls two columns independently.
+- **An expanded verification row is remembered too.** Restoring the offset
+  alone puts a reader at the same pixel with the section they had opened closed
+  again, which is somewhere else entirely.
+
+## 2026-09-14 (review card) — no edit mode, work on top, hints you can read
+
+- **`fp.tier` no longer opens with the word "tier".** "The tier test was run in
+  order, and a Tier 0 claim was verified against the stock copper" told a reader
+  nothing unless they already knew the standard. It is now **"The name follows
+  the right rule for this package, and a KiCad name means identical copper"**,
+  with the hint as four numbered questions, one example each, and the reason the
+  copper diff matters stated as the consequence: a name matching KiCad's over
+  different copper can map the symbol's pins to the wrong pads with nothing to
+  warn you.
+- **`fp.one_land_per_package` asks a question now**, not gives an instruction.
+  "Reuse the footprint the library already has" cannot be answered yes or no —
+  a VQFN-40 with a land nothing else uses had no obvious answer, and the
+  reviewer was left choosing between `checked` and `does not apply` on a coin
+  toss. It reads **"No other footprint in the library draws this same
+  package"**, and the hint states outright that a package unique to one part
+  answers CHECKED: one land exists and it is this one. There is no case for
+  `na`, because every footprint draws some package.
+- **`fp.one_land_per_package` is rewritten in plain language**, 1,996 → 1,181
+  characters. It was six dense paragraphs that mixed the rule, one family's pad
+  coordinates and a 3D-modelling instruction. Now: the rule with a worked
+  example a resistor or a push button fits, three numbered steps to reuse a
+  land, when it is a different package, when never to adjust one, and what to
+  record. Nothing was dropped except the 6x6 tactile family's eight
+  measurements — the footprint itself is that specification, and the hint names
+  which one to copy.
+
+- **The "Verify…" button is gone.** Every checklist row is answerable straight
+  away, and **Save / Cancel appear at the top the moment an answer is staged**.
+  Entering an edit mode was a click that carried no decision and hid every
+  control behind it.
+- **Items sort by how much attention they need**: findings, then warnings, then
+  open, then excused by a standing decision, then checked. The rank is read off
+  the SAVED answer, never a staged one, so answering a row does not make it jump
+  out from under the cursor — it re-sorts on the next load.
+- **The state sentence and the buttons that act on it share one line.**
+  "Partially verified — 8 item(s) still open." and `Mark checked` /
+  `Revoke verification` were stacked, and so were the note box and `Save` /
+  `Cancel`; that is two rows of chrome above every checklist. The sentence
+  gives way first when the line is tight, because it is the half a reader can
+  finish from the pills above it.
+- **A hint is behind an ⓘ, shown the moment the pointer is over it.** It used to
+  be a `title` attribute: a one-second wait, no sign it existed, and the
+  browser's own box with no line breaks — for text that is the only explanation
+  of what a check means. New shared `components/InfoTip.tsx`; the item's key
+  stays in `title`.
+
+## 2026-09-14 (footprint machine checks) — two checks that could not see
+
+- **`fp.via_dims` looked for a primitive that does not exist in a footprint.**
+  It matched `(via ...)`, which lives only in a `.kicad_pcb`; a `.kicad_mod` has
+  no via element at all. The regex matched **0 of 213 footprints**, so the check
+  answered `na — no vias` on every one, including **19 with a real thermal-via
+  field** — `VQFN-40-1EP_5x5mm_P0.4mm_EP3.3x3.3mm_ThermalVias` has 16.
+  KiCad draws a thermal via as a `thru_hole` PAD carrying the exposed pad's own
+  number, and the check now reads those: a through-hole pad is a via when its
+  number also appears on an smd pad, or when it has no number. Result:
+  **19 checked, 194 na**, all at 0.6/0.3 mm.
+- **`fp.smd_rratio` counted paste-only apertures.** The four pads it failed the
+  VQFN on are `(layers "F.Paste")` stencil openings at `rratio 0.174825`, not
+  copper. The house corner ratio is a rule about pads, and KiCad writes whatever
+  radius it computed for a paste sliver. Pads with no copper layer are skipped;
+  library failures **36 → 33**, and the 33 are real.
+- **The conformance digest now includes a hash of `validator.py`.** It covered
+  the resolved checklist, the facts and the exceptions — enough for a
+  declarative check, because editing one changes the item, and NOT enough for a
+  check written in Python. After the `fp.via_dims` fix, 15 footprints kept
+  serving `na — no vias` from cache because no fact and no item had moved.
+  Editing the validator now invalidates the library once and the warm-up
+  refills it, which is what decision 0017 promised.
+
+## 2026-09-14 (states) — a row and its card said different things
+
+- **A list row is measured against TODAY's checklist, not the record's own
+  snapshot.** `VQFN-40-1EP_5x5mm_P0.4mm_EP3.3x3.3mm_ThermalVias` read
+  `CHECKED (AGENT)` on its row and `PARTIAL — 8 items still open` the moment you
+  opened it. Its record was written against an 18-item checklist with 6 judgment
+  items; today's has 38 with 14. **Row and card now agree on all 862 subjects.**
+  - The snapshot stays correct for HISTORY — what a past record was measured
+    against — which is the history list, not a live state.
+  - Resolving a checklist per subject costs 33 ms, so a list page cannot pay for
+    it: 862 subjects is 28 seconds. The judgment list is cached on
+    `conformance.judgment`, which already rides the digest covering the resolved
+    checklist, so it invalidates itself when a check changes. List pages are
+    unchanged at **0.48 s** for 442 components.
+- **A subject with NO review record read `checked`.** With no record there was
+  no snapshot, so the denominator was empty and an unreviewed footprint passed.
+  **42 components** were being carried by one. They now read `unreviewed`.
+- **The judged fraction counted off-checklist answers.** `SMAJ24CA` read
+  "JUDGED 13/13" beside `partial` with four checklist items open, because four
+  `custom:` answers filled the places of four unanswered ones. `answered` and
+  `total` now count the checklist only; `custom:` answers are still shown, in
+  their own list.
+- **What this does to the numbers.** Components reading `checked` end to end:
+  **174 → 1**. Nothing was un-verified — the old figure measured each part
+  against whatever checklist existed when somebody last looked at it, and the
+  library gained checks all day. 205 of the 862 individual subjects are checked.
+
+## 2026-09-14 (plain words) — a check nobody understands is not a check
+
+- **The five simulation checks are rewritten in plain language.** The old
+  wording assumed the reader already knew the vocabulary. "The model header
+  names every behaviour it leaves out, and why" is now **"The model says which
+  real behaviours it does NOT reproduce"**, and every hint follows the same
+  shape: what the check asks, why it matters with a worked example, then
+  numbered steps.
+  - The worked example on `cmp.sim_limitations` is a real one. `sigma_npn`
+    holds the current gain at `BF=400`; a BC817-40 falls to 170 at 300 mA. Size
+    a base resistor from that simulation and you give the transistor 0.75 mA
+    where it needs 1.8 mA. The plot shows it saturated. The board does not.
+  - `cmp.sim_params` is automatic, so its wording lives in
+    `validator._CHECK_SPECS`, not the checklist. Changed there.
+  - No scope, severity or result changed.
+- **Nine findings that opened "No statement of what the model omits" are
+  reworded.** Same flags, same models, nothing re-decided — they now lead with
+  what is missing and what it costs.
+- **`sigma_npn` v2 has the header comment it never had**, naming what the block
+  ignores (beta roll-off, quasi-saturation, self-heating, breakdown, charge
+  storage, leakage) and what it is good for. `BC817-40-7-F` goes to **checked**;
+  `BC847CLT1G` and `MMBT3904,215` share the model.
+- **`BC817-40-7-F`'s `cmp.sim_numbers_read` is answered.** `BF=400` sits inside
+  the -40 grade's published hFE band, 250 to 600 at `VCE=1.0V, IC=100mA` (p4).
+  The sheet prints no typical, so it is a mid-band choice, not a quotation, and
+  `IS`, `VAF`, `RB` and `RC` are fitted block defaults. No value changed.
+
+## 2026-09-14 (families) — a triangle rule needs a triangle
+
+- **A review card folds the checks that are NOT about the part.** "Not about
+  parts like this one" and "switched off here" now sit behind a count
+  (`5 checks not about parts like this one`) instead of printing inline. A
+  MOSFET was showing "IQ is per CHANNEL…" and "the exposed pad is documented"
+  in the middle of its checklist, where they read as open work even though the
+  scope was correct. Kept rather than dropped — reading them is how somebody
+  finds out a scope is wrong.
+
+- **The five analog-triangle geometry checks now require a triangle body**, the
+  way the gate-family ones already did. `sym.triangle_body`, `sym.triangle_pins`,
+  `sym.inverting_on_top`, `sym.input_marks` and `sym.comparator_glyph` were
+  scoped by `comp_type` alone; `sym.gate_body` and `sym.digital_block` had
+  carried `$symbol_has_box` from the start.
+- **`ADA4945-1` was the part it caught.** A 17-pin fully-differential amplifier —
+  differential in, differential out, two feedback pins, VOCM, MODE, DISABLE, two
+  clamps and four supplies — correctly drawn as a BOX, and asked for 15.24 mm
+  triangle coordinates it can never have. Its judgment list drops 15 → 10 and
+  `sym.drawing_family`, which is the right question for it, stays open.
+- **The two triangle sizes were verified against every symbol.** They do not
+  overlap: 15.24 mm is `COMPARATOR|OPAMP`, 10.16 mm is `LOGIC` without a box.
+  A logic buffer (`74LVC1G17`) is on the 10.16 rule, as it should be.
+- **`sym.drawing_family` had no scope at all** and reached all 207 symbols, so a
+  MOSFET (`Q_NMOS_GSD`, behind `AO3400A`) was asked which of the three IC
+  families it belonged in. New fact **`$symbol_family_choice`** reads
+  `checklists.FIXED_PICTOGRAM` — 53 families drawn one way by convention:
+  transistors, diodes, passives, crystals, relays, connectors and mechanical
+  parts. Reach 207 → **98**, all ICs and modules.
+  - A symbol with no `comp_type` on any component (a power flag, a bare
+    graphic) returns ABSENT and is skipped too.
+  - A shared symbol keeps the question if ANY of its components has a choice.
+- **Every other judgment check was surveyed for the same fault.** The remaining
+  unscoped ones — `cmp.description`, `cmp.category`, `cmp.base_symbol`,
+  `cmp.value_field`, the seven `fp.*` naming and geometry items,
+  `sym.pin_numbers_unchanged` — are genuinely universal. `sym.drawing_family`
+  was the only outlier.
+
+## 2026-09-14 (scope) — a rule that says what it means
+
+- **The two rail checks are scoped by what a part IS, not by how its symbol is
+  typed.** `cmp.sim_iq_per_channel` ("IQ is per CHANNEL…") and
+  `cmp.sim_supply_current` were reached through `$symbol_power_pins`, which asks
+  whether a SYMBOL happens to type a pin as power. New fact **`$powered_die`**
+  answers the real question, reading `checklists.NO_QUIESCENT_CURRENT` — 30
+  families with no powered die: transistors, diodes, passives, plain LEDs,
+  crystals, relays, switches and the house simulation stand-ins.
+  - The list is of what is EXCLUDED, on purpose: a new IC type keeps the check
+    by default, where a positive list would let it escape silently.
+  - **No component changed scope** — all 442 already agreed. The gap it closes
+    is the next one: `TPD4E05U06DQAR` is a TVS array that draws two rails, so
+    the day it gained a `Sim.Params` row it would have been asked for its
+    per-channel quiescent current.
+  - The scope now also READS on the card. It was briefly a 265-character
+    negative lookahead; a fact puts the family list in `checklists.py`, where it
+    carries its reasoning, and leaves `$powered_die matches ^true$` on screen.
+
+## 2026-09-14 (TS24CA) — a pad named MP is not a missing pin
+
+- **`cmp.pads_to_pins` fired on its own fix.** TS24CA's two frame tabs were
+  numbered 3 and 4; the owner renamed them `MP` on 2026-09-13 so no net could
+  reach them, and the next read reported a pad the symbol does not draw.
+  `$pads_without_pins` now ignores pads named `MP` or `SH` — KiCad's own
+  libraries use both, and the name IS the statement that no pin lands there.
+  Library findings 13 → 9; the nine that remain are numbered pads (an exposed
+  pad, an NC lead, a second antenna terminal) and are real questions.
+- **The TS24CA package name said `SMD-4P … Right-Angle`.** It has two terminals
+  plus two `MP` pads, and the switch is top-actuated. Now `SMD-2P
+  4.7x3.5x2.25mm`, matching its TS3625A sibling. Unversioned, so no footprint
+  version and no copper change; the Buttons library rebuilt.
+- **TS24CA now reads `checked` on all three subjects.** The footprint had been
+  held at `failed` by a `custom:` flag saying the name claimed 4P — resolved by
+  the v5 rename a day earlier and never closed. Ten open judgment items were
+  answered (`fp.one_land_per_package`, `fp.tier`, `fp.field_order`,
+  `fp.jlc_land`, `fp.shared_land_record`, `fp.silk_clear`,
+  `sym.drawing_family`, `sym.fp_filters`, `sym.easyeda_diff`,
+  `sym.pin_numbers_unchanged`).
+- **Verification notes rewritten short.** Nothing was re-decided: every result
+  is unchanged. The longest was `fp.land_pattern` at 2,368 characters, now 234,
+  with the owner's accepted-deviation decision intact and the original finding
+  still on `superseded`.
+
+## 2026-09-14 (later) — the CE_Dongle_V3 BOM found eight wrong checks
+
+Walking 57 components one by one was a test of the check system, and it failed
+in eight places. All eight are fixed.
+
+- **A startup migration was reverting checklist edits.**
+  `migrate_rules_onto_items` re-stamped every CATEGORY checklist from the
+  retired rules table on every restart, where the BASE path had been given
+  `only_missing=True` for exactly that reason. Removing a bad pattern published
+  v4; the next reload published v5 with it back.
+- **`Value` had two owners.** `cmp.value_field` splits by `comp_type`;
+  `cmp.property_values` carried a competing per-category pattern that did not.
+  They disagreed on a ferrite bead and two LAN transformers, and the
+  category-wide one was wrong every time. Removed from all four categories.
+- **Checks demanded what a part cannot have.** An addressable RGB LED was
+  required to have one `Color` and one `Forward Voltage`; five parts on the
+  skill's own "deliberately free text" list were failed against a template.
+  Split by `comp_type` — four became rules, one became a standing exception.
+- **The new simulation checks were over-broad**: 57 of 94 parts carrying
+  `Sim.Params` have no supply pins, and a tactile switch was being asked about
+  its quiescent current. Scoped to parts with rails.
+- **`cmp.datasheet_is_document` was a judgment asked 413 times** that duplicated
+  `cmp.datasheet`. All 416 archived documents are PDFs, so its mechanical half
+  is now a machine guard and its judgment half goes where it belonged.
+- **New `sym.should_stack`** — the half `sym.stacked` could never ask, because
+  that one only reaches a symbol that already stacks. Seven real findings,
+  including a U.FL jack drawing its ground as two separate pins.
+- **`TOGNJING` is `TONGJING`** — the archived datasheet prints
+  `www.hftongjing.com` in its own footer, which is the primary source the
+  skill's own low-confidence note had asked for.
+- **33 verifications restored.** Components that lost their record to a
+  `comp_type` edit made before [decision 0019](docs/decisions/0019-a-classification-carries-the-first-time-it-is-set.md)
+  existed now carry it again; 24 others stayed blocked on real material
+  changes. **418 of 442 components carry a verification, up from 385.**
+
+## 2026-09-14 — every check says which parts it is about
+
+**The convention skills became checks.** `conventions-footprints` (1105 lines),
+`conventions-symbols` (654) and `conventions-library` (573) are now 197, 102 and
+112 — an index of which check answers which question. Every number, decided case
+and trap moved into the check hints, where it is read at the moment it is
+needed. Each cut was audited token by token against the new text plus every
+hint before publishing; 16 pieces of evidence that were being dropped went back.
+
+**Judgment checks are scoped.** They used to be asked of every subject of their
+kind — a two-pin ferrite bead was asked how its functional blocks were grouped.
+Nineteen scopes were added, each measured against the whole library first, and
+two were built and thrown away for hiding a 94-pin module and a 100-pin
+connector. Live standing exceptions fell from **186 to 55**: 131 were revoked
+because the checks now say what they mean.
+
+**`comp_type` on all 442 components**, across 94 types, with 385 keeping their
+verification — see [decision 0019](docs/decisions/0019-a-classification-carries-the-first-time-it-is-set.md).
+`$symbol_comp_types` carries it to the drawing axis, which is what let section 5
+of the symbol conventions become nine specific checks (the 15.24 mm triangle,
+the inverting input on top, the comparator glyph, the gate body, the digital
+block) instead of one yes/no asked of all 207 symbols.
+
+**Eighteen new checks**, nine of them promoted from recurring `custom:` keys.
+`sym.sourcing_defaults` found 19 symbols storing an LCSC or Manufacturer default
+the generator would inherit onto every component built from them; the custom key
+had found 2.
+
+**Fixes.** A declarative check was throwing away its author-written hint on
+save. `$electrical_props` counted `Reference` and `LCSC Part Class` as
+electrical data and excluded `Sim.Params`, which is one. A pinless drawing and
+an unparseable one both reported no pin count, so no scope could tell them
+apart.
+
 ## 2026-09-14 — Two convention documents audited against what actually runs
 
 Neither footprint nor symbol conventions turned out to be compressible: they are

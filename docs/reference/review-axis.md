@@ -390,10 +390,18 @@ review axis records who verified each version against its documentation.
   [0017](../decisions/0017-conformance-is-computed-not-recorded.md)).
   `services/conformance.py` evaluates it on read and caches the result in
   `models.Conformance` against a **digest** of everything it depends on — the
-  resolved checklist, the facts those checks actually read, and the live
-  exception ids. Edit a check and every digest in the library changes, so the
-  next read recomputes: nothing has to remember to invalidate anything, and a
-  new check can never again move 418 subjects at once. Measured: `evaluate` is
+  resolved checklist, the facts those checks actually read, the live exception
+  ids, **and a hash of `validator.py` itself**. Edit a check and every digest in
+  the library changes, so the next read recomputes: nothing has to remember to
+  invalidate anything, and a new check can never again move 418 subjects at
+  once.
+  **The validator's SOURCE is an input, since 2026-09-14.** Checklist and facts
+  are enough for a declarative check, because editing one changes the item. They
+  are not enough for a check written in Python: `fp.via_dims` was re-aimed from
+  a `(via ...)` regex to the pads that actually carry a thermal via, and 15
+  footprints went on serving `na — no vias` from the cache because no fact and
+  no item had moved. Editing that module now invalidates the library once and
+  the warm-up refills it. Measured: `evaluate` is
   20 ms, a cached read is 0 ms, and the whole library is 857 rows warmed by a
   background thread at startup.
   The digest reads facts through their own KEYS, never by iterating the mapping:

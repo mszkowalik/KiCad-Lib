@@ -104,6 +104,12 @@ version rail. Each is also recorded in `audit_log` as `footprint.rename` with `p
 
 ## Current footprints and their package names
 
+> **Changed since this snapshot.** `SW-SMD_TS24CA` was renamed a second time on 2026-09-13,
+> to `SW_Push-2P-2MP_SPST_SMD_4.7x3.5mm_H2.25mm_ShouHan_TS24CA`: the part has two terminals,
+> not four, and its two frame tabs became `MP` pads. Its package name was corrected on
+> 2026-09-14 for the same reason, and because the switch is top-actuated, not right-angle.
+> The "Renames applied" table above is the 2026-07-30 wave and still reads correctly as history.
+
 | Footprint | `display_name` |
 |---|---|
 | `7Sigma-Logo_3mm_SilkScreen` | Logo 3mm silkscreen |
@@ -236,7 +242,7 @@ version rail. Each is also recorded in `audit_log` as `footprint.rename` with `p
 | `SW_Push-2P_SPST_SMD_6x3.5mm_H2.5mm_ShouHan_TS3625A` | SMD-2P 6.1x3.7x2.5mm |
 | `SW_Push-4P_SPST_SMD_3x2.6mm_H0.65mm_G-Switch_GT-TC025D-H0065-L1` | SMD-4P 3x2.6x0.65mm |
 | `SW_Push-4P_SPST_SMD_4.2x3.2mm_H2.5mm_G-Switch_GT-TC048D-H025-L1` | SMD-4P 4.2x3.2x2.5mm |
-| `SW_Push-4P_SPST_SMD_4.7x3.5mm_H2.25mm_ShouHan_TS24CA` | SMD-4P 4.7x3.5x2.25mm Right-Angle |
+| `SW_Push-2P-2MP_SPST_SMD_4.7x3.5mm_H2.25mm_ShouHan_TS24CA` | SMD-2P 4.7x3.5x2.25mm |
 | `SW_Push-4P_SPST_SMD_6x6mm_H4.3mm_Kinghelm_KH-6X6X4.3H-STM` | SMD-4P 6x6x4.3mm |
 | `SW_Push-4P_SPST_SMD_6x6mm_H5mm_Kinghelm_KH-6X6X5H-STM` | SMD-4P 6x6x5mm |
 | `SW_Push-4P_SPST_SMD_6x6mm_H7mm_Kinghelm_KH-6X6X7H-STM` | SMD-4P 6x6x7mm |

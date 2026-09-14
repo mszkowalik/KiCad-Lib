@@ -3,7 +3,7 @@ name: kicad-conventions-simulation
 description: "Authoring simulation models and symbol links: the sigma_ namespace, parameter naming from datasheet symbols (V_BR at test current, never V_RWM), mandatory pin maps and the NC sentinel, per-component Sim.Params, switch drive modes (static / alter / PWL), scenario .control blocks, and the ngspice convergence traps. Use when writing a sim model, linking a symbol, or setting Sim.Params."
 ---
 
-<!-- platform-skill: conventions-simulation v6 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-simulation v7 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Simulation model conventions
 
@@ -193,88 +193,26 @@ One primitive, three drive modes — pick per scenario, not per model:
 
 ## Every number is read, never inferred
 
-- Take each figure from the part's own datasheet. A sibling variant's row is
-  not evidence: the table that says "peak" for one suffix says "continuous"
-  for another, and a dual-channel row is not a single-channel rating.
-- **Show the arithmetic in the version comment** when a parameter is derived
-  rather than quoted. A later reader must be able to redo it.
-- Anything you could not confirm carries the word **placeholder** in the
-  comment AND names what would confirm it. A default nobody has checked is
-  fine; a default nobody knows is unchecked is not.
-- State the condition with the value. `TON=55u` is meaningless without
-  "max, from the BTS723GW switching table".
+> Asked as **`cmp.sim_numbers_read`** on every component carrying `Sim.Params`,
+> which carries the rule and the reasoning. In one line: each figure from the
+> part's OWN datasheet, the condition stated with the value, the arithmetic
+> shown in the version comment when a figure is derived, and the word
+> **placeholder** on anything you could not confirm.
+
 
 ## An IC draws its supply current. Make it.
 
-**A controlled source referenced to node 0 manufactures its current out of the
-ground node.** The supply pins are only READ, by ideal sensors that draw
-nothing, so a model built that way delivers current to its load and takes none
-from its rails. This was true of the whole analog and logic family until
-2026-09-12, and nothing in any model said so. Measured, with an ammeter in
-every supply leg and a real load on every output:
+> Two checks hold this. **`cmp.sim_supply_current`** — a controlled source
+> referenced to node 0 manufactures its current out of the ground node, so the
+> model delivers current to its load and takes none from its rails. It was true
+> of the whole analog and logic family until 2026-09-12 and nothing said so.
+> **`cmp.sim_iq_per_channel`** — composition passes ONE `IQ` to every block, so
+> a dual part charges it twice; divide the datasheet row by the channel count
+> unless the row is already per channel, and write the arithmetic down.
+>
+> Both are on the component, because a SIM MODEL is not a review subject —
+> see "Open" at the end of this document.
 
-| Model | Into its load | From its own supply pin |
-|---|---|---|
-| `sigma_opamp` | 5.00 mA | 14 pA |
-| `sigma_comp` | 10.9 mA | 25 pA |
-| `sigma_rail_buf` | 3.22 mA | 0 A |
-| `sigma_ldo` | 100 mA | 3 mA (its IQ only) |
-
-Every rail-current, decoupling, regulator-loading and efficiency result taken
-from those models was wrong. Signal-path answers were fine, which is why it
-survived: the verdict harnesses check signals.
-
-**The split is structural, and it predicts the measurement exactly.** A model
-whose output is a real SWITCH or resistor between the rail and the pin already
-passes the load current from the supply — `sigma_ucc27538` and `sigma_hss`
-measured 117 mA and 2.38 A from their rails, correctly. A model whose output is
-a controlled source does not. Read the topology before you trust a rail.
-
-**Two jobs, both on whichever block owns the rails:**
-
-1. **Quiescent current.** Declare `IQ` in `params:` and draw it rail to rail.
-2. **Output current.** Put a 0 V source in series with the output, copy its
-   current with an `H` source (one volt per amp), and hand that to
-   `sigma_supply`, which takes sourcing from vcc and pushes sinking into vee.
-
-```
-  Vsns 2 2a dc 0
-  Rout 2a out {ROUT}
-  Hsns isns 0 Vsns 1
-  Xsup vcc vee isns sigma_supply IQ={IQ}
-```
-
-`sigma_supply` carries an RC lag on purpose. The corrected current moves the
-rail, the rail moves the clamp, the clamp moves the output, and the output
-moves the current — a real loop, and an algebraic one, which aborts the
-operating point. It is the same trick `sigma_ldo` already used to break its
-current-limit loop.
-
-**Write the output source against node 0, not against vee.** `sigma_rail_monostable`
-was referenced to `vee`, so a HIGH output sourced its load current from the
-NEGATIVE rail. Spell the rail term out in the expression instead
-(`v(vee) + v(vcc,vee)*…`) — identical voltage, and one correction form for the
-whole family.
-
-### IQ IS PER CHANNEL, NOT PER PACKAGE
-
-**Composition shares a parameter across every block by default.** A composed
-wrapper places one block per channel and passes them ONE `IQ`, so a dual part
-charges it twice — `sigma_sym_tlv7022`, `sigma_sym_74lvc2g34`,
-`sigma_sym_sn74hc21` and `sigma_sym_bts723gw` each hold two blocks.
-
-Take the datasheet's supply-current row, divide by the number of channels in
-the package unless the row is already per channel, and **write that arithmetic
-into the component's `Sim.Params` comment** so the next reader can redo it.
-
-**A pin is not a part.** `sigma_pin_out` declares no `IQ` at all, because a
-wrapper places one per output and a quiescent current declared there would be
-charged once per pin. The package's figure belongs on the block that owns the
-die.
-
-**The default is 0, and that is deliberate.** A part with no `Sim.Params` row
-draws nothing and the rail says so, which is a loud wrong answer. A non-zero
-default would be somebody else's number quietly applied to this part.
 
 ### A component edit does not reach a board that already exists
 
@@ -301,21 +239,14 @@ went unnoticed for as long as it did: `vcc` appears on several lines of
 
 ## Say what the model does NOT do
 
+> Asked as **`cmp.sim_limitations`**, which carries the ranked table of what to
+> leave out and how quietly each omission lies, and the `;`-not-`$` comment
+> rule with the ngspice invocation that reproduces KiCad's parser.
+
 The header comment must name every behaviour left out, and why. This is not
 politeness — it is the only thing standing between a reader and a confident
 wrong answer. Write it for the person who will trust the plot.
 
-Rank what you leave out by how quietly it lies:
-
-| Left out | Consequence |
-|---|---|
-| A series element deleted | The net silently opens. **Never acceptable** — model it. |
-| A current limit | A fault sim reports a current the part cannot deliver. |
-| A protection or enable pin | A shutdown the design relies on does nothing. |
-| Frequency-dependent behaviour | An EMI or ripple result is meaningless. |
-| Supply current (IQ, or the load current the rails carry) | Every rail-current, decoupling and efficiency answer is wrong, and the signal path still looks right. See "An IC draws its supply current". |
-| Dynamic CV*f current while switching | A CMOS gate's real consumption at a working clock rate is far above its static figure. |
-| Self-heating, tolerance, ageing | Usually fine; say so anyway. |
 
 ## Prefer a loud failure to a quiet wrong answer
 
@@ -347,18 +278,6 @@ Consequences you must know:
 - A **stale** link still counts as linked, on purpose: its Sim fields are
   withheld, so the netlist fails loudly instead of quietly dropping a part
   that should have been there.
-
-## Comment character: `;`, never `$`
-
-KiCad runs its embedded ngspice with `ngbehavior=ps lt a`. In that mode `$`
-is NOT a comment: numparam feeds the text to the expression parser and the
-model fails to load with `Undefined parameter [t]` from something as
-innocent as `$ V_IN(T+) 1.2..2.2 V`. `;` parses in every mode. Own-line `*`
-comments are always safe.
-
-Test a new model BOTH ways before publishing. Put `set ngbehavior=pslta` in
-`<dir>/scripts/spinit` and run `SPICE_LIB_DIR=<dir> ngspice -b model.cir` —
-that reproduces KiCad's parser without opening KiCad.
 
 ## Power modules (DC/DC bricks)
 
@@ -488,3 +407,11 @@ no longer builds against today's blocks, or when the published wrapper is not
 what the design builds. Both self-heal: fix the block model and the wrapper
 rebuilds itself. That is the point of composing — a fingerprint can only say
 "ports changed", where this names the port that lost its node.
+
+## Open — a sim model is not a review subject
+
+58 models exist and none can be verified directly: the review axis covers
+components, symbols and footprints only. The five checks named above attach to
+the **94 components that carry `Sim.Params`** instead, which reaches the
+per-component half of every rule but not the model's own text. Recorded
+2026-09-14; a `sim_model` subject kind is the fix, and nobody has asked for one.

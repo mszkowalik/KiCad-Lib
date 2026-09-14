@@ -62,6 +62,42 @@ block; {Pitch}` and `Pluggable terminal block; 3.5mm` coexist in one family —
 half templated, half with the pitch written in — so there is no single correct
 value to compare against yet.
 
+## What a SCOPE may be built on
+
+Added 2026-09-14, after nine scopes were measured and two were thrown away.
+
+**Build the predicate, measure who it drops, then ship it.** The question is
+never "does this cover the exceptions" — it is "which subject stops being asked
+that should not". A check that wrongly stops being asked is an invisible gap;
+an exception that survives is merely untidy.
+
+Two predicates failed exactly that test on `sym.pinout`:
+
+| Predicate | Covered | Would have dropped |
+|---|---|---|
+| `$symbol_distinct_mpns = 1` | 16 of 25 | `LE310X1` (94 pins), `MAX3222E` (20) — two package variants sharing one drawing |
+| `$symbol_named_pins ≥ 1` | 12 of 25 | `DF40C-100DS` (100 pins), `FPC-05F-24PH20` (26) — unnamed stubs and a real datasheet numbering |
+
+So `sym.pinout` stays library-wide with 25 exceptions. **When no predicate
+separates the cases, the exception IS the right instrument** — that is what it
+is for.
+
+### Absent and zero are not the same fact
+
+An absent fact never matches a `when`. So a count that returns nothing for both
+"there are none" and "the file would not parse" cannot be scoped on: the
+predicate would silently stop asking every question of a broken drawing. Split
+them first — `parsed()` in `services/checklists.py` is the pattern, and it is
+why a pinless symbol now reports `"0"` while a broken one still reports nothing.
+
+### A scope may reach across axes
+
+`comp_type` lives on a COMPONENT and a drawing rule is about a SYMBOL.
+`$symbol_comp_types` carries the classification over, which is what lets the
+op-amp triangle rules reach seven symbols instead of all 207. Without it a
+drawing rule can only be scoped by geometry, and geometry cannot tell an op-amp
+from an ESD array that also hides its pin names.
+
 ## Related
 
 * [review-axis.md](review-axis.md) — checks, facts, severities and exceptions.

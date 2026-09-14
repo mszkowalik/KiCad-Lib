@@ -374,6 +374,33 @@ renders INSTEAD of the router.
   round-trip the dormant DB columns; do not resurface them as controls.
 
 
+## Scroll position survives a reload — `src/scrollRestore.ts`
+
+`useScrollRestore()` is called once in `Shell` and covers every page. Four
+things about it are load-bearing, and each one was a bug first:
+
+- **The browser cannot do this for us.** `history.scrollRestoration` restores
+  the WINDOW, and this app never scrolls the window — `.app` is `height: 100%`
+  and the scrollbar belongs to a pane inside it.
+- **The scrollers are DISCOVERED, not listed.** Three pages, three different
+  ones: `.main` on browse, `.main-solo` on the review queue, `.detail-left` on
+  a component. A selector list would quietly stop covering the next page
+  somebody adds, so the hook walks the DOM for anything that actually has a
+  scrollbar and keys each by class plus its index among them.
+- **The restore loop keeps trying while a TARGET is unmet**, not while a
+  scroller is short of one. On mount the page is empty and the scroller does
+  not exist yet, so a loop that only looked at what was on screen decided it
+  had nothing to do and stopped on the first frame.
+- **Nothing is saved while a restore is running.** The save timer fired on the
+  half-built page, measured 0 everywhere, and deleted the entry it was about to
+  restore. Saving is gated on the restore having settled — met, timed out, or
+  abandoned because the user scrolled.
+
+**A fold that changes the page height must remember its state too**
+(`readOpen` / `writeOpen`, keyed by caller). Putting a reader back at the same
+PIXEL with the section they had expanded closed again lands them somewhere
+else entirely. `ReviewSubjectRows` takes a `storageKey` for exactly this.
+
 ## Adding a dependency needs `--renew-anon-volumes`
 
 The dev web container mounts `./web:/srv` and keeps the image's linux

@@ -125,7 +125,7 @@ def _detail(db: Session, kind: str, parent) -> dict:
     # The two are merged for DISPLAY only — nothing here writes anything.
     version = next((v for v in parent.versions if v.id == version_id), None)
     conf_items, excused_items = ((([], [])) if version is None
-                                else conformance_svc.get(db, kind, parent, version))
+                                else conformance_svc.get(db, kind, parent, version)[:2])
     conf = {i["key"]: i for i in conf_items}
     # Judgment items a standing exception closes. Computed, never recorded —
     # see `conformance.evaluate`. They overlay the record's own answer the same
@@ -1068,6 +1068,15 @@ def _validate_items(db: Session, items: list[dict], subject_kind: str) -> list[d
             # a sentence typed beside a rule can disagree with it.
             item = {"key": key, "text": validator.describe_assert(spec),
                     "machine": True, "assert": spec}
+            # The TEXT is generated because a sentence typed beside a comparison
+            # can disagree with it. The HINT is not a restatement of the
+            # comparison — it is why the rule exists, the decided cases, the
+            # trap that produced it — and nothing can generate that. Dropping it
+            # here is what left six new declarative checks with no explanation
+            # at all on 2026-09-14, while the prose they replaced was being
+            # deleted from the convention skills.
+            if str(i.get("hint", "")).strip():
+                item["hint"] = str(i["hint"]).strip()
         elif i.get("machine"):
             entry = validator.machine_check(db, subject_kind, key)
             if entry is None:

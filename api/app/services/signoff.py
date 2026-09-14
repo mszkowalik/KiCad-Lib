@@ -70,6 +70,30 @@ NON_MATERIAL_KEYS = frozenset({
 })
 
 
+# Keys that CLASSIFY the part rather than specify it.
+#
+# Adding one where there was NONE cannot invalidate a verification: nothing was
+# ever measured against a value that did not exist, and the part on the bench
+# did not change. CHANGING or REMOVING one still costs the carry, because
+# `comp_type` decides which checklist variants a part is judged by — moving a
+# part from LDO to DCDC changes the Value rule it must satisfy, and a
+# verification made under the old rule must not silently survive that.
+#
+# The narrowness is the point. This is NOT `NON_MATERIAL_KEYS`: it is a rule
+# about one TRANSITION (absent -> set), not about a key being unimportant.
+# Added 2026-09-14, when 364 of 442 components carried no `comp_type` at all
+# and classifying them as a material edit would have stripped verification from
+# 360 of them and sign-off from 112 — the whole library's review state, to
+# record a fact that changes nothing about the part.
+CLASSIFICATION_KEYS = frozenset({"comp_type"})
+
+
+def _is_empty(entry: tuple[str | None, bool]) -> bool:
+    """A property row that carries no value — absent, null, or blank."""
+    value, is_null = entry
+    return is_null or value is None or str(value).strip() == ""
+
+
 def _is_non_material(key: str) -> bool:
     # "Datasheet 2", "Reference schematic", ... — the extra datasheet fields are
     # named after their own label, so match the native key and the numbered form.
@@ -142,9 +166,24 @@ def data_carries(old_cv: M.ComponentVersion, new_cv: M.ComponentVersion,
         return False, "the component moved to another category"
 
     old_p, new_p = _material_props(old_cv, rename), _material_props(new_cv)
-    added = sorted(set(new_p) - set(old_p))
+
+    def _first_classification(key: str) -> bool:
+        """Is this a CLASSIFICATION key being filled in for the first time?
+
+        Covers both shapes the data takes: no property row at all, and a row
+        that exists but is null or blank. Only the absent-to-set direction —
+        emptying one, or moving it to another value, is a real change.
+        """
+        if key not in CLASSIFICATION_KEYS:
+            return False
+        if key not in new_p or _is_empty(new_p[key]):
+            return False
+        return key not in old_p or _is_empty(old_p[key])
+
+    added = sorted(k for k in set(new_p) - set(old_p) if not _first_classification(k))
     removed = sorted(set(old_p) - set(new_p))
-    changed = sorted(k for k in set(old_p) & set(new_p) if old_p[k] != new_p[k])
+    changed = sorted(k for k in set(old_p) & set(new_p)
+                     if old_p[k] != new_p[k] and not _first_classification(k))
     if added or removed or changed:
         parts = []
         if changed:

@@ -6,6 +6,24 @@ disposable projection. This codebase originally copied logic from the YAML
 pipeline's `kicad_lib/` (now retired to the `archive/yaml-library` branch)
 but never imports it.
 
+## Running a script inside the api container
+
+`docker compose exec api python /tmp/script.py` runs the **wrong code**. Python
+puts the *script's own directory* on `sys.path`, not the working directory, so
+`app` resolves to a stale copy installed in `site-packages` rather than the
+live-mounted `/srv/app`. It fails on whatever the schema has since changed —
+`column datasheet_versions.content_type does not exist` — and the swallowed
+error poisons the transaction, so every later call reports
+`InFailedSqlTransaction` and the real cause is three screens back.
+
+```
+docker compose exec -T -e PYTHONPATH=/srv api python /tmp/script.py
+```
+
+A heredoc (`docker compose exec -T api python - <<'PY'`) is safe: `sys.path[0]`
+is then the working directory. Found 2026-09-14, after ~330 component versions
+published against the September 3 copy.
+
 ## Reuse first — do not reinvent
 
 Before adding a helper, model, status string, or endpoint pattern, **find the

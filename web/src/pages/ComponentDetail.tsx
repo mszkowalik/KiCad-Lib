@@ -47,7 +47,7 @@ import {
 import { BackLink, ErrorBanner, LifecyclePill, ReviewPill, SignoffPill, Spinner, StatusPill } from "../components/Ui";
 import CommentsPanel from "../components/CommentsPanel";
 import SignoffCard from "../components/SignoffCard";
-import ReviewCard from "../components/ReviewCard";
+import ReviewSubjectRows, { type SubjectRow } from "../components/ReviewSubjectRows";
 import WhereUsedCard from "../components/WhereUsedCard";
 
 const FP_DATALIST_ID = "fp-options";
@@ -259,16 +259,7 @@ function VerificationSection({
   version: VersionDetail;
   onChanged: () => void;
 }) {
-  const parts = detail.review?.parts ?? {};
-  // A failing row opens itself. Three folds stood between a red pill and the
-  // control that answers it — this one, the card's checklist, and Verify… —
-  // and a user with a failing check in front of them reported there was no way
-  // to excuse it (2026-09-14). Only one row opens at a time by design: the
-  // three are read one after another, not side by side.
-  const firstFailing = (["component", "symbol", "footprint"] as const)
-    .find((k) => parts[k]?.state === "failed") ?? null;
-  const [open, setOpen] = useState<"component" | "symbol" | "footprint" | null>(firstFailing);
-  const rows: { key: "component" | "symbol" | "footprint"; label: string; id: number | null }[] = [
+  const rows: SubjectRow[] = [
     { key: "component", label: "Component data", id: detail.id },
     ...(version.symbol
       ? [{ key: "symbol" as const, label: `Symbol — ${version.symbol.name}`, id: version.symbol.id }]
@@ -286,37 +277,12 @@ function VerificationSection({
       <h3 className="card-title">
         Verification <ReviewPill state={detail.review?.state} provenance={detail.review?.provenance} />
       </h3>
-      <ul className="notes-list">
-        {rows.map((r) => (
-          <li key={r.key} className="note">
-            {/* The whole head is the target, not just the caret. A 20px
-                triangle beside a clickable-looking label that did nothing is
-                how the cards below read as absent. */}
-            <div
-              className="note-head clickable"
-              role="button"
-              tabIndex={0}
-              onClick={() => setOpen(open === r.key ? null : r.key)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setOpen(open === r.key ? null : r.key);
-                }
-              }}
-            >
-              <span aria-hidden>{open === r.key ? "▾" : "▸"}</span>{" "}
-              <span>{r.label}</span>{" "}
-              <ReviewPill
-                state={parts[r.key]?.state}
-                provenance={parts[r.key]?.provenance ?? null}
-              />
-            </div>
-            {open === r.key && r.id !== null ? (
-              <ReviewCard kind={r.key} id={r.id} label={r.label} onChange={onChanged} />
-            ) : null}
-          </li>
-        ))}
-      </ul>
+      <ReviewSubjectRows
+        rows={rows}
+        parts={detail.review?.parts ?? {}}
+        onChanged={onChanged}
+        storageKey={`component:${detail.id}`}
+      />
     </section>
   );
 }

@@ -707,6 +707,14 @@ def startup() -> None:
                 "ALTER TABLE snapshot_bom_lines ADD COLUMN IF NOT EXISTS "
                 "lib_version varchar(60) NOT NULL DEFAULT ''"
             ))
+            # The judgment items TODAY's checklist expects, cached beside the
+            # machine answers so a LIST row measures completeness against the
+            # same checklist the card does. NULL is "not computed yet" and the
+            # caller falls back to the record's own snapshot; the startup
+            # warm-up fills it.
+            conn.execute(text(
+                "ALTER TABLE conformance ADD COLUMN IF NOT EXISTS judgment jsonb"
+            ))
             conn.execute(text(
                 """
                 INSERT INTO project_cost_revisions

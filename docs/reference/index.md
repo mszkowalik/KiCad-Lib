@@ -16,6 +16,7 @@ edited.
 | [datasheets.md](datasheets.md) | Document identity, the fetch ladder, classification, the page index | `services/datasheet_store.py`, `datasheet_pages.py` |
 | [production-economics.md](production-economics.md) | Cost plans, invoices, stock, orders, sales, the built rule | `services/cost_state.py`, `material.py`, `stock.py`, `orders.py` |
 | [review-axis.md](review-axis.md) | Production sign-off, verification, the review record and what carries | `services/signoff.py`, `review.py` |
+| [publish-sanitization.md](publish-sanitization.md) | What a publish corrects for you, the two rules that decide what may go in, and why one field is emptied where another is deleted | `services/geometry_proposals.py` |
 | [what-a-check-can-hold.md](what-a-check-can-hold.md) | Which convention rules a check can enforce, which must stay prose, and the order to move one | `services/validator.py`, the convention skills |
 | [projects-module.md](projects-module.md) | Git-tracked designs, mirrors, snapshots, exports, credentials | `services/gitrepo.py`, `project_ops.py` |
 | [spice-runs.md](spice-runs.md) | Netlists, ngspice, verdict harnesses, the live sketch | `services/sim_spice.py`, `project_ops.py`, `sch_lib.py` |

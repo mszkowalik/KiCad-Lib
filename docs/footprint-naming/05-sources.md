@@ -26,9 +26,12 @@ The normative text. Fetched page by page 2026-07-25.
 
 **Known defects in KLC itself**, found by comparing the text against the shipped library:
 
-- **`HandSolder` vs `HandSoldering` is unresolved in the standard.** F2.1 rule #10 lists
-  `_HandSoldering`; F3.3's own example uses `_HandSolder`. The shipped library uses both —
-  108 files end in `HandSolder`, 86 in `HandSoldering`, plus lowercase `_Handsoldering`.
+- **`HandSolder` vs `HandSoldering` is unresolved in the standard, and the house now
+  sidesteps it.** F2.1 rule #10 lists `_HandSoldering`; F3.3's own example uses
+  `_HandSolder`. The shipped library uses both — 108 files end in `HandSolder`, 86 in
+  `HandSoldering`, plus lowercase `_Handsoldering`. Since 2026-09-14 the house mints
+  neither, so the disagreement costs us nothing; an adopted Tier 0 name keeps whichever
+  spelling it ships with.
   KLC picks no winner, so the house must (`01-standard.md` §3).
 - **F3.1 lists only C, CP, R, D as chip prefixes.** `L_` and `LED_` are used pervasively in
   the shipped library by analogy, with no rule sanctioning them.

@@ -16,14 +16,19 @@
 > *Applied: 6 proposed names corrected.* Note the full canonical name also removes the
 > `Diodes` vendor/category ambiguity, so no family-word prefix is needed.
 >
-> **D2 — `HandSoldering` (adopted).** House-minted variants use `_HandSoldering`, matching
-> KLC F2.1 rule #10 verbatim. `_HandSolder` and `_Handsoldering` are never minted here.
-> Consequence, stated so nobody "fixes" it later: the shipped library uses `HandSolder` on
-> 108 files (chip passives and tantalum) against `HandSoldering` on 86. Those are Tier 0 and
-> **keep their own spelling**. So a hand-solder chip passive adopted from stock will read
-> `_HandSolder` while a house-authored variant reads `_HandSoldering`. That is correct and
-> intended. The library currently contains **0** footprints with either spelling, so nothing
-> needs changing today.
+> **D2 — the hand-solder token is RETIRED (2026-09-14, superseding the original D2).**
+> The house mints no `_HandSoldering`, no `_HandSolder` and no `_Soldering`. The original
+> D2 adopted `_HandSoldering` for house-minted variants; it was never used — the library
+> held **0** footprints with either spelling — and the one token that did exist,
+> `Pin_D0.7mm_Pad1.4mm_Soldering`, said nothing its own `Pad1.4mm` field did not. It is now
+> `Pin_D0.7mm_Pad1.4mm`.
+>
+> **Nothing bans the token, deliberately.** KiCad ships 194 footprints whose filename ends
+> in `_HandSolder`, and a Tier 0 adoption keeps a stock filename character for character.
+> A ban would collide with that freeze the moment one of those lands is adopted. So an
+> adopted stock name may carry `_HandSolder` and that is correct; what changed is that the
+> house does not mint one. That is a tier question, not a spelling rule, and
+> `fp.name_spellings` no longer looks for it.
 >
 > **D3 — Rotation is never encoded in a name (adopted).** §3.6 is overridden. Names come from
 > the datasheet nominal; a rotated or mis-origined import is a **geometry defect** for the
@@ -57,7 +62,7 @@ Four decisions carry the whole standard:
 1. **KLC is the spine.** IPC-7351 is stored as searchable metadata only. EasyEDA/LCSC generator strings are stripped on import, never kept.
 2. **Stock is the reference implementation, and stock names are immune.** Where KiCad ships a footprint whose land pattern and pad numbering match ours, we take its filename byte-for-byte and no house rule may edit it. 91 of the current 173 names qualify today.
 3. **One tier rule decides geometric vs vendor-MPN naming** (§2), applied by a four-question test, not by judgement.
-4. **Where KLC is silent or self-contradictory, the house pins one answer globally** — decimal formatting, `HandSolder` spelling, mount tokens, axis order, vendor spelling, count padding. These are the four places two engineers provably produce different names today.
+4. **Where KLC is silent or self-contradictory, the house pins one answer globally** — decimal formatting, mount tokens, axis order, vendor spelling, count padding. (The hand-solder spelling was the exception that proved the rule: two clauses of this document pinned two different answers, and the token was retired instead — D2.) These are the four places two engineers provably produce different names today.
 
 ### What we are giving up, stated plainly
 
@@ -177,9 +182,9 @@ Two narrow exceptions:
 - `_Mask<w>x<h>mm` after the EP token = reduced solder-mask window over the EP.
 
 ### 3.8 Options — closed vocabulary, always last, chained with `_`
-`ThermalVias`, `HandSolder`, `PullBack`, `NexFET`, `ReverseMount`, `Hole<w>x<h>mm`, `Polarized`, `ThreadedFlange`, `MountHole`, `MountingPegs`, `Latch<len>mm`, `CircularHoles`, `Pin1Left`/`Pin1Right`, `TopOnly`/`TopBottom`/`Via`, `SilkScreen`/`Copper`, `Invisible`, `Mechanical`, `SMD`/`THT`. **Minting a new option token is a change to this document, not an ad-hoc decision.**
+`ThermalVias`, `PullBack`, `NexFET`, `ReverseMount`, `Hole<w>x<h>mm`, `Polarized`, `ThreadedFlange`, `MountHole`, `MountingPegs`, `Latch<len>mm`, `CircularHoles`, `Pin1Left`/`Pin1Right`, `TopOnly`/`TopBottom`/`Via`, `SilkScreen`/`Copper`, `Invisible`, `Mechanical`, `SMD`/`THT`. **Minting a new option token is a change to this document, not an ad-hoc decision.**
 
-**`HandSolder` is the house spelling** — never `HandSoldering`, never `Handsoldering`. Verified stock split: 108 / 86 / 28. KLC F2.1 rule 10 says `HandSoldering`; KLC F3.3's own example says `HandSolder`; the chip-passive and tantalum libraries (this library's densest neighbours) use `HandSolder`. Tier 0 names keep whatever stock wrote, so **all matching must be case-insensitive**.
+**The hand-solder token is RETIRED and is not in the vocabulary above** (2026-09-14 — see D2). The house mints no `_HandSolder`, `_HandSoldering` or `_Soldering`. This paragraph used to pin `HandSolder` as the house spelling while D2 pinned `HandSoldering`, which is the clearest evidence the question was not worth answering: the stock split is 108 / 86 / 28 across three spellings, KLC F2.1 rule 10 and KLC F3.3's own example disagree with each other, and the library never minted one. **A Tier 0 name keeps whatever stock wrote**, so the token still appears on adopted names and all matching must stay case-insensitive.
 
 ### 3.9 Mount technology is a disambiguator, not a field
 Write `_SMD` / `_THT` only when the family contains **both** technologies and the other fields would not tell you which. Never `_TH` (`_THT` 268 files vs `_TH_` 7), never `RA`/`RightAngle`/`Straight`/`Angled`.

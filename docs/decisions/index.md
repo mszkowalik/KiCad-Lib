@@ -47,6 +47,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0016](0016-severity-and-standing-exceptions.md) | A check has a severity, and a subject can carry a standing exception — both copied from KiCad's DRC/ERC model | Backend, frontend, review axis, agent tools |
 | [0017](0017-conformance-is-computed-not-recorded.md) | Conformance is computed on read and cached against a digest of its inputs, never recorded on publish | Backend, frontend, review axis |
 | [0018](0018-does-not-apply-is-an-exception-not-an-answer.md) | "Does not apply" is a standing exception, not a per-version `na` answer — one control, and it works on an item nobody has answered | Backend, frontend, review axis, agent tools |
+| [0019](0019-a-classification-carries-the-first-time-it-is-set.md) | A classification key carries the first time it is set — filling in `comp_type` costs no verification, changing one still does | Backend, review axis |
 
 ## Proposed
 
