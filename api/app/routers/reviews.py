@@ -910,6 +910,10 @@ def _clean_assert(key: str, given) -> dict:
             raise HTTPException(422, f"{key}: `{name}` needs a number") from None
     elif name == "equals":
         out["equals"] = str(value)
+    elif name == "absent":
+        # The only assertion whose subject is the ABSENCE of a value, so it is
+        # the only one a missing fact can satisfy rather than skip.
+        out["absent"] = bool(value)
     else:
         out["present"] = True
     return out

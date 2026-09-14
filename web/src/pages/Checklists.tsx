@@ -140,6 +140,11 @@ const ASSERTIONS = [
   { key: "at_least", label: "is at least", shape: "number" },
   { key: "at_most", label: "is at most", shape: "number" },
   { key: "present", label: "is present", shape: "none" },
+  // The only assertion a MISSING value satisfies. Every other one reads a
+  // value, so a subject without one is `na`; this one is how a rule says
+  // "there must be no X" — a misspelt property key, a pad that should not be
+  // plated — which `at_most 0` cannot express, because a count has to exist.
+  { key: "absent", label: "is not set at all", shape: "none" },
 ] as const;
 
 type AssertSpec = NonNullable<Item["assert"]>;

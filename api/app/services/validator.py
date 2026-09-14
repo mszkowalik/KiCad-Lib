@@ -917,7 +917,7 @@ def _sim_params_item(db: Session, cv: M.ComponentVersion, props: dict) -> dict:
 #: between two facts, it has stopped being a check and become a rules language —
 #: which is what `models.Rule` was, and what this platform spent 2026-09-14
 #: deleting. Reconsider at that point rather than adding `any_of`.
-ASSERTIONS = ("one_of", "matches", "equals", "at_least", "at_most", "present")
+ASSERTIONS = ("one_of", "matches", "equals", "at_least", "at_most", "present", "absent")
 
 
 #: Turning a claim into its opposite. Deliberately tiny: a claim is authored
@@ -952,6 +952,8 @@ def describe_assert(spec: dict) -> str:
     claim = entry.get("claim")
     if claim and "equals" in spec and str(spec["equals"]).lower() in ("true", "false"):
         return claim if str(spec["equals"]).lower() == "true" else _negate(claim)
+    if "absent" in spec:
+        return (f"There is no {fact}" if spec["absent"] else f"The {fact} is set")
     if "one_of" in spec:
         values = spec["one_of"] or []
         if not values:
@@ -983,7 +985,23 @@ def evaluate_assert(key: str, spec: dict, facts: dict | None) -> dict:
     """
     fact = str(spec.get("fact", ""))
     value = (facts or {}).get(fact)
-    if value is None or str(value) == "":
+    missing = value is None or str(value) == ""
+
+    # `absent` is judged BEFORE the missing-fact rule below, because absence is
+    # exactly what it asserts. Every other assertion reads a value, so a subject
+    # that has not got one cannot be judged by it; this one can only be judged
+    # then. It is the shape a rule takes when it says "there must be no X" — a
+    # misspelt property key, a pad that should not be plated — which otherwise
+    # has no expression at all: `at_most 0` needs a count to exist first.
+    if "absent" in spec:
+        want_absent = bool(spec["absent"])
+        if want_absent:
+            return (_item(key, "checked", f"no {fact}, as required") if missing else
+                    _item(key, "failed", f"{fact} must not be set here, and it is {str(value)!r}"))
+        return (_item(key, "failed", f"{fact} is missing, and it is required") if missing else
+                _item(key, "checked", str(value)))
+
+    if missing:
         return _item(key, "na", f"this subject has no {fact}")
     value = str(value)
 
