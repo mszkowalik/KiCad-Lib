@@ -14,26 +14,33 @@ reachability rule as the KiCad HTTP catalog.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import struct
+import uuid
+import zipfile
 from datetime import datetime, timezone
+from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import (
-    APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, WebSocket,
-    WebSocketDisconnect,
+    APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile,
+    WebSocket, WebSocketDisconnect,
 )
 from fastapi.responses import Response
 from pydantic import BaseModel
-from sqlalchemy import String, cast, func, select
+from sqlalchemy import String, cast, func, select, text
 from sqlalchemy.orm import Session
 
+from ..config import settings
+from ..models import utcnow
 from ..db import get_db
 from .. import models as M
 from ..services import storage
 from ..services import crypto
 from ..services.flasher import bundle, checks as checks_svc, validate
 from ..services.flasher.engine import RunEngine
-from .util import audit
+from .util import actor_of, audit
 
 router = APIRouter(prefix="/api/flasher", tags=["flasher"])
 
@@ -60,7 +67,7 @@ STEP_OPS = [
     "serial_open", "serial_close", "reset", "sleep", "wait_boot", "command",
     "set_and_check", "backlog", "berry", "expect", "assert_equals",
     "assert_range", "poll_until", "download_files", "derive_credentials",
-    "lte_sim_pin",
+    "lte_sim_pin", "mark_laser", "print_label",
 ]
 
 
@@ -613,10 +620,22 @@ def serve_device_file(version_id: int, filename: str, db: Session = Depends(get_
 # decision 2026-07-29). Composing a new version is a single call: say what
 # CHANGES, everything else is inherited from the version you start at.
 
+# What a deployment IS, so the bench can offer the right button rather than
+# guessing from the name. Backfilled once from `name ILIKE '% test'`; new
+# deployments say it outright.
+DEPLOYMENT_KINDS = ("flash", "test", "mark")
+
+
 class DeploymentIn(BaseModel):
     name: str
     description: str = ""
     chip: str = ""
+    # None = leave it alone. A PATCH that omitted it would otherwise reset a
+    # test or mark deployment to "flash" and quietly take its button away.
+    kind: str | None = None
+    # Same rule: None leaves the flag as it is. On a TEST deployment, true
+    # means every device of this project must pass it to read as verified.
+    active: bool | None = None
 
 
 class ImageIn(BaseModel):
@@ -661,6 +680,8 @@ def _deployment_json(d: M.Deployment, db: Session, deep: bool = False) -> dict:
         prev_by_id[v.id] = versions[i - 1] if i else None
     out = {
         "id": d.id, "name": d.name, "description": d.description, "chip": d.chip,
+        "kind": d.kind or "flash",
+        "active": bool(d.active),
         "project_id": d.project_id, "current_version_id": d.current_version_id,
         "created_at": _iso(d.created_at),
         "channels": [
@@ -692,25 +713,45 @@ def list_deployments(project_id: int, db: Session = Depends(get_db)):
     return [_deployment_json(d, db) for d in rows]
 
 
+def _deployment_kind(value: str) -> str:
+    kind = (value or "flash").strip().lower()
+    if kind not in DEPLOYMENT_KINDS:
+        raise HTTPException(400, f"kind must be one of {', '.join(DEPLOYMENT_KINDS)}")
+    return kind
+
+
 @router.post("/projects/{project_id}/deployments")
 def create_deployment(project_id: int, body: DeploymentIn, db: Session = Depends(get_db)):
     if db.get(M.Project, project_id) is None:
         raise HTTPException(404, "no such project")
+    kind = _deployment_kind(body.kind or "flash")
     d = M.Deployment(project_id=project_id, name=body.name.strip(),
-                     description=body.description, chip=body.chip.strip())
+                     description=body.description, chip=body.chip.strip(), kind=kind,
+                     # A test starts OFF: it gates every device in the project,
+                     # so somebody turns it on deliberately. Anything else is on.
+                     active=(body.active if body.active is not None else kind != "test"))
     db.add(d)
     db.commit()
     return {"id": d.id}
 
 
 @router.patch("/deployments/{deployment_id}")
-def patch_deployment(deployment_id: int, body: DeploymentIn, db: Session = Depends(get_db)):
+def patch_deployment(deployment_id: int, body: DeploymentIn, request: Request,
+                     db: Session = Depends(get_db)):
     d = db.get(M.Deployment, deployment_id)
     if d is None:
         raise HTTPException(404, "no such deployment")
     d.name = body.name.strip() or d.name
     d.description = body.description
     d.chip = body.chip.strip()
+    if body.kind is not None:
+        d.kind = _deployment_kind(body.kind)
+    if body.active is not None:
+        d.active = body.active
+        # Turning a test on or off re-judges every device in the project, so it
+        # is a decision worth being able to look up later.
+        audit(db, "flasher.deployment_active", "deployment", d.id,
+              details=f"{d.name} ({d.kind}) active={d.active}", actor=actor_of(request))
     db.commit()
     return _deployment_json(d, db)
 
@@ -1177,6 +1218,13 @@ def flasher_meta():
 
 # -------------------------------------------------------------------- devices
 
+def _parse_iso(text: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(text) if text else None
+    except ValueError:
+        return None
+
+
 def _run_summary_json(r: M.ProgrammingRun, db: Session) -> dict:
     prod = db.get(M.ProductionRun, r.production_run_id) if r.production_run_id else None
     v = db.get(M.DeploymentVersion, r.deployment_version_id)
@@ -1345,12 +1393,75 @@ def list_devices(
             "has_more": offset + len(out) < total}
 
 
+# THE identity rows of a device, label included, in display order. The page
+# renders what this returns and knows none of these names: a field that exists
+# on the model has to be able to appear here without a frontend change.
+#
+# MAC and serial are on every unit and are always drawn. Each of the others is
+# drawn when the device carries it, when a procedure of its project CAPTURES it
+# (`capture` keys, the same names `engine.IDENTITY_VARS` writes to the device
+# row), or when a sibling device in the project carries it. A Dongle_V2 has no
+# modem, so it printed five empty modem rows on 4400 devices (user report
+# 2026-09-16); the sibling rule is what keeps imported history readable once
+# the procedure that produced it is gone.
+_IDENTITY_ALWAYS = (("mac", "MAC"), ("serial", "Serial"))
+_IDENTITY_OPTIONAL = (
+    # column, label, the capture variable that fills it (None = never captured)
+    ("chip", "Chip", None),
+    ("tasmota_id", "Tasmota name", "topic"),
+    ("imei", "IMEI", "imei"),
+    ("iccid", "ICCID (SIM)", "iccid"),
+    ("imsi", "IMSI", "imsi"),
+    ("modem_model", "Modem", "modem_model"),
+    ("modem_fw", "Modem firmware", "modem_fw"),
+)
+
+
+def _identity_rows(db: Session, dev: M.DeviceUnit) -> list[dict]:
+    keys = [c for c, _, _ in _IDENTITY_OPTIONAL]
+    show = {c for c in keys if (getattr(dev, c, "") or "").strip()}
+
+    captured: set[str] = set()
+    for (steps,) in db.execute(text("""
+        SELECT v.steps FROM deployment_versions v
+        JOIN deployments d ON d.id = v.deployment_id
+        WHERE d.project_id = :p AND v.steps IS NOT NULL
+    """), {"p": dev.project_id}):
+        for step in steps or []:
+            if isinstance(step, dict):
+                captured.update((step.get("capture") or {}).keys())
+    show |= {c for c, _, var in _IDENTITY_OPTIONAL if var and var in captured}
+
+    rest = [c for c in keys if c not in show]
+    if rest:
+        sql = ", ".join(f"bool_or(coalesce({c}, '') <> '') AS {c}" for c in rest)
+        row = db.execute(text(f"SELECT {sql} FROM device_units WHERE project_id = :p"),
+                         {"p": dev.project_id}).mappings().one()
+        show |= {c for c in rest if row[c]}
+
+    rows = [{"key": c, "label": label, "value": getattr(dev, c, "") or ""}
+            for c, label in _IDENTITY_ALWAYS]
+    rows += [{"key": c, "label": label, "value": getattr(dev, c, "") or ""}
+             for c, label, _ in _IDENTITY_OPTIONAL if c in show]
+    return rows
+
+
 @router.get("/devices/{device_id}")
 def device_detail(device_id: int, reveal: bool = False, db: Session = Depends(get_db)):
     d = db.get(M.DeviceUnit, device_id)
     if d is None:
         raise HTTPException(404, "no such device")
     project = db.get(M.Project, d.project_id)
+    # WHAT IS ON THE DEVICE NOW — the values the LAST run to configure it
+    # wrote, not every value it ever carried. The full history made a 4-key
+    # device print twelve rows of the same three keys, which reads like twelve
+    # settings (user decision 2026-09-16). Every earlier value is still in
+    # `device_config_values` and still reachable through its own run.
+    # `set_at` is tz-aware; a NULL one sorts first rather than crashing the mix.
+    _epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    newest_cfg = max(d.configs, key=lambda c: (c.set_at or _epoch, c.id), default=None)
+    cfg_rows = ([c for c in d.configs if c.set_by_run_id == newest_cfg.set_by_run_id]
+                if newest_cfg is not None else [])
     configs = [
         {
             "key": c.key,
@@ -1358,8 +1469,10 @@ def device_detail(device_id: int, reveal: bool = False, db: Session = Depends(ge
             "is_secret": c.is_secret, "current": c.current,
             "set_by_run_id": c.set_by_run_id, "set_at": _iso(c.set_at),
         }
-        for c in sorted(d.configs, key=lambda c: (c.key, c.set_at.timestamp() if c.set_at else 0))
+        for c in sorted(cfg_rows, key=lambda c: c.key)
     ]
+    newest = checks_svc.newest_run(db, d.id)
+    verdict = checks_svc.verdict(db, d.id)
     return {
         "id": d.id, "mac": d.mac or "", "serial": d.serial, "chip": d.chip,
         "tasmota_id": d.tasmota_id, "imei": d.imei, "iccid": d.iccid, "imsi": d.imsi,
@@ -1368,8 +1481,21 @@ def device_detail(device_id: int, reveal: bool = False, db: Session = Depends(ge
         "first_seen": _iso(d.first_seen), "last_seen": _iso(d.last_seen),
         "last_status": d.last_status, "notes": d.notes,
         "configs": configs,
-        # What this device is PROVEN to do: newest run wins per check.
+        # The identity rows to draw, label and value — see _identity_rows.
+        "identity": _identity_rows(db, d),
+        # Which run wrote them, and how many earlier values are not shown.
+        "config_run_id": newest_cfg.set_by_run_id if newest_cfg is not None else None,
+        "config_superseded": len(d.configs) - len(cfg_rows),
+        # What this device is PROVEN to do: the newest run that MEASURED
+        # something, so a green cell can never outlive the attempt that
+        # replaced it, and a marking job never blanks the grid.
         "checks": checks_svc.for_device(db, d.id),
+        "checks_run": ({"id": newest["id"], "status": newest["status"],
+                        "act": checks_svc._act(newest),
+                        "attempt_no": newest["attempt_no"],
+                        "started_at": _iso(newest["started_at"])} if newest is not None else None),
+        # Is it programmed — config, then an active test, then no erase since.
+        "verdict": verdict,
         "runs": [_run_summary_json(r, db) for r in d.runs],
     }
 
@@ -1396,16 +1522,20 @@ class RunCreate(BaseModel):
     Version resolution, in order: an explicit `deployment_version_id`, else the
     batch's pinned version, else the batch's channel. A DRAFT version is
     allowed only for a bench trial and is recorded as such.
+
+    There is NO `operator` field: who ran it is the signed-in account
+    (`actor_of`), never a value the caller chooses. The bench used to ask for a
+    name in a text box, which meant the record was as good as whatever somebody
+    typed, and usually empty (user decision 2026-09-16).
     """
     production_run_id: int | None = None
     deployment_version_id: int | None = None
-    operator: str = ""
     station: str = ""
     override_reason: str = ""
 
 
 @router.post("/runs")
-def create_run(body: RunCreate, db: Session = Depends(get_db)):
+def create_run(body: RunCreate, request: Request, db: Session = Depends(get_db)):
     prod = None
     if body.production_run_id:
         prod = db.get(M.ProductionRun, body.production_run_id)
@@ -1449,20 +1579,97 @@ def create_run(body: RunCreate, db: Session = Depends(get_db)):
     override = bool(assigned and version_id != assigned)
     if override and not body.override_reason.strip():
         raise HTTPException(409, "programming with a non-assigned version needs an override_reason")
+    # Pin the RULE alongside the firmware: does a unit made by this run have to
+    # pass a test? The batch answers; a bench trial takes the project's current
+    # default (its active test deployment). Copied once, read forever — a
+    # later change of mind cannot re-judge what this run produced.
+    if prod is not None:
+        test_required = bool(prod.requires_test)
+    else:
+        test_required = bool(db.query(M.Deployment).filter(
+            M.Deployment.project_id == dep.project_id,
+            M.Deployment.kind == "test", M.Deployment.active).first())
     run = M.ProgrammingRun(
         production_run_id=prod.id if prod else None, deployment_version_id=v.id,
         firmware_fingerprint=v.firmware_fingerprint, files_fingerprint=v.files_fingerprint,
-        draft_run=draft_run,
+        draft_run=draft_run, test_required=test_required,
         release_override_reason=body.override_reason.strip() if override else "",
-        operator=body.operator, station=body.station, status="running",
+        operator=actor_of(request), station=body.station, status="running",
     )
     db.add(run)
     db.commit()
     if override:
         audit(db, "flasher.run_override", "programming_run", run.id,
               details=f"batch {prod.id if prod else '-'} assigned version {assigned}, "
-                      f"ran {version_id}: {body.override_reason}", actor=body.operator)
+                      f"ran {version_id}: {body.override_reason}", actor=actor_of(request))
     return {"run_id": run.id, "deployment_version_id": v.id, "draft_run": draft_run}
+
+
+class BenchRunIn(BaseModel):
+    """A bench action that ran no procedure: an erase, or a mark typed by hand."""
+    action: str = "erase"
+    project_id: int
+    mac: str = ""
+    chip: str = ""
+    status: str = "pass"          # pass | fail
+    error: str = ""
+    station: str = ""
+    started_at: str = ""
+    log: list[dict] = []          # [{"dir": "app", "text": "..."}]
+    results: dict = {}            # what the action produced, e.g. {"marked": "..."}
+
+
+@router.post("/bench-runs")
+def create_bench_run(body: BenchRunIn, request: Request, db: Session = Depends(get_db)):
+    """Record an erase or a manual mark in the SAME history as the programming runs.
+
+    An erase was deliberately left unrecorded — it is a workshop action, and a
+    row per erase would bury the production runs beside it. What changed the
+    answer is that an erase IDENTIFIES the device: once the MAC is known, the
+    attempt and its log are exactly what tells you a unit is giving trouble,
+    and a failure that leaves no trace is the one you rediscover on the next
+    batch (user decision 2026-09-16). An erase that never reached a MAC still
+    records nothing: there is no device to attach it to — and a mark typed by
+    hand is recorded on the same terms, because what the operator typed IS the
+    unit's identity, which is what makes it a device event and not a note.
+    """
+    mac = body.mac.strip().lower()
+    if not mac:
+        raise HTTPException(400, "a bench run needs the MAC it read")
+    dev = db.query(M.DeviceUnit).filter(M.DeviceUnit.mac == mac).one_or_none()
+    if dev is None:
+        dev = M.DeviceUnit(
+            project_id=body.project_id, mac=mac, chip=body.chip,
+            serial=mac.replace(":", "").upper(),
+        )
+        db.add(dev)
+        db.flush()
+    else:
+        dev.chip = body.chip or dev.chip
+        dev.last_seen = utcnow()
+    run = M.ProgrammingRun(
+        device_unit_id=dev.id, deployment_version_id=None, action=body.action,
+        status=body.status, error=body.error[:2000], operator=actor_of(request),
+        station=body.station, mac_read=mac, chip_read=body.chip,
+        started_at=_parse_iso(body.started_at) or utcnow(), finished_at=utcnow(),
+        results=body.results or None,
+    )
+    run.attempt_no = (
+        db.query(M.ProgrammingRun).filter(M.ProgrammingRun.device_unit_id == dev.id).count() + 1
+    )
+    db.add(run)
+    db.flush()
+    if body.log:
+        db.bulk_insert_mappings(M.ProgrammingLog, [
+            {"run_id": run.id, "seq": i + 1, "ts": utcnow(), "device_ts": "",
+             "dir": str(row.get("dir", "app"))[:10], "text": str(row.get("text", ""))[:4000]}
+            for i, row in enumerate(body.log)
+        ])
+    # This is the newest thing that happened to this unit.
+    dev.last_status = body.status
+    dev.last_seen = utcnow()
+    db.commit()
+    return {"run_id": run.id, "device_unit_id": dev.id}
 
 
 @router.post("/runs/{run_id}/mark-aborted")
@@ -1626,6 +1833,264 @@ def assign_batch_deployment(production_run_id: int, body: BatchDeploymentIn,
 
 
 # ----------------------------------------------------------- mosquitto export
+
+# USB serial bridges a bench opens. The profile grants ONLY these, so a device
+# outside the list still costs the operator a pick — deliberately: this file is
+# handed to people on machines nobody here administers, and "any serial port"
+# is not a grant to hand out by download. Both entries are measured, not
+# assumed: the CH340 from a V2 dongle on the bench (2026-09-16), the Espressif
+# id from `USB_SERIAL_JTAG` in web/src/flasher/station.ts.
+BENCH_USB_BRIDGES = [
+    (0x1A86, 0x7523, 'CH340 "USB2.0-Serial" — Dongle V2 bridge'),
+    (0x303A, 0x1001, "Espressif built-in USB-Serial/JTAG — V3"),
+]
+
+
+def _mobileconfig(origins: list[str]) -> str:
+    """A macOS configuration profile granting these ORIGINS what a page cannot ask for.
+
+    Why this file has to exist: a CH340 reports no USB serial number, so Chrome
+    has no stable identifier to persist and discards the port permission when
+    the device is unplugged. The operator is then back at the picker for every
+    unit. No page can ask for this — serial permission is device-scoped by
+    design, unlike camera or microphone — so the only grant that survives a
+    replug comes from browser policy.
+
+    The origins are baked in and EXACT: `localhost` and `127.0.0.1` are
+    different origins, and so is a different port. The caller passes the origin
+    the bench is really open at, which is why this is generated per request
+    rather than shipped as a static file.
+    """
+    devices = "".join(
+        f"""
+              <!-- {note} -->
+              <dict>
+                <key>vendor_id</key><integer>{vid}</integer>
+                <key>product_id</key><integer>{pid}</integer>
+              </dict>"""
+        for vid, pid, note in BENCH_USB_BRIDGES
+    )
+    urls = "".join(f"\n            <string>{o}</string>" for o in origins)
+    # Stable identifier: installing a second time REPLACES the first profile
+    # rather than stacking another copy.
+    ident = "cc.disfunction.bench.serial"  # kept: renaming it stacks a second profile
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadType</key><string>Configuration</string>
+  <key>PayloadVersion</key><integer>1</integer>
+  <key>PayloadIdentifier</key><string>{ident}</string>
+  <key>PayloadUUID</key><string>{uuid.uuid5(uuid.NAMESPACE_URL, ident + "|" + "|".join(origins))}</string>
+  <key>PayloadDisplayName</key><string>7Sigma bench — serial ports and the marking agent</string>
+  <key>PayloadDescription</key><string>Two grants the bench cannot ask for itself. Serial: the USB bridge reports no serial number, so Chrome forgets the port on every replug. Loopback: the marking bench reaches LightBurn through an agent on this machine, which Chrome blocks unless the site is allowed.</string>
+  <key>PayloadOrganization</key><string>7Sigma</string>
+  <key>PayloadScope</key><string>System</string>
+  <key>PayloadRemovalDisallowed</key><false/>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>PayloadType</key><string>com.google.Chrome</string>
+      <key>PayloadVersion</key><integer>1</integer>
+      <key>PayloadIdentifier</key><string>{ident}.chrome</string>
+      <key>PayloadUUID</key><string>{uuid.uuid5(uuid.NAMESPACE_URL, ident + ".chrome|" + "|".join(origins))}</string>
+      <key>PayloadDisplayName</key><string>Chrome — bench serial devices</string>
+      <key>SerialAllowUsbDevicesForUrls</key>
+      <array>
+        <dict>
+          <key>devices</key>
+          <array>{devices}
+          </array>
+          <key>urls</key>
+          <array>{urls}
+          </array>
+        </dict>
+      </array>
+      <!-- The marking bench reaches the laser through an agent on 127.0.0.1,
+           which Chrome 141+ blocks under Local Network Access with
+           ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS. Without this the operator
+           is prompted; the loopback key is the narrow one, and it outranks the
+           broader LocalNetworkAccessAllowedForUrls. -->
+      <key>LoopbackNetworkAccessAllowedForUrls</key>
+      <array>{urls}
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>
+"""
+
+
+def _calling_origin(request: Request) -> str:
+    """Which address the bench is really open at.
+
+    From the BROWSER (`Origin`, else `Referer`), because only it knows; a
+    profile or a launcher written for the wrong origin silently does nothing.
+    `public_base_url` is the fallback for a non-browser caller.
+    """
+    raw = request.headers.get("origin") or request.headers.get("referer") or ""
+    parts = urlsplit(raw)
+    origin = f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else ""
+    if not origin:
+        fallback = urlsplit(settings.public_base_url)
+        if fallback.scheme and fallback.netloc:
+            origin = f"{fallback.scheme}://{fallback.netloc}"
+    if not origin:
+        raise HTTPException(400, "cannot tell which origin this bench is served from")
+    return origin
+
+
+AGENT_SRC = Path(__file__).resolve().parent.parent / "services" / "bench_agent"
+
+_AGENT_README = """7Sigma agent
+============
+
+WHAT IT IS
+    The part of the bench that cannot live in a browser. Today it drives the
+    laser through LightBurn and reads the real serial port names; it will
+    grow as the bench does.
+
+TO START IT (macOS)
+    Double-click "{app}". A small window opens. Leave it open while
+    you mark; closing it stops the agent.
+
+    THE FIRST TIME on macOS, the app is unsigned and downloaded, so double-
+    clicking may say it cannot be opened. RIGHT-CLICK IT AND CHOOSE OPEN
+    instead, once, and confirm. After that it opens normally.
+
+    "Start in a terminal.command" is the same program without the window, for
+    when you would rather watch the log.
+
+WHAT IT SETS UP FOR YOU (no administrator rights needed)
+    On first start it grants this bench two things a web page cannot ask for
+    itself, and then says so:
+
+      * the USB serial adapters, so you are not asked to pick a port for
+        every device;
+      * permission to reach this agent on 127.0.0.1.
+
+    QUIT CHROME COMPLETELY AND REOPEN IT ONCE afterwards. Nothing else is
+    changed, other benches already listed keep working, and "--no-browser-setup"
+    turns it off.
+
+IF IT WILL NOT START
+    It needs Python 3, which macOS provides. If the machine has none, install
+    it from python.org and double-click again. Nothing else is required: no
+    pip, no virtualenv, no administrator rights.
+
+IF THE BENCH SAYS "LIGHTBURN IS NOT ANSWERING"
+    * Is LightBurn running, with no dialog waiting for a click?
+    * Does its title bar say Pro? LightBurn Core cannot drive a galvo laser,
+      and the way it fails is silence, not an error.
+
+THIS AGENT HOLDS NO PASSWORD AND NO TOKEN.
+    It listens on this machine only, and answers only the bench page it was
+    downloaded from ({origin}).
+"""
+
+# The app bundle. A .app is a directory with a plist and an executable, so it
+# can be built here with no tooling — and it opens a WINDOW rather than a
+# terminal, which is what a bench wants.
+_APP = "7Sigma Agent.app"
+
+_APP_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>7Sigma Agent</string>
+  <key>CFBundleDisplayName</key><string>7Sigma Agent</string>
+  <key>CFBundleIdentifier</key><string>cc.disfunction.bench.agent</string>
+  <key>CFBundleVersion</key><string>2</string>
+  <key>CFBundleShortVersionString</key><string>2.0</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleExecutable</key><string>run</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+"""
+
+# Finding a Python that can DRAW. `command -v python3` often lands on Homebrew's,
+# which ships without tkinter (measured 2026-09-16: "No module named '_tkinter'"),
+# while macOS's own /usr/bin/python3 has it. So: prefer one that can import it,
+# and fall back to any python3 at all — the agent then runs without a window
+# rather than not at all.
+_PICK_PY = """PY=""
+for C in /usr/bin/python3 "$(command -v python3)" /opt/homebrew/bin/python3 /usr/local/bin/python3; do
+  [ -x "$C" ] || continue
+  [ -z "$PY" ] && PY="$C"
+  if "$C" -c 'import tkinter' >/dev/null 2>&1; then PY="$C"; break; fi
+done
+[ -n "$PY" ] || PY=/usr/bin/python3
+"""
+
+_APP_RUN = """#!/bin/sh
+# The app's executable: find a Python that can draw, and hand it the agent.
+HERE=$(dirname "$0")
+{pick}
+exec "$PY" "$HERE/../Resources/agent.py" --origin '{origin}' "$@"
+"""
+
+_AGENT_COMMAND = """#!/bin/sh
+# The terminal way in, for a bench that would rather watch the log.
+# The app beside this file is the same program with a window.
+cd "$(dirname "$0")" || exit 1
+PY=$(command -v python3 || echo /usr/bin/python3)
+echo "Starting the 7Sigma agent. Leave this window open."
+exec "$PY" "{app}/Contents/Resources/agent.py" --terminal --origin '{origin}' "$@"
+"""
+
+
+
+@router.get("/agent.zip")
+def bench_agent(request: Request):
+    """The bench agent, as something an operator can download and open.
+
+    A bare .py is not clickable and a bare .command loses its execute bit in
+    transit, so this is a ZIP: the archive carries the mode, and expanding it
+    leaves a launcher that runs on a double-click. The bench's own origin is
+    baked into that launcher, so nobody types a flag.
+    """
+    origin = _calling_origin(request)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        def add(name: str, text: str, mode: int) -> None:
+            info = zipfile.ZipInfo(name, (2026, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = mode << 16
+            zf.writestr(info, text)
+
+        # ONE copy of the agent, inside the bundle; both launchers point at it.
+        add(f"{_APP}/Contents/Resources/agent.py", (AGENT_SRC / "agent.py").read_text(), 0o644)
+        add(f"{_APP}/Contents/Info.plist", _APP_PLIST, 0o644)
+        # 0o755: the execute bit is the whole reason this is an archive. A .app
+        # whose executable is not executable does not open at all.
+        add(f"{_APP}/Contents/MacOS/run",
+            _APP_RUN.format(origin=origin, pick=_PICK_PY), 0o755)
+        add("Start in a terminal.command", _AGENT_COMMAND.format(origin=origin, app=_APP), 0o755)
+        add("README.txt", _AGENT_README.format(origin=origin, app=_APP), 0o644)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="7sigma-agent.zip"'},
+    )
+
+
+@router.get("/bench-policy.mobileconfig")
+def bench_policy(request: Request):
+    """The macOS profile that stops the bench asking for a port on every unit.
+
+    The origin comes from the BROWSER (its `Origin`, else `Referer`), because
+    only the browser knows which address the bench is actually open at, and a
+    profile written for the wrong one silently does nothing. `public_base_url`
+    is the fallback for a non-browser caller.
+    """
+    origin = _calling_origin(request)
+    return Response(
+        content=_mobileconfig([origin]),
+        media_type="application/x-apple-aspen-config",
+        headers={"Content-Disposition": 'attachment; filename="7sigma-bench-serial.mobileconfig"'},
+    )
+
 
 @router.get("/projects/{project_id}/mosquitto")
 def mosquitto_export(project_id: int, db: Session = Depends(get_db)):

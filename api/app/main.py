@@ -225,6 +225,41 @@ _PHASE1_DDL = (
     ("uq_stock_adj_import",
      "CREATE UNIQUE INDEX IF NOT EXISTS uq_stock_adj_import "
      "ON component_stock_adjustments (import_ref) WHERE import_ref <> ''"),
+    # What a deployment IS, so the bench offers Program / Test from data rather
+    # than from a name match. Backfilled from the names the retro import gave
+    # them ("Dongle_V2 test", "Aqua_V2 test"); marking procedures come later.
+    ("deployments.kind",
+     "ALTER TABLE deployments ADD COLUMN IF NOT EXISTS "
+     "kind varchar(20) NOT NULL DEFAULT 'flash'"),
+    ("deployments.kind.backfill",
+     "UPDATE deployments SET kind = 'test' WHERE kind = 'flash' AND name ILIKE '%% test'"),
+    # The DEFAULT ticked on a new batch of this project. False on every test
+    # deployment and true on everything else, so a deploy lands with NO test
+    # required anywhere (user decision 2026-09-16): a fleet cannot go unverified
+    # overnight, and turning a product's test on is one click in the Deployments
+    # tab when its flow is ready for it.
+    ("deployments.active",
+     "ALTER TABLE deployments ADD COLUMN IF NOT EXISTS "
+     "active boolean NOT NULL DEFAULT false"),
+    ("deployments.active.backfill",
+     "UPDATE deployments SET active = true WHERE kind <> 'test'"),
+    # Whether a batch's units must pass the test, and the copy each programming
+    # run keeps of that answer. Both default false: every run already recorded
+    # required nothing, and a new rule must never re-judge a finished device.
+    ("production_runs.requires_test",
+     "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS "
+     "requires_test boolean NOT NULL DEFAULT false"),
+    ("programming_runs.test_required",
+     "ALTER TABLE programming_runs ADD COLUMN IF NOT EXISTS "
+     "test_required boolean NOT NULL DEFAULT false"),
+    # An erase runs no procedure, but it identifies a device and produces a log
+    # the operator needs beside the programming runs (user decision 2026-09-16,
+    # after a unit that could not be programmed left no trace).
+    ("programming_runs.action",
+     "ALTER TABLE programming_runs ADD COLUMN IF NOT EXISTS "
+     "action varchar(20) NOT NULL DEFAULT 'program'"),
+    ("programming_runs.version_nullable",
+     "ALTER TABLE programming_runs ALTER COLUMN deployment_version_id DROP NOT NULL"),
     # JLC's per-(order, part) `componentSource`: who actually supplied the part.
     ("jlc_imports.bom_info",
      "ALTER TABLE jlc_imports ADD COLUMN IF NOT EXISTS bom_info jsonb"),

@@ -76,6 +76,14 @@ const STATUS_TONES: Record<string, string> = {
   active: "ok",
   current: "ok",
   ok: "ok",
+  // A programming run's own words. They used to fall through to "neutral",
+  // which drew PASS and FAIL in the same grey — the one column an operator
+  // scans down a device list said nothing at a glance (user report
+  // 2026-09-16). `aborted` is warn, not err: somebody stopped it, the device
+  // did not fail.
+  pass: "ok",
+  fail: "err",
+  aborted: "warn",
   draft: "warn",
   pending: "warn",
   proposed: "warn",

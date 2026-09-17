@@ -425,7 +425,7 @@ host) by itself — so the scenario has less to push than the V2 flow did.
 | 4 | Admin + history UI | scenario editor, firmware assets, run history + log viewer, project tab | ~1 day |
 | 5 | Port the CE scenarios | `CE_Dongle_V2`, `CE_Aqua_V2` (ESP32) and `CE_Dongle_V3` (C6: factory+FS, plus app-only) as data; run side by side against the Python tool / PlatformIO tasks until they agree | ~1 day |
 | 6a | Laser marking, zero-install | `mark_browser` step: render the patched `.lbrn2`, download it, operator presses Start + confirms; `marking_templates`/`mark_jobs` tables | ~½ day |
-| 6b | Laser marking, hands-off (optional) | `mark_agent`: bench helper with an outbound WS to the platform, doing `FORCELOAD`/`START`/`STATUS` locally with dialog guards; driver already prototyped in `clients/lightburn-mark/`, needs the WS wrapper + packaging | ~1 day |
+| 6b | Laser marking, hands-off (optional) | `mark_agent`: bench helper with an outbound WS to the platform, doing `FORCELOAD`/`START`/`STATUS` locally with dialog guards; BUILT 2026-09-16 as an HTTP agent, not a WS one — see docs/reference/laser-marking.md and decision 0020 | done |
 | 7 | Cutover extras | mosquitto export, retire the Tkinter app | ~½ day |
 
 Phases 1–4 are the platform work; 5 is the actual migration; 6 folds marking
@@ -437,7 +437,7 @@ back in. The Python tool keeps working untouched until 5 passes.
 
 Researched and **measured against the installed LightBurn 1.7.03 on 2026-07-26**
 (licensed, no laser connected). Prototype driver:
-[`clients/lightburn-mark/mark.py`](../../clients/lightburn-mark/mark.py).
+[`api/app/services/bench_agent/`](../../api/app/services/bench_agent/) (moved there so the platform can serve it).
 
 ### Is there anything newer than the old UDP interface? No — but it is alive
 
@@ -545,7 +545,7 @@ The helper is deliberately marking-only and network-agnostic: it opens an
 firewall rules, no LAN assumption), receives `{serial, template, job bytes}`,
 writes the `.lbrn2` locally, runs `PING` → `FORCELOAD` → `PING` → `START` →
 poll `STATUS`, and streams the command log back for storage. The logic is already
-prototyped in `clients/lightburn-mark/mark.py`; only the WS client wrapper is
+prototyped in `api/app/services/bench_agent/agent.py`; the shipped agent speaks HTTP, and only the client wrapper was
 missing. Benches without a laser install nothing, and flashing stays in the
 browser either way.
 

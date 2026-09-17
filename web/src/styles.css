@@ -1019,6 +1019,15 @@ a.btn:hover {
   min-height: 0;
 }
 
+/* Two cards of EQUAL height is right when both hold a table that can grow. On
+   the device page the top card ("Where it is") is four event rows and a button
+   row, so half the column was empty while the programming history below it
+   needed a scroll to reach (user report 2026-09-16). Let the top card take
+   what it needs and give the rest to the card under it. */
+.detail-right-fit {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .backlink {
   display: inline-block;
   font-size: 13px;
@@ -2503,6 +2512,10 @@ table.kv.sim-map-table select {
   padding: 1px 9px;
   border-radius: 999px;
   vertical-align: middle;
+  /* A two-word label ("not signed", "in stock") broke across two lines inside
+     the pill and grew the table row with it. A pill is one line, always — a
+     cell that cannot hold it clips it like any other text. */
+  white-space: nowrap;
 }
 
 .pill.ok {
@@ -4132,19 +4145,265 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
 .flash-log .fl-app { color: var(--muted); }
 .flash-log .fl-esptool { color: var(--copper); }
 
+/* FOUR slots in ONE row. The whole point of the bench view is watching every
+   station at once, so nothing here may push a station below the fold — the
+   station box is sized to fit a quarter of the page rather than the grid being
+   sized to fit the box. Narrow screens fall back to 2, then 1. */
 .bench-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
   margin: 12px 0;
+}
+@media (max-width: 1250px) {
+  .bench-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 680px) {
+  .bench-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The laser's status is a STRIP, not a report: one line, wrapping only when the
+   window is narrow. The note takes the slack so the controls stay together at
+   the right. */
+.bench-agent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  /* A rule rather than a box: it lives in the settings card, and a border all
+     the way round would put it back to looking like a separate subject. */
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  padding-top: 10px;
+}
+.bench-agent-note { flex: 1 1 260px; min-width: 0; font-size: 12px; }
+
+/* The marking bench has ONE laser and ONE printer, so one station, and it gets
+   the whole page rather than a quarter of it. The four-up card is a narrow
+   column because four have to fit side by side; with one, that shape wastes
+   the width.
+
+   Two columns, and the split is by SUBJECT rather than by convenience: the
+   left column is the device — its serial, its port, what the station is doing
+   — and the right column is what can be done to it, one box per machine. A
+   machine's status sits above its own button because "LightBurn is not
+   answering" and "the printer has no roll" are fixed in two different places,
+   and a single status pill sent the operator to the wrong one. */
+.bench-grid-one { grid-template-columns: minmax(0, 1fr); }
+
+.bench-station.is-mark { display: flex; flex-direction: column; gap: 10px; }
+.bench-station.is-mark > .bench-log-wrap { margin-top: 0; }
+
+.bench-mark-cols {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 12px 18px;
+  align-items: start;
+}
+.bench-mark-left { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+/* Laser, the chain, printer. The middle column is the link control, and it is
+   there rather than inside a box because it belongs to neither: it says what
+   ONE press does. */
+.bench-mark-right {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+  align-items: stretch;
+}
+/* Under about 1100px the two action boxes stop being side by side before they
+   start clipping the roll name. A bench laptop is the narrow case. */
+@media (max-width: 1100px) {
+  .bench-mark-cols { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 680px) {
+  .bench-mark-right { grid-template-columns: minmax(0, 1fr); }
+  .bench-chain { flex-direction: row; gap: 8px; }
+}
+
+.bench-action {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.bench-action-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+/* Pressed with a part in the other hand, so it is a target rather than a link. */
+.bench-action-btn { padding: 14px 16px; font-size: 16px; }
+.bench-action .field-check { margin: 0; font-size: 12px; }
+.bench-roll { width: 100%; }
+/* What this station last put on a unit, under the button that did it. */
+.bench-did { font-size: 12px; color: var(--muted); }
+
+/* The chain between the two machines. Off it is quiet furniture; on it draws a
+   line across the gap, so which press does what is readable from standing. */
+.bench-chain {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  align-self: center;
+  padding: 8px 6px;
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.bench-chain:disabled { cursor: default; opacity: 0.5; }
+.bench-chain-icon { font-size: 16px; line-height: 1; filter: grayscale(1); }
+.bench-chain.is-on {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.bench-chain.is-on .bench-chain-icon { filter: none; }
+/* The line only exists when the two are joined. */
+.bench-chain.is-on::before,
+.bench-chain.is-on::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  border-top: 2px solid var(--accent);
+}
+.bench-chain.is-on::before { transform: translateX(-26px); }
+.bench-chain.is-on::after { transform: translateX(26px); }
+.bench-chain { position: relative; }
+
+/* One station, so the verdict can be read from where the operator stands. */
+.bench-station.is-mark .bench-verdict { font-size: 32px; padding: 14px 0; }
+.bench-station.is-mark .flash-log { height: 220px; }
+
+/* The serial, ABOVE the action: what is about to be engraved, whether the
+   device supplied it or the operator typed it. One box, because it is one
+   fact — a separate "engraved" readout said the same thing twice. */
+.bench-serial { display: flex; flex-direction: column; gap: 3px; }
+.bench-serial-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.bench-serial-box { font-size: 18px; letter-spacing: 0.06em; text-align: center; }
+/* Read-only is not disabled: it is the device's answer, and it must stay
+   readable from arm's length rather than greying out. */
+.bench-serial-box[readonly] { background: var(--surface-2); color: var(--text); }
+.bench-manual-toggle { margin: 0; font-size: 12px; }
+
+@media (max-width: 900px) {
+  .bench-station.is-mark {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "head" "serial" "acts" "verdict" "step" "note" "port" "log";
+    grid-template-rows: none;
+  }
 }
 .bench-station .bench-port {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 220px;
+  font-size: 11px;
 }
 .bench-station .bench-step { margin: 4px 0; }
+
+/* The verdict is the one thing read from across the bench, so it is sized for
+   that and not for the page. Colour follows the same tokens as `.pill`. */
+.bench-verdict {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: center;
+  padding: 8px 0;
+  margin: 8px 0 6px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.bench-verdict.v-busy { color: var(--warn); background: var(--warn-soft); border-color: var(--warn); }
+.bench-verdict.v-pass { color: var(--ok); background: var(--ok-soft); border-color: var(--ok); }
+.bench-verdict.v-fail,
+.bench-verdict.v-aborted { color: var(--err); background: var(--err-soft); border-color: var(--err); }
+
+.bench-progress { margin-bottom: 8px; }
+/* Two bars, the step above the procedure. Both stay in the layout at 0% so a
+   station does not change height every time a step starts. */
+.bench-bar {
+  height: 6px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+.bench-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
+/* Wraps rather than truncating: at a quarter of the page the pill, the adapter
+   name and the button do not fit on one line, and the port name is the part an
+   operator checks when a station misbehaves. */
+.bench-port-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.bench-port-row .bench-port {
+  flex-basis: 100%;
+  max-width: 100%;
+  order: 3;
+}
+
+/* The station's name is a heading that happens to be editable: it reads as a
+   title until you click it, so the bench does not look like a form. */
+.bench-name {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.bench-name:focus {
+  border-color: var(--accent);
+  background: var(--card);
+  outline: none;
+}
+.bench-name-text { font-size: 17px; }
+.bench-slot { font-size: 12px; margin: -2px 0 6px 6px; }
+/* The place a removed station left. Holds the column open so the remaining
+   stations keep their positions — an operator reaches for "the second one". */
+/* What to DO about the error above, smaller than the error itself so the
+   verdict still reads first. */
+.bench-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.85;
+}
+.bench-bootwait {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  font-size: 12px;
+}
+.bench-empty { min-height: 1px; }
+.bench-log-wrap { margin-top: 8px; }
+.bench-log-wrap summary { cursor: pointer; }
+
 .override-reason { width: 100%; margin-top: 8px; }
 
 .file-editor { min-height: 320px; }
@@ -4255,14 +4514,21 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
 .device-history-table th:nth-child(4), .device-history-table td:nth-child(4) { width: 15%; }
 .device-history-table th:nth-child(5), .device-history-table td:nth-child(5) { width: 15%; }
 
+/* Run · Result · Batch · Deployment · By · Took · Started. STARTED is a LENGTH,
+   not a share: a timestamp has a fixed width and "2026-09-16 20:…" is not a
+   time (same rule as the device list's serial). The rest share what is left.
+   Sized from measured content after two changes made the old split wrong — the
+   result pill printed "ABORTE" at 10%, and `By` started carrying a real
+   account name instead of a dash. Deployment and By are the two that truncate,
+   and both carry a title. */
 .device-runs-table { table-layout: fixed; }
-.device-runs-table th:nth-child(1), .device-runs-table td:nth-child(1) { width: 15%; }
-.device-runs-table th:nth-child(2), .device-runs-table td:nth-child(2) { width: 10%; }
-.device-runs-table th:nth-child(3), .device-runs-table td:nth-child(3) { width: 18%; }
-.device-runs-table th:nth-child(4), .device-runs-table td:nth-child(4) { width: 22%; }
-.device-runs-table th:nth-child(5), .device-runs-table td:nth-child(5) { width: 12%; }
-.device-runs-table th:nth-child(6), .device-runs-table td:nth-child(6) { width: 8%; }
-.device-runs-table th:nth-child(7), .device-runs-table td:nth-child(7) { width: 15%; }
+.device-runs-table th:nth-child(1), .device-runs-table td:nth-child(1) { width: 17%; }
+.device-runs-table th:nth-child(2), .device-runs-table td:nth-child(2) { width: 20%; }
+.device-runs-table th:nth-child(3), .device-runs-table td:nth-child(3) { width: 12%; }
+.device-runs-table th:nth-child(4), .device-runs-table td:nth-child(4) { width: 20%; }
+.device-runs-table th:nth-child(5), .device-runs-table td:nth-child(5) { width: 16%; }
+.device-runs-table th:nth-child(6), .device-runs-table td:nth-child(6) { width: 15%; }
+.device-runs-table th:nth-child(7), .device-runs-table td:nth-child(7) { width: 150px; }
 
 .progsteps-table { table-layout: fixed; }
 .progsteps-table th:nth-child(1), .progsteps-table td:nth-child(1) { width: 6%; }
@@ -4598,11 +4864,6 @@ a.check-cell:hover {
 .check-unknown .check-dot {
   background: transparent;
   border: 1px solid var(--border);
-}
-.check-bar {
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
 }
 @media (max-width: 900px) {
   .check-group { grid-template-columns: 1fr; }

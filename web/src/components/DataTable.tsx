@@ -38,8 +38,16 @@ export interface Column<T> {
   render?: (row: T) => ReactNode;
   /** Right-aligned, numerically sorted. */
   numeric?: boolean;
-  /** Column width in % — give every column one; they should sum to ~100. */
-  width: number;
+  /** Column width. A NUMBER is a percent of the table: give every column one,
+   *  and they should sum to ~100.
+   *
+   *  A STRING is a CSS length, honoured exactly, for a column whose content
+   *  has a hard maximum and must never be cut — a 12-character serial is the
+   *  case that asked for it. The percent columns then share what is left
+   *  (measured in Chromium: they scale down proportionally, and the table
+   *  still does not scroll sideways). Use it sparingly: two or three fixed
+   *  columns and the percentages stop meaning anything. */
+  width: number | string;
   /** Extra class for body cells (e.g. "mono"). */
   className?: string;
   /** Set false for action/icon columns — no filter input, no sort button. */
@@ -273,7 +281,7 @@ export default function DataTable<T>({
     <table className="data data-fixed">
       <colgroup>
         {columns.map((c) => (
-          <col key={c.key} style={{ width: `${c.width}%` }} />
+          <col key={c.key} style={{ width: typeof c.width === "number" ? `${c.width}%` : c.width }} />
         ))}
       </colgroup>
       <thead>

@@ -130,11 +130,15 @@ services:
         - ghcr.io/mszkowalik/kicad-lib/web:buildcache
         - ghcr.io/mszkowalik/kicad-lib/web:latest
     environment:
-      # Absolute API address, so the browser calls the api container directly
-      # (allowed by the CORS list in api/app/main.py). Drop this line to use
-      # relative paths through the dev server's proxy instead, which is what
-      # the deployed image does — then set VITE_API_PROXY=http://api:8000.
-      VITE_API_URL: http://localhost:8020
+      # Same-origin dev, the way the deployed image works: the browser uses
+      # relative paths and the Vite server proxies them to the api container.
+      # VITE_API_URL is deliberately NOT set — an absolute loopback address
+      # ties dev to one browser on one machine, and the CORS list in
+      # api/app/main.py names only localhost, so a page opened by the LAN
+      # address could not call the API at all. The flasher bench needs exactly
+      # that: see "base_url is resolved at hello" in
+      # api/app/services/flasher/CLAUDE.md.
+      VITE_API_PROXY: http://api:8000
       # Bind-mounted host edits don't emit fsevents into the container on
       # macOS/Windows, so Vite's file watcher must poll to see changes.
       CHOKIDAR_USEPOLLING: "true"
@@ -146,7 +150,10 @@ services:
       - ./web:/srv
       - /srv/node_modules
     ports:
-      - "127.0.0.1:5173:5173"
+      # Published on every interface, not just loopback: a device being
+      # programmed fetches its berryware from this port over WiFi, so the
+      # dev server has to answer on the machine's LAN address.
+      - "5173:5173"
     depends_on:
       - api
 

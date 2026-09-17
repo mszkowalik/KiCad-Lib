@@ -33,6 +33,7 @@ import asyncio
 import re
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlsplit
 
 from ...config import settings
 from ...db import SessionLocal
@@ -48,6 +49,12 @@ BROWSER_OPS = {
 # an ESP32 erase ~20 s). A step's own `timeout` (seconds) overrides.
 ACTION_TIMEOUTS = {"erase": 240, "flash": 900, "await_reenumerate": 90, "esp_connect": 90}
 SECRET_RE = re.compile(r"password|pin|salt|secret|token", re.I)
+# Default URL template for the files the DEVICE fetches. A step may carry its
+# own `url`; both go through `RunEngine._url`, so `{base_url}` means the same
+# thing in either. See `_resolve_base_url` for where that value comes from.
+FILE_URL_TEMPLATE = "{base_url}/api/flasher/files/{file_version_id}/{filename}"
+# A device on WiFi reaches none of these, whoever configured them.
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
 # Captured variables with these names also update the device row — the
 # "all identification stored per device" requirement (2026-07-29).
 IDENTITY_VARS = {
@@ -58,6 +65,23 @@ IDENTITY_VARS = {
     "modem_model": "modem_model",
     "modem_fw": "modem_fw",
 }
+
+
+# What a serial may be, for anything that goes ON a part. Eight to twelve
+# characters, no spaces (user decision 2026-09-17). A V2 dongle's MAC is twelve
+# hex characters; shorter product serials exist, and something outside this
+# range is a capture that went wrong — a whole Tasmota topic, an empty split, a
+# fragment of a log line — not a serial anybody meant to engrave.
+SERIAL_MIN, SERIAL_MAX = 8, 12
+
+# The only ops a bench may leave out of a run. See the note where they are read.
+#
+# `wait_boot` is here because its whole job is to WAIT until the device answers,
+# and a bench that has just had an answer has nothing to wait for. The identity
+# is still read inside the run by the `command` step that follows, so skipping
+# this proves nothing and assumes nothing — a device that has gone quiet in the
+# meantime fails there rather than waiting out a boot that already happened.
+SKIPPABLE_OPS = {"mark_laser", "print_label", "wait_boot"}
 
 
 class Aborted(Exception):
@@ -72,12 +96,46 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def usable_base(url: str) -> str:
+    """Why this address cannot be a base, or "" when it can.
+
+    Every candidate passes through here, the bench-reported ones included: what
+    the engine does with the winner is tell a DEVICE to fetch from it, so it is
+    checked like input rather than read like configuration.
+    """
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https"):
+        return "is not an http(s) address"
+    if not parts.hostname:
+        return "has no host"
+    if parts.username or parts.password:
+        return "carries credentials"
+    if loopback(url):
+        return "is loopback"
+    return ""
+
+
+def loopback(url: str) -> bool:
+    """True when this address only resolves on the machine that serves it.
+
+    The device fetches over WiFi, so a loopback base is not a URL that happens
+    to fail — it is a URL that cannot be right. Candidates are SKIPPED on this
+    test rather than used and failed on at step 18.
+    """
+    host = (urlsplit(url if "//" in url else f"//{url}").hostname or "").lower()
+    return host in LOOPBACK_HOSTS or host.endswith(".localhost")
+
+
 class RunEngine:
     def __init__(self, ws, run_id: int):
         self.ws = ws
         self.run_id = run_id
         self.vars: dict[str, Any] = {}
         self.results: dict[str, Any] = {}
+        # Where base_url came from, and every candidate weighed — the failure
+        # message is only useful if it names what was tried.
+        self.base_url_source = ""
+        self.base_url_tried: list[str] = []
         self.last_response: Any = None
         self.rx_q: asyncio.Queue[str] = asyncio.Queue()
         self.pending: dict[int, asyncio.Future] = {}
@@ -144,6 +202,11 @@ class RunEngine:
                 if ps and ps.values_enc:
                     import json as _json
                     params.update(_json.loads(crypto.decrypt_token(ps.values_enc)))
+            # Who is at the bench is a property of the RUN, stamped from the
+            # signed-in account when it was created. A client-sent `operator`
+            # param no longer exists; seeding it here keeps `{operator}` usable
+            # in a step without trusting the bench for it.
+            params.setdefault("operator", run.operator or "")
             return {
                 "project_id": dep.project_id,
                 "production_run_id": prod.id if prod else None,
@@ -162,7 +225,75 @@ class RunEngine:
 
         self.spec = await self._db(load)
         self.vars = dict(self.spec["params"])
-        self.vars.setdefault("base_url", settings.public_base_url)
+        # base_url is resolved AFTER hello, not here: the bench's own address is
+        # one of the candidates and it arrives with the hello message.
+
+    # ------------------------------------------------------------- addresses
+
+    def _resolve_base_url(self, client_info: dict) -> None:
+        """Pick the address the DEVICE will fetch from, best candidate first.
+
+        The platform does not know its own reachable address: in production it
+        is a public name, on a dev machine it is whatever LAN address the
+        operator opened the bench by, and the container only ever sees a bridge
+        IP. So the BENCH reports the two addresses it is provably reaching the
+        platform by — as a LAST resort.
+
+        CONFIGURATION OUTRANKS THE BENCH, on purpose. The winner is an address
+        the engine then tells a DEVICE to fetch its berryware from, so a value
+        the browser merely asserts is used only where the platform has no usable
+        one of its own. That is exactly the dev case, where `public_base_url` is
+        `localhost`. In production the configured value is reachable, wins, and
+        the bench candidates are never weighed at all.
+        """
+        candidates = [
+            # A param set or an operator field says it on purpose: it wins.
+            ("param", self.vars.get("base_url")),
+            # The platform's own configuration. Reachable in production; the
+            # `localhost` default on a dev machine drops out here.
+            ("public_base_url", settings.public_base_url),
+            # The API origin this browser calls, then the address the bench page
+            # itself was opened by. In dev the Vite server proxies /api, so the
+            # page address reaches the API even when the API origin is a
+            # loopback port no device could use.
+            ("bench api", client_info.get("api_base")),
+            ("bench page", client_info.get("page_base")),
+        ]
+        self.base_url_tried = []
+        for source, raw in candidates:
+            value = str(raw or "").rstrip("/")
+            if not value:
+                continue
+            self.base_url_tried.append(f"{source}={value}")
+            why = usable_base(value)
+            if why:
+                self.log("app", f"base_url: {source} {value} {why} — skipped")
+                continue
+            self.vars["base_url"] = value
+            self.base_url_source = source
+            self.log("app", f"base_url = {value} (from {source})")
+            return
+        self.vars["base_url"] = ""
+        self.base_url_source = "none"
+        self.log("app", "base_url: no candidate is reachable from a device")
+
+    def _url(self, template: str, **extra: Any) -> str:
+        """Resolve a URL template against the run vars plus an op's own names.
+
+        EVERY op that makes the device fetch something builds its URL here
+        rather than gluing a base onto a path, so one resolution of `base_url`
+        serves them all and a step can override the whole shape. The names in
+        `extra` are per-item (a file's version id, say) and the validator knows
+        them as `OP_LOCAL_VARS`.
+        """
+        url = str(protocol.subst(template, {**self.vars, **extra}))
+        if loopback(url):
+            raise StepFailed(
+                f"{url} is not reachable from the device. base_url came from "
+                f"{self.base_url_source or 'nothing'}; tried "
+                + (", ".join(self.base_url_tried) or "nothing")
+            )
+        return url
 
     # --------------------------------------------------------------- logging
 
@@ -320,10 +451,32 @@ class RunEngine:
                 raise StepFailed("bench did not say hello")
             operator_params = hello.get("params") or {}
             self.vars.update({k: v for k, v in operator_params.items() if v not in (None, "")})
+            # The bench may ask for the two ACTION ops to be left out, and
+            # nothing else. One marking procedure reads the device once and
+            # then engraves, prints, or both — which is what the two buttons on
+            # the bench are. Letting a bench skip anything else would let it
+            # decide what a unit was made under, and decision 0021 says that is
+            # the version's answer, not the bench's.
+            asked = {str(o) for o in (hello.get("skip_ops") or [])}
+            refused = asked - SKIPPABLE_OPS
+            skip = asked & SKIPPABLE_OPS
+            if refused:
+                self.log("app", f"the bench asked to skip {', '.join(sorted(refused))}, "
+                                "which is not skippable — running it")
+            if skip:
+                kept = [s for s in self.spec["steps"] if s.get("op") not in skip]
+                left_out = len(self.spec["steps"]) - len(kept)
+                if not kept:
+                    raise StepFailed(
+                        "skipping " + ", ".join(sorted(skip)) + " would leave nothing to run")
+                self.spec["steps"] = kept
+                self.log("app", f"{left_out} step(s) left out at the bench's request: "
+                                + ", ".join(sorted(skip)))
+            client_info = hello.get("client_info") or {}
+            self._resolve_base_url(client_info)
             masked = {
                 k: ("•••" if SECRET_RE.search(k) else v) for k, v in self.vars.items()
             }
-            client_info = hello.get("client_info") or {}
 
             def start(db):
                 run = db.get(M.ProgrammingRun, self.run_id)
@@ -533,6 +686,14 @@ class RunEngine:
                 want = (self.spec["chip"] or "").lower().replace("-", "")
                 if want and want not in chip.lower().replace("-", "").replace(" ", ""):
                     raise StepFailed(f'release expects {self.spec["chip"]} but the device reports "{chip}"')
+                # HOW the bench got the chip's attention is a property of the
+                # BOARD, not of the procedure: a unit that only answers with
+                # BOOT held, or only at the ROM baud, has a fault worth seeing
+                # in its history rather than being quietly rescued every run.
+                mode = str(info.get("connect_mode", ""))
+                if mode:
+                    self.results["connect_mode"] = mode
+                    self.log("app", f"connect mode: {mode}")
                 await self._register_device(chip, mac)
             return None
 
@@ -657,9 +818,129 @@ class RunEngine:
         if op == "lte_sim_pin":
             return await self._lte_sim_pin(step, timeout)
 
+        if op == "mark_laser":
+            return await self._mark_laser(step, timeout)
+
+        if op == "print_label":
+            return await self._print_label(step, timeout)
+
         raise StepFailed(f'unknown op "{op}"')
 
     # ------------------------------------------------------------ complex ops
+
+    def _identity_value(self, step: dict, op: str) -> str:
+        """What goes on the part: the same rule for the laser and the label.
+
+        `take_after` exists for the one shape the old tool relied on: Tasmota's
+        device name is `<something>_<MAC without separators>`, and the MAC is
+        what goes on the part. Keeping the split here rather than in a capture
+        path means the step says out loud what it puts on the unit — and a
+        device that is engraved and labelled carries the SAME string, because
+        both ops read it from here.
+        """
+        value = str(protocol.subst(step.get("value", "{mac}"), self.vars))
+        after = step.get("take_after")
+        if after:
+            value = value.rsplit(str(after), 1)[-1]
+        if not value or "{" in value:
+            raise StepFailed(f"{op}: nothing to put on the part — value resolved to {value!r}")
+        if value.split() != [value]:
+            raise StepFailed(
+                f"{op}: {value!r} has whitespace in it, so it is not a serial")
+        if not SERIAL_MIN <= len(value) <= SERIAL_MAX:
+            raise StepFailed(
+                f"{op}: {value!r} is {len(value)} characters. A serial is "
+                f"{SERIAL_MIN} to {SERIAL_MAX}, so this is a capture that went wrong rather "
+                "than something to put on a part")
+        return value
+
+    async def _print_label(self, step: dict, timeout: float) -> None:
+        """Print the device's own identity on a label, through the bench agent.
+
+        No pinned file, unlike marking: a Code 128 label has no artwork. Its
+        geometry comes out of the printer's own PPD, on the bench, so the AGENT
+        lays it out and this step only says what to put on it. The roll is a
+        bench setting that the station may override — the printer is physical
+        and the procedure is not — so the run records the roll the bench
+        reports back, never the one this step asked for.
+        """
+        value = self._identity_value(step, "print_label")
+        args = {
+            "value": value,
+            "size": str(step.get("roll") or ""),
+            "dots": int(step.get("dots") or 3),
+            "rotate": step.get("rotate", True) is not False,
+            "copies": int(step.get("copies") or 1),
+            "job_timeout": float(step.get("job_timeout", 120)),
+        }
+        self.log("app", f"printing {value}")
+        info = await self.action("print_label", args,
+                                 timeout=max(timeout, args["job_timeout"] + 30))
+        self.results["printed"] = value
+        if info.get("roll"):
+            self.results["label_roll"] = info["roll"]
+        if info.get("printer"):
+            self.results["label_printer"] = info["printer"]
+        if info.get("job_seconds") is not None:
+            self.log("app", f"the printer finished in {info['job_seconds']:.1f}s")
+
+    async def _mark_laser(self, step: dict, timeout: float) -> None:
+        """Engrave the device's own identity, through LightBurn on the bench.
+
+        The artwork is a device file pinned by THIS deployment version, exactly
+        like berryware: the version owns which drawing a unit gets, so a
+        changed logo is a version bump and the run record says which one was
+        used. The bench fetches it, replaces the placeholder text with `value`,
+        and hands the finished job to the marking agent — this engine never
+        touches the XML and never sees the laser.
+
+        What is engraved comes from `_identity_value`, the same rule the label
+        uses, so a unit that gets both carries one string.
+        """
+        files = self.spec["files"]
+        if not files:
+            raise StepFailed("mark_laser: this version pins no template file")
+        wanted = str(protocol.subst(step.get("template", ""), self.vars))
+        if wanted:
+            match = next((f for f in files if f["filename"] == wanted), None)
+            if match is None:
+                have = ", ".join(f["filename"] for f in files) or "nothing"
+                raise StepFailed(f"mark_laser: no pinned file called {wanted!r} (this version pins {have})")
+        elif len(files) == 1:
+            match = files[0]
+        else:
+            have = ", ".join(f["filename"] for f in files)
+            raise StepFailed(f"mark_laser: name the template, this version pins {len(files)}: {have}")
+
+        value = self._identity_value(step, "mark_laser")
+
+        args = {
+            "file_version_id": match["version_id"],
+            "filename": match["filename"],
+            "value": value,
+            "start": bool(step.get("start", True)),
+            "job_timeout": float(step.get("job_timeout", 300)),
+        }
+        # `device` is a LightBurn DEVICE PROFILE, not a laser source: the
+        # profile carries one source's galvo calibration, and the artwork's
+        # layers say which source fires ("Use Laser 2"). Which profile a product
+        # is marked under is a property of the product, so the VERSION says it
+        # (docs/reference/laser-marking.md, "The machine").
+        if step.get("device"):
+            args["device"] = str(step["device"])
+        # The placeholder is optional: the bench falls back to the strings the
+        # CE templates have always used when a step does not name one.
+        if step.get("placeholder"):
+            args["placeholder"] = str(step["placeholder"])
+        self.log("app", f"marking {value} from {match['filename']}")
+        info = await self.action("mark_laser", args, timeout=max(timeout, args["job_timeout"] + 30))
+        self.results["marked"] = value
+        self.results["mark_template"] = match["filename"]
+        if step.get("device"):
+            self.results["mark_device"] = str(step["device"])
+        if info.get("job_seconds") is not None:
+            self.results["mark_seconds"] = info["job_seconds"]
+            self.log("app", f"laser reported idle after {info['job_seconds']:.1f}s")
 
     async def _poll_until(self, step: dict, timeout: float) -> None:
         """Send `cmd` every `every` seconds until the response satisfies the
@@ -708,16 +989,19 @@ class RunEngine:
         files = self.spec["files"]
         if not files:
             raise StepFailed("download_files: the script version pins no device files")
-        base = str(self.vars.get("base_url", "")).rstrip("/")
-        if not base or "localhost" in base or "127.0.0.1" in base:
+        if not str(self.vars.get("base_url", "")):
             raise StepFailed(
-                f'download_files: base_url "{base}" is not reachable from the device — '
-                "set public_base_url (or the base_url param) to the platform's LAN address"
+                "download_files: no address the device could fetch from — tried "
+                + (", ".join(self.base_url_tried) or "nothing")
+                + ". Open the bench by the platform's LAN address, or set the "
+                "base_url param."
             )
+        template = step.get("url") or FILE_URL_TEMPLATE
         per_file_timeout = float(step.get("timeout", 30))
         retries = int(step.get("retries", 3))
         for f in files:
-            url = f"{base}/api/flasher/files/{f['version_id']}/{f['filename']}"
+            url = self._url(template, file_version_id=f["version_id"],
+                            filename=f["filename"])
             ok = False
             for attempt in range(1, retries + 1):
                 resp = await self.send_command("UrlFetch", url, "UrlFetch", per_file_timeout)

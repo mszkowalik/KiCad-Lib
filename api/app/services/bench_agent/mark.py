@@ -42,125 +42,21 @@ from __future__ import annotations
 
 import argparse
 import json
-import socket
 import sys
-import time
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
 from pathlib import Path
 
-OUT_PORT = 19840  # LightBurn listens here
-IN_PORT = 19841  # LightBurn replies here
-OK, FAIL, UNKNOWN_CMD = "OK", "!", "?"
+# The UDP client and its guards live in agent.py — the file that must stand
+# alone on a bench with nothing installed. This is the command-line tool on top
+# of it, so the protocol has one implementation.
+from agent import (  # noqa: F401  (re-exported for anything importing mark)
+    DEFAULT_PLACEHOLDERS,
+    DialogBlocked,
+    LightBurn,
+    Log,
+    MarkError,
+)
 
-# Placeholder strings used in the CE templates. The first match wins.
-DEFAULT_PLACEHOLDERS = ("123456", "123456789011")
-
-
-class MarkError(RuntimeError):
-    pass
-
-
-class DialogBlocked(MarkError):
-    """LightBurn is showing a modal dialog: nothing works until it is dismissed."""
-
-
-@dataclass
-class Log:
-    entries: list[dict] = field(default_factory=list)
-
-    def add(self, direction: str, text: str) -> None:
-        self.entries.append({"ts": time.time(), "dir": direction, "text": text})
-        print(f"  {'>>' if direction == 'tx' else '<<' if direction == 'rx' else '..'} {text}", file=sys.stderr)
-
-
-class LightBurn:
-    """Thin, synchronous client for LightBurn's UDP control interface."""
-
-    def __init__(self, host: str = "127.0.0.1", timeout: float = 3.0, log: Log | None = None):
-        self.host = host
-        self.timeout = timeout
-        self.log = log or Log()
-        # Dual-stack socket bound to the documented reply port: LightBurn's
-        # listener is IPv6-wildcard, so replies can arrive as IPv6 or as
-        # IPv4-mapped depending on how we addressed it.
-        self.sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-        self.sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock.bind(("::", IN_PORT))
-
-    def close(self) -> None:
-        self.sock.close()
-
-    def send(self, command: str, timeout: float | None = None) -> str | None:
-        """Send one command, return the reply ('OK' / '!' / '?') or None on silence."""
-        self.log.add("tx", command)
-        self.sock.sendto(command.encode(), (self.host, OUT_PORT))
-        self.sock.settimeout(timeout or self.timeout)
-        try:
-            data, _ = self.sock.recvfrom(2048)
-        except socket.timeout:
-            self.log.add("rx", "(no reply)")
-            return None
-        reply = data.decode(errors="replace").strip()
-        self.log.add("rx", reply)
-        return reply
-
-    # -- health -------------------------------------------------------------
-
-    def ping(self) -> bool:
-        return self.send("PING") == OK
-
-    def require_responsive(self, when: str) -> None:
-        if not self.ping():
-            raise DialogBlocked(
-                f"LightBurn is not answering PING {when}. It is almost certainly showing a "
-                f"modal dialog (missing file, licence prompt, unsaved changes) — someone has "
-                f"to dismiss it on the bench PC."
-            )
-
-    def busy(self) -> bool:
-        """True when LightBurn reports it is not idle. NOTE: an OK here does NOT
-        mean a laser is connected — measured OK with nothing attached."""
-        return self.send("STATUS") != OK
-
-    # -- job control --------------------------------------------------------
-
-    def load(self, path: Path, force: bool = True) -> None:
-        # Guard the freeze: never hand LightBurn a path it cannot open.
-        if not path.is_file():
-            raise MarkError(f"refusing to send LOADFILE for a missing file: {path}")
-        verb = "FORCELOAD" if force else "LOADFILE"
-        reply = self.send(f"{verb}:{path}", timeout=15)
-        if reply is None:
-            raise DialogBlocked(f"{verb} got no reply — LightBurn most likely opened an error dialog")
-        if reply != OK:
-            raise MarkError(f"{verb} failed with {reply!r}")
-        # A load that "succeeded" can still have raised a dialog behind it.
-        self.require_responsive("after loading the job")
-
-    def start(self) -> None:
-        reply = self.send("START", timeout=10)
-        if reply != OK:
-            raise MarkError(f"START failed with {reply!r} (laser off, no device selected, or a dialog is up)")
-
-    def wait_for_idle(self, timeout: float = 300.0, poll: float = 1.0, settle: float = 2.0) -> float:
-        """Poll STATUS until the job stops reporting busy.
-
-        UNVERIFIED against a real laser (none was connected when this was
-        written): with no device attached STATUS answers OK immediately, so this
-        returns at once and proves nothing. With a laser, LightBurn is
-        documented to answer '!' while running. Until that is confirmed on the
-        bench, treat a completed mark as operator-confirmed, not machine-proven.
-        """
-        t0 = time.time()
-        # Give the job a moment to actually start before believing "idle".
-        time.sleep(settle)
-        while time.time() - t0 < timeout:
-            if not self.busy():
-                return time.time() - t0
-            time.sleep(poll)
-        raise MarkError(f"job still busy after {timeout}s")
 
 
 def patch_template(template: Path, out_dir: Path, serial: str, placeholders=DEFAULT_PLACEHOLDERS,

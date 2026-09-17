@@ -66,6 +66,16 @@ def _run_json(r: M.ProductionRun, db: Session | None = None, with_detail: bool =
         "order_ref": r.order_ref,
         "order_date": r.order_date,
         "created_at": r.created_at.isoformat(),
+        # What this batch is set to be programmed with. The bench compares the
+        # version the operator picked against these two: equal is a normal run,
+        # different is an OVERRIDE and needs a reason. Both empty (every batch
+        # today) means the operator's choice is the only one there is.
+        "deployment_version_id": r.deployment_version_id,
+        "deployment_channel": r.deployment_channel,
+        # Must a unit of this batch pass the test? Each programming run copies
+        # this when it starts, so changing it here only affects work still to
+        # be done.
+        "requires_test": bool(r.requires_test),
         "attachment_count": len(r.attachments),
         "device_count": len(r.devices),
         "production_set_count": _pset_count(r),
@@ -132,6 +142,9 @@ class RunPatch(BaseModel):
     customer: str | None = None
     order_ref: str | None = None
     order_date: str | None = None
+    # Must a unit of this batch pass the project's test? Changing it affects
+    # only runs made AFTER the change: each programming run keeps its own copy.
+    requires_test: bool | None = None
 
 
 @router.get("/projects/{project_id}/runs")
@@ -152,6 +165,13 @@ def create_run(project_id: int, body: RunIn, db: Session = Depends(get_db)):
         raise HTTPException(404, "project not found")
     if body.qty < 1:
         raise HTTPException(422, "qty must be >= 1")
+    # The project's ACTIVE test deployment is the DEFAULT for a new batch, and
+    # only that: once the batch exists, the batch is the authority.
+    requires_test = bool(
+        db.query(M.Deployment).filter(
+            M.Deployment.project_id == project_id,
+            M.Deployment.kind == "test", M.Deployment.active).first()
+    )
     if body.snapshot_id is not None:
         snap = db.get(M.ProjectSnapshot, body.snapshot_id)
         if snap is None or snap.project_id != project_id:
@@ -184,7 +204,7 @@ def create_run(project_id: int, body: RunIn, db: Session = Depends(get_db)):
                   {"project_id": project_id, "label": body.label, **problems})
     data = body.model_dump()
     data.pop("ack_review", None)  # gate flag, not a run column
-    r = M.ProductionRun(project_id=project_id, **data)
+    r = M.ProductionRun(project_id=project_id, requires_test=requires_test, **data)
     db.add(r)
     db.flush()
     # economics are not stored — they resolve from price history at the
@@ -218,6 +238,8 @@ def update_run(run_id: int, body: RunPatch, db: Session = Depends(get_db)):
         r.qty = body.qty
     if body.status is not None:
         r.status = body.status.strip()
+    if body.requires_test is not None:
+        r.requires_test = body.requires_test
     if body.run_date is not None:
         r.run_date = body.run_date.strip()
     if body.notes is not None:

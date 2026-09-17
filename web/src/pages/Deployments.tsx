@@ -121,6 +121,24 @@ export default function Deployments() {
     }
   };
 
+  /** On a TEST deployment this is the DEFAULT FOR THE NEXT BATCH, not a rule
+   *  about devices: a new batch is created with "units must pass the test"
+   *  already ticked, and the batch is what every programming run copies. So
+   *  turning it on affects work still to be planned, and never re-judges a
+   *  device that is already on the shelf. */
+  const toggleActive = async () => {
+    if (!selected) return;
+    try {
+      await updateDeployment(selected.id, {
+        name: selected.name, description: selected.description, chip: selected.chip,
+        kind: selected.kind, active: !selected.active,
+      });
+      reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
   /** The API is the authority: it refuses while any programming run records
    *  this deployment, so a cleanup can never orphan device history. */
   const removeDeployment = async () => {
@@ -217,6 +235,11 @@ export default function Deployments() {
                     {d.chip || "chip?"} · {d.versions.length} versions
                   </span>
                   <span className="depl-chips">
+                    {d.kind === "test" ? (
+                      <span className={`pill ${d.active ? "ok" : "neutral"}`}>
+                        {d.active ? "default on new batches" : "optional"}
+                      </span>
+                    ) : null}
                     {d.channels
                       .filter((c) => c.version_no !== null)
                       .map((c) => (
@@ -237,6 +260,20 @@ export default function Deployments() {
                     <button type="button" className="btn btn-sm" onClick={editChip}>
                       {selected.chip || "set chip"}
                     </button>
+                    {selected.kind === "test" ? (
+                      <button
+                        type="button"
+                        className={`btn btn-sm${selected.active ? " btn-primary" : ""}`}
+                        onClick={toggleActive}
+                        title={
+                          selected.active
+                            ? "New batches of this project are created with \"units must pass the test\" ticked. Each batch can still be changed, and devices already made keep the rule they were made under. Click to stop requiring it by default."
+                            : "New batches are created without the test requirement. The test can still be run, and a test that runs and FAILS always counts against the device. Click to require it by default."
+                        }
+                      >
+                        {selected.active ? "required on new batches" : "not required by default"}
+                      </button>
+                    ) : null}
                     <button type="button" className="btn btn-sm row-del" onClick={removeDeployment}
                             title="Delete this deployment — refused while any programming run records it">
                       Delete

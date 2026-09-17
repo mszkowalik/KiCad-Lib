@@ -25,4 +25,7 @@ edited.
 | [pcm-packaging.md](pcm-packaging.md) | Package retention, per-package versioning, the personal repository URL | `services/pcm.py` |
 | [kicad-integration.md](kicad-integration.md) | How the library reaches KiCad, the HTTP catalog, field visibility | `services/generator.py`, `mirror.py`, the plugin |
 | [deployment.md](deployment.md) | Images, GHCR, the build cache, the server | a Dockerfile, a compose file, the workflow |
+| [bench-serial-ports.md](bench-serial-ports.md) | Why a bench station cannot be bound to a USB socket, every attempt that failed, and what would have to change | `web/src/flasher/station.ts`, the bench port rules |
+| [laser-marking.md](laser-marking.md) | Running a marking bench, authoring a marking procedure, what the BSL controller is and why the platform drives LightBurn instead | `api/app/services/bench_agent/`, `mark_laser`, decision 0020 |
+| [label-printing.md](label-printing.md) | How a serial becomes a Code 128 label, why the agent lays it out, the roll table, and the four measurements that make a label scannable | `api/app/services/bench_agent/`, `print_label`, decision 0022 |
 | [simulator-audits.md](simulator-audits.md) | Two read-throughs of the simulator and what they found | `web/src/sim/` |

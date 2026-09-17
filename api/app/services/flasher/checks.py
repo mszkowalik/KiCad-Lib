@@ -2,7 +2,7 @@
 
 A run's log says what happened. A check says what it means: "Relay 2 works",
 "the device joined WiFi", "all 16 berryware files landed". The device view is a
-grid of these, green or red, newest run wins.
+grid of these, green or red, and ONLY THE NEWEST RUN SPEAKS: see `for_device`.
 
 Two rules keep the table honest:
 
@@ -49,9 +49,14 @@ CATALOG: dict[str, tuple[str, str, int]] = {
     "relay.2": ("Relay 2 (Switch8)", "hardware", 2),
     "relay.3": ("Relay 3 (Switch9)", "hardware", 3),
     "temp.ds18b20": ("Temp sensor (DS18B20)", "hardware", 4),
+    # Marking is its own category: it proves nothing electrical, and a unit can
+    # be fully working and unmarked.
+    "mark.serial": ("Serial engraved", "marking", 0),
+    "mark.label": ("Label printed", "marking", 1),
 }
 
-CATEGORY_ORDER = ["identity", "firmware", "connectivity", "berryware", "hardware", "other"]
+CATEGORY_ORDER = ["identity", "firmware", "connectivity", "berryware", "hardware",
+                  "marking", "other"]
 
 # The Aqua test's temperature window, copied from test.py's asserts.
 TEMP_MIN, TEMP_MAX = -10.0, 70.0
@@ -244,18 +249,159 @@ def for_run(db: Session, run_id: int) -> list[dict]:
     return _sorted([dict(r) for r in rows])
 
 
+# A device's history holds every action that could be pinned to it — a
+# programming run, a test sweep, a marking job, an erase — and they do NOT all
+# mean the same thing about the unit. Two of them MEASURE (`flash` is the
+# config procedure, `test` is the sweep), one WIPES (`erase`), and marking
+# never changes whether a device works.
+MEASURING_KINDS = ("flash", "test")
+
+_HISTORY_SQL = """
+    SELECT r.id, r.status, r.started_at, r.attempt_no, r.action, r.test_required,
+           COALESCE(d.kind, 'flash') AS kind, d.name AS deployment_name
+    FROM programming_runs r
+    LEFT JOIN deployment_versions v ON v.id = r.deployment_version_id
+    LEFT JOIN deployments d ON d.id = v.deployment_id
+    WHERE r.device_unit_id = :dev
+    ORDER BY r.started_at DESC, r.id DESC
+"""
+
+
+def _act(row) -> str:
+    """What the run WAS: erase | flash | test | mark. From the deployment's
+    kind, never from a name — the rule the bench's Test button already
+    follows."""
+    return "erase" if row["action"] == "erase" else (row["kind"] or "flash")
+
+
+def _run_brief(row) -> dict:
+    return {"id": row["id"], "status": row["status"], "act": _act(row),
+            "attempt_no": row["attempt_no"], "deployment": row["deployment_name"],
+            "at": row["started_at"].isoformat() if row["started_at"] else None}
+
+
+def newest_run(db: Session, device_id: int, kinds: tuple[str, ...] = MEASURING_KINDS):
+    """The newest run that MEASURED something — where the grid comes from.
+
+    Not simply the newest row: a marking job proves nothing about a device and
+    an erase proves the opposite, so neither may stand in for the run that
+    programmed or tested the unit (user decision 2026-09-16).
+    """
+    for row in db.execute(text(_HISTORY_SQL), {"dev": device_id}).mappings():
+        if _act(row) in kinds:
+            return row
+    return None
+
+
+def verdict(db: Session, device_id: int) -> dict:
+    """IS THIS DEVICE PROGRAMMED — the sentence the device page leads with.
+
+    The rule, in the order it is checked (user decision 2026-09-16):
+
+    1. The newest CONFIG run (`kind="flash"`) must have passed. A later failed,
+       aborted or still-running attempt IS the newest one, and therefore the
+       answer.
+    2. A TEST THAT RAN ALWAYS COUNTS. If any test started after that config
+       run, the newest of them must have passed — whether or not the batch
+       asked for one. A test that was run and failed is knowledge about the
+       device, and no batch setting makes it go away (user decision
+       2026-09-16).
+    3. A TEST THAT DID NOT RUN counts only when the run says it had to. Each
+       programming run copies `test_required` from its batch when it starts, so
+       a device is judged by the rule in force when it was programmed: turning
+       a test on today does not unverify a tray finished last year, and
+       re-flashing a unit sends it back for testing because the newer config
+       run carries the newer rule.
+    4. No ERASE after whichever of those is newer. A wiped device is not a
+       programmed device, however well it tested this morning.
+
+    A MARKING run is never consulted: engraving a case does not change what the
+    firmware does.
+    """
+    acts = [(row, _act(row))
+            for row in db.execute(text(_HISTORY_SQL), {"dev": device_id}).mappings()]
+    config = next((r for r, a in acts if a == "flash"), None)
+    erase = next((r for r, a in acts if a == "erase"), None)
+
+    requires_test = bool(config["test_required"]) if config is not None else False
+
+    # The newest test that can speak about THIS programming. An older pass
+    # belongs to the firmware the device carried before.
+    test = None
+    if config is not None and config["started_at"]:
+        test = next((r for r, a in acts
+                     if a == "test" and r["started_at"]
+                     and r["started_at"] > config["started_at"]), None)
+
+    out = {
+        "programmed": False, "requires_test": requires_test,
+        "config_run": _run_brief(config) if config is not None else None,
+        "test_run": _run_brief(test) if test is not None else None,
+        "erased_after": None,
+        "reason": "",
+    }
+
+    if config is None:
+        out["reason"] = "no programming run has ever been recorded for it"
+        return out
+    if config["status"] != "pass":
+        out["reason"] = {
+            "running": "its newest programming run is still going",
+            "aborted": "its newest programming run was aborted",
+        }.get(config["status"], "its newest programming run failed")
+        return out
+    if test is not None and test["status"] != "pass":
+        # A test that ran has the last word, required or not.
+        out["reason"] = {
+            "running": "its test is still running",
+            "aborted": "its test was aborted",
+        }.get(test["status"], "it failed the test"
+              + ("" if requires_test else " — its batch did not ask for one, but the test ran"))
+        return out
+    if test is None and requires_test:
+        out["reason"] = "it has not been tested since it was last programmed"
+        return out
+
+    decided = max([r["started_at"] for r in (config, test)
+                   if r is not None and r["started_at"]], default=None)
+    if erase is not None and decided and erase["started_at"] and erase["started_at"] > decided:
+        out["erased_after"] = _run_brief(erase)
+        out["reason"] = "it was erased after it was programmed"
+        return out
+
+    out["programmed"] = True
+    out["reason"] = (
+        "it passed its test after the last programming run" if test is not None
+        else "its newest programming run passed, and its batch required no test"
+        if requires_test is False else "its newest programming run passed")
+    return out
+
+
 def for_device(db: Session, device_id: int) -> list[dict]:
-    """The device's grid: for every check ever recorded, the NEWEST run that
-    recorded it wins, with how many earlier runs disagreed."""
+    """The device's grid: ONLY THE NEWEST MEASURING RUN SPEAKS.
+
+    A check states what the device does NOW, so an older run's green must not
+    outlive a newer run that failed, aborted, erased the unit or is still going
+    (user decision 2026-09-16). Best-ever-per-check read as "programmed" on a
+    device whose newest attempt had not passed. The lifetime tally still rides
+    along in `attempts`, so what earlier runs measured is one hover away.
+    """
+    run = newest_run(db, device_id)
+    if run is None:
+        return []
     rows = db.execute(text("""
-        SELECT DISTINCT ON (c.name)
-               c.name, c.label, c.category, c.status, c.detail, c.value, c.position,
-               c.run_id, c.at
-        FROM run_checks c
-        JOIN programming_runs r ON r.id = c.run_id
-        WHERE c.device_unit_id = :d
-        ORDER BY c.name, r.started_at DESC, c.run_id DESC
-    """), {"d": device_id}).mappings().all()
+        SELECT name, label, category, status, detail, value, position, run_id, at
+        FROM run_checks WHERE run_id = :r
+    """), {"r": run["id"]}).mappings().all()
+    out = [dict(r) for r in rows]
+    if not out and run["status"] == "running":
+        # A run writes its rows when it finalizes. Until then the procedure's
+        # own promises stand in, grey, so the grid keeps its shape and nothing
+        # reads as proven while the attempt is still open.
+        live = db.get(M.ProgrammingRun, run["id"])
+        out = [dict(_row(name, "unknown", "not measured yet — the run is still going"),
+                    run_id=run["id"], at=run["started_at"])
+               for name in _declared(db, live)]
     history = db.execute(text("""
         SELECT name, status, count(*) AS n
         FROM run_checks WHERE device_unit_id = :d GROUP BY 1, 2
@@ -263,28 +409,31 @@ def for_device(db: Session, device_id: int) -> list[dict]:
     tally: dict[str, dict[str, int]] = {}
     for h in history:
         tally.setdefault(h.name, {})[h.status] = h.n
-    out = []
-    for r in rows:
-        d = dict(r)
+    for d in out:
         d["at"] = d["at"].isoformat() if d["at"] else None
         d["attempts"] = tally.get(d["name"], {})
-        out.append(d)
     return _sorted(out)
 
 
 def counts_for_devices(db: Session, device_ids: list[int]) -> dict[int, dict[str, int]]:
-    """pass/fail/unknown per device, newest run per check name — for the list."""
+    """pass/fail/unknown per device, from the newest MEASURING run — for the list.
+
+    Same rule as `for_device`, so the list and the device page never disagree.
+    """
     if not device_ids:
         return {}
     rows = db.execute(text("""
-        SELECT device_unit_id AS d, status, count(*) AS n FROM (
-            SELECT DISTINCT ON (c.device_unit_id, c.name)
-                   c.device_unit_id, c.name, c.status
-            FROM run_checks c
-            JOIN programming_runs r ON r.id = c.run_id
-            WHERE c.device_unit_id = ANY(:ids)
-            ORDER BY c.device_unit_id, c.name, r.started_at DESC, c.run_id DESC
-        ) latest GROUP BY 1, 2
+        SELECT newest.device_unit_id AS d, c.status, count(*) AS n
+        FROM (
+            SELECT DISTINCT ON (r.device_unit_id) r.device_unit_id, r.id
+            FROM programming_runs r
+            JOIN deployment_versions v ON v.id = r.deployment_version_id
+            JOIN deployments dep ON dep.id = v.deployment_id
+            WHERE r.device_unit_id = ANY(:ids) AND dep.kind IN ('flash', 'test')
+            ORDER BY r.device_unit_id, r.started_at DESC, r.id DESC
+        ) newest
+        JOIN run_checks c ON c.run_id = newest.id
+        GROUP BY 1, 2
     """), {"ids": device_ids}).fetchall()
     out: dict[int, dict[str, int]] = {}
     for r in rows:

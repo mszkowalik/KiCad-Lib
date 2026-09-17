@@ -82,10 +82,18 @@ sign-off states to `STATUS_TONES`.
   control gets its own inline-flex wrapper (`.lifecycle-control`), not
   `.btn-row`: `btn-row` brings `margin: 8px 0`, which lifts the pair out of
   line with the pills next to it.
-- **A pill is `inline-block`, so a column's ellipsis cannot shorten it** — too
-  narrow simply cuts it off with no visual hint. The browse table's sign-off
-  column is sized for the longest label. Check the rendered width when you add
-  a pill to a `table-layout: fixed` column.
+- **A pill is `inline-block` and `nowrap`, so a column's ellipsis cannot
+  shorten it** — too narrow simply cuts it off with no visual hint
+  (`ABORTE`, `1 FAILED` beside a clipped `0/1`). The browse table's sign-off
+  column is sized for the longest label. Measure instead of guessing:
+  `scrollWidth - clientWidth` per cell in the browser says which columns are
+  cut and by how much. Two pills in one narrow cell is a bug — merge them into
+  one that carries both facts, with the detail on the hover.
+- **A status word gets its colour from `STATUS_TONES` (`Ui.tsx`) and nowhere
+  else.** A word that is not in that map falls through to `neutral`, which is
+  how PASS and FAIL were drawn in the same grey down a 5000-row device list
+  (fixed 2026-09-16). Add the word to the map — never a colour at the call
+  site.
 - The browse filter matches the PRINTED label, not the API's state string
   (`SIGNOFF_TEXT` in `Browse.tsx`), so typing "re-check" finds the stale rows.
   Sorting that column uses rank order (worst first), not alphabetical — sorting
@@ -359,6 +367,26 @@ overflow):
 4. If one row genuinely must break the clamp (e.g. the full-width `colSpan`
    expansion row in the users table), opt *that cell* out with
    `white-space: normal; overflow: visible` — never relax the whole table.
+5. **No filterable column below ~7%.** `input.filter-input` has
+   `min-width: 60px` and the filter cell adds 16px of padding, so a narrower
+   column lets the box hang over its neighbour. Columns whose content is a
+   pill or a timestamp get their width from the measurement above; the ones
+   that truncate anyway (a long name, a chip string) pay for it.
+6. **Two cards in `.detail-right` do NOT have to be equal halves.** The grid
+   gives each row `1fr`, which is right when both hold a table that grows. Add
+   `detail-right-fit` when the top card is a fixed handful of rows — on the
+   device page it left half the column empty and pushed the programming history
+   below the fold.
+7. **Content with a HARD MAXIMUM takes a length, not a percent.** A percent
+   width is a promise about the window: the 12-character device serial fitted
+   at 1600px and was cut at 1280. `DataTable`'s `Column.width` accepts a CSS
+   length string (`"126px"`) as well as a percent number; it goes on the
+   `<col>`, the percent columns share what is left, and the table still does
+   not scroll sideways (measured in Chromium at 900–1920px). The device list
+   uses it for the serial and the last-seen timestamp. `min-width` does NOT
+   work here: on a `td` the fixed-layout algorithm ignores it outright, and on
+   a `<col>` it is honoured only partly. Two or three such columns is the
+   limit — past that the percentages stop meaning anything.
 
 Compound selectors (`.data.users-table td:nth-child(n)`) are needed to
 outrank existing width rules such as `.data td.ctr { width: 1% }`.

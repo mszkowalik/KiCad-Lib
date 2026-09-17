@@ -30,7 +30,7 @@ files — write it once and link to it.
 | `web/src/components\|pages\|sim/` | Shared components, routes, the simulator | the `CLAUDE.md` in that directory |
 | `mcp/` | Stdio MCP server proxying the agent tools to Claude Code | `mcp/CLAUDE.md` |
 | `render/` | kicad-cli render container (previews, project exports) | — |
-| `clients/` | A sample `.kicad_httplib` and unrelated client projects (flasher, invoice import). The KiCad sync plugin is NOT here: its source is `api/app/services/pcm_plugin/`, packaged by `api/app/services/pcm.py` | `api/CLAUDE.md` |
+| `clients/` | A sample `.kicad_httplib` and unrelated client projects (flasher, invoice import). Two clients the platform SERVES are NOT here — the KiCad sync plugin (`api/app/services/pcm_plugin/`, packaged by `pcm.py`) and the bench agent (`api/app/services/bench_agent/`, zipped by `routers/flasher.py`) — because `clients/` is not in the api image | `api/CLAUDE.md` |
 | `docs/reference/` | Long-form topic documents the `CLAUDE.md` files link to | [docs/reference/index.md](docs/reference/index.md) |
 | `docs/decisions/` | Architecture decisions, MADR format | [docs/decisions/index.md](docs/decisions/index.md) |
 | `compose.yaml`, `compose.prod.yaml`, `.github/workflows/images.yml` | Dev and server deployment, image builds | [docs/reference/deployment.md](docs/reference/deployment.md) |

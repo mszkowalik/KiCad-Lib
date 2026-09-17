@@ -4,6 +4,10 @@
  *  Grey is not a soft failure — it means "never measured", which for the
  *  imported V2 history is the honest answer for anything the old reports did
  *  not record. Hover a cell for the evidence sentence.
+ *
+ *  On a device the rows come from the NEWEST run only (`checks.for_device`),
+ *  so nothing here survives a later attempt that failed or is still going.
+ *  The hover still names the lifetime attempts.
  */
 import { Link } from "react-router-dom";
 import type { RunCheckRow } from "../../api";
@@ -87,17 +91,5 @@ export default function CheckGrid({
         </div>
       ))}
     </>
-  );
-}
-
-/** The list-view version: three numbers, no names. */
-export function CheckBar({ checks }: { checks: { pass: number; fail: number; unknown: number } }) {
-  const total = checks.pass + checks.fail + checks.unknown;
-  if (!total) return <span className="muted dim">—</span>;
-  return (
-    <span className="check-bar" title={`${checks.pass} passed, ${checks.fail} failed, ${checks.unknown} never measured`}>
-      {checks.fail ? <span className="pill err">{checks.fail} failed</span> : null}
-      <span className={`pill ${checks.fail ? "neutral" : "ok"}`}>{checks.pass}/{total}</span>
-    </span>
   );
 }

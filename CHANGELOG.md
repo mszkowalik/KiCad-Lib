@@ -1,5 +1,469 @@
 # Changelog
 
+## 2026-09-17 (the laser marks)
+
+**The AtomStack M4 marks from the platform for the first time.** Since the
+marking bench was built it had traced every job with the pointer and engraved
+nothing; a clean LightBurn install had the board in fibre mode with no analog
+power output, and "Require framing before start" turned every `START` into a
+framing pass. The machine's whole configuration — laser mode, the analog power
+line, the port map for the pointer and the second source, how a layer picks
+the 1064 nm or the 450 nm source — is now measured and written down in
+[docs/reference/laser-marking.md](docs/reference/laser-marking.md).
+
+- **A `mark_laser` step's `device` names a LightBurn PROFILE, not a source.**
+  The doc and the field's hint said the agent's `LASER:` command chose which
+  laser fired. It does not: the artwork's layers do, and the profile only
+  carries the calibration for one of them. The profiles are now named
+  `M4 IR 1064nm` and `M4 Diode 450nm`.
+- **`AQUA_DONGLE_Side_Info.lbrn2` v3**: the serial layer at 100 % and
+  600 mm/s, measured on white ABS, and `DeviceName` set to the IR profile. The
+  marking draft (Dongle_V2 marking v2) pins it and names the IR profile; it is
+  still a draft.
+- **The agent window shows its five facts, and has a status page.** The
+  window was blank because the Tk that macOS's own Python carries draws no
+  text in any widget except native buttons and the title bar (measured with
+  screenshots). It is now five flat buttons — Listening, LightBurn, Printer,
+  Chrome, Bench page — with the verdict in the title, and each opens
+  `http://127.0.0.1:19842/`, a self-refreshing page with the full text and
+  the log. "Open the log" opens the log file itself.
+- **The agent reports whether the laser is actually there.** `GET /health`
+  carries `laser_usb` — the controller board seen on the bench machine's USB
+  bus, or not — because LightBurn's `STATUS` answers `OK` with the board
+  unplugged. The agent window has a Laser row for it, and the marking
+  station's Laser box says **no laser on USB** and disables Mark when the
+  board is missing, instead of "ready".
+- **The flashing bench offers the agent, not the setup profile.** The agent
+  grants the Chrome serial and loopback policies itself on first start, so the
+  `.mobileconfig` link on the bench is gone; the endpoint stays for machines
+  with managed Chrome settings, where only an administrator can install it.
+- **The agent's Chrome row knows about managed profiles.** A profile in
+  `/Library/Managed Preferences` overrides the agent's own grant, so the row
+  now says *granted by a managed profile* when one carries the grants, and
+  names what a managed profile lacks when it does not — instead of reporting
+  the agent's own write as if Chrome were reading it.
+- **The two LightBurn profiles live in the repo** —
+  `docs/reference/laser-marking/`, with the vendor calibration files and a
+  script that writes them into a fresh LightBurn.
+- **The agent refuses to switch LightBurn profiles mid-session.** LightBurn
+  only connects the profile it started with; a switch answers `OK`, shows
+  "Disconnected", and `STATUS` keeps saying `OK`, so the job would report
+  success and mark nothing. The first `device` a job names is the session's
+  profile; a job naming another fails before anything is loaded, with the
+  instruction to restart LightBurn on that profile.
+
+## 2026-09-17 (the marking bench prints labels)
+
+**A device gets its barcode label from the same bench that engraves it**, off
+the same reading of its serial, with no DYMO software on the machine. The
+printer is a DYMO LabelWriter 550 on the bench agent's own machine, driven
+through CUPS.
+
+- **The marking station is now one box with two columns.** Left is the device:
+  its serial, its port, and what the station is doing. Right is one box per
+  machine — Laser and Printer — each with its own status above its own button.
+  A laser that is not answering and a printer with no roll are fixed in
+  different places, and one status pill sent the operator to the wrong one.
+- **A chain between the two boxes links them.** With it on, one press of Mark
+  engraves and then prints the label, so a bench that does both keeps the
+  trigger instead of switching on two automatic passes. It refuses to start
+  while the printer is not ready, rather than engraving a part it cannot label.
+- **Automatic is two checkboxes, one per machine.** A bench can engrave all day
+  and print nothing, or print while the laser is down. Each arms only when its
+  own machine is ready.
+- **Both buttons run the same procedure.** One marking version reads the device
+  once and then engraves, prints, or both; which one a press asked for travels
+  with the run. The engine allows that for those two actions only, so a bench
+  cannot change what a unit was made under.
+- **A `print_label` step IS the label definition** — a Code 128 barcode of the
+  value with the value under it. Nothing is pinned to the version for it,
+  because a generated label has no artwork. The roll is a station setting: the
+  printer cannot report what is loaded in it.
+- **A print is proven, not assumed, and it finishes when the label is out.**
+  The bench waits for the printer to report that it printed the page and the
+  backend to finish sending, with no fault standing. It deliberately does not
+  wait for CUPS to retire the job, which takes a further seven seconds during
+  which the printer does nothing — that turned a two-second step into nine. The
+  printer's own progress now appears in the run log, and a failed print cancels
+  its own job rather than leaving one queued: a waiting job resumes the moment
+  the roll goes back in, which would print a stale serial onto the next unit.
+- **The bench reads the device when you plug it in**, not when you press a
+  button. The serial appears in the box straight away, so it can be checked
+  against the part first, and the run leaves out the step whose only job was to
+  wait for the firmware — 0.7-1.1 s off every press. The run still reads the
+  identity itself, so nothing is taken on trust. Both buttons stay disabled
+  until the device has answered, and the box says what it is waiting for.
+- **A serial is checked before anything is put on a part**: 8 to 12 characters,
+  no spaces, whether it was typed by hand or read off the device. The bench says
+  which rule a value broke, and the engine refuses it too — a capture that went
+  wrong used to reach the laser as whatever string it happened to produce.
+- **A typed mark is no longer recorded**, and a typed label is not either. It
+  names no run and proves nothing about a unit.
+- The bench agent is at protocol 3. An older one has no printer routes, and the
+  bench says to download it again.
+
+Decision: [0022](docs/decisions/0022-labels-are-generated-by-the-bench-agent.md).
+Measurements: [docs/reference/label-printing.md](docs/reference/label-printing.md).
+
+## 2026-09-16 (marking is a run, and the laser is not ours to drive yet)
+
+**The marking bench exists.** Plug a device into the laser machine and it is
+read, patched into the artwork and engraved, with a run record and a log like
+any flash. It is a separate page from the flashing bench: one laser, one
+station, and it starts itself when a part arrives.
+
+- **A marking procedure is an ordinary deployment version** with kind `mark` —
+  its own steps, its own pinned artwork, the same publish gate. The `.lbrn2` is
+  pinned as a device file exactly like berryware, so the run record answers
+  which drawing a unit got. The new step is `mark_laser`.
+- **The laser is reached through LightBurn and a small local agent**
+  (`api/app/services/bench_agent/agent.py`), not a direct USB driver. The direct path
+  was probed on the hardware and rejected on evidence: the BSL controller
+  (`04b4:1004`) answers every EZCAD2 opcode with the same idle frame, so the
+  open-source LMC drivers do not apply, and decoding its own protocol needs a
+  USB capture that no machine here can take. Decision
+  [0020](docs/decisions/0020-marking-goes-through-lightburn.md), measurements in
+  [docs/reference/laser-marking.md](docs/reference/laser-marking.md).
+- **The agent holds no token and never reads the artwork.** It receives a
+  finished job and points LightBurn at it. It listens on loopback only and
+  checks the Origin of every connection, because Chrome's local-network prompt
+  is asked once and after that any page could reach it.
+- **The bench profile now carries the loopback grant too**, so a configured
+  bench never prompts for the agent connection.
+- **A mark is operator-confirmed, not machine-proven.** LightBurn answers `OK`
+  to `STATUS` and `START` with no laser attached, so neither proves a part was
+  engraved. That stands until `STATUS` is seen reporting busy during a real job.
+- **A deployment's kind can finally be SET.** It became readable when the bench
+  learned to offer the right button, but nothing could write it — a marking
+  deployment could not be created at all. `POST`/`PATCH` take it now, and the
+  PATCH leaves it alone when omitted, so an edit form that does not send it
+  cannot silently turn a test deployment back into a flashing one.
+- **`mark.serial` is a named check**, in its own "marking" category: a unit can
+  be fully working and unmarked, so it does not belong under hardware.
+- **A bench station is bound to a USB socket at last.** Assign a socket once and
+  the station takes that cable and no other, across replugs and reloads, with
+  the real port name (`/dev/cu.usbserial-110`) on the card. Nothing is adopted
+  automatically any more: an unassigned station stays empty however many devices
+  are plugged in. Arrival order is gone — it handed station 1 whatever turned
+  up, so moving a cable silently moved the station and nothing said so. The
+  flashing bench now wants the agent running too; without it, assignment still
+  works for the session but the station cannot remember its socket.
+- **The agent can see the serial ports, which is what made that possible.**
+  `GET /serial-ports` lists every USB serial node and, from `lsof`, which
+  process holds each one. macOS names a node after the USB location, so the name
+  IS the socket — and "who holds it" is the correlation a page cannot make on
+  its own: open one port, ask the agent which node Chrome just took. Binding a
+  station to a socket was documented as impossible from the page alone, and that
+  is still true; what changed is that a process outside the page now exists. The
+  bench does not use this yet — see `docs/todo.md`.
+- **The download sets the browser up too, with no administrator rights.** On
+  first start the agent grants this bench's origin the USB serial adapters and
+  the loopback connection, merging with anything already there, and asks for
+  Chrome to be restarted once. Chrome reads policy from the user's own defaults
+  domain as well as from managed preferences, and only the second needs root —
+  so one download now covers the whole setup. `--no-browser-setup` turns it off,
+  and a machine carrying the bench profile is unaffected: a system profile
+  outranks it.
+- **A marking step names its laser SOURCE.** This marker carries two, a fibre
+  and a blue, and LightBurn holds them as separate devices. `mark_laser` takes
+  `device:`, and the agent sends `LASER:<name>` BEFORE loading the job, so a job
+  cannot be fired from the other source. The agent also reports what the machine
+  has, so nobody guesses the spelling — a wrong name is refused, not ignored.
+  Needs LightBurn 2.0+; it answered `!` on 1.7.03.
+- **The agent is a macOS app called 7Sigma Agent**, and it starts LightBurn for
+  you. It ships as an app rather than a terminal
+  command: a small window with the log, the laser's state and a Quit button.
+  It is named for the bench, not for marking, because it will pick up the jobs
+  a browser cannot do as they arrive — label printing next. On start it opens LightBurn if LightBurn is
+  silent, waits for it to answer, and says plainly when it does not — naming the
+  two causes that look identical, a dialog waiting for a click and a Core
+  licence. The window is tkinter, so it still installs nothing; when no
+  available Python has tkinter it says so and runs without a window instead of
+  failing.
+- **The marking agent is a download.** The bench offers a zip; expand it,
+  double-click *7Sigma Agent*, done. The launcher carries that bench's
+  own address, so there are no flags to type, and it is an archive rather than
+  a bare file because a download loses the execute bit while a zip keeps it.
+  Its source moved to `api/app/services/bench_agent/` for the same reason the
+  KiCad plugin lives in the api package: the platform serves it, and `clients/`
+  is not in the image.
+- **The marking agent needs nothing installed.** It speaks plain HTTP from the
+  standard library, so whatever Python 3 is already on the laser machine runs
+  the file as it stands — verified on macOS's own 3.9.6 with no venv and no pip.
+  It was a WebSocket for an afternoon; the one dependency that required was the
+  only thing standing between an operator and a working bench.
+- **If LightBurn stops answering, check its tier.** LightBurn *Core* cannot
+  drive a galvo — EZCad2 and BSL controllers are Pro — and the symptom is not an
+  error but silence: the UDP port stays open and every command is ignored. An
+  upgrade put this bench on Core and cost an hour before the title bar was read.
+- **A mark can be run by hand.** Type a serial, press Mark: no device in the
+  loop, for a unit that is dead, uncased, or whose label was spoiled. Same
+  template, same placeholder, same agent as a run — only the source of the
+  string differs. It lands in the device's history like an erase does, but only
+  when what was typed is an identity: 12 hex characters become the MAC, and
+  anything else is engraved with the card saying plainly that it will not be
+  recorded.
+- **The marking station uses the width it has.** One laser means one station,
+  so it is laid out in two columns across the page instead of reusing the
+  narrow card that exists to fit four side by side, and it shows what was
+  engraved in large mono — the operator checks that against the part, not
+  against the log. Renaming it no longer renames flashing Station 1.
+
+## 2026-09-16 (a device is proven by its newest run, not by its best one)
+
+**"What this device is proven to do" counted the best result ever recorded per
+check, so a unit whose newest attempt failed, aborted or was still running kept
+a full green grid from an earlier pass.** That grid is the answer to "is this
+unit programmed", and it said yes about units that were not.
+
+- **The device grid now shows the NEWEST run only.** A green cell means that
+  run measured it and it passed. Nothing survives a later attempt. The lifetime
+  tally stays on the cell hover (`attempts: 3× pass`), so earlier evidence is
+  not lost, only demoted.
+- **The card states the verdict**: `programmed` or `not programmed`, with the
+  run that decided it. A run that is still going, a run that failed or aborted,
+  and an erase all read `not programmed` — an erase records `pass`, because the
+  erase worked, and that is not the same as a programmed device.
+- **The Devices list agrees** wherever it reports a check, because it counts
+  the same newest run.
+- **PASS and FAIL are no longer the same grey.** The Result column took its
+  colour from `STATUS_TONES`, which had no entry for a run's own words, so the
+  one column you scan down a 5427-row list said nothing at a glance. Pass is
+  green, fail is red, aborted is amber, everywhere a run status is printed.
+- **One device is one row, and nothing in it is cut.** The device list carried
+  twelve columns in a table that is 1050 px wide on a laptop, so most of them
+  were ellipses. Four are gone: **Name** (the serial with a `dongle_` prefix,
+  and the search box still matches it), **Project** (the selector above the
+  table), **IMEI** (blank on every unit without a modem) and **Checks** (it
+  said `4/4` beside a Result that already said PASS — what a run proved lives
+  on the device page). What is left — serial, MAC, chip, batch, where it is,
+  runs, result, last seen — prints whole from 1100 px up. Column widths on the
+  device list and the programming history were re-cut from measured content.
+- **A run's duration reads in minutes** above a minute: `3m 24s`, not
+  `204.3 s`.
+- **"Programmed" now means what the batch asked for** — see
+  [decision 0021](docs/decisions/0021-a-device-is-judged-by-the-rule-it-was-made-under.md).
+  A device's history holds programming runs, test sweeps, marking jobs and
+  erases, and they do not all say the same thing about the unit. The verdict
+  reads: the newest **config** run passed, any **test** that started after it
+  passed, and no **erase** since. **Marking never changes it.** A test that ran
+  and failed always counts, even when the batch asked for none; a test that did
+  not run counts only where it was required.
+- **A batch carries the test requirement, and every run keeps a copy.** "Units
+  of this batch must pass the test" sits on the batch (Devices tab of a
+  production run) and is copied onto each programming run when it starts, so
+  changing it affects work still to be made and never re-judges a device on the
+  shelf. A test deployment's flag in the Deployments tab is now only the
+  default ticked on a new batch. **The migration lands with no test required
+  anywhere** — every existing batch and run says false, and every test
+  deployment starts off, so a deploy changes nothing about devices already
+  made. Turn a product's test on when its flow is ready: the Deployments tab
+  for new batches, the batch's own Devices tab for one batch. Measured with
+  nothing required: of 990 Aqua devices 914 read programmed, and the 76 that do
+  not are the ones whose newest test actually failed.
+- **The device page fits on one screen.** "Where it is" took half the right
+  column whatever it held — four event rows and a button — so the programming
+  history started below the fold. It now takes what it needs and the history
+  gets the rest. The history's own columns were re-measured at the same time:
+  the start time can no longer be cut, and `By` (which now carries a real
+  account name) truncates with the full name on hover.
+- **A device page no longer prints fields the product does not have.** A
+  Dongle_V2 has no modem, so IMEI, ICCID, IMSI, Modem and Modem firmware were
+  five dashes on every one of 4400 units. A row is drawn when the device
+  carries the value, when one of the project's procedures captures it, or when
+  any sibling device in the project has it — so a Dongle_V3 still shows its SIM
+  rows before the first unit is programmed, and imported history stays readable
+  after the procedure that produced it is gone. The page holds no list of
+  fields at all: the server sends the rows with their labels, so a new
+  identity field appears without touching the frontend.
+- **The configuration card shows what is on the device now**, written by the
+  last run to configure it, instead of every value it ever carried — one device
+  printed twelve rows of the same three keys. Earlier values are kept and stay
+  reachable through their own run.
+- **The flash bench can program on plug-in.** "Program automatically when a
+  device is plugged in" arms every station: the run starts the moment a device
+  appears on that station's port, so a tray of dongles is plug, wait, unplug.
+  It is **off by default and remembered per browser once you turn it on**,
+  because a programming run erases the device before it writes — the marking
+  bench, which does nothing destructive, keeps arriving armed. Each station
+  arms ONCE per device: a unit left plugged in after its run is not programmed
+  again, and a unit that failed does not retry in a loop — pull it out and the
+  station re-arms. The box is disabled until a batch is picked, so auto-start
+  can never turn a batch run into a bench trial.
+- **The bench opens ready to work, and never on a batch you did not pick.**
+  Choosing a project now fills the version box with that project's config
+  procedure (its `kind: "flash"` deployment, current version), which is what a
+  batch is programmed with all day and was a click at the start of every
+  session. The batch dropdown is the opposite: it starts empty every time,
+  is never remembered across a reload, and until it is picked the stations
+  refuse to start — a batch run with no batch used to be recorded as a bench
+  trial. The override-reason box now appears only when the chosen version
+  really differs from the one the batch is assigned.
+- **The bench asks only for what the procedure uses.** The SIM PIN box appears
+  only for a procedure that has an `lte_sim_pin` step — Dongle_V3 today. A
+  Dongle_V2 and an Aqua have no modem, and the box was asking for a secret
+  that had nowhere to go. A hidden box also stops sending its value.
+- **The operator text box is gone; a run is stamped with the signed-in
+  account.** `operator` was never device configuration — no procedure in the
+  library uses it — it is the record of who was at the bench: the By column in
+  a device's history, the actor on the `produced` stock event, and the audit
+  line when somebody overrides a batch's assigned version. A name somebody
+  types is not that record. The API no longer accepts an `operator` field on a
+  run or an erase.
+- **A serial is never cut.** It is the MAC without separators — always 12
+  characters — and a truncated serial is not an identity. That column, and the
+  last-seen timestamp beside it, are now sized in pixels rather than as a share
+  of the window, so they hold their full value at any window width. Checked
+  from 900 to 1920 px.
+
+## 2026-09-16 (a board that cannot reset itself can still be programmed)
+
+**One V2 dongle would neither erase nor program from the bench, and chasing it
+found three separate faults — two of them ours.** Unit `20:e7:c8:92:b6:10`
+resets but never enters download mode: EN responds, IO0 does not. Five reset
+sequences driven by hand all ended in flash boot, and `esptool.py` from a
+terminal failed identically, which ruled the bench out early.
+
+- **Connecting is now a ladder that escalates by itself**: `default_reset` at
+  the profile's baud, then at 115200, then `no_reset` after the bench pulses EN
+  with the operator holding BOOT. A healthy unit still connects on the first
+  rung in two seconds; a faulty one is asked for instead of failed. The third
+  rung exists because esptool-js runs 7 resets per connect, and on a board whose
+  IO0 is not driven every one of those undoes the download mode the operator
+  just established — **more attempts made it worse**.
+- **The rung that worked is recorded** as `connect_mode` in the run's results.
+  A unit that only answers with BOOT held has a hardware fault, and quietly
+  rescuing it on every run is how that stays invisible until a batch fails.
+- **The fast baud is now a preference, not a requirement.** esptool-js changes
+  speed by closing and reopening the serial port, which toggles DTR/RTS; on a
+  board that resets from that, the stub dies and the next command reads
+  `Invalid head of packet`. Any failure at 460800 now retries at 115200, where
+  esptool-js skips the baud change completely. Erase uses 115200 outright.
+- **Holding BOOT no longer costs the fast baud.** The BOOT rung ran at 115200,
+  which turned a 2.3 MB image into minutes for every unit that needed a hand.
+  Needing BOOT held and refusing 460800 are two different faults; the rung now
+  starts at the profile's baud and drops to 115200 only when esptool reached
+  `Changing baudrate` — the one failure that holding BOOT cannot fix.
+- **An erase now enters the device's history once it has read a MAC.** A
+  `programming_runs` row with `action = "erase"` and no deployment version,
+  plus its log. A failed erase used to leave nothing behind, which is how a
+  troublesome unit stays invisible until the next batch.
+- **An open log no longer drags the page.** Each new line scrolled every
+  ancestor, so reading anything else on the bench was impossible while a run
+  was talking. The log box scrolls on its own now, and only while the operator
+  is already at the bottom of it.
+- **Errors carry advice.** A connect failure suggests holding BOOT and says what
+  it would prove; a mid-operation timeout points at the cable or socket.
+
+## 2026-09-16 (a replugged device needs no new port grant)
+
+**Swapping one device for the next broke the bench.** After a successful run,
+unplugging the device and plugging it back in made the next run fail with
+"Failed to execute 'open' on 'SerialPort': Failed to open serial port", and the
+only way out was re-picking the port in Chrome's popup.
+
+- **The cause is that the PERMISSION does not survive the unplug**, not just
+  the handle. Measured from the run log: after a replug `getPorts()` returns
+  **zero** ports and `port.connected` on the held handle is `false`. A CH340
+  reports no USB serial number, so Chrome cannot durably identify the device
+  and drops the grant with it. Nothing in the page can recover that — there is
+  no port to re-acquire, and only a fresh `requestPort()` popup would bring one
+  back.
+- **The bench now asks for the port inside the Start click**, and only when it
+  has no live one. That is the baseline everywhere the platform is not the
+  machine's owner: one pick per unit, which Web Serial gives no way around for a
+  device with no serial number. `ensurePort()` runs before the run row is
+  created, because `requestPort()` needs a user gesture and a gesture does not
+  survive a fetch.
+- **The bench page now offers a one-time setup file.** `GET
+  /api/flasher/bench-policy.mobileconfig` builds a macOS configuration profile
+  for the origin the browser reports, and a link at the bottom of the bench
+  offers it. The operator downloads and opens it once per machine; after that
+  the picker is gone. It grants only the listed USB bridges, never "any serial
+  port" — this file goes to people on machines nobody here administers. macOS
+  only so far.
+- **The same policy can be set by hand on a bench somebody owns, and on a
+  dev Mac it needs no root** —
+  the user-level `com.google.Chrome` domain is honoured. This machine already
+  had `SerialAllowAllPortsForUrls` live for `http://127.0.0.1:5174` from an
+  older setup, which is what proved the mechanism. It never covered the bench,
+  because policy origins are exact: `localhost` and `127.0.0.1` differ, and so
+  do two ports. `scripts/bench-serial-policy.plist` documents both that route
+  and the narrower `SerialAllowUsbDevicesForUrls` form for a provisioned bench.
+  A device that DOES report a serial number, such as the C6's native USB, never
+  had this problem — which is why V3 benches never saw it.
+- **`Station.resolvePort()` then picks the port up automatically.** Liveness
+  comes from `port.connected`; membership of `getPorts()` is not a liveness
+  signal, because the spec hands back the same instance for a device across a
+  disconnect. Every open path calls it first, including each retry.
+- **`settlePort()` closes a half-open port before opening it.** Chrome can be
+  left believing a port is open while the OS descriptor is already gone.
+- **A failed `port.close()` is no longer silent.** It leaves the port open, and
+  the next open then fails with a message that explains nothing.
+- **A station never takes a port another station holds.** Re-acquiring by USB
+  ids alone is not safe on this bench: every V2 dongle is the same CH340 and
+  every C6 the same native USB device, so one slot could have matched, and then
+  tried to open, the port another slot was mid-run on. A claim registry makes a
+  station skip a port that is spoken for — which also closes the same hole in
+  `awaitReenumerate()`, where it predates this change.
+- **The transport profiles are untouched.** Which one applies is still pinned by
+  the deployment version, and the C6 rule that the monitor phase never drives
+  DTR/RTS is unchanged.
+
+## 2026-09-16 (the bench tells the platform its own address)
+
+**`{base_url}` now resolves from the bench, so a step never needs to know where
+the platform runs.** Step 18 of every V2 procedure makes the DEVICE fetch its
+berryware over HTTP, and the address it fetched from was a single global,
+`public_base_url`. That value is correct on the server and wrong on every
+development machine, where it is `localhost` — an address a device on WiFi can
+never reach. The engine refused the run and told the operator to edit a setting.
+
+- **The browser reports the two addresses it is provably reaching the platform
+  by** (`api_base`, the API origin it calls, and `page_base`, the mount point
+  the bench page itself was opened by) in its `hello`. The engine takes the
+  first usable candidate in this order: the `base_url` param, `public_base_url`,
+  the bench API origin, the bench page origin. The run log records which source
+  won and why each skipped candidate was rejected.
+- **Configuration outranks the bench, deliberately.** The winner is an address
+  the engine then tells a device to fetch from, so a value the browser merely
+  asserts is used only where the platform has no usable one of its own. **In
+  production `public_base_url` is reachable, wins, and the bench candidates are
+  never weighed** — the behaviour there is exactly what it was. Every candidate
+  is vetted the same way: http(s), a host, no embedded credentials, not
+  loopback.
+- **On a development machine, opening the bench by the machine's LAN address is
+  now the whole configuration.** `compose.yaml` drops `VITE_API_URL` and sets
+  `VITE_API_PROXY`, so dev is same-origin through the Vite proxy the way the
+  deployed image is through nginx — no CORS entry, no second origin — and
+  publishes port 5173 on every interface, because a device being programmed
+  fetches its berryware from it over WiFi.
+- **Any op that makes the device fetch something takes a `url` template.**
+  `download_files` is the first: leave it empty for the default,
+  `{base_url}/api/flasher/files/{file_version_id}/{filename}`. The template goes
+  through one resolver (`RunEngine._url`), so `{base_url}` means the same thing
+  in every op, and the procedure editor shows the field on the step.
+**`flash_config.size: "detect"` could never flash from the browser bench, and
+every V2 deployment version carries it.** Found on the first V2 hardware run,
+which erased the device and then refused the image with "File 1 doesn't fit in
+the available flash".
+
+- **esptool-js accepts `"detect"` in one place only** — the image-header
+  rewrite, which detects the size itself. Its fit check passes the literal
+  string to `flashSizeBytes()`, which looks for "KB" or "MB", finds neither,
+  returns -1, and refuses every image. The V2 procedures were reconstructed
+  from a Python esptool, where `--flash_size detect` is valid. `Station.espFlash`
+  now resolves the value before esptool-js sees it, so the chip's real size
+  reaches both the fit check and the header.
+- **The erase runs first, so the failure left the device blank.** That is why
+  this is gated at publish now: `validate.check()` refuses a flash size, mode or
+  frequency outside the values esptool-js declares, rather than letting the run
+  die in the browser with the device already wiped.
+
+- **Publishing refuses a template that hardcodes a loopback host.** It is not a
+  value that might work — it is one that cannot, so it is an error rather than a
+  warning. Every existing published version validates unchanged.
+
 ## 2026-09-14 (`_HandSoldering` and `_Soldering` are retired)
 
 **The house mints no hand-solder token** (user decision 2026-09-14). Not

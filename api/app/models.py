@@ -1949,6 +1949,14 @@ class ProductionRun(Base):
     # or follow a channel by name and let it resolve at run creation.
     deployment_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     deployment_channel: Mapped[str] = mapped_column(String(40), default="")
+    # Must a unit of THIS batch pass the project's test to count as programmed?
+    # The requirement belongs to the batch, not to the project: "batch 9 was
+    # tested, batch 10 was not" is a real sentence, and a project-wide switch
+    # re-judged 555 finished devices every time it moved (user decision
+    # 2026-09-16). A new batch takes its default from the project's active test
+    # deployment; every programming run then COPIES the answer, so changing
+    # this later cannot re-judge units already made.
+    requires_test: Mapped[bool] = mapped_column(Boolean, default=False)
     # --- baseline pinning: without these, a later cost edit or a qty change
     # silently rewrites what a historical run "expected". All soft pointers.
     plan_revision_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -2399,6 +2407,18 @@ class Deployment(Base):
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")
     chip: Mapped[str] = mapped_column(String(30), default="")  # esp32 | esp32c6 | …
+    # What this procedure IS, so the bench can offer the right button rather
+    # than guessing from the name: flash | test | mark. A rename must not be
+    # able to take a station's Test button away.
+    kind: Mapped[str] = mapped_column(String(20), default="flash")
+    # On a TEST deployment: the DEFAULT for a new batch of this project. It is
+    # not the rule itself — the rule lives on the batch (`ProductionRun
+    # .requires_test`) and is copied onto every programming run, so that a
+    # change here can never re-judge devices already made (user decision
+    # 2026-09-16, after one project-wide switch would have unverified 555
+    # finished units). Flash and mark deployments carry the flag and nothing
+    # reads it.
+    active: Mapped[bool] = mapped_column(Boolean, default=False)
     current_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -2686,7 +2706,20 @@ class ProgrammingRun(Base):
     )
     # Pinned, never a soft pointer: this is exactly what was executed. One id
     # carries firmware + berryware + procedure + parameter wiring.
-    deployment_version_id: Mapped[int] = mapped_column(ForeignKey("deployment_versions.id"))
+    # NULL for a bench action that runs no procedure — an erase. The device and
+    # its log still belong in the one history this table is for; what is absent
+    # is a version, not the event.
+    deployment_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("deployment_versions.id"), nullable=True
+    )
+    # "program" | "erase". A run with no version is not a broken program run.
+    action: Mapped[str] = mapped_column(String(20), default="program")
+    # Did the unit have to pass a test to count as programmed, AS OF THIS RUN?
+    # Pinned like the fingerprints beside it: the batch (or the project default
+    # for a bench trial) answers once, at run creation, and the verdict reads
+    # this copy forever after. Legacy and imported runs carry false, which is
+    # the truth about them — nothing was required back then.
+    test_required: Mapped[bool] = mapped_column(Boolean, default=False)
     # Denormalised at run start so a run stays readable even if a version is
     # later rejected: which firmware/berryware set it actually carried.
     firmware_fingerprint: Mapped[str] = mapped_column(String(64), default="")

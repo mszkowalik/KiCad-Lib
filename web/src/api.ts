@@ -25,6 +25,31 @@ export const API_URL: string = import.meta.env.VITE_API_URL ?? APP_BASE;
 export const apiOrigin = (): string =>
   API_URL || (typeof window === "undefined" ? "the same origin" : window.location.origin);
 
+/** The API address as an ABSOLUTE url, the way THIS browser reaches it.
+ *
+ * The flasher sends it to the engine, which needs an address a DEVICE on WiFi
+ * can also fetch from. A relative API_URL resolves against the current page,
+ * so a deployment under /lib yields "https://host/lib". A VITE_API_URL that
+ * names a loopback port yields that port, and the engine drops it — see
+ * `_resolve_base_url` in api/app/services/flasher/engine.py.
+ */
+export const apiBaseUrl = (): string => {
+  if (typeof window === "undefined") return API_URL;
+  return new URL(API_URL || "/", window.location.href).href.replace(/\/+$/, "");
+};
+
+/** The app's own mount point as an absolute url.
+ *
+ * The dev server proxies /api (see vite.config.ts) and the deployed image is
+ * same-origin, so this address reaches the API in both — including on a dev
+ * machine, where API_URL points at a loopback port no device can use. Opening
+ * the bench by the machine's LAN address is therefore all the flasher needs.
+ */
+export const sameOriginBase = (): string => {
+  if (typeof window === "undefined") return APP_BASE;
+  return new URL(APP_BASE || "/", window.location.href).href.replace(/\/+$/, "");
+};
+
 // ---------------------------------------------------------------- categories
 
 export interface CategoryNode {
@@ -2540,6 +2565,13 @@ export interface RunInfo {
   run_date: string;
   notes: string;
   qty_good?: number | null;
+  /** what the batch is set to be programmed with: a pinned version, or a
+   *  channel to follow. Both empty = nothing assigned, so whatever the bench
+   *  picks is not an override. */
+  deployment_version_id?: number | null;
+  deployment_channel?: string;
+  /** must its units pass the project's test? */
+  requires_test?: boolean;
   /** the sale side: price PER DEVICE, units billed, and the customer order */
   qty_sold?: number | null;
   sale_unit_price?: number | null;
@@ -2625,6 +2657,10 @@ export interface RunPatchBody {
   customer?: string;
   order_ref?: string;
   order_date?: string;
+  /** must a unit of this batch pass the project's test to count as
+   *  programmed? Only runs made AFTER the change see it — every programming
+   *  run keeps its own copy of the answer. */
+  requires_test?: boolean;
 }
 
 export function getRuns(projectId: number, signal?: AbortSignal): Promise<RunInfo[]> {
@@ -4134,6 +4170,9 @@ export interface DeploymentVersionRow {
   image_count: number;
   file_count: number;
   step_count: number;
+  /** true when the procedure has an `lte_sim_pin` step — the bench shows its
+   *  SIM PIN box only then. */
+  needs_sim_pin: boolean;
   /** present on the deep payloads */
   images?: DeploymentImageRow[];
   files?: DeploymentFileRow[];
@@ -4156,6 +4195,13 @@ export interface DeploymentRow {
   name: string;
   description: string;
   chip: string;
+  /** What this procedure is: "flash" | "test" | "mark". Decides which button
+   *  the bench offers, so a rename cannot take the Test button away. */
+  kind: string;
+  /** On a TEST deployment: the DEFAULT for a NEW batch of this project. The
+   *  rule itself lives on the batch and is copied onto every programming run,
+   *  so changing this never re-judges devices already made. */
+  active: boolean;
   project_id: number;
   current_version_id: number | null;
   created_at: string | null;
@@ -4306,10 +4352,49 @@ export interface DeviceConfigRow {
   set_at: string | null;
 }
 
+export interface DeviceRunBrief {
+  id: number;
+  status: string;
+  /** flash | test | mark | erase */
+  act: string;
+  attempt_no: number;
+  deployment: string | null;
+  at: string | null;
+}
+
 export interface DeviceDetailPayload extends Omit<DeviceListRow, "batch" | "runs" | "checks"> {
   modem_fw: string;
+  /** THE identity rows to draw, in order, label included. The page renders
+   *  what it is given and hardcodes no field names: which rows exist depends on
+   *  the PRODUCT (a Dongle_V2 has no modem), and the server decides from the
+   *  project's procedures and its devices. */
+  identity: { key: string; label: string; value: string }[];
+  /** ONLY the values the last run to configure the device wrote. */
   configs: DeviceConfigRow[];
+  config_run_id: number | null;
+  /** how many earlier values exist and are not in `configs` */
+  config_superseded: number;
   checks: RunCheckRow[];
+  /** which run the grid above came from — the newest one, whatever its status */
+  checks_run: {
+    id: number;
+    status: string;
+    /** what that run WAS: flash (the config procedure) | test */
+    act: string;
+    attempt_no: number;
+    started_at: string | null;
+  } | null;
+  /** Is this device programmed: the newest config run passed, an ACTIVE test
+   *  passed after it, and nothing erased it since. Marking is never part of
+   *  the answer. `reason` is a sentence, already written for the reader. */
+  verdict: {
+    programmed: boolean;
+    requires_test: boolean;
+    reason: string;
+    config_run: DeviceRunBrief | null;
+    test_run: DeviceRunBrief | null;
+    erased_after: DeviceRunBrief | null;
+  };
   runs: ProgrammingRunSummary[];
 }
 
@@ -4406,7 +4491,7 @@ export function createDeployment(
 
 export function updateDeployment(
   id: number,
-  body: { name: string; description?: string; chip?: string },
+  body: { name: string; description?: string; chip?: string; kind?: string; active?: boolean },
 ): Promise<DeploymentRow> {
   return request(`/api/flasher/deployments/${id}`, {
     method: "PATCH",
@@ -4749,7 +4834,7 @@ export function createProgrammingRun(body: {
   /** omit for a bench trial (allowed to run a draft version) */
   production_run_id?: number | null;
   deployment_version_id?: number | null;
-  operator?: string;
+  /** NO operator: the server stamps the run with the signed-in account. */
   station?: string;
   override_reason?: string;
 }): Promise<{ run_id: number; deployment_version_id: number; draft_run: boolean }> {
@@ -4806,6 +4891,43 @@ export function mosquittoExportPath(projectId: number): string {
  *  Handles both API_URL shapes: an absolute origin (docker dev sets
  *  VITE_API_URL=http://localhost:8020) swaps http(s) for ws(s); a path
  *  prefix (deployed same-origin build) rides the page's own host. */
+/** Download URL for the macOS profile that grants this origin serial access.
+ *
+ *  A plain <a href>, not a request(): the browser must fetch it itself so the
+ *  file downloads, and so the API sees the bench's real Origin header — the
+ *  profile is generated FOR that origin, and one written for the wrong address
+ *  silently does nothing.
+ */
+export interface BenchRunIn {
+  action: string;
+  project_id: number;
+  mac: string;
+  chip: string;
+  status: string;
+  error?: string;
+  station?: string;
+  started_at?: string;
+  log?: { dir: string; text: string }[];
+  /** What the action produced — `{ marked: "D4E9F4F4DFD4" }` for a mark. */
+  results?: Record<string, unknown>;
+}
+
+/** Record a bench action that ran no procedure — an erase, or a mark typed by
+ *  hand — in the same history as the programming runs. Only called once a MAC
+ *  is known: without one there is no device to attach it to. */
+export const createBenchRun = (body: BenchRunIn) =>
+  request<{ run_id: number; device_unit_id: number }>("/api/flasher/bench-runs", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const benchPolicyUrl = (): string => `${API_URL}/api/flasher/bench-policy.mobileconfig`;
+
+/** The bench agent, as a zip the operator can expand and double-click. A
+ *  plain <a href download> like the profile: the browser must fetch it itself
+ *  so the API sees the bench's real Origin, which is baked into the launcher. */
+export const benchAgentUrl = (): string => `${API_URL}/api/flasher/agent.zip`;
+
 export function flasherWsUrl(runId: number): string {
   const path = `/api/flasher/ws/${runId}`;
   if (/^https?:\/\//.test(API_URL)) return API_URL.replace(/^http/, "ws") + path;

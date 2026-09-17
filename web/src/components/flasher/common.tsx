@@ -18,5 +18,9 @@ export function fmtWhen(iso: string | null): string {
 export function fmtDuration(ms: number | null): string {
   if (ms === null || ms === undefined) return "—";
   if (ms < 1000) return `${ms} ms`;
-  return `${(ms / 1000).toFixed(1)} s`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
+  // A whole run is minutes long. "204.3 s" spends four characters on a
+  // precision nobody reads and still has to be squeezed into a table column.
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
 }

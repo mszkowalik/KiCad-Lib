@@ -19,7 +19,6 @@ import {
 import DataTable, { type Column } from "../components/DataTable";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import { useInfiniteScroll } from "../components/useInfiniteScroll";
-import { CheckBar } from "../components/flasher/CheckGrid";
 import { fmtWhen } from "../components/flasher/common";
 import { useStickyState } from "../useStickyState";
 
@@ -133,7 +132,12 @@ export default function Devices() {
     {
       key: "serial",
       label: "Serial",
-      width: 9,
+      // A SERIAL IS NEVER CUT. It is the MAC without separators — 12 characters,
+      // always — and a truncated one is not an identity. A percent width made
+      // that a promise about the window size: at 1280 the column fell to 105px
+      // and clipped a 118px serial. This is a length, so the column is the
+      // same 12 characters wide whatever the table does around it.
+      width: "126px",
       serverFilter: true,
       className: "mono",
       get: (d) => d.serial || d.mac,
@@ -143,50 +147,43 @@ export default function Devices() {
         </Link>
       ),
     },
-    {
-      key: "tasmota_id",
-      label: "Name",
-      width: 8,
-      serverFilter: true,
-      className: "mono dim",
-      get: (d) => d.tasmota_id || "—",
-    },
-    { key: "mac", label: "MAC", width: 12, serverFilter: true, className: "mono dim", get: (d) => d.mac },
-    { key: "chip", label: "Chip", width: 6, serverFilter: true, get: (d) => d.chip || "—" },
-    // Project and batch live on other tables; the server joins them by name so
-    // both sort and filter like any other column.
-    { key: "project", label: "Project", width: 9, serverFilter: true, get: (d) => d.project.name },
-    { key: "batch", label: "Batch", width: 8, serverFilter: true, get: (d) => d.batch?.label ?? "—" },
+    { key: "mac", label: "MAC", width: 21, serverFilter: true, className: "mono dim", get: (d) => d.mac },
+    { key: "chip", label: "Chip", width: 23, serverFilter: true, get: (d) => d.chip || "—" },
+    // Four columns are deliberately absent (user decision 2026-09-16). NAME is
+    // the serial with a `dongle_` prefix, and the search box above matches it.
+    // PROJECT is the selector in the toolbar. IMEI is blank on every unit
+    // without a modem. CHECKS said `4/4` beside a RESULT that already said
+    // PASS — the device page is where what a run proved belongs. Each was
+    // spending width on something the row already told you.
+    // Batch lives on another table; the server joins it by name so it sorts
+    // and filters like any other column.
+    { key: "batch", label: "Batch", width: 20, serverFilter: true, get: (d) => d.batch?.label ?? "—" },
     {
       key: "state",
       label: "Where",
-      width: 8,
+      width: 15,
       serverFilter: true,
       get: (d) => d.state || "",
       render: (d) => (d.state ? <StatusPill status={d.state} /> : <>—</>),
     },
-    { key: "imei", label: "IMEI", width: 8, serverFilter: true, className: "mono dim", get: (d) => d.imei || "—" },
-    { key: "runs", label: "Runs", width: 5, numeric: true, serverFilter: true, get: (d) => d.runs },
-    {
-      key: "checks",
-      label: "Checks",
-      width: 7,
-      interactive: false,
-      get: (d) => `${d.checks.pass}/${d.checks.fail}`,
-      render: (d) => <CheckBar checks={d.checks} />,
-    },
+    // Nothing below 6%: a filter box has a 60px floor (`input.filter-input`),
+    // and a narrower column made it hang over its neighbour.
+    { key: "runs", label: "Runs", width: 10, numeric: true, serverFilter: true, get: (d) => d.runs },
     {
       key: "last_status",
       label: "Result",
-      width: 8,
+      width: 11,
       serverFilter: true,
       get: (d) => d.last_status ?? "",
       render: (d) => (d.last_status ? <StatusPill status={d.last_status} /> : <>—</>),
     },
     {
+      // A timestamp is the other column that must never be cut: "2026-07-08 0…"
+      // is not a time, and its length is as fixed as the serial's. Same
+      // mechanism, same reason — a length, not a share of the window.
       key: "last_seen",
       label: "Last seen",
-      width: 12,
+      width: "152px",
       className: "muted",
       get: (d) => d.last_seen ?? "",
       render: (d) => <>{fmtWhen(d.last_seen)}</>,

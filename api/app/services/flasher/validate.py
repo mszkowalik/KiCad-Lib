@@ -26,6 +26,29 @@ NATIVE_USB_CHIPS = ("esp32c3", "esp32c6", "esp32s2", "esp32s3", "esp32h2")
 # Ops the engine runs in the browser, i.e. the flash phase.
 FLASH_OPS = {"erase", "flash", "esp_reset", "await_reenumerate"}
 
+# Names an op supplies to its OWN url template, once per item it fetches. They
+# are not run variables — no parameter defines them and no step captures them —
+# so the dataflow check below would otherwise reject a step that uses them
+# correctly. Add a row here in the same change that adds a url template to an op
+# (see `RunEngine._url`).
+OP_LOCAL_VARS = {"download_files": {"file_version_id", "filename"}}
+
+# What esptool-js accepts for the three flash parameters (its own
+# `types/arguments.d.ts`). A value outside these lists is not a preference the
+# bench can interpret — it throws mid-run, after the erase has already wiped the
+# device. `size: "detect"` IS accepted, but only because `Station.espFlash`
+# resolves it before esptool-js sees it; read the comment there before changing
+# either side.
+FLASH_SIZES = {"detect", "keep", "256KB", "512KB", "1MB", "2MB", "2MB-c1",
+               "4MB", "4MB-c1", "8MB", "16MB", "32MB", "64MB", "128MB"}
+FLASH_MODES = {"keep", "dio", "qio", "dout", "qout"}
+FLASH_FREQS = {"keep", "80m", "60m", "48m", "40m", "30m", "26m", "24m", "20m",
+               "16m", "15m", "12m"}
+
+# A literal loopback host in a url template. The device fetches over WiFi, so
+# this is not a value that might work — it is one that cannot.
+LOOPBACK_URL = re.compile(r"//(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])", re.I)
+
 
 def _norm_chip(s: str) -> str:
     return (s or "").lower().replace("-", "").replace(" ", "").replace("_", "")
@@ -68,6 +91,16 @@ def check(db, version: M.DeploymentVersion) -> dict:
     deployment = db.get(M.Deployment, version.deployment_id)
     steps = version.steps or []
     ops = [s.get("op") for s in steps]
+
+    # 0. Flash parameters the bench can actually use. Wrong here means the run
+    #    dies in the browser AFTER the erase step, with the device blank.
+    for key, allowed in (("size", FLASH_SIZES), ("mode", FLASH_MODES),
+                         ("freq", FLASH_FREQS)):
+        value = (version.flash_config or {}).get(key)
+        if value is not None and value not in allowed:
+            errors.append(
+                f"flash {key} '{value}' is not one esptool understands "
+                f"({', '.join(sorted(allowed))})")
 
     # 1. Everything pinned must be published — a run can never flash a draft.
     for link in version.files:
@@ -120,10 +153,16 @@ def check(db, version: M.DeploymentVersion) -> dict:
     # 4. Dataflow: every {placeholder} must resolve, and only from EARLIER steps.
     available = set(bundle.RUNTIME_VARS) | _param_keys(db, version)
     for idx, step in enumerate(steps):
+        local = OP_LOCAL_VARS.get(step.get("op"), set())
+        url = step.get("url")
+        if isinstance(url, str) and LOOPBACK_URL.search(url):
+            errors.append(
+                f"step {idx + 1} ({step.get('op')}) hardcodes a loopback host in its "
+                "url — no device can reach it; use {base_url}")
         for text in _walk_strings({k: v for k, v in step.items()
                                    if k not in ("label", "note", "capture")}):
             for name in PLACEHOLDER.findall(text):
-                if name not in available:
+                if name not in available and name not in local:
                     errors.append(
                         f"step {idx + 1} ({step.get('op')}) uses {{{name}}}, which no parameter "
                         "defines and no earlier step captures")
@@ -141,7 +180,7 @@ def check(db, version: M.DeploymentVersion) -> dict:
     # 5. Downloads: need pinned files, and autoexec.be must come last.
     if "download_files" in ops and not version.files:
         errors.append("the procedure downloads files, but this version pins no berryware")
-    if version.files and "download_files" not in ops:
+    if version.files and "download_files" not in ops and "mark_laser" not in ops:
         warnings.append(
             f"{len(version.files)} berryware files are pinned but the procedure never "
             "downloads them")
@@ -165,7 +204,59 @@ def check(db, version: M.DeploymentVersion) -> dict:
             "esp_connect is not the first step — the MAC is read there, so anything before it "
             "cannot be attributed to a device if it fails")
 
-    # 7. SIM PIN provisioning.
+    # 7. Laser marking. The template is a pinned file like berryware is, so the
+    #    version still answers "what did this unit get" on its own.
+    pinned_names = [f.file_version.file.filename for f in version.files]
+    for idx, step in enumerate(steps):
+        if step.get("op") != "mark_laser":
+            continue
+        if not version.files:
+            errors.append(f"step {idx + 1} marks, but this version pins no template file")
+            continue
+        named = str(step.get("template") or "")
+        if named and named not in pinned_names:
+            errors.append(
+                f"step {idx + 1} names template {named!r}, which this version does not pin "
+                f"({', '.join(pinned_names)})")
+        elif not named and len(version.files) > 1:
+            errors.append(
+                f"step {idx + 1} does not name a template, but this version pins "
+                f"{len(version.files)}: {', '.join(pinned_names)}")
+        if not step.get("start", True):
+            warnings.append(
+                f"step {idx + 1} loads the job but never starts it — the operator has to press "
+                "Start in LightBurn, and the run cannot prove the part was marked")
+        if not str(step.get("value", "{mac}")).strip():
+            errors.append(f"step {idx + 1} has nothing to engrave")
+    if "mark_laser" in ops and (version.deployment.kind or "flash") != "mark":
+        warnings.append(
+            'this procedure marks, but its deployment kind is not "mark" — the bench offers it '
+            "on the flashing page rather than the marking page")
+
+    # 7b. Labels. No pinned file, unlike the laser: a Code 128 label has no
+    #     artwork, and its geometry comes from the printer's own PPD on the
+    #     bench. What the version owns is WHAT GOES ON IT, which is this step.
+    for idx, step in enumerate(steps):
+        if step.get("op") != "print_label":
+            continue
+        if not str(step.get("value", "{mac}")).strip():
+            errors.append(f"step {idx + 1} has nothing to print")
+        dots = step.get("dots")
+        if dots is not None and not 2 <= int(dots) <= 8:
+            errors.append(
+                f"step {idx + 1} asks for a {dots}-dot module. Two dots at 300 dpi is already "
+                "0.169 mm, below the 0.25 mm a Code 128 scanner is entitled to expect, and "
+                "eight is wider than any roll we stock")
+        if int(step.get("copies") or 1) > 1 and not step.get("label"):
+            warnings.append(
+                f"step {idx + 1} prints {step.get('copies')} labels and has no label text — "
+                "the run log will not say why a unit got more than one")
+    if "print_label" in ops and (version.deployment.kind or "flash") != "mark":
+        warnings.append(
+            'this procedure prints a label, but its deployment kind is not "mark" — the bench '
+            "offers it on the flashing page rather than the marking page")
+
+    # 8. SIM PIN provisioning.
     for idx, step in enumerate(steps):
         if step.get("op") != "lte_sim_pin":
             continue

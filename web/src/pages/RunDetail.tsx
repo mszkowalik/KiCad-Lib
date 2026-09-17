@@ -15,6 +15,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import { CheckField } from "../components/Field";
 import {
   addRunDevices,
   deleteRunAttachment,
@@ -369,6 +370,16 @@ export default function RunDetail() {
 
         {tab === "devices" && (
           <div className="card pad">
+            {/* The test requirement belongs to the BATCH, and each programming
+                run copies it when it starts — so this decides what is still to
+                be made, never what is already on the shelf. */}
+            <CheckField
+              checked={!!run.requires_test}
+              onChange={(v) => void patchRun({ requires_test: v })}
+              title="Units of this batch count as programmed only after they pass the project's test, run after their last programming run. A test that runs and fails always counts, batch or no batch. Changing this affects runs made from now on — every earlier run keeps the rule it was made under."
+            >
+              Units of this batch must pass the test
+            </CheckField>
             <div className="field-grid">
               <label>
                 Serial numbers <span className="muted">(one per line, saved on Add)</span>

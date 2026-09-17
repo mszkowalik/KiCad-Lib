@@ -50,6 +50,17 @@ const CAPTURE: Field = {
   hint: "variable name ← dotted path in the response, e.g. topic ← Status.Topic",
 };
 
+/** Any op that makes the DEVICE fetch something takes a url template, so the
+ *  address is never glued together inside the op (see `RunEngine._url`). Leave
+ *  it empty for the op's default. `{base_url}` resolves per bench to an address
+ *  a device on WiFi can actually reach, which is why a literal host is almost
+ *  always the wrong answer — and a literal loopback one is refused on publish. */
+const URL_TEMPLATE: Field = {
+  key: "url", label: "URL template", kind: "text",
+  placeholder: "{base_url}/api/flasher/files/{file_version_id}/{filename}",
+  hint: "empty = the op's own default; {base_url} is resolved per bench",
+};
+
 /** Any step may claim a functionality. Naming one turns this step's own pass or
  *  fail into a green/red cell on the device — nothing else is needed, because
  *  the step already succeeds or fails for a reason. */
@@ -167,7 +178,54 @@ const RAW_OPS: OpSpec[] = [
         hint: "pinned on this version — autoexec.be always goes last" },
       { key: "retries", label: "Retries per file", kind: "number", placeholder: "3" },
       TIMEOUT,
+      URL_TEMPLATE,
     ],
+  },
+  {
+    op: "mark_laser", title: "Engrave the serial", phase: "payload",
+    blurb: "The bench patches the pinned .lbrn2 with the value and hands it to the bench agent, which drives LightBurn. Needs the agent running on the laser machine.",
+    fields: [
+      LABEL,
+      { key: "template", label: "Template file", kind: "text", summary: true,
+        placeholder: "AQUA_DONGLE_Side_Info.lbrn2",
+        hint: "a file pinned by THIS version — leave empty when only one is pinned" },
+      { key: "value", label: "Text to engrave", kind: "text", summary: true,
+        placeholder: "{mac}",
+        hint: "resolved from run variables, so {mac} or a captured device name" },
+      { key: "take_after", label: "Keep only what follows", kind: "text", placeholder: "_",
+        hint: "Tasmota names a device <something>_<MAC>, and the MAC is what goes on the part" },
+      { key: "device", label: "LightBurn profile", kind: "text", summary: true,
+        placeholder: "M4 IR 1064nm",
+        hint: "a LightBurn DEVICE PROFILE, as LightBurn names it — on a two-source marker the profile carries the calibration for one source and its layers say which source fires; empty leaves LightBurn's own choice" },
+      { key: "placeholder", label: "Placeholder in the artwork", kind: "text",
+        placeholder: "123456789011",
+        hint: "empty = the strings the CE templates already use" },
+      { key: "start", label: "Fire the laser", kind: "bool",
+        hint: "off = load the job only, the operator presses Start in LightBurn" },
+      { key: "job_timeout", label: "Job timeout (s)", kind: "number", placeholder: "300" },
+    ],
+    provides: ["marked"],
+  },
+  {
+    op: "print_label", title: "Print the label", phase: "payload",
+    blurb: "A Code 128 barcode of the value, with the value under it. The bench agent lays it out from the printer's own page size and prints it. No artwork file: the label is generated, so the version pins nothing for it.",
+    fields: [
+      LABEL,
+      { key: "value", label: "Text on the label", kind: "text", summary: true,
+        placeholder: "{mac}",
+        hint: "resolved from run variables — the same value the laser engraves" },
+      { key: "take_after", label: "Keep only what follows", kind: "text", placeholder: "_",
+        hint: "Tasmota names a device <something>_<MAC>, and the MAC is what goes on the part" },
+      { key: "roll", label: "Default roll", kind: "text", placeholder: "w72h154",
+        hint: "the printer's own page size name — the bench can override it, because the roll is what is loaded on the day" },
+      { key: "rotate", label: "Turn a quarter turn", kind: "bool",
+        hint: "on = the barcode runs down the length. A 12-character serial needs 47.5 mm, which no narrow roll has across" },
+      { key: "dots", label: "Module width (printer dots)", kind: "number", placeholder: "3",
+        hint: "3 dots at 300 dpi is 0.254 mm, the standard minimum. Every bar edge then lands on a whole dot" },
+      { key: "copies", label: "Copies", kind: "number", placeholder: "1" },
+      { key: "job_timeout", label: "Job timeout (s)", kind: "number", placeholder: "120" },
+    ],
+    provides: ["printed"],
   },
   {
     op: "derive_credentials", title: "Derive the MQTT credentials", phase: "payload",

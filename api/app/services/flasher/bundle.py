@@ -80,6 +80,13 @@ def version_json(db, v: M.DeploymentVersion, deep: bool = True) -> dict:
         "created_at": v.created_at.isoformat() if v.created_at else None,
         "image_count": len(v.images), "file_count": len(v.files),
         "step_count": len(v.steps or []),
+        # Whether this PROCEDURE asks for a SIM PIN. The bench hides the box
+        # otherwise: a Dongle_V2 or an Aqua has no modem, and a field nobody
+        # can use is a field somebody fills in by mistake.
+        "needs_sim_pin": any(
+            isinstance(step, dict) and step.get("op") == "lte_sim_pin"
+            for step in (v.steps or [])
+        ),
     }
     if deep:
         out["images"] = [image_json(i) for i in v.images]

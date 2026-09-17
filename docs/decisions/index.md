@@ -48,6 +48,9 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0017](0017-conformance-is-computed-not-recorded.md) | Conformance is computed on read and cached against a digest of its inputs, never recorded on publish | Backend, frontend, review axis |
 | [0018](0018-does-not-apply-is-an-exception-not-an-answer.md) | "Does not apply" is a standing exception, not a per-version `na` answer — one control, and it works on an item nobody has answered | Backend, frontend, review axis, agent tools |
 | [0019](0019-a-classification-carries-the-first-time-it-is-set.md) | A classification key carries the first time it is set — filling in `comp_type` costs no verification, changing one still does | Backend, review axis |
+| [0020](0020-marking-goes-through-lightburn.md) | Drive the laser through LightBurn and a local agent, not a direct controller driver — the BSL board's protocol is not the open-source LMC one | Backend, frontend, production, external dependency |
+| [0021](0021-a-device-is-judged-by-the-rule-it-was-made-under.md) | Judge a device by the rule its batch carried, and pin that rule on every programming run (refines [0007](0007-built-means-finished-and-passed.md)) | Backend, frontend, production, flasher |
+| [0022](0022-labels-are-generated-by-the-bench-agent.md) | Print labels through CUPS and lay them out in the bench agent, with no template file and no vendor software (extends [0020](0020-marking-goes-through-lightburn.md)) | Backend, frontend, production, flasher |
 
 ## Proposed
 

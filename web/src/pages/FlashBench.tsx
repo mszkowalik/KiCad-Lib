@@ -1,12 +1,13 @@
-/** The operator bench: up to 5 station slots, each one USB adapter = one
+/** The operator bench: FOUR station slots, each one USB adapter = one
  *  device. Chromium-only (Web Serial needs a secure context — localhost or
  *  HTTPS). The engine runs server-side; every line is stored as it arrives.
  *
  *  Two modes: a BATCH run (the batch's deployment version, published only) or
  *  a BENCH TRIAL (no batch, any version including a draft — recorded as such).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  benchAgentUrl,
   errorMessage,
   getRuns,
   getProjects,
@@ -17,8 +18,33 @@ import {
   type RunInfo,
 } from "../api";
 import BenchStation from "../components/flasher/BenchStation";
+import { MarkAgent } from "../flasher/benchAgent";
+import { CheckField } from "../components/Field";
 import { ErrorBanner } from "../components/Ui";
 import { useStickyState } from "../useStickyState";
+
+const MAX_STATIONS = 4;
+const COUNT_KEY = "flasher.station-count.v1";
+
+/** How many stations this bench uses. One by default — a new operator has one
+ *  cable in their hand, not four. */
+function readStationCount(): number {
+  try {
+    const n = Number(localStorage.getItem(COUNT_KEY));
+    return Number.isInteger(n) && n >= 1 && n <= MAX_STATIONS ? n : 1;
+  } catch {
+    return 1;
+  }
+}
+
+function writeStationCount(n: number): number {
+  try {
+    localStorage.setItem(COUNT_KEY, String(n));
+  } catch {
+    /* blocked storage: the count still works for this session */
+  }
+  return n;
+}
 
 export default function FlashBench() {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
@@ -27,12 +53,45 @@ export default function FlashBench() {
   const [error, setError] = useState<string | null>(null);
   const [projectId, setProjectId] = useStickyState<number | null>("bench.project", null);
   const [mode, setMode] = useStickyState<"batch" | "trial">("bench.mode", "batch");
-  const [runId, setRunId] = useStickyState<number | null>("bench.run", null);
+  // The batch is deliberately NOT remembered (user decision 2026-09-16). A
+  // remembered batch is the one an operator programs a tray into by accident
+  // the next morning; picking it is one click and it has to be a decision.
+  const [runId, setRunId] = useState<number | null>(null);
   const [versionId, setVersionId] = useStickyState<number | null>("bench.versionv2", null);
-  const [operator, setOperator] = useStickyState<string>("bench.operator", "");
   const [simPin, setSimPin] = useState("");
+  // A heartbeat to the bench agent, and nothing more: this bench needs the
+  // agent only before a run (the Chrome grant, socket binding), so it never
+  // polled it — and the agent's own window then said no bench page had ever
+  // connected. One /hello every 10 s makes both sides honest.
+  const [agentUp, setAgentUp] = useState<boolean | null>(null);
+  useEffect(() => {
+    const a = new MarkAgent();
+    let alive = true;
+    const beat = async () => {
+      try {
+        await a.hello();
+        if (alive) setAgentUp(true);
+      } catch {
+        if (alive) setAgentUp(false);
+      }
+    };
+    void beat();
+    const timer = window.setInterval(() => void beat(), 10_000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, []);
   const [overrideReason, setOverrideReason] = useState("");
-  const [slots, setSlots] = useState(1);
+  // OFF by default, on purpose: a programming run erases the device and writes
+  // firmware, so arming a bench to do that on plug-in is a decision somebody
+  // makes, not a state they find the page in. Remembered per browser once made.
+  const [autoStart, setAutoStart] = useStickyState<boolean>("bench.autostart", false);
+  // How many stations are in use, 1..4, remembered across reloads. The GRID is
+  // always four cells wide: removing a station leaves its place empty rather
+  // than letting the remaining ones spread out, so a station never moves under
+  // the operator's hand mid-batch.
+  const [slots, setSlots] = useState(readStationCount);
 
   const webSerial = typeof navigator !== "undefined" && "serial" in navigator;
 
@@ -63,6 +122,13 @@ export default function FlashBench() {
   }, [validProject]);
 
   /** Every version, grouped by deployment, with channel and status labels. */
+  // The project's test sweep, if it has one. Read from `kind`, never from the
+  // name: renaming "Aqua_V2 test" must not take the Test button away.
+  const testVersionId = useMemo(() => {
+    const test = deployments.find((d) => d.kind === "test");
+    return test?.current_version_id ?? null;
+  }, [deployments]);
+
   const versionOptions = useMemo(
     () =>
       deployments.map((d) => ({
@@ -76,11 +142,75 @@ export default function FlashBench() {
     [deployments],
   );
 
+  /** The project's CONFIG procedure — `kind: "flash"`, read from the kind and
+   *  never from the name, the same rule the Test button follows. Its current
+   *  version is what the bench starts on: it is what a batch is programmed
+   *  with all day, and an empty dropdown made every session begin with the
+   *  same click. */
+  const configVersionId = useMemo(
+    () => deployments.find((d) => d.kind === "flash")?.current_version_id ?? null,
+    [deployments],
+  );
+
+  // Applied ONCE per project, so choosing "batch's assigned version" by hand
+  // afterwards sticks instead of snapping back. A version remembered from an
+  // earlier session wins when it still belongs to this project.
+  const defaultedFor = useRef<number | null>(null);
+  useEffect(() => {
+    // Wait for THIS project's deployments: switching project leaves the
+    // previous list in state for a moment, and defaulting from it marked the
+    // project done and left the box empty.
+    if (!validProject || deployments[0]?.project_id !== validProject) return;
+    if (defaultedFor.current === validProject) return;
+    defaultedFor.current = validProject;
+    const known = deployments.some((d) => d.versions.some((v) => v.id === versionId));
+    if (!known) setVersionId(configVersionId);
+  }, [validProject, deployments, configVersionId, versionId, setVersionId]);
+
   const validRun = runs.some((r) => r.id === runId) ? runId : null;
+  const batch = runs.find((r) => r.id === validRun) ?? null;
+
+  /** The version the BATCH says to use: its pinned one, else the version its
+   *  channel points at. Null for every batch today — none pins or follows
+   *  anything — which is why the operator's pick is not an override. */
+  const assignedVersionId = useMemo(() => {
+    if (!batch) return null;
+    if (batch.deployment_version_id) return batch.deployment_version_id;
+    const name = batch.deployment_channel;
+    if (!name) return null;
+    for (const d of deployments) {
+      const chan = d.channels.find((c) => c.name === name);
+      if (chan) return chan.deployment_version_id;
+    }
+    return null;
+  }, [batch, deployments]);
+
+  const isOverride =
+    mode === "batch" && versionId !== null && assignedVersionId !== null
+    && versionId !== assignedVersionId;
+
+  // In batch mode a run with no batch would be recorded as a bench trial —
+  // the operator would be programming a tray into nothing. The stations get no
+  // version until the batch is picked, which is what their own guard reads.
+  const batchMissing = mode === "batch" && validRun === null;
   const chosenVersion = deployments
     .flatMap((d) => d.versions.map((v) => ({ d, v })))
     .find((x) => x.v.id === versionId);
   const trialIsDraft = mode === "trial" && chosenVersion?.v.status === "draft";
+
+  /** The SIM PIN box belongs to the PROCEDURE, not to the bench. Only a
+   *  procedure with an `lte_sim_pin` step can use the value (Dongle_V3
+   *  today); on a Dongle_V2 or an Aqua the box asked for a secret that had
+   *  nowhere to go. In batch mode the version is the batch's own, and the page
+   *  does not resolve it, so the question falls back to the project: does any
+   *  of its procedures ask for a PIN? */
+  const wantsSimPin = useMemo(
+    () =>
+      chosenVersion
+        ? chosenVersion.v.needs_sim_pin
+        : deployments.some((d) => d.versions.some((v) => v.needs_sim_pin)),
+    [chosenVersion, deployments],
+  );
 
   return (
     <div className="main-solo">
@@ -107,6 +237,10 @@ export default function FlashBench() {
                 setProjectId(Number(e.target.value));
                 setRunId(null);
                 setVersionId(null);
+                // Picking a project — even the same one again — asks for its
+                // default back. Only this control clears the mark, so a
+                // deliberate "batch's assigned version" still sticks.
+                defaultedFor.current = null;
               }}
             >
               {projects.map((p) => (
@@ -156,22 +290,18 @@ export default function FlashBench() {
                 </optgroup>
               ))}
             </select>
-            <input
-              className="row-input"
-              placeholder="operator"
-              value={operator}
-              onChange={(e) => setOperator(e.target.value)}
-            />
-            <input
-              className="row-input mono"
-              type="password"
-              placeholder="SIM PIN (optional)"
-              title="Used by the lte_sim_pin step. Empty = the param set default, else the engine prompts."
-              value={simPin}
-              onChange={(e) => setSimPin(e.target.value)}
-            />
+            {wantsSimPin ? (
+              <input
+                className="row-input mono"
+                type="password"
+                placeholder="SIM PIN (optional)"
+                title="Used by the lte_sim_pin step. Empty = the param set default, else the engine prompts."
+                value={simPin}
+                onChange={(e) => setSimPin(e.target.value)}
+              />
+            ) : null}
           </div>
-          {mode === "batch" && versionId !== null ? (
+          {isOverride ? (
             <input
               className="row-input override-reason"
               placeholder="override reason — why not the batch's assigned version?"
@@ -179,6 +309,19 @@ export default function FlashBench() {
               onChange={(e) => setOverrideReason(e.target.value)}
             />
           ) : null}
+          {batchMissing ? (
+            <p className="banner-warn">
+              Pick the production batch this run belongs to, or switch to a bench trial.
+            </p>
+          ) : null}
+          <CheckField
+            checked={autoStart}
+            onChange={setAutoStart}
+            disabled={batchMissing}
+            title="Each station starts its own run the moment a device appears on its port. Armed once per device: a finished unit left plugged in is not programmed twice."
+          >
+            Program automatically when a device is plugged in
+          </CheckField>
           {trialIsDraft ? (
             <p className="banner-warn">
               Trying a DRAFT version. Each run is marked as a draft run and cannot be counted as
@@ -196,37 +339,84 @@ export default function FlashBench() {
         </div>
 
         <div className="bench-grid">
-          {Array.from({ length: slots }, (_, i) => (
-            <BenchStation
-              key={i}
-              index={i}
-              productionRunId={mode === "batch" ? validRun : null}
-              deploymentVersionId={versionId}
-              overrideReason={overrideReason}
-              operator={operator}
-              simPin={simPin}
-            />
-          ))}
+          {Array.from({ length: MAX_STATIONS }, (_, i) =>
+            i < slots ? (
+              <BenchStation
+                key={i}
+                index={i}
+                productionRunId={mode === "batch" ? validRun : null}
+                deploymentVersionId={batchMissing ? null : versionId}
+                autoStart={autoStart && !batchMissing}
+                overrideReason={overrideReason}
+                // A hidden box must not still be sending a value: switching
+                // from a V3 to a V2 would carry the PIN into a run that has
+                // no step to consume it.
+                simPin={wantsSimPin ? simPin : ""}
+                testVersionId={testVersionId}
+                projectId={validProject}
+              />
+            ) : (
+              <div key={i} className="bench-empty" />
+            ),
+          )}
         </div>
         <div className="btn-row">
           <button
             type="button"
             className="btn btn-sm"
-            onClick={() => setSlots((n) => Math.min(n + 1, 5))}
-            disabled={slots >= 5}
+            onClick={() => setSlots((n) => writeStationCount(Math.min(n + 1, MAX_STATIONS)))}
+            disabled={slots >= MAX_STATIONS}
           >
             + Station
           </button>
           <button
             type="button"
             className="btn btn-sm"
-            onClick={() => setSlots((n) => Math.max(n - 1, 1))}
+            onClick={() => setSlots((n) => writeStationCount(Math.max(n - 1, 1)))}
             disabled={slots <= 1}
           >
             − Station
           </button>
         </div>
+        <BenchSetupHint agentUp={agentUp} />
       </div>
     </div>
+  );
+}
+
+/** One-time bench setup, offered rather than required.
+ *
+ *  Two different things, and the agent now covers both. A station is bound to a
+ *  physical USB SOCKET, which a page cannot see — Web Serial gives it a vendor
+ *  and product id and nothing else, and every V2 dongle shares those. And the
+ *  port picker reappears for every unit, because a CH340 reports no USB serial
+ *  number for Chrome to remember a permission by. The agent answers the first
+ *  and grants the second, so it is one download rather than two.
+ */
+function BenchSetupHint({ agentUp }: { agentUp: boolean | null }) {
+  const mac = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
+  return (
+    <p className="muted">
+      {agentUp === true ? (
+        <strong>Bench agent: running on this machine.</strong>
+      ) : agentUp === false ? (
+        <strong>Bench agent: not running on this machine.</strong>
+      ) : null}{" "}
+      A station owns a USB socket, and the browser cannot see which socket a cable is in — the
+      bench agent answers that.{" "}
+      {mac ? (
+        <>
+          <a href={benchAgentUrl()} download>
+            Download the bench agent
+          </a>
+          , expand the zip and open <strong>7Sigma Agent</strong>: it also sets Chrome up for this
+          address on its first start — the port picker stops reappearing, and it needs no
+          administrator. Quit Chrome once after that. A machine with managed Chrome settings needs
+          the profile from its administrator instead.
+        </>
+      ) : (
+        <>The agent is macOS only so far; on this system the picker stays.</>
+      )}
+    </p>
   );
 }
