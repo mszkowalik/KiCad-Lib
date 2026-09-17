@@ -4875,7 +4875,11 @@ textarea.auto-grow { overflow-y: hidden; }
 .bundles-table th:nth-child(3), .bundles-table td:nth-child(3) { width: 18%; }
 .bundles-table th:nth-child(4), .bundles-table td:nth-child(4) { width: 20%; }
 .bundles-table th:nth-child(5), .bundles-table td:nth-child(5) { width: 20%; }
-/* A release's manifest on the Files page, and the derive dialog's plan. */
+/* A release's manifest, folded out under its row on the Files page, and the
+   derive dialog's plan. The expansion cell lifts the one-line clamp. */
+.set-detail { padding: 6px 4px 10px; }
+.set-detail .toolbar { margin: 0 0 4px; }
+
 .set-files-table { table-layout: fixed; }
 .set-files-table th:nth-child(1), .set-files-table td:nth-child(1) { width: 5%; }
 .set-files-table th:nth-child(2), .set-files-table td:nth-child(2) { width: 32%; }

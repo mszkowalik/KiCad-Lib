@@ -32,7 +32,7 @@ import {
   type VersionFileRow,
 } from "../../api";
 import { useDialog } from "../Dialog";
-import Field, { FieldGrid } from "../Field";
+import Field, { FieldGrid, FieldRow } from "../Field";
 import FilePick from "../FilePick";
 import DataTable, { type Column } from "../DataTable";
 import { ErrorBanner, Spinner } from "../Ui";
@@ -158,7 +158,7 @@ export default function FileSetsPanel({
     {
       key: "label",
       label: kind === "artwork" ? "Drawing" : "Release",
-      width: kind === "artwork" ? 32 : 26,
+      width: kind === "artwork" ? 34 : 30,
       className: "mono",
       get: (s) => s.label,
       render: (s) => (
@@ -168,7 +168,7 @@ export default function FileSetsPanel({
         </>
       ),
     },
-    { key: "files", label: "Files", width: 6, numeric: true, get: (s) => s.file_count },
+    { key: "files", label: "Files", width: 7, numeric: true, get: (s) => s.file_count },
     {
       key: "size", label: "Size", width: 9, numeric: true,
       get: (s) => s.size_bytes, render: (s) => <>{fmtBytes(s.size_bytes)}</>,
@@ -176,7 +176,7 @@ export default function FileSetsPanel({
     {
       key: "used",
       label: "Used by",
-      width: 13,
+      width: 12,
       get: (s) => (s.used_by ? `${s.used_by} version${s.used_by === 1 ? "" : "s"}` : "unused"),
       render: (s) => (
         <span
@@ -190,14 +190,14 @@ export default function FileSetsPanel({
       ),
     },
     {
-      key: "created", label: "Created", width: kind === "artwork" ? 12 : 18, className: "muted",
+      key: "created", label: "Created", width: kind === "artwork" ? 16 : 20, className: "muted",
       get: (s) => s.created_at ?? "",
       render: (s) => <>{fmtWhen(s.created_at)}{s.created_by ? ` · ${s.created_by}` : ""}</>,
     },
     {
       key: "actions",
       label: "",
-      width: 28,
+      width: 22,
       interactive: false,
       className: "ctr",
       get: () => "",
@@ -228,106 +228,97 @@ export default function FileSetsPanel({
   ];
 
   return (
-    <div className="fw-layout">
-      {/* ---------------- add ---------------- */}
-      <div className="card pad">
-        <h2 className="card-title">{kind === "artwork" ? "Add a drawing" : "Add a release"}</h2>
-        <p className="card-subtitle">
-          {kind === "artwork"
-            ? "One LightBurn file is one drawing. The same file uploaded twice is one row."
-            : "A release is one exact set of files. The same set is always the same release, whatever the folder was called — so re-importing cannot create a twin."}
-        </p>
-        {error ? <ErrorBanner message={error} /> : null}
-        {note ? <p className="banner-ok">{note}</p> : null}
-        <FieldGrid>
-          <Field label="Name" hint={kind === "artwork" ? "empty = the file's own name" : "empty = the folder's name"}>
-            <input
-              className="text"
-              value={label}
-              placeholder={kind === "artwork" ? "Side_Info rev 4" : "release-1.3.12"}
-              onChange={(e) => setLabel(e.target.value)}
-            />
-          </Field>
-          <Field label="Note">
-            <input
-              className="text"
-              value={comment}
-              placeholder="where it came from, what changed"
-              onChange={(e) => setComment(e.target.value)}
-            />
-          </Field>
-        </FieldGrid>
-        <div className="btn-row">
-          {kind === "berryware" ? (
-            <FilePick
-              directory
-              disabled={busy}
-              className="btn btn-primary"
-              title="Pick the release folder. Every file in it becomes the set; unchanged content is reused."
-              onPick={(files) => void upload(files)}
-            >
-              {busy ? "Working…" : "Import a folder…"}
-            </FilePick>
-          ) : null}
+    <div className="card pad">
+      {/* One card, full width: the table needs the room (six columns and
+          three buttons), so the way in is a toolbar and one row of fields
+          above it, not a column beside it. */}
+      <div className="toolbar">
+        <h2 className="card-title">{kind === "artwork" ? "Drawings" : "Releases"}</h2>
+        <span className="muted">{sets ? `${sets.length} ${noun}${sets.length === 1 ? "" : "s"}` : ""}</span>
+        {kind === "berryware" ? (
           <FilePick
-            multiple={kind === "berryware"}
-            accept={kind === "artwork" ? ".lbrn2,.lbrn" : undefined}
+            directory
             disabled={busy}
-            className={kind === "artwork" ? "btn btn-primary" : "btn"}
-            title={kind === "artwork"
-              ? "Upload a LightBurn project."
-              : "Pick the files of the release one by one."}
+            className="btn btn-primary btn-sm"
+            title="Pick the release folder. Every file in it becomes the set; unchanged content is reused."
             onPick={(files) => void upload(files)}
           >
-            {busy ? "Working…" : kind === "artwork" ? "Upload a .lbrn2…" : "Upload files…"}
+            {busy ? "Working…" : "Import a folder…"}
           </FilePick>
-        </div>
-        {kind === "berryware" ? (
-          <p className="muted dim">
-            To change one file of an existing release, use <strong>Derive…</strong> on its row:
-            the new release keeps everything else and names what moved.
-          </p>
         ) : null}
+        <FilePick
+          multiple={kind === "berryware"}
+          accept={kind === "artwork" ? ".lbrn2,.lbrn" : undefined}
+          disabled={busy}
+          className={kind === "artwork" ? "btn btn-primary btn-sm" : "btn btn-sm"}
+          title={kind === "artwork"
+            ? "Upload a LightBurn project."
+            : "Pick the files of the release one by one."}
+          onPick={(files) => void upload(files)}
+        >
+          {busy ? "Working…" : kind === "artwork" ? "Upload a .lbrn2…" : "Upload files…"}
+        </FilePick>
       </div>
-
-      {/* ---------------- the sets ---------------- */}
-      <div className="card pad">
-        <div className="toolbar">
-          <h2 className="card-title">{kind === "artwork" ? "Drawings" : "Releases"}</h2>
-          <span className="muted">{sets ? `${sets.length} ${noun}${sets.length === 1 ? "" : "s"}` : ""}</span>
-        </div>
-        {sets === null ? (
-          <Spinner label="Loading…" />
-        ) : sets.length === 0 ? (
-          <p className="muted">Nothing yet — add one on the left.</p>
-        ) : (
-          <div className="table-wrap">
-            <DataTable
-              columns={cols}
-              rows={sets}
-              rowKey={(s) => s.id}
-              persistKey={`file-sets-${kind}`}
-              rowClass={() => "ledger-row"}
-              openKey={open}
-              onOpenChange={(k) => setOpen(k === null ? null : Number(k))}
-              empty="Nothing yet."
-            />
-          </div>
-        )}
-        {open !== null && sets ? (
-          <SetDetail
-            key={open}
-            setId={open}
-            onPreview={(set, file) => setPreview({ set, file })}
+      <p className="card-subtitle">
+        {kind === "artwork"
+          ? "One LightBurn file is one drawing. The same file uploaded twice is one row."
+          : "A release is one exact set of files. The same set is always the same release, whatever the folder was called — so re-importing cannot create a twin. To change one file, use Derive… on its row."}
+      </p>
+      {error ? <ErrorBanner message={error} /> : null}
+      {note ? <p className="banner-ok">{note}</p> : null}
+      <FieldRow>
+        <Field label={kind === "artwork" ? "Name for the next upload" : "Name for the next import"}
+               hint={kind === "artwork" ? "empty = the file's own name" : "empty = the folder's name"}>
+          <input
+            className="text"
+            value={label}
+            placeholder={kind === "artwork" ? "Side_Info rev 4" : "release-1.3.12"}
+            onChange={(e) => setLabel(e.target.value)}
           />
-        ) : null}
-        {kind === "berryware" ? (
-          <p className="muted dim">
-            Download order is fixed when a release is made: autoexec.be goes last, so a partial
-            download never leaves a device booting an incomplete application.
-          </p>
-        ) : null}
-      </div>
+        </Field>
+        <Field label="Note">
+          <input
+            className="text"
+            value={comment}
+            placeholder="where it came from, what changed"
+            onChange={(e) => setComment(e.target.value)}
+          />
+        </Field>
+      </FieldRow>
+
+      {sets === null ? (
+        <Spinner label="Loading…" />
+      ) : sets.length === 0 ? (
+        <p className="muted">Nothing yet — import one above.</p>
+      ) : (
+        <div className="table-wrap">
+          <DataTable
+            columns={cols}
+            rows={sets}
+            rowKey={(s) => s.id}
+            persistKey={`file-sets-${kind}`}
+            rowClass={() => "ledger-row"}
+            openKey={open}
+            onOpenChange={(k) => setOpen(k === null ? null : Number(k))}
+            /* The manifest folds out UNDER its row (user request 2026-09-18),
+               not in a block below the table. */
+            expand={(s) => (
+              <SetDetail
+                key={s.id}
+                setId={s.id}
+                onPreview={(set, file) => setPreview({ set, file })}
+              />
+            )}
+            empty="Nothing yet."
+          />
+        </div>
+      )}
+      {kind === "berryware" ? (
+        <p className="muted dim">
+          Download order is fixed when a release is made: autoexec.be goes last, so a partial
+          download never leaves a device booting an incomplete application.
+        </p>
+      ) : null}
 
       {preview ? (
         <FilePreview set={preview.set} file={preview.file} onClose={() => setPreview(null)} />
@@ -374,7 +365,7 @@ function SetDetail({
   if (!set) return <Spinner label="Loading the files…" />;
   const users = set.users ?? [];
   return (
-    <div className="meta-card">
+    <div className="set-detail">
       <div className="toolbar">
         <strong className="mono">{set.label}</strong>
         <span className="muted dim mono" title={set.fingerprint}>{shortSha(set.fingerprint)}</span>
