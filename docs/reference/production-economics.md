@@ -101,11 +101,23 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
   (`confidence: "decided"`) instead of being demoted. The BOM vote counts
   only prepaid parts; the queue names the JLC-sourced material
   (`jlc_sourced_usd`) so a low vote on such an order reads as a floor.
-  - **A FIFO pick is a guess and a return corrects it** (`return_device`): the
-    returned device takes the place of a FIFO-picked device on the same line,
-    which goes back to stock or inherits the returned device's old slot; both
-    moves are events. A line fulfilled by unserialized units converts one of
-    them into the named device instead.
+  - **A FIFO pick is a guess, and two things correct it.** A RETURN
+    (`return_device`): the returned device takes the place of a FIFO-picked
+    device on the same line, which goes back to stock or inherits the returned
+    device's old slot; a line fulfilled by unserialized units converts one of
+    them into the named device instead. A STOCK COUNT
+    (`reconcile_shelf`, `POST /api/stock/reconcile`, decision
+    [0027](../decisions/0027-a-stock-count-corrects-a-fifo-guess.md)): every
+    `auto` pick the count contradicts is reversed and its slot refilled from
+    stock, oldest produced first. `dry_run` is the default and the first answer
+    is the plan. A `shipped` event with `auto = false` is never touched — a
+    person named that device — and `keep_count` decides whether a slot nothing
+    can refill becomes an anonymous unit or a shortfall on the order.
+  - **An `unshipped` event does not delete the `shipped` event it reverses**,
+    because the log is append-only. Every fulfilment and cost figure therefore
+    reads `live_shipped_events`, which pairs the two per device and shipment.
+    A new query that counts `DeviceEvent.kind == "shipped"` directly will count
+    reversed deliveries, which is the bug this replaced.
   - **The flasher writes `produced` on the first PASS in a batch**
     (`engine.py` → `mark_produced`, idempotent; never on a draft run). Legacy
     devices are linked with `POST /api/runs/{id}/produced`.

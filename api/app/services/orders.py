@@ -270,13 +270,43 @@ def refresh_order_status(order: M.SalesOrder) -> str:
     return order.status
 
 
+def live_shipped_events(db: Session, line_ids: list[int]) -> list[M.DeviceEvent]:
+    """The `shipped` events on these lines that are still true.
+
+    The log is append-only, so reversing a delivery does not delete the
+    `shipped` row — an `unshipped` event lands after it (decision 0003 §6 for a
+    return that corrects a FIFO guess, decision 0027 for a stock count that
+    does). Every fulfilment figure must therefore NET the pair out, or the
+    correction reads as a second delivery. The pairing is per device and
+    shipment, newest `shipped` first, so a device shipped, reversed and shipped
+    again on the same delivery still counts once.
+    """
+    if not line_ids:
+        return []
+    wanted = set(line_ids)
+    dids = [r[0] for r in db.query(M.DeviceEvent.device_id)
+            .filter(M.DeviceEvent.order_line_id.in_(line_ids),
+                    M.DeviceEvent.kind == "shipped").distinct()]
+    if not dids:
+        return []
+    open_: dict[tuple[int, int | None], list[M.DeviceEvent]] = defaultdict(list)
+    for e in (db.query(M.DeviceEvent)
+              .filter(M.DeviceEvent.device_id.in_(dids),
+                      M.DeviceEvent.kind.in_(("shipped", "unshipped")))
+              .order_by(M.DeviceEvent.device_id, M.DeviceEvent.at, M.DeviceEvent.id).all()):
+        key = (e.device_id, e.shipment_id)
+        if e.kind == "shipped":
+            open_[key].append(e)
+        elif open_[key]:
+            open_[key].pop()
+    return [e for stack in open_.values() for e in stack if e.order_line_id in wanted]
+
+
 def line_shipped(li: M.SalesOrderLine) -> int:
-    """Fulfilment: `shipped` events with no replaced device, plus unserialized
-    units on delivery shipments."""
+    """Fulfilment: `shipped` events with no replaced device that nothing has
+    reversed, plus unserialized units on delivery shipments."""
     sess = _session_of(li)
-    n = (sess.query(M.DeviceEvent)
-         .filter(M.DeviceEvent.order_line_id == li.id, M.DeviceEvent.kind == "shipped",
-                 M.DeviceEvent.replaces_device_id.is_(None)).count())
+    n = sum(1 for e in live_shipped_events(sess, [li.id]) if e.replaces_device_id is None)
     u = sum(sl.qty_unserialized or 0 for sl, sh in
             sess.query(M.ShipmentLine, M.Shipment).join(M.Shipment)
             .filter(M.ShipmentLine.order_line_id == li.id, M.Shipment.kind == "delivery").all())
@@ -521,6 +551,172 @@ def dispose_device(db: Session, device: M.DeviceUnit, *, reason: str = "", dispo
                         reason=reason or "", note=note or "")
 
 
+# ------------------------------------------------- correcting a FIFO guess
+
+def _refill_pool(db: Session, project_id: int, exclude: set[int]) -> list[M.DeviceUnit]:
+    """Devices that could take a freed slot: in stock, in this project, and NOT
+    on the shelf the count just proved. Oldest produced first, the order
+    `fifo_candidates` uses, so a refill picks the same device the original
+    shipment would have."""
+    return [d for d in (db.query(M.DeviceUnit)
+                        .filter(M.DeviceUnit.project_id == project_id,
+                                M.DeviceUnit.state == "in_stock")
+                        .order_by(M.DeviceUnit.first_seen, M.DeviceUnit.id).all())
+            if d.id not in exclude]
+
+
+def reconcile_shelf(db: Session, devices: list[M.DeviceUnit], *, refill: str = "same_batch",
+                    keep_count: bool = False, note: str = "", actor: str = "",
+                    dry_run: bool = True) -> dict:
+    """A stock count corrects the FIFO guesses that contradict it (decision 0027).
+
+    `devices` is what a physical count found on the shelf. Any of them the
+    platform believes is at a customer can only be there because a FIFO pick
+    GUESSED it (decision 0003 §6), so each such guess is reversed with an
+    `unshipped` event and the slot it held on that shipment is refilled from
+    stock. A `shipped` event somebody typed is never touched: the count says
+    where a device is, not who is wrong about it.
+
+    The shipment's QUANTITY is what the customer was invoiced for. When no
+    device is left to refill a slot, `keep_count` decides which of two true
+    statements the record makes: the quantity stands and one unit goes back to
+    being anonymous (§8), or the quantity falls and the order shows the
+    shortfall. There is no third option where both stay comfortable.
+    """
+    if refill not in ("same_batch", "any_batch", "none"):
+        raise HTTPException(422, "refill is same_batch, any_batch or none")
+    if not devices:
+        raise HTTPException(422, "the count names no device")
+    projects = {d.project_id for d in devices}
+    if len(projects) > 1:
+        raise HTTPException(422, "count one project at a time: these devices span "
+                                 f"{sorted(projects)}")
+    on_shelf = {d.id for d in devices}
+    typed: list[str] = []
+    already: list[int] = []
+    skipped: list[dict] = []
+    slots: list[tuple[M.DeviceUnit, M.DeviceEvent]] = []
+    for d in devices:
+        if d.state in ("in_stock", "allocated"):
+            already.append(d.id)
+            continue
+        if d.state != "shipped":
+            skipped.append({"device_id": d.id, "serial": d.serial, "state": d.state or "",
+                            "reason": "not shipped; a count does not undo this state"})
+            continue
+        ev = last_event(d, "shipped")
+        if ev is None or ev.shipment_id is None:
+            skipped.append({"device_id": d.id, "serial": d.serial, "state": d.state,
+                            "reason": "shipped against no shipment"})
+            continue
+        if not ev.auto:
+            typed.append(d.serial or str(d.id))
+            continue
+        slots.append((d, ev))
+    if typed:
+        raise HTTPException(409, {
+            "error": "a person named these devices on a shipment; a stock count does not overrule that",
+            "devices": sorted(typed)})
+
+    # Oldest delivery first, so the batch a 2024 shipment needs is offered to
+    # it before a 2026 one can take it.
+    ships = {s.id: s for s in db.query(M.Shipment)
+             .filter(M.Shipment.id.in_([e.shipment_id for _, e in slots] or [-1])).all()}
+    slots.sort(key=lambda se: (ships[se[1].shipment_id].shipped_at or "", se[1].shipment_id, se[0].id))
+
+    pool = _refill_pool(db, devices[0].project_id, on_shelf) if slots and refill != "none" else []
+    taken: set[int] = set()
+    freed: list[dict] = []
+    refilled: list[dict] = []
+    unfilled: list[dict] = []
+    unser: dict[tuple[int, int, int | None], int] = defaultdict(int)
+    delta: dict[int, int] = defaultdict(int)  # order_line_id -> change in counted units
+
+    for d, ev in slots:
+        sh = ships[ev.shipment_id]
+        counts = ev.replaces_device_id is None  # a replacement never counted
+        freed.append({"device_id": d.id, "serial": d.serial, "shipment_id": sh.id,
+                      "shipped_at": sh.shipped_at, "order_id": sh.order_id,
+                      "order_line_id": ev.order_line_id, "production_run_id": d.production_run_id,
+                      "counts": counts})
+        pick = None
+        for cand in pool:
+            if cand.id in taken:
+                continue
+            if refill == "same_batch" and cand.production_run_id != d.production_run_id:
+                continue
+            pick = cand
+            break
+        if pick is not None:
+            taken.add(pick.id)
+            refilled.append({"slot_device_id": d.id, "slot_serial": d.serial,
+                             "by_device_id": pick.id, "by_serial": pick.serial,
+                             "shipment_id": sh.id, "order_line_id": ev.order_line_id,
+                             "production_run_id": pick.production_run_id})
+            continue
+        unfilled.append({"device_id": d.id, "serial": d.serial, "shipment_id": sh.id,
+                         "order_line_id": ev.order_line_id,
+                         "production_run_id": d.production_run_id, "counts": counts})
+        if counts:
+            if keep_count:
+                unser[(sh.id, ev.order_line_id, d.production_run_id)] += 1
+            else:
+                delta[ev.order_line_id] -= 1
+
+    lines = {li.id: li for li in db.query(M.SalesOrderLine)
+             .filter(M.SalesOrderLine.id.in_([f["order_line_id"] for f in freed] or [-1])).all()}
+    effect = []
+    for lid, li in sorted(lines.items()):
+        before = line_shipped(li)
+        effect.append({"order_line_id": lid, "order_id": li.order_id,
+                       "order_ref": li.order.order_ref, "product": li.product,
+                       "qty_ordered": li.qty_ordered, "qty_shipped_before": before,
+                       "qty_shipped_after": before + delta[lid],
+                       "status_before": li.order.status})
+    plan = {
+        "dry_run": dry_run, "refill": refill, "keep_count": keep_count,
+        "already_in_stock": already, "skipped": skipped,
+        "freed": freed, "refilled": refilled, "unfilled": unfilled,
+        "unserialized": [{"shipment_id": s, "order_line_id": l, "source_run_id": r, "qty": n}
+                         for (s, l, r), n in sorted(unser.items(), key=lambda kv: kv[0][:2])],
+        "lines": effect,
+    }
+    if dry_run:
+        return plan
+
+    refill_by_slot = {r["slot_device_id"]: r for r in refilled}
+    for d, ev in slots:
+        record_event(db, d, "unshipped", actor=actor, shipment_id=ev.shipment_id, auto=False,
+                     note=note or "a stock count found this device on the shelf")
+        r = refill_by_slot.get(d.id)
+        if r is None:
+            continue
+        pick = db.get(M.DeviceUnit, r["by_device_id"])
+        record_event(db, pick, "shipped", at=ev.at, actor=actor, auto=True,
+                     order_line_id=ev.order_line_id, shipment_id=ev.shipment_id,
+                     replaces_device_id=ev.replaces_device_id,
+                     note=f"refill: takes the slot of {d.serial or d.id}, which the count found on the shelf")
+    for (ship_id, line_id, run_id), n in unser.items():
+        row = (db.query(M.ShipmentLine)
+               .filter(M.ShipmentLine.shipment_id == ship_id,
+                       M.ShipmentLine.order_line_id == line_id,
+                       M.ShipmentLine.source_run_id == run_id).first())
+        if row is None:
+            row = M.ShipmentLine(shipment_id=ship_id, order_line_id=line_id,
+                                 qty_unserialized=0, source_run_id=run_id)
+            db.add(row)
+        row.qty_unserialized = (row.qty_unserialized or 0) + n
+    db.flush()
+    for li in lines.values():
+        db.expire(li.order, ["shipments", "lines"])
+        refresh_order_status(li.order)
+    for row in effect:
+        li = lines[row["order_line_id"]]
+        row["qty_shipped_after"] = line_shipped(li)
+        row["status_after"] = li.order.status
+    return plan
+
+
 def allocate_devices(db: Session, line: M.SalesOrderLine, device_ids: list[int], actor: str = "") -> int:
     n = 0
     for did in device_ids:
@@ -580,8 +776,12 @@ def order_economics(db: Session, order: M.SalesOrder, unit_cost: dict[int, float
     shipped_devices = 0
     replacements = 0
     line_ids = [li.id for li in order.lines]
-    evs = (db.query(M.DeviceEvent, M.DeviceUnit).join(M.DeviceUnit, M.DeviceEvent.device_id == M.DeviceUnit.id)
-           .filter(M.DeviceEvent.order_line_id.in_(line_ids or [-1]), M.DeviceEvent.kind == "shipped").all())
+    # A delivery an `unshipped` event reversed is not charged to the order:
+    # the device never went, so its production cost is still stock.
+    live = live_shipped_events(db, line_ids)
+    units = {d.id: d for d in db.query(M.DeviceUnit)
+             .filter(M.DeviceUnit.id.in_([e.device_id for e in live] or [-1])).all()}
+    evs = [(e, units[e.device_id]) for e in live if e.device_id in units]
     for ev, d in evs:
         shipped_devices += 1
         if ev.replaces_device_id is not None:
@@ -654,18 +854,14 @@ def _line_counts(db: Session, line_ids: list[int]) -> dict[int, dict]:
            for lid in line_ids}
     if not line_ids:
         return out
-    for lid, kind, rep_null, n in (
-        db.query(M.DeviceEvent.order_line_id, M.DeviceEvent.kind,
-                 M.DeviceEvent.replaces_device_id.is_(None), func.count(M.DeviceEvent.id))
-        .filter(M.DeviceEvent.order_line_id.in_(line_ids))
-        .group_by(M.DeviceEvent.order_line_id, M.DeviceEvent.kind,
-                  M.DeviceEvent.replaces_device_id.is_(None)).all()
-    ):
-        c = out[lid]
-        if kind == "shipped":
-            c["shipped" if rep_null else "replacements"] += n
-        elif kind == "returned":
-            c["returned"] += n
+    for e in live_shipped_events(db, line_ids):
+        c = out[e.order_line_id]
+        c["shipped" if e.replaces_device_id is None else "replacements"] += 1
+    for lid, n in (db.query(M.DeviceEvent.order_line_id, func.count(M.DeviceEvent.id))
+                   .filter(M.DeviceEvent.order_line_id.in_(line_ids),
+                           M.DeviceEvent.kind == "returned")
+                   .group_by(M.DeviceEvent.order_line_id).all()):
+        out[lid]["returned"] += n
     for lid, n in (db.query(M.ShipmentLine.order_line_id, func.sum(M.ShipmentLine.qty_unserialized))
                    .join(M.Shipment).filter(M.ShipmentLine.order_line_id.in_(line_ids),
                                             M.Shipment.kind == "delivery")

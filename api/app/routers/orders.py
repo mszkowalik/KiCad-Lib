@@ -541,6 +541,57 @@ def link_produced(run_id: int, body: ProducedIn, request: Request, db: Session =
 # ------------------------------------------------------------------- stock
 
 
+# ------------------------------------------------------------ stock count
+
+
+class ReconcileIn(BaseModel):
+    """A physical count of one project's shelf. Name the devices by id or by
+    the serial a scanner read — a scan sheet has serials, not ids."""
+
+    device_ids: list[int] = []
+    serials: list[str] = []
+    refill: str = "same_batch"  # same_batch | any_batch | none
+    keep_count: bool = False
+    note: str = ""
+    dry_run: bool = True
+
+
+@router.post("/stock/reconcile")
+def reconcile_stock(body: ReconcileIn, request: Request, db: Session = Depends(get_db)):
+    """Correct the FIFO guesses a stock count contradicts (decision 0027).
+
+    `dry_run` is the DEFAULT: the answer is the plan, and nothing is written
+    until you send it again with `dry_run: false`. This rewrites the device
+    history of shipments that are already invoiced, so seeing the effect first
+    is the point.
+    """
+    devices = [_device(db, did) for did in body.device_ids]
+    seen = {d.id for d in devices}
+    if body.serials:
+        wanted = [s.strip() for s in body.serials if s.strip()]
+        found = {d.serial: d for d in db.query(M.DeviceUnit)
+                 .filter(M.DeviceUnit.serial.in_(wanted)).all()}
+        missing = [s for s in wanted if s not in found]
+        if missing:
+            raise HTTPException(404, {"error": "no device carries these serials",
+                                      "serials": missing})
+        for s in wanted:
+            if found[s].id not in seen:
+                devices.append(found[s])
+                seen.add(found[s].id)
+    actor = actor_of(request)
+    plan = svc.reconcile_shelf(db, devices, refill=body.refill, keep_count=body.keep_count,
+                               note=body.note, actor=actor, dry_run=body.dry_run)
+    if body.dry_run:
+        return plan
+    audit(db, "stock.reconcile", "project", devices[0].project_id,
+          {"counted": len(devices), "freed": len(plan["freed"]),
+           "refilled": len(plan["refilled"]), "unfilled": len(plan["unfilled"]),
+           "keep_count": body.keep_count, "note": body.note}, actor=actor)
+    db.commit()
+    return plan
+
+
 @router.get("/demand")
 def demand(project_id: int | None = None, db: Session = Depends(get_db)):
     """Open order quantity against shelf stock and planned batches, per project."""

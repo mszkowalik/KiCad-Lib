@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-09-17 (a stock count can correct the record)
+
+- **A shelf count now reverses the FIFO guesses it contradicts.** A shipment
+  without serials draws devices FIFO (decision 0003 §6), and that pick is a
+  guess. Until now a customer return was the only thing that could correct one,
+  so a count that found a device sitting on the shelf while the platform said
+  it was at a customer had nowhere to go: `create_shipment` refuses a device
+  that is not in stock, `delete_shipment` refuses a shipment that carries
+  device events, and the device PATCH writes notes. `POST /api/stock/reconcile`
+  takes the devices a count found — by id or by the serial a scanner read —
+  reverses each `auto` FIFO pick that contradicts it, and refills the slot from
+  stock, oldest produced first. `dry_run` is the default, so the first answer is
+  always the plan. See
+  [decision 0027](docs/decisions/0027-a-stock-count-corrects-a-fifo-guess.md).
+- **A `shipped` event somebody typed is never reversed by a count.** The call
+  fails and names those devices. A count says where a device is, not who is
+  wrong about it.
+- **Reversing a delivery no longer reads as a second one.** `DeviceEvent` is
+  append-only, so an `unshipped` event lands after the `shipped` event it
+  reverses without removing it, and every fulfilment and cost figure counted
+  raw `shipped` rows. `live_shipped_events` now pairs the two, and
+  `line_shipped`, the order line counts and `order_economics` all read it. This
+  also fixes the swap in `_swap_into_line`, which had been inflating a line's
+  `qty_shipped` by one for each correction it made — no production order had a
+  return yet, so no recorded figure changes.
+
 ## 2026-09-17 (the marking bench survives its second device)
 
 - **The agent no longer wedges after one mark.** A bench marked one unit and
