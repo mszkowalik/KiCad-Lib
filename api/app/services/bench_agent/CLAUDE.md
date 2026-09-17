@@ -143,6 +143,26 @@ portable, but nothing Windows-specific is shipped or claimed: no launcher we
 cannot test, and `install_chrome_policy` says plainly that only macOS is
 automated rather than pretending.
 
+## The version number, and why the page does not trust it
+
+`PROTOCOL_VERSION` stayed at **3** through the whole of decision 0023, which
+added `POST /esp`, `/monitor/*` and the vendored esptool. So an agent from
+BEFORE the bench could program reported exactly what one that could reported,
+the page saw nothing wrong, and a run failed part-way with the agent's own 404
+— `no such path` — after a device was already in the socket (bench,
+2026-09-17). The operator's agent was five weeks old and nothing had said so.
+
+- **Bump `PROTOCOL_VERSION` in the same change that adds a route a page
+  depends on.** It is 4 now. Forgetting it is the whole defect above.
+- **But the flashing bench tests the CAPABILITY, not the number**
+  (`canProgram` in `web/src/flasher/benchAgent.ts`): `/hello` reports the
+  esptool it carries, and that IS the question. Raising `NEEDS_PROTOCOL`
+  instead would have been tidy and wrong — it would also condemn every agent
+  that programs perfectly well, for a download nobody needs. A version number
+  is a proxy; ask the real question when `/hello` can answer it.
+- **Anything a page must know before it commits an operator to something goes
+  in `/hello`.** It is the one call made before work starts.
+
 ## The rules
 
 - **`agent.py` is standard-library only, and `vendor.zip` is the ONE

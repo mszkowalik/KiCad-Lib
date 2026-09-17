@@ -903,7 +903,14 @@ def list_printers() -> list:
 # The deployed bench. Dev origins are added with --origin, never assumed: an
 # allow-list that quietly includes localhost is an allow-list with a hole in it.
 DEFAULT_ORIGINS = ("https://disfunction.cc",)
-PROTOCOL_VERSION = 3
+# 4 = this agent programs devices (decision 0023: POST /esp, /monitor/*, the
+# vendored esptool). It stayed at 3 through that whole change, so an agent from
+# before it reported the same number as one that could program — and the bench
+# ran a job against it and failed on `no such path` from the 404, with a device
+# in the socket (bench, 2026-09-17). BUMP THIS whenever a route the page
+# depends on is added, and raise `NEEDS_PROTOCOL` in `web/src/flasher/benchAgent.ts`
+# in the same change.
+PROTOCOL_VERSION = 4
 # A job's lines and result are kept so a page that reloads mid-mark can still
 # read the outcome. Only the last few matter; a bench runs one at a time.
 KEEP_JOBS = 20

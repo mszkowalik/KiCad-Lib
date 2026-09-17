@@ -39,6 +39,23 @@ const AGENT_URL = "http://127.0.0.1:19842";
  *  once, at hello, and says which it is. The agent is downloaded, not deployed,
  *  so a bench really can be behind. */
 export const NEEDS_PROTOCOL = 3;
+
+/** Can this agent PROGRAM? Not a version test on purpose.
+ *
+ *  `/esp` and the vendored esptool arrived in decision 0023 and the protocol
+ *  number was left at 3, so a pre-0023 agent reports exactly what a current one
+ *  does — the bench took a job against one and failed with the agent's own 404,
+ *  `no such path`, after a device was already in the socket (2026-09-17).
+ *  Raising the number would have been the tidy answer and the wrong one: it
+ *  would also condemn every agent that programs perfectly well, for a download
+ *  nobody needs. `/hello` already reports the esptool it carries, and that IS
+ *  the capability — so ask the question that matters instead of a proxy for it.
+ *
+ *  `PROTOCOL_VERSION` is bumped to 4 in `agent.py` all the same, so the next
+ *  download stops lying about what it is. */
+export function canProgram(hello: { esptool?: string | null }): boolean {
+  return Boolean(hello.esptool);
+}
 /** How often a running job's log is collected. Fast enough that the operator
  *  sees the laser start, slow enough to be free. */
 const POLL_MS = 400;
@@ -293,7 +310,9 @@ export class MarkAgent {
   // using the agent the same way whatever it speaks underneath.
   close() {}
 
-  async hello(): Promise<{ agent: string; protocol: number; lightburn_host: string }> {
+  async hello(): Promise<{
+    agent: string; protocol: number; lightburn_host: string; esptool?: string | null;
+  }> {
     return (await this.call("/hello")) as unknown as {
       agent: string;
       protocol: number;
@@ -348,6 +367,18 @@ export class MarkAgent {
     onLog?: (l: MarkLog) => void,
   ): Promise<{ status: "pass" | "fail"; error?: string; info?: Record<string, unknown> }> {
     const timeoutS = body.op === "flash" ? 900 : body.op === "erase" ? 240 : 90;
+    // Ask WHO is answering before handing it a device. An agent from before
+    // decision 0023 has no `/esp` at all and returns its own 404 — the run then
+    // failed with "no such path", which names nothing an operator can act on
+    // (bench, 2026-09-17). The banner on the page says the same thing, but the
+    // banner can be scrolled off and this cannot.
+    const hello = await this.hello();
+    if (!canProgram(hello)) {
+      throw new Error(
+        "the bench agent on this machine is too old to program — it carries no esptool. "
+        + "Download it again, replace the copy in Applications, and restart it",
+      );
+    }
     const started = await this.call("/esp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

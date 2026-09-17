@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-17 (an out-of-date bench agent says so)
+
+- **The flashing bench refuses to start a run against an agent that cannot
+  program**, and says which it is. The agent is DOWNLOADED, not deployed, so a
+  bench can be weeks behind and look healthy: one was, and the run failed
+  part-way with the agent's own 404 — `no such path` — after a device was
+  already in the socket. The page now asks at `hello` and shows a banner, and
+  the relay refuses before it touches the device, because a banner can be
+  scrolled off.
+- **It tests the capability, not the version.** `/hello` reports the esptool the
+  agent carries, and that is the question. `PROTOCOL_VERSION` had been left at 3
+  through the change that added programming, so the number could not tell the
+  two apart — it is 4 now, but nothing depends on it for this.
+
 ## 2026-09-17 (a version says which parameters it needs)
 
 **Editing a project's parameters can no longer break a version published months

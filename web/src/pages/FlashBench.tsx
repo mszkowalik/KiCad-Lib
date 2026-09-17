@@ -22,7 +22,7 @@ import {
   type RunInfo,
 } from "../api";
 import BenchStation from "../components/flasher/BenchStation";
-import { MarkAgent } from "../flasher/benchAgent";
+import { canProgram, MarkAgent } from "../flasher/benchAgent";
 import { CheckField } from "../components/Field";
 import { ErrorBanner } from "../components/Ui";
 import { useStickyState } from "../useStickyState";
@@ -70,13 +70,21 @@ export default function FlashBench() {
   // "is it running" is the first thing this page has to be able to say. It
   // also tells the agent's own window that a bench page is here.
   const [agentUp, setAgentUp] = useState<boolean | null>(null);
+  /** The agent answered, but carries no esptool, so it cannot program. It is
+   *  DOWNLOADED, not deployed, so a bench can be a month behind and look
+   *  healthy — and the failure it produces is the agent's own 404 on `/esp`,
+   *  reported as "no such path" after a device is already in the socket
+   *  (bench, 2026-09-17). Asking once at hello is the whole fix. */
+  const [agentStale, setAgentStale] = useState(false);
   useEffect(() => {
     const a = new MarkAgent();
     let alive = true;
     const beat = async () => {
       try {
-        await a.hello();
-        if (alive) setAgentUp(true);
+        const hello = await a.hello();
+        if (!alive) return;
+        setAgentUp(true);
+        setAgentStale(!canProgram(hello));
       } catch {
         if (alive) setAgentUp(false);
       }
@@ -221,6 +229,13 @@ export default function FlashBench() {
           <div className="banner-warn">
             The bench agent is not running on this machine. It does all the serial work, so
             nothing can be programmed until it is started.
+          </div>
+        ) : agentStale ? (
+          <div className="banner-error">
+            <strong>This machine is running an old bench agent.</strong> It cannot program —
+            it has no esptool inside it, and a run would fail part-way with{" "}
+            <span className="mono">no such path</span>. Download it again from the Marking
+            page and replace the copy in Applications, then restart it.
           </div>
         ) : null}
         {error ? <ErrorBanner message={error} /> : null}
