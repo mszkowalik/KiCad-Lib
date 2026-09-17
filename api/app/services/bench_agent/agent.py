@@ -761,19 +761,45 @@ def watch_monitor(agent: "Agent") -> None:
             say(f"console watch: {exc}")
 
 
+def printer_snapshot(agent: "Agent") -> dict:
+    """One full look at the printers, the slow way, kept on the agent.
+
+    THIS IS THE ONLY PLACE THAT ASKS CUPS FOR THE PICTURE. `lpinfo -l -v`
+    walks every backend, including the network ones, and took 5.5 s on a
+    laptop with nothing plugged in (2026-09-17). Until this existed the window
+    tick, the status page, `/ready` and the watcher each ran it on their own,
+    at once, on top of one another: `/ready` answered in 25 s, the status page
+    in 31 s, and the window — whose tick ran it on Tk's main thread — hung for
+    most of every cycle. On an 8 GB machine that was the whole bench.
+
+    The lock keeps two callers from launching two scans; the second waits and
+    then takes its own, so a button press still reads the truth.
+    """
+    with agent.printers_lock:
+        plan = printer_plan()
+        snap = {"plan": plan, "printers": list_printers(), "at": time.time()}
+        agent.printers = snap
+        agent.printers_ready.set()
+        return snap
+
+
 def watch_printers(agent: "Agent") -> None:
-    """Give a printer with a driver a queue, without being asked.
+    """Keep the printer snapshot fresh, and give a printer with a driver a
+    queue without being asked.
 
     ONLY a printer that has NO queue. Repointing one that exists is left to the
     button, because creating something absent and changing something present are
     different acts — the second may be undoing a choice somebody made.
 
     It is a watcher rather than a one-off at start because the printer is
-    usually plugged in after the agent is already running.
+    usually plugged in after the agent is already running. Every status view
+    reads `agent.printers` and never asks CUPS itself; `agent.printers_wake`
+    brings the next look forward.
     """
     while True:
         try:
-            for row in printer_plan():
+            made = False
+            for row in printer_snapshot(agent)["plan"]:
                 if row["state"] != "no_queue" or row["uri"] in TRIED_SETUP:
                     continue
                 TRIED_SETUP.add(row["uri"])
@@ -782,9 +808,13 @@ def watch_printers(agent: "Agent") -> None:
                     say(f"could not set {row['model']} up by itself: {out['error']}")
                 else:
                     say(f"{row['model']} had no queue — made {out['queue']}")
+                    made = True
+            if made:
+                printer_snapshot(agent)
         except Exception as exc:  # noqa: BLE001 — a watcher must not die
             say(f"printer watch: {exc}")
-        time.sleep(SETUP_EVERY_S)
+        agent.printers_wake.wait(SETUP_EVERY_S)
+        agent.printers_wake.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -835,9 +865,9 @@ def bench_actions(agent: "Agent", facts: list) -> dict:
         # thing on demand, for the operator who quit it mid-shift.
         actions["LightBurn"] = [_act("do", "Open LightBurn", "/lightburn/open")]
 
-    # The printer, in whatever state it is in. `printer_plan` does the thinking;
-    # this turns each state into the next thing to press.
-    for row in printer_plan():
+    # The printer, in whatever state it is in. `printer_plan` does the thinking,
+    # on the watcher; this turns each state into the next thing to press.
+    for row in agent.printers.get("plan", []):
         if row["state"] == "ready":
             continue
         if row["state"] == "no_queue":
@@ -855,14 +885,20 @@ def bench_actions(agent: "Agent", facts: list) -> dict:
     return actions
 
 
-def printer_facts() -> list:
+def printer_facts(agent: "Agent") -> list:
     """The Printer line, said properly.
 
     `list_printers` reports the QUEUES this machine has. On a new bench there
     are none and the interesting thing is the printer that is plugged in with
     nothing set up for it — which is what the operator is looking at.
+
+    Read from the watcher's snapshot, never from CUPS: this runs on the window's
+    main thread once a second.
     """
-    plan = printer_plan()
+    snap = agent.printers
+    if not snap:
+        return [("Printer", "dim", "asking…")]
+    plan = snap["plan"]
     rows = []
     for row in plan:
         if row["state"] == "no_driver":
@@ -871,7 +907,7 @@ def printer_facts() -> list:
             rows.append(("Printer", "warn", row["detail"]))
     if rows:
         return rows
-    printers = list_printers()
+    printers = snap["printers"]
     if not printers:
         return [("Printer", "warn",
                  "no printer on this machine, and none plugged in")]
@@ -1346,6 +1382,14 @@ class Agent:
         # so a copy moved between benches still answers. Only these are set up
         # in Chrome, so only these are worth reporting on.
         self.setup_origins: "set[str]" = set()
+        # The printer watcher's last look: {"plan", "printers", "at"}. Every
+        # status view reads THIS and never asks CUPS itself — `printer_snapshot`
+        # says what it cost when they did. `printers_ready` is set once the
+        # first look is in; `printers_wake` brings the next one forward.
+        self.printers: dict = {}
+        self.printers_lock = threading.Lock()
+        self.printers_ready = threading.Event()
+        self.printers_wake = threading.Event()
 
     # -- LightBurn ----------------------------------------------------------
 
@@ -1770,9 +1814,12 @@ class Handler(BaseHTTPRequestHandler):
                 for n, st, d in facts]}, origin)
         if url.path == "/printers":
             queue = (parse_qs(url.query).get("printer") or [""])[0]
-            plan = printer_plan()
-            return self.reply(200, {"printers": list_printers(),
-                                    "candidates": plan,
+            # The first look after start takes a few seconds; a page that asks
+            # before it is in waits for it rather than hearing "no printer".
+            self.agent.printers_ready.wait(30)
+            snap = self.agent.printers
+            return self.reply(200, {"printers": snap.get("printers", []),
+                                    "candidates": snap.get("plan", []),
                                     "rolls": rolls(queue) if queue else [],
                                     "default_roll": DEFAULT_ROLL}, origin)
         if url.path.startswith("/job/"):
@@ -1807,10 +1854,12 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=ensure_lightburn, args=(self.agent,),
                              daemon=True).start()
             out = {"opening": True}
-        elif path == "/printer/setup":
-            out = setup_printer(str(body.get("uri") or ""))
-        elif path == "/printer/remove":
-            out = remove_queue(str(body.get("queue") or ""))
+        elif path in ("/printer/setup", "/printer/remove"):
+            out = (setup_printer(str(body.get("uri") or "")) if path == "/printer/setup"
+                   else remove_queue(str(body.get("queue") or "")))
+            # Before answering, so the page this redirects to shows the queue
+            # it just made rather than the picture from ten seconds ago.
+            printer_snapshot(self.agent)
         elif path.startswith("/monitor/"):
             verb = path.rsplit("/", 1)[1]
             out = ({"open": self.agent.monitor_open, "write": self.agent.monitor_write,
@@ -2172,7 +2221,7 @@ def bench_facts(agent: "Agent", port: int) -> "list[tuple[str, str, str]]":
     else:
         out.append(("Laser", "bad", "no laser board on USB — is the marker powered on and plugged in?"))
 
-    out.extend(printer_facts())
+    out.extend(printer_facts(agent))
 
     ok, detail = chrome_policy_state(agent.setup_origins)
     out.append(("Chrome", "ok" if ok else "warn",

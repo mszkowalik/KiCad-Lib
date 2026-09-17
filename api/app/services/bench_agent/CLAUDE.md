@@ -92,6 +92,18 @@ and `bench_actions()` turns each state into a button on the status page.
 - **Actions are derived FROM the facts**, not from a second look at the world.
   Re-reading the health raced the probe `bench_facts` starts, and the page
   offered "Open LightBurn" beside a LightBurn that was answering.
+- **`bench_facts` spawns NOTHING. Every slow probe runs on a watcher, and the
+  facts read its last answer.** `lpinfo -l -v` walks every CUPS backend, the
+  network ones included, and takes 5.5 s on a laptop with nothing plugged in.
+  Until 2026-09-17 the window tick (on Tk's main thread, every second), the
+  status page (every 2 s), `/ready` and the printer watcher each ran it on
+  their own, on top of one another: `/ready` answered in 25 s, the status page
+  in 31 s, and the window hung for most of every cycle — "the agent is laggy
+  and unresponsive", on an 8 GB Mac unusable. Now `printer_snapshot` is the one
+  caller, `watch_printers` keeps `agent.printers` fresh every 10 s, and the
+  same routes answer in 0.05 s. A button that CHANGES a queue refreshes the
+  snapshot before it answers, so the redirect shows the truth. If a new fact
+  needs a subprocess that is not measured to be instant, put it on a watcher.
 - **A printer with a driver and no queue gets one, on a watcher, without being
   asked** (`watch_printers`). Only a queue that is ABSENT: repointing one that
   exists stays a button, because creating something missing and changing

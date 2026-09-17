@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-17 (the bench agent stops hanging)
+
+- **The 7Sigma agent no longer freezes.** Its window, its status page and the
+  bench's `/ready` call each asked CUPS for the printer picture on their own
+  and at once, and one of those calls (`lpinfo -l -v`) takes 5.5 s on a Mac
+  with nothing plugged in — the window ran it on its own main thread every
+  second. Measured before: `/ready` 25 s, the status page 31 s. After: both
+  under 0.1 s. One watcher now takes the picture every 10 s and everything else
+  reads it. **Benches have to download the agent again** — nothing updates it
+  in place, and `/hello` reports the same protocol as before because no route
+  changed.
+- **A printer button waits for its own result.** "Set up" and "Remove" refresh
+  the picture before the page reloads, so the queue they made is on it.
+
 ## 2026-09-17 (a device fetches from its own address)
 
 - **Berryware downloads work on production.** Step 16 of `Dongle_V2 config` had
