@@ -53,8 +53,11 @@ text applied to another.
   tiles across the top, then two columns (version timeline → the deployment's
   own fields and the selected version), with `DiffView` for comparisons.
   **`/production/files`** administers what a version PINS, one kind per tab
-  (`?tab=bundles|firmware|files`) — bundles first, because that is the unit
-  berryware ships in. `/production/artifacts` redirects there.
+  (`?tab=releases|artwork|firmware`; `bundles` and `files` are aliases of
+  `releases`) — releases first, because that is the unit berryware ships in.
+  Releases and drawings are platform wide, so those tabs have no project
+  selector; firmware keeps it. `?open=<set id>` opens one row, which is how
+  the version card links here. `/production/artifacts` redirects there.
   **`/production/parameters`** is what a version DEPENDS on and does not
   contain: the values, who needs each key, and the revision log (decision
   [0024](../../../../docs/decisions/0024-a-version-declares-the-parameters-it-needs.md)).
@@ -81,10 +84,10 @@ text applied to another.
      becomes a full rewrite of the version.
   4. **Firmware, berryware and artwork have no controls of their own**, and
      never did — a `flash` step picks its images, a `download_files` step its
-     bundle and a `mark_laser` step picks or UPLOADS its artwork, inside
+     release and a `mark_laser` step picks or UPLOADS its drawing, inside
      `StepEditor`. The Firmware and Files cards are summaries of what the
      procedure pinned. An artwork change is ONE patch carrying `steps` and
-     `file_version_ids` together (`changeArtwork` in `VersionView`), because a
+     `artwork_set_id` together (`changeArtwork` in `VersionView`), because a
      step naming a file the version does not pin is what the gate refuses.
   5. **The procedure opens read-only and `Edit procedure` turns editing on**
      (user request 2026-09-17). A published version offers `Edit as new
@@ -104,17 +107,20 @@ text applied to another.
   version a programming run records (a draft runs as a bench trial) — the UI
   falls back to `reject`, which keeps the row as history. The card offers
   `Delete this version` on anything not published.
-- **A flash step selects its firmware and a download step its bundle**, and
-  both write the VERSION's pins. Keep it that way: the version stays the single
-  definition of a payload (fingerprints, diffs and bundle identity all derive
-  from it) — the step editor only puts the controls where the work happens.
-- **Berryware reads as a BUNDLE, not a file list** (user feedback 2026-07-30).
-  The version view leads with one pill — bundle name + file count, green for a
-  named bundle and amber for an unnamed ad-hoc set — and puts the file table
-  behind a Show-files toggle. **The card is titled by `files_kind`** —
-  Berryware, Artwork or Files — and artwork gets a count, not a bundle pill;
-  the diff, the timeline line and the bench summary read the same field
-  (2026-09-17, after a mark version's drawing was labelled berryware).
+- **A flash step selects its firmware and a download step its release**, and
+  both write the VERSION's pins (`file_set_id` for the release,
+  `artwork_set_id` for the drawing — decision 0029). Keep it that way: the
+  version stays the single definition of a payload — the step editor only
+  puts the controls where the work happens. The pickers list every set on the
+  platform (`listFileSets`), because a set belongs to no project.
+- **Berryware reads as a RELEASE, not a file list** (user feedback 2026-07-30).
+  The version view leads with one pill per set — the release, green, and the
+  drawing, blue — each a link to its row on the Files page, and puts the file
+  table behind a Show-files toggle. **The card is titled by `files_kind`** —
+  Berryware, Artwork or Files; the diff, the timeline line and the bench
+  summary read `file_set` / `artwork_set` the same way (2026-09-17, after a
+  mark version's drawing was labelled berryware). There is no "unnamed set":
+  every set has a label, and one you did not name reads "N files".
   Deleting an artifact goes through the API's usage guard; surface the 409
   text, never pre-filter in the browser (the backend knows every reference).
 - **A `print_label` step DRAWS its label** (`LabelPreview`, 2026-09-17), from
@@ -128,16 +134,19 @@ text applied to another.
   server the CORS refusal is expected and the preview falls back to the
   roll's nominal size from its name (`w72h154` = 72 × 154 pt) and says so in
   the caption. Never guess a margin.
-- **The pool UPLOADS, it never pastes** (`DeviceFilesPanel`, user decision
-  2026-09-17). One `FilePick` on the toolbar (kind by extension), `Upload` on
-  an ARTWORK row only (`replace_file_id`, so the row keeps its name), nothing
-  on a berryware row — the Bundles tab's folder import is that update path.
-  The eye opens `FilePreview`, a popup with the LightBurn thumbnail
-  (`lbrnThumbnail` in `common.tsx`, also drawn in the marking step) and the
-  full text; a binary gets its size and Download. The row's × deletes the
-  NEWEST version and the server's 409 is the guard; the `Used` column prints
-  the same join before the click. **`components/FilePick.tsx` is the shared
-  file button** — never write another `<input type="file">`.
+- **The Files page is ONE panel for both kinds** (`FileSetsPanel`, `kind`
+  prop, 2026-09-18). A release enters by folder import or file upload, and
+  only ever changes by **Derive…** — a dialog that plans replacements,
+  additions, borrowings from another release and omissions, and sends them
+  as one `deriveFileSet` call; the base row is never edited. There is no
+  per-file upload and no paste. The row opens `SetDetail`: who pins it, and
+  the manifest with a "vs previous" cell read off the older sets. The eye
+  opens `FilePreview` (the LightBurn thumbnail via `lbrnThumbnail` in
+  `common.tsx`, then the text; a binary gets its size and Download). The
+  row's × deletes the SET and the server's 409 is the guard; the `Used by`
+  column prints the same join before the click.
+  **`components/FilePick.tsx` is the shared file button** — never write
+  another `<input type="file">`.
 - **The BATCH is the only mode control, and "no batch" is the bench trial**
   (user decision 2026-09-17). There used to be a `batch run` / `bench trial`
   dropdown beside the batch one, which made "batch run with no batch picked" a

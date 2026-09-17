@@ -421,24 +421,9 @@ _PHASE1_DDL = (
     ("users.theme",
      "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
      "theme varchar(10) NOT NULL DEFAULT 'system'"),
-    # The device-file pool holds two kinds of file — the berryware a device
-    # downloads and the artwork a mark version engraves — and until now nothing
-    # in the data told them apart, so every screen called both "berryware".
-    # Backfilled from the extension: a LightBurn project is the only artwork
-    # the platform has ever stored (decision 0026).
-    ("device_files.kind",
-     "ALTER TABLE device_files ADD COLUMN IF NOT EXISTS "
-     "kind varchar(20) NOT NULL DEFAULT 'berryware'"),
-    ("device_files.kind.backfill",
-     "UPDATE device_files SET kind = 'artwork' WHERE kind = 'berryware' "
-     "AND (lower(filename) LIKE '%%.lbrn' OR lower(filename) LIKE '%%.lbrn2')"),
-    # A file that is not UTF-8 text keeps its bytes as uploaded. Every version
-    # stored so far is text, so the default is a no-op migration.
-    ("device_file_versions.is_binary",
-     "ALTER TABLE device_file_versions ADD COLUMN IF NOT EXISTS "
-     "is_binary boolean NOT NULL DEFAULT false"),
-    ("device_file_versions.content_bytes",
-     "ALTER TABLE device_file_versions ADD COLUMN IF NOT EXISTS content_bytes bytea"),
+    # The device-file pool (`device_files`, `device_file_versions`) is gone:
+    # services/flasher/fileset_migrate.py folded it into blobs and file sets
+    # (decision 0029) and dropped the tables.
 )
 
 # name -> "ok" | "failed: ..."; served by GET /api/health/schema.
@@ -538,13 +523,10 @@ def _flasher_bundle_migration(conn) -> None:
         ("deployments", "chip", "varchar(30) NOT NULL DEFAULT ''"),
         ("deployment_versions", "flash_config", "jsonb"),
         ("deployment_versions", "firmware_fingerprint", "varchar(64) NOT NULL DEFAULT ''"),
-        ("deployment_versions", "files_fingerprint", "varchar(64) NOT NULL DEFAULT ''"),
-        ("deployment_versions", "files_label", "varchar(120) NOT NULL DEFAULT ''"),
         ("programming_runs", "firmware_fingerprint", "varchar(64) NOT NULL DEFAULT ''"),
         ("programming_runs", "files_fingerprint", "varchar(64) NOT NULL DEFAULT ''"),
         ("programming_runs", "draft_run", "boolean NOT NULL DEFAULT false"),
         ("production_runs", "deployment_channel", "varchar(40) NOT NULL DEFAULT ''"),
-        ("deployment_versions", "berry_bundle_id", "integer"),
     ):
         conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {typ}"))
 
@@ -936,6 +918,11 @@ def startup() -> None:
     from .services.proglog_migrate import migrate as migrate_proglog_pk
 
     migrate_proglog_pk(engine)
+    # The per-file version pool becomes blobs + file sets (decision 0029).
+    # Runs after create_all built the three new tables; one transaction,
+    # checked before the old tables are dropped, reported on /health/schema.
+    from .services.flasher.fileset_migrate import migrate as migrate_file_sets
+    migrate_file_sets(engine)
     _migrate_run_sales()
     try:
         from .db import SessionLocal
@@ -1169,9 +1156,11 @@ def health_schema():
     """
     from .services.datasheet_migrate import RESULT as _DOC_MIGRATION
     from .services.proglog_migrate import RESULT as _PROGLOG_MIGRATION
+    from .services.flasher.fileset_migrate import RESULT as _FILESET_MIGRATION
 
     _SCHEMA_RESULTS.update(_DOC_MIGRATION)
     _SCHEMA_RESULTS.update(_PROGLOG_MIGRATION)
+    _SCHEMA_RESULTS.update(_FILESET_MIGRATION)
     failed = {k: v for k, v in _SCHEMA_RESULTS.items() if v not in ("ok", "skipped")}
     return {
         "ok": not failed,

@@ -1,5 +1,39 @@
 # Changelog
 
+## 2026-09-18 (a release is one thing)
+
+- **Production → Files lists releases, not file versions.** A berryware
+  release is one row: its files, its size, which deployment versions pin it,
+  and per file whether it is the same as the newest older release that
+  carried that name. The per-file pool with a version number on every script
+  is gone, and so are the bundles beside it — a release IS the set
+  ([decision 0029](docs/decisions/0029-a-release-is-a-file-set.md)).
+  Releases are platform wide: the same folder imported for two projects is
+  one row, and the same driver JSON is stored once.
+- **Derive… makes a release from a release.** Replace or add files by
+  upload, borrow files from any other release, leave some out, name the
+  result. The base is untouched. This replaces both "upload a new version of
+  one file" and "name a set of stored files".
+- **Artwork has its own tab.** One LightBurn file is one drawing; a marking
+  step picks a drawing or uploads one, and the version pins it the same way
+  it pins a release.
+- **A version card shows one pill per set** — the release and the drawing —
+  each linking to its row on the Files page. The device URL is now
+  `/api/flasher/files/{set}/{filename}`; every stored procedure uses the
+  default template, so nothing had to be re-published.
+- **Old links keep working**: `?tab=bundles` and `?tab=files` open the
+  releases tab.
+
+## 2026-09-18 (a shield tab is not a missing pin)
+
+- **Six shielded connectors stop reading `failed`.** `cmp.pins_to_pads` dropped
+  the non-electrical pad names `MP` and `SH` from the footprint's pads but not
+  from the symbol's pins, so every connector drawing the house `SH` shield pin
+  reported one pin with nowhere to land — `GT-USB-7010ASV`, `HR913550A`,
+  `NANO_SIM_TL6P_H1.35`, `R-RJ45S08P-B000`, `RC01812` and
+  `U262-161N-4BVC11`. Their raw pin and pad numbers matched exactly in every
+  case. The names now leave both sets.
+
 ## 2026-09-17 (the stock count has a screen)
 
 - **Production → Orders can count the shelf.** Paste what a scanner read —

@@ -478,7 +478,7 @@ export default function BenchStation(props: StationSlotProps) {
       out = await runMarkJob(
         apiBaseUrl(),
         {
-          fileVersionId: file.device_file_version_id,
+          fileSetId: file.set_id,
           filename: file.filename,
           value,
           // Stated, never guessed: the step's own, else the platform's.

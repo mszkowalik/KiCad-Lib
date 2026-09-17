@@ -39,7 +39,7 @@ from ...config import settings
 from ...db import SessionLocal
 from ... import models as M
 from .. import crypto
-from . import checks, credentials, params as params_svc, protocol, transports
+from . import checks, credentials, params as params_svc, protocol, transports, bundle
 
 BROWSER_OPS = {
     "esp_connect", "erase", "flash", "esp_reset", "await_reenumerate",
@@ -52,7 +52,7 @@ SECRET_RE = re.compile(r"password|pin|salt|secret|token", re.I)
 # Default URL template for the files the DEVICE fetches. A step may carry its
 # own `url`; both go through `RunEngine._url`, so `{base_url}` means the same
 # thing in either. See `_resolve_base_url` for where that value comes from.
-FILE_URL_TEMPLATE = "{base_url}/api/flasher/files/{file_version_id}/{filename}"
+FILE_URL_TEMPLATE = "{base_url}/api/flasher/files/{file_set_id}/{filename}"
 # The text a marking template carries where the serial goes. A step names its
 # own with `placeholder`; these are what the CE artwork has always used, tried
 # in order. They lived in the BROWSER until 2026-09-17, which meant a constant
@@ -192,15 +192,17 @@ class RunEngine:
                 }
                 for img in v.images
             ]
+            # The berryware release first, then the artwork: two sets, each
+            # an ordered manifest, and the set id is what the URL names.
             files = [
                 {
-                    "version_id": link.file_version.id,
-                    "filename": link.file_version.file.filename,
-                    "kind": link.file_version.file.kind or "berryware",
-                    "size_bytes": link.file_version.size_bytes,
-                    "sha256": link.file_version.sha256,
+                    "set_id": e.file_set_id,
+                    "filename": e.filename,
+                    "kind": kind,
+                    "size_bytes": e.blob.size_bytes,
+                    "sha256": e.blob.sha256,
                 }
-                for link in sorted(v.files, key=lambda f: f.position)
+                for e, kind in bundle.version_entries(v)
             ]
             params: dict[str, Any] = {}
             if v.param_defaults:
@@ -951,7 +953,7 @@ class RunEngine:
         value = self._identity_value(step, "mark_laser")
 
         args = {
-            "file_version_id": match["version_id"],
+            "file_set_id": match["set_id"],
             "filename": match["filename"],
             "value": value,
             "start": bool(step.get("start", True)),
@@ -1038,8 +1040,7 @@ class RunEngine:
         per_file_timeout = float(step.get("timeout", 30))
         retries = int(step.get("retries", 3))
         for f in files:
-            url = self._url(template, file_version_id=f["version_id"],
-                            filename=f["filename"])
+            url = self._url(template, file_set_id=f["set_id"], filename=f["filename"])
             ok = False
             for attempt in range(1, retries + 1):
                 resp = await self.send_command("UrlFetch", url, "UrlFetch", per_file_timeout)

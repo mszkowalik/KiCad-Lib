@@ -6,7 +6,7 @@ Production programming. The wider design is in
 
 ## The load-bearing rules
 
-Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its history).
+Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model it replaced, §13 = the history before that).
 
 - **`programming_logs` is keyed by `(run_id, seq)` and has NO surrogate id**
   (2026-09-12, `services/proglog_migrate.py`). It is the largest row count in
@@ -44,18 +44,55 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
 
 
 - **ONE revision binds everything: the DEPLOYMENT VERSION.** It pins firmware
-  images (`deployment_images`), berryware (`deployment_files` → exact
-  `device_file_versions`), the procedure (`steps`), and the parameter wiring.
-  The `Release` entity was folded in and DROPPED (2026-07-29) — its identity
-  is now a derived **fingerprint**, so "firmware unchanged since v5" needs no
-  second versioned object. Never reintroduce a parallel versioned wrapper
-  around firmware; add a fingerprint if you need to compare.
-- **Fingerprints are cache, never authority.** `bundle.stamp()` recomputes
-  both from the child rows; call it after ANY change to images or files.
-  `firmware_fingerprint` is order-sensitive (address+sha), `files_fingerprint`
-  is a set (reordering downloads is a procedure change, not a payload change).
-  Equal file fingerprints mean the same berryware bundle — that is how every
-  historical V2 set recovered its real name by propagation.
+  images (`deployment_images`), a berryware release (`file_set_id`), a
+  drawing (`artwork_set_id`), the procedure (`steps`), and the parameter
+  wiring. The `Release` entity was folded in and DROPPED (2026-07-29) — its
+  identity is a derived **fingerprint**, so "firmware unchanged since v5"
+  needs no second versioned object. Never reintroduce a parallel versioned
+  wrapper around firmware; add a fingerprint if you need to compare.
+- **A RELEASE IS A FILE SET, and a file has no version of its own**
+  (2026-09-18, decision
+  [0029](../../../../docs/decisions/0029-a-release-is-a-file-set.md)).
+  `file_blobs` is bytes keyed by sha256, platform wide; `file_sets` is an
+  immutable manifest of `(filename, blob)` whose `fingerprint` is its
+  identity, unique on the platform, with a `kind` (`berryware` | `artwork`)
+  decided from the extensions of the whole manifest — a mix is refused. A set
+  is NOT project-scoped: the same folder imported for two projects is one
+  row. `bundle.ensure_set` is the ONE constructor (import, derive, migration);
+  `bundle.version_entries` is the one reader of "what does this version pin",
+  and the engine, the validator, `checks._pinned_files` and every JSON go
+  through it. There is no draft state on a set, so nothing here publishes.
+  Five things follow:
+
+  1. **`bundle.stamp()` recomputes the FIRMWARE fingerprint only**, after any
+     change to images. The files need no cache — the set's fingerprint is on
+     the set. A run stamps `bundle.version_files_fingerprint(v)`, which is the
+     old formula over both sets, so historical run stamps still match.
+  2. **`_pick_set` in `routers/flasher.py` is the one place a version's set
+     pointer is resolved**: `None` inherits, a negative id clears (a PATCH
+     sends explicit `null`), and the set's kind must match the field — a
+     drawing pinned as berryware would reach the device as a download.
+  3. **A set enters by `POST /file-sets/import` or `POST /file-sets/{id}/derive`.**
+     Derive copies a manifest, applies uploads (replace by name or add),
+     borrows entries from any other set (`take`), drops names (`remove`), and
+     runs `ensure_set` on the result — so deriving back to an existing
+     manifest FINDS that set rather than forking it. There is no paste
+     endpoint and no per-file endpoint.
+  4. **Delete is per set, guarded by `bundle.set_users`** — the same join the
+     list prints as `used_by`. Any deployment version, draft or published,
+     refuses it with 409 naming them. `bundle.prune_blobs` runs after a
+     delete: a blob no set names is bytes, not history.
+  5. **Text is stored LF-normalised (`bundle.normalise_text`) and a non-UTF-8
+     upload (or one with a NUL) is kept as bytes** with `is_binary` set — the
+     column is `is_binary` because `binary` is reserved in SQL; the JSON key
+     is still `binary`. Content addressing only pays off if the same source
+     always yields the same hash.
+
+  `services/flasher/fileset_migrate.py` did the fold once, in one checked
+  transaction, and reports on `/api/health/schema` as `file_sets.fold`. It
+  dropped `device_files`, `device_file_versions`, `berry_bundles`,
+  `berry_bundle_files` and `deployment_files`; do not add DDL for any of them
+  back.
 - **A version DECLARES the parameters it needs; the values keep a revision log**
   (2026-09-17, decision
   [0024](../../../../docs/decisions/0024-a-version-declares-the-parameters-it-needs.md)).
@@ -104,7 +141,7 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
 
 - **`validate.check()` is the single gate.** The live composer and the publish
   button call the same function, so the editor can never disagree with the
-  refusal. Errors block publishing (unpublished pins, chip/transport mismatch,
+  refusal. Errors block publishing (chip/transport mismatch,
   overlapping flash offsets, unresolved `{placeholder}` or assert variable,
   autoexec.be not last, serial op before `serial_open`); warnings inform.
   Publishing also requires a comment. **A new step op has to be declared in
@@ -112,39 +149,11 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
   rules here, `STEP_OPS` in `routers/flasher.py` (which refuses an unknown op on
   compose, with a 400 that says nothing about the other three) and
   `web/src/components/flasher/stepSchema.ts` so the editor can author it.
-- **Device file text is stored LF-normalised** (`_normalise_text`). A CRLF file
-  read as bytes hashes differently from the same file read as text, which made
-  five V3 files report "changed" on every import when nothing had. Content
-  addressing only pays off if the same source always yields the same hash.
-  **A file that is not UTF-8 text (or carries a NUL) is kept as bytes** in
-  `content_bytes` with `is_binary` set and served as bytes (2026-09-17). The
-  column is `is_binary` because `binary` is a reserved word in SQL; the JSON
-  key is still `binary`.
-- **A device file has a KIND, fixed at upload: `berryware` or `artwork`**
-  ([0026](../../../../docs/decisions/0026-a-device-file-carries-its-kind-and-enters-by-upload.md)).
-  `_kind_for` decides it from the extension, or from the `kind` the caller
-  asked for — `artwork` is refused unless the file is `.lbrn`/`.lbrn2`. The
-  engine hands the device only berryware (`download_files`) and the laser only
-  artwork (`mark_laser`); `validate.check` reads the same split, and
-  `bundle.files_kind` is the one word the UI labels a card with.
-  **`POST …/device-files/import` is the way a file enters the pool**, one file
-  or a folder: `make_bundle=false` for a single upload (artwork never joins a
-  bundle either way), `replace_file_id` for a new version of THAT row under
-  its own name. It publishes. The paste endpoint remains for API callers and
-  still makes a DRAFT. Delete is per version and the usage join that guards it
-  is the same one `list_device_files` prints as `used` / `used_by`.
-- **Deleting an artifact is usage-guarded, and the guard lives in the API.**
-  A firmware asset pinned by any deployment version, a bundle used by any
-  version, a device file version pinned by a version or a bundle: all refuse
-  with 409 and name the users. Programming runs record what they flashed, so
-  the pinned artifacts must outlive any tidy-up. `_firmware_usage` /
-  `_file_version_usage` are the single source for those answers — reuse them
-  rather than re-deriving a join per call site.
-- **A bundle's file SET is its identity; only the label is editable.** A
-  different set is a different bundle (`ensure_bundle` resolves by fingerprint,
-  so the same folder never forks a twin). Renaming one updates
-  `files_label` on every version using it, because the version DISPLAYS the
-  bundle's name rather than storing its own.
+- **Deleting a firmware asset is usage-guarded, and the guard lives in the
+  API.** An asset pinned by any deployment version refuses with 409 and names
+  the users; `_firmware_usage` is the single source for that answer. A file
+  set has the same rule through `bundle.set_users` (above). Programming runs
+  record what they flashed, so the pinned artifacts must outlive any tidy-up.
 - **A setting that decides what happens to HARDWARE lives on the platform, and
   preferably on the STEP** (2026-09-17, user decision). Four of them were
   TypeScript constants in the browser bundle, so changing any one meant a web
@@ -176,9 +185,8 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
   rejected row behind forever. It refuses for `published` — that is what a
   device was given — and for any version a `ProgrammingRun` records, since a
   draft runs as a bench trial. `reject` stays beside it for that case: the row
-  is kept as history. The ORM cascade is what removes the version's images and
-  files, so the delete has to go through the endpoint — raw SQL hits the
-  `deployment_files` foreign key.
+  is kept as history. The ORM cascade is what removes the version's images,
+  so the delete has to go through the endpoint.
 - **Channels are pointers, history is immutable.** `deployment_channels` name a
   version (`production`, `bench`); rolling back moves a channel. A batch pins a
   version or follows a channel; run creation resolves it and records the
@@ -253,15 +261,16 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
   every value it ever carried: three keys written four times printed twelve
   rows that read like twelve settings. Earlier values stay in
   `device_config_values` and are still reachable through their own run.
-- **`GET /api/flasher/files/{version_id}/{filename}` is deliberately
-  unauthenticated** — the DEVICE fetches it with Tasmota's `UrlFetch`, which
-  sends no auth headers. Published versions only; the URL ends with the
-  filename because Tasmota saves by the last path segment.
+- **`GET /api/flasher/files/{set_id}/{filename}` is deliberately
+  unauthenticated** (`authgate._OPEN_PREFIXES`) — the DEVICE fetches it with
+  Tasmota's `UrlFetch`, which sends no auth headers, and the bench fetches
+  the artwork from it. The URL ends with the filename because Tasmota saves
+  by the last path segment.
 
 - **An op that makes the device fetch something builds its URL in
   `RunEngine._url`, never by gluing a base onto a path** (2026-09-16). The op
   takes an optional `url` template, `{base_url}` resolves inside it, and the
-  per-item names it adds (`file_version_id`, `filename` for `download_files`)
+  per-item names it adds (`file_set_id`, `filename` for `download_files`)
   are declared in `validate.OP_LOCAL_VARS` — without that row the dataflow gate
   rejects a correct step. Add both in the same change as the op.
 
@@ -360,9 +369,10 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
   [0020](../../../../docs/decisions/0020-marking-goes-through-lightburn.md)). A
   marking procedure is an ordinary deployment version with `kind = "mark"`: its
   own steps, its own history rows, the same publish gate. The template is a
-  pinned DEVICE FILE, like berryware, so the version still answers "which
-  drawing did this unit get" — that is why there is no `marking_templates`
-  table, and why adding one would fork the answer. The engine names the file and
+  pinned ARTWORK SET — one `.lbrn2` per set, `artwork_set_id` beside the
+  berryware `file_set_id` — so the version still answers "which drawing did
+  this unit get"; that is why there is no `marking_templates` table, and why
+  adding one would fork the answer. The engine names the file and
   the text; the BENCH fetches the artwork, patches the one text shape, and
   relays the finished job to the bench agent. The engine never touches the XML
   and never sees the laser. Read

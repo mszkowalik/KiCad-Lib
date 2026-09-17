@@ -4110,49 +4110,64 @@ export interface DeploymentImageRow {
   build_label: string;
 }
 
-export interface DeviceFileVersionRow {
+/** The short form a version carries for a pinned set: enough to label a
+ *  pill and link to the release. */
+export interface FileSetRef {
   id: number;
-  version_no: number;
-  status: string;
-  sha256: string;
+  kind: string;
+  label: string;
+  fingerprint: string;
+  file_count: number;
+}
+
+/** One file of a set, or one file a version pins — the same row either way.
+ *  `set_id` is what the device URL names; there is no per-file version. */
+export interface VersionFileRow {
+  set_id: number;
+  filename: string;
+  kind: string;
+  position: number;
   size_bytes: number;
+  sha256: string;
+  binary: boolean;
+  blob_id: number;
+  /** on a set's own listing: the newest older set of the same kind that
+   *  carried this name, and whether the content is the same */
+  previous?: { set_id: number; label: string; same: boolean } | null;
+  /** on the entry endpoint: the text, or "" for a binary */
+  content?: string;
+}
+
+/** A RELEASE: an immutable manifest of files, platform wide, identified by
+ *  its fingerprint. `berryware` is what the device downloads; `artwork` is
+ *  what the laser engraves (one drawing per set). Decision 0029. */
+export interface FileSetRow {
+  id: number;
+  kind: string;
+  label: string;
+  fingerprint: string;
   comment: string;
   created_by: string;
   created_at: string | null;
-  /** Not UTF-8 text: `content` is empty and the bytes are at `deviceFilePath`. */
-  binary: boolean;
-  content?: string;
-  /** What pins this exact version — the list endpoint fills it in. A version
-   *  with neither is the one Delete may take. */
-  used_by?: { versions: number; bundles: number };
+  file_count: number;
+  size_bytes: number;
+  /** the manifest's names, in download order — an artwork set has one */
+  filenames: string[];
+  /** deployment versions pinning it — draft or published, current or not */
+  used_by: number;
+  /** deep form only */
+  users?: FileSetUser[];
+  files?: VersionFileRow[];
 }
 
-/** One file of the project pool. `kind` says what it IS: `berryware` (the
- *  device downloads it) or `artwork` (a mark version engraves it). */
-export interface DeviceFileRow {
-  id: number;
-  filename: string;
-  description: string;
-  kind: string;
-  current_version_id: number | null;
-  /** any version of it is pinned by a deployment version or carried by a bundle */
-  used: boolean;
-  versions: DeviceFileVersionRow[];
-}
-
-/** One device file pinned inside a deployment version — berryware or artwork. */
-export interface DeploymentFileRow {
-  device_file_version_id: number;
-  device_file_id: number;
-  filename: string;
-  kind: string;
-  binary: boolean;
+export interface FileSetUser {
+  version_id: number;
   version_no: number;
   status: string;
-  size_bytes: number;
-  sha256: string;
-  position: number;
-  comment: string;
+  deployment: string;
+  deployment_id: number;
+  project: string;
+  project_id: number;
 }
 
 /** What moved between two versions — drives the timeline and the publish diff. */
@@ -4188,9 +4203,9 @@ export interface DeploymentVersionRow {
   param_set_id: number | null;
   param_defaults: Record<string, unknown> | null;
   firmware_fingerprint: string;
-  files_fingerprint: string;
-  files_label: string;
-  berry_bundle_id: number | null;
+  /** the berryware release and the artwork drawing this version pins */
+  file_set: FileSetRef | null;
+  artwork_set: FileSetRef | null;
   created_at: string | null;
   image_count: number;
   file_count: number;
@@ -4203,7 +4218,7 @@ export interface DeploymentVersionRow {
   needs_sim_pin: boolean;
   /** present on the deep payloads */
   images?: DeploymentImageRow[];
-  files?: DeploymentFileRow[];
+  files?: VersionFileRow[];
   steps?: Record<string, unknown>[];
   param_set_name?: string | null;
   changes?: VersionChanges;
@@ -4273,7 +4288,11 @@ export interface DeploymentDiff {
   from: { id: number; version_no: number } | null;
   to: { id: number; version_no: number };
   images: (DiffSide<DeploymentImageRow> & { address: string })[];
-  files: (DiffSide<DeploymentFileRow> & { filename: string })[];
+  files: (DiffSide<VersionFileRow> & { filename: string })[];
+  file_set_before?: FileSetRef | null;
+  file_set_after?: FileSetRef | null;
+  artwork_set_before?: FileSetRef | null;
+  artwork_set_after?: FileSetRef | null;
   steps_changed: boolean;
   steps_before?: Record<string, unknown>[];
   steps_after?: Record<string, unknown>[];
@@ -4291,16 +4310,15 @@ export interface ComposeBody {
   comment?: string;
   created_by?: string;
   images?: { firmware_asset_id: number; address: string }[];
-  file_version_ids?: number[];
-  files_label?: string;
+  /** the sets to pin; null clears, undefined inherits (on compose) or leaves alone (on patch) */
+  file_set_id?: number | null;
+  artwork_set_id?: number | null;
   steps?: Record<string, unknown>[];
   param_set_id?: number | null;
   param_defaults?: Record<string, unknown> | null;
   transport_profile?: string;
   monitor_baud?: number;
   flash_config?: Record<string, string> | null;
-  berry_bundle_id?: number | null;
-  latest_files?: boolean;
 }
 
 /** One published version that needs a key from this set. */
@@ -4685,102 +4703,102 @@ export function setDeploymentChannel(
   });
 }
 
-export function listDeviceFiles(projectId: number, signal?: AbortSignal): Promise<DeviceFileRow[]> {
-  return request(`/api/flasher/projects/${projectId}/device-files`, { signal });
+/** Every set on the platform, newest first — optionally one kind. */
+export function listFileSets(kind?: string, signal?: AbortSignal): Promise<FileSetRow[]> {
+  return request(`/api/flasher/file-sets${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`, { signal });
 }
 
-/** The bytes of a PUBLISHED file version — what the device downloads and what
- *  the pool's Download link opens. Unauthenticated on purpose (the device
- *  sends no headers), so it needs no credentials to link to. */
-export function deviceFilePath(versionId: number, filename: string): string {
-  return `${API_URL}/api/flasher/files/${versionId}/${encodeURIComponent(filename)}`;
+export function getFileSet(setId: number, signal?: AbortSignal): Promise<FileSetRow> {
+  return request(`/api/flasher/file-sets/${setId}`, { signal });
 }
 
-export function createDeviceFileVersion(
-  projectId: number,
-  body: { filename: string; description?: string; content: string; comment?: string; created_by?: string },
-): Promise<DeviceFileVersionRow & { file_id: number }> {
-  return request(`/api/flasher/projects/${projectId}/device-files`, {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify(body),
-  });
-}
-
-export function getDeviceFileVersion(
-  versionId: number,
+/** One file's text, for a preview or the LightBurn thumbnail. */
+export function getFileSetEntry(
+  setId: number,
+  filename: string,
   signal?: AbortSignal,
-): Promise<DeviceFileVersionRow & { file_id: number; filename: string; content: string }> {
-  return request(`/api/flasher/device-file-versions/${versionId}`, { signal });
+): Promise<VersionFileRow & { content: string }> {
+  return request(`/api/flasher/file-sets/${setId}/entries/${encodeURIComponent(filename)}`, { signal });
 }
 
-export function publishDeviceFileVersion(
-  versionId: number,
-  approvedBy = "",
-): Promise<DeviceFileVersionRow> {
-  return request(`/api/flasher/device-file-versions/${versionId}/publish`, {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ approved_by: approvedBy }),
-  });
+/** The bytes of one file of a set — what the device downloads and what the
+ *  bench fetches to mark. Unauthenticated on purpose (the device sends no
+ *  headers), so it needs no credentials to link to. */
+export function fileSetFilePath(setId: number, filename: string): string {
+  return `${API_URL}/api/flasher/files/${setId}/${encodeURIComponent(filename)}`;
 }
 
-export function rejectDeviceFileVersion(versionId: number): Promise<{ ok: boolean }> {
-  return request(`/api/flasher/device-file-versions/${versionId}/reject`, {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify({}),
-  });
-}
-
-export interface BerryBundleRow {
-  id: number;
-  label: string;
-  files_fingerprint: string;
-  comment: string;
-  created_by: string;
-  created_at: string | null;
-  file_count: number;
-  used_by: number;
-  files: {
-    device_file_version_id: number;
-    filename: string;
-    version_no: number;
-    size_bytes: number;
-    sha256: string;
-  }[];
-}
-
-export function listBerryBundles(projectId: number, signal?: AbortSignal): Promise<BerryBundleRow[]> {
-  return request(`/api/flasher/projects/${projectId}/berry-bundles`, { signal });
-}
-
-export function createBerryBundle(
-  projectId: number,
-  body: { label: string; file_version_ids: number[]; comment?: string; created_by?: string },
-): Promise<BerryBundleRow> {
-  return request(`/api/flasher/projects/${projectId}/berry-bundles`, {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify(body),
-  });
-}
-
-/** Rename or annotate. The file SET is the identity — a different set is a
- *  different bundle, so it is never editable here. */
-export function patchBerryBundle(
-  bundleId: number,
+/** Rename or annotate. The manifest is the identity and never changes — a
+ *  different set of files is a different set (derive one). */
+export function patchFileSet(
+  setId: number,
   body: { label?: string; comment?: string },
-): Promise<BerryBundleRow> {
-  return request(`/api/flasher/berry-bundles/${bundleId}`, {
+): Promise<FileSetRow> {
+  return request(`/api/flasher/file-sets/${setId}`, {
     method: "PATCH",
     headers: JSON_HEADERS,
     body: JSON.stringify(body),
   });
 }
 
-export function deleteBerryBundle(bundleId: number): Promise<{ ok: boolean }> {
-  return request(`/api/flasher/berry-bundles/${bundleId}`, { method: "DELETE" });
+export function deleteFileSet(setId: number): Promise<{ ok: boolean; blobs_pruned: number }> {
+  return request(`/api/flasher/file-sets/${setId}`, { method: "DELETE" });
+}
+
+export interface ImportedFile {
+  filename: string;
+  size_bytes: number;
+  sha256: string;
+  /** whether the bytes were new to the platform */
+  state: "new" | "existing";
+}
+
+export interface FileSetImportResult {
+  set: FileSetRow;
+  /** false when the exact manifest already existed and was reused */
+  created: boolean;
+  files: ImportedFile[];
+  changes: { replaced?: string[]; added?: string[]; removed?: string[]; borrowed?: string[] };
+}
+
+/** A whole folder or one file, the same path: unchanged bytes are reused
+ *  and the manifest becomes a set — or finds the one that already exists.
+ *  `kind: "artwork"` is what the marking step's upload asks for; the server
+ *  refuses anything that is not a LightBurn file. */
+export function importFileSet(
+  files: File[],
+  meta: { label?: string; comment?: string; created_by?: string; kind?: string } = {},
+): Promise<FileSetImportResult> {
+  const form = new FormData();
+  for (const f of files) form.append("files", f);
+  if (meta.label) form.append("label", meta.label);
+  if (meta.comment) form.append("comment", meta.comment);
+  if (meta.created_by) form.append("created_by", meta.created_by);
+  if (meta.kind) form.append("kind", meta.kind);
+  return request(`/api/flasher/file-sets/import`, { method: "POST", body: form });
+}
+
+/** A new set from an existing one: swap or add files by upload, borrow files
+ *  from any other set, leave some out. The base is untouched. */
+export function deriveFileSet(
+  setId: number,
+  body: {
+    files?: File[];
+    remove?: string[];
+    take?: { set_id: number; filename: string }[];
+    label?: string;
+    comment?: string;
+    created_by?: string;
+  },
+): Promise<FileSetImportResult> {
+  const form = new FormData();
+  for (const f of body.files ?? []) form.append("files", f);
+  form.append("remove", JSON.stringify(body.remove ?? []));
+  form.append("take", JSON.stringify(body.take ?? []));
+  if (body.label) form.append("label", body.label);
+  if (body.comment) form.append("comment", body.comment);
+  if (body.created_by) form.append("created_by", body.created_by);
+  return request(`/api/flasher/file-sets/${setId}/derive`, { method: "POST", body: form });
 }
 
 export function patchFirmware(
@@ -4803,61 +4821,6 @@ export function getFirmwareUsage(
   signal?: AbortSignal,
 ): Promise<{ versions: { deployment: string; version_no: number; version_id: number }[] }> {
   return request(`/api/flasher/firmware/${assetId}/usage`, { signal });
-}
-
-export function deleteDeviceFileVersion(versionId: number): Promise<{ ok: boolean }> {
-  return request(`/api/flasher/device-file-versions/${versionId}`, { method: "DELETE" });
-}
-
-export function getDeviceFileVersionUsage(
-  versionId: number,
-  signal?: AbortSignal,
-): Promise<{
-  versions: { deployment: string; version_no: number }[];
-  bundles: { id: number; label: string }[];
-}> {
-  return request(`/api/flasher/device-file-versions/${versionId}/usage`, { signal });
-}
-
-export interface ImportedFile {
-  filename: string;
-  device_file_id: number;
-  device_file_version_id: number;
-  kind: string;
-  version_no: number;
-  state: "unchanged" | "changed" | "new";
-  size_bytes: number;
-}
-
-/** Import a whole berryware folder, or upload ONE file — the same path:
- *  unchanged bytes are reused, only a real change mints a version, and an
- *  upload publishes. Returns the resolved set to pin.
- *
- *  `make_bundle: false` for a single file, so an artwork revision does not
- *  mint a one-file bundle. `kind: "artwork"` is what the marking step's
- *  upload asks for, and the server refuses anything that is not a LightBurn
- *  file. `replace_file_id` makes the upload a new version of THAT file, under
- *  its name, whatever the picked file was called. */
-export function importDeviceFiles(
-  projectId: number,
-  files: File[],
-  meta: {
-    label?: string; created_by?: string; publish?: boolean;
-    make_bundle?: boolean; kind?: string; replace_file_id?: number;
-  } = {},
-): Promise<{ label: string; bundle: BerryBundleRow | null; files: ImportedFile[]; changed: number }> {
-  const form = new FormData();
-  for (const f of files) form.append("files", f);
-  if (meta.label) form.append("label", meta.label);
-  if (meta.created_by) form.append("created_by", meta.created_by);
-  form.append("publish", String(meta.publish ?? true));
-  if (meta.make_bundle === false) form.append("make_bundle", "false");
-  if (meta.kind) form.append("kind", meta.kind);
-  if (meta.replace_file_id) form.append("replace_file_id", String(meta.replace_file_id));
-  return request(`/api/flasher/projects/${projectId}/device-files/import`, {
-    method: "POST",
-    body: form,
-  });
 }
 
 export function listParamSets(projectId: number, signal?: AbortSignal): Promise<ParamSetRow[]> {

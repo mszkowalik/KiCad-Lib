@@ -2345,60 +2345,66 @@ class FirmwareAsset(Base):
     __table_args__ = (UniqueConstraint("project_id", "sha256", name="uq_firmware_project_sha"),)
 
 
-class DeviceFile(Base):
-    """A file a deployment version pins one at a time. Two KINDS share the
-    pool, because both are project-scoped versioned content a version pins
-    through `deployment_files`: `berryware` is the payload the device
-    downloads during deployment (`autoexec.be`, driver JSONs) and `artwork`
-    is what a `mark` version engraves (a LightBurn `.lbrn2`). The kind is
-    fixed at upload — by the extension, or by the editor that asked for it —
-    and decides which steps may use the file (decision 0026). Versioned
-    SEPARATELY from firmware (user decision 2026-07-29): a script change never
-    requires a firmware rebuild."""
+class FileBlob(Base):
+    """CONTENT, addressed by its sha256 and shared by every file set on the
+    platform (decision 0029). The same driver JSON in three projects is one
+    row. Text is LF-normalised so the same source always hashes the same; a
+    file that is not UTF-8 text (or carries a NUL) keeps its bytes in
+    `content_bytes` with `is_binary` set. A blob has no name: the name lives
+    on the set entry that uses it."""
 
-    __tablename__ = "device_files"
+    __tablename__ = "file_blobs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
-    filename: Mapped[str] = mapped_column(String(200))  # name ON THE DEVICE, e.g. autoexec.be
-    description: Mapped[str] = mapped_column(String(500), default="")
-    kind: Mapped[str] = mapped_column(String(20), default="berryware")  # berryware | artwork
-    current_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-    versions: Mapped[list["DeviceFileVersion"]] = relationship(
-        back_populates="file", cascade="all, delete-orphan", order_by="DeviceFileVersion.version_no"
-    )
-
-    __table_args__ = (UniqueConstraint("project_id", "filename", name="uq_device_file_name"),)
-
-
-class DeviceFileVersion(Base):
-    """IMMUTABLE content of one device file. A TEXT file lives in `content`,
-    LF-normalised so the same source always hashes the same; a file that is
-    not UTF-8 text lives in `content_bytes` as uploaded, with `binary` set,
-    because the pool can no longer promise every upload is a source file
-    (user decision 2026-09-17). `size_bytes` is what the device's file_size
-    check must report after the download."""
-
-    __tablename__ = "device_file_versions"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    device_file_id: Mapped[int] = mapped_column(ForeignKey("device_files.id"))
-    version_no: Mapped[int] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft|published|rejected
+    sha256: Mapped[str] = mapped_column(String(64), unique=True)
     content: Mapped[str] = mapped_column(Text, default="")
     is_binary: Mapped[bool] = mapped_column(Boolean, default=False)  # `binary` is reserved in SQL
     content_bytes: Mapped[bytes | None] = deferred(mapped_column(LargeBinary, nullable=True))
-    sha256: Mapped[str] = mapped_column(String(64), default="")
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)
-    created_by: Mapped[str] = mapped_column(String(100), default="")
-    comment: Mapped[str] = mapped_column(String(500), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
-    file: Mapped[DeviceFile] = relationship(back_populates="versions")
 
-    __table_args__ = (UniqueConstraint("device_file_id", "version_no", name="uq_device_file_version"),)
+class FileSet(Base):
+    """A RELEASE: an immutable, ordered manifest of (filename, blob), platform
+    wide, identified by the fingerprint of its content. It is the unit a
+    deployment version pins and the unit the user sees — `release-1.3.11`,
+    not eighteen per-file version numbers (decision 0029). `kind` says what
+    the set is for: `berryware` is what the device downloads, `artwork` is
+    what the laser engraves (one drawing per set). A changed file is a new
+    set; the same folder imported twice, under any name, is the same set."""
+
+    __tablename__ = "file_sets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), default="berryware")  # berryware | artwork
+    label: Mapped[str] = mapped_column(String(120))  # "release-1.3.11", "Side_Info.lbrn2"
+    fingerprint: Mapped[str] = mapped_column(String(64), unique=True)
+    comment: Mapped[str] = mapped_column(String(300), default="")
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    entries: Mapped[list["FileSetEntry"]] = relationship(
+        back_populates="file_set", cascade="all, delete-orphan", order_by="FileSetEntry.position"
+    )
+
+
+class FileSetEntry(Base):
+    """One file of a set: the name the device (or the laser) sees, and the
+    blob behind it. `position` is the download order — autoexec.be last, so
+    a partial download never leaves a bootable-but-incomplete device."""
+
+    __tablename__ = "file_set_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_set_id: Mapped[int] = mapped_column(ForeignKey("file_sets.id"))
+    blob_id: Mapped[int] = mapped_column(ForeignKey("file_blobs.id"))
+    filename: Mapped[str] = mapped_column(String(200))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+    file_set: Mapped[FileSet] = relationship(back_populates="entries")
+    blob: Mapped[FileBlob] = relationship()
+
+    __table_args__ = (UniqueConstraint("file_set_id", "filename", name="uq_file_set_entry"),)
 
 
 class Deployment(Base):
@@ -2456,10 +2462,12 @@ class DeploymentVersion(Base):
     """THE immutable revision: firmware + berryware + procedure + parameters.
 
     Everything a device receives is pinned here, so a programming run records
-    one id and the whole truth follows from it. The two fingerprints are
-    DERIVED (sha256 over the ordered image list / the file set) and stored so
-    the UI can say "firmware unchanged since v5" or "3 files changed" without
-    re-reading every child row — they are cache, never authority.
+    one id and the whole truth follows from it. The firmware fingerprint is
+    DERIVED (sha256 over the ordered image list) and stored so the UI can say
+    "firmware unchanged since v5" without re-reading every image row — cache,
+    never authority. The files need no such cache: the version pins a
+    `FileSet` for berryware and one for artwork, and a set's fingerprint is
+    its identity (decision 0029).
 
     Parameter VALUES stay out (user decision 2026-07-27): they come from a
     ParamSet at run time and are snapshotted per ProgrammingRun, so rotating a
@@ -2495,18 +2503,15 @@ class DeploymentVersion(Base):
     # published months ago and the platform found out at the bench, mid-run
     # (decision 0024).
     param_schema: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    # Derived identity of the two halves — see the class docstring.
+    # Derived identity of the firmware half — see the class docstring. The
+    # files half needs no cache: the version pins a FileSet, whose fingerprint
+    # IS its identity (decision 0029).
     firmware_fingerprint: Mapped[str] = mapped_column(String(64), default="")
-    files_fingerprint: Mapped[str] = mapped_column(String(64), default="")
-    # Human label for the berryware set ("release-1.3.11", "fs @ 2026-07-22").
-    # The user thinks in file BUNDLES even though files version individually
-    # (user decision 2026-07-29), so the set gets a name of its own. When the
-    # pinned set matches a BerryBundle, `berry_bundle_id` links it and the
-    # label mirrors the bundle's.
-    files_label: Mapped[str] = mapped_column(String(120), default="")
-    berry_bundle_id: Mapped[int | None] = mapped_column(
-        ForeignKey("berry_bundles.id"), nullable=True
-    )
+    # What the device downloads (a berryware release) and what the laser
+    # engraves (one artwork drawing). Either may be empty: a test version
+    # pins nothing, a mark version pins artwork only.
+    file_set_id: Mapped[int | None] = mapped_column(ForeignKey("file_sets.id"), nullable=True)
+    artwork_set_id: Mapped[int | None] = mapped_column(ForeignKey("file_sets.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     deployment: Mapped[Deployment] = relationship(back_populates="versions")
@@ -2515,11 +2520,8 @@ class DeploymentVersion(Base):
         cascade="all, delete-orphan",
         order_by="DeploymentImage.position",
     )
-    files: Mapped[list["DeploymentFile"]] = relationship(
-        back_populates="version",
-        cascade="all, delete-orphan",
-        order_by="DeploymentFile.position",
-    )
+    file_set: Mapped[FileSet | None] = relationship(foreign_keys=[file_set_id])
+    artwork_set: Mapped[FileSet | None] = relationship(foreign_keys=[artwork_set_id])
 
     __table_args__ = (
         UniqueConstraint("deployment_id", "version_no", name="uq_deployment_version"),
@@ -2543,76 +2545,6 @@ class DeploymentImage(Base):
 
     __table_args__ = (
         UniqueConstraint("deployment_version_id", "address", name="uq_deployment_image_addr"),
-    )
-
-
-class DeploymentFile(Base):
-    """One pinned device file version inside a deployment version. Download
-    order follows `position` (autoexec.be last, so a partial download never
-    leaves a bootable-but-incomplete device — the validator enforces it)."""
-
-    __tablename__ = "deployment_files"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    deployment_version_id: Mapped[int] = mapped_column(ForeignKey("deployment_versions.id"))
-    device_file_version_id: Mapped[int] = mapped_column(ForeignKey("device_file_versions.id"))
-    position: Mapped[int] = mapped_column(Integer, default=0)
-
-    version: Mapped[DeploymentVersion] = relationship(back_populates="files")
-    file_version: Mapped[DeviceFileVersion] = relationship()
-
-    __table_args__ = (
-        UniqueConstraint(
-            "deployment_version_id", "device_file_version_id", name="uq_deployment_file"
-        ),
-    )
-
-
-class BerryBundle(Base):
-    """A named berryware SET — the unit the user actually receives ("the fs of
-    release 1.3.11"), while files keep versioning individually underneath.
-
-    One row per distinct file set per project: identity is the set fingerprint
-    (same rule as DeploymentVersion.files_fingerprint), so re-importing the
-    same folder under any name reuses the bundle instead of minting a twin.
-    Immutable once created — a changed file set is a NEW bundle.
-    """
-
-    __tablename__ = "berry_bundles"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
-    label: Mapped[str] = mapped_column(String(120))  # "release-1.3.11", "fs @ 2026-07-22"
-    files_fingerprint: Mapped[str] = mapped_column(String(64))
-    comment: Mapped[str] = mapped_column(String(300), default="")
-    created_by: Mapped[str] = mapped_column(String(100), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-    files: Mapped[list["BerryBundleFile"]] = relationship(
-        back_populates="bundle", cascade="all, delete-orphan", order_by="BerryBundleFile.position"
-    )
-
-    __table_args__ = (
-        UniqueConstraint("project_id", "files_fingerprint", name="uq_berry_bundle_set"),
-    )
-
-
-class BerryBundleFile(Base):
-    """One pinned device file version inside a bundle (autoexec.be last, same
-    ordering rule as DeploymentFile)."""
-
-    __tablename__ = "berry_bundle_files"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    berry_bundle_id: Mapped[int] = mapped_column(ForeignKey("berry_bundles.id"))
-    device_file_version_id: Mapped[int] = mapped_column(ForeignKey("device_file_versions.id"))
-    position: Mapped[int] = mapped_column(Integer, default=0)
-
-    bundle: Mapped[BerryBundle] = relationship(back_populates="files")
-    file_version: Mapped[DeviceFileVersion] = relationship()
-
-    __table_args__ = (
-        UniqueConstraint("berry_bundle_id", "device_file_version_id", name="uq_bundle_file"),
     )
 
 

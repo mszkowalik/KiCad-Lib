@@ -54,9 +54,9 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0023](0023-the-agent-programs-the-device.md) | Do every byte of bench serial work in the agent, with esptool vendored inside it, and drop Web Serial entirely | Backend, frontend, production, flasher, external dependency |
 | [0024](0024-a-version-declares-the-parameters-it-needs.md) | A version declares the parameters it needs, and a parameter set keeps an append-only revision log (supplies the half 2026-07-27 left out) | Backend, frontend, production, flasher |
 | [0025](0025-a-device-fetches-from-its-own-address.md) | A device fetches from its own address, and on this deployment that address is plain HTTP — Tasmota completes no TLS against the edge and validates no certificate | Backend, production, flasher, deployment |
-| [0026](0026-a-device-file-carries-its-kind-and-enters-by-upload.md) | A device file carries its kind (berryware or artwork), enters the pool by upload through the import endpoint, and is never deleted while a version or a bundle pins it | Backend, frontend, production, flasher |
 | [0027](0027-a-stock-count-corrects-a-fifo-guess.md) | Let a stock count reverse a FIFO guess, and net the reversal out of every fulfilment figure (extends [0003](0003-orders-shipments-and-device-history.md)) | Backend, production, orders |
 | [0028](0028-a-shipment-recorded-in-error-is-reversed-not-deleted.md) | Reverse a shipment recorded in error instead of deleting it, and never let a reversed delivery count as a previous one (completes [0027](0027-a-stock-count-corrects-a-fifo-guess.md)) | Backend, production, orders |
+| [0029](0029-a-release-is-a-file-set.md) | A release is a content-addressed file set, platform wide, and a deployment version pins the set — no per-file versions, no bundle beside the pins (supersedes [0026](0026-a-device-file-carries-its-kind-and-enters-by-upload.md)) | Backend, frontend, production, flasher, storage |
 
 ## Proposed
 
@@ -67,3 +67,4 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 
 | # | Decision | Superseded by |
 |---|---|---|
+| [0026](0026-a-device-file-carries-its-kind-and-enters-by-upload.md) | A device file carries its kind, enters the pool by upload, and is never deleted while pinned | [0029](0029-a-release-is-a-file-set.md) |

@@ -11,10 +11,11 @@
  *  What is editable on a draft: the note, the procedure (with its transport
  *  and monitor baud), and the parameter set. **Firmware, berryware and
  *  artwork are not**, and never were — a `flash` step picks its images, a
- *  `download_files` step picks its bundle and a `mark_laser` step picks or
- *  uploads its artwork, inside `StepEditor` (user decision 2026-07-30,
- *  extended 2026-09-17). The Firmware and Files cards are summaries of what
- *  the procedure pinned.
+ *  `download_files` step picks its release and a `mark_laser` step picks or
+ *  uploads its drawing, inside `StepEditor` (user decision 2026-07-30,
+ *  extended 2026-09-17). A release and a drawing are file SETS (decision
+ *  0029): the version pins one of each, and the Firmware and Files cards are
+ *  summaries of what the procedure pinned.
  *
  *  **The procedure opens READ-ONLY and a button turns editing on** (user
  *  request 2026-09-17), on a draft. A published version offers `Edit as new
@@ -33,20 +34,18 @@ import {
   errorMessage,
   firmwareBinPath,
   getDeploymentVersion,
-  importDeviceFiles,
+  importFileSet,
   isAbortError,
-  listBerryBundles,
-  listDeviceFiles,
+  listFileSets,
   listFirmware,
   listParamSets,
   patchDeploymentVersion,
   deleteDeploymentVersion,
   publishDeploymentVersion,
   rejectDeploymentVersion,
-  type BerryBundleRow,
   type ComposeBody,
   type DeploymentVersionDetail,
-  type DeviceFileRow,
+  type FileSetRow,
   type FirmwareAssetRow,
   type FlasherMeta,
   type ParamSetRow,
@@ -110,9 +109,9 @@ export default function VersionView({
   const [rawJson, setRawJson] = useState(false);
   const [stepsText, setStepsText] = useState("");
   const [assets, setAssets] = useState<FirmwareAssetRow[]>([]);
-  const [bundles, setBundles] = useState<BerryBundleRow[]>([]);
+  /** Every file set on the platform — releases and drawings — for the pickers. */
+  const [sets, setSets] = useState<FileSetRow[]>([]);
   const [paramSets, setParamSets] = useState<ParamSetRow[]>([]);
-  const [pool, setPool] = useState<DeviceFileRow[]>([]);
   /** The bench printer's rolls, when this browser sits on the bench machine
    *  and the agent answers on loopback. Away from it: none, and the label
    *  preview draws the roll's nominal size and says so. */
@@ -167,15 +166,13 @@ export default function VersionView({
     const ac = new AbortController();
     Promise.all([
       listFirmware(projectId, ac.signal),
-      listBerryBundles(projectId, ac.signal),
+      listFileSets(undefined, ac.signal),
       listParamSets(projectId, ac.signal),
-      listDeviceFiles(projectId, ac.signal),
     ])
-      .then(([a, b, p, files]) => {
+      .then(([a, allSets, p]) => {
         setAssets(a);
-        setBundles(b);
+        setSets(allSets);
         setParamSets(p);
-        setPool(files);
       })
       .catch((err) => {
         if (!isAbortError(err)) setError(errorMessage(err));
@@ -183,21 +180,16 @@ export default function VersionView({
     return () => ac.abort();
   }, [draftMode, projectId]);
 
-  /** The artwork a marking step may pick: the newest published version of
-   *  every `.lbrn2` in the project pool. */
+  /** The drawings a marking step may pick: every artwork set on the platform. */
   const artworkPool = useMemo<ArtworkChoice[]>(() =>
-    pool
-      .filter((f) => f.kind === "artwork")
-      .map((f) => {
-        const published = f.versions.filter((x) => x.status === "published");
-        const live = published[published.length - 1];
-        return live ? {
-          device_file_version_id: live.id, filename: f.filename,
-          version_no: live.version_no, size_bytes: live.size_bytes,
-        } : null;
-      })
-      .filter((x): x is ArtworkChoice => x !== null),
-  [pool]);
+    sets
+      .filter((s) => s.kind === "artwork" && s.filenames.length)
+      .map((s) => ({
+        set_id: s.id, label: s.label, filename: s.filenames[0],
+        size_bytes: s.size_bytes, created_at: s.created_at,
+      })),
+  [sets]);
+  const releases = useMemo(() => sets.filter((s) => s.kind === "berryware"), [sets]);
 
   /** The ONE write path for a draft. Takes the server's answer back whole, so
    *  the validation under the header is always the publish button's own. */
@@ -270,39 +262,28 @@ export default function VersionView({
     noteTimer.current = window.setTimeout(() => void patch({ comment: text }), 700);
   };
 
-  /** A marking step picked or uploaded its artwork: the step and the pin move
-   *  in ONE patch. The new file replaces whatever artwork the step named
-   *  before, and every other pinned file — berryware, another step's artwork
-   *  — stays exactly as it was. */
-  const changeArtwork = (index: number, step: Record<string, unknown>, file: ArtworkChoice) => {
+  /** A marking step picked or uploaded its drawing: the step and the pin move
+   *  in ONE patch. The version pins one artwork set, so the pick replaces it
+   *  and the berryware release stays exactly as it was. */
+  const changeArtwork = (index: number, step: Record<string, unknown>, choice: ArtworkChoice) => {
     const steps = (pendingSteps.current ?? parsedSteps ?? v.steps ?? []).map((s, j) =>
       j === index ? step : s);
-    const previous = String((parsedSteps ?? v.steps ?? [])[index]?.template ?? "");
-    const keep = (v.files ?? []).filter((f) =>
-      f.filename !== file.filename
-      && !(previous ? f.filename === previous
-           : f.kind === "artwork" && (v.files ?? []).filter((x) => x.kind === "artwork").length === 1));
     if (stepsTimer.current) window.clearTimeout(stepsTimer.current);
     pendingSteps.current = null;
     setStepsText(JSON.stringify(steps, null, 2));
-    void patch({
-      steps,
-      file_version_ids: [...keep.map((f) => f.device_file_version_id), file.device_file_version_id],
-    });
+    void patch({ steps, artwork_set_id: choice.set_id });
   };
 
-  /** Upload a .lbrn2 into the project pool as ARTWORK, published, and hand
-   *  back what to pin. The server refuses anything that is not a LightBurn
-   *  file, and `make_bundle: false` keeps it out of the berryware bundles. */
+  /** Upload a .lbrn2 as an ARTWORK set and hand back what to pin. The server
+   *  refuses anything that is not a LightBurn file, and the same bytes
+   *  uploaded twice find the set that already exists. */
   const uploadArtwork = async (file: File): Promise<ArtworkChoice> => {
-    const res = await importDeviceFiles(v.deployment.project_id, [file],
-      { kind: "artwork", make_bundle: false });
-    const made = res.files[0];
-    if (!made) throw new Error("the upload returned no file");
-    listDeviceFiles(v.deployment.project_id).then(setPool).catch(() => undefined);
+    const res = await importFileSet([file], { kind: "artwork" });
+    const made = res.set;
+    listFileSets().then(setSets).catch(() => undefined);
     return {
-      device_file_version_id: made.device_file_version_id, filename: made.filename,
-      version_no: made.version_no, size_bytes: made.size_bytes,
+      set_id: made.id, label: made.label, filename: made.filenames[0] ?? file.name,
+      size_bytes: made.size_bytes, created_at: made.created_at,
     };
   };
 
@@ -630,17 +611,9 @@ export default function VersionView({
             }))}
             assets={isDraft ? assets : assetsOf(v)}
             onImagesChange={(next) => void patch({ images: next })}
-            bundleId={v.berry_bundle_id ?? -1}
-            bundles={isDraft ? bundles : bundlesOf(v)}
-            onBundleChange={(id) => {
-              const b = bundles.find((x) => x.id === id);
-              if (!b) return;
-              void patch({
-                berry_bundle_id: id,
-                file_version_ids: b.files.map((f) => f.device_file_version_id),
-                files_label: b.label,
-              });
-            }}
+            fileSetId={v.file_set?.id ?? null}
+            fileSets={isDraft ? releases : setsOf(v)}
+            onFileSetChange={(id) => void patch({ file_set_id: id })}
             defaultOffsets={isDraft ? meta?.default_offsets : undefined}
             checkNames={isDraft ? meta?.checks : undefined}
           />
@@ -692,26 +665,31 @@ export default function VersionView({
         )}
       </div>
 
-      {/* Named by what the version PINS — berryware, artwork, or both — because
-          a mark version pins a LightBurn drawing and calling that "berryware"
-          was reported as wrong (2026-09-17). Only berryware has a bundle to
-          name; artwork is one file per marking step. */}
+      {/* Named by what the version PINS — a berryware release, an artwork
+          drawing, or both. Each is ONE set, so each reads as one pill that
+          links to the release; the file table is detail behind a toggle
+          (user feedback 2026-07-30: the bundle, not the files). */}
       <div className="card pad">
         <div className="toolbar">
           <h3 className="card-title">{FILES_TITLE[v.files_kind] ?? "Files"}</h3>
-          {v.files?.length && v.files_kind !== "artwork" ? (
-            <span className={`pill ${v.berry_bundle_id ? "ok" : "warn"}`}
-                  title={v.berry_bundle_id
-                    ? "a named bundle — the same set everywhere it appears"
-                    : "an ad-hoc file set nobody has named"}>
-              {v.files_label || "unnamed set"} · {v.files.length} files
-            </span>
-          ) : v.files?.length ? (
-            <span className="pill info">{v.files.length} {v.files.length === 1 ? "drawing" : "drawings"}</span>
+          {v.file_set ? (
+            <Link
+              className="pill ok"
+              to={`/production/files?open=${v.file_set.id}`}
+              title="the berryware release this version pins — open it on the Files page"
+            >
+              {v.file_set.label} · {v.file_set.file_count} files
+            </Link>
           ) : null}
-          <span className="muted dim mono">
-            {v.files_fingerprint ? shortSha(v.files_fingerprint) : ""}
-          </span>
+          {v.artwork_set ? (
+            <Link
+              className="pill info"
+              to={`/production/files?tab=artwork&open=${v.artwork_set.id}`}
+              title="the drawing this version pins — open it on the Files page"
+            >
+              {v.artwork_set.label}
+            </Link>
+          ) : null}
           {v.files?.length ? (
             <button type="button" className="btn btn-sm" onClick={() => setShowFiles((x) => !x)}>
               {showFiles ? "Hide files" : "Show files"}
@@ -729,28 +707,19 @@ export default function VersionView({
                 <tr>
                   <th className="num">#</th>
                   <th>File</th>
-                  <th>Version</th>
+                  <th>Kind</th>
                   <th className="num">Size</th>
                   <th>sha256</th>
-                  <th>Note</th>
                 </tr>
               </thead>
               <tbody>
                 {v.files.map((f, i) => (
-                  <tr key={f.device_file_version_id}>
+                  <tr key={`${f.set_id}:${f.filename}`}>
                     <td className="num">{i + 1}</td>
-                    <td className="mono" title={`${f.filename} — ${f.kind}`}>
-                      {f.filename}
-                      {v.files_kind === "mixed" ? (
-                        <span className={`pill ${f.kind === "artwork" ? "info" : "neutral"}`}> {f.kind}</span>
-                      ) : null}
-                    </td>
-                    <td>
-                      v{f.version_no} <StatusPill status={f.status} />
-                    </td>
+                    <td className="mono" title={f.filename}>{f.filename}</td>
+                    <td><span className={`pill ${f.kind === "artwork" ? "info" : "neutral"}`}>{f.kind}</span></td>
                     <td className="num">{fmtBytes(f.size_bytes)}</td>
                     <td className="mono dim" title={f.sha256}>{shortSha(f.sha256)}</td>
-                    <td className="muted" title={f.comment}>{f.comment || "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -807,18 +776,14 @@ function assetsOf(v: DeploymentVersionDetail): FirmwareAssetRow[] {
   }));
 }
 
-function bundlesOf(v: DeploymentVersionDetail): BerryBundleRow[] {
-  if (!v.files?.length) return [];
+function setsOf(v: DeploymentVersionDetail): FileSetRow[] {
+  if (!v.file_set) return [];
+  const files = (v.files ?? []).filter((f) => f.kind === "berryware");
   return [{
-    id: v.berry_bundle_id ?? -1,
-    label: v.files_label || "unnamed set",
-    files_fingerprint: v.files_fingerprint,
+    ...v.file_set,
     comment: "", created_by: "", created_at: null,
-    file_count: v.files.length, used_by: 0,
-    files: v.files.map((f) => ({
-      device_file_version_id: f.device_file_version_id,
-      filename: f.filename, version_no: f.version_no,
-      size_bytes: f.size_bytes, sha256: f.sha256,
-    })),
+    size_bytes: files.reduce((n, f) => n + f.size_bytes, 0),
+    filenames: files.map((f) => f.filename),
+    used_by: 0,
   }];
 }

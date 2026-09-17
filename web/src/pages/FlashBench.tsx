@@ -357,7 +357,7 @@ export default function FlashBench() {
               {chosenVersion.d.name} v{chosenVersion.v.version_no} · {chosenVersion.v.image_count}{" "}
               image(s) · {chosenVersion.v.file_count}{" "}
               {chosenVersion.v.files_kind === "artwork" ? "artwork" : chosenVersion.v.files_kind === "mixed" ? "" : "berryware"} file(s)
-              {chosenVersion.v.files_label && chosenVersion.v.files_kind !== "artwork" ? ` (${chosenVersion.v.files_label})` : ""} ·{" "}
+              {chosenVersion.v.file_set ? ` (${chosenVersion.v.file_set.label})` : ""} ·{" "}
               {chosenVersion.v.step_count} steps
             </p>
           ) : null}

@@ -1346,3 +1346,56 @@ version and every pinned file version are published — a run can never flash
 a draft. Seed script: `scratchpad/seed_flasher_v3.py` (blank-device Dongle_V3
 scenario, 33 steps, publishes everything).
 
+
+## 15. A release is a file set — the file store refactor (2026-09-18)
+
+§14 gave every file its own version number, named the SET as a bundle beside
+them, and pinned each file version again under every deployment version. One
+berryware release therefore lived three times, and the version cached a
+fingerprint, a label and a bundle id that `link_bundle` re-derived after every
+edit. Measured before the change: 56 files, 111 file versions, 9 bundles and
+293 pin rows for 9 releases across 25 versions; the same driver JSON stored as
+three files with three histories because the pool was project-scoped. User
+verdict: the per-file versions mean nothing, and the way files are stored in
+relation to where they are used is too complicated. Decision
+[0029](../decisions/0029-a-release-is-a-file-set.md).
+
+### The model
+
+| Table | Holds |
+|---|---|
+| `file_blobs` | bytes keyed by sha256, platform wide; text LF-normalised, binaries as bytes |
+| `file_sets` | an immutable ordered manifest of (filename, blob); `kind` berryware or artwork; `fingerprint` = identity, unique on the platform |
+| `deployment_versions.file_set_id` / `artwork_set_id` | the release and the drawing a version pins |
+
+Gone: `device_files`, `device_file_versions`, `berry_bundles`,
+`berry_bundle_files`, `deployment_files`, and the version's
+`files_fingerprint`, `files_label`, `berry_bundle_id`. The fingerprint formula
+is unchanged, so every historical run stamp still matches its set, and the
+same folder imported by two projects is now ONE row (bundles 2/3 and 10/11
+collapsed in the fold).
+
+### The ways in
+
+Import (a folder or files) makes a set or finds the one that exists. **Derive**
+copies a manifest and applies uploads, borrowings from any other set, and
+omissions, then runs the same get-or-create — deriving back to an existing
+manifest finds it. There is no paste editor, no per-file upload, and no
+hand-picked composition of file versions.
+
+### The fold
+
+`services/flasher/fileset_migrate.py`, one transaction at startup: blobs from
+every distinct sha256, sets from every bundle (ids kept, twins collapsed), a
+one-file artwork set per artwork version, every version repointed, every
+berryware-only version's set fingerprint checked against its old cached one,
+and only then the old tables dropped. Local result: 76 blobs, 10 sets, 25
+versions repointed, 20 fingerprints checked, 6 unreachable blobs pruned.
+
+### What the UI became
+
+`/production/files` has three tabs — releases, artwork, firmware — and the
+first two have no project selector. A release row shows its files, size, who
+pins it and a per-file "same as / changed since" read off the older sets. The
+version card shows one pill per set, each linking to its row. The device URL
+is `/api/flasher/files/{set_id}/{filename}`.

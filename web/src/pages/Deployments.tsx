@@ -433,9 +433,8 @@ export default function Deployments() {
                             </div>
                             <div className="version-changes muted">
                               {v.changes?.summary ?? ""}
-                              {v.files_kind === "artwork"
-                                ? ` · artwork${v.file_count > 1 ? ` ×${v.file_count}` : ""}`
-                                : v.files_label ? ` · berryware ${v.files_label}` : ""}
+                              {v.file_set ? ` · berryware ${v.file_set.label}` : ""}
+                              {v.artwork_set ? ` · artwork ${v.artwork_set.label}` : ""}
                             </div>
                             {/* The note is NOT repeated here. Seven versions of
                                 one deployment share an opening sentence, so a

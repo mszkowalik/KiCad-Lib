@@ -2,8 +2,8 @@
 """Replicate deployments from one platform to another, content-addressed.
 
 For each named deployment: take the SOURCE's current published version, ensure
-every firmware asset (by sha256) and device file version (by filename+sha)
-exists on the TARGET, mint the same bundle, compose, publish, and mirror the
+every firmware asset (by sha256) and file set (by fingerprint) exists on
+the TARGET, compose, publish, and mirror the
 channels. Ids never travel — only content and names — so the two stacks can
 have entirely different row ids.
 
@@ -54,26 +54,24 @@ def ensure_asset(dst_pid, img):
     return r.json()["id"]
 
 
-def ensure_files(dst_pid, files):
-    """Device file versions by (filename, sha); content from the source."""
-    existing = {}
-    for f in get(DST, f"/api/flasher/projects/{dst_pid}/device-files"):
-        for v in f["versions"]:
-            existing[(f["filename"], v["sha256"])] = v["id"]
-    out = []
-    for f in files:
-        key = (f["filename"], f["sha256"])
-        if key in existing:
-            out.append(existing[key])
-            continue
-        content = get(SRC, f"/api/flasher/device-file-versions/{f['device_file_version_id']}")["content"]
-        made = post(DST, f"/api/flasher/projects/{dst_pid}/device-files", json={
-            "filename": f["filename"], "content": content,
-            "comment": "replicated", "created_by": "replicate"})
-        post(DST, f"/api/flasher/device-file-versions/{made['id']}/publish",
-             json={"approved_by": "replicate"})
-        out.append(made["id"])
-    return out
+def ensure_set(ref):
+    """The same file set on the target, by fingerprint; content from the
+    source. Sets are platform wide (decision 0029), so there is no project
+    in the path — only the manifest matters."""
+    if not ref:
+        return None
+    for s in get(DST, "/api/flasher/file-sets"):
+        if s["fingerprint"] == ref["fingerprint"]:
+            return s["id"]
+    src = get(SRC, f"/api/flasher/file-sets/{ref['id']}")
+    files = []
+    for f in src["files"]:
+        data = requests.get(f"{SRC}/api/flasher/files/{src['id']}/{f['filename']}").content
+        files.append(("files", (f["filename"], data)))
+    made = post(DST, "/api/flasher/file-sets/import", files=files,
+                data={"label": src["label"], "comment": f"replicated: {src['comment']}"[:290],
+                      "created_by": "replicate", "kind": src["kind"]})
+    return made["set"]["id"]
 
 
 def main():
@@ -101,8 +99,11 @@ def main():
         tgt = dst_deps.get(name)
         if tgt and tgt.get("current_version_id"):
             t = get(DST, f"/api/flasher/deployment-versions/{tgt['current_version_id']}")
-            if (t["firmware_fingerprint"], t["files_fingerprint"], t["steps"]) == \
-               (v["firmware_fingerprint"], v["files_fingerprint"], v["steps"]):
+            def fp(x):
+                return ((x.get("file_set") or {}).get("fingerprint"),
+                        (x.get("artwork_set") or {}).get("fingerprint"))
+            if (t["firmware_fingerprint"], fp(t), t["steps"]) == \
+               (v["firmware_fingerprint"], fp(v), v["steps"]):
                 print(f"== {name}: target already current")
                 continue
 
@@ -116,7 +117,8 @@ def main():
         images = [{"firmware_asset_id": ensure_asset(
                        dst_pid, {**img, "src_pid": src_pid}),
                    "address": img["address"]} for img in v["images"]]
-        file_ids = ensure_files(dst_pid, v["files"])
+        set_id = ensure_set(v.get("file_set"))
+        art_id = ensure_set(v.get("artwork_set"))
         ps_id = None
         if v.get("param_set_name"):
             for ps in get(DST, f"/api/flasher/projects/{dst_pid}/param-sets"):
@@ -125,8 +127,7 @@ def main():
         new = post(DST, f"/api/flasher/deployments/{tgt_id}/versions", json={
             "comment": f"replicated: {v['comment']}"[:490],
             "created_by": "replicate",
-            "images": images, "file_version_ids": file_ids,
-            "files_label": v["files_label"],
+            "images": images, "file_set_id": set_id, "artwork_set_id": art_id,
             "steps": v["steps"], "param_set_id": ps_id,
             "param_defaults": v["param_defaults"],
             "transport_profile": v["transport_profile"],

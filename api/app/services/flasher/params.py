@@ -38,7 +38,7 @@ SECRET_RE = re.compile(r"password|pin|salt|secret|token", re.I)
 # Names an op supplies to its own url template, once per item it fetches. They
 # are not parameters and no step captures them. Mirrors `validate.OP_LOCAL_VARS`
 # because both walk the same steps; keep the two in step.
-OP_LOCAL_VARS = {"download_files": {"file_version_id", "filename"}}
+OP_LOCAL_VARS = {"download_files": {"file_set_id", "filename"}}
 
 # Ops that ADD names mid-run, and what each adds.
 OP_CAPTURES = {

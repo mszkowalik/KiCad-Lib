@@ -12,7 +12,7 @@
  *    capture   map of variable name -> response path
  *    images    which pinned firmware images this flash step writes
  *    bundle    which berryware bundle this download step sends
- *    artwork   which pinned .lbrn2 this marking step engraves — pick or upload
+ *    artwork   which .lbrn2 this marking step engraves — an artwork set, picked or uploaded
  *    roll      a label roll, by the printer's PPD name — a list when the bench
  *              agent is reachable, a text box otherwise
  *    label     the label DRAWN from the step's own fields (LabelPreview);
@@ -77,7 +77,7 @@ const CAPTURE: Field = {
  *  always the wrong answer — and a literal loopback one is refused on publish. */
 const URL_TEMPLATE: Field = {
   key: "url", label: "URL template", kind: "text",
-  placeholder: "{base_url}/api/flasher/files/{file_version_id}/{filename}",
+  placeholder: "{base_url}/api/flasher/files/{file_set_id}/{filename}",
   hint: "empty = the op's own default; {base_url} is resolved per bench",
 };
 
@@ -208,7 +208,7 @@ const RAW_OPS: OpSpec[] = [
     fields: [
       LABEL,
       { key: "template", label: "Artwork", kind: "artwork", summary: true,
-        hint: "the .lbrn2 this version pins for the step — pick one from the project pool or upload a new one; uploading replaces the pin" },
+        hint: "the drawing this version pins for the step — pick a release from the artwork list or upload a new .lbrn2; either replaces the pin" },
       { key: "value", label: "Text to engrave", kind: "text", summary: true,
         placeholder: "{mac}",
         hint: "resolved from run variables, so {mac} or a captured device name" },

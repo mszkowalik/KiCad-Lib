@@ -141,7 +141,7 @@ export interface AgentHealth {
 }
 
 export interface MarkJob {
-  fileVersionId: number;
+  fileSetId: number;
   filename: string;
   /** The LightBurn DEVICE PROFILE to mark under, as LightBurn names it — a
    *  profile carries one source's calibration; the artwork's layers pick the
@@ -170,7 +170,7 @@ export async function runMarkJob(
   job: MarkJob,
   onLog: (dir: string, text: string) => void,
 ): Promise<MarkResult> {
-  const url = `${apiBase}/api/flasher/files/${job.fileVersionId}/${encodeURIComponent(job.filename)}`;
+  const url = `${apiBase}/api/flasher/files/${job.fileSetId}/${encodeURIComponent(job.filename)}`;
   onLog("app", `fetching ${job.filename}`);
   const res = await fetch(url);
   if (!res.ok) throw new Error(`could not fetch ${job.filename}: HTTP ${res.status}`);

@@ -1,16 +1,14 @@
 /** Files — administration of everything a deployment version PINS.
  *
- *  Three sections, one at a time (user request 2026-07-30: a tab per kind is
- *  cleaner to administer than stacked cards): berryware bundles, firmware and
- *  the individual-file pool. Composing them into a version happens on the
+ *  Three sections, one at a time: berryware releases, artwork drawings and
+ *  firmware. Releases and drawings are file SETS (decision 0029) and are
+ *  platform wide — the same driver JSON in three projects is one row — so
+ *  those two tabs have no project selector. Firmware is still project-scoped
+ *  and keeps it. Composing any of them into a version happens on the
  *  Deployments page.
  *
- *  Parameters were a fourth tab until 2026-09-17 and are now their own page,
- *  `/production/parameters`. They are not a file: they are what a version
- *  depends on and does not contain, and they needed room to say which versions
- *  depend on each key (decision 0024).
- *
- *  The active section lives in the URL (?tab=), so any view is linkable.
+ *  The active section lives in the URL (`?tab=`), and `?open=<set id>` opens
+ *  one release on arrival, which is how the version card links here.
  */
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -23,25 +21,27 @@ import {
   type ProjectInfo,
 } from "../api";
 import { ErrorBanner, Spinner } from "../components/Ui";
-import BundlesPanel from "../components/flasher/BundlesPanel";
-import DeviceFilesPanel from "../components/flasher/DeviceFilesPanel";
+import FileSetsPanel from "../components/flasher/FileSetsPanel";
 import FirmwarePanel from "../components/flasher/FirmwarePanel";
 import { useStickyState } from "../useStickyState";
 
-const TABS = ["bundles", "firmware", "files"] as const;
+const TABS = ["releases", "artwork", "firmware"] as const;
 type Tab = (typeof TABS)[number];
 
 const LABELS: Record<Tab, string> = {
-  bundles: "Berryware bundles",
+  releases: "Berryware releases",
+  artwork: "Artwork",
   firmware: "Firmware",
-  files: "Individual files",
 };
 
 const BLURBS: Record<Tab, string> = {
-  bundles: "the berryware sets a device downloads, named as the berry project releases them",
-  firmware: "the .bin images, content-addressed by sha256",
-  files: "the raw per-file pool — the berryware behind the bundles, and the .lbrn2 artwork a mark version pins",
+  releases: "the file sets a device downloads, named as the berry project releases them — platform wide",
+  artwork: "the LightBurn drawings a mark version engraves, one per set — platform wide",
+  firmware: "the .bin images, content-addressed by sha256, per project",
 };
+
+/** Old links: the tabs were `bundles` and `files` until 2026-09-18. */
+const ALIASES: Record<string, Tab> = { bundles: "releases", files: "releases" };
 
 export default function FlasherAdmin() {
   const [projects, setProjects] = useState<ProjectInfo[] | null>(null);
@@ -50,10 +50,13 @@ export default function FlasherAdmin() {
   const [projectId, setProjectId] = useStickyState<number | null>("flasher.project", null);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const rawTab = searchParams.get("tab") ?? "bundles";
-  const tab: Tab = (TABS as readonly string[]).includes(rawTab) ? (rawTab as Tab) : "bundles";
+  const rawTab = searchParams.get("tab") ?? "releases";
+  const tab: Tab = (TABS as readonly string[]).includes(rawTab)
+    ? (rawTab as Tab)
+    : ALIASES[rawTab] ?? "releases";
+  const openId = Number(searchParams.get("open") ?? "") || null;
   const setTab = (t: Tab) =>
-    setSearchParams(t === "bundles" ? {} : { tab: t }, { replace: true });
+    setSearchParams(t === "releases" ? {} : { tab: t }, { replace: true });
 
   useEffect(() => {
     const ac = new AbortController();
@@ -75,7 +78,7 @@ export default function FlasherAdmin() {
       <div className="page">
         <div className="toolbar">
           <h1>Files</h1>
-          {projects ? (
+          {tab === "firmware" && projects ? (
             <select
               className="row-input"
               value={valid ?? ""}
@@ -105,16 +108,16 @@ export default function FlasherAdmin() {
         </div>
 
         {error ? <ErrorBanner message={error} /> : null}
-        {projects === null ? (
+        {tab === "releases" ? (
+          <FileSetsPanel kind="berryware" openId={openId} />
+        ) : tab === "artwork" ? (
+          <FileSetsPanel kind="artwork" openId={openId} />
+        ) : projects === null ? (
           <Spinner label="Loading projects…" />
         ) : valid === null ? (
           <p className="muted">No projects.</p>
-        ) : tab === "bundles" ? (
-          <BundlesPanel projectId={valid} />
-        ) : tab === "firmware" ? (
-          <FirmwarePanel projectId={valid} meta={meta} />
         ) : (
-          <DeviceFilesPanel projectId={valid} />
+          <FirmwarePanel projectId={valid} meta={meta} />
         )}
       </div>
     </div>

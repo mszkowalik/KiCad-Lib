@@ -133,10 +133,10 @@ export default function DiffView({
                         <tr key={r.filename}>
                           <td className="mono" title={r.filename}>{r.filename}</td>
                           <td className="mono dim">
-                            {r.before ? `v${r.before.version_no} ${shortSha(r.before.sha256)}` : "—"}
+                            {r.before ? `${shortSha(r.before.sha256)} (${fmtBytes(r.before.size_bytes)})` : "—"}
                           </td>
                           <td className="mono">
-                            {r.after ? `v${r.after.version_no} ${shortSha(r.after.sha256)}` : "—"}
+                            {r.after ? `${shortSha(r.after.sha256)} (${fmtBytes(r.after.size_bytes)})` : "—"}
                           </td>
                           <td><span className={`pill ${stateClass(r.state)}`}>{r.state}</span></td>
                         </tr>

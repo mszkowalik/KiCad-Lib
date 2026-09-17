@@ -30,7 +30,7 @@ FLASH_OPS = {"erase", "flash", "esp_reset", "await_reenumerate"}
 # so the dataflow check below would otherwise reject a step that uses them
 # correctly. Add a row here in the same change that adds a url template to an op
 # (see `RunEngine._url`).
-OP_LOCAL_VARS = {"download_files": {"file_version_id", "filename"}}
+OP_LOCAL_VARS = {"download_files": {"file_set_id", "filename"}}
 
 # What esptool-js accepts for the three flash parameters (its own
 # `types/arguments.d.ts`). A value outside these lists is not a preference the
@@ -106,13 +106,10 @@ def check(db, version: M.DeploymentVersion) -> dict:
                 f"step {idx + 1} ({step.get('op')}) sets baud '{baud}', which is not one the "
                 f"bench offers ({', '.join(str(b) for b in transports.FLASH_BAUDS)})")
 
-    # 1. Everything pinned must be published — a run can never flash a draft.
-    for link in version.files:
-        fv = link.file_version
-        if fv.status != "published":
-            errors.append(
-                f"berryware file {fv.file.filename} v{fv.version_no} is {fv.status} — "
-                "publish it first")
+    # 1. A pinned set is always whole and always published — a set has no
+    #    draft state (decision 0029) — so the old "pinned file is a draft"
+    #    rule has nothing left to check. What can still be wrong is the KIND,
+    #    and the compose and patch endpoints refuse that before it lands here.
 
     # 2. Chip agreement across deployment, images and transport profile.
     dep_chip = _norm_chip(deployment.chip if deployment else "")
@@ -195,8 +192,8 @@ def check(db, version: M.DeploymentVersion) -> dict:
     # 5. Downloads: need pinned BERRYWARE, and autoexec.be must come last. The
     #    pool holds artwork too, and the engine hands the device only the
     #    berryware, so the rules here look at the same subset.
-    berry = [f for f in version.files if (f.file_version.file.kind or "berryware") == "berryware"]
-    artwork = [f for f in version.files if f.file_version.file.kind == "artwork"]
+    berry = list(version.file_set.entries) if version.file_set is not None else []
+    artwork = list(version.artwork_set.entries) if version.artwork_set is not None else []
     if "download_files" in ops and not berry:
         errors.append("the procedure downloads files, but this version pins no berryware")
     if berry and "download_files" not in ops:
@@ -208,7 +205,7 @@ def check(db, version: M.DeploymentVersion) -> dict:
             f"{len(artwork)} artwork file(s) are pinned but the procedure never marks")
     if berry:
         ordered = sorted(berry, key=lambda f: f.position)
-        names = [f.file_version.file.filename for f in ordered]
+        names = [f.filename for f in ordered]
         if "autoexec.be" in names and names[-1] != "autoexec.be":
             errors.append(
                 "autoexec.be must be downloaded LAST — otherwise a partial download leaves a "
@@ -230,7 +227,7 @@ def check(db, version: M.DeploymentVersion) -> dict:
     #    version still answers "what did this unit get" on its own — and it
     #    must be ARTWORK: the step editor only offers .lbrn2 files, and a
     #    template typed by hand that names a script is caught here.
-    art_names = [f.file_version.file.filename for f in artwork]
+    art_names = [f.filename for f in artwork]
     for idx, step in enumerate(steps):
         if step.get("op") != "mark_laser":
             continue

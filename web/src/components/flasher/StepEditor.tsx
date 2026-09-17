@@ -22,10 +22,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   errorMessage,
-  getDeviceFileVersion,
-  type BerryBundleRow,
-  type DeploymentFileRow,
+  getFileSetEntry,
+  type FileSetRow,
   type FirmwareAssetRow,
+  type VersionFileRow,
 } from "../../api";
 import Field, { CheckField, FieldGrid } from "../Field";
 import FilePick from "../FilePick";
@@ -34,7 +34,7 @@ import SiInput from "../SiInput";
 import type { AgentRoll } from "../../flasher/benchAgent";
 import { rollFromName, type RollGeometry } from "../../flasher/label";
 import LabelPreview from "./LabelPreview";
-import { fmtBytes, lbrnThumbnail } from "./common";
+import { fmtBytes, fmtWhen, lbrnThumbnail } from "./common";
 import {
   OPS, OP_BY_NAME, PHASES, getField, setField, varsBefore,
   type Field as FieldSpec, type OpSpec,
@@ -42,13 +42,14 @@ import {
 
 type Step = Record<string, unknown>;
 
-/** One artwork the marking step may pin: the newest published version of a
- *  `.lbrn2` in the project pool, or the one the version already pins. */
+/** One drawing the marking step may pin: an ARTWORK file set — one `.lbrn2`
+ *  per set — from anywhere on the platform. */
 export interface ArtworkChoice {
-  device_file_version_id: number;
+  set_id: number;
+  label: string;
   filename: string;
-  version_no: number;
   size_bytes: number;
+  created_at: string | null;
 }
 
 export interface StepEditorProps {
@@ -60,15 +61,15 @@ export interface StepEditorProps {
   images: { firmware_asset_id: number; address: string }[];
   assets: FirmwareAssetRow[];
   onImagesChange: (images: { firmware_asset_id: number; address: string }[]) => void;
-  /** berryware: the bundle this version pins, and the ones to choose from */
-  bundleId: number | null;
-  bundles: BerryBundleRow[];
-  onBundleChange: (bundleId: number) => void;
+  /** berryware: the release this version pins, and the ones to choose from */
+  fileSetId: number | null;
+  fileSets: FileSetRow[];
+  onFileSetChange: (setId: number) => void;
   /** artwork: what the version pins (any kind — the picker filters), the
-   *  project's artwork pool to pick from, and the two ways a step changes it.
+   *  platform's drawings to pick from, and the two ways a step changes it.
    *  A pick and an upload both end in `onArtworkChange`, which the owner turns
    *  into ONE patch carrying the step and the new pin together. */
-  pinnedFiles?: DeploymentFileRow[];
+  pinnedFiles?: VersionFileRow[];
   artworkPool?: ArtworkChoice[];
   onArtworkChange?: (index: number, step: Step, file: ArtworkChoice) => void;
   onArtworkUpload?: (file: File) => Promise<ArtworkChoice>;
@@ -235,13 +236,13 @@ function summarise(step: Step, spec: OpSpec | undefined, props: StepEditorProps)
       continue;
     }
     if (f.kind === "bundle") {
-      const b = props.bundles.find((x) => x.id === props.bundleId);
-      bits.push(b ? `${b.label} (${b.file_count} files)` : "no bundle pinned");
+      const b = props.fileSets.find((x) => x.id === props.fileSetId);
+      bits.push(b ? `${b.label} (${b.file_count} files)` : "no release pinned");
       continue;
     }
     if (f.kind === "artwork") {
       const art = artworkOf(step, props);
-      bits.push(art ? `${art.filename} v${art.version_no}` : "no artwork pinned");
+      bits.push(art ? art.filename : "no artwork pinned");
       continue;
     }
     if (f.kind === "commands") {
@@ -262,7 +263,7 @@ const kindOf = (id: number, assets: FirmwareAssetRow[]) =>
 
 /** The artwork THIS step engraves: the pinned file its `template` names, or
  *  the only pinned artwork when it names none — the engine's own rule. */
-function artworkOf(step: Step, props: StepEditorProps): DeploymentFileRow | null {
+function artworkOf(step: Step, props: StepEditorProps): VersionFileRow | null {
   const art = (props.pinnedFiles ?? []).filter((f) => f.kind === "artwork");
   const named = String(step.template ?? "");
   if (named) return art.find((f) => f.filename === named) ?? null;
@@ -750,18 +751,18 @@ function ImagePicker(p: FieldEditorProps) {
   );
 }
 
-/** The download step's berryware bundle. */
-function BundlePicker({ bundles, bundleId, onBundleChange }: FieldEditorProps) {
-  const chosen = bundles.find((b) => b.id === bundleId);
+/** The download step's berryware release — one file set. */
+function BundlePicker({ fileSets, fileSetId, onFileSetChange }: FieldEditorProps) {
+  const chosen = fileSets.find((b) => b.id === fileSetId);
   return (
     <span className="img-picker">
       <select
         className="text"
-        value={bundleId ?? ""}
-        onChange={(e) => onBundleChange(Number(e.target.value))}
+        value={fileSetId ?? ""}
+        onChange={(e) => onFileSetChange(Number(e.target.value))}
       >
-        <option value="">— pick a bundle —</option>
-        {bundles.map((b) => (
+        <option value="">— pick a release —</option>
+        {fileSets.map((b) => (
           <option key={b.id} value={b.id}>
             {b.label} · {b.file_count} files{b.used_by ? ` · used by ${b.used_by}` : ""}
           </option>
@@ -769,7 +770,7 @@ function BundlePicker({ bundles, bundleId, onBundleChange }: FieldEditorProps) {
       </select>
       {chosen ? (
         <span className="muted dim">
-          {chosen.files.map((f) => f.filename).join(", ")}
+          {chosen.filenames.join(", ")}
         </span>
       ) : null}
     </span>
@@ -778,41 +779,41 @@ function BundlePicker({ bundles, bundleId, onBundleChange }: FieldEditorProps) {
 
 /** The LightBurn thumbnail of a pinned artwork, fetched on demand: the file
  *  is 150 kB of XML and only the picker and the preview want the picture. */
-function useArtworkThumb(versionId: number | null): string | null {
+function useArtworkThumb(setId: number | null, filename: string): string | null {
   const [thumb, setThumb] = useState<string | null>(null);
   useEffect(() => {
     setThumb(null);
-    if (!versionId) return;
+    if (!setId || !filename) return;
     const ac = new AbortController();
-    getDeviceFileVersion(versionId, ac.signal)
-      .then((v) => setThumb(v.binary ? null : lbrnThumbnail(v.content)))
+    getFileSetEntry(setId, filename, ac.signal)
+      .then((e) => setThumb(e.binary ? null : lbrnThumbnail(e.content)))
       .catch(() => setThumb(null));
     return () => ac.abort();
-  }, [versionId]);
+  }, [setId, filename]);
   return thumb;
 }
 
-/** The marking step's artwork: pick one from the project pool, or upload a
- *  new .lbrn2. Either way the step's `template` and the version's pin change
- *  together, in one patch, because a step naming a file the version does not
- *  pin is exactly what the publish gate refuses. */
+/** The marking step's drawing: pick an artwork set from the platform, or
+ *  upload a new .lbrn2. Either way the step's `template` and the version's
+ *  pin change together, in one patch, because a step naming a file the
+ *  version does not pin is exactly what the publish gate refuses. */
 function ArtworkPicker(p: FieldEditorProps) {
   const { step, index, artworkPool = [], onArtworkChange, onArtworkUpload } = p;
   const current = artworkOf(step, p);
-  const thumb = useArtworkThumb(current?.device_file_version_id ?? null);
+  const thumb = useArtworkThumb(current?.set_id ?? null, current?.filename ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const choices: ArtworkChoice[] = [...artworkPool];
-  if (current && !choices.some((c) => c.device_file_version_id === current.device_file_version_id)) {
+  if (current && !choices.some((c) => c.set_id === current.set_id)) {
     choices.unshift({
-      device_file_version_id: current.device_file_version_id, filename: current.filename,
-      version_no: current.version_no, size_bytes: current.size_bytes,
+      set_id: current.set_id, label: current.filename, filename: current.filename,
+      size_bytes: current.size_bytes, created_at: null,
     });
   }
 
   const pick = (id: number) => {
-    const file = choices.find((c) => c.device_file_version_id === id);
+    const file = choices.find((c) => c.set_id === id);
     if (file) onArtworkChange?.(index, { ...step, template: file.filename }, file);
   };
   const upload = async (files: File[]) => {
@@ -835,14 +836,14 @@ function ArtworkPicker(p: FieldEditorProps) {
       <span className="artwork-fields">
         <select
           className="text mono"
-          value={current?.device_file_version_id ?? ""}
+          value={current?.set_id ?? ""}
           onChange={(e) => pick(Number(e.target.value))}
           disabled={busy}
         >
-          <option value="">— pick an artwork from the pool —</option>
+          <option value="">— pick a drawing —</option>
           {choices.map((c) => (
-            <option key={c.device_file_version_id} value={c.device_file_version_id}>
-              {c.filename} · v{c.version_no} · {fmtBytes(c.size_bytes)}
+            <option key={c.set_id} value={c.set_id}>
+              {c.label} · {fmtBytes(c.size_bytes)}{c.created_at ? ` · ${fmtWhen(c.created_at)}` : ""}
             </option>
           ))}
         </select>
@@ -851,13 +852,13 @@ function ArtworkPicker(p: FieldEditorProps) {
             accept=".lbrn2,.lbrn"
             disabled={busy || !onArtworkUpload}
             onPick={(files) => void upload(files)}
-            title="Upload a LightBurn project. It joins the project pool, is published, and replaces this step's artwork."
+            title="Upload a LightBurn project. It becomes a drawing on the platform and replaces this step's artwork."
           >
             {busy ? "Uploading…" : "Upload a new .lbrn2…"}
           </FilePick>
           {current ? (
             <span className="muted dim">
-              pinned: {current.filename} v{current.version_no} · {fmtBytes(current.size_bytes)}
+              pinned: {current.filename} · {fmtBytes(current.size_bytes)}
             </span>
           ) : (
             <span className="muted dim">nothing pinned yet</span>
@@ -966,7 +967,7 @@ function StepFields({
     }
 
     if (f.kind === "bundle") {
-      const b = props.bundles.find((x) => x.id === props.bundleId) ?? props.bundles[0];
+      const b = props.fileSets.find((x) => x.id === props.fileSetId) ?? props.fileSets[0];
       rows.push({
         label: f.label,
         node: b ? (
@@ -988,7 +989,7 @@ function StepFields({
         node: art ? (
           <span>
             <span className="mono">{art.filename}</span>{" "}
-            <span className="muted dim">v{art.version_no} · {fmtBytes(art.size_bytes)}</span>
+            <span className="muted dim">{fmtBytes(art.size_bytes)}</span>
           </span>
         ) : (
           <span className="muted">nothing pinned</span>

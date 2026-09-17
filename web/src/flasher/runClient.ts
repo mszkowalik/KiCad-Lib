@@ -293,7 +293,7 @@ export class RunClient {
     const out = await runMarkJob(
       apiBaseUrl(),
       {
-        fileVersionId: Number(args.file_version_id),
+        fileSetId: Number(args.file_set_id),
         filename: String(args.filename ?? ""),
         value: String(args.value ?? ""),
         // The ENGINE states these — the step's own, or the platform's

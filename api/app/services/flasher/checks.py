@@ -145,12 +145,11 @@ def _temp(sensors: list) -> dict:
 
 def _pinned_files(db: Session, run: M.ProgrammingRun) -> list[str]:
     rows = db.execute(text("""
-        SELECT f.filename
-        FROM deployment_files df
-        JOIN device_file_versions v ON v.id = df.device_file_version_id
-        JOIN device_files f ON f.id = v.device_file_id
-        WHERE df.deployment_version_id = :v
-        ORDER BY df.position
+        SELECT e.filename
+        FROM deployment_versions v
+        JOIN file_set_entries e ON e.file_set_id = v.file_set_id
+        WHERE v.id = :v
+        ORDER BY e.position
     """), {"v": run.deployment_version_id}).fetchall()
     return [r.filename for r in rows]
 

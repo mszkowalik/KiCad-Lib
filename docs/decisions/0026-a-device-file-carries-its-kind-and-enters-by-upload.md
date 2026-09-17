@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "superseded by 0029-a-release-is-a-file-set.md"
 date: 2026-09-17
 decision-makers: Mateusz Kowalik
 ---
