@@ -249,9 +249,15 @@ Both were measured against LightBurn 1.7.03 on 2026-07-26 and both are guarded
 in `api/app/services/bench_agent/agent.py`:
 
 - **`STATUS` answered `OK` with no laser connected**, so it means "not busy",
-  never "a laser is there". `START` likewise answered `OK`. Neither confirms
-  that anything was engraved — **a mark is operator-confirmed, not
-  machine-proven**, until `STATUS` is seen reporting busy during a real job.
+  never "a laser is there". `START` likewise answered `OK`. **But `STATUS`
+  does report busy during a real job**: the first production mark (prod run
+  6328, 2026-09-17, serial D4E9F4F4DFD4) held `STATUS != OK` for 10.5 s and
+  the run stored `mark_seconds = 10.5`. So a job whose "idle after" time is
+  near zero did not run — that is the machine-side check decision 0020 left
+  open, and it is now the agent's `wait_for_idle` doing it. What `STATUS`
+  still cannot say is whether the selected PROFILE was connected to the board
+  (see "The machine"), which is why the USB check and the one-profile rule
+  exist.
 - **`RequireFrameBeforeStart` is on in both device profiles**, and a frame pass
   is the red pointer tracing the outline — the galvo moving with nothing
   marked. If a job traces and leaves no mark, look there before suspecting the

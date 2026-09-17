@@ -251,6 +251,19 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
   run's results: a unit that only answers with BOOT held has a fault, and
   rescuing it silently every run is how that stays invisible.
 
+- **A deploy breaks every bench tab that is already open, and it looks like a
+  device fault** (prod run 6329, 2026-09-17). esptool-js loads its per-chip
+  module lazily, Vite emits it as a hashed chunk, and a new image replaces
+  every chunk — so a tab opened before the deploy fails its first connect with
+  `Failed to fetch dynamically imported module …/esp32-<hash>.js`, on every
+  rung, and the ladder ended in "BOOT was not held within 30s" while the
+  operator held BOOT. Two guards: `main.tsx` reloads once on Vite's
+  `vite:preloadError`, and `Station.espOpen` aborts the ladder on that error
+  with "reload the page" instead of blaming the device. Never treat a
+  module-load failure as a rung. The esptool phase itself runs in the browser
+  over USB; the internet carries only the engine's step messages, so latency
+  was never the cause.
+
 - **esptool-js changes baud by CLOSING and REOPENING the port**
   (`changeBaud()` → `transport.disconnect()` then `connect()`), and a Web Serial
   close/open toggles DTR and RTS. On a board that resets from that, the stub is

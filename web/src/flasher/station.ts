@@ -73,6 +73,20 @@ const ROM_BAUD = 115200;
  *  a run: after this it FAILS, and the operator starts it again. */
 const BOOT_WAIT_MS = 30_000;
 
+/** esptool-js imports its chip module lazily; after a deploy the hashed chunk
+ *  this tab knows about no longer exists, and the browser throws this. It is a
+ *  page fault, never a device one. */
+function isStaleChunk(e: Error): boolean {
+  return /dynamically imported module|Importing a module script failed/i.test(e.message);
+}
+
+function staleChunkError(e: Error): Error {
+  return new Error(
+    "this page is out of date — the platform was updated while it was open, and it can no "
+    + `longer load the esptool chip module. Reload the page and run again. (${e.message})`,
+  );
+}
+
 /** Await something, but never longer than `ms`.
  *
  *  Every step of closing a serial port can hang rather than fail: a writer
@@ -602,6 +616,9 @@ export class Station {
    *  rung that worked is returned, so a unit that needed help is visible in the
    *  run record instead of being quietly rescued every time.
    */
+  /** The connect ladder. Every rung is a device fault it was built for — but a
+   *  failure to LOAD esptool's chip module is not a rung, it is a stale page
+   *  after a deploy, and it aborts the ladder with the one fix that exists. */
   async espOpen(
     chipExpect: string,
     baudOverride?: number,
@@ -641,6 +658,7 @@ export class Station {
             } catch (e) {
               last = e as Error;
               await this.cleanup();
+              if (isStaleChunk(last)) throw staleChunkError(last);
               // Reaching "Changing baudrate" means the sync and the stub were
               // fine and only the speed switch failed — the one failure here
               // that holding BOOT harder will not fix.
@@ -665,8 +683,12 @@ export class Station {
         return { ...out, connect_mode: rung.why };
       } catch (e) {
         last = e as Error;
-        this.emit("err", `${last.message} — ${rung.why} did not work`);
         await this.cleanup();
+        // Not a rung that failed — a page that cannot load esptool's chip
+        // module any more. Walking the ladder would blame the device and end
+        // in "BOOT was not held" (prod run 6329, 2026-09-17).
+        if (isStaleChunk(last)) throw staleChunkError(last);
+        this.emit("err", `${last.message} — ${rung.why} did not work`);
       }
     }
     throw last ?? new Error("could not connect to the device");

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-17 (a deploy no longer breaks an open bench tab)
+
+- **A bench tab opened before a deploy failed every connect as "BOOT was not
+  held"** (prod run 6329). esptool's chip module is a lazily loaded, hashed
+  chunk; the deploy replaced it; the browser could not fetch it; and the
+  connect ladder treated that as a device that would not answer. The page now
+  reloads itself once when a chunk is missing, and the ladder stops at once
+  with "this page is out of date — reload" instead of walking its rungs.
+- **A mark is now machine-checked.** The first production mark showed
+  LightBurn's `STATUS` reporting busy for the whole 10.5 s job, so a job that
+  reports idle immediately did not run. Recorded in
+  [docs/reference/laser-marking.md](docs/reference/laser-marking.md).
+
 ## 2026-09-17 (deployments can be published and re-kinded from the page)
 
 - **A draft version has a Publish button on the timeline.** Publishing lived
