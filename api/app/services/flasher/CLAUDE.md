@@ -252,7 +252,12 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
   the browser reports the two addresses it is provably reaching the platform by
   (`client_info.api_base`, `client_info.page_base`), and `_resolve_base_url`
   takes the first USABLE candidate in this order: the `base_url` param,
-  `public_base_url`, the bench API origin, the bench page origin. The bench
+  `device_base_url`, `public_base_url`, the bench API origin, the bench page
+  origin. **`device_base_url` is a DEVICE address, not a browser one** — on
+  production it is the `http://` twin of the public name, because Tasmota
+  completes no TLS against the Cloudflare edge and validates no certificate
+  anyway ([0025](../../../../docs/decisions/0025-a-device-fetches-from-its-own-address.md)).
+  It is empty everywhere else and drops out. The bench
   ranks last because the winner is an address the engine then tells a DEVICE to
   fetch from — so a value the browser merely asserts is used only where the
   platform has no usable one of its own, which is the dev case and nothing else.

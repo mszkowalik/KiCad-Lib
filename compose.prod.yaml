@@ -74,6 +74,11 @@ services:
       # Required: generated symbols embed this address in datasheet links, and
       # a wrong value produces links that resolve nowhere from a KiCad client.
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL to this server's address}
+      # The address a PROGRAMMED DEVICE fetches berryware from. Leave it unset
+      # unless the device cannot use PUBLIC_BASE_URL — here it is the http://
+      # twin of the public name, because Tasmota's TLS never completes against
+      # the edge. Decision 0025; the cost is in api/app/config.py.
+      DEVICE_BASE_URL: ${DEVICE_BASE_URL:-}
       HTTPLIB_TOKEN: ${HTTPLIB_TOKEN:?set HTTPLIB_TOKEN in .env}
       # /api/agent/* can create draft proposals — never leave it open off-host.
       MCP_TOKEN: ${MCP_TOKEN:?set MCP_TOKEN in .env}

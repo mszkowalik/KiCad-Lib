@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-09-17 (a device fetches from its own address)
+
+- **Berryware downloads work on production.** Step 16 of `Dongle_V2 config` had
+  never run there before, and it failed every retry with `TLS connection error
+  296`: the device was sent `https://disfunction.cc/lib`, and a Dongle V2
+  completes **0 of about 12** HTTPS attempts against the Cloudflare edge. Over
+  plain HTTP by name it succeeds every time.
+- **`DEVICE_BASE_URL` is a new setting**, ranked above `PUBLIC_BASE_URL` when the
+  engine picks the address a device fetches from. Empty by default, which means
+  "the same address browsers use". Production sets it to
+  `http://disfunction.cc/lib`. No deployment version changed and none needed
+  re-publishing — no step overrides the download URL.
+- **Stated rather than buried**: the scripts now cross the internet in the clear,
+  and the download step still verifies the byte count rather than the sha256 it
+  already holds. Tasmota validated no certificate before this change, so HTTPS
+  was buying the device encryption to an unverified peer and nothing else. Full
+  reasoning and the measurements in
+  [decision 0025](docs/decisions/0025-a-device-fetches-from-its-own-address.md).
+
 ## 2026-09-17 (settings that touch hardware live on the platform)
 
 - **The transport profiles left the browser.** The baud a device is flashed at,

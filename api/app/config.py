@@ -55,6 +55,28 @@ class Settings(BaseSettings):
     # locally stored datasheets injected into generated symbols.
     public_base_url: str = "http://localhost:8020"
 
+    # The address a PROGRAMMED DEVICE fetches its berryware from, when that is
+    # not the address a browser uses. Empty means "the same", and that is the
+    # right answer almost everywhere.
+    #
+    # It exists because an ESP32 running Tasmota is not a browser. Measured on
+    # a Dongle V2 against this deployment, 2026-09-17, twelve attempts:
+    #
+    #     http://disfunction.cc/lib   Done    every time
+    #     https://disfunction.cc/lib  Failed  every time (TLS error 296)
+    #
+    # The same device completes HTTPS to other hosts intermittently, so the
+    # failure is the pair, not the feature. Tasmota's HTTP client validates no
+    # certificate anyway, so HTTPS was buying the device nothing it could check.
+    #
+    # WHAT THIS COSTS, stated so nobody has to rediscover it: the berry scripts
+    # then cross the internet in the clear, and `_download_files` verifies the
+    # byte COUNT, not the sha256 the platform already stores. A same-length
+    # substitution would pass. The endpoint is unauthenticated by design and
+    # the files are device configuration rather than secrets, so this is a
+    # tampering exposure and not a disclosure one. See decision 0025.
+    device_base_url: str = ""
+
     # Browser origins allowed to call this API, comma-separated. The deployed
     # web image serves the SPA from the same origin as the API (nginx proxies
     # both), so CORS only matters for a dev server aimed at a remote API.

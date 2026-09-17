@@ -252,6 +252,10 @@ class RunEngine:
         IP. So the BENCH reports the two addresses it is provably reaching the
         platform by — as a LAST resort.
 
+        A DEVICE IS NOT A BROWSER, so `device_base_url` sits above
+        `public_base_url`: the public name is what a person opens, and this is
+        what an ESP32 can actually fetch from.
+
         CONFIGURATION OUTRANKS THE BENCH, on purpose. The winner is an address
         the engine then tells a DEVICE to fetch its berryware from, so a value
         the browser merely asserts is used only where the platform has no usable
@@ -262,6 +266,12 @@ class RunEngine:
         candidates = [
             # A param set or an operator field says it on purpose: it wins.
             ("param", self.vars.get("base_url")),
+            # The address configured for DEVICES specifically, when it differs
+            # from the one browsers use. Unset almost everywhere; on this
+            # deployment it is the http:// twin of the public name, because the
+            # device cannot complete TLS to it. See `config.device_base_url`
+            # for the measurement and decision 0025 for what it costs.
+            ("device_base_url", settings.device_base_url),
             # The platform's own configuration. Reachable in production; the
             # `localhost` default on a dev machine drops out here.
             ("public_base_url", settings.public_base_url),

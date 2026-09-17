@@ -139,6 +139,13 @@ personal API token. Full rules in `api/CLAUDE.md` (backend) and `web/CLAUDE.md`
 - **`PUBLIC_BASE_URL`, `APP_BASE` and the shared nginx `/lib/` route still move
   together** — the personal URLs are built from `PUBLIC_BASE_URL`, so a mismatch
   hands users a link that resolves nowhere.
+- **A PROGRAMMED DEVICE uses `DEVICE_BASE_URL`, not `PUBLIC_BASE_URL`.** On this
+  deployment it is the `http://` twin of the public name, because Tasmota
+  completes no TLS against the Cloudflare edge and validates no certificate
+  anyway. It is empty everywhere else and then means "the same". Do not
+  "fix" the mismatch between the two by making them equal —
+  [0025](docs/decisions/0025-a-device-fetches-from-its-own-address.md) is why
+  they differ, and what it costs.
 
 ## Decisions and open work
 
