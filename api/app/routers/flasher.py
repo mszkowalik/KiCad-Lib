@@ -39,13 +39,18 @@ from .. import models as M
 from ..services import storage
 from ..services import crypto
 from ..services.flasher import (bundle, checks as checks_svc,
-                                params as params_svc, validate)
-from ..services.flasher.engine import RunEngine
+                                params as params_svc, transports, validate)
+from ..services.flasher import engine as engine_mod
+from ..services.flasher.engine import (SERIAL_MAX, SERIAL_MIN, RunEngine)
 from .util import actor_of, audit
 
 router = APIRouter(prefix="/api/flasher", tags=["flasher"])
 
-TRANSPORT_PROFILES = ["uart_bridge", "usb_serial_jtag"]
+# The NAMES a version may pin. The profiles themselves — baud, reset style,
+# whether the monitor may touch DTR/RTS — live in `services/flasher/transports.py`,
+# which is also what `/meta` serves and what the engine puts in a run's spec.
+# They were TypeScript constants until 2026-09-17; see that module for why.
+TRANSPORT_PROFILES = list(transports.NAMES)
 FIRMWARE_KINDS = ["factory", "app", "filesystem", "safeboot"]
 # The only two parts in production (user decision 2026-07-30).
 CHIPS = ["esp32", "esp32c6"]
@@ -1446,6 +1451,17 @@ def delete_param_set(param_set_id: int, db: Session = Depends(get_db)):
 @router.get("/meta")
 def flasher_meta():
     return {"ops": STEP_OPS, "transport_profiles": TRANSPORT_PROFILES,
+            # The full table, not just the names: the bench needs the baud and
+            # the reset style, and it must not keep its own copy of them.
+            "transports": transports.PROFILES,
+            "flash_bauds": list(transports.FLASH_BAUDS),
+            # What a marking template says where the serial goes, when a step
+            # does not name its own. The BENCH used to hold this list.
+            "mark_placeholders": list(engine_mod.DEFAULT_MARK_PLACEHOLDERS),
+            # The bounds `_identity_value` enforces. The bench checks them too,
+            # so a bad capture is caught before a run is created — but it reads
+            # them from here rather than keeping its own copy.
+            "serial_len": {"min": SERIAL_MIN, "max": SERIAL_MAX},
             "firmware_kinds": FIRMWARE_KINDS, "chips": CHIPS,
             "default_offsets": DEFAULT_OFFSETS,
             # The check vocabulary, so a step can pick a name from a list and

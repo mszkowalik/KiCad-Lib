@@ -9,6 +9,7 @@ import {
   errorMessage,
   getDeploymentVersion,
   type DeploymentVersionDetail,
+  type FlasherMeta,
 } from "../../api";
 import {
   listSerialPorts,
@@ -16,6 +17,7 @@ import {
   runPrintJob,
   type AgentPort,
   type AgentPrinter,
+  type AgentRoll,
 } from "../../flasher/benchAgent";
 import { RunClient, type RunSpec } from "../../flasher/runClient";
 import {
@@ -38,6 +40,10 @@ export interface StationSlotProps {
   simPin: string;
   /** Which project an erased device belongs to, for the run record. */
   projectId: number | null;
+  /** `/meta`. The station keeps NO constants that decide what happens to a
+   *  device: the serial bounds, the marking placeholders and the label rolls
+   *  all come from the platform (decision 2026-09-17). */
+  meta?: FlasherMeta | null;
   /** What this slot is for. "mark" drops Erase and Test — a marking bench has
    *  no business wiping a device — and renames Program to Mark. */
   mode?: "flash" | "mark";
@@ -59,6 +65,8 @@ export interface StationSlotProps {
     laserUsb?: { present: boolean; name: string; ids: string } | null;
   };
   printers?: AgentPrinter[];
+  /** The rolls that printer's PPD actually offers. */
+  rolls?: AgentRoll[];
   onRunCreated?: (runId: number) => void;
 }
 
@@ -92,25 +100,23 @@ const ERASE_ESTIMATE_MS = 6000;
  *  A V2 dongle's MAC is twelve hex characters and shorter product serials
  *  exist. Something outside this range is a capture that went wrong — a whole
  *  Tasmota topic, an empty split — not a serial anybody meant to engrave. */
-const SERIAL_MIN = 8;
-const SERIAL_MAX = 12;
-
-/** "" when the value is usable, otherwise why it is not. */
-function serialProblem(value: string): string {
+/** "" when the value is usable, otherwise why it is not. The bounds come from
+ *  `/meta`; the engine is still the gate, and these only catch a bad capture
+ *  before a run is created. */
+function serialProblem(value: string, min: number, max: number): string {
   if (!value) return "no serial yet";
   if (value.split(/\s/).length > 1) return `"${value}" has a space in it`;
-  if (value.length < SERIAL_MIN || value.length > SERIAL_MAX)
-    return `"${value}" is ${value.length} characters — a serial is ${SERIAL_MIN} to ${SERIAL_MAX}`;
+  if (value.length < min || value.length > max)
+    return `"${value}" is ${value.length} characters — a serial is ${min} to ${max}`;
   return "";
 }
 
-/** The label stock this bench runs. The agent can list every roll the
- *  printer's PPD knows — 61 of them — but a dropdown of 61 is a search, not a
- *  choice. Add a row here when a roll is actually bought, and the `size` is
- *  the PPD's own page-size name, which is what `lp -o PageSize=` takes. */
-const ROLLS = [
-  { size: "w72h154", label: "25 x 54 mm", note: "11352 return address" },
-];
+/** The roll to offer when nothing else says. The AGENT lists what the
+ *  printer's PPD actually knows and the `print_label` step names the one a
+ *  procedure expects — this is only the last resort, and buying a new roll must
+ *  not be a code change (decision 2026-09-17: bench settings live on the
+ *  platform or on the step, never in a bundle). */
+const FALLBACK_ROLL = { size: "w72h154", label: "25 x 54 mm", note: "11352 return address" };
 
 /** What a CUPS state reason means in a sentence. The first one is the only one
  *  this printer raises, and it covers three different causes — measured on
@@ -221,7 +227,7 @@ export default function BenchStation(props: StationSlotProps) {
    *  printer cannot report what is loaded in it (CUPS carries no media-ready
    *  for this driver, measured 2026-09-17), so the operator states it once and
    *  the station remembers. */
-  const [roll, setRoll] = useStickyState<string>("mark.roll", ROLLS[0].size);
+  const [roll, setRoll] = useStickyState<string>("mark.roll", FALLBACK_ROLL.size);
   const [printer, setPrinter] = useStickyState<string>("mark.printer", "");
   /** The marking procedure's own template and placeholder, so a typed mark and
    *  a run cannot disagree about which drawing a unit gets. */
@@ -458,7 +464,7 @@ export default function BenchStation(props: StationSlotProps) {
         ? files[0]
         : undefined;
     const value = typed.trim().toUpperCase();
-    if (!file || serialProblem(value)) return;
+    if (!file || serialProblem(value, props.meta?.serial_len?.min ?? 8, props.meta?.serial_len?.max ?? 12)) return;
 
     setError(null);
     setHint(null);
@@ -473,7 +479,10 @@ export default function BenchStation(props: StationSlotProps) {
           fileVersionId: file.device_file_version_id,
           filename: file.filename,
           value,
-          placeholder: step?.placeholder,
+          // Stated, never guessed: the step's own, else the platform's.
+          placeholders: step?.placeholder
+            ? [String(step.placeholder)]
+            : (props.meta?.mark_placeholders ?? []),
           device: step?.device,
           start: true,
           jobTimeoutS: Number(step?.job_timeout ?? 300),
@@ -508,7 +517,7 @@ export default function BenchStation(props: StationSlotProps) {
    */
   const printTyped = async () => {
     const value = typed.trim().toUpperCase();
-    if (serialProblem(value)) return;
+    if (serialProblem(value, props.meta?.serial_len?.min ?? 8, props.meta?.serial_len?.max ?? 12)) return;
     setError(null);
     setHint(null);
     setStatus("busy");
@@ -585,7 +594,7 @@ export default function BenchStation(props: StationSlotProps) {
       );
       if (!raw) throw new Error(`the device answered, but said nothing at ${plan.path}`);
       const value = (plan.takeAfter ? raw.split(plan.takeAfter).pop() ?? raw : raw).toUpperCase();
-      const bad = serialProblem(value);
+      const bad = serialProblem(value, props.meta?.serial_len?.min ?? 8, props.meta?.serial_len?.max ?? 12);
       // A device that answers with something that is not a serial is not an
       // identified device. Saying so here stops a run that would fail on its
       // action step anyway, after the part is already in the fixture.
@@ -821,7 +830,10 @@ export default function BenchStation(props: StationSlotProps) {
    *  nothing to chain to, whatever the switch says. */
   const chained = marking && linked && hasLabelStep;
   /** Manual mode's own verification. The read path is checked in `preRead`. */
-  const typedProblem = manual ? serialProblem(typed.trim().toUpperCase()) : "";
+  const typedProblem = manual
+    ? serialProblem(typed.trim().toUpperCase(),
+                    props.meta?.serial_len?.min ?? 8, props.meta?.serial_len?.max ?? 12)
+    : "";
   const autoMarkNow = marking ? autoMark && laserReady && identified : false;
   const autoPrintNow = marking
     ? (autoPrint || (linked && autoMarkNow)) && printerReady && hasLabelStep && identified
@@ -1108,7 +1120,12 @@ export default function BenchStation(props: StationSlotProps) {
                 disabled={busy}
                 title="Which label roll is in the printer. It cannot be read from the printer, so it is stated here."
               >
-                {ROLLS.map((r) => (
+                {/* What the AGENT says the printer's PPD knows, not a list
+                    kept here. `health.rolls` is that report; the fallback is
+                    the one roll this bench has always run. */}
+                {(props.rolls?.length
+                  ? props.rolls.map((r) => ({ size: r.size, label: r.name || r.size }))
+                  : [FALLBACK_ROLL]).map((r) => (
                   <option key={r.size} value={r.size}>
                     {r.label}
                   </option>

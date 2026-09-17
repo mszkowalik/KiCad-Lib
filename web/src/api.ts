@@ -4336,6 +4336,24 @@ export interface FlasherMeta {
   /** the functional-check vocabulary a step may claim with `check` */
   checks: { name: string; label: string; category: string; position: number }[];
   check_categories: string[];
+  /** The transport profiles in full — baud, reset style, monitor signals. The
+   *  bench keeps NO copy of these: a setting that decides what happens to a
+   *  device lives on the platform, and a step's `baud` overrides the profile
+   *  (decision 2026-09-17). */
+  transports: Record<string, {
+    label: string;
+    before: "default_reset" | "usb_reset";
+    flash_baud: number;
+    monitor_signals: { dataTerminalReady: boolean; requestToSend: boolean } | null;
+    reenumerates_on_reset: boolean;
+  }>;
+  /** Bauds a step may name. Anything else corrupts the transfer after the erase. */
+  flash_bauds: number[];
+  /** What a marking template says where the serial goes, when a step names
+   *  nothing. */
+  mark_placeholders: string[];
+  /** The bounds the engine enforces on anything that goes ON a part. */
+  serial_len: { min: number; max: number };
 }
 
 /** One named functionality, proven or disproven by one run. Derived from the

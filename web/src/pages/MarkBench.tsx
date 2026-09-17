@@ -20,12 +20,15 @@ import {
   benchAgentUrl,
   type DeploymentRow,
   type ProjectInfo,
+  getFlasherMeta,
+  type FlasherMeta,
 } from "../api";
 import BenchStation from "../components/flasher/BenchStation";
 import Field, { FieldRow } from "../components/Field";
 import { ErrorBanner } from "../components/Ui";
 import {
   listPrinters,
+  type AgentRoll,
   MarkAgent,
   NEEDS_PROTOCOL,
   type AgentPrinter,
@@ -49,6 +52,9 @@ type AgentState =
       /** the laser controller on the bench machine's USB; null = cannot tell */
       laserUsb: { present: boolean; name: string; ids: string } | null;
       host: string;
+      /** The rolls that printer's PPD offers — the printer's own statement,
+       *  never a list kept in the browser. */
+      rolls: AgentRoll[];
       /** Every print queue on the bench machine. The station shows the one it
        *  is set to; the page only fetches, because it owns the heartbeat. */
       printers: AgentPrinter[];
@@ -60,6 +66,15 @@ export default function MarkBench() {
   const [error, setError] = useState<string | null>(null);
   const [projectId, setProjectId] = useStickyState<number | null>("mark.project", null);
   const [versionId, setVersionId] = useStickyState<number | null>("mark.version", null);
+
+  /** `/meta`: the marking placeholders and the serial bounds the station needs.
+   *  It keeps none of its own (decision 2026-09-17). */
+  const [meta, setMeta] = useState<FlasherMeta | null>(null);
+  useEffect(() => {
+    const ac = new AbortController();
+    getFlasherMeta(ac.signal).then(setMeta).catch(() => setMeta(null));
+    return () => ac.abort();
+  }, []);
 
   const [agent, setAgent] = useState<AgentState>({ kind: "checking" });
   /** When the answer below was taken. A re-check that finds the same state
@@ -127,16 +142,24 @@ export default function MarkBench() {
       // calls on the agent and the laser probe is a UDP round trip, so asking
       // for them together costs one poll rather than two.
       let printers: AgentPrinter[] = [];
+      // The rolls come with them: they are the PPD's own statement about the
+      // printer, and the bench must not keep a list of its own (decision
+      // 2026-09-17).
+      let rolls: AgentRoll[] = [];
       try {
-        printers = (await listPrinters()).printers;
+        const got = await listPrinters();
+        printers = got.printers;
+        rolls = got.rolls;
       } catch {
         // An agent from before labels existed answers 404 here. That is not a
         // reason to report the whole bench as down — it still marks.
         printers = [];
+        rolls = [];
       }
       setAgent({
         kind: "up",
         stale: (hello.protocol ?? 0) < NEEDS_PROTOCOL,
+        rolls,
         lightburn: health.responsive,
         busy: health.busy,
         laserUsb: health.laserUsb,
@@ -268,6 +291,8 @@ export default function MarkBench() {
                 : { responsive: false, busy: null, laserUsb: null }
             }
             printers={agent.kind === "up" ? agent.printers : []}
+            rolls={agent.kind === "up" ? agent.rolls : []}
+            meta={meta}
             productionRunId={null}
             deploymentVersionId={versionId}
             overrideReason=""

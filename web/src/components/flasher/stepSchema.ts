@@ -44,6 +44,20 @@ export interface OpSpec {
 }
 
 const TIMEOUT: Field = { key: "timeout", label: "Timeout (s)", kind: "number", placeholder: "10" };
+/** The serial speed THIS esptool step runs at. Blank = the transport profile's
+ *  default, which the server resolves and sends with the run.
+ *
+ *  It is a step field and not a global because it is a property of the board on
+ *  the bench, not of the browser — it lived in `station.ts` as a TypeScript
+ *  constant until 2026-09-17, where changing it meant a deploy and moved every
+ *  deployment on that profile at once. Measured on a Dongle V2 (CH340) with the
+ *  2.27 MB image: 460800 = 45.4 s, 750000 = 32.5 s, while 576000 and 921600
+ *  both corrupt the transfer — the bridge's 12 MHz clock divides cleanly into
+ *  750000 and not into the other two. The publish gate is `validate.check`. */
+const BAUD: Field = {
+  key: "baud", label: "Serial baud", kind: "number", placeholder: "profile default",
+  hint: "blank = the transport profile's baud; a bridge that cannot divide its clock into the number corrupts the transfer after the erase",
+};
 const LABEL: Field = { key: "label", label: "Label", kind: "text", placeholder: "what this step does", summary: true };
 const CAPTURE: Field = {
   key: "capture", label: "Capture into variables", kind: "capture",
@@ -74,12 +88,12 @@ const RAW_OPS: OpSpec[] = [
   {
     op: "esp_connect", title: "Connect + read MAC", phase: "flash",
     blurb: "Opens the ROM loader, detects the chip and reads the MAC. Put it first — the MAC is what makes a failed run attributable to a device.",
-    fields: [LABEL], provides: ["mac", "serial", "chip"],
+    fields: [LABEL, BAUD], provides: ["mac", "serial", "chip"],
   },
   {
     op: "erase", title: "Erase flash", phase: "flash",
     blurb: "esptool erase_flash. Wipes settings and filesystem with it.",
-    fields: [LABEL, TIMEOUT],
+    fields: [LABEL, BAUD, TIMEOUT],
   },
   {
     op: "flash", title: "Write firmware", phase: "flash",
@@ -89,6 +103,7 @@ const RAW_OPS: OpSpec[] = [
       { key: "images", label: "Images to write", kind: "images", summary: true,
         hint: "pinned on this version; a step may write all of them or only some kinds" },
       { key: "verify_md5", label: "Verify MD5 after writing", kind: "bool" },
+      BAUD,
       TIMEOUT,
     ],
   },

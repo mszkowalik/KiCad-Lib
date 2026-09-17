@@ -8,7 +8,7 @@
  */
 import { apiBaseUrl, flasherWsUrl, sameOriginBase } from "../api";
 import { runMarkJob, runPrintJob } from "./benchAgent";
-import { Station, type FlashImage, type LogDir } from "./station";
+import { Station, type FlashImage, type LogDir, type TransportProfile } from "./station";
 
 export interface RunSpec {
   deployment_name: string;
@@ -16,6 +16,10 @@ export interface RunSpec {
   draft: boolean;
   chip: string;
   transport_profile: string;
+  /** The resolved profile from the server — baud, reset style, monitor
+   *  signals. The bench keeps no table of its own (decision: settings that
+   *  decide what happens to hardware live in the database). */
+  transport?: TransportProfile | null;
   monitor_baud: number;
   flash_config: Record<string, string> | null;
   images: FlashImage[];
@@ -140,6 +144,7 @@ export class RunClient {
       case "run": {
         this.spec = msg.spec as RunSpec;
         this.station.profileKey = this.spec.transport_profile;
+        this.station.transport = this.spec.transport ?? null;
         this.events.onSpec(this.spec);
         return;
       }
@@ -181,22 +186,36 @@ export class RunClient {
   }
 
   private async runAction(msg: ActionMsg) {
+    /** A step's own baud, when it states one. Undefined means "whatever the
+     *  transport says", which is the answer for every step that has no reason
+     *  to differ. */
+    const stepBaud = (m: ActionMsg): number | undefined => {
+      const raw = m.args.baud;
+      const n = typeof raw === "number" ? raw : Number(raw);
+      return Number.isFinite(n) && n > 0 ? n : undefined;
+    };
     const st = this.station;
     const spec = this.spec;
     try {
       let info: Record<string, unknown> = {};
       switch (msg.op) {
+        // `baud` is a field on the STEP, where it belongs: it is a property of
+        // this erase or this write, not of the browser (user decision
+        // 2026-09-17). Absent, the transport the server resolved applies. The
+        // engine forwards every step field as an arg, so nothing else had to
+        // change to carry it.
         case "esp_connect":
-          info = await st.espOpen(spec?.chip ?? "");
+          info = await st.espOpen(spec?.chip ?? "", stepBaud(msg));
           break;
         case "erase":
-          await st.espErase();
+          await st.espErase(stepBaud(msg));
           break;
         case "flash":
           await st.espFlash(
             (msg.args.images as FlashImage[]) ?? [],
             (msg.args.flash_config as Record<string, string>) ?? {},
             msg.args.verify_md5 !== false,
+            stepBaud(msg),
           );
           break;
         case "esp_reset":
@@ -277,7 +296,11 @@ export class RunClient {
         fileVersionId: Number(args.file_version_id),
         filename: String(args.filename ?? ""),
         value: String(args.value ?? ""),
-        placeholder: args.placeholder ? String(args.placeholder) : undefined,
+        // The ENGINE states these — the step's own, or the platform's
+        // defaults. The bench no longer has a list of its own.
+        placeholders: Array.isArray(args.placeholders)
+          ? (args.placeholders as string[]).map(String)
+          : [],
         device: args.device ? String(args.device) : undefined,
         start: args.start !== false,
         jobTimeoutS: Number(args.job_timeout ?? 300),

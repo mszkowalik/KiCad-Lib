@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-09-17 (settings that touch hardware live on the platform)
+
+- **The transport profiles left the browser.** The baud a device is flashed at,
+  whether a reset re-enumerates USB, and whether the console may touch DTR/RTS
+  were TypeScript constants in `station.ts` — so changing any of them needed a
+  web deploy and moved every deployment on that profile at once. They are in
+  `services/flasher/transports.py` now, `/meta` serves them, and the engine
+  sends the resolved profile with each run.
+- **A step states its own serial baud.** `esp_connect`, `erase` and `flash` take
+  a `baud`, editable in the step editor, blank = the profile's default, and
+  refused at publish if the bench cannot speak it. Measured on a Dongle V2:
+  **460800 = 45.4 s, 750000 = 32.5 s**, while 576000 and 921600 corrupt the
+  transfer — the CH340's 12 MHz clock divides exactly into 750000 and not into
+  the others.
+- **Three more constants followed**: what a marking template says where the
+  serial goes (the browser decided what got engraved), the label rolls (its own
+  comment said "add a row here when a roll is bought"), and the serial length
+  bounds. All now come from the platform or the printer's own PPD.
+
 ## 2026-09-17 (light or dark, and the platform remembers which)
 
 - **The platform can be set to light or dark, on Account → Appearance.** Three

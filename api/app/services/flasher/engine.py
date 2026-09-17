@@ -39,7 +39,7 @@ from ...config import settings
 from ...db import SessionLocal
 from ... import models as M
 from .. import crypto
-from . import checks, credentials, params as params_svc, protocol
+from . import checks, credentials, params as params_svc, protocol, transports
 
 BROWSER_OPS = {
     "esp_connect", "erase", "flash", "esp_reset", "await_reenumerate",
@@ -53,6 +53,13 @@ SECRET_RE = re.compile(r"password|pin|salt|secret|token", re.I)
 # own `url`; both go through `RunEngine._url`, so `{base_url}` means the same
 # thing in either. See `_resolve_base_url` for where that value comes from.
 FILE_URL_TEMPLATE = "{base_url}/api/flasher/files/{file_version_id}/{filename}"
+# The text a marking template carries where the serial goes. A step names its
+# own with `placeholder`; these are what the CE artwork has always used, tried
+# in order. They lived in the BROWSER until 2026-09-17, which meant a constant
+# in a bundle decided what got engraved — the engine states it now, so the
+# bench only does what it is told (user decision: settings that decide what
+# happens to hardware live on the platform).
+DEFAULT_MARK_PLACEHOLDERS = ("123456789011", "123456")
 # A device on WiFi reaches none of these, whoever configured them.
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
 # Captured variables with these names also update the device row — the
@@ -215,6 +222,12 @@ class RunEngine:
                 "draft": v.status == "draft",
                 "chip": dep.chip,
                 "transport_profile": v.transport_profile,
+                # The RESOLVED transport — baud, reset style, monitor signals —
+                # so the bench keeps no table of its own. It is the profile with
+                # this version's `flash_config.baud` applied, and it is why a
+                # baud change is a version publish and not a web deploy
+                # (user decision 2026-09-17).
+                "transport": transports.resolve(v.transport_profile),
                 "monitor_baud": v.monitor_baud,
                 "flash_config": v.flash_config,
                 "steps": v.steps or [],
@@ -497,7 +510,8 @@ class RunEngine:
             await self._send({"t": "run", "spec": {
                 k: self.spec[k] for k in (
                     "deployment_name", "deployment_version_no", "draft", "chip",
-                    "transport_profile", "monitor_baud", "flash_config", "images",
+                    "transport_profile", "transport", "monitor_baud", "flash_config",
+                    "images",
                 )
             } | {"steps": [{"op": s.get("op"), "label": s.get("label", s.get("op"))}
                            for s in self.spec["steps"]]}})
@@ -936,10 +950,10 @@ class RunEngine:
         # (docs/reference/laser-marking.md, "The machine").
         if step.get("device"):
             args["device"] = str(step["device"])
-        # The placeholder is optional: the bench falls back to the strings the
-        # CE templates have always used when a step does not name one.
-        if step.get("placeholder"):
-            args["placeholder"] = str(step["placeholder"])
+        # ALWAYS stated, never inferred by the bench: the step's own if it names
+        # one, else the platform's defaults.
+        args["placeholders"] = ([str(step["placeholder"])] if step.get("placeholder")
+                                else list(DEFAULT_MARK_PLACEHOLDERS))
         self.log("app", f"marking {value} from {match['filename']}")
         info = await self.action("mark_laser", args, timeout=max(timeout, args["job_timeout"] + 30))
         self.results["marked"] = value

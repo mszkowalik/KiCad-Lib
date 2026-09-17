@@ -128,6 +128,31 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
   so the same folder never forks a twin). Renaming one updates
   `files_label` on every version using it, because the version DISPLAYS the
   bundle's name rather than storing its own.
+- **A setting that decides what happens to HARDWARE lives on the platform, and
+  preferably on the STEP** (2026-09-17, user decision). Four of them were
+  TypeScript constants in the browser bundle, so changing any one meant a web
+  build and a deploy, and it moved every deployment at once:
+
+  | was | is now |
+  |---|---|
+  | `TRANSPORT_PROFILES` in `station.ts` | `services/flasher/transports.py`, served by `/meta`, resolved into each run's spec as `spec.transport` |
+  | the flash baud, per profile | **`baud` on the `esp_connect` / `erase` / `flash` step**, gated by `validate.check` against `transports.FLASH_BAUDS` |
+  | `DEFAULT_PLACEHOLDERS` (what gets engraved) | `engine.DEFAULT_MARK_PLACEHOLDERS`, always stated in the step's args; the step's own `placeholder` still wins |
+  | `ROLLS`, `SERIAL_MIN/MAX` | the agent's own PPD report, and `/meta`'s `serial_len` |
+
+  The engine forwards EVERY step field to the bench (`args = dict(step)`), so a
+  new per-step setting needs no plumbing — add it to `stepSchema.ts` so it can
+  be edited, and gate it in `validate.check` if a wrong value damages something.
+  Do not reintroduce a browser copy, not even as a fallback: a second table is
+  a second answer.
+
+  **Why the baud belongs on the step and not on the profile**: measured on a
+  Dongle V2 (CH340) with the 2.27 MB image, 460800 = 45.4 s, **750000 = 32.5 s
+  (3/3 clean)**, while 576000 and 921600 both corrupt the transfer — the
+  bridge's 12 MHz clock divides exactly into 750000 and not into the other two.
+  That is a property of one board. The Aqua shares the profile and has never
+  been flashed at 750000, so it keeps the default until someone tries it.
+
 - **A DRAFT can be deleted; anything published cannot** (2026-09-17).
   `DELETE /deployment-versions/{id}` exists because `New version` now mints a
   draft on one click, and a draft somebody opened and closed must not leave a

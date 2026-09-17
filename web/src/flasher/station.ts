@@ -33,6 +33,18 @@ export interface OutputSignals {
   requestToSend: boolean;
 }
 
+/** How this board is talked to. **The TABLE IS NOT HERE** — it lives in
+ *  `api/app/services/flasher/transports.py`, `/meta` serves it, and the engine
+ *  puts the RESOLVED profile into each run's spec.
+ *
+ *  It was a TypeScript literal in this file until 2026-09-17, which meant the
+ *  baud a device is flashed at was decided by a browser bundle: changing it
+ *  needed a web build and a deploy, and it moved every deployment on that
+ *  profile at once. A setting that decides what happens to hardware belongs in
+ *  the database beside everything else a version pins — `flash_config.baud`
+ *  overrides it per version, and publishing that version is the whole change
+ *  (user decision 2026-09-17). Do not reintroduce a copy here, not even a
+ *  fallback: a second table is a second answer. */
 export interface TransportProfile {
   label: string;
   before: "default_reset" | "usb_reset";
@@ -41,21 +53,15 @@ export interface TransportProfile {
   reenumerates_on_reset: boolean;
 }
 
-export const TRANSPORT_PROFILES: Record<string, TransportProfile> = {
-  uart_bridge: {
-    label: "external USB-UART bridge",
-    before: "default_reset",
-    flash_baud: 460800,
-    monitor_signals: { dataTerminalReady: false, requestToSend: false },
-    reenumerates_on_reset: false,
-  },
-  usb_serial_jtag: {
-    label: "built-in USB-Serial/JTAG",
-    before: "usb_reset",
-    flash_baud: 115200, // CDC ignores baud; changing it only forces a pointless re-open
-    monitor_signals: null, // NEVER call setSignals() — measured requirement
-    reenumerates_on_reset: true,
-  },
+/** What a run uses before its spec arrives — the bridge, which is every board
+ *  without a native USB peripheral. The SERVER sends the real one in
+ *  `spec.transport` before step 1, and `profileKey` is only a label after that. */
+const BRIDGE: TransportProfile = {
+  label: "external USB-UART bridge",
+  before: "default_reset",
+  flash_baud: 460800,
+  monitor_signals: { dataTerminalReady: false, requestToSend: false },
+  reenumerates_on_reset: false,
 };
 
 export interface FlashImage {
@@ -145,6 +151,9 @@ export class Station {
   /** Which slot this is, 0-based. It is the key its socket is stored under. */
   slot = 0;
   profileKey = "uart_bridge";
+  /** The resolved transport for this run, set from the spec by `runClient`
+   *  before step 1. Null until then, and only then does `BRIDGE` apply. */
+  transport: TransportProfile | null = null;
   progress: number | null = null;
   lost = false;
 
@@ -196,9 +205,8 @@ export class Station {
    *  read the USB ids off a SerialPort handle, and this tab no longer holds
    *  one. A bench trial with no version gets the bridge, which is what every
    *  V2 is; a C6 procedure names `usb_serial_jtag` itself. */
-  profile(profileKey?: string): TransportProfile {
-    const key = profileKey || this.profileKey;
-    return TRANSPORT_PROFILES[key] ?? TRANSPORT_PROFILES.uart_bridge;
+  profile(): TransportProfile {
+    return this.transport ?? BRIDGE;
   }
 
 
@@ -297,14 +305,15 @@ export class Station {
     };
   }
 
-  async espErase() {
-    await this.agentEsp("erase", { baud: this.profile().flash_baud });
+  async espErase(baudOverride?: number) {
+    await this.agentEsp("erase", { baud: baudOverride ?? this.profile().flash_baud });
   }
 
   async espFlash(
     images: FlashImage[],
     flashConfig: Record<string, string>,
     _verifyMd5: boolean,
+    baudOverride?: number,
   ): Promise<void> {
     // The PAGE fetches the firmware — the agent holds no platform token and
     // makes no outbound connection — and hands the bytes over on loopback.
@@ -319,7 +328,7 @@ export class Station {
       payload.push({ address: img.address, name: img.filename, data: bytesToBase64(data) });
     }
     await this.agentEsp("flash", {
-      baud: this.profile().flash_baud,
+      baud: baudOverride ?? this.profile().flash_baud,
       images: payload,
       flash_config: flashConfig,
     });

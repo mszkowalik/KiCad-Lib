@@ -60,10 +60,6 @@ export function canProgram(hello: { esptool?: string | null }): boolean {
  *  sees the laser start, slow enough to be free. */
 const POLL_MS = 400;
 
-/** The placeholder strings the CE templates have always used. First hit wins,
- *  same order as the old tool, so an unchanged drawing needs no step argument. */
-const DEFAULT_PLACEHOLDERS = ["123456789011", "123456"];
-
 export interface MarkLog {
   dir: string;
   text: string;
@@ -83,10 +79,15 @@ export interface MarkResult {
  *  correction LightBurn applies — is left exactly as the artwork author left
  *  it, which is the whole point of patching rather than generating.
  */
-export function patchTemplate(xml: string, value: string, placeholder?: string): string {
+/** `placeholders` is stated by the caller and never guessed here. The engine
+ *  sends the step's own, or the platform's defaults
+ *  (`engine.DEFAULT_MARK_PLACEHOLDERS`) — a constant in a browser bundle must
+ *  not decide what is engraved on a part. */
+export function patchTemplate(xml: string, value: string, placeholders: string[]): string {
   const doc = new DOMParser().parseFromString(xml, "application/xml");
   if (doc.querySelector("parsererror")) throw new Error("the template is not valid XML");
-  const wanted = placeholder ? [placeholder] : DEFAULT_PLACEHOLDERS;
+  const wanted = placeholders.filter(Boolean);
+  if (!wanted.length) throw new Error("no placeholder named for this template");
   for (const p of wanted) {
     for (const shape of Array.from(doc.querySelectorAll('Shape[Type="Text"]'))) {
       if (shape.getAttribute("Str") === p) {
@@ -150,7 +151,7 @@ export interface MarkJob {
   /** what goes on the part */
   value: string;
   /** empty = the strings the CE templates already use */
-  placeholder?: string;
+  placeholders: string[];
   start: boolean;
   jobTimeoutS: number;
 }
@@ -173,7 +174,7 @@ export async function runMarkJob(
   onLog("app", `fetching ${job.filename}`);
   const res = await fetch(url);
   if (!res.ok) throw new Error(`could not fetch ${job.filename}: HTTP ${res.status}`);
-  const patched = patchTemplate(await res.text(), job.value, job.placeholder);
+  const patched = patchTemplate(await res.text(), job.value, job.placeholders);
   onLog("app", `patched ${job.filename} with ${job.value}`);
 
   const agent = new MarkAgent();

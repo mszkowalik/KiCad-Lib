@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 
 from ... import models as M
-from . import bundle, params as params_svc
+from . import bundle, params as params_svc, transports
 
 # `PLACEHOLDER` and the string walker live in `params.py` — the same walk
 # decides what a version DECLARES, and two copies would drift.
@@ -48,6 +48,9 @@ FLASH_FREQS = {"keep", "80m", "60m", "48m", "40m", "30m", "26m", "24m", "20m",
 # this is not a value that might work — it is one that cannot.
 LOOPBACK_URL = re.compile(r"//(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])", re.I)
 
+# The ops that talk to esptool, and so the only ones a `baud` means anything on.
+BAUD_OPS = {"esp_connect", "erase", "flash"}
+
 
 def _norm_chip(s: str) -> str:
     return (s or "").lower().replace("-", "").replace(" ", "").replace("_", "")
@@ -77,6 +80,27 @@ def check(db, version: M.DeploymentVersion) -> dict:
             errors.append(
                 f"flash {key} '{value}' is not one esptool understands "
                 f"({', '.join(sorted(allowed))})")
+    # A step's own baud. A bridge that cannot divide its clock into the number
+    # corrupts the transfer AFTER the erase has wiped the device, so this is a
+    # publish gate and not a warning (measured on a CH340: 576000 and 921600
+    # both fail, 750000 does not — see services/flasher/transports.py).
+    for idx, step in enumerate(steps):
+        baud = step.get("baud")
+        if baud is None:
+            continue
+        if step.get("op") not in BAUD_OPS:
+            warnings.append(
+                f"step {idx + 1} ({step.get('op')}) carries a baud, which only "
+                f"{', '.join(sorted(BAUD_OPS))} use — it is ignored")
+            continue
+        try:
+            ok = int(baud) in transports.FLASH_BAUDS
+        except (TypeError, ValueError):
+            ok = False
+        if not ok:
+            errors.append(
+                f"step {idx + 1} ({step.get('op')}) sets baud '{baud}', which is not one the "
+                f"bench offers ({', '.join(str(b) for b in transports.FLASH_BAUDS)})")
 
     # 1. Everything pinned must be published — a run can never flash a draft.
     for link in version.files:
