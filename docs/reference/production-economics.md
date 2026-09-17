@@ -88,8 +88,12 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
     first-pass rule keeps `produced` when a later run fails — add a
     failed-after-pass event before relying on live runs for stock.
   - **Demand is derived, never stored** (`project_demand`, `GET /api/demand`):
-    open = unshipped order-line quantity, supply = shelf stock + the quantity
-    of every run still `planned`. A planned batch is not yet linked to the
+    open = unshipped order-line quantity, supply = shelf stock + devices
+    ALLOCATED to those same open lines + the quantity of every run still
+    `planned`. The allocated term is easy to leave out and wrong to: such a
+    device is on the shelf, `run_stock` excludes it (see §9 above), and the
+    line holding it still counts its open quantity — so without it a boxed
+    device reads as one to build. A planned batch is not yet linked to the
     order lines it covers; the project tab shows the arithmetic only.
 - **A JLC decision outranks JLC's cached panelisation.** `JlcImport.panel_info`
   is what the sync saw; a `JlcOrderDecision` with a `panel_factor` is a person

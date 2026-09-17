@@ -1129,8 +1129,9 @@ def run_sales_json(db: Session, run: M.ProductionRun) -> dict:
 def project_demand(db: Session, project_id: int | None = None) -> list[dict]:
     """Open demand against supply, per project — the number the project window
     and the Orders page both ask for. Open demand is the unshipped part of
-    every non-cancelled order line; supply is what is on the shelf plus what
-    planned batches will build. Shortfall is what nothing yet covers."""
+    every non-cancelled order line; supply is what is on the shelf, plus the
+    devices ALLOCATED to those same open lines, plus what planned batches will
+    build. Shortfall is what nothing yet covers."""
     q = (db.query(M.SalesOrderLine, M.SalesOrder)
          .join(M.SalesOrder)
          .filter(M.SalesOrder.cancelled.is_(False)))
@@ -1138,16 +1139,28 @@ def project_demand(db: Session, project_id: int | None = None) -> list[dict]:
         q = q.filter(M.SalesOrderLine.project_id == project_id)
     open_qty: dict[int, int] = defaultdict(int)
     open_orders: dict[int, set[int]] = defaultdict(set)
+    open_lines: set[int] = set()
     for li, o in q.all():
         left = max((li.qty_ordered or 0) - line_shipped(li), 0)
         if left:
             open_qty[li.project_id] += left
             open_orders[li.project_id].add(o.id)
+            open_lines.add(li.id)
     shelf: dict[int, int] = defaultdict(int)
     planned: dict[int, int] = defaultdict(int)
     planned_runs: dict[int, list[dict]] = defaultdict(list)
     for r in run_stock(db, project_id):
         shelf[r["project_id"]] += r["stock"]
+    # An ALLOCATED device is on the shelf, reserved for a line whose open
+    # quantity is counted above — `run_stock` leaves it out of stock (decision
+    # 0003 §9) and the line still asks to be filled, so without this a boxed
+    # device reads as one to build. Only allocations against the lines this
+    # demand is measuring count; an allocation to a line already fulfilled is
+    # neither demand nor supply here.
+    for d in db.query(M.DeviceUnit).filter(M.DeviceUnit.state == "allocated").all():
+        ev = last_event(d, "allocated")
+        if ev is not None and ev.order_line_id in open_lines:
+            shelf[d.project_id] += 1
     rq = db.query(M.ProductionRun).filter(M.ProductionRun.status == "planned")
     if project_id:
         rq = rq.filter(M.ProductionRun.project_id == project_id)

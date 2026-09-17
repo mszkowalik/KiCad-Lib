@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-17 (a boxed device stops asking to be built)
+
+- **Demand counts a device allocated to an open line as supply.** An
+  `allocated` device is on the shelf, reserved for one order line, and
+  `run_stock` leaves it out of stock by design (decision 0003 §9) — but the
+  line it is held for still shows its open quantity. `GET /api/demand`
+  therefore counted a boxed device as one to build and not as one already
+  there: 32 dongles packed for order 17 read as 32 to make. Supply is now shelf
+  stock, plus devices allocated to the lines whose open quantity the same
+  figure is measuring, plus planned batches. An allocation to a line that is
+  already fulfilled counts as neither.
+
 ## 2026-09-17 (a shipment can be taken back)
 
 - **A device the stock count put back on the shelf now counts when it ships

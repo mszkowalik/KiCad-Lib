@@ -257,3 +257,29 @@ def test_a_shipment_recorded_in_error_is_reversed_whole(world):
     assert svc.line_shipped(line) == 0
     assert all(d.state == "in_stock" for ds in world["devs"].values() for d in ds)
     assert order.status == "open"
+
+
+def test_an_allocated_device_is_supply_for_the_line_it_is_held_for(world):
+    """A boxed device is on the shelf and its line still asks to be filled.
+    Counting it as demand but not as supply builds it twice."""
+    db, line, order = world["db"], world["line"], world["order"]
+    sh = order.shipments[0]
+    svc.reverse_shipment(db, sh, actor="test", dry_run=False)
+    db.flush()
+    db.refresh(order)
+    proj_id = world["proj"].id
+    before = next(r for r in svc.project_demand(db, proj_id) if r["project_id"] == proj_id)
+    assert (before["open"], before["on_shelf"]) == (10, 10)
+    svc.allocate_devices(db, line, [d.id for d in world["devs"]["A"]], actor="test")
+    db.flush()
+    after = next(r for r in svc.project_demand(db, proj_id) if r["project_id"] == proj_id)
+    assert (after["open"], after["on_shelf"]) == (10, 10)
+    assert after["shortfall"] == 0
+
+
+def test_an_allocation_to_a_closed_line_is_not_supply(world):
+    """The line is fulfilled, so neither its demand nor those devices count."""
+    db, line, order = world["db"], world["line"], world["order"]
+    proj_id = world["proj"].id
+    row = next(r for r in svc.project_demand(db, proj_id) if r["project_id"] == proj_id)
+    assert (row["open"], row["on_shelf"]) == (0, 0)
