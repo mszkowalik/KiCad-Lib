@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-09-17 (a shipment can be taken back)
+
+- **A device the stock count put back on the shelf now counts when it ships
+  again.** `create_shipment` marks a device as its own replacement when it
+  finds an earlier `shipped` event on the same line — the rule that stops a
+  repaired device counting twice — and it read the raw event log. A delivery
+  that an `unshipped` event had REVERSED still looked like a previous delivery,
+  so re-shipping such a device recorded a replacement and added nothing to the
+  order. It reads `live_shipped_of` now. A device that really was delivered,
+  came back and went out again is still its own replacement.
+- **`POST /api/shipments/{id}/reverse` takes back a shipment recorded in
+  error.** Every delivery on it is reversed, its anonymous units go to zero and
+  the devices return to stock. `dry_run` is the default. The header and its
+  events stay — device history is not deleted, and a shipment the customer
+  actually received still comes back through `POST /api/devices/{id}/return`.
+  See [decision 0028](docs/decisions/0028-a-shipment-recorded-in-error-is-reversed-not-deleted.md).
+
 ## 2026-09-17 (a stock count can correct the record)
 
 - **A shelf count now reverses the FIFO guesses it contradicts.** A shipment

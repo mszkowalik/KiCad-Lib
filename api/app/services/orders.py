@@ -302,6 +302,19 @@ def live_shipped_events(db: Session, line_ids: list[int]) -> list[M.DeviceEvent]
     return [e for stack in open_.values() for e in stack if e.order_line_id in wanted]
 
 
+def live_shipped_of(device: M.DeviceUnit) -> list[M.DeviceEvent]:
+    """This device's `shipped` events that no `unshipped` has reversed, paired
+    the same way `live_shipped_events` pairs them. `DeviceUnit.events` is
+    ordered by `at, id`, which is the order the pairing needs."""
+    open_: dict[int | None, list[M.DeviceEvent]] = defaultdict(list)
+    for e in device.events:
+        if e.kind == "shipped":
+            open_[e.shipment_id].append(e)
+        elif e.kind == "unshipped" and open_[e.shipment_id]:
+            open_[e.shipment_id].pop()
+    return [e for stack in open_.values() for e in stack]
+
+
 def line_shipped(li: M.SalesOrderLine) -> int:
     """Fulfilment: `shipped` events with no replaced device that nothing has
     reversed, plus unserialized units on delivery shipments."""
@@ -399,8 +412,13 @@ def create_shipment(db: Session, order: M.SalesOrder, *, kind: str = "delivery",
             raise HTTPException(422, "a replacement shipment names exactly one device")
         for d, auto in picked:
             rep = int(replaces) if replaces is not None else None
-            if rep is None and any(e.kind == "shipped" and e.order_line_id == li.id for e in d.events):
-                rep = d.id  # re-shipped after repair: its own replacement, counted once
+            # Re-shipped after repair: its own replacement, counted once. A
+            # delivery an `unshipped` event REVERSED is not a previous
+            # delivery, so `live_shipped_of` and not `d.events` — otherwise a
+            # device the stock count put back on the shelf ships again as a
+            # replacement and never counts (decision 0027).
+            if rep is None and any(e.order_line_id == li.id for e in live_shipped_of(d)):
+                rep = d.id
             record_event(db, d, "shipped", at=at, actor=actor, auto=auto, order_line_id=li.id,
                          shipment_id=sh.id, replaces_device_id=rep,
                          note=(spec.get("note") or ""))
@@ -425,6 +443,42 @@ def create_shipment(db: Session, order: M.SalesOrder, *, kind: str = "delivery",
     db.flush()
     refresh_order_status(order)
     return sh
+
+
+def reverse_shipment(db: Session, sh: M.Shipment, *, actor: str = "", note: str = "",
+                     dry_run: bool = True) -> dict:
+    """Take back a shipment that was recorded in error.
+
+    Every delivery it still carries is reversed with an `unshipped` event and
+    its anonymous units go to zero, so the shipment counts nothing and its
+    devices are back in stock. The header and the events STAY: decision 0003
+    keeps device history, and a delivery that was recorded and withdrawn is
+    part of it. Reversing a delivery the customer actually received is a
+    RETURN, not this.
+    """
+    dids = {e.device_id for e in db.query(M.DeviceEvent)
+            .filter(M.DeviceEvent.shipment_id == sh.id, M.DeviceEvent.kind == "shipped")}
+    units = {d.id: d for d in db.query(M.DeviceUnit).filter(M.DeviceUnit.id.in_(dids or [-1])).all()}
+    live = [e for d in units.values() for e in live_shipped_of(d) if e.shipment_id == sh.id]
+    unser = [sl for sl in sh.lines if (sl.qty_unserialized or 0) > 0]
+    plan = {
+        "dry_run": dry_run, "shipment_id": sh.id, "order_id": sh.order_id,
+        "devices": [{"device_id": e.device_id, "order_line_id": e.order_line_id} for e in live],
+        "unserialized": [{"order_line_id": sl.order_line_id, "source_run_id": sl.source_run_id,
+                          "qty": sl.qty_unserialized} for sl in unser],
+    }
+    if dry_run:
+        return plan
+    for e in live:
+        record_event(db, db.get(M.DeviceUnit, e.device_id), "unshipped", actor=actor,
+                     shipment_id=sh.id, auto=False,
+                     note=note or "the shipment was recorded in error and taken back")
+    for sl in unser:
+        sl.qty_unserialized = 0
+    db.flush()
+    db.expire(sh.order, ["shipments", "lines"])
+    refresh_order_status(sh.order)
+    return plan
 
 
 def return_device(db: Session, device: M.DeviceUnit, *, order_line: M.SalesOrderLine | None,

@@ -209,3 +209,51 @@ def test_the_endpoint_rejects_a_serial_nothing_carries(world):
         router.reconcile_stock(body, _Req(), db=world["db"])
     assert e.value.status_code == 404
     assert e.value.detail["serials"] == ["NOPE"]
+
+
+def test_a_reversed_delivery_is_not_a_previous_delivery(world):
+    """The bug this pair of fixes exists for. A count puts three devices back on
+    the shelf; shipping them again on the SAME line must count three deliveries,
+    not three replacements of themselves."""
+    db, line, order = world["db"], world["line"], world["order"]
+    counted = world["devs"]["A"][:3]
+    svc.reconcile_shelf(db, counted, refill="none", actor="test", dry_run=False)
+    db.flush()
+    assert svc.line_shipped(line) == 7
+    db.refresh(order)
+    svc.create_shipment(db, order, shipped_at="2026-04-01",
+                        lines=[{"order_line_id": line.id,
+                                "device_ids": [d.id for d in counted]}], actor="test")
+    db.flush()
+    assert svc.line_shipped(line) == 10
+    assert all(svc.last_event(d, "shipped").replaces_device_id is None for d in counted)
+
+
+def test_a_repaired_device_re_shipped_is_still_its_own_replacement(world):
+    """The rule the fix above must not break: a device that really was
+    delivered, came back and went out again counts once, not twice."""
+    db, line, order = world["db"], world["line"], world["order"]
+    d = world["devs"]["A"][0]
+    svc.return_device(db, d, order_line=line, reason="fault", returned_at="2026-04-01", actor="test")
+    svc.repair_device(db, d, outcome="to_stock", repaired_at="2026-04-02", actor="test")
+    db.flush()
+    db.refresh(order)
+    before = svc.line_shipped(line)
+    svc.create_shipment(db, order, shipped_at="2026-04-03",
+                        lines=[{"order_line_id": line.id, "device_ids": [d.id]}], actor="test")
+    db.flush()
+    assert svc.last_event(d, "shipped").replaces_device_id == d.id
+    assert svc.line_shipped(line) == before
+
+
+def test_a_shipment_recorded_in_error_is_reversed_whole(world):
+    db, line, order = world["db"], world["line"], world["order"]
+    sh = order.shipments[0]
+    plan = svc.reverse_shipment(db, sh, actor="test", dry_run=True)
+    assert len(plan["devices"]) == 10
+    assert svc.line_shipped(line) == 10
+    svc.reverse_shipment(db, sh, actor="test", dry_run=False)
+    db.flush()
+    assert svc.line_shipped(line) == 0
+    assert all(d.state == "in_stock" for ds in world["devs"].values() for d in ds)
+    assert order.status == "open"

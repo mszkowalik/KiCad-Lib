@@ -424,6 +424,33 @@ def delete_shipment(shipment_id: int, request: Request, db: Session = Depends(ge
     return svc.order_json(db, o, with_detail=True)
 
 
+class ReverseShipmentIn(BaseModel):
+    note: str = ""
+    dry_run: bool = True
+
+
+@router.post("/shipments/{shipment_id}/reverse")
+def reverse_shipment(shipment_id: int, body: ReverseShipmentIn, request: Request,
+                     db: Session = Depends(get_db)):
+    """Take back a shipment recorded in error: every delivery on it is reversed
+    and its devices go back to stock. A shipment the customer RECEIVED comes
+    back through `POST /api/devices/{id}/return`, not this.
+    """
+    sh = db.get(M.Shipment, shipment_id)
+    if sh is None:
+        raise HTTPException(404, "shipment not found")
+    if sh.kind != "delivery":
+        raise HTTPException(422, "that shipment is a return, not a delivery")
+    actor = actor_of(request)
+    plan = svc.reverse_shipment(db, sh, actor=actor, note=body.note, dry_run=body.dry_run)
+    if body.dry_run:
+        return plan
+    audit(db, "order.shipment.reverse", "sales_order", sh.order_id,
+          {"shipment_id": sh.id, "devices": len(plan["devices"]), "note": body.note}, actor=actor)
+    db.commit()
+    return plan
+
+
 # ----------------------------------------------------------------- devices
 
 

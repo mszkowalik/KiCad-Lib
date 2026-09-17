@@ -115,9 +115,17 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
     can refill becomes an anonymous unit or a shortfall on the order.
   - **An `unshipped` event does not delete the `shipped` event it reverses**,
     because the log is append-only. Every fulfilment and cost figure therefore
-    reads `live_shipped_events`, which pairs the two per device and shipment.
-    A new query that counts `DeviceEvent.kind == "shipped"` directly will count
-    reversed deliveries, which is the bug this replaced.
+    reads `live_shipped_events` (per line) or `live_shipped_of` (per device),
+    which pair the two per device and shipment. A new rule that reads
+    `DeviceEvent.kind == "shipped"` directly will treat a reversed delivery as
+    a real one — that mistake has now been made twice, once in the fulfilment
+    counts and once in `create_shipment`'s self-replacement rule (decision
+    [0028](../decisions/0028-a-shipment-recorded-in-error-is-reversed-not-deleted.md)).
+  - **A shipment recorded in error is REVERSED, not deleted**
+    (`reverse_shipment`, `POST /api/shipments/{id}/reverse`): every delivery on
+    it gets an `unshipped` event, its `qty_unserialized` goes to zero, the
+    header and the events stay. A shipment the customer RECEIVED comes back
+    through `return_device` instead.
   - **The flasher writes `produced` on the first PASS in a batch**
     (`engine.py` → `mark_produced`, idempotent; never on a draft run). Legacy
     devices are linked with `POST /api/runs/{id}/produced`.

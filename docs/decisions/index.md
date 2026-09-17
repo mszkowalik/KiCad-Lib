@@ -56,6 +56,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0025](0025-a-device-fetches-from-its-own-address.md) | A device fetches from its own address, and on this deployment that address is plain HTTP — Tasmota completes no TLS against the edge and validates no certificate | Backend, production, flasher, deployment |
 | [0026](0026-a-device-file-carries-its-kind-and-enters-by-upload.md) | A device file carries its kind (berryware or artwork), enters the pool by upload through the import endpoint, and is never deleted while a version or a bundle pins it | Backend, frontend, production, flasher |
 | [0027](0027-a-stock-count-corrects-a-fifo-guess.md) | Let a stock count reverse a FIFO guess, and net the reversal out of every fulfilment figure (extends [0003](0003-orders-shipments-and-device-history.md)) | Backend, production, orders |
+| [0028](0028-a-shipment-recorded-in-error-is-reversed-not-deleted.md) | Reverse a shipment recorded in error instead of deleting it, and never let a reversed delivery count as a previous one (completes [0027](0027-a-stock-count-corrects-a-fifo-guess.md)) | Backend, production, orders |
 
 ## Proposed
 
