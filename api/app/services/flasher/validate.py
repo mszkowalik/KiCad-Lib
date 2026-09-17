@@ -48,8 +48,12 @@ FLASH_FREQS = {"keep", "80m", "60m", "48m", "40m", "30m", "26m", "24m", "20m",
 # this is not a value that might work — it is one that cannot.
 LOOPBACK_URL = re.compile(r"//(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])", re.I)
 
-# The ops that talk to esptool, and so the only ones a `baud` means anything on.
-BAUD_OPS = {"esp_connect", "erase", "flash"}
+# The ops a `baud` means anything on. `serial_open` is the CONSOLE speed and has
+# carried one since the beginning; the other three are esptool's. They draw from
+# the same set of standard rates, so one check covers both — but leaving
+# serial_open out warned that a baud the bench has always honoured was ignored
+# (caught composing v19, 2026-09-17).
+BAUD_OPS = {"esp_connect", "erase", "flash", "serial_open"}
 
 
 def _norm_chip(s: str) -> str:
