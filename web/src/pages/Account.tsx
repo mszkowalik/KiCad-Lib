@@ -3,13 +3,14 @@
  *
  *  It is deliberately NOT the Admin page. Admin is administration of the
  *  platform — other people's accounts, the deployment's knobs. This is the
- *  things that belong to whoever is signed in: who they are, and the git
- *  accounts they have taught the platform to authenticate as.
+ *  things that belong to whoever is signed in: who they are, how the platform
+ *  looks to them, and the git accounts they have taught it to authenticate as.
  */
 import { Link } from "react-router-dom";
 
 import { useAuth } from "../auth";
 import AccountSecurityCard from "../components/AccountSecurityCard";
+import AppearanceCard from "../components/AppearanceCard";
 import GitCredentialsCard from "../components/GitCredentialsCard";
 import KicadClientCards from "../components/KicadClientCards";
 
@@ -48,6 +49,7 @@ export default function Account() {
           </div>
         ) : null}
 
+        <AppearanceCard />
         <AccountSecurityCard />
         <GitCredentialsCard />
         <KicadClientCards />

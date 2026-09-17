@@ -2996,6 +2996,13 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(120), default="")
     role: Mapped[str] = mapped_column(String(20), default="user")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Light, dark, or follow the operating system. It lives on the ACCOUNT, not
+    # in the browser, so the same person gets the same platform on the bench
+    # machine and on their laptop without setting it twice. `system` is the
+    # default and means "whatever the OS asks for"; the browser still caches
+    # the answer, because the choice has to be applied before the first paint
+    # and `/api/auth/me` has not answered yet then (`web/src/theme.ts`).
+    theme: Mapped[str] = mapped_column(String(10), default="system")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

@@ -29,12 +29,19 @@ class LoginIn(BaseModel):
 
 
 def user_json(user) -> dict:
+    """What the SPA is told about itself.
+
+    `theme` rides along here rather than on `/api/account`, because the gate
+    already fetches this on every load and the choice has to be applied before
+    anything paints. See `POST /api/account/theme` for the write side.
+    """
     return {
         "id": user.id,
         "username": user.username,
         "display_name": user.display_name,
         "role": user.role,
         "is_admin": user.role == "admin",
+        "theme": user.theme or "system",
     }
 
 

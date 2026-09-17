@@ -97,3 +97,33 @@ def revoke_own_token(token_id: int, request: Request, db: Session = Depends(get_
           actor=user.username)
     db.commit()
     return user_json(db, user, reveal=True)
+
+
+THEMES = ("system", "light", "dark")
+
+
+class ThemeIn(BaseModel):
+    theme: str
+
+
+@router.post("/theme")
+def set_own_theme(body: ThemeIn, request: Request, db: Session = Depends(get_db)):
+    """Light, dark, or follow the operating system.
+
+    Stored on the account so the choice follows the person to the next browser,
+    and read back by the sign-in gate (`routers/auth.py::user_json`) rather than
+    by a fetch of its own — the theme has to be applied before the first paint,
+    and the gate's request is the only one that has already happened by then.
+
+    An unknown value is REFUSED, not coerced to the default: a typo that
+    silently does nothing is harder to notice than an error.
+    """
+    user = _me(request, db)
+    theme = body.theme.strip().lower()
+    if theme not in THEMES:
+        raise HTTPException(400, f"theme must be one of {', '.join(THEMES)}")
+    user.theme = theme
+    audit(db, "account.theme", "user", user.id, details={"theme": theme},
+          actor=user.username)
+    db.commit()
+    return {"theme": theme}

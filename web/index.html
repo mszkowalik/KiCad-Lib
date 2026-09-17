@@ -11,6 +11,26 @@
          including inside identifiers and comments. -->
     <base href="__APP_BASE__/" />
     <title>Project Management Platform</title>
+    <!-- Paint in the right theme from the very first frame. The stylesheet has
+         no prefers-color-scheme rule any more, so without this a dark-theme
+         user gets a white flash on every load. src/theme.ts owns the choice and
+         re-applies it a moment later; this only reads the cache it writes, so
+         the storage key has to match the one in that file. -->
+    <script>
+      (function () {
+        var pref = "system";
+        try {
+          var saved = localStorage.getItem("ui-theme");
+          if (saved === "light" || saved === "dark" || saved === "system") pref = saved;
+        } catch (e) {
+          /* no storage — follow the OS */
+        }
+        var dark =
+          pref === "dark" ||
+          (pref === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

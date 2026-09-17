@@ -1,7 +1,14 @@
 /* ================================================================== tokens */
 
+/* The palette below is LIGHT. The dark one is `:root[data-theme="dark"]`, and
+   `data-theme` is always written on <html> by `theme.ts` — the OS preference is
+   resolved in JavaScript rather than by `prefers-color-scheme` here, because a
+   person may now override it (Account -> Appearance) and the two rules would
+   otherwise have to state the same 60 tokens twice. index.html sets the
+   attribute before anything paints; this is a React app, so there is no
+   scriptless case to fall back for. */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
   /* cool slate neutrals, biased toward blue */
   --bg: #f2f5f9;
@@ -101,67 +108,67 @@
   --radius: 8px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #11151c;
-    --surface: #181e27;
-    --surface-2: #202834;
-    --text: #dbe3ed;
-    --muted: #8d9db0;
-    --line: #2a3442;
+:root[data-theme="dark"] {
+  color-scheme: dark;
 
-    --accent: #5b93f5;
-    --accent-soft: rgba(91, 147, 245, 0.14);
+  --bg: #11151c;
+  --surface: #181e27;
+  --surface-2: #202834;
+  --text: #dbe3ed;
+  --muted: #8d9db0;
+  --line: #2a3442;
 
-    --copper: #d69a62;
-    --copper-soft: rgba(214, 154, 98, 0.14);
+  --accent: #5b93f5;
+  --accent-soft: rgba(91, 147, 245, 0.14);
 
-    --ok: #46b57f;
-    --ok-soft: rgba(70, 181, 127, 0.14);
-    --err: #e0655b;
-    --err-soft: rgba(224, 101, 91, 0.12);
-    --warn: #d7a52f;
-    --warn-soft: rgba(215, 165, 47, 0.14);
+  --copper: #d69a62;
+  --copper-soft: rgba(214, 154, 98, 0.14);
 
-    --fs-signal: #d69a62;
-    --fs-reference: #6c7887;
-    --fs-mask: rgba(70, 181, 127, 0.32);
-    --fs-finish: #e8c15c;
+  --ok: #46b57f;
+  --ok-soft: rgba(70, 181, 127, 0.14);
+  --err: #e0655b;
+  --err-soft: rgba(224, 101, 91, 0.12);
+  --warn: #d7a52f;
+  --warn-soft: rgba(215, 165, 47, 0.14);
 
-    --sim-hot: #e0655b;
-    --sim-cold: #5b93f5;
-    --sim-zero: #8d9db0;
-    --sim-pos: #4ecb84;
-    --sim-neg: #f26d6d;
-    --sim-current: #e8c15c;
-    --sim-trace-0: #5b93f5;
-    --sim-trace-1: #e0655b;
-    --sim-trace-2: #46b57f;
-    --sim-trace-3: #d69a62;
-    --sim-trace-4: #ad8bf0;
-    --sim-trace-5: #4fc4d6;
+  --fs-signal: #d69a62;
+  --fs-reference: #6c7887;
+  --fs-mask: rgba(70, 181, 127, 0.32);
+  --fs-finish: #e8c15c;
 
-    --stk-overlay: #2a3a2c;
-    --stk-overlay-ink: #7ea173;
-    --stk-mask: #1f4c36;
-    --stk-mask-ink: #4bbd84;
-    --stk-finish: #463a1d;
-    --stk-finish-ink: #d7a52f;
-    --stk-copper: #4b3320;
-    --stk-copper-ink: #d69a62;
-    /* Core darker than prepreg, the same way round as the light palette: a core is
-       the heavier, cured laminate and reads as the denser band. */
-    --stk-core: #262523;
-    --stk-core-ink: #9a9081;
-    --stk-prepreg: #35332e;
-    --stk-prepreg-ink: #837d71;
-    --stk-dielectric: #2c2b28;
-    --stk-dielectric-ink: #857f74;
-    --stk-edge: rgba(219, 227, 237, 0.16);
+  --sim-hot: #e0655b;
+  --sim-cold: #5b93f5;
+  --sim-zero: #8d9db0;
+  --sim-pos: #4ecb84;
+  --sim-neg: #f26d6d;
+  --sim-current: #e8c15c;
+  --sim-trace-0: #5b93f5;
+  --sim-trace-1: #e0655b;
+  --sim-trace-2: #46b57f;
+  --sim-trace-3: #d69a62;
+  --sim-trace-4: #ad8bf0;
+  --sim-trace-5: #4fc4d6;
 
-    --scrim: rgba(0, 0, 0, 0.55);
-    --modal-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
-  }
+  --stk-overlay: #2a3a2c;
+  --stk-overlay-ink: #7ea173;
+  --stk-mask: #1f4c36;
+  --stk-mask-ink: #4bbd84;
+  --stk-finish: #463a1d;
+  --stk-finish-ink: #d7a52f;
+  --stk-copper: #4b3320;
+  --stk-copper-ink: #d69a62;
+  /* Core darker than prepreg, the same way round as the light palette: a core is
+     the heavier, cured laminate and reads as the denser band. */
+  --stk-core: #262523;
+  --stk-core-ink: #9a9081;
+  --stk-prepreg: #35332e;
+  --stk-prepreg-ink: #837d71;
+  --stk-dielectric: #2c2b28;
+  --stk-dielectric-ink: #857f74;
+  --stk-edge: rgba(219, 227, 237, 0.16);
+
+  --scrim: rgba(0, 0, 0, 0.55);
+  --modal-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
 }
 
 /* ==================================================================== base */

@@ -414,6 +414,13 @@ _PHASE1_DDL = (
      "ALTER TABLE deployment_versions ADD CONSTRAINT fk_deployment_version_param_set "
      "FOREIGN KEY (param_set_id) REFERENCES param_sets (id); "
      "EXCEPTION WHEN duplicate_object THEN NULL; END $$"),
+    # Light/dark is a property of the PERSON, not of the browser they happen to
+    # be at. Everyone who existed before this column follows their OS, which is
+    # what the app did for everybody until now, so the default is a no-op
+    # migration.
+    ("users.theme",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+     "theme varchar(10) NOT NULL DEFAULT 'system'"),
 )
 
 # name -> "ok" | "failed: ..."; served by GET /api/health/schema.

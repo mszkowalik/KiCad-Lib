@@ -27,6 +27,7 @@ import {
 } from "./api";
 import Login from "./pages/Login";
 import { Spinner } from "./components/Ui";
+import { saveTheme, storedTheme, rememberTheme, type ThemePref } from "./theme";
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -36,6 +37,12 @@ interface AuthContextValue {
   signOut: () => Promise<void>;
   /** Re-read `/api/auth/me` — call after anything that can change the role. */
   refresh: () => Promise<void>;
+  /** Light, dark, or follow the OS. Lives here because the gate is what reads
+   *  it back off the account — see `theme.ts`. */
+  theme: ThemePref;
+  /** Throws if the account could not be written; the tab already shows the new
+   *  theme by then, so the caller must show the error. */
+  setTheme: (pref: ThemePref) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -44,6 +51,8 @@ const AuthContext = createContext<AuthContextValue>({
   isAdmin: true,
   signOut: async () => {},
   refresh: async () => {},
+  theme: "system",
+  setTheme: async () => {},
 });
 
 export function useAuth(): AuthContextValue {
@@ -54,6 +63,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authEnabled, setAuthEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
+  // Seeded from the browser cache, which is what painted the first frame; the
+  // account's answer replaces it as soon as we know who this is.
+  const [theme, setThemeState] = useState<ThemePref>(() => storedTheme());
 
   const refresh = useCallback(async () => {
     try {
@@ -74,12 +86,35 @@ export function AuthGate({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh]);
 
+  // The account is the truth, and it arrives here whether the person was
+  // already signed in or has just typed a password — both paths end at `user`.
+  // Writing it back to the browser cache is what stops the NEXT load flashing
+  // the other theme before this request answers.
+  useEffect(() => {
+    const pref = user?.theme;
+    if (pref === "system" || pref === "light" || pref === "dark") {
+      setThemeState(pref);
+      rememberTheme(pref);
+    }
+  }, [user]);
+
   // Any 401 from any endpoint drops us back to the login form. Registered once
   // for the whole app — see `setUnauthorizedHandler` in api.ts.
   useEffect(() => {
     setUnauthorizedHandler(() => setUser(null));
     return () => setUnauthorizedHandler(null);
   }, []);
+
+  const setTheme = useCallback(
+    async (pref: ThemePref) => {
+      setThemeState(pref);
+      // With auth off (dev) there is no account to write to, and
+      // `/api/account/theme` says so with a 409. The choice still applies to
+      // this browser, which is the whole of what that mode can offer.
+      await saveTheme(pref, authEnabled);
+    },
+    [authEnabled],
+  );
 
   const signOut = useCallback(async () => {
     try {
@@ -98,8 +133,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
       isAdmin: !authEnabled || user?.is_admin === true,
       signOut,
       refresh,
+      theme,
+      setTheme,
     }),
-    [user, authEnabled, signOut, refresh],
+    [user, authEnabled, signOut, refresh, theme, setTheme],
   );
 
   if (loading) return <Spinner label="Loading…" />;

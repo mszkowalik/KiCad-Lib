@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-17 (light or dark, and the platform remembers which)
+
+- **The platform can be set to light or dark, on Account → Appearance.** Three
+  choices — System, Light, Dark. System is the default and follows the operating
+  system, including a change made while the page is open.
+- **The choice is stored on the ACCOUNT, not in the browser.** Signing in on the
+  bench machine gets the same platform as the laptop, with nothing to set twice.
+  The browser still caches it, because the theme has to be applied before the
+  page paints and the sign-in request has not answered by then.
+- **Kuba Remian's account was set to dark** on the production platform.
+
 ## 2026-09-17 (an out-of-date bench agent says so)
 
 - **The flashing bench refuses to start a run against an agent that cannot

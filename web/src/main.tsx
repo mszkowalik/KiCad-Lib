@@ -3,10 +3,16 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { APP_BASE } from "./appbase";
+import { initTheme } from "./theme";
 import "./styles.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root element");
+
+// Before the first render, and a second time after index.html's snippet has
+// already done it: this one also installs the OS listener, and it is the copy
+// that survives a change to how the choice is read.
+initTheme();
 
 // A deploy replaces every hashed chunk, and a tab opened before it still holds
 // the old index. The first lazy import after that — esptool's per-chip module

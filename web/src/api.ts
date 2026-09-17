@@ -1061,6 +1061,10 @@ export interface AuthUser {
   display_name: string;
   role: string;
   is_admin: boolean;
+  /** "system" | "light" | "dark" — see `theme.ts`. Carried here, and not on
+   *  `/api/account`, because the gate's fetch is the only one that has
+   *  happened by the time the theme must be on the page. */
+  theme: string;
 }
 
 export interface AuthState {
@@ -1083,6 +1087,15 @@ export function login(username: string, password: string): Promise<AuthUser> {
 
 export function logout(): Promise<{ ok: boolean }> {
   return request("/api/auth/logout", { method: "POST" });
+}
+
+/** Save the signed-in user's light/dark choice. `theme.ts` owns the rest. */
+export function setOwnTheme(theme: string): Promise<{ theme: string }> {
+  return request("/api/account/theme", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ theme }),
+  });
 }
 
 export function changeOwnPassword(

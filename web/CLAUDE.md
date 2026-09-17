@@ -47,9 +47,8 @@ component:
 - **Add a new class only as a last resort**, when nothing existing fits. If you
   must, add it to `styles.css` (not a new stylesheet, not a CSS module), build
   it from the variables above, place it near its siblings, and make sure it
-  works in **both light and dark** (the palette flips via
-  `@media (prefers-color-scheme: dark)` and `:root[data-theme=…]`). Prefer
-  extending/generalizing an existing class over adding a near-duplicate.
+  works in **both light and dark** (see "The theme is one selector" below).
+  Prefer extending/generalizing an existing class over adding a near-duplicate.
 - **ONE CSS rule draws every text control, and the size classes carry SIZE
   ONLY.** `input.text, select.text, textarea.text, input.row-input, …` in
   `styles.css` is the single place a border, background, radius, focus ring or
@@ -247,6 +246,31 @@ component:
   chunks, which keeps filters instant and exact. A column whose filter cannot
   reach the server on a paged list must be `interactive: false` rather than
   offering a box that quietly searches one page.
+
+### The theme is ONE selector, and JavaScript decides when it applies
+
+`:root` is the LIGHT palette and `:root[data-theme="dark"]` is the dark one.
+There is no `prefers-color-scheme` rule in `styles.css` any more: a person can
+now choose light, dark or "follow the OS" (Account → Appearance), so the OS
+preference is resolved in `src/theme.ts` and written to `<html>` as
+`data-theme`, which is ALWAYS `light` or `dark` and never `system`. Keeping the
+media query as well would mean stating the same 60 palette tokens twice, once
+per way of arriving at dark — and the second copy is the one that gets
+forgotten.
+
+- **A new token belongs in both blocks.** Nothing else in the app reads
+  `prefers-color-scheme`, so a token defined only on `:root` silently keeps its
+  light value in dark; the field solver reads the variables per paint
+  (`sim/field/draw.ts`) and follows for free.
+- **The choice lives on the ACCOUNT** (`users.theme`, `POST
+  /api/account/theme`), and `localStorage["ui-theme"]` is a CACHE of it, not a
+  second setting. The cache exists because the theme has to be on `<html>`
+  before anything paints and `/api/auth/me` has not answered by then — which is
+  also why a snippet in `index.html` reads that same key. Rename the key and
+  you must rename it in both places.
+- **`AuthGate` applies the account's answer** when the user arrives, by either
+  path (already signed in, or just signed in). Do not fetch the theme from a
+  page; read `useAuth().theme` and write it with `useAuth().setTheme`.
 
 ### `.kv` names TWO designs — keep both selectors element-qualified
 
