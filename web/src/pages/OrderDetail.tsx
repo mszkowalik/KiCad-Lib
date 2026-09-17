@@ -12,6 +12,7 @@ import {
   addOrderInvoice,
   addOrderLine,
   createShipment,
+  reverseShipment,
   deleteOrderInvoice,
   deleteOrderLine,
   deleteShipment,
@@ -641,6 +642,26 @@ function ShipmentsCard({ order, apply }: { order: OrderRow; apply: (w: () => Pro
                       await apply(() => deleteShipment(sh.id));
                     }
                   }}
+                  onReverse={async () => {
+                    const plan = await reverseShipment(sh.id, { dry_run: true });
+                    const units = plan.unserialized.reduce((n, u) => n + u.qty, 0);
+                    const what = [
+                      plan.devices.length ? `${plan.devices.length} device${plan.devices.length === 1 ? "" : "s"}` : "",
+                      units ? `${units} unit${units === 1 ? "" : "s"} without a serial` : "",
+                    ].filter(Boolean).join(" and ");
+                    if (
+                      await dialog.confirm(
+                        `Take this shipment back? ${what} return to stock and the order stops counting them as delivered. ` +
+                          "Use this only for a delivery recorded in error — a shipment the customer received comes back as a return, on the device.",
+                        { tone: "danger", confirmLabel: "Take it back" },
+                      )
+                    ) {
+                      await apply(async () => {
+                        await reverseShipment(sh.id, { dry_run: false, note: "" });
+                        return await getOrder(order.id);
+                      });
+                    }
+                  }}
                 />
               ))}
             </tbody>
@@ -657,12 +678,14 @@ function ShipmentRows({
   onToggle,
   lineName,
   onDelete,
+  onReverse,
 }: {
   sh: ShipmentRow;
   open: boolean;
   onToggle: () => void;
   lineName: (id: number) => string;
   onDelete: () => void;
+  onReverse: () => void;
 }) {
   const content = Object.entries(sh.per_line)
     .map(([lid, n]) => `${n} × ${lineName(Number(lid))}`)
@@ -673,16 +696,34 @@ function ShipmentRows({
         <td className="mono">{sh.shipped_at || "—"}</td>
         <td>{sh.kind === "return" ? <span className="pill warn">return</span> : "delivery"}</td>
         <td title={content}>
-          {content}
+          {content || <span className="muted">nothing</span>}
           {sh.devices.length ? <span className="muted"> · {sh.devices.length} serial{sh.devices.length === 1 ? "" : "s"}</span> : null}
+          {sh.reversed ? <span className="muted"> · {sh.reversed} taken back</span> : null}
         </td>
         <td title={sh.delivery_note}>{sh.delivery_note || "—"}</td>
         <td title={sh.tracking}>{sh.tracking || "—"}</td>
         <td>
-          {sh.devices.length === 0 ? (
+          {/* A reversed shipment carries no device but still carries EVENTS,
+              and `delete_shipment` refuses those — so `deletable` decides the
+              button, never `devices.length`, which would offer a delete the
+              API answers 409 to. */}
+          {sh.kind === "delivery" && sh.devices.length > 0 ? (
             <button
               type="button"
               className="btn btn-sm"
+              title="Take back a delivery recorded in error"
+              onClick={(e) => {
+                e.stopPropagation();
+                onReverse();
+              }}
+            >
+              Take back
+            </button>
+          ) : sh.deletable ? (
+            <button
+              type="button"
+              className="btn btn-sm"
+              title="Delete this shipment"
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete();
@@ -769,13 +810,12 @@ function ShipCard({ order, onDone }: { order: OrderRow; onDone: (o: OrderRow) =>
       const qty = Number(r.qty || 0);
       const unser = Number(r.unser || 0);
       if (serials.length) {
-        // serials are resolved server-side by device id only; look them up here
-        const ids = serials.map((s) => Number(s)).filter((n) => Number.isFinite(n) && n > 0);
-        if (ids.length !== serials.length) {
-          setError("Paste device IDs (numbers) — serial lookup is on the device list; open a device to see its ID.");
-          return;
-        }
-        lines.push({ order_line_id: li.id, device_ids: ids, note: "" });
+        // A scan sheet carries the string on the label; a person reading the
+        // device list has the row id. The endpoint resolves both, and names
+        // any serial it does not know rather than shipping a short list.
+        const ids = serials.filter((s) => /^\d+$/.test(s)).map(Number);
+        const labels = serials.filter((s) => !/^\d+$/.test(s));
+        lines.push({ order_line_id: li.id, device_ids: ids, serials: labels, note: "" });
       } else if (qty > 0) {
         lines.push({ order_line_id: li.id, qty, run_ids: [...r.runs] });
       }
@@ -806,7 +846,8 @@ function ShipCard({ order, onDone }: { order: OrderRow; onDone: (o: OrderRow) =>
       <h2 className="card-title">Ship</h2>
       <p className="card-subtitle">
         Devices are drawn oldest-first from the batches you tick. Untick a batch to keep it back.
-        A batch from before device records offers units “without a serial” instead.
+        Paste what a scanner read to name them instead of drawing them. A batch from before device
+        records offers units “without a serial” instead.
       </p>
       {error ? <ErrorBanner message={error} /> : null}
       <div className="field-grid">
@@ -882,8 +923,14 @@ function ShipCard({ order, onDone }: { order: OrderRow; onDone: (o: OrderRow) =>
                   <input className="text num" inputMode="numeric" value={r.qty} onChange={(e) => set(li.id, { qty: e.target.value })} />
                 </label>
                 <label>
-                  …or device IDs, pasted
-                  <input className="text mono" value={r.serials} placeholder="1234 1235 1236" onChange={(e) => set(li.id, { serials: e.target.value })} />
+                  …or scanned serials
+                  <input
+                    className="text mono"
+                    value={r.serials}
+                    placeholder="D4E9F4F56838 20E7C8929814 …"
+                    title="What the scanner read, or device row ids — both are resolved."
+                    onChange={(e) => set(li.id, { serials: e.target.value })}
+                  />
                 </label>
                 <label>
                   Units without a serial

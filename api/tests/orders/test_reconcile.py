@@ -283,3 +283,32 @@ def test_an_allocation_to_a_closed_line_is_not_supply(world):
     proj_id = world["proj"].id
     row = next(r for r in svc.project_demand(db, proj_id) if r["project_id"] == proj_id)
     assert (row["open"], row["on_shelf"]) == (0, 0)
+
+
+def test_a_shipment_can_be_recorded_from_serials(world):
+    """A scan sheet names devices by the string on the label."""
+    from app.routers import orders as router
+
+    db, line, order = world["db"], world["line"], world["order"]
+    sh = order.shipments[0]
+    svc.reverse_shipment(db, sh, actor="test", dry_run=False)
+    db.flush()
+    db.refresh(order)
+    body = router.ShipmentIn(shipped_at="2026-04-01",
+                             lines=[router.ShipmentLineIn(order_line_id=line.id,
+                                                          serials=["A0", "A1", "A2"])])
+    router.create_shipment(order.id, body, _Req(), db=db)
+    db.flush()
+    assert svc.line_shipped(line) == 3
+
+
+def test_a_reversed_shipment_says_it_cannot_be_deleted(world):
+    db, order = world["db"], world["order"]
+    sh = order.shipments[0]
+    assert svc.shipment_json(db, sh)["deletable"] is False
+    svc.reverse_shipment(db, sh, actor="test", dry_run=False)
+    db.flush()
+    row = svc.shipment_json(db, sh)
+    assert row["devices"] == [] and row["qty"] == 0
+    assert row["reversed"] == 10
+    assert row["deletable"] is False

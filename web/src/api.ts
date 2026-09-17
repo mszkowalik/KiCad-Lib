@@ -6967,6 +6967,11 @@ export interface ShipmentRow {
   per_line: Record<string, number>;
   devices: ShipmentDeviceRow[];
   unserialized: { order_line_id: number; qty_unserialized: number; source_run_id: number | null }[];
+  /** deliveries on this shipment that an `unshipped` event took back */
+  reversed: number;
+  /** false while ANY device event names the shipment, reversed or not — the
+   *  delete endpoint refuses those, so the button must not offer it */
+  deletable: boolean;
 }
 
 export interface OrderEconomics {
@@ -7056,6 +7061,8 @@ export interface InvoiceIn {
 export interface ShipmentLineIn {
   order_line_id: number;
   device_ids?: number[];
+  /** what a scanner read; resolved to device ids server-side */
+  serials?: string[];
   qty?: number;
   run_ids?: number[];
   board?: string;
@@ -7255,6 +7262,88 @@ export function createShipment(orderId: number, body: ShipmentIn): Promise<Order
 
 export function deleteShipment(shipmentId: number): Promise<OrderRow> {
   return request(`/api/shipments/${shipmentId}`, { method: "DELETE" });
+}
+
+/** What reversing a shipment would take back (decision 0028). */
+export interface ShipmentReversal {
+  dry_run: boolean;
+  shipment_id: number;
+  order_id: number;
+  devices: { device_id: number; order_line_id: number | null }[];
+  unserialized: { order_line_id: number; source_run_id: number | null; qty: number }[];
+}
+
+export function reverseShipment(
+  shipmentId: number,
+  body: { note?: string; dry_run: boolean },
+): Promise<ShipmentReversal> {
+  return request(`/api/shipments/${shipmentId}/reverse`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+/** A physical count of one project's shelf, and what it would correct
+ *  (decision 0027). `dry_run` is the default on the server too: the first
+ *  answer is always the plan. */
+export interface StockCountIn {
+  device_ids?: number[];
+  serials?: string[];
+  refill?: "same_batch" | "any_batch" | "none";
+  keep_count?: boolean;
+  note?: string;
+  dry_run: boolean;
+}
+
+export interface StockCountSlot {
+  device_id: number;
+  serial: string;
+  shipment_id: number;
+  shipped_at?: string;
+  order_id?: number;
+  order_line_id: number | null;
+  production_run_id: number | null;
+  counts?: boolean;
+}
+
+export interface StockCountPlan {
+  dry_run: boolean;
+  refill: string;
+  keep_count: boolean;
+  already_in_stock: number[];
+  skipped: { device_id: number; serial: string; state: string; reason: string }[];
+  freed: StockCountSlot[];
+  refilled: {
+    slot_device_id: number;
+    slot_serial: string;
+    by_device_id: number;
+    by_serial: string;
+    shipment_id: number;
+    order_line_id: number | null;
+    production_run_id: number | null;
+  }[];
+  unfilled: StockCountSlot[];
+  unserialized: { shipment_id: number; order_line_id: number; source_run_id: number | null; qty: number }[];
+  lines: {
+    order_line_id: number;
+    order_id: number;
+    order_ref: string;
+    product: string;
+    qty_ordered: number;
+    qty_shipped_before: number;
+    qty_shipped_after: number;
+    status_before: string;
+    status_after?: string;
+  }[];
+}
+
+export function reconcileStock(body: StockCountIn): Promise<StockCountPlan> {
+  return request("/api/stock/reconcile", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
 }
 
 export function getFinishedStock(projectId?: number, signal?: AbortSignal): Promise<FinishedStock> {

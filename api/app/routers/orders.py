@@ -23,6 +23,26 @@ def _order(db: Session, order_id: int) -> M.SalesOrder:
     return o
 
 
+def _by_serial(db: Session, serials: list[str]) -> list[M.DeviceUnit]:
+    """Resolve the serials a scanner read. A scan sheet names devices by the
+    string on the label, never by our row id, so every path a sheet reaches —
+    a shipment, a stock count — takes both."""
+    wanted = [s.strip() for s in serials if s and s.strip()]
+    if not wanted:
+        return []
+    found = {d.serial: d for d in db.query(M.DeviceUnit)
+             .filter(M.DeviceUnit.serial.in_(wanted)).all()}
+    missing = [s for s in wanted if s not in found]
+    if missing:
+        raise HTTPException(404, {"error": "no device carries these serials", "serials": missing})
+    out, seen = [], set()
+    for s in wanted:
+        if found[s].id not in seen:
+            out.append(found[s])
+            seen.add(found[s].id)
+    return out
+
+
 def _device(db: Session, device_id: int) -> M.DeviceUnit:
     d = db.get(M.DeviceUnit, device_id)
     if d is None:
@@ -364,6 +384,7 @@ def delete_invoice(invoice_id: int, request: Request, db: Session = Depends(get_
 class ShipmentLineIn(BaseModel):
     order_line_id: int
     device_ids: list[int] = []
+    serials: list[str] = []  # resolved to device ids; a scan sheet has these
     qty: int = 0
     run_ids: list[int] = []
     board: str = ""
@@ -397,9 +418,16 @@ def stock_options(order_id: int, db: Session = Depends(get_db)):
 def create_shipment(order_id: int, body: ShipmentIn, request: Request, db: Session = Depends(get_db)):
     o = _order(db, order_id)
     actor = actor_of(request)
+    lines = []
+    for ln in body.lines:
+        spec = ln.model_dump()
+        spec.pop("serials", None)
+        ids = [*(spec.get("device_ids") or []), *(d.id for d in _by_serial(db, ln.serials))]
+        spec["device_ids"] = list(dict.fromkeys(ids))
+        lines.append(spec)
     sh = svc.create_shipment(db, o, shipped_at=body.shipped_at, delivery_note=body.delivery_note,
                              tracking=body.tracking, notes=body.notes,
-                             lines=[ln.model_dump() for ln in body.lines], actor=actor)
+                             lines=lines, actor=actor)
     audit(db, "order.ship", "sales_order", o.id, {"shipment_id": sh.id}, actor=actor)
     db.commit()
     db.expire(o, ["shipments", "lines"])
@@ -594,18 +622,10 @@ def reconcile_stock(body: ReconcileIn, request: Request, db: Session = Depends(g
     """
     devices = [_device(db, did) for did in body.device_ids]
     seen = {d.id for d in devices}
-    if body.serials:
-        wanted = [s.strip() for s in body.serials if s.strip()]
-        found = {d.serial: d for d in db.query(M.DeviceUnit)
-                 .filter(M.DeviceUnit.serial.in_(wanted)).all()}
-        missing = [s for s in wanted if s not in found]
-        if missing:
-            raise HTTPException(404, {"error": "no device carries these serials",
-                                      "serials": missing})
-        for s in wanted:
-            if found[s].id not in seen:
-                devices.append(found[s])
-                seen.add(found[s].id)
+    for d in _by_serial(db, body.serials):
+        if d.id not in seen:
+            devices.append(d)
+            seen.add(d.id)
     actor = actor_of(request)
     plan = svc.reconcile_shelf(db, devices, refill=body.refill, keep_count=body.keep_count,
                                note=body.note, actor=actor, dry_run=body.dry_run)

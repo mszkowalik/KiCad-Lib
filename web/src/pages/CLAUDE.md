@@ -182,6 +182,15 @@ and the copy was worse.
   repairs and disposals are on the DEVICE page (`components/DeviceHistoryCard.tsx`),
   because they are events in a device's history. The run page's sale card
   stays until the register reads the orders; it now points at the order.
+  **Counting the shelf is on this page too** (`CountShelfCard`, decisions 0027
+  and 0028): it corrects the number the stock card owns, so it presses TWICE —
+  the first press only asks for the plan, which names every order line whose
+  delivered quantity moves, because writing rewrites the history of invoiced
+  shipments. `parseScanSheet` decides nothing: it strips a scanner's CSV and
+  the SERVER names the codes that are not devices, which get a "Drop N" button.
+  A delivery recorded in error is taken back on its row, never deleted, and the
+  `×` follows `sh.deletable`, NOT `sh.devices.length` — a reversed shipment
+  carries no device but still carries events. Ship takes scanned serials now.
   The project window has an **Orders tab** (`components/project/OrdersTab.tsx`):
   read-only, one row per order line of that project, headed by the demand
   card (`DemandCard` in `pages/Orders.tsx`, from `GET /api/demand`) — open

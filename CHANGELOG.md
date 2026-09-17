@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-09-17 (the stock count has a screen)
+
+- **Production → Orders can count the shelf.** Paste what a scanner read —
+  a plain list, or the CSV a scanner exports, header and timestamps included —
+  and the card shows the plan: how many recorded deliveries would be taken
+  back, how many refilled from stock, how many left empty, and every order line
+  whose delivered quantity would move. Nothing is written until you press again.
+  A code that is not a device is named and dropped with one button, which is
+  what the two stray EAN barcodes on the 2026-09-17 sheet needed.
+- **A shipment row has a "Take back" button** for a delivery recorded in error,
+  and shows how many of its deliveries were already taken back. The delete `×`
+  now follows whether the API would actually allow a delete: a reversed
+  shipment carries no device but still carries events, so it offered a delete
+  that answered 409.
+- **The Ship card takes scanned serials.** It accepted only device row ids,
+  which no scan sheet carries — its own hint told you to go and look each one
+  up. Serials and ids now go in the same box, and a serial nothing carries is
+  named instead of quietly shipping a shorter list.
+
 ## 2026-09-17 (a boxed device stops asking to be built)
 
 - **Demand counts a device allocated to an open line as supply.** An

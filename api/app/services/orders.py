@@ -996,10 +996,17 @@ def shipment_json(db: Session, sh: M.Shipment) -> dict:
               "source_run_id": sl.source_run_id} for sl in sh.lines]
     for u in unser:
         per_line[u["order_line_id"]] += u["qty_unserialized"] or 0
+    # `devices` is what the shipment still carries, so a fully reversed
+    # delivery shows none — and would read as deletable, which it is not:
+    # `delete_shipment` refuses while ANY event names the shipment, reversed
+    # or not. The row says so itself rather than letting the button promise
+    # something the API answers 409 to.
+    reversed_n = sum(1 for ev, _ in evs if ev.kind == "unshipped")
     return {"id": sh.id, "order_id": sh.order_id, "kind": sh.kind, "shipped_at": sh.shipped_at,
             "delivery_note": sh.delivery_note, "tracking": sh.tracking, "notes": sh.notes,
             "qty": sum(per_line.values()), "per_line": dict(per_line),
-            "devices": devices, "unserialized": unser}
+            "devices": devices, "unserialized": unser,
+            "reversed": reversed_n, "deletable": not evs}
 
 
 def device_history_json(db: Session, device: M.DeviceUnit) -> dict:

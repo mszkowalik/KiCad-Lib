@@ -6,6 +6,12 @@
  *  and never set by hand. The stock card is this number's ONE home: a count
  *  of devices in `in_stock` per batch, plus the units of legacy batches that
  *  were never recorded as devices (§8).
+ *
+ *  Counting the shelf lives here for the same reason: it CORRECTS that number.
+ *  A shipment without serials picks devices FIFO and the pick is a guess
+ *  (0003 §6); a person with a scanner is the evidence that settles it
+ *  (decision 0027). The card never writes on the first press — it shows the
+ *  plan, and the plan names every order whose quantity would move.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -15,6 +21,9 @@ import {
   getDemand,
   getFinishedStock,
   isAbortError,
+  reconcileStock,
+  ApiError,
+  type StockCountPlan,
   listCustomers,
   listOrders,
   getProjects,
@@ -27,6 +36,9 @@ import {
   type ProjectInfo,
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
+import Field, { CheckField, FieldRow } from "../components/Field";
+import AutoTextarea from "../components/AutoTextarea";
+import { useDialog } from "../components/Dialog";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import { amount, plain, usd } from "../format";
 
@@ -155,6 +167,7 @@ export default function Orders() {
 
         <DemandCard rows={demand} />
         <StockCard stock={stock} />
+        <CountShelfCard onApplied={reload} />
 
         <div className="card pad">
           <h2 className="card-title">Customer orders</h2>
@@ -562,6 +575,308 @@ function NewOrderCard({
         Notes
         <textarea className="note-textarea" value={notes} onChange={(e) => setNotes(e.target.value)} />
       </label>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------- counting the shelf */
+
+/** The words a barcode scanner's CSV export puts around the payloads.
+ *  Dropping them is safe because none of them can be a device serial; every
+ *  other token is offered to the server, which is the only thing that knows
+ *  what a serial is. */
+const SCAN_NOISE = new Set([
+  "timestamp", "type", "content", "favorite", "true", "false",
+  "code128", "code39", "code93", "codabar", "ean13", "ean8", "upc_a", "upc_e",
+  "qr_code", "qrcode", "data_matrix", "pdf417", "itf", "aztec",
+]);
+
+/** Serial-looking tokens in a paste, in the order they were scanned.
+ *
+ *  Takes a plain list, one per line, AND the CSV a scanner exports — nobody
+ *  should have to strip quotes and timestamps by hand to use their own scan
+ *  sheet. It deliberately does NOT try to decide what a serial looks like:
+ *  a payload that is not a device comes back named by the server, which is
+ *  the honest place for that answer. The two EAN barcodes in the 2026-09-17
+ *  sheet arrived exactly that way. */
+export function parseScanSheet(text: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of text.split(/[\s,;"']+/)) {
+    const tok = raw.trim();
+    if (!tok) continue;
+    if (SCAN_NOISE.has(tok.toLowerCase())) continue;
+    if (tok.includes(":") || tok.includes("-")) continue; // ISO timestamps, MACs with separators
+    if (seen.has(tok)) continue;
+    seen.add(tok);
+    out.push(tok);
+  }
+  return out;
+}
+
+/** Serials the server said it does not know, out of a structured 404. */
+function unknownSerials(err: unknown): string[] {
+  if (!(err instanceof ApiError) || err.status !== 404) return [];
+  const d = err.detail as { serials?: unknown } | null;
+  return Array.isArray(d?.serials) ? d.serials.filter((s): s is string => typeof s === "string") : [];
+}
+
+/** Count the shelf: the scan sheet against what the platform believes.
+ *
+ *  Two presses, never one. The first asks the server for the plan and writes
+ *  nothing; the second applies exactly the plan on screen. That split is the
+ *  whole safety of this card — it rewrites the device history of shipments
+ *  that are already invoiced (decision 0027). */
+function CountShelfCard({ onApplied }: { onApplied: () => void }) {
+  const dialog = useDialog();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [refill, setRefill] = useState<"same_batch" | "any_batch" | "none">("same_batch");
+  const [keepCount, setKeepCount] = useState(true);
+  const [note, setNote] = useState("");
+  const [plan, setPlan] = useState<StockCountPlan | null>(null);
+  const [unknown, setUnknown] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+
+  const serials = useMemo(() => parseScanSheet(text), [text]);
+
+  const run = async (dry: boolean) => {
+    setBusy(true);
+    setError(null);
+    setUnknown([]);
+    try {
+      const p = await reconcileStock({ serials, refill, keep_count: keepCount, note: note.trim(), dry_run: dry });
+      if (dry) {
+        setPlan(p);
+        setDone(null);
+      } else {
+        setPlan(null);
+        setText("");
+        setDone(
+          `${p.freed.length} ${p.freed.length === 1 ? "delivery" : "deliveries"} taken back, ` +
+            `${p.refilled.length} refilled from stock, ${p.unfilled.length} left empty.`,
+        );
+        onApplied();
+      }
+    } catch (err) {
+      const miss = unknownSerials(err);
+      setUnknown(miss);
+      setError(
+        miss.length
+          ? `${miss.length} of the ${serials.length} scanned code${miss.length === 1 ? " is" : "s are"} not a device in the platform.`
+          : errorMessage(err),
+      );
+      setPlan(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const dropUnknown = () => {
+    const drop = new Set(unknown);
+    setText(serials.filter((s) => !drop.has(s)).join("\n"));
+    setUnknown([]);
+    setError(null);
+  };
+
+  return (
+    <div className="card pad">
+      <div className="toolbar">
+        <h2 className="card-title">Count the shelf</h2>
+        <button type="button" className="btn btn-sm" onClick={() => setOpen((v) => !v)}>
+          {open ? "Close" : "Count"}
+        </button>
+      </div>
+      <p className="card-subtitle">
+        A shipment without serials draws devices oldest-first, and that pick is a guess. Scanning
+        what is actually on the shelf settles it: every guess this count contradicts is taken back
+        and its place on the shipment is refilled from stock. A device somebody named by hand is
+        never touched — a count says where a device is, not who is wrong about it.
+      </p>
+      {done ? <p className="ok-text">{done}</p> : null}
+      {!open ? null : (
+        <>
+          {error ? <ErrorBanner message={error} /> : null}
+          {unknown.length ? (
+            <div className="serial-cloud">
+              {unknown.map((s) => (
+                <span key={s} className="pill err mono">{s}</span>
+              ))}
+              <button type="button" className="btn btn-sm" onClick={dropUnknown}>
+                Drop {unknown.length} and count the rest
+              </button>
+            </div>
+          ) : null}
+          <Field
+            label="What the scanner read"
+            hint={
+              serials.length
+                ? `${serials.length} code${serials.length === 1 ? "" : "s"}, one project at a time.`
+                : "One serial per line, or paste the scanner's CSV export whole."
+            }
+          >
+            <AutoTextarea
+              className="text mono"
+              rows={4}
+              maxRows={14}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={"D4E9F4F56838\n20E7C8929814\n…"}
+            />
+          </Field>
+          <FieldRow>
+            <Field label="Refill a freed place" hint="A freed place left empty lowers what the order counts as delivered.">
+              <select className="text" value={refill} onChange={(e) => setRefill(e.target.value as typeof refill)}>
+                <option value="same_batch">from the same batch</option>
+                <option value="any_batch">from any batch of the project</option>
+                <option value="none">not at all</option>
+              </select>
+            </Field>
+            <Field label="Note" wide hint="Why this count happened. It lands on every event it writes.">
+              <input
+                className="text"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder={`shelf count ${new Date().toISOString().slice(0, 10)}`}
+              />
+            </Field>
+          </FieldRow>
+          <CheckField
+            checked={keepCount}
+            onChange={setKeepCount}
+            title="What the customer was invoiced for does not change; the unit simply stops naming a device."
+          >
+            Keep the invoiced quantity when nothing is left to refill a place — the unit becomes one
+            without a serial
+          </CheckField>
+          <div className="btn-row">
+            <button type="button" className="btn" disabled={busy || !serials.length} onClick={() => run(true)}>
+              {busy && !plan ? "Counting…" : "Show me the plan"}
+            </button>
+          </div>
+          {plan ? <CountPlan plan={plan} busy={busy} onApply={async () => {
+            const moved = plan.lines.filter((l) => l.qty_shipped_after !== l.qty_shipped_before);
+            const warn = moved.length
+              ? ` ${moved.length} order line${moved.length === 1 ? "" : "s"} change what they count as delivered.`
+              : "";
+            if (await dialog.confirm(
+              `Write this count? ${plan.freed.length} recorded deliveries are taken back and ${plan.refilled.length} refilled.${warn}`,
+              { tone: "danger", confirmLabel: "Write the count" },
+            )) {
+              await run(false);
+            }
+          }} /> : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** What the count would do, before it does it. */
+function CountPlan({ plan, busy, onApply }: { plan: StockCountPlan; busy: boolean; onApply: () => void }) {
+  const byShipment = useMemo(() => {
+    const m = new Map<number, { freed: number; refilled: number; unfilled: number; shipped_at: string }>();
+    for (const f of plan.freed) {
+      const row = m.get(f.shipment_id) ?? { freed: 0, refilled: 0, unfilled: 0, shipped_at: f.shipped_at ?? "" };
+      row.freed += 1;
+      m.set(f.shipment_id, row);
+    }
+    for (const r of plan.refilled) {
+      const row = m.get(r.shipment_id);
+      if (row) row.refilled += 1;
+    }
+    for (const u of plan.unfilled) {
+      const row = m.get(u.shipment_id);
+      if (row) row.unfilled += 1;
+    }
+    return [...m.entries()].sort((a, b) => a[1].shipped_at.localeCompare(b[1].shipped_at));
+  }, [plan]);
+
+  const anon = plan.unserialized.reduce((s, u) => s + u.qty, 0);
+
+  return (
+    <div className="count-plan">
+      <h3 className="card-subtitle">
+        {plan.already_in_stock.length} already on the shelf · {plan.freed.length} deliveries taken
+        back · {plan.refilled.length} refilled · {plan.unfilled.length} left empty
+        {anon ? ` · ${anon} become units without a serial` : ""}
+      </h3>
+      {plan.skipped.length ? (
+        <p className="muted">
+          {plan.skipped.length} counted device{plan.skipped.length === 1 ? "" : "s"} the count cannot
+          act on: {plan.skipped.map((s) => `${s.serial || s.device_id} (${s.reason})`).join("; ")}
+        </p>
+      ) : null}
+      {byShipment.length ? (
+        <div className="table-wrap">
+          <table className="data order-table">
+            <thead>
+              <tr>
+                <th>Shipment</th>
+                <th>Dated</th>
+                <th className="num">Taken back</th>
+                <th className="num">Refilled</th>
+                <th className="num">Left empty</th>
+              </tr>
+            </thead>
+            <tbody>
+              {byShipment.map(([id, r]) => (
+                <tr key={id}>
+                  <td className="mono">#{id}</td>
+                  <td className="mono">{r.shipped_at || "—"}</td>
+                  <td className="num">{r.freed}</td>
+                  <td className="num">{r.refilled}</td>
+                  <td className={"num" + (r.unfilled ? " warn-text" : "")}>{r.unfilled}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="muted">Nothing to correct: every counted device is already recorded on the shelf.</p>
+      )}
+      {plan.lines.length ? (
+        <div className="table-wrap">
+          <table className="data order-table">
+            <thead>
+              <tr>
+                <th>Order</th>
+                <th>Product</th>
+                <th className="num">Delivered now</th>
+                <th className="num">After the count</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plan.lines.map((l) => {
+                const moved = l.qty_shipped_after !== l.qty_shipped_before;
+                return (
+                  <tr key={l.order_line_id}>
+                    <td>
+                      <Link className="comp-link" to={`/production/orders/${l.order_id}`}>
+                        {l.order_ref || `#${l.order_id}`}
+                      </Link>
+                    </td>
+                    <td>{l.product}</td>
+                    <td className="num">
+                      {l.qty_shipped_before.toLocaleString()} / {l.qty_ordered.toLocaleString()}
+                    </td>
+                    <td className={"num" + (moved ? " warn-text" : "")}>
+                      {l.qty_shipped_after.toLocaleString()} / {l.qty_ordered.toLocaleString()}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      <div className="btn-row">
+        <button type="button" className="btn btn-primary" disabled={busy || !plan.freed.length} onClick={onApply}>
+          {busy ? "Writing…" : "Write the count"}
+        </button>
+      </div>
     </div>
   );
 }

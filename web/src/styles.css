@@ -1641,6 +1641,9 @@ dl.kv {
 .warn-text {
   color: var(--warn);
 }
+.ok-text {
+  color: var(--ok);
+}
 
 .props .prop-key {
   white-space: nowrap;
@@ -4532,7 +4535,9 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
 .order-lines-edit-table th:nth-child(5), .order-lines-edit-table td:nth-child(5) { width: 6%; }
 .order-shipments-table td.expand-cell { white-space: normal; overflow: visible; }
 .order-shipments-table tr.clickable { cursor: pointer; }
-.ship-line { border-top: 1px solid var(--line); padding-top: 0.5rem; margin-top: 0.5rem; }
+/* One block under the control that produced it: a per-line ship form, the
+   plan a stock count prints before it writes. Same rule, never a second one. */
+.ship-line, .count-plan { border-top: 1px solid var(--line); padding-top: 0.5rem; margin-top: 0.5rem; }
 .serial-cloud { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.4rem; }
 .device-history-table { table-layout: fixed; }
 .device-history-table th:nth-child(1), .device-history-table td:nth-child(1) { width: 16%; }
