@@ -49,6 +49,36 @@ outright. The pass was reverted.
   LightPipe, the RF pigtail — and they belong in prose precisely because
   `cmp.description` stays a judgment check in those categories.
 
+## What an ANSWER can hold: 400 characters, and it fails silently
+
+`record_verification` **drops any item whose `note` is longer than 400
+characters.** It does not reject the call. It returns `ok: true`, reports the
+other items as recorded, and the long one simply stays unanswered — the only
+way to notice is to re-read the checklist and find the key still open.
+
+Measured on 2026-09-18 while closing the CE_Dongle_V3 footprints: a 358-character
+note landed, a 405-character note did not, and one call lost 4 of 7 items this
+way before the pattern was spotted. Two of the same pass's earlier SOIC
+`fp.jlc_land` answers had been lost to it and re-recorded shorter.
+
+The same ceiling does not apply everywhere. Notes written through other paths
+sit well above it — `fp.land_pattern` on `D_SOD-323`'s neighbours carries 1747
+characters — so a long note in the database is not evidence that the agent tool
+will accept one.
+
+**Check the length before you send it.** A helper that raises at 400 costs one
+line and turns a silent loss into a visible one:
+
+```python
+bad = [(i['key'], len(i.get('note') or '')) for i in items
+       if len(i.get('note') or '') > 400]
+if bad:
+    raise SystemExit(f'NOTE TOO LONG (>400): {bad}')
+```
+
+Comments on a publish have their own, larger ceiling: 600 characters, which
+rejects the call outright rather than truncating.
+
 ## What blocks a check today
 
 A per-category rule needs a discriminator to split on. **`Inductors`, `RF` and
@@ -89,6 +119,23 @@ An absent fact never matches a `when`. So a count that returns nothing for both
 predicate would silently stop asking every question of a broken drawing. Split
 them first — `parsed()` in `services/checklists.py` is the pattern, and it is
 why a pinless symbol now reports `"0"` while a broken one still reports nothing.
+
+### A non-electrical pad leaves BOTH sets, never one
+
+`NON_ELECTRICAL_PADS` in `services/checklists.py` holds `MP` and `SH` — a
+mounting post and a shield tab. Neither is a terminal, so neither belongs in
+`cmp.pins_to_pads` or `cmp.pads_to_pins`.
+
+It was subtracted from the pad set only. Every shielded connector whose symbol
+draws the house `SH` pin then reported exactly one pin with nowhere to land,
+because the pin side still carried `SH` and the pad side no longer did. That
+was 6 of 6 failures on `cmp.pins_to_pads` on 2026-09-18, all false, all on
+parts whose raw pin and pad numbers matched exactly.
+
+**A set the check declares out of scope has to leave every set the check
+compares.** Subtracting from one side does not narrow a check, it inverts it.
+The cost of the symmetry is a shield pin with no pad at all, which this check
+no longer sees. That case was never the one the 6 failures were reporting.
 
 ### A scope may reach across axes
 

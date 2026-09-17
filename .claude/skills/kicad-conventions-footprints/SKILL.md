@@ -2,7 +2,7 @@
 name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints: where to get the copper, how to publish it, and the index of every footprint rule with the check that now holds it. The rules themselves live in the footprint checklist — read them with get_review_checklist('footprint'). Use when naming, picking or authoring any footprint."
 ---
-<!-- platform-skill: conventions-footprints v45 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v48 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 **The rules are checks now, not prose.** Every convention this document used to
@@ -114,7 +114,7 @@ Pass the model path as it appears after `3DModels/` in the `(model ...)` line.
 | Does a standard package have exactly one land, and is a reuse annotated rather than re-cut? | `fp.one_land_per_package` |
 | Does this land also fit other vendor package names, and are they in `tags` and `descr`? | `fp.shared_land_record` |
 | Which of the four naming rules applies to this package? | `fp.tier` |
-| Is a name copied from KiCad's own library really on KiCad's copper? | `fp.stock_name_diffed` |
+| Is a name copied from KiCad's own library really on KiCad's copper? (not asked of a house land — see below) | `fp.stock_name_diffed` |
 | Does anything justify a rename? | `fp.naming` |
 | Are the twelve name slots in order? | `fp.field_order` |
 | Is the family word right for this mount technology? (varistors split, fuses do not) | `fp.family_prefix` |
@@ -140,6 +140,101 @@ Pass the model path as it appears after `3DModels/` in the `(model ...)` line.
 
 Full naming standard, the per-footprint migration table and the catalogue of
 canonical names for packages not yet in the library: `docs/footprint-naming/`.
+
+## An exact EasyEDA land match verifies the rotation offset
+
+**`fp.rotation_offset` does not always need a JLC export.** Mateusz Kowalik,
+2026-09-18: "if the footprint matches easyeda, then the rotation is ok."
+
+The reasoning: the offset is a property of one PAIR — a given land and the
+part's orientation in its tape. If our land is an exact copy of JLC's own land,
+it is the same pair, so the stored offset is the offset for that land.
+
+**THE TEST IS EXACTNESS, and it is the whole test.** Run
+`easyeda2kicad --lcsc_id=C<n> --footprint` and compare every pad: number,
+position, size and rotation. All four, on every pad. `U.FL_Kinghelm_
+KH-IPEX-K501-29_Vertical` passes it — JLC's `ANT-SMD_KH-IPEX-K501-29` is
+identical pad for pad, so its stored 180 was answered CHECKED on 2026-09-18
+with no export read.
+
+**IT DOES NOT COVER A LAND THAT DIFFERS.** The moment our copper is not JLC's,
+the pair is not the same pair and this shortcut is gone. That is most of the
+house families: `SOT-23-5` and `SOT-23-6` both carry an offset of 90 and both
+sit at the decided 1.00 mm pitch where JLC uses 0.95, with different pad sizes
+again — so they still need a reviewed export, and they are still open.
+
+**THE CHECK'S OWN HINT SAYS OTHERWISE**, and has not been changed: it reads
+"ONLY A REVIEWED EXPORT VERIFIES AN OFFSET". Treat this section as the newer
+decision and say in the note which route was taken, so the two never get
+confused on one part.
+
+## A house land is not diffed against KiCad
+
+**`fp.stock_name_diffed` does not apply to a house-prepared land.** Mateusz
+Kowalik, 2026-09-18: "if its house model, it doesnt need to be compared against
+kicad." Answer it `na`, reason `kind_exempt`, and move on.
+
+The generic chip-passive families are house copper under a stock name, on
+purpose. Every one of them differs from the shipped file, because the whole
+library was snapped to the 0.1 mm grid and KiCad's generator was not:
+
+| Land | Ours vs KiCad, pad 1 x and size |
+|---|---|
+| `C_0402_1005Metric` | −0.50 vs −0.48, 0.54×0.64 vs 0.56×0.62 |
+| `C_0805_2012Metric` | −0.90 vs −0.95 |
+| `C_1210_3225Metric` | −1.45 vs −1.475, 1.20 vs 1.15 wide |
+| `R_0402_1005Metric` | −0.50 vs −0.51 |
+| `R_0805_2012Metric` | −0.90 vs −0.9125, 1.00×1.45 vs 1.025×1.40 |
+| `L_0402_1005Metric` | −0.50 vs −0.485, 0.54 vs 0.59 wide |
+| `L_0603_1608Metric` | −0.80 vs −0.7875, 0.90 vs 0.875 wide |
+| `Fuse_1206_3216Metric` | −1.45 vs −1.40, 1.20×1.80 vs 1.25×1.75 |
+
+**The name stays.** This closes the Tier 0 question the same way the SOT-23
+family closed it: house copper under a stock name. Do not rename, and do not
+redraw the copper back to KiCad's.
+
+**What the check still protects.** It exists for pad NUMBERING — same name,
+same pad count, different numbers, and the symbol lands on the wrong pads of a
+board that looks right. None of the lands above touches that: pad count, pad
+numbering and the pitch axis are identical to KiCad's in every case. A house
+land that changed pad numbers or pad count is still a real finding, and the
+exemption does not cover it.
+
+**`fp.jlc_land` works the same way** and already names R_0402, R_0805, R_1206
+and the SOIC family. The rule generalises: a house-prepared family is ours on
+purpose, so a difference from stock or from JLC is not a defect. Record the
+measured diff in the note and leave the geometry alone.
+
+**A fourth pass re-discovered this on 2026-09-17**, on the chip capacitor,
+inductor and fuse lands. That is why it is written here rather than left to the
+check text, which still says a stock name is abandoned when the copper differs.
+
+## JLC does not win against the manufacturer's own minimum
+
+**`fp.jlc_land` says "WHEN THEY DISAGREE, JLC WINS". That holds because JLC's
+file is machine-readable for the exact orderable part. It stops holding when
+JLC's land breaks a dimension the manufacturer publishes as a limit.**
+
+Measured on `D_SMA`, 2026-09-18, against the Littelfuse SMAJ recommended land
+(p5):
+
+| | Pad width | Inner gap |
+|---|---|---|
+| Littelfuse | 1.8 **min** | 2.3 **max** |
+| Ours, 2.5 × 1.8 at ±2.0 | 1.80 ✓ | 1.50 ✓ |
+| JLC `SMA_L4.4-W2.8-LS5.4-RD`, 2.05 × 1.62 at ±2.57 | 1.62 ✗ | 3.09 ✗ |
+
+JLC is under the minimum width and over the maximum gap. Ours is inside both,
+so ours stays and the diff is recorded in the note.
+
+**The test is a PUBLISHED LIMIT, not a preference.** A min or a max in the
+manufacturer's land drawing outranks JLC. A difference from a nominal, or from
+a figure JLC simply drew differently, does not — that is the ordinary
+note-and-move-on case the check already describes, and the chip-passive and
+SOT-23 families are decided that way.
+
+**Say which document and which page in the note**, so the next reader can
+check the limit rather than take the exception on trust.
 
 ## Pad placement grid — still prose, because no check holds it
 

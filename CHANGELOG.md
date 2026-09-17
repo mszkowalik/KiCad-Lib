@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-09-18 (a pin-1 mark that exists is not a pin-1 mark that reads)
+
+- **New derived fact `$footprint_pin1_marks_offspec`.** `fp.pin1_mark` only
+  ever asked that at least one `Cmts.User` circle sits within 2 mm of pad 1.
+  It never asked what the circle looks like, so a wrong-sized mark — and, worse,
+  an unrelated `Cmts.User` circle that merely happens to sit near pad 1 —
+  passed it. The new fact counts the circles that are NOT the house mark, a
+  0.1 mm radius with a 0.2 mm stroke. A circle whose width the file does not
+  state counts as off-spec, because a mark nobody can measure is not one
+  anybody can rely on.
+- **Measured across the whole library on 2026-09-18: 40 of the 199 footprints
+  that have a pad 1 carry an off-spec mark**, and the sizes cluster — 17 at
+  r 0.15 / w 0.3, 6 at r 0.25 / w 0.5, 5 at r 0.06 / w 0.25, which is the
+  EasyEDA import writing its own size. Five more are not pin-1 marks at all
+  (r 0.9 to 3.25); those were passing `fp.pin1_mark` on a circle that means
+  something else entirely.
+
+## 2026-09-18 (a verification note has a ceiling, and it is silent)
+
+- **`record_verification` drops any item whose note is over 400 characters,
+  and reports success.** The call returns `ok: true`, the other items land,
+  and the long one stays unanswered — nothing says so. Found while closing the
+  CE_Dongle_V3 footprints, after one call lost 4 of 7 items. Measured: 358
+  characters landed, 405 did not. Written up, with the one-line guard that
+  makes the loss visible, in
+  [what-a-check-can-hold.md](docs/reference/what-a-check-can-hold.md).
+
 ## 2026-09-18 (a release is one thing)
 
 - **Production → Files lists releases, not file versions.** A berryware

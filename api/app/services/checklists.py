@@ -481,6 +481,12 @@ FACTS: tuple[dict, ...] = (
     {"name": "$footprint_pin1_marks", "kinds": ("component", "footprint"),
      "lazy": True, "noun": "count of Cmts.User pin-1 marks",
      "what": "Cmts.User circles within 2 mm of pad 1 — absent when there is no pad 1"},
+    {"name": "$footprint_pin1_marks_offspec", "kinds": ("component", "footprint"),
+     "lazy": True, "noun": "count of off-spec Cmts.User pin-1 marks",
+     "what": "of those circles, how many are NOT a 0.1 mm radius with a 0.2 mm "
+             "stroke — the house mark. A circle with no stated width counts "
+             "here, because a mark whose width the file does not give is not "
+             "one anybody can rely on"},
     #: The human package name (`0402`, `SOT-23-6`) the generator injects
     #: wherever a description references {Footprint_Name}. Unversioned, so it
     #: lives on the footprint row rather than in the drawing.
@@ -1120,6 +1126,13 @@ def _derived_providers(db: Session, cv: M.ComponentVersion) -> dict:
             return None, None
         pin_nums.discard("")
         pad_nums.discard("")
+        # A shield tab or a mounting post is not an electrical terminal, so it
+        # is dropped from BOTH sides. Dropping it from the pads alone made
+        # every shielded connector whose symbol draws the house `SH` pin
+        # report exactly one pin with nowhere to land: 6 parts on 2026-09-18
+        # (GT-USB-7010ASV, HR913550A, NANO_SIM_TL6P_H1.35, R-RJ45S08P-B000,
+        # RC01812, U262-161N-4BVC11), every one of them a false error.
+        pin_nums -= NON_ELECTRICAL_PADS
         pad_nums -= NON_ELECTRICAL_PADS
         if not pin_nums or not pad_nums:
             return None, None
@@ -1878,6 +1891,56 @@ def _footprint_providers(source_of) -> dict:
                 n += 1
         return str(n)
 
+    def pin1_marks_offspec():
+        """Of the pin-1 marks `pin1_marks` counts, how many are OFF-SPEC.
+
+        `fp.pin1_mark` only asks that at least one `Cmts.User` circle exists
+        within 2 mm of pad 1. It never asks what that circle looks like, and
+        the gap is not theoretical: eleven EasyEDA-imported footprints in one
+        2026-09-18 pass carried a stray or wrong-sized mark and every one of
+        them passed. Two failure shapes hide behind that count — a circle of
+        the wrong size, and a SECOND circle that makes "which one is pin 1"
+        ambiguous. This fact answers the first; `$footprint_pin1_marks` already
+        answers the second, because a check on it can say `at_most 1`.
+
+        The house mark is a 0.1 mm RADIUS circle with a 0.2 mm stroke,
+        unfilled. Radius is measured as the distance from `center` to `end`,
+        which is how KiCad stores a circle. A circle with no readable stroke
+        counts as off-spec rather than being skipped: a mark whose width the
+        file does not state is not a mark anybody can rely on.
+
+        Absent when there is no pad 1, which is `na` rather than a failure,
+        exactly as `pin1_marks` is.
+        """
+        one = next((p for p in pads()
+                    if str(p.get("number")) in ("1", "A1")), None)
+        at = (one or {}).get("at")
+        if not at or len(at) < 2:
+            return None
+        px, py = float(at[0]), float(at[1])
+        n = 0
+        src = source_of() or ""
+        for m in re.finditer(r"\(fp_circle\b", src):
+            block = _block_at(src, m.start())
+            if "Cmts.User" not in block:
+                continue
+            c = re.search(r"\(center\s+(-?[\d.]+)\s+(-?[\d.]+)\)", block)
+            e = re.search(r"\(end\s+(-?[\d.]+)\s+(-?[\d.]+)\)", block)
+            if c is None:
+                continue
+            cx, cy = float(c.group(1)), float(c.group(2))
+            if ((cx - px) ** 2 + (cy - py) ** 2) ** 0.5 > 2.0:
+                continue
+            if e is None:
+                n += 1
+                continue
+            radius = ((float(e.group(1)) - cx) ** 2 + (float(e.group(2)) - cy) ** 2) ** 0.5
+            w = re.search(r"\(width\s+(-?[\d.]+)\)", block)
+            width = float(w.group(1)) if w else None
+            if abs(radius - 0.1) > 1e-6 or width is None or abs(width - 0.2) > 1e-6:
+                n += 1
+        return str(n)
+
     def heatsink_pads():
         """Pads flagged `pad_prop_heatsink` — an exposed pad or a thermal via.
 
@@ -1902,6 +1965,7 @@ def _footprint_providers(source_of) -> dict:
         "$footprint_rotation_alt_fields": rotation_alt_fields,
         "$footprint_courtyard_clearance": courtyard_clearance,
         "$footprint_pin1_marks": pin1_marks,
+        "$footprint_pin1_marks_offspec": pin1_marks_offspec,
         "$footprint_silk_over_pads": silk_over_pads,
         "$footprint_thermal_vias": thermal_vias,
         "$footprint_vias_outside_ep": vias_outside_ep,
