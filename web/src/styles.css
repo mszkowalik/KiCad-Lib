@@ -4554,18 +4554,60 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
 .progsteps-table th:nth-child(5), .progsteps-table td:nth-child(5) { width: 14%; }
 
 /* ------------------------------------------------------- deployments (bundles) */
-/* Three columns: the deployments, their version timeline, the composed view of
-   the selected version. Collapses to one column on a narrow screen. */
+/* TWO columns: the version timeline, then everything about the selected
+   version — its deployment's fields and the composed view, in one wide column.
+   The deployments themselves are tiles above (`.depl-tiles`).
+
+   It was three columns, with a picker down the left. That picker held three
+   buttons and cost 15% of the page, the timeline took 30%, and what was left
+   for the PROCEDURE — 28 steps, the thing the page exists to show — was a
+   little over half. Now the procedure gets the width the picker and the head
+   were spending (user request 2026-09-17). */
 .depl-layout {
   display: grid;
-  grid-template-columns: minmax(200px, 15%) minmax(300px, 30%) 1fr;
+  grid-template-columns: minmax(260px, 24%) 1fr;
   gap: 12px;
   align-items: start;
 }
 @media (max-width: 1100px) {
   .depl-layout { grid-template-columns: 1fr; }
 }
-.depl-list { display: flex; flex-direction: column; gap: 6px; }
+/* A wrapping ROW of tiles. `auto-fill` rather than a flex wrap so the tiles
+   are the same width whatever the longest name is — a ragged row of pickers
+   reads as a list of different things. */
+.depl-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+/* The × sits on the tile and appears on hover or keyboard focus. Always-on it
+   is four delete buttons competing with the names; never-on it is a control
+   nobody finds. */
+.depl-item { position: relative; }
+.depl-tile-x {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  padding: 0 4px;
+  border-radius: var(--radius);
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1.2;
+  opacity: 0;
+}
+.depl-item:hover .depl-tile-x,
+.depl-tile-x:focus-visible { opacity: 1; }
+.depl-tile-x:hover { color: var(--err); background: var(--err-soft); }
+/* The add tile: same box, nothing in it but the affordance. */
+.depl-item-new {
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  gap: 0;
+}
+.depl-plus { font-size: 20px; line-height: 1; color: var(--muted); }
+.depl-item-new:hover .depl-plus { color: var(--accent); }
 .depl-item {
   display: flex;
   flex-direction: column;
@@ -4586,12 +4628,14 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
 
 .depl-timeline { display: flex; flex-direction: column; gap: 8px; }
 
-/* The selected deployment's head: what it is, then how it is set up.
-   It was one wrapping `.toolbar` — title, chip button, kind button, Delete and
-   New version in one line that broke wherever the width said, so the primary
-   action sat under a Delete and the settings read as a random row of buttons.
-   Two deliberate rows: identity (name, description, the one primary action) and
-   settings (each labelled), with Delete alone at the far right of the second. */
+/* The selected deployment's fields, at the top of the WIDE column beside the
+   version they describe. Name, chip and kind share the first line and the
+   description takes the second; Delete sits alone under a rule, and the only
+   other buttons are Save and Cancel, which appear when something differs from
+   what is stored.
+   It was one wrapping `.toolbar` of buttons, each opening a popup, in a 320 px
+   column of its own — so the primary action sat under a Delete and the fields
+   read as a random row. */
 .depl-head {
   display: flex;
   flex-direction: column;
@@ -4601,10 +4645,22 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
-.depl-head-row { display: flex; align-items: flex-end; gap: 10px; }
-.depl-field-wide { flex: 1; }
-.depl-new-version { margin-bottom: 2px; }
-.depl-desc-box { resize: vertical; }
+.depl-head .field-row > .field.depl-field-wide { flex: 1 1 200px; }
+/* A chip name is "esp32" or "esp32c6" — now a dropdown, so it needs room for
+   the longest option plus the arrow. Pinned, so the rest of the row goes to
+   the name and the kind. */
+.depl-head .field-row > .field.depl-field-chip { flex: 0 0 138px; }
+/* One word now, so it takes what it needs and gives the row to the name. */
+.depl-head .field-row > .field.depl-field-kind { flex: 0 0 120px; }
+.depl-desc-box { resize: none; }
+/* Versions get their own bar so New version sits with what it creates. */
+.depl-versions-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.depl-versions-title { margin: 0; }
 /* The live socket picker: one row per USB port the agent can see, arrivals
    first. A row is a button because picking one IS the action — there is no
    Assign step to confirm, which is what makes "plug it in and take the new
@@ -4643,6 +4699,52 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
 }
 .depl-setting { display: inline-flex; align-items: center; gap: 6px; }
 .depl-setting .muted { font-size: 12px; }
+/* The publish note, as prose. It is free text of any length written when the
+   version was made, so it gets a readable size and case — see VersionView for
+   what it looked like before. */
+.version-note {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  background: var(--surface);
+  border-left: 3px solid var(--line);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.version-note-label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.version-note p { margin: 0; font-size: 13px; line-height: 1.5; }
+/* The version's parameter line: label, set, and the button to edit its values,
+   all on one row inside the header card. */
+.version-params {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+.version-params .version-note-label { margin: 0; }
+.version-params .row-input { width: auto; }
+/* The version's delete: alone, at the foot, on the right, above a rule — so
+   nothing lands next to it by accident and it reads as the end of the card. */
+.version-danger {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+/* On a DRAFT the same block is the editor: the note box takes the width, and
+   Publish / Discard sit under it. */
+.version-note > .text { width: 100%; }
+.version-note .btn-row { margin: 8px 0 0; }
+/* Grows to its content instead of hiding the rest behind an inner scrollbar. */
+textarea.auto-grow { overflow-y: hidden; }
 .version-timeline { display: flex; flex-direction: column; gap: 6px; }
 .version-row {
   background: var(--surface);
@@ -4656,14 +4758,40 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
 .version-row.active { border-left-color: var(--accent); background: var(--accent-soft); }
 .version-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .version-changes { font-size: 0.92em; margin-top: 2px; }
-.version-comment {
-  font-size: 0.88em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .version-actions { margin-top: 4px; }
 .depl-detail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+/* ---------------------------------------------------------- parameters page */
+/* One card per parameter set: its keys, who depends on each, and the history
+   of what moved. The dependency column is the whole reason this is a page and
+   not a row in a list (decision 0024). */
+.param-set-card { margin-bottom: 12px; }
+/* `table-layout: fixed` is REQUIRED here, not decorative. `.row-input` is
+   `width: 100%`, so under auto layout it contributes NOTHING to the column's
+   intrinsic width — the key and value columns collapsed to about 110 px and
+   `don.columbusenergy.cloud` rendered as `don.colun` while "Needed by" took
+   the rest. Same trap `table.kv.settings-table` documents. */
+.param-keys-table { table-layout: fixed; }
+.param-keys-table th:nth-child(1), .param-keys-table td:nth-child(1) { width: 34%; }
+.param-keys-table th:nth-child(2), .param-keys-table td:nth-child(2) { width: 62%; }
+.param-keys-table th:nth-child(3), .param-keys-table td:nth-child(3) { width: 4%; }
+.param-key-cell { display: flex; align-items: center; gap: 6px; }
+.param-key-cell input { flex: 1 1 auto; min-width: 0; }
+.param-key-cell .pill { flex: none; }
+/* Save, Cancel and the note appear only once something differs from what is
+   stored — the same rule the deployment card follows. */
+.param-save {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.param-save > .text { flex: 1; }
+.param-history { margin-top: 8px; }
+/* In the editor, beside the row it belongs to. */
+.param-uses { grid-column: 1 / -1; font-size: 12px; }
 
 /* Validation lists (composer + version view) */
 .val-list { margin: 4px 0 0 1.1em; padding: 0; }
@@ -4680,7 +4808,6 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
   overflow: auto;
   padding: 8px 10px;
 }
-.composer-comment { flex: 1 1 260px; }
 
 /* One parameter: key, value, and its buttons on ONE line.
    `.btn-row` wraps them instead, because `.row-input` is width:100% and
@@ -4688,7 +4815,8 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
    the two boxes a share each and lets the buttons keep their own size. */
 .param-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) auto auto;
+  /* key · value · delete. The show/hide column went with the masking. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) auto;
   gap: 6px;
   align-items: center;
   margin-bottom: 6px;

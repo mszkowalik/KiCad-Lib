@@ -38,7 +38,8 @@ from ..db import get_db
 from .. import models as M
 from ..services import storage
 from ..services import crypto
-from ..services.flasher import bundle, checks as checks_svc, validate
+from ..services.flasher import (bundle, checks as checks_svc,
+                                params as params_svc, validate)
 from ..services.flasher.engine import RunEngine
 from .util import actor_of, audit
 
@@ -636,6 +637,11 @@ class DeploymentIn(BaseModel):
     # Same rule: None leaves the flag as it is. On a TEST deployment, true
     # means every device of this project must pass it to read as verified.
     active: bool | None = None
+    # The parameter set the deployment works against — the default its next
+    # version inherits. `-1` means "clear it"; None means "leave it alone", the
+    # same convention `kind` and `active` use, because a PATCH that omitted it
+    # would otherwise unlink every deployment it touched.
+    param_set_id: int | None = None
 
 
 class ImageIn(BaseModel):
@@ -682,6 +688,9 @@ def _deployment_json(d: M.Deployment, db: Session, deep: bool = False) -> dict:
         "id": d.id, "name": d.name, "description": d.description, "chip": d.chip,
         "kind": d.kind or "flash",
         "active": bool(d.active),
+        "param_set_id": d.param_set_id,
+        "param_set_name": (ps.name if (ps := db.get(M.ParamSet, d.param_set_id)) else None)
+                          if d.param_set_id else None,
         "project_id": d.project_id, "current_version_id": d.current_version_id,
         "created_at": _iso(d.created_at),
         "channels": [
@@ -720,6 +729,17 @@ def _deployment_kind(value: str) -> str:
     return kind
 
 
+def _sole_param_set(db: Session, project_id: int) -> int | None:
+    """The project's parameter set when it has exactly one.
+
+    Every project on this platform has one, named `production`. Guessing is
+    still wrong when there are two — the author has to say which — so this
+    answers None rather than picking the first.
+    """
+    rows = db.query(M.ParamSet).filter(M.ParamSet.project_id == project_id).all()
+    return rows[0].id if len(rows) == 1 else None
+
+
 @router.post("/projects/{project_id}/deployments")
 def create_deployment(project_id: int, body: DeploymentIn, db: Session = Depends(get_db)):
     if db.get(M.Project, project_id) is None:
@@ -727,6 +747,12 @@ def create_deployment(project_id: int, body: DeploymentIn, db: Session = Depends
     kind = _deployment_kind(body.kind or "flash")
     d = M.Deployment(project_id=project_id, name=body.name.strip(),
                      description=body.description, chip=body.chip.strip(), kind=kind,
+                     # A new deployment in a project that already has ONE set
+                     # takes it. Every project here has exactly one, so the
+                     # alternative is an empty field the author has to fill in
+                     # with the only possible answer.
+                     param_set_id=body.param_set_id if body.param_set_id not in (None, -1)
+                     else _sole_param_set(db, project_id),
                      # A test starts OFF: it gates every device in the project,
                      # so somebody turns it on deliberately. Anything else is on.
                      active=(body.active if body.active is not None else kind != "test"))
@@ -744,6 +770,8 @@ def patch_deployment(deployment_id: int, body: DeploymentIn, request: Request,
     d.name = body.name.strip() or d.name
     d.description = body.description
     d.chip = body.chip.strip()
+    if body.param_set_id is not None:
+        d.param_set_id = None if body.param_set_id == -1 else body.param_set_id
     if body.kind is not None:
         d.kind = _deployment_kind(body.kind)
     if body.active is not None:
@@ -840,7 +868,12 @@ def compose_version(deployment_id: int, body: ComposeIn, db: Session = Depends(g
         flash_config=inherit("flash_config", base.flash_config if base else None,
                              body.flash_config),
         steps=steps,
-        param_set_id=inherit("param_set_id", base.param_set_id if base else None,
+        # A version inherits from the one it was composed FROM, and a first
+        # version from the deployment's own set — which is what makes a new
+        # deployment usable without opening the composer's Parameters section
+        # at all.
+        param_set_id=inherit("param_set_id",
+                             base.param_set_id if base else d.param_set_id,
                              body.param_set_id),
         param_defaults=inherit("param_defaults", base.param_defaults if base else None,
                                body.param_defaults),
@@ -947,7 +980,11 @@ def get_deployment_version(version_id: int, db: Session = Depends(get_db)):
     )
     return {
         **bundle.version_json(db, v),
-        "deployment": {"id": d.id, "name": d.name, "chip": d.chip, "project_id": d.project_id},
+        "deployment": {"id": d.id, "name": d.name, "chip": d.chip, "project_id": d.project_id,
+                       # The deployment's CURRENT default, so the card can say
+                       # when this version is pinned to a different set. The
+                       # version's own `param_set_id` is what a run uses.
+                       "param_set_id": d.param_set_id},
         "changes": bundle.changes_since(prev, v),
         "validation": validate.check(db, v),
         "where_used": {
@@ -1081,6 +1118,10 @@ def publish_deployment_version(version_id: int, body: PublishIn, db: Session = D
     result = validate.check(db, v)
     if not result["ok"]:
         raise HTTPException(409, "validation failed: " + " | ".join(result["errors"]))
+    # Freeze the CONTRACT at publish: which parameters this version needs and
+    # where each came from. From here on, editing the project's values can be
+    # refused by name instead of failing at the bench (decision 0024).
+    v.param_schema = params_svc.build_schema(db, v)
     v.status = "published"
     v.approved_by = body.approved_by or None
     d = db.get(M.Deployment, v.deployment_id)
@@ -1100,6 +1141,52 @@ def reject_deployment_version(version_id: int, body: PublishIn, db: Session = De
         raise HTTPException(409, "already published — publish a newer version instead")
     v.status = "rejected"
     db.commit()
+    return {"ok": True}
+
+
+@router.delete("/deployment-versions/{version_id}")
+def delete_deployment_version(version_id: int, db: Session = Depends(get_db)):
+    """Delete a DRAFT that nothing has used, so discarding one leaves no trace.
+
+    `reject` exists beside this and keeps the row as history; it is the right
+    answer for a draft somebody worked on and decided against. This one is for
+    the draft nobody wanted: since 2026-09-17 `New version` mints one on a
+    single click, so looking at a procedure and changing your mind must not
+    leave a rejected row behind forever.
+
+    Published is refused outright — a published version is what a device was
+    given. A draft is refused too once anything records it: a draft CAN be run
+    as a bench trial, and those runs name it.
+    """
+    v = db.get(M.DeploymentVersion, version_id)
+    if v is None:
+        raise HTTPException(404, "no such deployment version")
+    if v.status == "published":
+        raise HTTPException(409, "published versions are never deleted — they are what a "
+                                 "device was given. Publish a newer one instead.")
+    runs = (
+        db.query(M.ProgrammingRun)
+        .filter(M.ProgrammingRun.deployment_version_id == version_id).count()
+    )
+    if runs:
+        raise HTTPException(409, {
+            "error": f"{runs} programming run(s) record this version, so it cannot be "
+                     "deleted. Reject it instead — the row stays as history.",
+            "runs": runs,
+        })
+    chans = (
+        db.query(M.DeploymentChannel)
+        .filter(M.DeploymentChannel.deployment_version_id == version_id).all()
+    )
+    for c in chans:
+        c.deployment_version_id = None
+    d = db.get(M.Deployment, v.deployment_id)
+    if d is not None and d.current_version_id == version_id:
+        d.current_version_id = None
+    db.delete(v)   # images and files cascade
+    db.commit()
+    audit(db, "flasher.version_delete", "deployment_version", version_id,
+          {"deployment_id": v.deployment_id, "version_no": v.version_no})
     return {"ok": True}
 
 
@@ -1144,6 +1231,13 @@ def set_channel(deployment_id: int, name: str, body: ChannelIn, db: Session = De
 class ParamSetIn(BaseModel):
     values: dict[str, str | int | float]
     updated_by: str = ""
+    # Why the values changed. It ends up on the revision row, which is the only
+    # record that a MEANING changed — a key whose name survives and whose value
+    # moves passes every other check the platform has.
+    note: str = ""
+    # Remove a key a published version declares anyway. The refusal names the
+    # versions; forcing it is a decision, so it is recorded on the revision.
+    force: bool = False
 
 
 @router.get("/projects/{project_id}/param-sets")
@@ -1160,7 +1254,19 @@ def list_param_sets(project_id: int, db: Session = Depends(get_db)):
                 keys = sorted(json.loads(crypto.decrypt_token(ps.values_enc)).keys())
             except Exception:
                 keys = ["<undecryptable>"]
+        # Which published versions depend on each key. This is the fact the
+        # editor never had: removing "Topic" breaks Dongle_V2 config v10, and
+        # until decision 0024 the platform found that out at the bench.
+        used = params_svc.dependents(db, ps.id)
+        last = (
+            db.query(M.ParamSetRevision)
+            .filter(M.ParamSetRevision.param_set_id == ps.id)
+            .order_by(M.ParamSetRevision.revision_no.desc())
+            .first()
+        )
         out.append({"id": ps.id, "name": ps.name, "keys": keys,
+                    "used_by": {k: v for k, v in used.items()},
+                    "revision_no": last.revision_no if last else 0,
                     "updated_by": ps.updated_by, "updated_at": _iso(ps.updated_at)})
     return out
 
@@ -1175,11 +1281,123 @@ def put_param_set(project_id: int, name: str, body: ParamSetIn, db: Session = De
     if ps is None:
         ps = M.ParamSet(project_id=project_id, name=name)
         db.add(ps)
-    ps.values_enc = crypto.encrypt_token(json.dumps(body.values))
+        db.flush()  # the revision row needs the id
+    old: dict = {}
+    if ps.values_enc:
+        try:
+            old = json.loads(crypto.decrypt_token(ps.values_enc))
+        except Exception:  # noqa: BLE001 — an unreadable set is replaced wholesale
+            old = {}
+    new_values = dict(body.values)
+    # The guard decision 0024 exists for: refuse an edit that would break a
+    # PUBLISHED version, and say which. A draft is not counted — its author is
+    # usually the person editing here, and a guard people learn to force is
+    # worse than no guard.
+    broken = params_svc.breaking(db, ps.id, new_values)
+    if broken and not body.force:
+        raise HTTPException(409, {
+            "error": "this change would break a published version: " + "; ".join(broken),
+            "breaking": broken,
+        })
+    rev = params_svc.record_revision(
+        db, ps, old, new_values, body.updated_by,
+        note=(body.note + (" [forced]" if broken and body.force else "")).strip(),
+    )
+    ps.values_enc = crypto.encrypt_token(json.dumps(new_values))
     ps.updated_by = body.updated_by
     ps.updated_at = datetime.now(timezone.utc)
     db.commit()
-    return {"id": ps.id}
+    audit(db, "flasher.param_set_write", "param_set", ps.id,
+          {"revision_no": rev.revision_no, "added": rev.keys_added,
+           "removed": rev.keys_removed, "changed": rev.changed,
+           "forced": bool(broken and body.force)})
+    return {"id": ps.id, "revision_no": rev.revision_no}
+
+
+class ParamRevertIn(BaseModel):
+    revision_no: int
+    updated_by: str = ""
+    note: str = ""
+    force: bool = False
+
+
+@router.post("/param-sets/{param_set_id}/revert")
+def revert_param_set(param_set_id: int, body: ParamRevertIn, db: Session = Depends(get_db)):
+    """Put the values back to what a revision left, as a NEW revision.
+
+    History is append-only and a revert does not remove any of it (user
+    decision 2026-09-17): reverting r5 to r2 writes r6 holding r2's values, so
+    the record still says that r3 to r5 happened and that somebody undid them.
+    The breaking guard applies exactly as it does to a normal save — an old
+    revision can be missing a key a version published since then needs.
+    """
+    ps = db.get(M.ParamSet, param_set_id)
+    if ps is None:
+        raise HTTPException(404, "no such param set")
+    rev = (
+        db.query(M.ParamSetRevision)
+        .filter(M.ParamSetRevision.param_set_id == param_set_id,
+                M.ParamSetRevision.revision_no == body.revision_no)
+        .one_or_none()
+    )
+    if rev is None:
+        raise HTTPException(404, f"this set has no revision {body.revision_no}")
+    if not rev.values_enc:
+        raise HTTPException(409, {
+            "error": f"revision {body.revision_no} was recorded before the values were kept, "
+                     "so there is nothing to restore. Its key list is still in the history.",
+        })
+    values = params_svc.revision_values(db, rev.id)
+    broken = params_svc.breaking(db, ps.id, values)
+    if broken and not body.force:
+        raise HTTPException(409, {
+            "error": "this change would break a published version: " + "; ".join(broken),
+            "breaking": broken,
+        })
+    old: dict = {}
+    if ps.values_enc:
+        try:
+            old = json.loads(crypto.decrypt_token(ps.values_enc))
+        except Exception:  # noqa: BLE001
+            old = {}
+    note = body.note.strip() or f"reverted to r{rev.revision_no}"
+    new_rev = params_svc.record_revision(
+        db, ps, old, values, body.updated_by,
+        note=note + (" [forced]" if broken and body.force else ""),
+    )
+    ps.values_enc = crypto.encrypt_token(json.dumps(values))
+    ps.updated_by = body.updated_by
+    ps.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    audit(db, "flasher.param_set_revert", "param_set", ps.id,
+          {"to_revision": rev.revision_no, "new_revision": new_rev.revision_no,
+           "forced": bool(broken and body.force)})
+    return {"id": ps.id, "revision_no": new_rev.revision_no,
+            "reverted_to": rev.revision_no}
+
+
+@router.get("/param-sets/{param_set_id}/revisions")
+def param_set_revisions(param_set_id: int, db: Session = Depends(get_db)):
+    """What changed, when and by whom — never the value a secret used to hold."""
+    ps = db.get(M.ParamSet, param_set_id)
+    if ps is None:
+        raise HTTPException(404, "no such param set")
+    rows = (
+        db.query(M.ParamSetRevision)
+        .filter(M.ParamSetRevision.param_set_id == param_set_id)
+        .order_by(M.ParamSetRevision.revision_no.desc())
+        .all()
+    )
+    return [{"id": r.id, "revision_no": r.revision_no,
+             "keys_added": r.keys_added or [], "keys_removed": r.keys_removed or [],
+             "changed": r.changed or [], "values_public": r.values_public or {},
+             # Whether this revision can be reverted TO. False for one recorded
+             # before the values were kept — the page says so rather than
+             # offering a button that restores an empty set.
+             "restorable": bool(r.values_enc),
+             "note": r.note, "updated_by": r.updated_by,
+             "created_at": _iso(r.created_at)}
+            for r in rows]
 
 
 @router.get("/param-sets/{param_set_id}/values")
@@ -1197,6 +1415,27 @@ def delete_param_set(param_set_id: int, db: Session = Depends(get_db)):
     ps = db.get(M.ParamSet, param_set_id)
     if ps is None:
         raise HTTPException(404, "no such param set")
+    # `param_set_id` used to be a soft pointer, so this left every version
+    # pointing at a dead id and the failure surfaced as "no parameter defines
+    # {MqttHost}" with a device already in the socket (decision 0024).
+    users = (
+        db.query(M.DeploymentVersion)
+        .filter(M.DeploymentVersion.param_set_id == param_set_id).all()
+    )
+    if users:
+        named = ", ".join(
+            f"{db.get(M.Deployment, v.deployment_id).name} v{v.version_no}"
+            for v in sorted(users, key=lambda v: (v.deployment_id, v.version_no))[:6]
+        )
+        more = f" and {len(users) - 6} more" if len(users) > 6 else ""
+        raise HTTPException(409, {
+            "error": f"{len(users)} deployment version(s) use this parameter set: "
+                     f"{named}{more}. Point them at another set first.",
+            "versions": [v.id for v in users],
+        })
+    db.query(M.ParamSetRevision).filter(
+        M.ParamSetRevision.param_set_id == param_set_id
+    ).delete()
     db.delete(ps)
     db.commit()
     return {"ok": True}
@@ -1571,11 +1810,17 @@ def create_run(body: RunCreate, request: Request, db: Session = Depends(get_db))
         raise HTTPException(
             409, f"version {dep.name} v{v.version_no} is a draft — publish it, or run it as a "
                  "bench trial (no batch) to try it out")
-    if not draft_run:
-        result = validate.check(db, v)
-        if not result["ok"]:
-            raise HTTPException(409, "this version no longer validates: "
-                                     + " | ".join(result["errors"]))
+    # Drafts are validated too. They used to be exempt, and a draft is exactly
+    # where an unresolved {placeholder} does the most damage: `subst` leaves the
+    # literal text, `set_and_check` compares what it sent against what it read
+    # back — both "{MqttHost}" — and the step PASSES. The device ships pointed
+    # at a broker called {MqttHost} and the run says so too (decision 0024).
+    # A draft's errors are reported as a draft's, not as "no longer validates".
+    result = validate.check(db, v)
+    if not result["ok"]:
+        raise HTTPException(409, (
+            "this draft does not validate yet: " if draft_run
+            else "this version no longer validates: ") + " | ".join(result["errors"]))
     override = bool(assigned and version_id != assigned)
     if override and not body.override_reason.strip():
         raise HTTPException(409, "programming with a non-assigned version needs an override_reason")

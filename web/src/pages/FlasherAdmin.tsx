@@ -1,9 +1,14 @@
 /** Files — administration of everything a deployment version PINS.
  *
- *  Four sections, one at a time (user request 2026-07-30: a tab per kind is
- *  cleaner to administer than four stacked cards): berryware bundles,
- *  firmware, the individual-file pool, and parameter sets. Composing them
- *  into a version happens on the Deployments page.
+ *  Three sections, one at a time (user request 2026-07-30: a tab per kind is
+ *  cleaner to administer than stacked cards): berryware bundles, firmware and
+ *  the individual-file pool. Composing them into a version happens on the
+ *  Deployments page.
+ *
+ *  Parameters were a fourth tab until 2026-09-17 and are now their own page,
+ *  `/production/parameters`. They are not a file: they are what a version
+ *  depends on and does not contain, and they needed room to say which versions
+ *  depend on each key (decision 0024).
  *
  *  The active section lives in the URL (?tab=), so any view is linkable.
  */
@@ -21,24 +26,21 @@ import { ErrorBanner, Spinner } from "../components/Ui";
 import BundlesPanel from "../components/flasher/BundlesPanel";
 import DeviceFilesPanel from "../components/flasher/DeviceFilesPanel";
 import FirmwarePanel from "../components/flasher/FirmwarePanel";
-import ParamSetsPanel from "../components/flasher/ParamSetsPanel";
 import { useStickyState } from "../useStickyState";
 
-const TABS = ["bundles", "firmware", "files", "parameters"] as const;
+const TABS = ["bundles", "firmware", "files"] as const;
 type Tab = (typeof TABS)[number];
 
 const LABELS: Record<Tab, string> = {
   bundles: "Berryware bundles",
   firmware: "Firmware",
   files: "Individual files",
-  parameters: "Parameters",
 };
 
 const BLURBS: Record<Tab, string> = {
   bundles: "the berryware sets a device downloads, named as the berry project releases them",
   firmware: "the .bin images, content-addressed by sha256",
   files: "the raw per-file pool behind the bundles — for a surgical edit to one script",
-  parameters: "shared values a procedure interpolates: WiFi, MQTT host, credential salt, SIM PIN",
 };
 
 export default function FlasherAdmin() {
@@ -111,10 +113,8 @@ export default function FlasherAdmin() {
           <BundlesPanel projectId={valid} />
         ) : tab === "firmware" ? (
           <FirmwarePanel projectId={valid} meta={meta} />
-        ) : tab === "files" ? (
-          <DeviceFilesPanel projectId={valid} />
         ) : (
-          <ParamSetsPanel projectId={valid} />
+          <DeviceFilesPanel projectId={valid} />
         )}
       </div>
     </div>

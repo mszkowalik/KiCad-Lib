@@ -20,6 +20,7 @@ import Deployments from "./pages/Deployments";
 import FlashBench from "./pages/FlashBench";
 import MarkBench from "./pages/MarkBench";
 import FlasherAdmin from "./pages/FlasherAdmin";
+import Parameters from "./pages/Parameters";
 import FlashRunDetail from "./pages/FlashRunDetail";
 import Invoices from "./pages/Invoices";
 import Stock from "./pages/Stock";
@@ -97,6 +98,7 @@ const PRODUCTION_LINKS = [
   { to: "/production/stock", label: "Stock" },
   { to: "/production/jlc", label: "JLC" },
   { to: "/production/deployments", label: "Deployments" },
+  { to: "/production/parameters", label: "Parameters" },
   { to: "/production/bench", label: "Bench" },
   { to: "/production/marking", label: "Marking" },
   { to: "/production/devices", label: "Devices" },
@@ -212,6 +214,10 @@ function Shell() {
             <Route path="/production/jlc" element={<ProductionJlc />} />
             <Route path="/production/deployments" element={<Deployments />} />
             <Route path="/production/files" element={<FlasherAdmin />} />
+            <Route path="/production/parameters" element={<Parameters />} />
+            {/* The parameters used to be a tab on the files page. */}
+            <Route path="/production/files/parameters"
+                   element={<Navigate to="/production/parameters" replace />} />
             <Route path="/production/artifacts" element={<Navigate to="/production/files" replace />} />
             <Route path="/production/flasher" element={<Navigate to="/production/deployments" replace />} />
             <Route path="/production/bench" element={<FlashBench />} />

@@ -360,6 +360,60 @@ _PHASE1_DDL = (
      "ALTER TABLE projects ADD CONSTRAINT fk_projects_git_credential "
      "FOREIGN KEY (git_credential_id) REFERENCES git_credentials (id); "
      "EXCEPTION WHEN duplicate_object THEN NULL; END $$"),
+    # Decision 0024: a version DECLARES the parameters it needs, so editing a
+    # project's values can refuse a change that breaks a published version
+    # instead of failing at the bench. NULL means "never published under the
+    # new rule" and the validator falls back to walking the steps, which is
+    # what it always did — no backfill, nothing breaks.
+    ("deployment_versions.param_schema",
+     "ALTER TABLE deployment_versions ADD COLUMN IF NOT EXISTS param_schema jsonb"),
+    # `param_set_revisions` is a new table and arrives via create_all. These
+    # are the pointers from existing rows. Each FK is its own statement so a
+    # failure to add one cannot cost us the column.
+    ("programming_runs.param_set_revision_id",
+     "ALTER TABLE programming_runs ADD COLUMN IF NOT EXISTS "
+     "param_set_revision_id integer"),
+    ("programming_runs.param_set_revision_id fk",
+     "DO $$ BEGIN "
+     "ALTER TABLE programming_runs ADD CONSTRAINT fk_programming_run_param_rev "
+     "FOREIGN KEY (param_set_revision_id) REFERENCES param_set_revisions (id); "
+     "EXCEPTION WHEN duplicate_object THEN NULL; END $$"),
+    # `param_set_id` was a plain integer — a "soft pointer" — so deleting a set
+    # left every version pointing at a dead id and the failure surfaced as
+    # "no parameter defines {MqttHost}". Verified 0 dangling rows before this
+    # was added (2026-09-17).
+    # Revert needs the values, not just the names of what moved (user request
+    # 2026-09-17). Encrypted exactly as the set itself is. A revision written
+    # before this column is empty and reverting to it is refused, rather than
+    # restoring an empty set over every parameter in the project.
+    ("param_set_revisions.values_enc",
+     "ALTER TABLE param_set_revisions ADD COLUMN IF NOT EXISTS "
+     "values_enc text NOT NULL DEFAULT ''"),
+    # A deployment's own parameter set: the default its next version inherits.
+    # NULL means "not chosen", and version creation then falls back to the base
+    # version's set exactly as it always did — no backfill, nothing breaks.
+    ("deployments.param_set_id",
+     "ALTER TABLE deployments ADD COLUMN IF NOT EXISTS param_set_id integer"),
+    ("deployments.param_set_id fk",
+     "DO $$ BEGIN "
+     "ALTER TABLE deployments ADD CONSTRAINT fk_deployment_param_set "
+     "FOREIGN KEY (param_set_id) REFERENCES param_sets (id); "
+     "EXCEPTION WHEN duplicate_object THEN NULL; END $$"),
+    # Backfill from what the deployment's versions already use: every one of
+    # them points at the same set today, so the deployment's answer is simply
+    # the one its newest version pinned.
+    ("deployments.param_set_id backfill",
+     "UPDATE deployments d SET param_set_id = v.param_set_id "
+     "FROM deployment_versions v "
+     "WHERE v.deployment_id = d.id AND v.param_set_id IS NOT NULL "
+     "AND d.param_set_id IS NULL "
+     "AND v.version_no = (SELECT MAX(version_no) FROM deployment_versions x "
+     "                    WHERE x.deployment_id = d.id AND x.param_set_id IS NOT NULL)"),
+    ("deployment_versions.param_set_id fk",
+     "DO $$ BEGIN "
+     "ALTER TABLE deployment_versions ADD CONSTRAINT fk_deployment_version_param_set "
+     "FOREIGN KEY (param_set_id) REFERENCES param_sets (id); "
+     "EXCEPTION WHEN duplicate_object THEN NULL; END $$"),
 )
 
 # name -> "ok" | "failed: ..."; served by GET /api/health/schema.

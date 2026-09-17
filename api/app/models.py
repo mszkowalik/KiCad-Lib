@@ -2406,6 +2406,17 @@ class Deployment(Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")
+    # The parameter set this deployment WORKS AGAINST — the default a new
+    # version inherits, and the answer to "which parameters is this deployment
+    # linked to" (user question 2026-09-17). It is NOT the authority for a run:
+    # each version pins its own `param_set_id` at creation and keeps it
+    # forever, so changing this never rewrites what a published version used.
+    # Before it, the link existed only on the versions, so a brand-new
+    # deployment had no parameters until somebody chose a set inside the
+    # composer, three screens into making its first version.
+    param_set_id: Mapped[int | None] = mapped_column(
+        ForeignKey("param_sets.id"), nullable=True
+    )
     chip: Mapped[str] = mapped_column(String(30), default="")  # esp32 | esp32c6 | …
     # What this procedure IS, so the bench can offer the right button rather
     # than guessing from the name: flash | test | mark. A rename must not be
@@ -2462,8 +2473,18 @@ class DeploymentVersion(Base):
     monitor_baud: Mapped[int] = mapped_column(Integer, default=115200)
     flash_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # mode/freq/size
     steps: Mapped[list | None] = mapped_column(JSONB, nullable=True)  # ordered op list
-    param_set_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    param_set_id: Mapped[int | None] = mapped_column(
+        ForeignKey("param_sets.id"), nullable=True
+    )
     param_defaults: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # non-secret
+    # WHICH parameters this version needs, and what each one MEANS. Computed
+    # from the steps on publish (`services/flasher/params.py`) and frozen here,
+    # because the steps say `{MqttHost}` and nothing said what that is or who
+    # still depends on it. It is the CONTRACT; the ParamSet holds the values.
+    # Without it, editing a project's parameters could break a version
+    # published months ago and the platform found out at the bench, mid-run
+    # (decision 0024).
+    param_schema: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # Derived identity of the two halves — see the class docstring.
     firmware_fingerprint: Mapped[str] = mapped_column(String(64), default="")
     files_fingerprint: Mapped[str] = mapped_column(String(64), default="")
@@ -2627,6 +2648,53 @@ class ParamSet(Base):
     __table_args__ = (UniqueConstraint("project_id", "name", name="uq_param_set_name"),)
 
 
+class ParamSetRevision(Base):
+    """One recorded edit of a ParamSet — append-only, secrets never in the clear.
+
+    A ParamSet is deliberately NOT versioned: rotating a WiFi password must not
+    mint a new version of every deployment that uses it (decision 2026-07-27,
+    and 0024 keeps it). But that left a whole class of change invisible. A key
+    whose NAME survives and whose MEANING changes — `MqttHost` repointed from
+    staging to production, `creds_salt` rotated — passes every check the
+    platform has, and an old version happily runs against the new meaning.
+
+    So each write appends a row here. `keys_added` / `keys_removed` name what
+    moved; `changed` names the keys whose value changed WITHOUT saying to what,
+    because a secret's old value must not outlive its rotation. A
+    ProgrammingRun points at the revision it used, so the question "which salt
+    did this unit get" has an answer that is not the secret itself.
+    """
+
+    __tablename__ = "param_set_revisions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    param_set_id: Mapped[int] = mapped_column(ForeignKey("param_sets.id"))
+    # 1, 2, 3 … per set. The number an operator quotes.
+    revision_no: Mapped[int] = mapped_column(Integer, default=1)
+    keys_added: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    keys_removed: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    changed: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # Non-secret values as they stood AFTER this edit, for DISPLAY. A key whose
+    # name matches SECRET_RE is listed as present and nothing more, so the
+    # history page can be read over somebody's shoulder.
+    values_public: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # The full values after this edit, Fernet-encrypted exactly as the set
+    # itself is — which is what makes REVERT possible (user request
+    # 2026-09-17). The trade is deliberate and stated in 0024: a revert that
+    # silently skipped the secrets would restore a configuration that has never
+    # existed, so the alternative was worse. It does mean a rotated secret stays
+    # recoverable from history by anyone holding SECRET_KEY, which is the same
+    # condition under which the CURRENT secret is readable.
+    values_enc: Mapped[str] = mapped_column(Text, default="")
+    note: Mapped[str] = mapped_column(String(500), default="")
+    updated_by: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("param_set_id", "revision_no", name="uq_param_set_revision"),
+    )
+
+
 # ------------------------------------------------ devices + programming runs
 class DeviceUnit(Base):
     """A PHYSICAL device, identified by the MAC read out of the chip.
@@ -2743,6 +2811,12 @@ class ProgrammingRun(Base):
     chip_read: Mapped[str] = mapped_column(String(60), default="")
     results: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # captured vars
     params_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # values applied
+    # The ParamSet revision the values came from. `params_snapshot` masks every
+    # secret, so it cannot answer "which salt did this unit get?" after a
+    # rotation — the revision id can, without storing the secret twice.
+    param_set_revision_id: Mapped[int | None] = mapped_column(
+        ForeignKey("param_set_revisions.id"), nullable=True
+    )
     client_info: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # UA, USB ids
 
     device: Mapped[DeviceUnit | None] = relationship(back_populates="runs")

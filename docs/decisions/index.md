@@ -52,6 +52,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0021](0021-a-device-is-judged-by-the-rule-it-was-made-under.md) | Judge a device by the rule its batch carried, and pin that rule on every programming run (refines [0007](0007-built-means-finished-and-passed.md)) | Backend, frontend, production, flasher |
 | [0022](0022-labels-are-generated-by-the-bench-agent.md) | Print labels through CUPS and lay them out in the bench agent, with no template file and no vendor software (extends [0020](0020-marking-goes-through-lightburn.md)) | Backend, frontend, production, flasher |
 | [0023](0023-the-agent-programs-the-device.md) | Do every byte of bench serial work in the agent, with esptool vendored inside it, and drop Web Serial entirely | Backend, frontend, production, flasher, external dependency |
+| [0024](0024-a-version-declares-the-parameters-it-needs.md) | A version declares the parameters it needs, and a parameter set keeps an append-only revision log (supplies the half 2026-07-27 left out) | Backend, frontend, production, flasher |
 
 ## Proposed
 

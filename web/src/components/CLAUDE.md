@@ -7,7 +7,11 @@ unit is an `SiInput`, and a labelled control goes through `Field.tsx`
 (`Field`, `FieldRow` for a few controls on one line, `FieldGrid` for a whole
 form, `FieldSet` for a named group, `CheckField` for a checkbox — both
 containers have been classes in `styles.css` since the 2026-09-12
-unification).
+unification). **A multi-line value goes in `AutoTextarea`**, which is as tall
+as its content: a fixed `rows` is a guess about text nobody has written yet,
+and it hid half a deployment's description behind an inner scrollbar with
+nothing to say it was there (2026-09-17). `rows` is the floor and `maxRows`
+the ceiling past which it scrolls.
 
 A component in this directory is used by more than one page. If you are about to
 write a page-local copy of something here, extend the shared one instead.
@@ -214,6 +218,14 @@ const name = await dialog.prompt("New skill name:", { title: "New skill" }); // 
 await dialog.alert(errorMessage(err), { title: "Adding the file failed" });
 ```
 
+- **EVERY delete asks first. No exceptions** (project rule, user 2026-09-17).
+  A control that destroys something — a row, a version, a file, a credential —
+  goes through `dialog.confirm` with `tone: "danger"` before it calls the API,
+  and the message names what is about to go. A server that would refuse the
+  delete anyway is not a substitute: the refusal arrives after the click, and
+  the ones that succeed are exactly the ones nobody meant. Audited 2026-09-17
+  across all thirteen files that call a `delete*` endpoint; one had been
+  written without it the same day.
 - `tone`: `"danger"` for destructive/discard actions, `"ok"` for approvals,
   default `"primary"` otherwise.
 - Handlers become `async` — awaiting the dialog in an `onClick` is fine.
@@ -387,6 +399,17 @@ overflow):
    work here: on a `td` the fixed-layout algorithm ignores it outright, and on
    a `<col>` it is honoured only partly. Two or three such columns is the
    limit — past that the percentages stop meaning anything.
+
+8. **Never put `display: flex` on a `<td>`.** It takes the cell out of the
+   table layout entirely, so the COLUMN keeps the width you gave it and the
+   CELL sizes to its own content. Measured 2026-09-17 on the parameters table:
+   the `<th>` computed 379 px, the `<td>` beside it 129 px, and every value was
+   clipped (`don.columbusenergy.cloud` read `don.colun`) while
+   `table-layout: fixed` was correctly in force and nothing looked wrong in the
+   stylesheet. Put the flex row on a `<div>` INSIDE the cell. The related trap
+   one level down: `.row-input` is `width: 100%`, which as a flex item is a
+   BASIS a sibling button wins against — give the input
+   `flex: 1 1 auto; min-width: 0` and the button `flex: none`.
 
 Compound selectors (`.data.users-table td:nth-child(n)`) are needed to
 outrank existing width rules such as `.data td.ctr { width: 1% }`.

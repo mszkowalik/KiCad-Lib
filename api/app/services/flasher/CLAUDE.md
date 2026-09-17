@@ -56,6 +56,52 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
   is a set (reordering downloads is a procedure change, not a payload change).
   Equal file fingerprints mean the same berryware bundle — that is how every
   historical V2 set recovered its real name by propagation.
+- **A version DECLARES the parameters it needs; the values keep a revision log**
+  (2026-09-17, decision
+  [0024](../../../../docs/decisions/0024-a-version-declares-the-parameters-it-needs.md)).
+  `services/flasher/params.py` is the ONE implementation of "which keys does
+  this version use" — the publish gate, the parameter editor and the freeze all
+  call it, and `validate.py` no longer keeps its own copy of the walk. Four
+  things follow:
+
+  1. **A ParamSet is still NOT versioned** (2026-07-27, unchanged): rotating a
+     WiFi password must not mint a version of every deployment. What is
+     versioned is `DeploymentVersion.param_schema`, frozen on publish.
+     **THREE places name a set, and only one of them is what a run uses.**
+     `Deployment.param_set_id` is the default a NEW version starts from — the
+     deployment's own link, and what the head card edits.
+     `DeploymentVersion.param_set_id` is the pin, taken at creation and never
+     moved, and it is the one the engine reads. A version composed from another
+     inherits that one; a FIRST version inherits the deployment's. Moving the
+     deployment's set therefore never rewrites a published version, and the
+     version card says so when the two differ.
+  2. **`PUT /param-sets/{name}` refuses to remove a key a PUBLISHED version
+     declares**, naming them; `force` is recorded on the revision. Drafts are
+     not counted on purpose — their author is usually the person editing.
+     `DELETE` refuses while any version points at the set.
+  3. **Every write appends a `ParamSetRevision`**, and a run stamps
+     `param_set_revision_id`. `changed` NAMES the keys whose value moved and
+     never prints the old one; the values themselves live in the revision's own
+     `values_enc`, which is what `POST /param-sets/{id}/revert` reads. This is
+     the only record that a MEANING changed — same key, new broker — which
+     passes every other check there is.
+     **A revert APPENDS.** Reverting r5 to r2 writes r6 with r2's values, so
+     the history still says r3-r5 happened and that somebody undid them, and
+     the breaking guard applies to it exactly as it does to a save.
+  4. **`params.OP_PARAM_FIELDS` is a FIFTH declaration site** beside the four
+     below. An op that reads a parameter by name instead of interpolating
+     `{it}` must be listed there. `derive_credentials` reads `creds_salt`
+     straight out of the run's variables and raises without it, so before this
+     the one key whose loss cannot be recovered from at the bench read as
+     "needed by nobody — safe to remove".
+
+- **Drafts are validated at run start too.** They were exempt, and that is the
+  worst place to skip it: `protocol.subst` leaves an unresolved placeholder as
+  LITERAL TEXT, and `set_and_check` compares what it sent against what it read
+  back — both `"{MqttHost}"` — so the step PASSES and the device ships pointed
+  at a broker called `{MqttHost}`. Only a later step that observes the effect
+  catches it, which the WiFi poll does and nothing else does.
+
 - **`validate.check()` is the single gate.** The live composer and the publish
   button call the same function, so the editor can never disagree with the
   refusal. Errors block publishing (unpublished pins, chip/transport mismatch,
@@ -82,6 +128,15 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
   so the same folder never forks a twin). Renaming one updates
   `files_label` on every version using it, because the version DISPLAYS the
   bundle's name rather than storing its own.
+- **A DRAFT can be deleted; anything published cannot** (2026-09-17).
+  `DELETE /deployment-versions/{id}` exists because `New version` now mints a
+  draft on one click, and a draft somebody opened and closed must not leave a
+  rejected row behind forever. It refuses for `published` — that is what a
+  device was given — and for any version a `ProgrammingRun` records, since a
+  draft runs as a bench trial. `reject` stays beside it for that case: the row
+  is kept as history. The ORM cascade is what removes the version's images and
+  files, so the delete has to go through the endpoint — raw SQL hits the
+  `deployment_files` foreign key.
 - **Channels are pointers, history is immutable.** `deployment_channels` name a
   version (`production`, `bench`); rolling back moves a channel. A batch pins a
   version or follows a channel; run creation resolves it and records the

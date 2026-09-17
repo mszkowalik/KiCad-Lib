@@ -4202,6 +4202,12 @@ export interface DeploymentRow {
    *  rule itself lives on the batch and is copied onto every programming run,
    *  so changing this never re-judges devices already made. */
   active: boolean;
+  /** The parameter set this deployment WORKS AGAINST — the default its next
+   *  version inherits. It is not the authority for a run: each version pins its
+   *  own set at creation and keeps it, so changing this never rewrites what a
+   *  published version used. `-1` on a PATCH clears it; omitting it leaves it. */
+  param_set_id: number | null;
+  param_set_name: string | null;
   project_id: number;
   current_version_id: number | null;
   created_at: string | null;
@@ -4211,7 +4217,12 @@ export interface DeploymentRow {
 }
 
 export interface DeploymentVersionDetail extends DeploymentVersionRow {
-  deployment: { id: number; name: string; chip: string; project_id: number };
+  deployment: {
+    id: number; name: string; chip: string; project_id: number;
+    /** The deployment's CURRENT default set. A published version keeps the one
+     *  it was made with, so these can differ and the card says when they do. */
+    param_set_id: number | null;
+  };
   changes: VersionChanges;
   validation: ValidationResult;
   where_used: {
@@ -4262,12 +4273,43 @@ export interface ComposeBody {
   latest_files?: boolean;
 }
 
+/** One published version that needs a key from this set. */
+export interface ParamUse {
+  deployment: string;
+  deployment_id: number;
+  version_id: number;
+  version_no: number;
+}
+
 export interface ParamSetRow {
   id: number;
   name: string;
   keys: string[];
+  /** key -> the PUBLISHED versions that declare it. Removing a key listed here
+   *  is refused by the server, which names the versions (decision 0024). */
+  used_by: Record<string, ParamUse[]>;
+  /** 0 = never edited since the revision log existed, not "revision zero". */
+  revision_no: number;
   updated_by: string;
   updated_at: string | null;
+}
+
+/** One recorded edit. `changed` names the keys whose VALUE moved and stops
+ *  there — a rotated secret must not outlive its rotation in a log. */
+export interface ParamRevisionRow {
+  id: number;
+  revision_no: number;
+  keys_added: string[];
+  keys_removed: string[];
+  changed: string[];
+  values_public: Record<string, string>;
+  /** False for a revision recorded before the values were kept — there is
+   *  nothing to restore, and the page must not offer a button that would put
+   *  an empty set over every parameter in the project. */
+  restorable: boolean;
+  note: string;
+  updated_by: string;
+  created_at: string | null;
 }
 
 export interface FlasherMeta {
@@ -4480,7 +4522,7 @@ export function getDeployment(id: number, signal?: AbortSignal): Promise<Deploym
 
 export function createDeployment(
   projectId: number,
-  body: { name: string; description?: string; chip?: string },
+  body: { name: string; description?: string; chip?: string; param_set_id?: number },
 ): Promise<{ id: number }> {
   return request(`/api/flasher/projects/${projectId}/deployments`, {
     method: "POST",
@@ -4491,7 +4533,10 @@ export function createDeployment(
 
 export function updateDeployment(
   id: number,
-  body: { name: string; description?: string; chip?: string; kind?: string; active?: boolean },
+  body: {
+    name: string; description?: string; chip?: string; kind?: string;
+    active?: boolean; param_set_id?: number;
+  },
 ): Promise<DeploymentRow> {
   return request(`/api/flasher/deployments/${id}`, {
     method: "PATCH",
@@ -4562,6 +4607,13 @@ export function publishDeploymentVersion(
     headers: JSON_HEADERS,
     body: JSON.stringify({ approved_by: approvedBy }),
   });
+}
+
+/** Delete a DRAFT nothing has used, so discarding one leaves no trace. Refused
+ *  for a published version, and for a draft any programming run records —
+ *  `rejectDeploymentVersion` keeps that one as history instead. */
+export function deleteDeploymentVersion(versionId: number): Promise<{ ok: boolean }> {
+  return request(`/api/flasher/deployment-versions/${versionId}`, { method: "DELETE" });
 }
 
 export function rejectDeploymentVersion(versionId: number): Promise<{ ok: boolean }> {
@@ -4742,16 +4794,44 @@ export function listParamSets(projectId: number, signal?: AbortSignal): Promise<
   return request(`/api/flasher/projects/${projectId}/param-sets`, { signal });
 }
 
+export function listParamRevisions(
+  paramSetId: number,
+  signal?: AbortSignal,
+): Promise<ParamRevisionRow[]> {
+  return request(`/api/flasher/param-sets/${paramSetId}/revisions`, { signal });
+}
+
+/** Put the values back to what a revision left, as a NEW revision. History is
+ *  append-only: reverting r5 to r2 writes r6 and the record still says r3-r5
+ *  happened and that somebody undid them. */
+export function revertParamSet(
+  paramSetId: number,
+  revisionNo: number,
+  opts: { note?: string; force?: boolean } = {},
+): Promise<{ id: number; revision_no: number; reverted_to: number }> {
+  return request(`/api/flasher/param-sets/${paramSetId}/revert`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({
+      revision_no: revisionNo, note: opts.note ?? "", force: opts.force ?? false,
+    }),
+  });
+}
+
 export function putParamSet(
   projectId: number,
   name: string,
   values: Record<string, string | number>,
   updatedBy = "",
-): Promise<{ id: number }> {
+  opts: { note?: string; force?: boolean } = {},
+): Promise<{ id: number; revision_no: number }> {
   return request(`/api/flasher/projects/${projectId}/param-sets/${encodeURIComponent(name)}`, {
     method: "PUT",
     headers: JSON_HEADERS,
-    body: JSON.stringify({ values, updated_by: updatedBy }),
+    body: JSON.stringify({
+      values, updated_by: updatedBy,
+      note: opts.note ?? "", force: opts.force ?? false,
+    }),
   });
 }
 

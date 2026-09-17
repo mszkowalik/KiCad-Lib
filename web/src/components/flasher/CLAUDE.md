@@ -4,6 +4,35 @@ The production programming screens. The backend rules are in
 `api/app/services/flasher/CLAUDE.md` and the wider design is in
 [docs/flasher/design.md](../../../../docs/flasher/design.md).
 
+## A version's NOTE is prose, and the deployment card is not a form to scroll
+
+Two things on the Deployments page were reported unreadable from the bench
+(2026-09-17), and both were the same mistake — a style chosen for one length of
+text applied to another.
+
+- **`.card-subtitle` is a CAPTION style** — 11px uppercase mono with
+  letter-spacing. It suits "retro-import · 2026-07-29 · changed: berryware".
+  `VersionView` used it for the version's publish comment as well, which is
+  free text of any length: a five-line paragraph rendered that way looks like a
+  heading and reads like nothing. The note now has `.version-note`, sentence
+  case, under its own label. Keep the caption for captions.
+- **The note is NOT repeated on the timeline row.** Seven versions of one
+  deployment share an opening sentence, so a clipped copy per row told them
+  apart not at all while costing a line each. The row carries the CHANGE
+  summary, which does; the note is on its `title` and in full on the card.
+- **Two columns, and the wide one belongs to the PROCEDURE.** The page was
+  three — a picker for three deployments down the left at 15%, the timeline at
+  30%, and the composed version in what was left — so the 28-step procedure,
+  which is the thing the page exists to show, read in about half the window and
+  truncated every step's command. The deployments are `.depl-tiles` across the
+  top now (tiles, not a dropdown: the pills say which version each channel runs
+  and what kind the procedure is), the timeline is the left column, and the
+  deployment's fields sit with the version in the right one. Measured at
+  1500 px: the detail column went 660 → 864 px, and the head 415 → 224 px.
+- **The procedure card comes BEFORE firmware and berryware in `VersionView`.**
+  Firmware is one table row and berryware is one pill; they pushed the steps
+  off the bottom of the window for no benefit.
+
 ## Flasher UI — where things live
 
 - `src/flasher/station.ts` is a RELAY to the bench agent, not an
@@ -20,28 +49,47 @@ The production programming screens. The backend rules are in
   `action` ops, pipes `tx`/`rx`, answers `prompt`s (SIM PIN modal) and
   forwards every station log line as `{t:"log"}` so the stored record is
   complete. The scenario itself NEVER runs in the browser.
-- Pages: **`/production/deployments`** is the home of the flasher — three
-  columns (deployments → version timeline → composed view of the selected
-  version), with `Composer` for new versions and `DiffView` for comparisons.
-  **`/production/files`** administers everything a version pins, one kind per
-  tab (`?tab=bundles|firmware|files|parameters`) — bundles first, because that
-  is the unit berryware ships in. `/production/artifacts` redirects there. Then `/production/bench` (stations),
+- Pages: **`/production/deployments`** is the home of the flasher — deployment
+  tiles across the top, then two columns (version timeline → the deployment's
+  own fields and the selected version), with `DiffView` for comparisons.
+  **`/production/files`** administers what a version PINS, one kind per tab
+  (`?tab=bundles|firmware|files`) — bundles first, because that is the unit
+  berryware ships in. `/production/artifacts` redirects there.
+  **`/production/parameters`** is what a version DEPENDS on and does not
+  contain: the values, who needs each key, and the revision log (decision
+  [0024](../../../../docs/decisions/0024-a-version-declares-the-parameters-it-needs.md)).
+  It was a fourth tab under Files until 2026-09-17;
+  `/production/files/parameters` redirects. Then `/production/bench` (stations),
   `/production/devices` (+ `/:id`), `/production/flash-runs/:id` (step
   timeline + full log, live-tails by polling `after=<last seq>`). The bench log
   box keeps a bounded tail — the full log is in Postgres.
-- **The composer inherits by omission.** A section left untouched sends
-  `undefined` and the backend inherits it from `from_version_id`; only touched
-  sections are transmitted. Keep that contract — sending a section you did not
-  edit turns "berryware bump" into a full rewrite of the version.
-- **Validation comes from the server, always.** The composer PATCHes the draft
-  and renders the returned `validation`; never re-implement a rule in the
-  browser, or the editor will eventually disagree with the publish gate.
-- **`StepEditor` renders the procedure in BOTH places** — editable in the
-  composer, `readOnly` on a published version — from one schema
-  (`stepSchema.ts`, keyed by op). Add an op there and both views get it. The
-  read-only path takes its context from the version payload itself
-  (`assetsOf` / `bundlesOf` in `VersionView`), so it needs no extra fetches;
-  making a published procedure editable later is a flag, not a second view.
+- **There is no composer. A draft is edited where it is read** (2026-09-17,
+  user request). `Composer.tsx` was a modal that rendered the same four
+  sections a second time, editable, over `VersionView` — two renderings of a
+  procedure, which is two places every step op has to be understood, and they
+  had already diverged on which controls a section carries. `New version` now
+  POSTs a draft inheriting everything, selects it, and `VersionView` becomes
+  the editor. Four consequences:
+
+  1. **`VersionView` is one component with a `status` branch, not two views.**
+     `StepEditor`'s `readOnly` was always a flag; now the whole card is.
+  2. **Every edit PATCHes and takes the server's `validation` back whole.**
+     Never re-implement a rule in the browser — `validate.check()` is the one
+     gate and the errors under the header must be the publish button's own.
+  3. **Inherit by omission still holds.** A PATCH sends only what changed; a
+     section you did not touch must stay `undefined`, or a berryware bump
+     becomes a full rewrite of the version.
+  4. **Firmware and berryware have no controls of their own**, and never did —
+     a `flash` step picks its images and a `download_files` step its bundle,
+     inside `StepEditor`. Those two cards are summaries of what the procedure
+     pinned.
+- **Discarding a draft DELETES it; rejecting keeps it.** `DELETE
+  /deployment-versions/{id}` removes a draft nothing has used, because a
+  version minted by one click and looked at must not leave a rejected row
+  behind forever. The server refuses for a published version, and for any
+  version a programming run records (a draft runs as a bench trial) — the UI
+  falls back to `reject`, which keeps the row as history. The card offers
+  `Delete this version` on anything not published.
 - **A flash step selects its firmware and a download step its bundle**, and
   both write the VERSION's pins. Keep it that way: the version stays the single
   definition of a payload (fingerprints, diffs and bundle identity all derive

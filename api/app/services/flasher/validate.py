@@ -8,15 +8,14 @@ implementation, so the editor can never disagree with the publish button.
 """
 from __future__ import annotations
 
-import json
 import re
-from typing import Any
 
 from ... import models as M
-from .. import crypto
-from . import bundle
+from . import bundle, params as params_svc
 
-PLACEHOLDER = re.compile(r"\{(\w+)\}")
+# `PLACEHOLDER` and the string walker live in `params.py` — the same walk
+# decides what a version DECLARES, and two copies would drift.
+PLACEHOLDER = params_svc.PLACEHOLDER
 
 # Transport profiles and the chips they are valid for. Native USB-Serial/JTAG
 # exists only on the C/S families; picking it for a plain ESP32 means the
@@ -59,29 +58,6 @@ def _addr(a: str) -> int | None:
         return int(a, 16)
     except (TypeError, ValueError):
         return None
-
-
-def _param_keys(db, version: M.DeploymentVersion) -> set[str]:
-    keys = set((version.param_defaults or {}).keys())
-    if version.param_set_id:
-        ps = db.get(M.ParamSet, version.param_set_id)
-        if ps and ps.values_enc:
-            try:
-                keys |= set(json.loads(crypto.decrypt_token(ps.values_enc)).keys())
-            except Exception:  # noqa: BLE001 — an unreadable set is its own error below
-                keys.add("<undecryptable>")
-    return keys
-
-
-def _walk_strings(value: Any):
-    if isinstance(value, str):
-        yield value
-    elif isinstance(value, dict):
-        for v in value.values():
-            yield from _walk_strings(v)
-    elif isinstance(value, list):
-        for v in value:
-            yield from _walk_strings(v)
 
 
 def check(db, version: M.DeploymentVersion) -> dict:
@@ -151,7 +127,7 @@ def check(db, version: M.DeploymentVersion) -> dict:
                 f"{b_name} starts at 0x{b_start:X}")
 
     # 4. Dataflow: every {placeholder} must resolve, and only from EARLIER steps.
-    available = set(bundle.RUNTIME_VARS) | _param_keys(db, version)
+    available = set(bundle.RUNTIME_VARS) | params_svc.available_keys(db, version)
     for idx, step in enumerate(steps):
         local = OP_LOCAL_VARS.get(step.get("op"), set())
         url = step.get("url")
@@ -159,7 +135,7 @@ def check(db, version: M.DeploymentVersion) -> dict:
             errors.append(
                 f"step {idx + 1} ({step.get('op')}) hardcodes a loopback host in its "
                 "url — no device can reach it; use {base_url}")
-        for text in _walk_strings({k: v for k, v in step.items()
+        for text in params_svc._walk_strings({k: v for k, v in step.items()
                                    if k not in ("label", "note", "capture")}):
             for name in PLACEHOLDER.findall(text):
                 if name not in available and name not in local:
@@ -171,6 +147,17 @@ def check(db, version: M.DeploymentVersion) -> dict:
             errors.append(
                 f"step {idx + 1} ({step.get('op')}) asserts on '{var}', which no earlier step "
                 "captures")
+        # An op that reads a parameter by NAME rather than interpolating it.
+        # The walk above cannot see these: `derive_credentials` takes the salt
+        # straight out of the run's variables and raises mid-run without it, so
+        # a version missing `creds_salt` published cleanly and failed at the
+        # bench after the erase (found 2026-09-17).
+        for field, default in params_svc.OP_PARAM_FIELDS.get(step.get("op"), []):
+            name = str(step.get(field) or default)
+            if name not in available:
+                errors.append(
+                    f"step {idx + 1} ({step.get('op')}) needs the '{name}' parameter, which no "
+                    "parameter set or default supplies")
         available |= set((step.get("capture") or {}).keys())
         if step.get("op") == "derive_credentials":
             available |= {"mqtt_user", "mqtt_password"}
@@ -260,7 +247,7 @@ def check(db, version: M.DeploymentVersion) -> dict:
     for idx, step in enumerate(steps):
         if step.get("op") != "lte_sim_pin":
             continue
-        has_source = "sim_pin" in _param_keys(db, version)
+        has_source = "sim_pin" in params_svc.available_keys(db, version)
         if not has_source and not step.get("optional"):
             warnings.append(
                 f"step {idx + 1} provisions the SIM PIN but no param set supplies 'sim_pin' — "

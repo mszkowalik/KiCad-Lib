@@ -70,6 +70,46 @@ vetted, pure-Python archive. The moment it needs a package with a compiled
 part, it stops being something an operator can download and open, and that
 property is worth more than any convenience inside it.
 
+## Setting a printer up, and the trap that makes it worth doing
+
+The agent does the whole setup except installing the driver, which needs root.
+`printer_plan()` decides what stands between each printer and a working queue,
+and `bench_actions()` turns each state into a button on the status page.
+
+- **The driver is matched on the device's make-and-model EXACTLY**, never as a
+  substring, and an existing queue's PPD NickName is checked the same way. CUPS
+  offers `DYMO Label Printer`, `SE450`, `550 Connect`, `550 Turbo` and
+  `550 Twin Turbo` beside the right one. A queue on any of them looks healthy —
+  `lpadmin` accepts it, it lists label sizes, jobs complete — and prints
+  NOTHING, measured on a powered 550. The printer advertises no page language
+  (`CMD:` empty), so it cannot complain.
+- **`lpinfo -v` lists BACKENDS as well as devices.** Only a uri containing
+  `://` is a printer; `network ipp` is a backend. Matching the scheme alone
+  would find a driverless printer on every Mac.
+- **Creating a queue needs no password** for an account in `_lpadmin`, which an
+  admin account has. `remove_queue` only removes what this run created: a bench
+  is not the place to delete somebody else's print queue.
+- **Actions are derived FROM the facts**, not from a second look at the world.
+  Re-reading the health raced the probe `bench_facts` starts, and the page
+  offered "Open LightBurn" beside a LightBurn that was answering.
+- **A printer with a driver and no queue gets one, on a watcher, without being
+  asked** (`watch_printers`). Only a queue that is ABSENT: repointing one that
+  exists stays a button, because creating something missing and changing
+  something present are different acts, and the second may undo a choice. One
+  attempt per printer per run, so deleting a queue on purpose is not argued
+  with ten seconds later.
+- **A console nobody is using is closed and its port given back**
+  (`watch_monitor`, 120 s). Nothing tells the agent that a tab was closed,
+  reloaded or crashed, so until this the port stayed held until the agent was
+  quit and every other program asking for it was refused. Never while a mark, a
+  print or a flash is running: those own the bench even when the console is
+  quiet. The touch is taken BEFORE the long poll waits, or a slow device would
+  look like an abandoned tab.
+- **The status page is where actions live**, because this Tk draws no text and
+  the window is a launcher for that page. A link opens, a command is shown to
+  copy, and anything that CHANGES the machine is a form POST — never a link,
+  which a page load could follow.
+
 ## The printer, and the three things that are expensive to get wrong
 
 Full measurements in

@@ -20,31 +20,72 @@ step IS the label definition.** A Code 128 label has no artwork, and its
 geometry comes from the printer's PPD on the bench, which is why the agent lays
 it out instead of the page. That is the one place this differs from marking.
 
-## Setting up the printer
+## Setting up the printer on a new bench
+
+Measured end to end on 2026-09-17, on a Mac put deliberately into the state a
+new one arrives in.
 
 1. Plug it in and give it its own power adapter. USB alone does not bring it up.
-2. **The DYMO driver has to be on the machine, but no DYMO application has to
-   run.** On the current bench macOS created the queue by itself the moment the
-   printer was plugged in — `usb://DYMO/LabelWriter%20550?serial=…`, with the
-   `lw550` PPD and the `raster2dymolw` filter — because that driver was already
-   installed. **Do not read that as "macOS ships it".** What is on this Mac is
-   DYMO's own payload: 40 DYMO PPDs in
-   `/Library/Printers/PPDs/Contents/Resources/`, filters and a `pnpd` helper in
-   `/Library/Printers/DYMO/`, all code-signed by Sanford, L.P. (DYMO's parent,
-   team `N3S6676K3E`) and timestamped 24 April 2024.
+2. **Install DYMO's driver once.** `brew install --cask dymo-connect` fetches
+   DYMO's own `DCDMac…pkg`, or download DYMO Connect for Desktop from
+   dymo.com/support. The application can be deleted afterwards and none of its
+   background jobs need to run: the bench printed all evening with no DYMO app
+   installed and nothing of DYMO's loaded in `launchctl`. What the bench uses is
+   the CUPS driver the installer leaves behind.
+3. **Open the agent's status page and press Set up.** The agent finds the
+   printer, matches the driver and builds the queue. Nothing else is needed,
+   and no administrator password: `lpadmin` is authorised through the
+   `_lpadmin` group, which an admin account already has.
+4. Load a **DYMO Authentic** roll. The 550 series reads an RFID chip on the roll
+   and refuses anything else, including older DYMO rolls without a chip.
 
-   **How it got there cannot be established from the machine**: no installer
-   receipt claims those files (`pkgutil --file-info` reports none) and
-   `install.log` has rotated past it. Either DYMO's own installer or an Apple
-   printer-driver update put it there, before this OS was in use.
+**macOS does not reliably do step 3 for you.** It built the queue by itself the
+first time on one bench, and on a freshly installed driver with the printer
+plugged in it did not. Whether the first one was macOS or DYMO's `pnpd` could
+never be established, so the bench does not depend on either.
 
-   So on a NEW bench: plug the printer in, and if no queue appears, install
-   DYMO Connect for Desktop or DYMO's standalone LabelWriter driver once. After
-   that the application can be removed — the CUPS driver is what the bench
-   uses, and nothing of DYMO's needs to be running.
-3. Load a **DYMO Authentic** roll. The 550 series reads an RFID chip on the
-   roll and refuses anything else, including older DYMO rolls without a chip.
-4. The bench agent reports the queue on its own window and to the bench page.
+### Why the driver is not optional, and why the match must be exact
+
+The printer's own device-id ends `CMD: ` — **empty**. It advertises no page
+language at all, no PCL, no PostScript, no PWG raster, and its USB interface is
+class 7 protocol 2, a plain bidirectional printer rather than IPP-over-USB
+(which is protocol 4). So nothing generic can drive it and there is no
+driverless path.
+
+That matters more than it sounds, because CUPS offers drivers that LOOK right:
+
+```
+drv:///sample.drv/dymo.ppd              DYMO Label Printer          <- CUPS's own
+Library/.../se450.ppd.gz                DYMO LabelWriter SE450
+Library/.../lw550c.ppd.gz               DYMO LabelWriter 550 Connect
+Library/.../lw550t.ppd.gz               DYMO LabelWriter 550 Turbo
+Library/.../lw550tt.ppd.gz              DYMO LabelWriter 550 Twin Turbo
+Library/.../lw550.ppd.gz                DYMO LabelWriter 550        <- the only right one
+```
+
+A queue on the wrong one **looks completely healthy**: `lpadmin` accepts it, it
+lists sensible label sizes, a job completes and reports "Finished page 1", and
+nothing comes out of the printer. Tested with the CUPS sample driver on a
+powered 550. The printer cannot complain, because it advertises no language it
+could be judged against.
+
+So the agent matches the device's `make-and-model` string EXACTLY against the
+description in `lpinfo -m`, never as a substring, and it checks an existing
+queue's PPD `NickName` the same way — a queue on the wrong driver is repaired
+in place rather than trusted.
+
+### What the agent can and cannot do
+
+| | |
+|---|---|
+| `GET /ready` | every fact with what to do about it — the status page renders it, and the bench page reads the same JSON so the wording exists once |
+| `POST /printer/setup` `{uri}` | create the queue, or repoint a wrongly-driven one |
+| `POST /printer/remove` `{queue}` | remove a queue **this agent created** and nothing else |
+| `POST /lightburn/open` | open LightBurn when it is installed and silent |
+
+It cannot install the driver: that needs root, and an appliance that downloads
+and runs a vendor installer is not something a bench should carry. It offers
+the command and the link instead.
 
 ## Which roll, and why the bench has to be told
 

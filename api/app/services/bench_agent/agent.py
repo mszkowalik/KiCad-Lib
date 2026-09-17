@@ -522,6 +522,366 @@ def laser_usb() -> dict:
     return out
 
 
+# ---------------------------------------------------------------------------
+# Getting a printer ready, on a machine where nobody has set one up.
+#
+# Measured on a Mac with no DYMO software at all (2026-09-17), which is the
+# state a new bench arrives in:
+#
+#   * CUPS still reports the printer's full identity, so the agent can NAME the
+#     printer it is asking for a driver for:
+#       uri = usb://DYMO/LabelWriter%20550?serial=04234076828001
+#       make-and-model = DYMO LabelWriter 550
+#       device-id = MFG:DYMO;...;CMD: ;MDL:LabelWriter 550;CLASS:PRINTER;...
+#   * `CMD:` is EMPTY. The printer advertises no page language — no PCL, no
+#     PostScript, no PWG raster — so nothing generic can drive it and the
+#     vendor's driver is not a preference, it is the only way.
+#   * Its USB interface is class 7, protocol 2: a plain bidirectional printer,
+#     not IPP-over-USB (which is protocol 4). So there is no driverless path
+#     for THIS printer, though the ladder below tries one first for the next.
+#   * macOS creates no queue by itself when the driver is missing.
+# ---------------------------------------------------------------------------
+
+# Schemes that mean "this printer needs no driver". Matched against a device
+# URI, never against a bare scheme: `lpinfo -v` lists the BACKENDS too, as
+# lines like "network ipp" with make-and-model "Unknown", and a match on those
+# would find a driverless printer on every machine and then build a queue
+# pointing at the literal uri "ipp".
+DRIVERLESS_SCHEMES = ("ippusb://", "ipps://", "ipp://", "dnssd://")
+
+
+def cups_devices() -> list:
+    """Every printer CUPS can see right now, backends excluded.
+
+    A device has a uri containing "://" and a real make-and-model. A backend
+    has a bare scheme and says "Unknown".
+    """
+    out, cur = [], {}
+    for line in _lp(["lpinfo", "-l", "-v"], timeout=30).splitlines():
+        line = line.strip()
+        if line.startswith("Device:"):
+            if cur.get("uri", "").find("://") > 0:
+                out.append(cur)
+            cur = {"uri": line.split("uri =", 1)[-1].strip()}
+        elif "=" in line and cur:
+            key, _, value = line.partition("=")
+            cur[key.strip().replace("-", "_")] = value.strip()
+    if cur.get("uri", "").find("://") > 0:
+        out.append(cur)
+    return out
+
+
+def cups_drivers() -> list:
+    """(model, description) for every driver this CUPS offers."""
+    rows = []
+    for line in _lp(["lpinfo", "-m"], timeout=30).splitlines():
+        model, _, description = line.strip().partition(" ")
+        if model and description:
+            rows.append((model, description.strip()))
+    return rows
+
+
+def driver_for(make_and_model: str, drivers=None) -> str:
+    """The driver whose description is EXACTLY this printer's make-and-model.
+
+    NEVER a substring, and this is the rule that costs the most to get wrong. A
+    Mac with no 550 driver still offers "DYMO Label Printer" — CUPS's own
+    sample driver for the LabelWriter 300/400 family — and "DYMO LabelWriter
+    SE450". Both contain "DYMO", neither drives a 550, and a queue built on one
+    LOOKS PERFECTLY HEALTHY: lpadmin accepts it, it lists sensible label sizes,
+    a job completes and reports "Finished page 1", and nothing comes out of the
+    printer. Measured on a powered printer, 2026-09-17. The printer cannot
+    complain, because it advertises no language it could be judged against.
+    """
+    wanted = " ".join(make_and_model.split()).lower()
+    for model, description in drivers if drivers is not None else cups_drivers():
+        if " ".join(description.split()).lower() == wanted:
+            return model
+    return ""
+
+
+def cups_queues() -> dict:
+    """queue name -> device uri, for every queue on this machine."""
+    out = {}
+    for line in _lp(["lpstat", "-v"]).splitlines():
+        if line.startswith("device for "):
+            name, _, uri = line[len("device for "):].partition(":")
+            out[name.strip()] = uri.strip()
+    return out
+
+
+def queue_driver(queue: str) -> str:
+    """What a queue's own PPD calls itself, for comparing with the device."""
+    try:
+        text = ppd_path(queue).read_text(encoding="latin-1", errors="ignore")
+    except OSError:
+        return ""
+    match = re.search(r'^\*NickName:\s*"([^"]*)"', text, re.M)
+    # A NickName may carry a version after a comma: "Foo 550, 1.2".
+    return match.group(1).split(",")[0].strip() if match else ""
+
+
+def printer_plan() -> list:
+    """What stands between each printer on this machine and a working queue.
+
+    One entry per device, with the single next action spelled out. The bench
+    page and the window both read this, so they cannot disagree.
+    """
+    drivers = cups_drivers()
+    queues = cups_queues()
+    plan = []
+    for dev in cups_devices():
+        uri, model = dev["uri"], dev.get("make_and_model", "")
+        mine = [q for q, u in queues.items() if u == uri]
+        driverless = uri.startswith(DRIVERLESS_SCHEMES)
+        driver = "everywhere" if driverless else driver_for(model, drivers)
+        row = {"uri": uri, "model": model, "queue": mine[0] if mine else "",
+               "driver": driver, "driverless": driverless}
+        if mine:
+            have = queue_driver(mine[0])
+            if driverless or not model or " ".join(have.split()) == " ".join(model.split()):
+                row.update(state="ready", detail=f"{mine[0]} is set up for {model}")
+            elif driver:
+                row.update(state="wrong_driver",
+                           detail=f"{mine[0]} is set up as {have!r}, and this printer is "
+                                  f"{model!r}. A queue on the wrong driver accepts jobs and "
+                                  "prints nothing.")
+            else:
+                row.update(state="no_driver",
+                           detail=f"{mine[0]} is set up as {have!r}, which is not a driver for "
+                                  f"{model!r}, and no driver for it is installed.")
+        elif driver:
+            row.update(state="no_queue", detail=f"{model} is plugged in and has no queue yet")
+        else:
+            row.update(state="no_driver",
+                       detail=f"{model} is plugged in, and no driver for it is installed on "
+                              "this machine")
+        plan.append(row)
+    return plan
+
+
+def queue_name_for(model: str, taken) -> str:
+    """macOS's own shape for a queue name, and never one that is taken."""
+    base = re.sub(r"[^A-Za-z0-9]+", "_", model).strip("_") or "printer"
+    name, n = base, 2
+    while name in taken:
+        name, n = f"{base}_{n}", n + 1
+    return name
+
+
+def setup_printer(uri: str) -> dict:
+    """Create the queue for one device, or repoint one that is wrongly driven.
+
+    An admin account can do this with no password — `lpadmin` is authorised
+    through the `_lpadmin` group, and the agent runs as the operator. It
+    refuses rather than guessing when no exact driver exists, because the
+    guess that is available is the one that prints nothing.
+    """
+    wanted = [row for row in printer_plan() if row["uri"] == uri]
+    if not wanted:
+        return {"error": f"no printer is answering on {uri}"}
+    row = wanted[0]
+    if row["state"] == "ready":
+        return {"queue": row["queue"], "did": "nothing", "detail": row["detail"]}
+    if not row["driver"]:
+        return {"error": f"{row['model']} needs its maker's driver, and none is installed. "
+                         "Install DYMO Connect for Desktop from dymo.com/support, then press "
+                         "this again — the application can be removed afterwards, the bench "
+                         "only uses the driver it leaves behind."}
+    queue = row["queue"] or queue_name_for(row["model"], cups_queues())
+    args = ["lpadmin", "-p", queue]
+    if not row["queue"]:
+        # A queue that exists keeps its device; only a new one is told where to
+        # find the printer.
+        args += ["-v", uri]
+    args += ["-m", row["driver"], "-E"]
+    result = subprocess.run(args, capture_output=True, text=True)
+    # lpadmin warns about deprecated drivers on stderr and still succeeds.
+    if result.returncode:
+        return {"error": (result.stderr or result.stdout).strip() or "lpadmin refused"}
+    did = "repointed" if row["queue"] else "created"
+    say(f"{did} the queue {queue} for {row['model']}")
+    CREATED_QUEUES.add(queue)
+    return {"queue": queue, "did": did,
+            "detail": f"{queue} now uses {row['driver']} for {row['model']}"}
+
+
+def remove_queue(queue: str) -> dict:
+    """Undo a queue this agent made. Only ours: a bench is not the place to
+    delete a print queue somebody else set up."""
+    if queue not in CREATED_QUEUES:
+        return {"error": f"{queue} was not created by this agent, so it will not remove it"}
+    result = subprocess.run(["lpadmin", "-x", queue], capture_output=True, text=True)
+    if result.returncode:
+        return {"error": (result.stderr or result.stdout).strip() or "lpadmin refused"}
+    CREATED_QUEUES.discard(queue)
+    say(f"removed the queue {queue}")
+    return {"removed": queue}
+
+
+# Queues this run of the agent created, so it can take back its own mistakes
+# and nothing else.
+CREATED_QUEUES = set()
+# Devices this run has already set up by itself. An operator who deletes a
+# queue on purpose is not argued with: the watcher takes one attempt per
+# printer per run, and the button is there for the second.
+TRIED_SETUP = set()
+SETUP_EVERY_S = 10
+
+
+# How long a console may sit untouched before the agent takes the port back.
+# The page long-polls `/monitor` for up to 20s, so a live bench touches it far
+# more often than this; the margin is for a run whose current step is the LASER
+# or the PRINTER, where nothing reads the console for a minute or two.
+MONITOR_IDLE_S = 120
+MONITOR_CHECK_S = 5
+
+
+def watch_monitor(agent: "Agent") -> None:
+    """Close a console nobody is using, and give the port back.
+
+    Nothing tells the agent that a tab was closed, reloaded or crashed, so
+    without this the port stayed held until the agent was quit — and any other
+    program that wanted it was refused meanwhile.
+
+    Never while a job is running: a mark, a print or a flash owns the bench even
+    when the console is quiet, and taking the port from under one would break a
+    run to tidy up after a tab that is not even gone.
+    """
+    while True:
+        time.sleep(MONITOR_CHECK_S)
+        try:
+            if not agent.monitor or agent.busy or agent.printing or agent.flashing:
+                continue
+            idle = time.time() - agent.monitor_touched
+            if idle > MONITOR_IDLE_S:
+                say(f"console untouched for {int(idle)}s — closing it and giving the port back")
+                agent.monitor_close()
+        except Exception as exc:  # noqa: BLE001 — a watcher must not die
+            say(f"console watch: {exc}")
+
+
+def watch_printers(agent: "Agent") -> None:
+    """Give a printer with a driver a queue, without being asked.
+
+    ONLY a printer that has NO queue. Repointing one that exists is left to the
+    button, because creating something absent and changing something present are
+    different acts — the second may be undoing a choice somebody made.
+
+    It is a watcher rather than a one-off at start because the printer is
+    usually plugged in after the agent is already running.
+    """
+    while True:
+        try:
+            for row in printer_plan():
+                if row["state"] != "no_queue" or row["uri"] in TRIED_SETUP:
+                    continue
+                TRIED_SETUP.add(row["uri"])
+                out = setup_printer(row["uri"])
+                if out.get("error"):
+                    say(f"could not set {row['model']} up by itself: {out['error']}")
+                else:
+                    say(f"{row['model']} had no queue — made {out['queue']}")
+        except Exception as exc:  # noqa: BLE001 — a watcher must not die
+            say(f"printer watch: {exc}")
+        time.sleep(SETUP_EVERY_S)
+
+
+# ---------------------------------------------------------------------------
+# What to DO about each fact.
+#
+# `bench_facts` says what is true. This says what the operator can do next, as
+# things a page can render: a link to open, a command to copy, or a button that
+# asks this agent to fix it. One source for the wording, so the status page and
+# the bench page cannot give different advice.
+#
+# It is here rather than in a README because a README is read once, on the day
+# the bench is set up, and this is read on the day something is wrong.
+# ---------------------------------------------------------------------------
+
+LIGHTBURN_APP = Path("/Applications/LightBurn.app")
+LIGHTBURN_URL = "https://lightburnsoftware.com/pages/trial-version-try-before-you-buy"
+DYMO_URL = "https://www.dymo.com/support?cfid=online-support"
+DYMO_BREW = "brew install --cask dymo-connect"
+BREW = Path("/opt/homebrew/bin/brew")
+
+
+def _act(kind: str, label: str, value: str, **extra) -> dict:
+    """kind: "url" to open, "copy" to put on the clipboard, "do" to call back."""
+    return {"kind": kind, "label": label, "value": value, **extra}
+
+
+def bench_actions(agent: "Agent", facts: list) -> dict:
+    """{fact name: [action, ...]} for the facts that have something to offer.
+
+    It is handed the FACTS rather than looking things up again. Reading the
+    health a second time raced the probe that `bench_facts` kicks off, and the
+    page offered "Open LightBurn" beside a LightBurn that was answering.
+    """
+    state_of = {name: state for name, state, _ in facts}
+    actions: dict = {}
+
+    # LightBurn. "Not answering" has three causes and the agent cannot tell
+    # them apart — the licence tier is not in LightBurn's preferences, checked
+    # on 2026-09-17. But "not installed" IS decidable, and it is the only one
+    # with an answer the operator cannot guess.
+    if not LIGHTBURN_APP.exists():
+        actions["LightBurn"] = [_act("url", "Get LightBurn", LIGHTBURN_URL)]
+    elif state_of.get("LightBurn") == "bad":
+        # Installed and silent, and only once that answer is KNOWN — while the
+        # first probe is out the state reads "asking…", and offering to fix
+        # something we have not found yet is how a bench learns to ignore its
+        # own status line. The agent opens LightBurn on start; this is the same
+        # thing on demand, for the operator who quit it mid-shift.
+        actions["LightBurn"] = [_act("do", "Open LightBurn", "/lightburn/open")]
+
+    # The printer, in whatever state it is in. `printer_plan` does the thinking;
+    # this turns each state into the next thing to press.
+    for row in printer_plan():
+        if row["state"] == "ready":
+            continue
+        if row["state"] == "no_queue":
+            actions.setdefault("Printer", []).append(
+                _act("do", f"Set up {row['model']}", "/printer/setup", uri=row["uri"]))
+        elif row["state"] == "wrong_driver":
+            actions.setdefault("Printer", []).append(
+                _act("do", f"Repair the queue for {row['model']}", "/printer/setup",
+                     uri=row["uri"]))
+        elif row["state"] == "no_driver":
+            offer = actions.setdefault("Printer", [])
+            if BREW.exists():
+                offer.append(_act("copy", "Copy the install command", DYMO_BREW))
+            offer.append(_act("url", "DYMO downloads", DYMO_URL))
+    return actions
+
+
+def printer_facts() -> list:
+    """The Printer line, said properly.
+
+    `list_printers` reports the QUEUES this machine has. On a new bench there
+    are none and the interesting thing is the printer that is plugged in with
+    nothing set up for it — which is what the operator is looking at.
+    """
+    plan = printer_plan()
+    rows = []
+    for row in plan:
+        if row["state"] == "no_driver":
+            rows.append(("Printer", "bad", row["detail"]))
+        elif row["state"] in ("no_queue", "wrong_driver"):
+            rows.append(("Printer", "warn", row["detail"]))
+    if rows:
+        return rows
+    printers = list_printers()
+    if not printers:
+        return [("Printer", "warn",
+                 "no printer on this machine, and none plugged in")]
+    first = [p for p in printers if p.get("default")] or printers
+    p = first[0]
+    return [("Printer", "ok" if p["ok"] else "bad",
+             f"{p['queue']} ready" if p["ok"] else
+             f"{p['queue']}: {p['reasons']} — " + PRINTER_ADVICE.get(p["reasons"], "check it"))]
+
+
 def list_printers() -> list:
     """Every print queue on this machine, and which one is the default."""
     out, default = [], ""
@@ -956,6 +1316,10 @@ class Agent:
         self.printing = False
         # Programming holds a serial port for a minute; one at a time, like a mark.
         self.flashing = False
+        # When the page last touched the console. A held port that nobody is
+        # using is the thing this timestamp exists to end: nothing tells the
+        # agent a tab was closed, and until this it kept the port until quit.
+        self.monitor_touched = 0.0
         # The console port, held open between steps for the whole dialog phase.
         self.monitor: Monitor | None = None
         self.esptool_version: str | None = None
@@ -1132,6 +1496,7 @@ class Agent:
                 self.monitor = Monitor(port, int(body.get("baud") or 115200), body.get("signals"))
             except Exception as exc:  # noqa: BLE001
                 return {"error": f"could not open {port}: {exc}"}
+        self.monitor_touched = time.time()
         say(f"monitor open on {port} @ {body.get('baud')}")
         return {"open": True, "port": port}
 
@@ -1139,6 +1504,10 @@ class Agent:
         m = self.monitor
         if not m:
             return {"open": False, "seen": since, "lines": []}
+        # Before the wait, not after: a long poll that is still out IS the page
+        # holding the console, and timing it from the answer would make a slow
+        # device look like an abandoned tab.
+        self.monitor_touched = time.time()
         seen, lines = m.since(since, wait)
         return {"open": True, "seen": seen, "lines": lines}
 
@@ -1146,6 +1515,7 @@ class Agent:
         m = self.monitor
         if not m:
             return {"error": "the monitor is not open"}
+        self.monitor_touched = time.time()
         try:
             m.write(str(body.get("text") or ""))
         except Exception as exc:  # noqa: BLE001
@@ -1156,6 +1526,7 @@ class Agent:
         m = self.monitor
         if not m:
             return {"error": "the monitor is not open"}
+        self.monitor_touched = time.time()
         try:
             m.reset()
         except Exception as exc:  # noqa: BLE001
@@ -1309,7 +1680,12 @@ class Handler(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin")
         if origin is None:
             return ""
-        return origin if origin in self.agent.origins else None
+        if origin in self.agent.origins:
+            return origin
+        # Our own status page. A browser sets Origin honestly, so this cannot
+        # be forged by another site, and the page is only reachable from this
+        # machine anyway.
+        return origin if origin == f"http://127.0.0.1:{self.server.server_address[1]}" else None
 
     def note_page(self, origin: str) -> None:
         if origin:
@@ -1378,9 +1754,18 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, self.agent.monitor_lines(since, wait), origin)
         if url.path == "/serial-ports":
             return self.reply(200, {"ports": list_serial_ports()}, origin)
+        if url.path == "/ready":
+            port_no = self.server.server_address[1]
+            facts = bench_facts(self.agent, port_no)
+            acts = bench_actions(self.agent, facts)
+            return self.reply(200, {"facts": [
+                {"name": n, "state": st, "detail": d, "actions": acts.get(n, [])}
+                for n, st, d in facts]}, origin)
         if url.path == "/printers":
             queue = (parse_qs(url.query).get("printer") or [""])[0]
+            plan = printer_plan()
             return self.reply(200, {"printers": list_printers(),
+                                    "candidates": plan,
                                     "rolls": rolls(queue) if queue else [],
                                     "default_roll": DEFAULT_ROLL}, origin)
         if url.path.startswith("/job/"):
@@ -1399,14 +1784,27 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse()
         path = urlparse(self.path).path
         if path not in ("/mark", "/print", "/esp", "/monitor/open", "/monitor/write",
-                        "/monitor/reset", "/monitor/close"):
+                        "/monitor/reset", "/monitor/close",
+                        "/printer/setup", "/printer/remove", "/lightburn/open"):
             return self.reply(404, {"error": "no such path"}, origin)
+        raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        form = "form-urlencoded" in (self.headers.get("Content-Type") or "")
         try:
-            length = int(self.headers.get("Content-Length") or 0)
-            body = json.loads(self.rfile.read(length) or b"{}")
+            body = ({k: v[0] for k, v in parse_qs(raw.decode()).items()} if form
+                    else json.loads(raw or b"{}"))
         except (ValueError, TypeError):
             return self.reply(400, {"error": "not JSON"}, origin)
-        if path.startswith("/monitor/"):
+        if path == "/lightburn/open":
+            # In a thread: opening waits for LightBurn to answer, and the page
+            # asking must not sit on a socket for that long.
+            threading.Thread(target=ensure_lightburn, args=(self.agent,),
+                             daemon=True).start()
+            out = {"opening": True}
+        elif path == "/printer/setup":
+            out = setup_printer(str(body.get("uri") or ""))
+        elif path == "/printer/remove":
+            out = remove_queue(str(body.get("queue") or ""))
+        elif path.startswith("/monitor/"):
             verb = path.rsplit("/", 1)[1]
             out = ({"open": self.agent.monitor_open, "write": self.agent.monitor_write,
                     "reset": self.agent.monitor_reset}[verb](body)
@@ -1415,6 +1813,14 @@ class Handler(BaseHTTPRequestHandler):
             out = (self.agent.start_mark(body) if path == "/mark"
                    else self.agent.start_print(body) if path == "/print"
                    else self.agent.start_esp(body))
+        if form:
+            # Straight back to the status page, so the operator sees the result
+            # as a changed fact rather than as a blob of JSON.
+            self.send_response(303)
+            self.send_header("Location", "/")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         return self.reply(409 if "error" in out else 200, out, origin)
 
 
@@ -1759,16 +2165,7 @@ def bench_facts(agent: "Agent", port: int) -> "list[tuple[str, str, str]]":
     else:
         out.append(("Laser", "bad", "no laser board on USB — is the marker powered on and plugged in?"))
 
-    printers = list_printers()
-    if not printers:
-        out.append(("Printer", "warn", "none on this machine — add one in System Settings"))
-    else:
-        first = [p for p in printers if p.get("default")] or printers
-        p = first[0]
-        out.append(("Printer", "ok" if p["ok"] else "bad",
-                    f"{p['queue']} ready" if p["ok"] else
-                    f"{p['queue']}: {p['reasons']} — "
-                    + PRINTER_ADVICE.get(p["reasons"], "check it")))
+    out.extend(printer_facts())
 
     ok, detail = chrome_policy_state(agent.setup_origins)
     out.append(("Chrome", "ok" if ok else "warn",
@@ -1795,10 +2192,35 @@ def status_page(agent: "Agent", port: int) -> bytes:
     script, no fetch, and therefore no Origin allow-list entry — a browser
     navigation carries no Origin, and that is already allowed."""
     import html
+    facts = bench_facts(agent, port)
+    actions = bench_actions(agent, facts)
+    seen = set()
+
+    def offer(name: str) -> str:
+        """The buttons for one fact, once, even when the fact repeats."""
+        if name in seen:
+            return ""
+        seen.add(name)
+        bits = []
+        for a in actions.get(name, []):
+            if a["kind"] == "url":
+                bits.append(f'<a href="{html.escape(a["value"])}" target="_blank" '
+                            f'rel="noreferrer">{html.escape(a["label"])}</a>')
+            elif a["kind"] == "copy":
+                bits.append(f'{html.escape(a["label"])}: <code>{html.escape(a["value"])}</code>')
+            else:
+                # A form, not a link: it CHANGES this machine, and a link would
+                # let a page load do it.
+                bits.append(
+                    f'<form method="post" action="{html.escape(a["value"])}">'
+                    f'<input type="hidden" name="uri" value="{html.escape(a.get("uri", ""))}">'
+                    f'<button type="submit">{html.escape(a["label"])}</button></form>')
+        return f'<div class="do">{" ".join(bits)}</div>' if bits else ""
+
     rows = "".join(
         f'<tr class="{state}"><td>{MARK[state]}</td><th>{html.escape(name)}</th>'
-        f'<td>{html.escape(detail)}</td></tr>'
-        for name, state, detail in bench_facts(agent, port))
+        f'<td>{html.escape(detail)}{offer(name)}</td></tr>'
+        for name, state, detail in facts)
     log = html.escape("\n".join(list(LOG_LINES)[-300:]))
     return f"""<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="2">
 <title>7Sigma agent</title>
@@ -1808,6 +2230,8 @@ def status_page(agent: "Agent", port: int) -> bytes:
  table{{border-collapse:collapse;margin-bottom:20px}} td,th{{padding:4px 10px 4px 0;text-align:left;vertical-align:top}}
  th{{font-family:Menlo,monospace;white-space:nowrap}} tr.ok td:first-child{{color:#1a7f37}} tr.warn td:first-child{{color:#9a6700}}
  tr.bad td:first-child{{color:#b42318}} tr.warn td:last-child{{color:#9a6700}} tr.bad td:last-child{{color:#b42318}}
+ .do{{margin:6px 0 2px}} .do form{{display:inline;margin-right:8px}}
+ .do a{{margin-right:8px}} .do code{{font:12px Menlo,monospace;background:rgba(127,127,127,.15);padding:2px 5px;border-radius:4px;user-select:all}}
  pre{{font:12px/1.4 Menlo,monospace;background:rgba(127,127,127,.12);padding:12px;border-radius:6px;white-space:pre-wrap}}
  @media (prefers-color-scheme:dark){{tr.ok td:first-child{{color:#4ac26b}} tr.warn td:first-child,tr.warn td:last-child{{color:#e3b341}} tr.bad td:first-child,tr.bad td:last-child{{color:#f85149}}}}
 </style>
@@ -1935,6 +2359,8 @@ def main() -> int:
     # seconds to come up.
     if not args.no_open_lightburn:
         threading.Thread(target=ensure_lightburn, args=(agent,), daemon=True).start()
+    threading.Thread(target=watch_printers, args=(agent,), daemon=True).start()
+    threading.Thread(target=watch_monitor, args=(agent,), daemon=True).start()
 
     if args.terminal:
         say("leave this window open while you mark")

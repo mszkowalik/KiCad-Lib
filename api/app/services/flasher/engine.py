@@ -39,7 +39,7 @@ from ...config import settings
 from ...db import SessionLocal
 from ... import models as M
 from .. import crypto
-from . import checks, credentials, protocol
+from . import checks, credentials, params as params_svc, protocol
 
 BROWSER_OPS = {
     "esp_connect", "erase", "flash", "esp_reset", "await_reenumerate",
@@ -481,6 +481,14 @@ class RunEngine:
             def start(db):
                 run = db.get(M.ProgrammingRun, self.run_id)
                 run.params_snapshot = masked
+                # WHICH revision of the values this unit got. `masked` hides
+                # every secret, so it cannot answer "which salt?" after a
+                # rotation; the revision id can, without storing the secret
+                # twice (decision 0024).
+                v = db.get(M.DeploymentVersion, run.deployment_version_id)
+                run.param_set_revision_id = params_svc.current_revision_id(
+                    db, v.param_set_id if v else None
+                )
                 run.client_info = client_info
 
             await self._db(start)

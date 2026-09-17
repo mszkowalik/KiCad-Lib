@@ -1,5 +1,135 @@
 # Changelog
 
+## 2026-09-17 (a version says which parameters it needs)
+
+**Editing a project's parameters can no longer break a version published months
+ago without telling you** ([decision 0024](docs/decisions/0024-a-version-declares-the-parameters-it-needs.md)).
+
+- **A deployment is linked to a parameter set, and says so under its
+  description.** The link used to exist only on each version, picked inside the
+  composer — so a new deployment was wired to nothing and you found out when a
+  publish was refused for an unresolved `{MqttHost}`. A new deployment in a
+  project with one set now takes it, its first version inherits that, and later
+  versions inherit from the version they were composed from. A published version
+  keeps the set it was made with whatever the deployment does later, and its
+  card says **deployment now defaults elsewhere** when the two differ.
+- **A new version is edited where it is read, not in a popup.** `New version`
+  creates the draft, selects it, and the card on the right becomes the editor —
+  note, procedure, transport, monitor baud and parameter set, each saving as you
+  change it. The `Composer` modal is deleted: it rendered the same four sections
+  a second time over the top of the read-only ones, so a procedure had two
+  renderings and they had already drifted on which controls a section carries.
+- **A version can be removed.** `Delete this version` on any draft or rejected
+  version takes it out entirely rather than leaving a rejected row behind. It is
+  refused for a published version — that is what a device was given — and for
+  any version a programming run records, which keeps the old reject-as-history
+  behaviour where it belongs.
+- **The kind dropdown is three words.** `flash · test · mark`, with what each
+  one does on the ⓘ instead of inside every option.
+- **A new deployment is an empty card, not two prompts.** The + tile creates
+  the row, selects it and puts the caret in the name — the two `prompt` dialogs
+  asked for the same fields the card already holds, so the answers were typed
+  twice. Pressing + twice gives "New deployment 2" rather than a unique-key
+  error.
+- **Chip is a dropdown everywhere.** The platform knows which parts it supports,
+  and the validator refuses a version whose transport does not match its chip,
+  so a free-text box could only ever produce a typo that fails at publish. A
+  blank option stays — a mark or test procedure legitimately has no chip.
+- **Parameters have their own page**, `Production → Parameters`. They were a
+  fourth tab under Files, beside firmware images and berryware bundles — but a
+  parameter is not an artefact a version pins, it is what a version depends on
+  and does not contain.
+- **Each key says which published versions need it.** `Dongle_V2 config` v10
+  needs seven keys and v18 needs four, both pointing at the same set; removing
+  the three v18 stopped using breaks v10, and nothing said so until a run was
+  attempted with a device in the socket. Removing such a key is now **refused**,
+  naming the versions. Deleting a set in use is refused too.
+- **A history of what moved.** Every save appends a revision with a note: which
+  keys arrived, which left, and which changed value. A key whose NAME survives
+  and whose MEANING changes — a broker repointed, a salt rotated — used to pass
+  every check the platform had. Each programming run now records which revision
+  it used, so a unit can be traced back to the values it was given even though
+  the secrets themselves are never stored twice.
+- **A draft run is validated like a published one.** It was exempt, and that is
+  where it mattered most: an unresolved `{MqttHost}` is left as literal text,
+  the step that writes it compares what it sent against what it read back, and
+  the device shipped configured against a broker called `{MqttHost}` with the
+  run reporting **pass**.
+- **The history can be reverted to.** "Revert to this" on any earlier revision
+  puts those values back — including the secrets — and **appends** rather than
+  rewinds: reverting r5 to r2 writes r6, so the record still says r3-r5 happened
+  and that somebody undid them. The same refusal applies, since an old revision
+  can be missing a key a version published since then needs.
+- **Editing is in place.** The Parameters page IS the editor: type in the row,
+  and Save, Cancel and the note appear only once something differs from what is
+  stored. No dialog, and values are shown in the clear — a parameter is a bench
+  setting you came to the page to read, and it is already behind the sign-in
+  gate. Storage is unchanged: the set is encrypted at rest either way.
+- **A key nothing reads is marked `unused`.** Which versions DO need it is on
+  the × and in the refusal — a parameter set belongs to one project, so listing
+  them was a wide column naming siblings of the project already selected.
+- **The deployment page lost what it did not need.** The tagline is gone, the
+  deployment list is tiles with a **+** to add and a **×** to remove, and the
+  `→ production` / `→ bench` buttons are gone from every version row — they
+  pointed a channel a batch could follow, and no batch in the database follows
+  one. Version rows went from 96 px to 78 px, so all seven fit on one screen.
+- **`creds_salt` is counted.** `derive_credentials` reads it directly instead of
+  interpolating it, so the one key whose loss cannot be recovered from at the
+  bench read as "needed by nobody". A version missing it now fails to publish
+  rather than failing mid-run, after the erase.
+
+## 2026-09-17 (the bench sets its own printer up)
+
+**A new bench no longer needs anyone to know how CUPS works.** The agent's
+status page now says what is missing and gives you the button that fixes it.
+
+- **The printer is found, matched and set up by the agent.** It names the
+  printer that is plugged in, matches its driver exactly, builds the queue, and
+  repairs a queue that is on the wrong driver. None of it needs a password.
+- **It refuses to guess.** CUPS offers five DYMO drivers that look plausible for
+  a LabelWriter 550 and only one that works; a queue on any of the others
+  accepts jobs, reports success and prints nothing. Measured, on a powered
+  printer, which is why the match is exact rather than "close enough".
+- **The one step it cannot do is named plainly**: install DYMO Connect for
+  Desktop once, with the brew command offered for copying. The application can
+  be deleted afterwards — the bench uses only the driver it leaves behind.
+- **The queue is built without being asked.** A printer that has a driver and
+  no queue gets one within ten seconds of being plugged in. A queue on the
+  wrong driver is still repaired by the button, not silently.
+- **A console nobody is using gives its port back.** Closing the tab used to
+  leave the serial port held until the agent was quit, and anything else
+  wanting that port was refused. After two idle minutes the agent closes it —
+  never during a mark, a print or a flash.
+- **LightBurn gets a button too**: not installed offers the download, installed
+  but silent offers to open it.
+- Everything the page shows is also served at `GET /ready`, so the bench page
+  and the status page cannot end up giving different advice.
+
+## 2026-09-17 (a deployment card you can read)
+
+- **The version's note is prose, under a label.** It was drawn in the caption
+  style — 11px uppercase mono — run together with the author and the date, so a
+  five-line paragraph looked like a heading nobody could place. It now says
+  **Note on this version** and reads as a sentence. The caption keeps the short
+  facts: who, when, and what changed.
+- **The description box fits what is in it.** Two fixed rows hid the second half
+  of every description behind an inner scrollbar with nothing to show it was
+  there. It grows to its content and stops at 14 rows.
+- **Name and Chip share a line**, the three permanent hint lines are ⓘ markers
+  on the labels, and **New version** moved down to the versions bar where it
+  acts. The card lost 68 px while showing 67 px more description.
+- **The page is two columns, and the wide one is the procedure.** The left
+  column used to be a picker for three deployments; they are tiles across the
+  top now, keeping the pills that say which version each channel runs. The
+  detail column went from 660 px to 864 px at a 1500 px window, which is the
+  difference between `Write factory image …` and the whole step with its
+  command and value. **The procedure also moved above firmware and berryware**,
+  which are one table row and one pill and were pushing 28 steps off-screen.
+- **A version row no longer repeats the note.** Seven versions of one deployment
+  open with the same sentence, so a clipped copy per row told them apart not at
+  all. The row keeps what changed; the note is on its hover and in full on the
+  card.
+
 ## 2026-09-17 (find the socket by plugging the device in)
 
 - **Assign socket… is a live list.** It opens even when nothing is plugged in,
