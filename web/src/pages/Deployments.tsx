@@ -13,6 +13,7 @@ import {
   getProjects,
   isAbortError,
   listDeployments,
+  publishDeploymentVersion,
   rejectDeploymentVersion,
   setDeploymentChannel,
   updateDeployment,
@@ -30,6 +31,13 @@ import { fmtWhen } from "../components/flasher/common";
 import { useStickyState } from "../useStickyState";
 
 const CHANNELS = ["production", "bench"];
+/** The three procedure kinds the API accepts (`DEPLOYMENT_KINDS` in
+ *  routers/flasher.py). The bench reads `kind`, never the name. */
+const KIND_OPTIONS = [
+  { value: "flash", label: "flash — programs the device" },
+  { value: "test", label: "test — judges the device" },
+  { value: "mark", label: "mark — engraves and labels it" },
+];
 
 export default function Deployments() {
   const dialog = useDialog();
@@ -176,6 +184,48 @@ export default function Deployments() {
     }
   };
 
+  /** Publish a draft from the timeline. The composer can publish too, but a
+   *  draft that was finished elsewhere — the API, another machine — had no
+   *  button here, and "open the editor to press Publish" is not a status
+   *  control. The server's gate is the same either way: it refuses without a
+   *  comment or with validation errors, and says which. */
+  const publishDraft = async (version: DeploymentVersionRow) => {
+    if (!selected) return;
+    if (!(await dialog.confirm(
+      `Publish v${version.version_no} of "${selected.name}"? It becomes the current version and is immutable from then on.`,
+      { title: "Publish version", tone: "ok", confirmLabel: "Publish" },
+    ))) return;
+    try {
+      await publishDeploymentVersion(version.id);
+      setReloadKey((k) => k + 1);
+      reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
+  /** What this procedure IS — flash, test or mark — decides which bench
+   *  offers it and which button it gets. Read from `kind`, never from the
+   *  name, so it has to be settable where the name is. */
+  const changeKind = async () => {
+    if (!selected) return;
+    const kind = await dialog.select(
+      `What kind of procedure is "${selected.name}"?`,
+      KIND_OPTIONS,
+      { title: "Deployment kind", confirmLabel: "Set kind" },
+    );
+    if (kind === null || kind === selected.kind) return;
+    try {
+      await updateDeployment(selected.id, {
+        name: selected.name, description: selected.description, chip: selected.chip,
+        kind, active: selected.active,
+      });
+      reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
   const discard = async (version: DeploymentVersionRow) => {
     if (!(await dialog.confirm(`Discard draft v${version.version_no}?`, {
       title: "Discard draft", tone: "danger", confirmLabel: "Discard",
@@ -260,6 +310,14 @@ export default function Deployments() {
                     <button type="button" className="btn btn-sm" onClick={editChip}>
                       {selected.chip || "set chip"}
                     </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={changeKind}
+                      title="flash: programs the device · test: judges it · mark: engraves and labels it. Decides which bench offers this procedure."
+                    >
+                      {KIND_OPTIONS.find((k) => k.value === selected.kind)?.label ?? selected.kind}
+                    </button>
                     {selected.kind === "test" ? (
                       <button
                         type="button"
@@ -332,6 +390,16 @@ export default function Deployments() {
                               : null}
                             {v.status === "draft" ? (
                               <>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-primary"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void publishDraft(v);
+                                  }}
+                                >
+                                  Publish
+                                </button>
                                 <button
                                   type="button"
                                   className="btn btn-sm"

@@ -3721,6 +3721,17 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
   justify-content: center;
   padding: 18vh 16px 16px;
   background: var(--scrim);
+  /* The page behind is locked while a modal is up, so a card taller than the
+     viewport — the version composer with a 28-step procedure — had its Publish
+     button below the fold and NOTHING scrolled. The backdrop scrolls instead. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* A wide card is a working surface, not a prompt: start it near the top so a
+   normal laptop viewport shows as much of it as possible. */
+.modal-backdrop:has(> .modal-card-wide) {
+  padding-top: 4vh;
 }
 
 .modal-card {

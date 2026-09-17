@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-09-17 (deployments can be published and re-kinded from the page)
+
+- **A draft version has a Publish button on the timeline.** Publishing lived
+  only inside the editor, so a draft finished anywhere else — the API, another
+  machine — had no status control at all. Same server gate: no comment or a
+  validation error still refuses, and says which.
+- **A deployment's kind is a button next to its chip** — flash, test or
+  mark. The bench reads the kind, never the name, and it could not be changed
+  after creation.
+- **The version editor scrolls.** A procedure with 28 steps made the card
+  taller than the window, the page behind it is locked while a modal is up,
+  and the Publish button sat below the fold with nothing able to scroll to
+  it. Every modal's backdrop now scrolls, and a wide card starts near the top.
+- **The flashing bench keeps a heartbeat to the agent** and says whether it
+  is running, so the agent's own window no longer reports that no bench page
+  has ever connected.
+
 ## 2026-09-17 (the laser marks)
 
 **The AtomStack M4 marks from the platform for the first time.** Since the
