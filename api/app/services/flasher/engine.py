@@ -196,6 +196,7 @@ class RunEngine:
                 {
                     "version_id": link.file_version.id,
                     "filename": link.file_version.file.filename,
+                    "kind": link.file_version.file.kind or "berryware",
                     "size_bytes": link.file_version.size_bytes,
                     "sha256": link.file_version.sha256,
                 }
@@ -929,9 +930,12 @@ class RunEngine:
         What is engraved comes from `_identity_value`, the same rule the label
         uses, so a unit that gets both carries one string.
         """
-        files = self.spec["files"]
+        # Only the ARTWORK the version pins is a candidate: a version that
+        # both configures and marks a unit pins its berryware beside the
+        # drawing, and a .be file is not something to hand to a laser.
+        files = [f for f in self.spec["files"] if f.get("kind", "berryware") == "artwork"]
         if not files:
-            raise StepFailed("mark_laser: this version pins no template file")
+            raise StepFailed("mark_laser: this version pins no artwork")
         wanted = str(protocol.subst(step.get("template", ""), self.vars))
         if wanted:
             match = next((f for f in files if f["filename"] == wanted), None)
@@ -1018,9 +1022,11 @@ class RunEngine:
         """The device fetches every pinned file version from THIS platform over
         HTTP (UrlFetch), then the size is verified against the stored byte
         count — the V2 config.py loop, with the platform as the file host."""
-        files = self.spec["files"]
+        # The device gets the BERRYWARE only. Marking artwork pinned beside it
+        # is the bench's business, not the device's.
+        files = [f for f in self.spec["files"] if f.get("kind", "berryware") == "berryware"]
         if not files:
-            raise StepFailed("download_files: the script version pins no device files")
+            raise StepFailed("download_files: the script version pins no berryware")
         if not str(self.vars.get("base_url", "")):
             raise StepFailed(
                 "download_files: no address the device could fetch from — tried "

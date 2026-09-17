@@ -160,6 +160,29 @@ All taken on 2026-09-17, on this printer, so nobody has to take them again.
    must cancel its own job** — otherwise the next roll change prints a stale
    serial onto whatever unit is in the fixture. `Agent._print` does that.
 
+## Seeing the label before it prints
+
+The `print_label` step in the Deployments editor draws the label the agent
+will produce (the marking station deliberately does not): `web/src/flasher/
+label.ts` is a line-for-line mirror of the agent's `code128` and `label_pdf`,
+verified module-for-module against it. The picture is the roll at its true
+proportions, the printable area dashed inside it, the symbol turned when the
+step says so, and the value under it; the caption gives the millimetres of
+barcode, and a value that does not fit is refused under the picture with the
+same sentence the agent would answer.
+
+Two limits, both deliberate:
+
+* **The printable area is the printer's statement.** It is read from the
+  agent's `/printers` when the page runs on the bench's own origin. Anywhere
+  else the label is drawn at the nominal size the roll name encodes
+  (`w72h154` is 72 × 154 pt) and the caption says the printable area is on
+  the bench's printer. The fit check is then against the nominal size, so a
+  value within about 2 mm of the edge is only settled on the bench.
+* **The picture is not the job.** The agent lays the real label out from the
+  PPD on the day; the preview cannot disagree with it about the symbol, but it
+  cannot know which roll is loaded either. That stays the operator's answer.
+
 ## Checking a label without using one
 
 The printer's own filter chain runs from the command line, so a label can be

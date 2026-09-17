@@ -128,6 +128,11 @@ Full measurements in
 [reference/label-printing.md](../../../../docs/reference/label-printing.md);
 the reasoning is [0022](../../../../docs/decisions/0022-labels-are-generated-by-the-bench-agent.md).
 
+- **The browser DRAWS the label the agent lays out** (`web/src/flasher/label.ts`,
+  2026-09-17): the Code 128 table, `QUIET`, the 1 mm pad, the 22 % text rule
+  and the 35 % gap are copied there so the step editor and the bench can show
+  the label and refuse a value that does not fit before `/print` is called.
+  A change to `code128` or `label_pdf` here is a change to that file too.
 - **The agent LAYS THE LABEL OUT, and that is deliberate.** The laser's artwork
   is a versioned file the platform serves, so the page owns it and this file
   never reads it. A label has no artwork: its geometry is in the printer's PPD,
@@ -195,6 +200,25 @@ the page saw nothing wrong, and a run failed part-way with the agent's own 404
   The direction looks backwards until you remember which file has to stand
   alone. One implementation of the UDP protocol and of the dialog guards, which
   were measured against a real LightBurn and are not guesses.
+- **ONE socket may hold the UDP reply port, and the flag that says a job is
+  running must be cleared by a `finally` nothing can jump over.** `SO_REUSEADDR`
+  does NOT let two sockets share a UDP port on macOS: the second `bind` gets
+  errno 48 (measured 2026-09-17). `health()` and a mark each build a
+  `LightBurn`, so they take `udp_lock` — a poll that finds `busy` set answers
+  from the flag instead of binding, and the check and the bind are one step.
+  This is worth a named lock because the cost was silent: the client used to be
+  built OUTSIDE `_run`'s `try`, so the losing thread died before the `finally`
+  that clears `busy`, and the agent then refused every later mark with "the
+  agent is already marking" until it was restarted — one good mark per launch
+  (runs 6442-6444, 2026-09-17). **Build nothing that can fail before the `try`
+  whose `finally` releases a flag**, and give every worker thread the catch-all
+  `except Exception` that `_run`, `_print` and `_esp` now have. The fingerprint
+  of a thread that died early is a job stuck at `{"lines": [], "done": false}`.
+- **A held request's deadline belongs to the CLIENT, above the server's.**
+  `GET /monitor?wait=N` is held for up to N seconds, so the page asks for
+  `N + 5` before it aborts (`monitorLines` in `web/src/flasher/benchAgent.ts`).
+  Both sides once expired at 10 s, and every quiet device produced "the bench
+  agent did not answer within 10s" from a poll that was working.
 - **The window is tkinter, and the LAUNCHER has to pick a Python that has it.**
   `command -v python3` often lands on Homebrew's, which ships without tkinter
   (measured 2026-09-16: `No module named '_tkinter'`), while macOS's own

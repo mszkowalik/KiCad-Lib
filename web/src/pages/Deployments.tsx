@@ -67,6 +67,8 @@ export default function Deployments() {
   const [composing, setComposing] = useState(false);
   const [diffFor, setDiffFor] = useState<number | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  /** The draft this page just minted, which `VersionView` opens editing. */
+  const [autoEditId, setAutoEditId] = useState<number | null>(null);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -168,6 +170,7 @@ export default function Deployments() {
       // the pane to the live version sees an id that is not in the list yet
       // and resets it.
       await refetch();
+      setAutoEditId(made.id);
       setVersionId(made.id);
       setReloadKey((k) => k + 1);
     } catch (err) {
@@ -430,7 +433,9 @@ export default function Deployments() {
                             </div>
                             <div className="version-changes muted">
                               {v.changes?.summary ?? ""}
-                              {v.files_label ? ` · berryware ${v.files_label}` : ""}
+                              {v.files_kind === "artwork"
+                                ? ` · artwork${v.file_count > 1 ? ` ×${v.file_count}` : ""}`
+                                : v.files_label ? ` · berryware ${v.files_label}` : ""}
                             </div>
                             {/* The note is NOT repeated here. Seven versions of
                                 one deployment share an opening sentence, so a
@@ -650,6 +655,8 @@ export default function Deployments() {
                     versionId={versionId}
                     onDiff={setDiffFor}
                     reloadKey={reloadKey}
+                    autoEdit={versionId === autoEditId}
+                    onEditAsNew={() => void newVersion()}
                     meta={meta}
                     onChanged={() => void refetch()}
                     onGone={() => {

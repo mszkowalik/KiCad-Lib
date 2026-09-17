@@ -4119,22 +4119,34 @@ export interface DeviceFileVersionRow {
   comment: string;
   created_by: string;
   created_at: string | null;
+  /** Not UTF-8 text: `content` is empty and the bytes are at `deviceFilePath`. */
+  binary: boolean;
   content?: string;
+  /** What pins this exact version — the list endpoint fills it in. A version
+   *  with neither is the one Delete may take. */
+  used_by?: { versions: number; bundles: number };
 }
 
+/** One file of the project pool. `kind` says what it IS: `berryware` (the
+ *  device downloads it) or `artwork` (a mark version engraves it). */
 export interface DeviceFileRow {
   id: number;
   filename: string;
   description: string;
+  kind: string;
   current_version_id: number | null;
+  /** any version of it is pinned by a deployment version or carried by a bundle */
+  used: boolean;
   versions: DeviceFileVersionRow[];
 }
 
-/** One berryware file pinned inside a deployment version. */
+/** One device file pinned inside a deployment version — berryware or artwork. */
 export interface DeploymentFileRow {
   device_file_version_id: number;
   device_file_id: number;
   filename: string;
+  kind: string;
+  binary: boolean;
   version_no: number;
   status: string;
   size_bytes: number;
@@ -4182,6 +4194,9 @@ export interface DeploymentVersionRow {
   created_at: string | null;
   image_count: number;
   file_count: number;
+  /** what the pinned files are, as one word for a label: "berryware",
+   *  "artwork", "mixed" or "" when nothing is pinned */
+  files_kind: string;
   step_count: number;
   /** true when the procedure has an `lte_sim_pin` step — the bench shows its
    *  SIM PIN box only then. */
@@ -4232,6 +4247,8 @@ export interface DeploymentRow {
 export interface DeploymentVersionDetail extends DeploymentVersionRow {
   deployment: {
     id: number; name: string; chip: string; project_id: number;
+    /** "flash" | "test" | "mark" — what an empty files card says is missing */
+    kind: string;
     /** The deployment's CURRENT default set. A published version keeps the one
      *  it was made with, so these can differ and the card says when they do. */
     param_set_id: number | null;
@@ -4672,6 +4689,13 @@ export function listDeviceFiles(projectId: number, signal?: AbortSignal): Promis
   return request(`/api/flasher/projects/${projectId}/device-files`, { signal });
 }
 
+/** The bytes of a PUBLISHED file version — what the device downloads and what
+ *  the pool's Download link opens. Unauthenticated on purpose (the device
+ *  sends no headers), so it needs no credentials to link to. */
+export function deviceFilePath(versionId: number, filename: string): string {
+  return `${API_URL}/api/flasher/files/${versionId}/${encodeURIComponent(filename)}`;
+}
+
 export function createDeviceFileVersion(
   projectId: number,
   body: { filename: string; description?: string; content: string; comment?: string; created_by?: string },
@@ -4797,24 +4821,39 @@ export function getDeviceFileVersionUsage(
 
 export interface ImportedFile {
   filename: string;
+  device_file_id: number;
   device_file_version_id: number;
+  kind: string;
   version_no: number;
   state: "unchanged" | "changed" | "new";
   size_bytes: number;
 }
 
-/** Import a whole berryware folder: unchanged files are reused, only real
- *  content changes mint a version. Returns the resolved set to pin. */
+/** Import a whole berryware folder, or upload ONE file — the same path:
+ *  unchanged bytes are reused, only a real change mints a version, and an
+ *  upload publishes. Returns the resolved set to pin.
+ *
+ *  `make_bundle: false` for a single file, so an artwork revision does not
+ *  mint a one-file bundle. `kind: "artwork"` is what the marking step's
+ *  upload asks for, and the server refuses anything that is not a LightBurn
+ *  file. `replace_file_id` makes the upload a new version of THAT file, under
+ *  its name, whatever the picked file was called. */
 export function importDeviceFiles(
   projectId: number,
   files: File[],
-  meta: { label?: string; created_by?: string; publish?: boolean } = {},
+  meta: {
+    label?: string; created_by?: string; publish?: boolean;
+    make_bundle?: boolean; kind?: string; replace_file_id?: number;
+  } = {},
 ): Promise<{ label: string; bundle: BerryBundleRow | null; files: ImportedFile[]; changed: number }> {
   const form = new FormData();
   for (const f of files) form.append("files", f);
   if (meta.label) form.append("label", meta.label);
   if (meta.created_by) form.append("created_by", meta.created_by);
   form.append("publish", String(meta.publish ?? true));
+  if (meta.make_bundle === false) form.append("make_bundle", "false");
+  if (meta.kind) form.append("kind", meta.kind);
+  if (meta.replace_file_id) form.append("replace_file_id", String(meta.replace_file_id));
   return request(`/api/flasher/projects/${projectId}/device-files/import`, {
     method: "POST",
     body: form,

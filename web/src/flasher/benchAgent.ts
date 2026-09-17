@@ -416,7 +416,15 @@ export class MarkAgent {
     since: number,
     waitS = 0,
   ): Promise<{ open: boolean; seen: number; lines: string[] }> {
-    const r = await this.call(`/monitor?since=${since}&wait=${waitS}`);
+    // The agent holds this request for `waitS`, so the client deadline must sit
+    // ABOVE it. At the default 10 s both sides expired together and any quiet
+    // device produced "the bench agent did not answer within 10s" on a poll
+    // that was working correctly (run 6442, 2026-09-17).
+    const r = await this.call(
+      `/monitor?since=${since}&wait=${waitS}`,
+      undefined,
+      Math.max(10000, waitS * 1000 + 5000),
+    );
     return {
       open: Boolean(r.open),
       seen: Number(r.seen ?? since),

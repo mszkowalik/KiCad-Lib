@@ -205,11 +205,14 @@ class LightBurn:
     def wait_for_idle(self, timeout: float = 300.0, poll: float = 1.0, settle: float = 2.0) -> float:
         """Poll STATUS until the job stops reporting busy.
 
-        UNVERIFIED against a real laser (none was connected when this was
-        written): with no device attached STATUS answers OK immediately, so this
-        returns at once and proves nothing. With a laser, LightBurn is
-        documented to answer '!' while running. Until that is confirmed on the
-        bench, treat a completed mark as operator-confirmed, not machine-proven.
+        VERIFIED on the bench 2026-09-17, with the M4 attached and marking:
+        STATUS answers '!' for every poll while the job runs and 'OK' when it
+        ends, so the time this returns is the real engraving time (9.7 s for the
+        dongle side artwork, twice). A completed mark is machine-proven.
+
+        The old caveat still holds for the empty bench: with NO laser attached
+        STATUS answers OK at once, so this returns immediately and proves
+        nothing. `laser_usb()` is what says a machine is there.
         """
         t0 = time.time()
         # Give the job a moment to actually start before believing "idle".
@@ -1367,10 +1370,19 @@ class Agent:
         self.monitor: Monitor | None = None
         self.esptool_version: str | None = None
         self.lock = threading.Lock()
-        # One health probe at a time, and its answer kept. Two probes would bind
-        # the reply port (19841) twice, and with SO_REUSEADDR either can take
-        # the other's datagram.
+        # One health probe at a time, and its answer kept. Two probes would try
+        # to bind the reply port (19841) twice, and the second one fails.
         self.health_lock = threading.Lock()
+        # WHO MAY BIND THE REPLY PORT. Measured 2026-09-17: SO_REUSEADDR does
+        # NOT let two sockets share a UDP port on macOS — the second bind gets
+        # errno 48. A health poll holds 19841 for about half a second, so a mark
+        # that started inside that window died on the bind, and because the
+        # client was built outside `_run`'s try block the thread died with it
+        # and left `busy` set for good ("the agent is already marking" until a
+        # restart; run 6443, 2026-09-17). A poll that finds a mark running says
+        # so without touching LightBurn, so this is only ever held for the
+        # moment it takes to build a client, never for a whole job.
+        self.udp_lock = threading.Lock()
         self.last_health: dict = {}
         self.last_health_at = 0.0
         # When a BENCH PAGE last spoke to us. The operator's other half of the
@@ -1397,15 +1409,16 @@ class Agent:
         """PING + STATUS, except while a job is running.
 
         The page polls this every couple of seconds, and a mark holds its own
-        socket on the reply port (19841) for the whole job. A second socket
-        bound there with SO_REUSEADDR can take a reply meant for the first, so a
-        poll could steal the STATUS that `wait_for_idle` is waiting for and end
-        the job early. While we are marking we already know the answer, so say
-        it without touching LightBurn.
+        socket on the reply port (19841) for the whole job. While we are marking
+        we already know the answer, so say it without touching LightBurn.
+
+        THE BUSY CHECK AND THE BIND ARE ONE STEP, under `udp_lock`. Reading
+        `busy` first and binding after left a window the width of a poll: a mark
+        that began in it hit errno 48 and wedged the agent (see `udp_lock`).
         """
-        if self.busy:
-            return {"responsive": True, "busy": True, "laser_usb": laser_usb()}
-        with self.health_lock:
+        with self.health_lock, self.udp_lock:
+            if self.busy:
+                return {"responsive": True, "busy": True, "laser_usb": laser_usb()}
             lb = LightBurn(host=self.lb_host)
             try:
                 alive = lb.ping()
@@ -1450,9 +1463,16 @@ class Agent:
         log = Log()
         log.add = job.add  # type: ignore[method-assign]
         result: dict = {"status": "fail"}
-        lb = LightBurn(host=self.lb_host, log=log)
+        # INSIDE the try, both of them. Built outside it, a failure here — the
+        # reply port already bound, a job directory that cannot be written —
+        # killed the thread before the `finally` that clears `busy`, so the
+        # agent refused every later mark and logged nothing at all. The job sat
+        # at `{"lines": [], "done": false}` forever, which is the fingerprint.
+        lb: LightBurn | None = None
         path = self.job_dir / f"{safe}-{int(time.time())}.lbrn2"
         try:
+            with self.udp_lock:
+                lb = LightBurn(host=self.lb_host, log=log)
             lb.require_responsive("before starting")
             # Before the file, not after: loading a job under one profile and
             # firing it under another is the mistake this prevents.
@@ -1483,8 +1503,16 @@ class Agent:
         except (MarkError, DialogBlocked, OSError) as exc:
             result["error"] = str(exc)
             job.add("err", str(exc))
+        except Exception as exc:  # noqa: BLE001 — a bug must surface, not vanish
+            # What `_esp` has always done. Without it a bug in here was silent
+            # twice over: no line in the job, no line in the agent log, and a
+            # bench that only said "the agent is already marking".
+            result["error"] = f"{type(exc).__name__}: {exc}"
+            job.add("err", result["error"])
+            say(f"marking {safe} failed: {result['error']}")
         finally:
-            lb.close()
+            if lb is not None:
+                lb.close()
             result["job_file"] = str(path)
             job.result = result
             job.done = True
@@ -1702,6 +1730,13 @@ class Agent:
             job.add("err", str(exc))
             if cups_job:
                 # Never leave it queued. See the docstring.
+                _lp(["cancel", cups_job])
+                job.add("app", f"cancelled {cups_job} so it cannot print later")
+        except Exception as exc:  # noqa: BLE001 — same rule as `_run` and `_esp`
+            result["error"] = f"{type(exc).__name__}: {exc}"
+            job.add("err", result["error"])
+            say(f"printing {value} failed: {result['error']}")
+            if cups_job:
                 _lp(["cancel", cups_job])
                 job.add("app", f"cancelled {cups_job} so it cannot print later")
         finally:

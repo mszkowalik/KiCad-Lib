@@ -53,6 +53,10 @@ function writeStationCount(n: number): number {
 export default function FlashBench() {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [runs, setRuns] = useState<RunInfo[]>([]);
+  /** Which project `runs` belongs to. An empty list cannot say whether it is
+   *  "no batches" or "not loaded yet", and the batch default must wait for the
+   *  first and not the second. */
+  const [runsFor, setRunsFor] = useState<number | null>(null);
   const [deployments, setDeployments] = useState<DeploymentRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [projectId, setProjectId] = useStickyState<number | null>("bench.project", null);
@@ -60,9 +64,12 @@ export default function FlashBench() {
    *  beside the batch one, which made "batch run" with no batch a state the
    *  page had to warn about; now the two are one control and that state cannot
    *  be expressed (user decision 2026-09-17). */
-  // The batch is deliberately NOT remembered (user decision 2026-09-16). A
-  // remembered batch is the one an operator programs a tray into by accident
-  // the next morning; picking it is one click and it has to be a decision.
+  // The batch is not remembered across sessions; it is DEFAULTED to the
+  // project's latest batch every time the project is chosen (user decision
+  // 2026-09-17, replacing the 2026-09-16 rule that preselected none — the
+  // bench programs the newest batch all day, and an empty box made every
+  // session begin with the same click). Clearing it to "bench trial" sticks
+  // until the project is picked again.
   const [runId, setRunId] = useState<number | null>(null);
   const [versionId, setVersionId] = useStickyState<number | null>("bench.versionv2", null);
   const [simPin, setSimPin] = useState("");
@@ -125,6 +132,7 @@ export default function FlashBench() {
     Promise.all([getRuns(validProject, ac.signal), listDeployments(validProject, ac.signal)])
       .then(([r, d]) => {
         setRuns(r);
+        setRunsFor(validProject);
         setDeployments(d);
       })
       .catch((err) => {
@@ -171,6 +179,25 @@ export default function FlashBench() {
     const known = deployments.some((d) => d.versions.some((v) => v.id === versionId));
     if (!known) setVersionId(configVersionId);
   }, [validProject, deployments, configVersionId, versionId, setVersionId]);
+
+  /** The project's LATEST batch: newest run date, then newest id. Status is
+   *  not consulted — the newest batch is the one being built, whatever its
+   *  row says, and a finished one is one click away from "bench trial". */
+  const latestRunId = useMemo(() => {
+    const sorted = [...runs].sort((a, b) =>
+      (b.run_date || "").localeCompare(a.run_date || "") || b.id - a.id);
+    return sorted[0]?.id ?? null;
+  }, [runs]);
+  // Applied ONCE per project, like the version default above, so clearing the
+  // batch by hand stays cleared. Waits for THIS project's batches for the same
+  // reason the version default waits for its deployments.
+  const batchDefaultedFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (!validProject || runsFor !== validProject) return;
+    if (batchDefaultedFor.current === validProject) return;
+    batchDefaultedFor.current = validProject;
+    setRunId(latestRunId);
+  }, [validProject, runsFor, latestRunId]);
 
   const validRun = runs.some((r) => r.id === runId) ? runId : null;
   const batch = runs.find((r) => r.id === validRun) ?? null;
@@ -250,9 +277,11 @@ export default function FlashBench() {
                 setRunId(null);
                 setVersionId(null);
                 // Picking a project — even the same one again — asks for its
-                // default back. Only this control clears the mark, so a
-                // deliberate "batch's assigned version" still sticks.
+                // defaults back: the config version and the latest batch.
+                // Only this control clears the marks, so a deliberate
+                // "batch's assigned version" or "bench trial" still sticks.
                 defaultedFor.current = null;
+                batchDefaultedFor.current = null;
               }}
             >
               {projects.map((p) => (
@@ -326,8 +355,9 @@ export default function FlashBench() {
           {chosenVersion ? (
             <p className="muted">
               {chosenVersion.d.name} v{chosenVersion.v.version_no} · {chosenVersion.v.image_count}{" "}
-              image(s) · {chosenVersion.v.file_count} berryware files
-              {chosenVersion.v.files_label ? ` (${chosenVersion.v.files_label})` : ""} ·{" "}
+              image(s) · {chosenVersion.v.file_count}{" "}
+              {chosenVersion.v.files_kind === "artwork" ? "artwork" : chosenVersion.v.files_kind === "mixed" ? "" : "berryware"} file(s)
+              {chosenVersion.v.files_label && chosenVersion.v.files_kind !== "artwork" ? ` (${chosenVersion.v.files_label})` : ""} ·{" "}
               {chosenVersion.v.step_count} steps
             </p>
           ) : null}

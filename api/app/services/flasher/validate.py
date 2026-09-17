@@ -192,15 +192,22 @@ def check(db, version: M.DeploymentVersion) -> dict:
         if step.get("op") == "esp_connect":
             available |= {"mac", "serial", "chip"}
 
-    # 5. Downloads: need pinned files, and autoexec.be must come last.
-    if "download_files" in ops and not version.files:
+    # 5. Downloads: need pinned BERRYWARE, and autoexec.be must come last. The
+    #    pool holds artwork too, and the engine hands the device only the
+    #    berryware, so the rules here look at the same subset.
+    berry = [f for f in version.files if (f.file_version.file.kind or "berryware") == "berryware"]
+    artwork = [f for f in version.files if f.file_version.file.kind == "artwork"]
+    if "download_files" in ops and not berry:
         errors.append("the procedure downloads files, but this version pins no berryware")
-    if version.files and "download_files" not in ops and "mark_laser" not in ops:
+    if berry and "download_files" not in ops:
         warnings.append(
-            f"{len(version.files)} berryware files are pinned but the procedure never "
+            f"{len(berry)} berryware files are pinned but the procedure never "
             "downloads them")
-    if version.files:
-        ordered = sorted(version.files, key=lambda f: f.position)
+    if artwork and "mark_laser" not in ops:
+        warnings.append(
+            f"{len(artwork)} artwork file(s) are pinned but the procedure never marks")
+    if berry:
+        ordered = sorted(berry, key=lambda f: f.position)
         names = [f.file_version.file.filename for f in ordered]
         if "autoexec.be" in names and names[-1] != "autoexec.be":
             errors.append(
@@ -220,23 +227,25 @@ def check(db, version: M.DeploymentVersion) -> dict:
             "cannot be attributed to a device if it fails")
 
     # 7. Laser marking. The template is a pinned file like berryware is, so the
-    #    version still answers "what did this unit get" on its own.
-    pinned_names = [f.file_version.file.filename for f in version.files]
+    #    version still answers "what did this unit get" on its own — and it
+    #    must be ARTWORK: the step editor only offers .lbrn2 files, and a
+    #    template typed by hand that names a script is caught here.
+    art_names = [f.file_version.file.filename for f in artwork]
     for idx, step in enumerate(steps):
         if step.get("op") != "mark_laser":
             continue
-        if not version.files:
-            errors.append(f"step {idx + 1} marks, but this version pins no template file")
+        if not artwork:
+            errors.append(f"step {idx + 1} marks, but this version pins no artwork (.lbrn2)")
             continue
         named = str(step.get("template") or "")
-        if named and named not in pinned_names:
+        if named and named not in art_names:
             errors.append(
-                f"step {idx + 1} names template {named!r}, which this version does not pin "
-                f"({', '.join(pinned_names)})")
-        elif not named and len(version.files) > 1:
+                f"step {idx + 1} names template {named!r}, which is not artwork this version "
+                f"pins ({', '.join(art_names)})")
+        elif not named and len(artwork) > 1:
             errors.append(
                 f"step {idx + 1} does not name a template, but this version pins "
-                f"{len(version.files)}: {', '.join(pinned_names)}")
+                f"{len(artwork)}: {', '.join(art_names)}")
         if not step.get("start", True):
             warnings.append(
                 f"step {idx + 1} loads the job but never starts it — the operator has to press "

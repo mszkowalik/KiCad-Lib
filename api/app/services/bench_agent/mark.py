@@ -23,11 +23,10 @@ with the failure modes that were measured against LightBurn 1.7.03 on
     listener binds the wildcard address, so a remote host on the LAN can drive
     it (verified against 192.168.200.46, not just loopback).
 
-NOT YET VERIFIED (no laser was connected): that `STATUS` reports `!` while a job
-is actually running. The wait_for_idle() loop below assumes it does — that is
-the documented behaviour ("`!` if busy") and it is the only completion signal
-the interface offers. Confirm it with the laser attached before trusting a run
-result, and see the note in wait_for_idle().
+VERIFIED 2026-09-17 with the M4 attached and marking: `STATUS` answers `!` for
+every poll while a job runs and `OK` when it ends, so wait_for_idle() measures
+the real engraving time rather than assuming one. It stays true that an EMPTY
+bench answers OK at once — that is the absent laser, not a finished job.
 
 Usage:
     python3 mark.py --serial 588C812F7474 \
@@ -43,6 +42,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 

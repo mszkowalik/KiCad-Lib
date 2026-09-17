@@ -79,10 +79,24 @@ text applied to another.
   3. **Inherit by omission still holds.** A PATCH sends only what changed; a
      section you did not touch must stay `undefined`, or a berryware bump
      becomes a full rewrite of the version.
-  4. **Firmware and berryware have no controls of their own**, and never did —
-     a `flash` step picks its images and a `download_files` step its bundle,
-     inside `StepEditor`. Those two cards are summaries of what the procedure
-     pinned.
+  4. **Firmware, berryware and artwork have no controls of their own**, and
+     never did — a `flash` step picks its images, a `download_files` step its
+     bundle and a `mark_laser` step picks or UPLOADS its artwork, inside
+     `StepEditor`. The Firmware and Files cards are summaries of what the
+     procedure pinned. An artwork change is ONE patch carrying `steps` and
+     `file_version_ids` together (`changeArtwork` in `VersionView`), because a
+     step naming a file the version does not pin is what the gate refuses.
+  5. **The procedure opens read-only and `Edit procedure` turns editing on**
+     (user request 2026-09-17). A published version offers `Edit as new
+     version`, which mints the draft and opens it editing (`autoEdit`, set by
+     the page for the draft it just made — `New version` lands editing too).
+     Edits still commit as they are made; typed ones are debounced
+     (`editSteps`, 600 ms) and `flushSteps` runs before a pin change, before
+     publish and when editing ends. Every control is TYPED: a `seconds` field
+     is an `SiInput`, a count a `NumberInput`, a flag a `CheckField`, a value
+     the value/parameter toggle; command, capture and image lists are
+     numbered rows with ↑ ↓ ×. Do not add a Save button — there is nothing
+     it would save that is not already saved.
 - **Discarding a draft DELETES it; rejecting keeps it.** `DELETE
   /deployment-versions/{id}` removes a draft nothing has used, because a
   version minted by one click and looked at must not leave a rejected row
@@ -95,11 +109,35 @@ text applied to another.
   definition of a payload (fingerprints, diffs and bundle identity all derive
   from it) — the step editor only puts the controls where the work happens.
 - **Berryware reads as a BUNDLE, not a file list** (user feedback 2026-07-30).
-  The version view and the composer lead with one pill — bundle name + file
-  count, green for a named bundle and amber for an unnamed ad-hoc set — and put
-  the file table behind a Show-files toggle. Deleting an artifact goes through
-  the API's usage guard; surface the 409 text, never pre-filter in the browser
-  (the backend knows every reference).
+  The version view leads with one pill — bundle name + file count, green for a
+  named bundle and amber for an unnamed ad-hoc set — and puts the file table
+  behind a Show-files toggle. **The card is titled by `files_kind`** —
+  Berryware, Artwork or Files — and artwork gets a count, not a bundle pill;
+  the diff, the timeline line and the bench summary read the same field
+  (2026-09-17, after a mark version's drawing was labelled berryware).
+  Deleting an artifact goes through the API's usage guard; surface the 409
+  text, never pre-filter in the browser (the backend knows every reference).
+- **A `print_label` step DRAWS its label** (`LabelPreview`, 2026-09-17), from
+  `flasher/label.ts` — a mirror of the agent's `code128` and `label_pdf`, same
+  table, quiet zone, padding, text size and gap. The agent still prints; this
+  only shows what it will print and says a value does not fit before the job
+  is queued. It is drawn in the STEP only — the marking station shows no
+  picture (user decision 2026-09-17). **Change the agent's layout and change the mirror in the same
+  commit.** The roll's printable area comes from the agent (`listPrinters`)
+  when it answers, which it does only from the bench's own origin — on a dev
+  server the CORS refusal is expected and the preview falls back to the
+  roll's nominal size from its name (`w72h154` = 72 × 154 pt) and says so in
+  the caption. Never guess a margin.
+- **The pool UPLOADS, it never pastes** (`DeviceFilesPanel`, user decision
+  2026-09-17). One `FilePick` on the toolbar (kind by extension), `Upload` on
+  an ARTWORK row only (`replace_file_id`, so the row keeps its name), nothing
+  on a berryware row — the Bundles tab's folder import is that update path.
+  The eye opens `FilePreview`, a popup with the LightBurn thumbnail
+  (`lbrnThumbnail` in `common.tsx`, also drawn in the marking step) and the
+  full text; a binary gets its size and Download. The row's × deletes the
+  NEWEST version and the server's 409 is the guard; the `Used` column prints
+  the same join before the click. **`components/FilePick.tsx` is the shared
+  file button** — never write another `<input type="file">`.
 - **The BATCH is the only mode control, and "no batch" is the bench trial**
   (user decision 2026-09-17). There used to be a `batch run` / `bench trial`
   dropdown beside the batch one, which made "batch run with no batch picked" a
@@ -123,6 +161,18 @@ text applied to another.
   because a programming run erases the device before it writes. Whatever else
   gets this, keep the once-per-device arm: a retry loop on a failing unit is
   the failure mode it exists to prevent.
+- **A VERDICT BELONGS TO THE DEVICE THAT EARNED IT** (user report 2026-09-17).
+  PASS, FAIL and ABORTED used to survive a device swap — `syncPort` only ever
+  promoted `empty` to `ready` — so the next unit arrived under the last one's
+  result. A third arm beside the marking read and the automatic start clears
+  the verdict, the step label, the progress, the engraved/printed readouts and
+  the run link when the NEXT device ARRIVES, not when the finished one is taken
+  out: the operator still reads PASS with the part in their hand. Both benches
+  get it, because both are `BenchStation`. **The log is NOT cleared** — it is
+  the station's record and a failure is usually read after the part is out — so
+  a separator line marks where one device ends and the next begins. The arm is
+  consumed only when the reset actually runs, so a verdict that lands while a
+  device is already in the socket still clears on the next arrival.
 - **The socket picker WATCHES, because a port name identifies nothing**
   (`SocketPicker.tsx`, user request 2026-09-17). Four identical CH340s give
   four `/dev/cu.usbserial-*` names an operator cannot tell apart, so the picker

@@ -290,10 +290,47 @@ def _file_version_json(v: M.DeviceFileVersion, with_content: bool = False) -> di
         "id": v.id, "version_no": v.version_no, "status": v.status,
         "sha256": v.sha256, "size_bytes": v.size_bytes, "comment": v.comment,
         "created_by": v.created_by, "created_at": _iso(v.created_at),
+        "binary": bool(v.is_binary),
     }
     if with_content:
-        out["content"] = v.content
+        # A binary version has no text to show; the bytes are at
+        # /files/{id}/{filename}, which is what the preview's Download uses.
+        out["content"] = "" if v.is_binary else v.content
     return out
+
+
+# The two kinds of file the pool holds, and how a filename lands in one of them
+# when nothing says otherwise. A marking template is a LightBurn project and
+# nothing else has ever been artwork, so the extension is the rule; the
+# marking step's own upload control asks for `artwork` outright and is
+# refused anything that is not an .lbrn/.lbrn2 (user decision 2026-09-17).
+DEVICE_FILE_KINDS = ("berryware", "artwork")
+ARTWORK_EXTENSIONS = (".lbrn", ".lbrn2")
+
+
+def _kind_for(filename: str, asked: str = "") -> str:
+    name = filename.lower()
+    is_art = name.endswith(ARTWORK_EXTENSIONS)
+    if asked:
+        if asked not in DEVICE_FILE_KINDS:
+            raise HTTPException(400, f"kind must be one of {', '.join(DEVICE_FILE_KINDS)}")
+        if asked == "artwork" and not is_art:
+            raise HTTPException(
+                400, f"{filename} is not a LightBurn file — a marking template must be "
+                     "an .lbrn2 (or .lbrn)")
+        return asked
+    return "artwork" if is_art else "berryware"
+
+
+def _decode_upload(raw: bytes) -> tuple[str, bytes | None]:
+    """Text, LF-normalised, or the bytes untouched when the upload is not
+    UTF-8 text. A NUL byte is the tell for a binary that happens to decode."""
+    if b"\x00" not in raw:
+        try:
+            return _normalise_text(raw.decode("utf-8")), None
+        except UnicodeDecodeError:
+            pass
+    return "", raw
 
 
 def _normalise_text(raw: str) -> str:
@@ -310,15 +347,42 @@ def _normalise_text(raw: str) -> str:
 
 @router.get("/projects/{project_id}/device-files")
 def list_device_files(project_id: int, db: Session = Depends(get_db)):
+    """The pool, with what USES each version: how many deployment versions pin
+    it and how many bundles carry it. A version nobody uses is the one the
+    Delete button may take; the delete endpoint still decides, this only lets
+    the list say so up front."""
     rows = (
         db.query(M.DeviceFile).filter(M.DeviceFile.project_id == project_id)
         .order_by(M.DeviceFile.filename).all()
     )
+    pins = dict(
+        db.query(M.DeploymentFile.device_file_version_id, func.count())
+        .join(M.DeviceFileVersion,
+              M.DeviceFileVersion.id == M.DeploymentFile.device_file_version_id)
+        .join(M.DeviceFile, M.DeviceFile.id == M.DeviceFileVersion.device_file_id)
+        .filter(M.DeviceFile.project_id == project_id)
+        .group_by(M.DeploymentFile.device_file_version_id).all()
+    )
+    bundled = dict(
+        db.query(M.BerryBundleFile.device_file_version_id, func.count())
+        .join(M.DeviceFileVersion,
+              M.DeviceFileVersion.id == M.BerryBundleFile.device_file_version_id)
+        .join(M.DeviceFile, M.DeviceFile.id == M.DeviceFileVersion.device_file_id)
+        .filter(M.DeviceFile.project_id == project_id)
+        .group_by(M.BerryBundleFile.device_file_version_id).all()
+    )
+
+    def version(v: M.DeviceFileVersion) -> dict:
+        return {**_file_version_json(v),
+                "used_by": {"versions": pins.get(v.id, 0), "bundles": bundled.get(v.id, 0)}}
+
     return [
         {
             "id": f.id, "filename": f.filename, "description": f.description,
+            "kind": f.kind or "berryware",
             "current_version_id": f.current_version_id,
-            "versions": [_file_version_json(v) for v in f.versions],
+            "used": any(pins.get(v.id) or bundled.get(v.id) for v in f.versions),
+            "versions": [version(v) for v in f.versions],
         }
         for f in rows
     ]
@@ -338,7 +402,8 @@ def create_device_file_version(project_id: int, body: DeviceFileIn, db: Session 
         .one_or_none()
     )
     if file is None:
-        file = M.DeviceFile(project_id=project_id, filename=name, description=body.description)
+        file = M.DeviceFile(project_id=project_id, filename=name, description=body.description,
+                            kind=_kind_for(name))
         db.add(file)
         db.flush()
     elif body.description:
@@ -453,41 +518,61 @@ async def import_device_files(
     label: str = Form(""),
     created_by: str = Form(""),
     publish: bool = Form(True),
+    # False for a single upload — a marking template, one artwork revision —
+    # which must not mint a one-file "bundle". Artwork never joins a bundle
+    # either way: a bundle is the berryware SET a device downloads.
+    make_bundle: bool = Form(True),
+    # "" = decide by the extension; "artwork" = the marking editor's upload,
+    # refused unless the file is a LightBurn project.
+    kind: str = Form(""),
+    # A new version of THIS file, whatever the uploaded file was called. The
+    # pool's per-row upload uses it, because "a new version of autoexec.be"
+    # must not become a file called autoexec (1).be.
+    replace_file_id: int | None = Form(None),
     db: Session = Depends(get_db),
 ):
-    """Import a whole berryware FOLDER at once — the composer's file drop.
+    """Import a whole berryware FOLDER at once, or ONE file — the same path.
 
     Content-addressed per file: a file whose bytes match its newest published
     version is REUSED (no version churn), anything else becomes a new version.
     Returns the resolved set, so the composer can pin it directly. This is the
-    step that turns "19 files, 19 manual publishes" into one action.
+    step that turns "19 files, 19 manual publishes" into one action, and since
+    2026-09-17 it is also the only way a file enters the pool: uploading beats
+    pasting, and an upload publishes.
     """
     if db.get(M.Project, project_id) is None:
         raise HTTPException(404, "no such project")
+    target = db.get(M.DeviceFile, replace_file_id) if replace_file_id else None
+    if replace_file_id and (target is None or target.project_id != project_id):
+        raise HTTPException(404, "no such device file in this project")
+    if target is not None and len(files) != 1:
+        raise HTTPException(400, "a new version of one file takes exactly one upload")
     resolved: list[dict] = []
     for upload in files:
-        name = (upload.filename or "").split("/")[-1]
+        name = target.filename if target else (upload.filename or "").split("/")[-1]
         if not name:
             continue
         raw = await upload.read()
-        try:
-            content = _normalise_text(raw.decode("utf-8"))
-        except UnicodeDecodeError:
-            raise HTTPException(
-                400, f"{name} is not UTF-8 text — berryware files are sources, not binaries")
-        sha = hashlib.sha256(content.encode()).hexdigest()
-        df = (
+        content, blob = _decode_upload(raw)
+        stored = blob if blob is not None else content.encode()
+        sha = hashlib.sha256(stored).hexdigest()
+        df = target or (
             db.query(M.DeviceFile)
             .filter(M.DeviceFile.project_id == project_id, M.DeviceFile.filename == name)
             .one_or_none()
         )
+        wanted_kind = _kind_for(name, kind)
         if df is None:
-            df = M.DeviceFile(project_id=project_id, filename=name)
+            df = M.DeviceFile(project_id=project_id, filename=name, kind=wanted_kind)
             db.add(df)
             db.flush()
+        elif kind and (df.kind or "berryware") != wanted_kind:
+            raise HTTPException(
+                409, f"{name} is already in the pool as {df.kind}, not {wanted_kind}")
         same = next((v for v in df.versions if v.sha256 == sha and v.status == "published"), None)
         if same is not None:
-            resolved.append({"filename": name, "device_file_version_id": same.id,
+            resolved.append({"filename": name, "device_file_id": df.id,
+                             "device_file_version_id": same.id, "kind": df.kind,
                              "version_no": same.version_no, "state": "unchanged",
                              "size_bytes": same.size_bytes})
             continue
@@ -495,29 +580,32 @@ async def import_device_files(
             device_file_id=df.id,
             version_no=max((x.version_no for x in df.versions), default=0) + 1,
             status="published" if publish else "draft",
-            content=content, sha256=sha, size_bytes=len(content.encode()),
+            content=content, is_binary=blob is not None, content_bytes=blob,
+            sha256=sha, size_bytes=len(stored),
             created_by=created_by,
-            comment=f"imported from {label}" if label else "folder import",
+            comment=f"imported from {label}" if label else
+                    ("uploaded" if len(files) == 1 else "folder import"),
         )
         db.add(v)
         db.flush()
         if publish:
             df.current_version_id = v.id
-        resolved.append({"filename": name, "device_file_version_id": v.id,
+        resolved.append({"filename": name, "device_file_id": df.id,
+                         "device_file_version_id": v.id, "kind": df.kind,
                          "version_no": v.version_no,
                          "state": "new" if v.version_no == 1 else "changed",
                          "size_bytes": v.size_bytes})
     db.flush()
     b = None
-    published_ids = [r["device_file_version_id"] for r in resolved]
-    if publish and published_ids:
-        b = bundle.ensure_bundle(db, project_id, published_ids, label=label,
+    berry_ids = [r["device_file_version_id"] for r in resolved if r["kind"] == "berryware"]
+    if publish and make_bundle and berry_ids:
+        b = bundle.ensure_bundle(db, project_id, berry_ids, label=label,
                                  created_by=created_by,
-                                 comment=f"folder import ({len(resolved)} files)")
+                                 comment=f"folder import ({len(berry_ids)} files)")
         db.flush()
     db.commit()
     audit(db, "flasher.files_import", "project", project_id,
-          details=f"{len(resolved)} files ({label or 'folder import'})", actor=created_by)
+          details=f"{len(resolved)} files ({label or 'upload'})", actor=created_by)
     return {"label": (b.label if b else label),
             "bundle": bundle.bundle_json(db, b) if b else None,
             "files": sorted(resolved, key=lambda r: r["filename"]),
@@ -618,7 +706,8 @@ def serve_device_file(version_id: int, filename: str, db: Session = Depends(get_
         raise HTTPException(404, "no such published file version")
     if filename != v.file.filename:
         raise HTTPException(404, "filename does not match this version")
-    return Response(content=v.content.encode("utf-8"), media_type="application/octet-stream")
+    data = v.content_bytes if v.is_binary else v.content.encode("utf-8")
+    return Response(content=data or b"", media_type="application/octet-stream")
 
 
 # --------------------------------------------------------------- deployments
@@ -986,6 +1075,7 @@ def get_deployment_version(version_id: int, db: Session = Depends(get_db)):
     return {
         **bundle.version_json(db, v),
         "deployment": {"id": d.id, "name": d.name, "chip": d.chip, "project_id": d.project_id,
+                       "kind": d.kind or "flash",
                        # The deployment's CURRENT default, so the card can say
                        # when this version is pinned to a different set. The
                        # version's own `param_set_id` is what a run uses.

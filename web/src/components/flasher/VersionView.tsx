@@ -9,10 +9,18 @@
  *  selects it, and the draft is edited exactly where it is read.
  *
  *  What is editable on a draft: the note, the procedure (with its transport
- *  and monitor baud), and the parameter set. **Firmware and berryware are
- *  not**, and never were — a `flash` step picks its images and a
- *  `download_files` step picks its bundle, inside `StepEditor` (user decision
- *  2026-07-30). Those two cards are summaries of what the procedure pinned.
+ *  and monitor baud), and the parameter set. **Firmware, berryware and
+ *  artwork are not**, and never were — a `flash` step picks its images, a
+ *  `download_files` step picks its bundle and a `mark_laser` step picks or
+ *  uploads its artwork, inside `StepEditor` (user decision 2026-07-30,
+ *  extended 2026-09-17). The Firmware and Files cards are summaries of what
+ *  the procedure pinned.
+ *
+ *  **The procedure opens READ-ONLY and a button turns editing on** (user
+ *  request 2026-09-17), on a draft. A published version offers `Edit as new
+ *  version` instead, which mints the draft and opens it editing. Edits still
+ *  commit as they are made — there is no Save to forget — but typing is
+ *  debounced, because a PATCH per keystroke re-ran the whole validator.
  *
  *  Every edit PATCHes the draft and takes the server's validation back, so the
  *  errors under the header are the same ones the publish button will enforce —
@@ -25,8 +33,10 @@ import {
   errorMessage,
   firmwareBinPath,
   getDeploymentVersion,
+  importDeviceFiles,
   isAbortError,
   listBerryBundles,
+  listDeviceFiles,
   listFirmware,
   listParamSets,
   patchDeploymentVersion,
@@ -36,14 +46,25 @@ import {
   type BerryBundleRow,
   type ComposeBody,
   type DeploymentVersionDetail,
+  type DeviceFileRow,
   type FirmwareAssetRow,
   type FlasherMeta,
   type ParamSetRow,
 } from "../../api";
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
-import StepEditor from "./StepEditor";
+import { listPrinters, type AgentRoll } from "../../flasher/benchAgent";
+import StepEditor, { type ArtworkChoice } from "./StepEditor";
 import { fmtBytes, fmtWhen, shortSha } from "./common";
+
+/** One word for the files card, from what the version pins. */
+const FILES_TITLE: Record<string, string> = {
+  berryware: "Berryware", artwork: "Artwork", mixed: "Files", "": "Files",
+};
+
+/** Debounce for typed edits to the procedure — one PATCH per pause, not per
+ *  keystroke, because each PATCH re-runs the whole validator. */
+const STEPS_DEBOUNCE_MS = 600;
 
 export default function VersionView({
   versionId,
@@ -52,6 +73,8 @@ export default function VersionView({
   meta,
   onChanged,
   onGone,
+  onEditAsNew,
+  autoEdit = false,
 }: {
   versionId: number;
   onDiff?: (versionId: number) => void;
@@ -63,6 +86,12 @@ export default function VersionView({
   onChanged?: () => void;
   /** A draft was discarded; there is nothing here to select any more. */
   onGone?: () => void;
+  /** On a published version: mint a draft from it and open that one editing.
+   *  The page owns version creation, so the button here only asks. */
+  onEditAsNew?: () => void;
+  /** Open this version in edit mode straight away — set by the page for the
+   *  draft it just minted, so `New version` lands on an editable procedure. */
+  autoEdit?: boolean;
 }) {
   const dialog = useDialog();
   /** The param-set editor, open on this set's id. */
@@ -83,7 +112,17 @@ export default function VersionView({
   const [assets, setAssets] = useState<FirmwareAssetRow[]>([]);
   const [bundles, setBundles] = useState<BerryBundleRow[]>([]);
   const [paramSets, setParamSets] = useState<ParamSetRow[]>([]);
+  const [pool, setPool] = useState<DeviceFileRow[]>([]);
+  /** The bench printer's rolls, when this browser sits on the bench machine
+   *  and the agent answers on loopback. Away from it: none, and the label
+   *  preview draws the roll's nominal size and says so. */
+  const [rolls, setRolls] = useState<AgentRoll[]>([]);
   const noteTimer = useRef<number | null>(null);
+  /** Edit mode for the procedure. Off by default even on a draft: the card
+   *  opens as a document, and the button turns it into a form. */
+  const [editing, setEditing] = useState(false);
+  const stepsTimer = useRef<number | null>(null);
+  const pendingSteps = useRef<Record<string, unknown>[] | null>(null);
 
   const load = useCallback(() => {
     const ac = new AbortController();
@@ -98,12 +137,25 @@ export default function VersionView({
 
   useEffect(() => load(), [load]);
 
+  // One ask, only when a step prints: the agent is a loopback call that
+  // fails fast off the bench, and a procedure with no label has no use for it.
+  const printsLabel = (v?.steps ?? []).some((s) => (s as { op?: string }).op === "print_label");
+  useEffect(() => {
+    if (!printsLabel) return;
+    let live = true;
+    listPrinters()
+      .then((got) => { if (live) setRolls(got.rolls); })
+      .catch(() => { if (live) setRolls([]); });
+    return () => { live = false; };
+  }, [printsLabel]);
+
   // The note and the JSON box follow whichever version is on screen.
   useEffect(() => {
     if (!v) return;
     setNote(v.comment);
     setStepsText(JSON.stringify(v.steps ?? [], null, 2));
     setRawJson(false);
+    setEditing(autoEdit && v.status === "draft");
   }, [v?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // The pools a draft edits FROM. Fetched only for a draft: a published
@@ -117,17 +169,35 @@ export default function VersionView({
       listFirmware(projectId, ac.signal),
       listBerryBundles(projectId, ac.signal),
       listParamSets(projectId, ac.signal),
+      listDeviceFiles(projectId, ac.signal),
     ])
-      .then(([a, b, p]) => {
+      .then(([a, b, p, files]) => {
         setAssets(a);
         setBundles(b);
         setParamSets(p);
+        setPool(files);
       })
       .catch((err) => {
         if (!isAbortError(err)) setError(errorMessage(err));
       });
     return () => ac.abort();
   }, [draftMode, projectId]);
+
+  /** The artwork a marking step may pick: the newest published version of
+   *  every `.lbrn2` in the project pool. */
+  const artworkPool = useMemo<ArtworkChoice[]>(() =>
+    pool
+      .filter((f) => f.kind === "artwork")
+      .map((f) => {
+        const published = f.versions.filter((x) => x.status === "published");
+        const live = published[published.length - 1];
+        return live ? {
+          device_file_version_id: live.id, filename: f.filename,
+          version_no: live.version_no, size_bytes: live.size_bytes,
+        } : null;
+      })
+      .filter((x): x is ArtworkChoice => x !== null),
+  [pool]);
 
   /** The ONE write path for a draft. Takes the server's answer back whole, so
    *  the validation under the header is always the publish button's own. */
@@ -156,6 +226,29 @@ export default function VersionView({
     }
   }, [stepsText]);
 
+  /** A procedure edit: the screen follows at once, the PATCH after a pause.
+   *  `flushSteps` sends whatever is pending now — before a pin change, before
+   *  publishing, before leaving edit mode — so nothing typed is lost. */
+  const editSteps = useCallback((next: Record<string, unknown>[]) => {
+    setStepsText(JSON.stringify(next, null, 2));
+    pendingSteps.current = next;
+    if (stepsTimer.current) window.clearTimeout(stepsTimer.current);
+    stepsTimer.current = window.setTimeout(() => {
+      const steps = pendingSteps.current;
+      pendingSteps.current = null;
+      if (steps) void patch({ steps });
+    }, STEPS_DEBOUNCE_MS);
+  }, [patch]);
+  const flushSteps = useCallback(async () => {
+    if (stepsTimer.current) window.clearTimeout(stepsTimer.current);
+    const steps = pendingSteps.current;
+    pendingSteps.current = null;
+    if (steps) await patch({ steps });
+  }, [patch]);
+  useEffect(() => () => {
+    if (stepsTimer.current) window.clearTimeout(stepsTimer.current);
+  }, []);
+
   if (error && !v) return <ErrorBanner message={error} />;
   if (!v) return <Spinner label="Loading version…" />;
 
@@ -177,6 +270,42 @@ export default function VersionView({
     noteTimer.current = window.setTimeout(() => void patch({ comment: text }), 700);
   };
 
+  /** A marking step picked or uploaded its artwork: the step and the pin move
+   *  in ONE patch. The new file replaces whatever artwork the step named
+   *  before, and every other pinned file — berryware, another step's artwork
+   *  — stays exactly as it was. */
+  const changeArtwork = (index: number, step: Record<string, unknown>, file: ArtworkChoice) => {
+    const steps = (pendingSteps.current ?? parsedSteps ?? v.steps ?? []).map((s, j) =>
+      j === index ? step : s);
+    const previous = String((parsedSteps ?? v.steps ?? [])[index]?.template ?? "");
+    const keep = (v.files ?? []).filter((f) =>
+      f.filename !== file.filename
+      && !(previous ? f.filename === previous
+           : f.kind === "artwork" && (v.files ?? []).filter((x) => x.kind === "artwork").length === 1));
+    if (stepsTimer.current) window.clearTimeout(stepsTimer.current);
+    pendingSteps.current = null;
+    setStepsText(JSON.stringify(steps, null, 2));
+    void patch({
+      steps,
+      file_version_ids: [...keep.map((f) => f.device_file_version_id), file.device_file_version_id],
+    });
+  };
+
+  /** Upload a .lbrn2 into the project pool as ARTWORK, published, and hand
+   *  back what to pin. The server refuses anything that is not a LightBurn
+   *  file, and `make_bundle: false` keeps it out of the berryware bundles. */
+  const uploadArtwork = async (file: File): Promise<ArtworkChoice> => {
+    const res = await importDeviceFiles(v.deployment.project_id, [file],
+      { kind: "artwork", make_bundle: false });
+    const made = res.files[0];
+    if (!made) throw new Error("the upload returned no file");
+    listDeviceFiles(v.deployment.project_id).then(setPool).catch(() => undefined);
+    return {
+      device_file_version_id: made.device_file_version_id, filename: made.filename,
+      version_no: made.version_no, size_bytes: made.size_bytes,
+    };
+  };
+
   const publish = async () => {
     if (!note.trim()) {
       setError("Say what changed and why — it is stored with the version.");
@@ -185,6 +314,7 @@ export default function VersionView({
     setBusy(true);
     setError(null);
     try {
+      await flushSteps();
       // The note may still be inside the debounce, so send it with the PATCH
       // rather than racing the timer.
       const synced = await patchDeploymentVersion(v.id, { comment: note });
@@ -396,27 +526,32 @@ export default function VersionView({
           <span className="muted dim mono">
             {v.transport_profile} @ {v.monitor_baud}
           </span>
-          {isDraft ? (
+          {isDraft && editing ? (
             <>
-              <select
-                className="row-input"
-                value={v.transport_profile}
-                title="uart_bridge = external USB-UART; usb_serial_jtag = native USB (never touches DTR/RTS in monitor mode)"
-                onChange={(e) => void patch({ transport_profile: e.target.value })}
-              >
-                {(meta?.transport_profiles ?? ["uart_bridge", "usb_serial_jtag"]).map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-              <input
-                className="row-input num"
-                defaultValue={v.monitor_baud}
-                title="monitor baud"
-                onBlur={(e) => {
-                  const n = Number(e.target.value) || 115200;
-                  if (n !== v.monitor_baud) void patch({ monitor_baud: n });
-                }}
-              />
+              {/* Two compact controls on the toolbar line. `.row-input` is
+                  width: 100%, which as a bare flex item takes the whole row;
+                  the wrap gives each a box of its own. */}
+              <span className="field-inline">
+                <select
+                  className="row-input transport-pick"
+                  value={v.transport_profile}
+                  title="uart_bridge = external USB-UART; usb_serial_jtag = native USB (never touches DTR/RTS in monitor mode)"
+                  onChange={(e) => void patch({ transport_profile: e.target.value })}
+                >
+                  {(meta?.transport_profiles ?? ["uart_bridge", "usb_serial_jtag"]).map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+                <input
+                  className="row-input num-input"
+                  defaultValue={v.monitor_baud}
+                  title="monitor baud"
+                  onBlur={(e) => {
+                    const n = Number(e.target.value) || 115200;
+                    if (n !== v.monitor_baud) void patch({ monitor_baud: n });
+                  }}
+                />
+              </span>
               <button
                 type="button"
                 className="btn btn-sm"
@@ -427,11 +562,44 @@ export default function VersionView({
               </button>
             </>
           ) : null}
+          {/* The one control that changes what the card IS. A draft opens as
+              a document and this makes it a form; a published version cannot
+              change, so the same place offers the draft that can. */}
+          {isDraft ? (
+            <button
+              type="button"
+              className={`btn btn-sm${editing ? " btn-primary" : ""}`}
+              disabled={busy}
+              title={editing
+                ? "Every change is saved as you make it. This closes the form."
+                : "Open every step for editing — fields, order, firmware and artwork pins"}
+              onClick={() => {
+                if (editing) {
+                  void flushSteps();
+                  setRawJson(false);
+                }
+                setEditing((x) => !x);
+                setShowSteps(true);
+              }}
+            >
+              {editing ? "Done editing" : "Edit procedure"}
+            </button>
+          ) : onEditAsNew ? (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={onEditAsNew}
+              title="A published version is immutable. This mints a draft from it and opens the draft for editing."
+            >
+              Edit as new version
+            </button>
+          ) : null}
+          {editing ? <span className="muted dim">changes save as you make them</span> : null}
           <button type="button" className="btn btn-sm" onClick={() => setShowSteps((s) => !s)}>
             {showSteps ? "Hide" : "Show"}
           </button>
         </div>
-        {!showSteps ? null : rawJson && isDraft ? (
+        {!showSteps ? null : rawJson && isDraft && editing ? (
           <>
             <textarea
               className="note-textarea mono file-editor"
@@ -448,12 +616,14 @@ export default function VersionView({
           /* ONE rendering of a procedure, read-only or not. `readOnly` is a
              flag, never a second component — the composer's copy is deleted. */
           <StepEditor
-            readOnly={!isDraft}
+            readOnly={!(isDraft && editing)}
             steps={(isDraft ? parsedSteps ?? [] : (v.steps ?? [])) as Record<string, unknown>[]}
-            onChange={(next) => {
-              setStepsText(JSON.stringify(next, null, 2));
-              void patch({ steps: next });
-            }}
+            onChange={editSteps}
+            pinnedFiles={v.files ?? []}
+            rolls={rolls}
+            artworkPool={isDraft ? artworkPool : []}
+            onArtworkChange={isDraft ? changeArtwork : undefined}
+            onArtworkUpload={isDraft ? uploadArtwork : undefined}
             paramKeys={isDraft ? paramKeys : []}
             images={(v.images ?? []).map((i) => ({
               firmware_asset_id: i.firmware_asset_id, address: i.address,
@@ -522,16 +692,22 @@ export default function VersionView({
         )}
       </div>
 
+      {/* Named by what the version PINS — berryware, artwork, or both — because
+          a mark version pins a LightBurn drawing and calling that "berryware"
+          was reported as wrong (2026-09-17). Only berryware has a bundle to
+          name; artwork is one file per marking step. */}
       <div className="card pad">
         <div className="toolbar">
-          <h3 className="card-title">Berryware</h3>
-          {v.files?.length ? (
+          <h3 className="card-title">{FILES_TITLE[v.files_kind] ?? "Files"}</h3>
+          {v.files?.length && v.files_kind !== "artwork" ? (
             <span className={`pill ${v.berry_bundle_id ? "ok" : "warn"}`}
                   title={v.berry_bundle_id
                     ? "a named bundle — the same set everywhere it appears"
                     : "an ad-hoc file set nobody has named"}>
               {v.files_label || "unnamed set"} · {v.files.length} files
             </span>
+          ) : v.files?.length ? (
+            <span className="pill info">{v.files.length} {v.files.length === 1 ? "drawing" : "drawings"}</span>
           ) : null}
           <span className="muted dim mono">
             {v.files_fingerprint ? shortSha(v.files_fingerprint) : ""}
@@ -543,7 +719,9 @@ export default function VersionView({
           ) : null}
         </div>
         {!v.files?.length ? (
-          <p className="muted">No berryware pinned.</p>
+          <p className="muted">
+            {v.deployment.kind === "mark" ? "No artwork pinned." : "No files pinned."}
+          </p>
         ) : !showFiles ? null : (
           <div className="table-wrap">
             <table className="data data-fixed dv-files-table">
@@ -561,7 +739,12 @@ export default function VersionView({
                 {v.files.map((f, i) => (
                   <tr key={f.device_file_version_id}>
                     <td className="num">{i + 1}</td>
-                    <td className="mono" title={f.filename}>{f.filename}</td>
+                    <td className="mono" title={`${f.filename} — ${f.kind}`}>
+                      {f.filename}
+                      {v.files_kind === "mixed" ? (
+                        <span className={`pill ${f.kind === "artwork" ? "info" : "neutral"}`}> {f.kind}</span>
+                      ) : null}
+                    </td>
                     <td>
                       v{f.version_no} <StatusPill status={f.status} />
                     </td>

@@ -15,6 +15,10 @@ the ceiling past which it scrolls.
 
 A component in this directory is used by more than one page. If you are about to
 write a page-local copy of something here, extend the shared one instead.
+**A file selector is `FilePick`** (2026-09-17): one button that opens the
+browser's dialog, resets itself so the same file can be picked twice, and takes
+`accept`, `multiple` or `directory`. Seven hand-rolled `<input type="file">`
+markups predate it; new code uses the component.
 
 Sub-directories carry their own rules: `flasher/`, `invoices/`, `project/`,
 `run/`.

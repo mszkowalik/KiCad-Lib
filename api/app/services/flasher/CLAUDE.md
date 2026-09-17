@@ -116,6 +116,23 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
   read as bytes hashes differently from the same file read as text, which made
   five V3 files report "changed" on every import when nothing had. Content
   addressing only pays off if the same source always yields the same hash.
+  **A file that is not UTF-8 text (or carries a NUL) is kept as bytes** in
+  `content_bytes` with `is_binary` set and served as bytes (2026-09-17). The
+  column is `is_binary` because `binary` is a reserved word in SQL; the JSON
+  key is still `binary`.
+- **A device file has a KIND, fixed at upload: `berryware` or `artwork`**
+  ([0026](../../../../docs/decisions/0026-a-device-file-carries-its-kind-and-enters-by-upload.md)).
+  `_kind_for` decides it from the extension, or from the `kind` the caller
+  asked for — `artwork` is refused unless the file is `.lbrn`/`.lbrn2`. The
+  engine hands the device only berryware (`download_files`) and the laser only
+  artwork (`mark_laser`); `validate.check` reads the same split, and
+  `bundle.files_kind` is the one word the UI labels a card with.
+  **`POST …/device-files/import` is the way a file enters the pool**, one file
+  or a folder: `make_bundle=false` for a single upload (artwork never joins a
+  bundle either way), `replace_file_id` for a new version of THAT row under
+  its own name. It publishes. The paste endpoint remains for API callers and
+  still makes a DRAFT. Delete is per version and the usage join that guards it
+  is the same one `list_device_files` prints as `used` / `used_by`.
 - **Deleting an artifact is usage-guarded, and the guard lives in the API.**
   A firmware asset pinned by any deployment version, a bundle used by any
   version, a device file version pinned by a version or a bundle: all refuse
@@ -181,16 +198,18 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
   it themselves. `POST /runs` and `POST /bench-runs` take no `operator`, and
   the engine seeds `{operator}` from the run row. It is a stamp, not device
   configuration: no procedure in the library interpolates it.
-- **The bench opens on the project's CONFIG version, and on NO batch**
-  (2026-09-16). The version defaults to the `kind: "flash"` deployment's
-  current version — read from the kind, never from the name — because that is
-  what a batch is programmed with all day. The batch is the opposite: it is
-  never remembered and never preselected, because a remembered batch is the one
-  a tray gets programmed into by accident the next morning. In batch mode with
-  no batch picked the stations get no version at all, so a run cannot quietly
-  become a bench trial. NOTE: no batch in the database pins a version or
-  follows a channel, so `POST /runs` 409s unless the request names one — the
-  default is what makes the bench work, not a convenience.
+- **The bench opens on the project's CONFIG version and its LATEST batch;
+  the marking bench on the project's marking procedure** (2026-09-17, user
+  decision — the batch half reverses 2026-09-16, which preselected none). The
+  version defaults to the `kind: "flash"` deployment's current version — read
+  from the kind, never from the name — and the batch to the newest `run_date`
+  (then id), status not consulted. Both are applied ONCE per project pick, so
+  an operator who clears the batch to "bench trial" stays there. The batch is
+  still not remembered across sessions: it is re-derived, not restored. In
+  batch mode with no batch picked the stations get no version at all, so a run
+  cannot quietly become a bench trial. NOTE: no batch in the database pins a
+  version or follows a channel, so `POST /runs` 409s unless the request names
+  one — the default is what makes the bench work, not a convenience.
 - **A field on the bench belongs to the PROCEDURE, not to the bench.**
   `version_json` carries `needs_sim_pin` (any step with op `lte_sim_pin`), and
   the bench shows its SIM PIN box only then — a Dongle_V2 or an Aqua has no

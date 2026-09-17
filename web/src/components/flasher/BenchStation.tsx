@@ -457,7 +457,9 @@ export default function BenchStation(props: StationSlotProps) {
     ) as
       | { template?: string; placeholder?: string; job_timeout?: number; device?: string }
       | undefined;
-    const files = markVersion?.files ?? [];
+    // Only the artwork: a version that configures AND marks pins its
+    // berryware beside the drawing, and the engine applies the same filter.
+    const files = (markVersion?.files ?? []).filter((f) => f.kind === "artwork");
     const file = step?.template
       ? files.find((f) => f.filename === step.template)
       : files.length === 1
@@ -819,6 +821,49 @@ export default function BenchStation(props: StationSlotProps) {
     void preRead();
   }, [marking, portState, busy, markVersion, preRead]);
 
+  /** A VERDICT BELONGS TO THE DEVICE THAT EARNED IT (user report 2026-09-17).
+   *
+   *  PASS, FAIL and ABORTED used to survive a device swap: `syncPort` promoted
+   *  `empty` to `ready` and nothing else touched the status, so the next unit
+   *  arrived under the last one's result and an operator read it as its own.
+   *
+   *  It is cleared when the NEXT device ARRIVES, not when the finished one is
+   *  taken out, so the operator still reads PASS with the part in their hand.
+   *  Armed on removal, exactly like the marking read and the automatic start
+   *  above — and for the same reason those are: the port going away is the only
+   *  event that says a device is finished with.
+   *
+   *  The LOG is not cleared. It is the station's record and the failure it
+   *  explains is often read after the part is out; a separator line says where
+   *  one device ends and the next begins. The run LINK goes, because "run #N"
+   *  beside a fresh device reads as this device's run.
+   */
+  const verdictArmed = useRef(false);
+  useEffect(() => {
+    if (portState !== "waiting") {
+      // Any state where the socket is not holding a device re-arms it. A run
+      // reports `working`, which deliberately does not.
+      if (portState === "none" || portState === "gone" || portState === "empty") {
+        verdictArmed.current = true;
+      }
+      return;
+    }
+    if (!verdictArmed.current || busy) return;
+    verdictArmed.current = false;
+    // Nothing to clear on a station that has not run: this is the first device.
+    setStatus((cur) => (cur === "busy" ? cur : "ready"));
+    setStepLabel("idle");
+    setStepNo(null);
+    setProgress(null);
+    setMarked(null);
+    setPrinted(null);
+    setError(null);
+    setHint(null);
+    setRunId(null);
+    setTyped("");
+    pushLog("app", "— a new device is in the socket —");
+  }, [portState, busy, pushLog]);
+
   const autoArmed = useRef(true);
   // Which actions an automatic pass should perform. A bench may be engraving
   // all day and printing nothing, or printing while the laser is down, so the
@@ -1139,6 +1184,9 @@ export default function BenchStation(props: StationSlotProps) {
                 />
                 <span>Automatic</span>
               </label>
+              {/* No picture of the label here (user decision 2026-09-17): the
+                  station is for pressing, and the step editor is where the
+                  label is looked at. */}
               {printed ? <div className="bench-did mono">printed {printed}</div> : null}
             </div>
           </div>

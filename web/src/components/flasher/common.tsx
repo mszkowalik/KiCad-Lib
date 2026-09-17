@@ -24,3 +24,12 @@ export function fmtDuration(ms: number | null): string {
   const s = Math.round(ms / 1000);
   return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
 }
+
+/** The PNG a LightBurn project embeds as its own preview, as a data URL — or
+ *  null when the text is not an .lbrn2 or carries none. The file is XML and
+ *  the thumbnail sits in one attribute near the top, so a regex is enough and
+ *  a parser would be a second thing to keep in step with LightBurn. */
+export function lbrnThumbnail(text: string): string | null {
+  const m = /<Thumbnail\s+Source="([A-Za-z0-9+/=\s]+)"/.exec(text);
+  return m ? `data:image/png;base64,${m[1].replace(/\s+/g, "")}` : null;
+}

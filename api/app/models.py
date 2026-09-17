@@ -2346,11 +2346,15 @@ class FirmwareAsset(Base):
 
 
 class DeviceFile(Base):
-    """A payload file the device downloads during deployment (`autoexec.be`,
-    driver JSONs). Versioned SEPARATELY from firmware (user decision
-    2026-07-29): a script change never requires a firmware rebuild. Delivery
-    is over HTTP from the platform — the deployment script has the device
-    fetch each pinned version with UrlFetch and verifies the size."""
+    """A file a deployment version pins one at a time. Two KINDS share the
+    pool, because both are project-scoped versioned content a version pins
+    through `deployment_files`: `berryware` is the payload the device
+    downloads during deployment (`autoexec.be`, driver JSONs) and `artwork`
+    is what a `mark` version engraves (a LightBurn `.lbrn2`). The kind is
+    fixed at upload — by the extension, or by the editor that asked for it —
+    and decides which steps may use the file (decision 0026). Versioned
+    SEPARATELY from firmware (user decision 2026-07-29): a script change never
+    requires a firmware rebuild."""
 
     __tablename__ = "device_files"
 
@@ -2358,6 +2362,7 @@ class DeviceFile(Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
     filename: Mapped[str] = mapped_column(String(200))  # name ON THE DEVICE, e.g. autoexec.be
     description: Mapped[str] = mapped_column(String(500), default="")
+    kind: Mapped[str] = mapped_column(String(20), default="berryware")  # berryware | artwork
     current_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -2369,8 +2374,11 @@ class DeviceFile(Base):
 
 
 class DeviceFileVersion(Base):
-    """IMMUTABLE content of one device file. Text lives in Postgres (these are
-    small .be/.json sources); `size_bytes` is what the device's file_size
+    """IMMUTABLE content of one device file. A TEXT file lives in `content`,
+    LF-normalised so the same source always hashes the same; a file that is
+    not UTF-8 text lives in `content_bytes` as uploaded, with `binary` set,
+    because the pool can no longer promise every upload is a source file
+    (user decision 2026-09-17). `size_bytes` is what the device's file_size
     check must report after the download."""
 
     __tablename__ = "device_file_versions"
@@ -2380,6 +2388,8 @@ class DeviceFileVersion(Base):
     version_no: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(20), default="draft")  # draft|published|rejected
     content: Mapped[str] = mapped_column(Text, default="")
+    is_binary: Mapped[bool] = mapped_column(Boolean, default=False)  # `binary` is reserved in SQL
+    content_bytes: Mapped[bytes | None] = deferred(mapped_column(LargeBinary, nullable=True))
     sha256: Mapped[str] = mapped_column(String(64), default="")
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)
     created_by: Mapped[str] = mapped_column(String(100), default="")

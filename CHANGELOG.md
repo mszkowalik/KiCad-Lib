@@ -1,5 +1,100 @@
 # Changelog
 
+## 2026-09-17 (the marking bench survives its second device)
+
+- **The agent no longer wedges after one mark.** A bench marked one unit and
+  then refused every following one with "the agent is already marking" until it
+  was restarted, which cost a restart per device. The agent's health poll and a
+  mark each bind the same UDP reply port, and `SO_REUSEADDR` does not let two
+  sockets share a UDP port on macOS — the second bind gets errno 48. The
+  marking thread built its LightBurn client outside the `try` whose `finally`
+  clears the "busy" flag, so the losing thread died before that line, the flag
+  stayed set for good and nothing was written to any log. The two now take one
+  lock, a poll that finds a mark running answers without binding, and the
+  client is built inside the `try`. `_run` and `_print` also gained the
+  catch-all `except` that `_esp` already had, so a thread that dies says so in
+  the job and in the agent's log. Reproduced and fixed against the bench:
+  unpatched, 1 mark passed and the next 19 were refused; patched, 20 of 20
+  passed under continuous health polling, then three full sessions on real
+  hardware.
+- **A quiet device no longer reports a false agent timeout.** The console long
+  poll is held by the agent for 10 s and the page aborted at exactly 10 s, so
+  any 10 s silence was a coin flip that produced "the bench agent did not
+  answer within 10s" from a poll that was working. The page now allows the
+  hold plus 5 s.
+- **`mark.py` runs again.** The command-line marking tool called `time.time()`
+  without importing `time`, so it raised `NameError` on its first line. The
+  agent itself was unaffected.
+- **A finished mark is machine-proven.** With the laser attached, LightBurn
+  answers `STATUS` with `!` for every poll while a job runs and `OK` when it
+  ends, measured twice at 9.7 s on the dongle side artwork. The code carried a
+  "NOT YET VERIFIED" note saying to treat a mark as operator-confirmed until
+  someone checked this on the bench; that note is now the measurement.
+
+**Benches must download the agent again** from the Flasher page. The fix is in
+`agent.py`, and an installed copy carries the old one. `PROTOCOL_VERSION` is
+unchanged at 4 because no route changed, so nothing will warn you.
+
+## 2026-09-17 (device files know what they are, and the procedure editor grows up)
+
+- **A device file is berryware or artwork, and every screen says which.** The
+  pool held the LightBurn `.lbrn2` a mark version engraves beside the `.be`
+  scripts a device downloads, and the version card, the diff, the timeline
+  line, the bench summary and the pool all called both "berryware". A `kind`
+  column on the file now drives the label: a mark version's card reads
+  **Artwork**, its change summary reads "artwork (1 changed)", and the pool
+  shows a kind pill per row. Backfilled from the extension
+  ([decision 0026](docs/decisions/0026-a-device-file-carries-its-kind-and-enters-by-upload.md)).
+- **Files are uploaded, not pasted.** The paste-the-text editor on the
+  Individual files tab is gone. **Upload a file…** takes one or many files and
+  publishes them; an artwork row has its own **Upload** for a new version
+  under the same name; berryware rows have none, because the Bundles tab's
+  folder import is how berryware is updated. A file that is not UTF-8 text is
+  stored and served as bytes instead of being refused.
+- **The marking step owns its artwork.** `Engrave the serial` shows the pinned
+  drawing's own LightBurn thumbnail, a picker over the project's artwork, and
+  **Upload a new .lbrn2…** — the upload publishes into the pool and re-pins
+  the draft in the same action. The server refuses a non-LightBurn file there.
+  The engine now hands the laser only artwork and the device only berryware,
+  and the publish gate says "pins no artwork (.lbrn2)" instead of "no template
+  file".
+- **The pool says what is in use, previews any file, and deletes one version
+  at a time.** A **Used** column reads "in use" or "not used" from the same
+  join the delete guard uses; the eye button opens a popup with the LightBurn
+  thumbnail and the full text (or, for a binary, its size and a Download);
+  the row's × removes the newest version and the server still refuses a
+  pinned one. Every version row shows who pins it.
+- **A finished device's verdict no longer greets the next one.** PASS, FAIL and
+  ABORTED survived a device swap on both benches, so a unit arrived under the
+  previous one's result. The verdict, the step label, the progress bar, the
+  engraved and printed readouts and the run link now clear when the next device
+  arrives — not when the finished one is removed, so the operator still reads
+  PASS with the part in their hand. The log is kept, with a line marking where
+  one device ends and the next begins.
+- **The benches open ready.** Picking a project on the flashing bench now
+  selects its latest batch (newest run date) as well as its config version;
+  the marking bench selects the project's marking procedure. Clearing the
+  batch to "bench trial" sticks until the project is picked again. This
+  reverses the 2026-09-16 rule that left the batch empty on purpose.
+- **The label is drawn before it is printed.** A `print_label` step now shows
+  the label as the bench agent will lay it out — the Code 128 symbol and the
+  value under it, at the roll's true proportions, turned when the step says
+  so — for a sample serial the author can change, and prints the agent's own
+  refusal in red when the value does not fit ("needs 47.5 mm, this roll prints
+  22.9 mm across") before the printer ever sees it. On the bench machine the
+  roll is picked from the printer's own list and the printable area is the
+  printer's; anywhere else the label is drawn at its nominal size and the
+  caption says so. `web/src/flasher/label.ts` mirrors the agent's encoder
+  and layout, checked module-for-module against it.
+- **The procedure has an edit mode.** A draft opens read-only and **Edit
+  procedure** turns it into a form; a published version offers **Edit as new
+  version**, which mints the draft and opens it editing (so does **New
+  version**). Every field is a typed control: a duration is a unit box (type
+  `500ms`), a count a number box, a flag a checkbox, a value a
+  value/parameter toggle; command, capture and image lists are numbered rows
+  that move up and down; a step can be duplicated. Typing is saved after a
+  pause instead of on every keystroke, and flushed before a publish.
+
 ## 2026-09-17 (the bench agent stops hanging)
 
 - **The 7Sigma agent no longer freezes.** Its window, its status page and the

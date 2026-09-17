@@ -4,13 +4,19 @@
  *    text      free string
  *    value     literal OR {parameter} — see ValuePicker
  *    varname   a variable an EARLIER step captured (or a runtime var)
- *    number    numeric input
+ *    number    a count or a rate — retries, copies, a baud
+ *    seconds   a duration, stored in seconds — an SiInput, so "500ms" works
  *    bool      checkbox
  *    path      dotted response path ("StatusSTS.Wifi.SSId")
  *    commands  a list of "Cmd value" lines (Backlog)
  *    capture   map of variable name -> response path
  *    images    which pinned firmware images this flash step writes
  *    bundle    which berryware bundle this download step sends
+ *    artwork   which pinned .lbrn2 this marking step engraves — pick or upload
+ *    roll      a label roll, by the printer's PPD name — a list when the bench
+ *              agent is reachable, a text box otherwise
+ *    label     the label DRAWN from the step's own fields (LabelPreview);
+ *              stores nothing, so its key is never written to the step
  *    check     the functionality this step proves (a name from the catalog)
  *
  *  The ops and their meaning come from the engine (`services/flasher/engine.py`);
@@ -19,8 +25,8 @@
  */
 
 export type FieldKind =
-  | "text" | "value" | "varname" | "number" | "bool" | "path"
-  | "commands" | "capture" | "images" | "bundle" | "check";
+  | "text" | "value" | "varname" | "number" | "seconds" | "bool" | "path"
+  | "commands" | "capture" | "images" | "bundle" | "artwork" | "roll" | "label" | "check";
 
 export interface Field {
   key: string;
@@ -43,7 +49,7 @@ export interface OpSpec {
   provides?: string[];
 }
 
-const TIMEOUT: Field = { key: "timeout", label: "Timeout (s)", kind: "number", placeholder: "10" };
+const TIMEOUT: Field = { key: "timeout", label: "Timeout", kind: "seconds", placeholder: "10 s" };
 /** The serial speed THIS esptool step runs at. Blank = the transport profile's
  *  default, which the server resolves and sends with the run.
  *
@@ -130,7 +136,7 @@ const RAW_OPS: OpSpec[] = [
     fields: [LABEL] },
   { op: "sleep", title: "Wait a fixed time", phase: "serial",
     blurb: "Only for physical settling (relay actuation). Prefer wait_boot or poll_until.",
-    fields: [LABEL, { key: "seconds", label: "Seconds", kind: "number", placeholder: "2", summary: true }] },
+    fields: [LABEL, { key: "seconds", label: "Wait", kind: "seconds", placeholder: "2 s", summary: true }] },
   {
     op: "wait_boot", title: "Wait until the firmware answers", phase: "serial",
     blurb: "Polls a command until it replies — a reply is proof the app is running. A boot banner cannot be relied on (native USB loses everything printed before the port opens).",
@@ -139,7 +145,7 @@ const RAW_OPS: OpSpec[] = [
       { key: "probe.cmd", label: "Probe command", kind: "text", placeholder: "Status" },
       { key: "probe.payload", label: "Probe payload", kind: "text", placeholder: "0" },
       { key: "probe.expect_key", label: "Expect key", kind: "text", placeholder: "Status" },
-      { key: "probe_every", label: "Probe every (s)", kind: "number", placeholder: "2" },
+      { key: "probe_every", label: "Probe every", kind: "seconds", placeholder: "2 s" },
     ],
   },
   // --------------------------------------------------------------- dialog
@@ -201,9 +207,8 @@ const RAW_OPS: OpSpec[] = [
     blurb: "The bench patches the pinned .lbrn2 with the value and hands it to the bench agent, which drives LightBurn. Needs the agent running on the laser machine.",
     fields: [
       LABEL,
-      { key: "template", label: "Template file", kind: "text", summary: true,
-        placeholder: "AQUA_DONGLE_Side_Info.lbrn2",
-        hint: "a file pinned by THIS version — leave empty when only one is pinned" },
+      { key: "template", label: "Artwork", kind: "artwork", summary: true,
+        hint: "the .lbrn2 this version pins for the step — pick one from the project pool or upload a new one; uploading replaces the pin" },
       { key: "value", label: "Text to engrave", kind: "text", summary: true,
         placeholder: "{mac}",
         hint: "resolved from run variables, so {mac} or a captured device name" },
@@ -217,7 +222,7 @@ const RAW_OPS: OpSpec[] = [
         hint: "empty = the strings the CE templates already use" },
       { key: "start", label: "Fire the laser", kind: "bool",
         hint: "off = load the job only, the operator presses Start in LightBurn" },
-      { key: "job_timeout", label: "Job timeout (s)", kind: "number", placeholder: "300" },
+      { key: "job_timeout", label: "Job timeout", kind: "seconds", placeholder: "300 s" },
     ],
     provides: ["marked"],
   },
@@ -231,14 +236,16 @@ const RAW_OPS: OpSpec[] = [
         hint: "resolved from run variables — the same value the laser engraves" },
       { key: "take_after", label: "Keep only what follows", kind: "text", placeholder: "_",
         hint: "Tasmota names a device <something>_<MAC>, and the MAC is what goes on the part" },
-      { key: "roll", label: "Default roll", kind: "text", placeholder: "w72h154",
+      { key: "roll", label: "Default roll", kind: "roll", placeholder: "w72h154",
         hint: "the printer's own page size name — the bench can override it, because the roll is what is loaded on the day" },
       { key: "rotate", label: "Turn a quarter turn", kind: "bool",
         hint: "on = the barcode runs down the length. A 12-character serial needs 47.5 mm, which no narrow roll has across" },
       { key: "dots", label: "Module width (printer dots)", kind: "number", placeholder: "3",
         hint: "3 dots at 300 dpi is 0.254 mm, the standard minimum. Every bar edge then lands on a whole dot" },
       { key: "copies", label: "Copies", kind: "number", placeholder: "1" },
-      { key: "job_timeout", label: "Job timeout (s)", kind: "number", placeholder: "120" },
+      { key: "job_timeout", label: "Job timeout", kind: "seconds", placeholder: "120 s" },
+      { key: "preview", label: "The label", kind: "label",
+        hint: "drawn the way the bench agent lays it out, on the roll above — a value that does not fit is refused here before the printer ever sees it" },
     ],
     provides: ["printed"],
   },
@@ -276,7 +283,7 @@ const RAW_OPS: OpSpec[] = [
       { key: "matches", label: "Must match (regex)", kind: "text" },
       { key: "min", label: "At least", kind: "number" },
       { key: "max", label: "At most", kind: "number" },
-      { key: "every", label: "Poll every (s)", kind: "number", placeholder: "2" },
+      { key: "every", label: "Poll every", kind: "seconds", placeholder: "2 s" },
       TIMEOUT, CAPTURE,
     ],
   },

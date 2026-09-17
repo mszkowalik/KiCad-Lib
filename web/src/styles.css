@@ -862,10 +862,13 @@ input.search {
   color: var(--accent);
 }
 
-.btn:disabled {
+.btn:disabled,
+.btn.disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
+/* A `<label>` drawn as a button (FilePick) has no :disabled state of its own. */
+.btn.disabled { pointer-events: none; }
 
 .btn-danger {
   background: var(--err);
@@ -4468,13 +4471,14 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
 .device-files-table th:nth-child(5), .device-files-table td:nth-child(5) { width: 15%; }
 
 .file-versions-table { table-layout: fixed; }
-.file-versions-table th:nth-child(1), .file-versions-table td:nth-child(1) { width: 8%; }
-.file-versions-table th:nth-child(2), .file-versions-table td:nth-child(2) { width: 11%; }
-.file-versions-table th:nth-child(3), .file-versions-table td:nth-child(3) { width: 9%; }
-.file-versions-table th:nth-child(4), .file-versions-table td:nth-child(4) { width: 13%; }
-.file-versions-table th:nth-child(5), .file-versions-table td:nth-child(5) { width: 25%; }
-.file-versions-table th:nth-child(6), .file-versions-table td:nth-child(6) { width: 14%; }
-.file-versions-table th:nth-child(7), .file-versions-table td:nth-child(7) { width: 20%; }
+.file-versions-table th:nth-child(1), .file-versions-table td:nth-child(1) { width: 6%; }
+.file-versions-table th:nth-child(2), .file-versions-table td:nth-child(2) { width: 10%; }
+.file-versions-table th:nth-child(3), .file-versions-table td:nth-child(3) { width: 8%; }
+.file-versions-table th:nth-child(4), .file-versions-table td:nth-child(4) { width: 11%; }
+.file-versions-table th:nth-child(5), .file-versions-table td:nth-child(5) { width: 19%; }
+.file-versions-table th:nth-child(6), .file-versions-table td:nth-child(6) { width: 13%; }
+.file-versions-table th:nth-child(7), .file-versions-table td:nth-child(7) { width: 15%; }
+.file-versions-table th:nth-child(8), .file-versions-table td:nth-child(8) { width: 18%; }
 
 .script-versions-table { table-layout: fixed; }
 .script-versions-table th:nth-child(1), .script-versions-table td:nth-child(1) { width: 7%; }
@@ -5011,6 +5015,65 @@ textarea.auto-grow { overflow-y: hidden; }
 .cmd-row .cmd-name { flex: 0 0 11em; }
 .cmd-row .value-picker { flex: 1 1 auto; }
 .cmd-row select:first-child { flex: 1 1 auto; min-width: 0; }
+
+/* The procedure toolbar's transport select: sized to its longest option, not
+   to the toolbar. */
+.transport-pick { width: 11em; flex: none; }
+
+/* Reorderable rows inside a step (commands, captures, images): the index
+   column keeps the rows readable as a list, the tool column keeps its width
+   whether or not a row can move. */
+.cmd-row .cmd-idx {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  min-width: 1.6em;
+  text-align: right;
+}
+.cmd-row .cmd-tools { display: inline-flex; gap: 2px; flex: none; }
+.cmd-row .cmd-tools .btn { padding: 1px 6px; }
+.cmd-row input.text, .cmd-row select.text { min-width: 0; }
+
+/* A marking step's artwork: the LightBurn thumbnail the file carries, beside
+   the picker, so the author sees the drawing and not only its name. */
+.artwork-pick { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+.artwork-pick .artwork-fields { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.artwork-thumb {
+  flex: none;
+  max-width: 220px;
+  max-height: 140px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+/* The label as the printer will produce it (LabelPreview). Paper, printable
+   area, bars and text are classes so both themes draw them; the SVG is sized
+   in mm and scales to its box. */
+.label-preview { display: flex; flex-direction: column; gap: 4px; max-width: 320px; }
+.label-preview-svg { width: 100%; height: auto; display: block; }
+.label-paper { fill: var(--surface); stroke: var(--line); stroke-width: 0.4; }
+.label-printable { fill: none; stroke: var(--line); stroke-width: 0.25; stroke-dasharray: 1 1; }
+.label-bar { fill: var(--text); }
+.label-text { fill: var(--text); font-family: Helvetica, Arial, sans-serif; }
+.label-preview-bad .label-paper { stroke: var(--err); stroke-width: 0.6; }
+.label-preview-note { font-size: 11px; }
+.label-preview-verdict { font-size: 12px; }
+.label-sample { width: 11em; }
+
+/* The pool's preview popup: the thumbnail an artwork carries, then the text.
+   Never squeezed into a cell — the eye button opens this instead. */
+.file-preview { max-height: 62vh; overflow: auto; margin: 8px 0 0; }
+.file-preview-thumb {
+  display: block;
+  max-width: 100%;
+  max-height: 340px;
+  margin: 8px auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.btn-eye svg { width: 14px; height: 14px; vertical-align: -2px; }
 
 /* Read-only step fields (a published procedure) */
 .ro-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 0; }

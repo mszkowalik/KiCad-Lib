@@ -60,10 +60,20 @@ def file_json(link: M.DeploymentFile) -> dict:
     v = link.file_version
     return {
         "device_file_version_id": v.id, "device_file_id": v.device_file_id,
-        "filename": v.file.filename, "version_no": v.version_no, "status": v.status,
+        "filename": v.file.filename, "kind": v.file.kind or "berryware",
+        "version_no": v.version_no, "status": v.status,
         "size_bytes": v.size_bytes, "sha256": v.sha256, "position": link.position,
-        "comment": v.comment,
+        "comment": v.comment, "binary": bool(v.is_binary),
     }
+
+
+def files_kind(links) -> str:
+    """What a version's pinned files ARE, as one word the UI can label a card
+    with: "berryware", "artwork", "mixed", or "" when nothing is pinned."""
+    kinds = {(link.file_version.file.kind or "berryware") for link in links}
+    if not kinds:
+        return ""
+    return kinds.pop() if len(kinds) == 1 else "mixed"
 
 
 def version_json(db, v: M.DeploymentVersion, deep: bool = True) -> dict:
@@ -79,6 +89,7 @@ def version_json(db, v: M.DeploymentVersion, deep: bool = True) -> dict:
         "berry_bundle_id": v.berry_bundle_id,
         "created_at": v.created_at.isoformat() if v.created_at else None,
         "image_count": len(v.images), "file_count": len(v.files),
+        "files_kind": files_kind(v.files),
         "step_count": len(v.steps or []),
         # Whether this PROCEDURE asks for a SIM PIN. The bench hides the box
         # otherwise: a Dongle_V2 or an Aqua has no modem, and a field nobody
@@ -110,6 +121,8 @@ def changes_since(prev: M.DeploymentVersion | None, cur: M.DeploymentVersion) ->
         parts.append("firmware")
     prev_files = {(f.file_version.file.filename, f.file_version.sha256) for f in prev.files}
     cur_files = {(f.file_version.file.filename, f.file_version.sha256) for f in cur.files}
+    kind_of = {f.file_version.file.filename: (f.file_version.file.kind or "berryware")
+               for f in [*prev.files, *cur.files]}
     prev_names = {n for n, _ in prev_files}
     cur_names = {n for n, _ in cur_files}
     changed = {n for n, _ in cur_files - prev_files if n in prev_names}
@@ -124,7 +137,11 @@ def changes_since(prev: M.DeploymentVersion | None, cur: M.DeploymentVersion) ->
         if removed:
             bits.append(f"{len(removed)} removed")
         files = ", ".join(bits)
-        parts.append(f"berryware ({files})")
+        # Name the files by what they are: a mark version's summary must not
+        # say "berryware" when the only thing that moved is the artwork.
+        moved = {kind_of[n] for n in changed | added | removed}
+        noun = moved.pop() if len(moved) == 1 else "files"
+        parts.append(f"{noun} ({files})")
     proc = "unchanged" if (prev.steps or []) == (cur.steps or []) else "changed"
     if proc == "changed":
         n_prev, n_cur = len(prev.steps or []), len(cur.steps or [])

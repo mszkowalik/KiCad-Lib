@@ -40,7 +40,7 @@ const LABELS: Record<Tab, string> = {
 const BLURBS: Record<Tab, string> = {
   bundles: "the berryware sets a device downloads, named as the berry project releases them",
   firmware: "the .bin images, content-addressed by sha256",
-  files: "the raw per-file pool behind the bundles — for a surgical edit to one script",
+  files: "the raw per-file pool — the berryware behind the bundles, and the .lbrn2 artwork a mark version pins",
 };
 
 export default function FlasherAdmin() {

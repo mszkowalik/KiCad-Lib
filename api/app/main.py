@@ -421,6 +421,24 @@ _PHASE1_DDL = (
     ("users.theme",
      "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
      "theme varchar(10) NOT NULL DEFAULT 'system'"),
+    # The device-file pool holds two kinds of file — the berryware a device
+    # downloads and the artwork a mark version engraves — and until now nothing
+    # in the data told them apart, so every screen called both "berryware".
+    # Backfilled from the extension: a LightBurn project is the only artwork
+    # the platform has ever stored (decision 0026).
+    ("device_files.kind",
+     "ALTER TABLE device_files ADD COLUMN IF NOT EXISTS "
+     "kind varchar(20) NOT NULL DEFAULT 'berryware'"),
+    ("device_files.kind.backfill",
+     "UPDATE device_files SET kind = 'artwork' WHERE kind = 'berryware' "
+     "AND (lower(filename) LIKE '%%.lbrn' OR lower(filename) LIKE '%%.lbrn2')"),
+    # A file that is not UTF-8 text keeps its bytes as uploaded. Every version
+    # stored so far is text, so the default is a no-op migration.
+    ("device_file_versions.is_binary",
+     "ALTER TABLE device_file_versions ADD COLUMN IF NOT EXISTS "
+     "is_binary boolean NOT NULL DEFAULT false"),
+    ("device_file_versions.content_bytes",
+     "ALTER TABLE device_file_versions ADD COLUMN IF NOT EXISTS content_bytes bytea"),
 )
 
 # name -> "ok" | "failed: ..."; served by GET /api/health/schema.

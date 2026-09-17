@@ -112,7 +112,7 @@ export default function DiffView({
               </div>
             )}
 
-            <h3 className="card-title">Berryware</h3>
+            <h3 className="card-title">{filesTitle(diff.files)}</h3>
             {changedOnly(diff.files).length === 0 ? (
               <p className="muted">Unchanged — same file set.</p>
             ) : (
@@ -204,4 +204,12 @@ function StepDiff({
       ) : null}
     </div>
   );
+}
+
+/** "Berryware", "Artwork" or "Files" — from the kinds on both sides, so a
+ *  mark version's diff does not call its drawing berryware. */
+function filesTitle(rows: { before: { kind: string } | null; after: { kind: string } | null }[]): string {
+  const kinds = new Set(rows.flatMap((r) => [r.before?.kind, r.after?.kind]).filter(Boolean));
+  if (kinds.size === 1) return kinds.has("artwork") ? "Artwork" : "Berryware";
+  return "Files";
 }

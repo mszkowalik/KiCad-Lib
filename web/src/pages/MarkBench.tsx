@@ -11,7 +11,7 @@
  *  own steps, its own pinned artwork, its own history rows. The laser is
  *  reached by `mark_laser`, the only op the bench hands to the agent.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   errorMessage,
   getProjects,
@@ -130,6 +130,21 @@ export default function MarkBench() {
     .flatMap((d) => d.versions.map((v) => ({ d, v })))
     .find((x) => x.v.id === versionId);
 
+  /** The project's marking procedure, current version — what the bench marks
+   *  with all day, so the page opens on it (user decision 2026-09-17). Applied
+   *  once per project: a version picked by hand afterwards sticks, and a
+   *  remembered one that still belongs to this project wins. */
+  const defaultedFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (!validProject || deployments[0]?.project_id !== validProject) return;
+    if (defaultedFor.current === validProject) return;
+    defaultedFor.current = validProject;
+    const known = deployments.some((d) => d.kind === "mark" && d.versions.some((v) => v.id === versionId));
+    if (known) return;
+    const mark = deployments.find((d) => d.kind === "mark" && d.current_version_id);
+    setVersionId(mark?.current_version_id ?? null);
+  }, [validProject, deployments, versionId, setVersionId]);
+
   const checkAgent = useCallback(async (quiet = false) => {
     // Only the FIRST check says "checking…". A poll that flickered the pill
     // twice a second would be harder to read than no status at all.
@@ -232,7 +247,12 @@ export default function MarkBench() {
             <Field label="Project">
               <select
                 value={validProject ?? ""}
-                onChange={(e) => setProjectId(Number(e.target.value) || null)}
+                onChange={(e) => {
+                  setProjectId(Number(e.target.value) || null);
+                  setVersionId(null);
+                  // Picking a project asks for its marking procedure back.
+                  defaultedFor.current = null;
+                }}
               >
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
