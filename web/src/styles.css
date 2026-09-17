@@ -4143,11 +4143,16 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
   font-size: 12px;
   line-height: 1.45;
   padding: 8px 10px;
-  height: 300px;
+  /* Four lines shorter than it was: the log is open by default now, and the
+     station box must still fit four-up above the fold. */
+  height: 230px;
   overflow-y: auto;
-  overflow-x: hidden;
-  white-space: pre-wrap;
-  word-break: break-all;
+  /* ONE LINE PER LINE. Wrapping split every esptool progress line in two —
+     "Writing at 0x001bfd5a... (76" / "%)" — which doubled the height of the
+     busiest part of a run and made it unreadable. A long line scrolls
+     sideways instead; nothing important sits at the right-hand end. */
+  overflow-x: auto;
+  white-space: pre;
 }
 .flash-log-tall { height: 68vh; }
 .flash-log .fl-tx { color: var(--accent); }
@@ -4580,6 +4585,64 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
 .depl-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 
 .depl-timeline { display: flex; flex-direction: column; gap: 8px; }
+
+/* The selected deployment's head: what it is, then how it is set up.
+   It was one wrapping `.toolbar` — title, chip button, kind button, Delete and
+   New version in one line that broke wherever the width said, so the primary
+   action sat under a Delete and the settings read as a random row of buttons.
+   Two deliberate rows: identity (name, description, the one primary action) and
+   settings (each labelled), with Delete alone at the far right of the second. */
+.depl-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.depl-head-row { display: flex; align-items: flex-end; gap: 10px; }
+.depl-field-wide { flex: 1; }
+.depl-new-version { margin-bottom: 2px; }
+.depl-desc-box { resize: vertical; }
+/* The live socket picker: one row per USB port the agent can see, arrivals
+   first. A row is a button because picking one IS the action — there is no
+   Assign step to confirm, which is what makes "plug it in and take the new
+   row" a single gesture. */
+.socket-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 0;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.socket-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+}
+.socket-row:hover { background: var(--surface-2); }
+.socket-row.is-new { border-color: var(--ok); background: var(--ok-soft); }
+.socket-node { flex: 1; }
+
+.depl-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+.depl-setting { display: inline-flex; align-items: center; gap: 6px; }
+.depl-setting .muted { font-size: 12px; }
 .version-timeline { display: flex; flex-direction: column; gap: 6px; }
 .version-row {
   background: var(--surface);
@@ -4618,6 +4681,18 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
   padding: 8px 10px;
 }
 .composer-comment { flex: 1 1 260px; }
+
+/* One parameter: key, value, and its buttons on ONE line.
+   `.btn-row` wraps them instead, because `.row-input` is width:100% and
+   contributes no intrinsic width — the same trap `table.kv` hit. A grid gives
+   the two boxes a share each and lets the buttons keep their own size. */
+.param-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) auto auto;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
 .hidden-input { display: none; }
 
 .dv-images-table { table-layout: fixed; }

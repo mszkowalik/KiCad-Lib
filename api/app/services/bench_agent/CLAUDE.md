@@ -32,14 +32,42 @@ same reason.
 ## It is the bench's local appliance, and it will grow
 
 It is named for marking because that is what it was built for, but what it
-actually IS is "the part of the bench that has to run on the machine". It now
-drives the label printer as well (`/printers`, `/print`, 2026-09-17), and
-`GET /serial-ports` is here for binding stations to USB sockets
+actually IS is "the part of the bench that has to run on the machine". It drives
+the label printer (`/printers`, `/print`) and, since
+[0023](../../../../docs/decisions/0023-the-agent-programs-the-device.md),
+**every byte of serial the bench sends**: `POST /esp` (connect, erase, flash,
+reset, through the vendored esptool) and `/monitor/*` plus `GET /monitor?since=`
+(the device console). `GET /serial-ports` names the sockets a station can be
+bound to
 ([reference/bench-serial-ports.md](../../../../docs/reference/bench-serial-ports.md)).
 
-Adding a capability means adding a ROUTE, and keeping every rule below. In
-particular it stays one standard-library file: the moment it needs a printing
-library, it stops being something an operator can download and open, and that
+Three things that follow, and are easy to break:
+
+- **Everything is addressed by NODE**, so nothing here works for a station with
+  no socket assigned. That is the contract, not a limitation to route around.
+- **The connect ladder lives HERE and nowhere else** (`EspRun`). The browser
+  copy is deleted; do not reintroduce one.
+- **One console session at a time**, and `/monitor/open` closes any previous
+  one. The page's identity probe relies on that, and so does the hand-off
+  between the esptool phase and the dialog phase.
+- **A failed esptool call keeps the port open for as long as its exception
+  lives** (bench, 2026-09-17: "held by Python" — the agent refusing its own
+  handle, unfixable without a restart). The loader that opened the port hangs
+  off the exception's traceback. So `EspRun` keeps MESSAGES, never exception
+  objects, raises `from None`, and calls `release_own_port` AFTER the `except`
+  block — inside it the exception is still alive and `gc.collect()` frees
+  nothing. And an own-process hold is released, never refused.
+- **The device console reads ONE byte and then drains `in_waiting`.**
+  `ser.read(4096)` with a 200 ms timeout waits for the full count or the
+  timeout — a latency floor on every reply, which paced every Tasmota command
+  at about a second (run 6377). `GET /monitor` long-polls on a condition for
+  the same reason: the engine drains its queue before each command, so a
+  console delivered in clumps loses a reply that lands 3 ms after the write.
+
+Adding a capability means adding a ROUTE, and keeping every rule below — in
+particular the one about `vendor.zip`: it stays standard library plus that one
+vetted, pure-Python archive. The moment it needs a package with a compiled
+part, it stops being something an operator can download and open, and that
 property is worth more than any convenience inside it.
 
 ## The printer, and the three things that are expensive to get wrong
@@ -77,12 +105,20 @@ automated rather than pretending.
 
 ## The rules
 
-- **`agent.py` must stay standalone and standard-library only.** It is
-  downloaded and run on a bench with nothing installed — verified against
-  macOS's own Python 3.9.6, no venv, no pip. A dependency here is not a small
-  change; it is the difference between "run this file" and "set up a machine".
-  That is also why it speaks plain HTTP and the page polls, rather than a
-  WebSocket: the library was the whole obstacle.
+- **`agent.py` is standard-library only, and `vendor.zip` is the ONE
+  exception.** The agent is downloaded and run on a bench with nothing
+  installed — verified against macOS's own Python 3.9.6, no venv, no pip.
+  Since [0023](../../../../docs/decisions/0023-the-agent-programs-the-device.md)
+  it programs devices too, and esptool is not standard library: it ships as
+  `vendor.zip` beside `agent.py` (esptool 4.8.1, pyserial, and their
+  pure-Python dependencies — no compiled code, ~640 KB), which `import_vendor()`
+  extracts once into `~/Library/Caches/7Sigma Agent/vendor-<hash>/`. Extracted,
+  not zipimported: esptool opens its stub-flasher JSON files by path. Rebuild
+  it with `scripts/build-agent-vendor.sh`, never by hand, and never add a
+  package with a compiled part — `cryptography` is left out on purpose, and
+  esptool imports without it. Anything else the agent needs stays stdlib, and
+  the page still polls plain HTTP: the library was the obstacle, and one
+  vetted zip is the whole allowance.
 - **The LightBurn client lives in `agent.py`, and `mark.py` imports it back.**
   The direction looks backwards until you remember which file has to stand
   alone. One implementation of the UDP protocol and of the dialog guards, which

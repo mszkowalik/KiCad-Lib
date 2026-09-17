@@ -23,6 +23,7 @@ import {
   type ValidationResult,
 } from "../../api";
 import { ErrorBanner, Spinner } from "../Ui";
+import ParamSetEditor from "./ParamSetEditor";
 import StepEditor from "./StepEditor";
 import { useModal } from "../modal";
 
@@ -58,6 +59,8 @@ export default function Composer({
   const [filesLabel, setFilesLabel] = useState("");
   const [stepsText, setStepsText] = useState("");
   const [paramSetId, setParamSetId] = useState<number | "">("");
+  /** The param-set editor, when open: an id to edit or a new set to create. */
+  const [editingParams, setEditingParams] = useState<{ id: number } | { new: true } | null>(null);
   const [transport, setTransport] = useState("uart_bridge");
   const [monitorBaud, setMonitorBaud] = useState(115200);
 
@@ -312,7 +315,31 @@ export default function Composer({
                 <option key={p.id} value={p.id}>{p.name} ({p.keys.length} keys)</option>
               ))}
             </select>
+            {/* The VALUES are editable from here, not only on the files page:
+                changing the bench WiFi means opening the deployment, and
+                sending somebody to another screen for it is how a procedure
+                ends up interpolating a password nobody can find. */}
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => setEditingParams(paramSetId === "" ? { new: true } : { id: Number(paramSetId) })}
+            >
+              {paramSetId === "" ? "New param set…" : "Edit values…"}
+            </button>
           </div>
+          {paramSetId !== "" ? (
+            <p className="muted dim">
+              This procedure may interpolate{" "}
+              <span className="mono">{paramKeys.map((k) => `{${k}}`).join(" ") || "nothing"}</span>.
+              The values are shared and not versioned — a change takes effect on the next run of
+              every version using this set.
+            </p>
+          ) : (
+            <p className="muted dim">
+              No set: a step writing <span className="mono">{"{SSId1}"}</span> or{" "}
+              <span className="mono">{"{MqttHost}"}</span> cannot be published.
+            </p>
+          )}
         </div>
 
         {/* ---------------- validation ---------------- */}
@@ -363,6 +390,28 @@ export default function Composer({
           </button>
         </div>
       </div>
+      {editingParams ? (
+        <ParamSetEditor
+          projectId={deployment.project_id}
+          paramSetId={"id" in editingParams ? editingParams.id : null}
+          onClose={(saved) => {
+            setEditingParams(null);
+            if (!saved) return;
+            // Re-read the list: a new set has to become selectable, and an
+            // edited one may have gained or lost keys the step editor offers.
+            void listParamSets(deployment.project_id).then((sets) => {
+              setParamSets(sets);
+              if (!("id" in editingParams)) {
+                const made = sets.find((x) => !paramSets.some((old) => old.id === x.id));
+                if (made) {
+                  setParamSetId(made.id);
+                  mark("params");
+                }
+              }
+            });
+          }}
+        />
+      ) : null}
     </div>
   );
 }

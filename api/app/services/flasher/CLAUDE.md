@@ -19,6 +19,30 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
   table, cost per row is the design constraint** — a column here is four bytes
   times two and a half million.
 
+- **THE BROWSER OPENS NO SERIAL PORT. The agent does every byte** (2026-09-17,
+  decision
+  [0023](../../../../docs/decisions/0023-the-agent-programs-the-device.md)).
+  `esp_connect`, `erase`, `flash` and `esp_reset` are relayed by
+  `Station.agentEsp` to `POST /esp`, which runs Python's esptool against the
+  station's socket; the device console is `POST /monitor/open` plus a poll of
+  `GET /monitor?since=`. `connect_mode` comes back prefixed `agent:`. The PAGE
+  still fetches the firmware and passes the bytes on loopback, because the
+  agent holds no token. **There is no browser fallback** — `station.ts` lost
+  948 lines, esptool-js included — so a bench with no agent cannot program,
+  and both benches say so.
+
+  Three consequences for anything you change here:
+
+  1. **The connect ladder lives once, in `EspRun` (`agent.py`).** The rungs
+     below are its rungs. Do not re-implement them in the page.
+  2. **A station must own a socket.** The agent addresses a port by its
+     `/dev/cu.*` node, so `Assign socket…` is a list of the agent's own names
+     and not Chrome's picker. Nothing is adopted by arrival.
+  3. **The transport profile comes from the deployment VERSION.** Nothing
+     sniffs USB ids any more, because no `SerialPort` object exists here. A C6
+     procedure names `usb_serial_jtag` itself; everything else gets the bridge.
+
+
 - **ONE revision binds everything: the DEPLOYMENT VERSION.** It pins firmware
   images (`deployment_images`), berryware (`deployment_files` → exact
   `device_file_versions`), the procedure (`steps`), and the parameter wiring.
@@ -172,113 +196,61 @@ Full design: `docs/flasher/design.md` (§14 = the bundle model, §13 = its histo
   available flash" — **after the erase step has already wiped the device**.
   Every V2 deployment version carries `detect`, because the procedures were
   reconstructed from a Python esptool that accepts `--flash_size detect`, so no
-  V2 version could ever have flashed from the browser. `validate.check()` now
-  gates all three flash parameters against the values esptool-js declares.
+  V2 version could ever have flashed from the browser. **Decision 0023 returned
+  the platform to that same Python esptool**, which takes `detect` directly, so
+  the resolution step is gone with the rest of the browser path — but
+  `validate.check()` still gates all three flash parameters, because a version
+  is authored once and may outlive whichever tool reads it.
 
 - **The Dongle V2 bridge is a CH340 and reports NO USB serial number**
   (verified 2026-09-16: `idVendor` 0x1A86, `idProduct` 0x7523, "USB2.0-Serial",
-  and `ioreg` shows no serial-number key). Three consequences, all load-bearing
-  for the bench:
-  1. **Two V2 units are indistinguishable over USB.** `SerialPort.getInfo()`
-     returns only `usbVendorId`, `usbProductId` and a Bluetooth class id — no
-     path, no location, no serial number — so `Station.sameDevice()` is as
-     specific as it can ever be and a multi-slot page must arbitrate an
-     arriving port by ARRIVAL, never by identity, and **a station cannot be
-     bound to a USB socket at all** — the port belongs to the dongle, and
-     `getInfo()` hides the one name that encodes the socket. Four attempts at
-     it failed; do not try a fifth without reading
-     [docs/reference/bench-serial-ports.md](../../../../docs/reference/bench-serial-ports.md),
-     which records each one, what was measured, and what would have to change
-     (a C6 may not need any of it). A refused assign SAYS whose port it is, and
-     the label carries `#n` from `getPorts()`, because the USB ids alone cannot
-     tell two stations' ports apart.
-  2. **The Web Serial grant does NOT survive an unplug** (measured
-     2026-09-16: after a replug the run log shows `granted ports: 0`, and
-     `port.connected` on the held handle is `false`). With no serial number
-     Chrome cannot durably identify the device, so the permission is dropped
-     with the device and `getPorts()` comes back EMPTY. No amount of
-     re-acquiring helps — there is nothing to re-acquire, and only a fresh
-     `requestPort()` popup would restore it. **One pick per unit is therefore
-     the BASELINE the bench must work well under**, because the software also
-     runs on machines nobody here can configure. `Station.ensurePort()` asks
-     inside the operator's own Start click — a user gesture does not survive an
-     intervening fetch, so the port is obtained BEFORE the run is created, never
-     after. A serial policy removes the pick, but it is an optimisation for a
-     bench somebody owns, never something the product may depend on. **A bench therefore needs a Chrome
-     serial policy**, and on a dev Mac it needs no root: the user-level
-     `com.google.Chrome` domain is honoured (verified 2026-09-16, where an
-     older `SerialAllowAllPortsForUrls` entry for `http://127.0.0.1:5174` was
-     already live and working). The policy's origins are EXACT — `localhost`
-     and `127.0.0.1` are different origins, and so is a different port, which
-     is why that old entry never covered the bench on 5173. **The product
-     ships this inside the bench agent, not as a script** (2026-09-17): the
-     agent's first start writes the grant into the user's `com.google.Chrome`
-     domain for the origin baked into its launcher, and both benches offer the
-     agent download. `GET /api/flasher/bench-policy.mobileconfig` still
-     generates a macOS profile for the origin the BROWSER says it is on
-     (`Origin`, else `Referer`) — for a machine whose Chrome is managed, where
-     `/Library/Managed Preferences` outranks the user domain and only an
-     administrator can install anything. Only the browser knows the real
-     address, and a grant written for the wrong one silently does nothing. It grants `SerialAllowUsbDevicesForUrls` for
-     `BENCH_USB_BRIDGES` only — never "any serial port", which is not a grant to
-     hand out by download. Windows is not covered yet. A part that DOES
-     report a serial number, such as the C6's native USB, never had this
-     problem — which is why V3 benches never hit it.
-  3. **Device identity comes from the FIRMWARE, never the bridge.** The MAC and
+  and `ioreg` shows no serial-number key). **Decision 0023 made most of what
+  followed from that moot** — the browser no longer opens a port, so there is
+  no grant to lose and no picker to re-answer. What survives it:
+
+  1. **A station is bound to a SOCKET, by name, from the agent's list**
+     ([bench-serial-ports.md](../../../../docs/reference/bench-serial-ports.md)
+     holds the two hardware facts that make it hard, and names the four
+     browser-side attempts that failed so nobody rebuilds one; the answer is
+     now trivial because the agent can simply see the node).
+  2. **Device identity comes from the FIRMWARE, never the bridge.** The MAC and
      the Tasmota topic are read over the console (`Status 0`), which is why the
      marking procedure has to talk to the device before it can mark it.
+  3. **`GET /api/flasher/bench-policy.mobileconfig` is now only about loopback
+     access**, for a machine whose Chrome is managed. The serial grant in it is
+     vestigial.
 
-- **A `SerialPort` handle does not survive the device leaving the bus**
-  (2026-09-16). After a replug Chrome hands out a NEW object from
-  `getPorts()`; `open()` on the old one fails with "Failed to open serial
-  port." The GRANT survives, so this never needs another port-picker popup —
-  `Station.resolvePort()` re-acquires by USB ids and every open path calls it
-  first, including each retry. An operator swapping one device for the next is
-  the normal case on a bench, not an edge case.
-
-- **`Station.espOpen` is a LADDER, and each rung is a defect it was built for**
-  (2026-09-16): `default_reset` at the profile's baud, then at 115200, then
+- **The connect LADDER is `EspRun`'s, in `agent.py`, and each rung is a defect
+  it was built for** (2026-09-16, moved to the agent 2026-09-17): `default_reset` at the profile's baud, then at 115200, then
   `no_reset` at the profile's baud after pulsing EN ourselves with the operator
   holding BOOT. Rung 3 exists because a board whose IO0 is not driven (unit
-  `20:e7:c8:92:b6:10`) lands back in flash boot on EVERY reset — and esptool-js
-  runs seven per connect, so **more attempts make it worse, not better**. That
+  `20:e7:c8:92:b6:10`) lands back in flash boot on EVERY reset — and esptool
+  runs several per connect, so **more attempts make it worse, not better**. That
   rung needs a hand on the device, so it KEEPS RETRYING while it says so
-  (`onBootWait`, every 1.2 s for 30 s, with a Stop waiting button) and then
-  fails — asking once would only move the retry into the operator's hands while
+  (every 1.2 s for 30 s) and then fails — asking once would only move the retry into the operator's hands while
   they are still reaching for the board. There is no "BOOT held" switch: the
   ladder reaches that rung by itself, and a switch would be one more thing to
   leave in the wrong position. The rung that worked is reported as `connect_mode` and stored in the
   run's results: a unit that only answers with BOOT held has a fault, and
   rescuing it silently every run is how that stays invisible.
 
-- **A deploy breaks every bench tab that is already open, and it looks like a
-  device fault** (prod run 6329, 2026-09-17). esptool-js loads its per-chip
-  module lazily, Vite emits it as a hashed chunk, and a new image replaces
-  every chunk — so a tab opened before the deploy fails its first connect with
-  `Failed to fetch dynamically imported module …/esp32-<hash>.js`, on every
-  rung, and the ladder ended in "BOOT was not held within 30s" while the
-  operator held BOOT. Two guards: `main.tsx` reloads once on Vite's
-  `vite:preloadError`, and `Station.espOpen` aborts the ladder on that error
-  with "reload the page" instead of blaming the device. Never treat a
-  module-load failure as a rung. The esptool phase itself runs in the browser
-  over USB; the internet carries only the engine's step messages, so latency
-  was never the cause.
-
-- **esptool-js changes baud by CLOSING and REOPENING the port**
-  (`changeBaud()` → `transport.disconnect()` then `connect()`), and a Web Serial
-  close/open toggles DTR and RTS. On a board that resets from that, the stub is
-  gone and the next command reads `Invalid head of packet`. Python esptool
-  changes speed on the open descriptor and never sees this. `espOpen` therefore
-  falls back to 115200 on any failure, where `romBaudrate === baudrate` and
-  esptool-js skips the change entirely; erase uses 115200 outright, because a
-  three-second command gains nothing from the switch. **A board that needs BOOT
-  held is not a board that cannot take 460800** — those are two faults, and the
-  BOOT rung used to charge every unit the price of both. It now starts at the
-  profile's baud and drops to 115200 only when esptool got as far as logging
-  `Changing baudrate` (`Station.sawBaudChange`), which means the sync and the
-  stub were fine and the speed switch alone failed. Holding BOOT harder does not
-  fix that one, so it is the only failure worth demoting on.
-
+- **A deploy used to break every bench tab that was already open** (prod run
+  6329, 2026-09-17). esptool-js loaded its per-chip module lazily, Vite emitted
+  it as a hashed chunk, a new image replaced every chunk, and a tab opened
+  before the deploy failed its first connect with `Failed to fetch dynamically
+  imported module …/esp32-<hash>.js` — on every rung, ending in "BOOT was not
+  held within 30s" while the operator held BOOT. **Decision 0023 removed the
+  cause**: nothing in the flashing path is lazily imported any more. The guard
+  in `main.tsx` (reload once on Vite's `vite:preloadError`) stays, because any
+  route in the app can still be a stale chunk after a deploy.
+- **esptool-js changed baud by CLOSING and REOPENING the port**, and that is
+  why the ladder below has a 115200 rung. A Web Serial close/open toggles DTR
+  and RTS; on a board that resets from it the stub is gone and the next command
+  reads `Invalid head of packet`. **Python's esptool does not do this** — it
+  sets the speed on the open descriptor — so the rung may turn out to be
+  unnecessary now. It is kept until a bench proves it: the fault it was built
+  for (unit `20:e7:c8:92:b6:10`, 2026-09-16) is a property of the board, and
+  only a run on that unit can say whether the transport was the whole story.
 - **Marking is a RUN, and `mark_laser` is the only op the bench does not execute
   itself** (2026-09-16, decision
   [0020](../../../../docs/decisions/0020-marking-goes-through-lightburn.md)). A

@@ -98,7 +98,9 @@ export class RunClient {
             skip_ops: this.bench.skipOps ?? [],
             client_info: {
               user_agent: navigator.userAgent,
-              usb: this.station.portIds,
+              // The SOCKET, not USB ids: the agent names the port and the ids
+              // never distinguished two identical dongles anyway.
+              socket: this.station.socket,
               // Two addresses this browser is PROVABLY reaching the platform
               // by. The engine picks the first one a device on WiFi could use
               // too, which is how {base_url} resolves without configuration.

@@ -6,11 +6,16 @@ The production programming screens. The backend rules are in
 
 ## Flasher UI — where things live
 
-- `src/flasher/station.ts` is the PORTED, HARDWARE-VERIFIED PoC (one USB
-  adapter = one Station: esptool phase + monitor byte pipe). The transport
-  rules in it are measured requirements (ESP32-C6 native USB: never call
-  `setSignals()` in monitor mode; explicit reset pulse because esptool-js's
-  `after("hard_reset")` is a no-op) — do not "clean them up".
+- `src/flasher/station.ts` is a RELAY to the bench agent, not an
+  implementation (decision
+  [0023](../../../../docs/decisions/0023-the-agent-programs-the-device.md)).
+  One station = one USB SOCKET on the bench machine. It names the socket and
+  the operation; the agent runs Python's esptool and holds the console. **This
+  page opens no serial port, so there is no Web Serial here at all** — no
+  picker, no permission, no `navigator.serial`. The transport rules are still
+  measured requirements and are honoured by the agent (ESP32-C6 native USB:
+  `monitor_signals` is null and DTR/RTS are left alone) — do not "clean them
+  up" on either side.
 - `src/flasher/runClient.ts` talks to the engine WebSocket: it executes
   `action` ops, pipes `tx`/`rx`, answers `prompt`s (SIM PIN modal) and
   forwards every station log line as `{t:"log"}` so the stored record is
@@ -47,6 +52,18 @@ The production programming screens. The backend rules are in
   the file table behind a Show-files toggle. Deleting an artifact goes through
   the API's usage guard; surface the 409 text, never pre-filter in the browser
   (the backend knows every reference).
+- **The BATCH is the only mode control, and "no batch" is the bench trial**
+  (user decision 2026-09-17). There used to be a `batch run` / `bench trial`
+  dropdown beside the batch one, which made "batch run with no batch picked" a
+  state the page had to detect and warn about — and which disabled Automatic
+  until it was resolved. One control cannot express it: a batch means
+  production on that batch's assigned version, none means a trial that may run
+  a draft and is recorded as such.
+- **There is no Test button on a station.** A test is an ordinary deployment
+  with `kind: "test"`, so it is run by picking its version like any other, and
+  a second button that silently ran a different version was a way to program a
+  unit under a procedure nobody chose (user decision 2026-09-17). The kind
+  still decides which BENCH offers a procedure; it no longer adds a button.
 - **The marking bench is its own page, and `BenchStation` takes a `mode`**
   (2026-09-16). `mode="mark"` drops Erase and Test — a marking bench has no
   business wiping a device — and renames Program to Mark. `autoStart` fires the
@@ -58,22 +75,30 @@ The production programming screens. The backend rules are in
   because a programming run erases the device before it writes. Whatever else
   gets this, keep the once-per-device arm: a retry loop on a failing unit is
   the failure mode it exists to prevent.
-- **A station owns a SOCKET, and nothing is adopted automatically**
-  (2026-09-16). `Assign socket…` picks a port once, identifies which
-  `/dev/cu.*` node it is, and stores `slot -> node` in the browser; after that
-  the station takes that node and no other, across replugs and reloads, and the
-  port row prints the real name. An unassigned station stays empty however many
-  devices appear. **Arrival order is gone** — it handed station 1 whatever
-  turned up, so moving a cable silently moved the station.
-- **Identification OPENS the port, which resets an ESP32.** That is the price of
-  the only trick that works (`identifyPort` in `flasher/station.ts`: note what
-  the agent says is held, open, look again). So it never runs against a busy
-  station, the result is cached per `SerialPort` object, and the identifications
-  are queued — two at once and both look "newly held".
-- **Without the agent the bench still works, it just forgets.** `identifyPort`
-  returns "" rather than throwing, assignment holds the port for the session,
-  and the row says the station cannot remember its socket. Do not turn that into
-  an error: a bench with no agent is a usable bench.
+- **The socket picker WATCHES, because a port name identifies nothing**
+  (`SocketPicker.tsx`, user request 2026-09-17). Four identical CH340s give
+  four `/dev/cu.usbserial-*` names an operator cannot tell apart, so the picker
+  opens with whatever is there — including nothing — polls the agent while it
+  is open, and marks anything that ARRIVES as `new`, sorted to the top. Plug
+  the device in with the dialog open and take the row that appears; that is how
+  Chrome's own picker solved the same problem. It never auto-assigns: two
+  cables can arrive at once, and appearing is a hint rather than a decision.
+  Both benches use it — the marking station needs a socket for exactly the same
+  reason, to read the device's serial.
+- **A station owns a SOCKET, chosen BY NAME from the agent's list**
+  (2026-09-16, simplified by 0023 on 2026-09-17). `Assign socket…` shows the
+  agent's `/dev/cu.*` nodes with who holds each, and stores `slot -> node` in
+  the browser; after that the station takes that node and no other, across
+  replugs and reloads. An unassigned station stays empty however many devices
+  appear, and cannot run at all — the agent addresses a port by its name.
+  **Arrival order is gone** — it handed station 1 whatever turned up, so moving
+  a cable silently moved the station. **So is `identifyPort`**, the
+  open-the-port-and-compare trick that existed only because Web Serial would
+  not name a port; the agent simply names it.
+- **Without the agent the bench does NOT work, and says so.** That is the
+  trade 0023 made deliberately: one implementation, no fallback. The flashing
+  bench keeps a `/hello` heartbeat so the banner is honest, and a station whose
+  socket has no cable in it reads empty rather than ready.
 - **One station gets a different LAYOUT, not a different component.**
   `.bench-station.is-mark` re-flows the same markup into two columns through
   named grid areas — what the operator acts on at the left, what they read at
@@ -88,7 +113,7 @@ The production programming screens. The backend rules are in
   `BenchStation` with flashing slot 0, so keying both by index meant renaming
   one renamed the other.
 - **The manual mark and a marking run share ONE implementation**
-  (`runMarkJob` in `flasher/markAgent.ts`). Both fetch the artwork the version
+  (`runMarkJob` in `flasher/benchAgent.ts`). Both fetch the artwork the version
   pins, patch the one text shape and hand the finished job to the agent; the
   only difference is where the string came from — the device's own topic, or
   the operator's keyboard. Two copies would drift the moment one of them

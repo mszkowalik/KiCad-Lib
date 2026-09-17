@@ -68,4 +68,5 @@ include = ["app*", "kiutils*"]
 # Jaravis's seed skill documents are read at import time via importlib path
 # (app/seed_skills/*.md) — ship them in the non-editable Docker install too.
 # Same for the KiCad sync plugin sources packaged by services/pcm.py.
-app = ["seed_skills/*.md", "services/fieldsolver/data/*.json", "services/pcm_plugin/*"]
+app = ["seed_skills/*.md", "services/fieldsolver/data/*.json", "services/pcm_plugin/*",
+       "services/bench_agent/vendor.zip"]

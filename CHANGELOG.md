@@ -1,5 +1,68 @@
 # Changelog
 
+## 2026-09-17 (find the socket by plugging the device in)
+
+- **Assign socket… is a live list.** It opens even when nothing is plugged in,
+  watches the agent's ports while it is open, and marks anything that appears
+  as **new**, at the top. Plug the device in with the dialog open and take the
+  row that appeared — the same trick Chrome's port picker used, now against
+  the agent's real `/dev/cu.*` names. Both benches use it.
+
+## 2026-09-17 (the bench asks one question about a batch)
+
+- **One dropdown, not two.** The flashing bench had a `batch run` / `bench
+  trial` select beside the batch select, so "batch run" with nothing picked
+  was a state it had to warn about and which disabled Automatic. Now the batch
+  dropdown starts with **no batch — bench trial**: picking a batch makes the
+  run production, leaving it makes it a trial that may run a draft.
+- **The Test button is gone from a station.** A test is an ordinary deployment
+  with `kind: "test"` — pick its version and press Program. The button ran a
+  different version than the one on screen.
+
+## 2026-09-17 (a deployment is configured on its own page)
+
+- **The WiFi, MQTT and the other placeholder values are editable from the
+  deployment.** *Edit values…* on a published version's Parameters card and in
+  the composer's Parameters section open the same editor the files page uses
+  (`ParamSetEditor`); secrets are masked with a show toggle. Both say plainly
+  that a param set is shared and not versioned: a change reaches the next run
+  of every version that points at it.
+- **The deployment's own fields are boxes, not prompts.** Name, description
+  (stored on every deployment and never shown until now), kind, chip and the
+  test default for new batches are plain fields on the deployment's card;
+  **Save** and **Cancel** appear only once something differs from what is
+  stored, and one Save writes the whole row. *New version* sits alone beside
+  the name and Delete alone at the far end. It used to be six buttons in one
+  wrapping line, each opening a popup.
+
+## 2026-09-17 (the bench is browser-independent)
+
+**The bench agent does every byte of serial work, and Web Serial is gone**
+([decision 0023](docs/decisions/0023-the-agent-programs-the-device.md)).
+Connect, erase, flash, reset and the device console all run in the agent on the
+bench machine, against the socket a station owns. The page names the socket and
+relays the log; it opens no port.
+
+- **`Assign socket…` is a list of real port names** — the agent's own
+  `/dev/cu.*` nodes, with who holds each — instead of Chrome's port picker.
+  A station keeps its socket across replugs and reloads.
+- **Nothing to grant and nothing to lose.** No serial permission, no per-unit
+  picker on a CH340 that has no serial number, no
+  `SerialAllowUsbDevicesForUrls`, no secure-context requirement. A deploy can
+  no longer break a bench tab that is open, because nothing in the flashing
+  path is lazily loaded any more.
+- **The agent download carries `vendor.zip`** (esptool 4.8.1 + pyserial, pure
+  Python, 634 KB), extracted once on first start. The agent window and
+  `/hello` report which esptool it has.
+- **A bench with no agent cannot program**, by design — one implementation, no
+  fallback. Both benches say so plainly, and the flashing bench keeps a
+  heartbeat so the message is current.
+- **Confirmed on hardware, then the browser's flashing dependencies were
+  deleted.** Runs 6383, 6384 and 6385 all passed through the agent at 460800
+  baud on the first rung, and 6385 joined WiFi and pulled its 18 configuration
+  files — so `esptool-js`, `js-md5` and the Web Serial types left
+  `web/package.json`. The bundle no longer carries a chip module at all.
+
 ## 2026-09-17 (a deploy no longer breaks an open bench tab)
 
 - **A bench tab opened before a deploy failed every connect as "BOOT was not

@@ -1,6 +1,7 @@
 /** The composed view of ONE deployment version: everything a device gets,
  *  in the order it gets it, plus where the version is used. */
 import { useCallback, useEffect, useState } from "react";
+import ParamSetEditor from "./ParamSetEditor";
 import { Link } from "react-router-dom";
 import {
   errorMessage,
@@ -24,6 +25,8 @@ export default function VersionView({
   onDiff?: (versionId: number) => void;
   reloadKey?: number;
 }) {
+  /** The param-set editor, open on this set's id. */
+  const [editingParams, setEditingParams] = useState<number | null>(null);
   const [v, setV] = useState<DeploymentVersionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSteps, setShowSteps] = useState(true);
@@ -231,8 +234,30 @@ export default function VersionView({
           {v.param_defaults && Object.keys(v.param_defaults).length
             ? ` · defaults: ${Object.keys(v.param_defaults).join(", ")}`
             : ""}
+          {v.param_set_id ? (
+            <>
+              {" · "}
+              {/* Editable from a PUBLISHED version too, on purpose: the values
+                  are not versioned, so changing the WiFi is a settings change
+                  rather than a new version. The card above says so. */}
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setEditingParams(v.param_set_id)}
+              >
+                Edit values…
+              </button>
+            </>
+          ) : null}
         </p>
       </div>
+      {editingParams ? (
+        <ParamSetEditor
+          projectId={v.deployment.project_id}
+          paramSetId={editingParams}
+          onClose={() => setEditingParams(null)}
+        />
+      ) : null}
 
       <div className="card pad">
         <h3 className="card-title">Where used</h3>

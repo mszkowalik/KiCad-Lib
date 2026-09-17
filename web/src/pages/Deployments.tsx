@@ -23,6 +23,7 @@ import {
   type ProjectInfo,
 } from "../api";
 import { useDialog } from "../components/Dialog";
+import Field, { CheckField, FieldRow } from "../components/Field";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import Composer from "../components/flasher/Composer";
 import DiffView from "../components/flasher/DiffView";
@@ -113,15 +114,17 @@ export default function Deployments() {
     }
   };
 
-  const editChip = async () => {
+  /** Every field of the deployment itself — name, description, chip, kind,
+   *  the test default — is edited through this, so a change to one can never
+   *  reset another (the API takes the whole row). */
+  const patchDeployment = async (patch: Partial<{
+    name: string; description: string; chip: string; kind: string; active: boolean;
+  }>) => {
     if (!selected) return;
-    const chip = await dialog.prompt("Chip for this deployment:", {
-      title: selected.name, initial: selected.chip,
-    });
-    if (chip === null) return;
     try {
       await updateDeployment(selected.id, {
-        name: selected.name, description: selected.description, chip,
+        name: selected.name, description: selected.description, chip: selected.chip,
+        kind: selected.kind, active: selected.active, ...patch,
       });
       reload();
     } catch (err) {
@@ -129,21 +132,29 @@ export default function Deployments() {
     }
   };
 
-  /** On a TEST deployment this is the DEFAULT FOR THE NEXT BATCH, not a rule
-   *  about devices: a new batch is created with "units must pass the test"
-   *  already ticked, and the batch is what every programming run copies. So
-   *  turning it on affects work still to be planned, and never re-judges a
-   *  device that is already on the shelf. */
-  const toggleActive = async () => {
-    if (!selected) return;
+  /** The deployment's own fields, as typed. Boxes rather than prompts (user
+   *  decision 2026-09-17): every field is visible at once, Save and Cancel
+   *  appear only when something differs from what is stored, and one Save
+   *  writes the whole row. */
+  type Draft = { name: string; description: string; chip: string; kind: string; active: boolean };
+  const storedDraft = (d: DeploymentRow): Draft => ({
+    name: d.name, description: d.description, chip: d.chip, kind: d.kind, active: d.active,
+  });
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    // A new selection, or a reload after saving, is the stored row again.
+    setDraft(selected ? storedDraft(selected) : null);
+  }, [selected]);
+  const dirty = !!selected && !!draft
+    && (Object.keys(draft) as (keyof Draft)[]).some((k) => draft[k] !== storedDraft(selected)[k]);
+  const saveDraft = async () => {
+    if (!selected || !draft || !draft.name.trim()) return;
+    setSaving(true);
     try {
-      await updateDeployment(selected.id, {
-        name: selected.name, description: selected.description, chip: selected.chip,
-        kind: selected.kind, active: !selected.active,
-      });
-      reload();
-    } catch (err) {
-      setError(errorMessage(err));
+      await patchDeployment({ ...draft, name: draft.name.trim(), chip: draft.chip.trim() });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -198,28 +209,6 @@ export default function Deployments() {
     try {
       await publishDeploymentVersion(version.id);
       setReloadKey((k) => k + 1);
-      reload();
-    } catch (err) {
-      setError(errorMessage(err));
-    }
-  };
-
-  /** What this procedure IS — flash, test or mark — decides which bench
-   *  offers it and which button it gets. Read from `kind`, never from the
-   *  name, so it has to be settable where the name is. */
-  const changeKind = async () => {
-    if (!selected) return;
-    const kind = await dialog.select(
-      `What kind of procedure is "${selected.name}"?`,
-      KIND_OPTIONS,
-      { title: "Deployment kind", confirmLabel: "Set kind" },
-    );
-    if (kind === null || kind === selected.kind) return;
-    try {
-      await updateDeployment(selected.id, {
-        name: selected.name, description: selected.description, chip: selected.chip,
-        kind, active: selected.active,
-      });
       reload();
     } catch (err) {
       setError(errorMessage(err));
@@ -282,9 +271,10 @@ export default function Deployments() {
                 >
                   <span className="depl-name">{d.name}</span>
                   <span className="muted dim">
-                    {d.chip || "chip?"} · {d.versions.length} versions
+                    {d.chip || "no chip"} · {d.versions.length} version{d.versions.length === 1 ? "" : "s"}
                   </span>
                   <span className="depl-chips">
+                    {d.kind !== "flash" ? <span className="pill neutral">{d.kind}</span> : null}
                     {d.kind === "test" ? (
                       <span className={`pill ${d.active ? "ok" : "neutral"}`}>
                         {d.active ? "default on new batches" : "optional"}
@@ -305,50 +295,104 @@ export default function Deployments() {
             <div className="depl-timeline">
               {selected ? (
                 <>
-                  <div className="toolbar">
-                    <h2 className="card-title">{selected.name}</h2>
-                    <button type="button" className="btn btn-sm" onClick={editChip}>
-                      {selected.chip || "set chip"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={changeKind}
-                      title="flash: programs the device · test: judges it · mark: engraves and labels it. Decides which bench offers this procedure."
-                    >
-                      {KIND_OPTIONS.find((k) => k.value === selected.kind)?.label ?? selected.kind}
-                    </button>
-                    {selected.kind === "test" ? (
-                      <button
-                        type="button"
-                        className={`btn btn-sm${selected.active ? " btn-primary" : ""}`}
-                        onClick={toggleActive}
-                        title={
-                          selected.active
-                            ? "New batches of this project are created with \"units must pass the test\" ticked. Each batch can still be changed, and devices already made keep the rule they were made under. Click to stop requiring it by default."
-                            : "New batches are created without the test requirement. The test can still be run, and a test that runs and FAILS always counts against the device. Click to require it by default."
-                        }
-                      >
-                        {selected.active ? "required on new batches" : "not required by default"}
-                      </button>
+                  <div className="depl-head">
+                    {draft ? (
+                      <>
+                        <div className="depl-head-row">
+                          <Field label="Name" className="depl-field-wide">
+                            <input
+                              className="text"
+                              value={draft.name}
+                              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                            />
+                          </Field>
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm depl-new-version"
+                            onClick={() =>
+                              setComposing({
+                                from: selected.versions.find(
+                                  (v) => v.id === (selected.current_version_id ?? selected.versions[0]?.id),
+                                ) ?? null,
+                              })
+                            }
+                          >
+                            New version
+                          </button>
+                        </div>
+                        <Field label="Description" hint="What this procedure is for, in a sentence.">
+                          <textarea
+                            className="text depl-desc-box"
+                            rows={2}
+                            value={draft.description}
+                            onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                          />
+                        </Field>
+                        <FieldRow>
+                          <Field
+                            label="Kind"
+                            hint="Decides which bench offers this procedure."
+                          >
+                            <select
+                              className="text"
+                              value={draft.kind}
+                              onChange={(e) => setDraft({ ...draft, kind: e.target.value })}
+                            >
+                              {KIND_OPTIONS.map((k) => (
+                                <option key={k.value} value={k.value}>{k.label}</option>
+                              ))}
+                            </select>
+                          </Field>
+                          <Field label="Chip" hint="esp32, esp32c6, …">
+                            <input
+                              className="text mono"
+                              value={draft.chip}
+                              onChange={(e) => setDraft({ ...draft, chip: e.target.value })}
+                            />
+                          </Field>
+                          {draft.kind === "test" ? (
+                            <CheckField
+                              checked={draft.active}
+                              onChange={(v) => setDraft({ ...draft, active: v })}
+                              title="New batches of this project are created with “units must pass the test” ticked. Each batch can still be changed, and devices already made keep the rule they were made under."
+                            >
+                              New batches must pass this test
+                            </CheckField>
+                          ) : null}
+                        </FieldRow>
+                        <div className="depl-settings">
+                          {dirty ? (
+                            <>
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                onClick={() => void saveDraft()}
+                                disabled={saving || !draft.name.trim()}
+                              >
+                                {saving ? "Saving…" : "Save"}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm"
+                                onClick={() => setDraft(storedDraft(selected))}
+                                disabled={saving}
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : null}
+                          <span className="rail-spacer" />
+                          <button
+                            type="button"
+                            className="btn btn-sm row-del"
+                            onClick={removeDeployment}
+                            title="Delete this deployment — refused while any programming run records it"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </>
                     ) : null}
-                    <button type="button" className="btn btn-sm row-del" onClick={removeDeployment}
-                            title="Delete this deployment — refused while any programming run records it">
-                      Delete
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      onClick={() =>
-                        setComposing({
-                          from: selected.versions.find(
-                            (v) => v.id === (selected.current_version_id ?? selected.versions[0]?.id),
-                          ) ?? null,
-                        })
-                      }
-                    >
-                      New version
-                    </button>
                   </div>
                   <div className="version-timeline">
                     {selected.versions.map((v) => {

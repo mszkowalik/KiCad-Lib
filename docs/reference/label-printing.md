@@ -23,11 +23,25 @@ it out instead of the page. That is the one place this differs from marking.
 ## Setting up the printer
 
 1. Plug it in and give it its own power adapter. USB alone does not bring it up.
-2. macOS creates the queue by itself, with the DYMO PPD it already carries
-   (`/Library/Printers/PPDs/Contents/Resources/lw550.ppd.gz`, filter
-   `/Library/Printers/DYMO/Filters/V2/raster2dymolw`). **No DYMO application is
-   needed.** Verified on macOS 26 on 2026-09-17: the queue came up as
-   `usb://DYMO/LabelWriter%20550?serial=…` with no software installed.
+2. **The DYMO driver has to be on the machine, but no DYMO application has to
+   run.** On the current bench macOS created the queue by itself the moment the
+   printer was plugged in — `usb://DYMO/LabelWriter%20550?serial=…`, with the
+   `lw550` PPD and the `raster2dymolw` filter — because that driver was already
+   installed. **Do not read that as "macOS ships it".** What is on this Mac is
+   DYMO's own payload: 40 DYMO PPDs in
+   `/Library/Printers/PPDs/Contents/Resources/`, filters and a `pnpd` helper in
+   `/Library/Printers/DYMO/`, all code-signed by Sanford, L.P. (DYMO's parent,
+   team `N3S6676K3E`) and timestamped 24 April 2024.
+
+   **How it got there cannot be established from the machine**: no installer
+   receipt claims those files (`pkgutil --file-info` reports none) and
+   `install.log` has rotated past it. Either DYMO's own installer or an Apple
+   printer-driver update put it there, before this OS was in use.
+
+   So on a NEW bench: plug the printer in, and if no queue appears, install
+   DYMO Connect for Desktop or DYMO's standalone LabelWriter driver once. After
+   that the application can be removed — the CUPS driver is what the bench
+   uses, and nothing of DYMO's needs to be running.
 3. Load a **DYMO Authentic** roll. The 550 series reads an RFID chip on the
    roll and refuses anything else, including older DYMO rolls without a chip.
 4. The bench agent reports the queue on its own window and to the bench page.

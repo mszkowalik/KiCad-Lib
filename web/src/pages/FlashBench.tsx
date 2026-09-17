@@ -1,9 +1,13 @@
-/** The operator bench: FOUR station slots, each one USB adapter = one
- *  device. Chromium-only (Web Serial needs a secure context — localhost or
- *  HTTPS). The engine runs server-side; every line is stored as it arrives.
+/** The operator bench: FOUR station slots, each one USB socket = one device.
  *
- *  Two modes: a BATCH run (the batch's deployment version, published only) or
- *  a BENCH TRIAL (no batch, any version including a draft — recorded as such).
+ *  Browser-independent since decision 0023: every byte is the bench agent's, so
+ *  this page needs no Web Serial, no port picker and no Chrome policy. The
+ *  engine runs server-side; every line is stored as it arrives.
+ *
+ *  ONE control decides what a run is: the batch it belongs to. "no batch" is a
+ *  BENCH TRIAL — any version including a draft, recorded as a trial. Picking a
+ *  batch makes it production, on that batch's assigned version unless the
+ *  operator names another and says why.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -52,17 +56,19 @@ export default function FlashBench() {
   const [deployments, setDeployments] = useState<DeploymentRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [projectId, setProjectId] = useStickyState<number | null>("bench.project", null);
-  const [mode, setMode] = useStickyState<"batch" | "trial">("bench.mode", "batch");
+  /** No batch picked = a bench trial. The mode used to be its own dropdown
+   *  beside the batch one, which made "batch run" with no batch a state the
+   *  page had to warn about; now the two are one control and that state cannot
+   *  be expressed (user decision 2026-09-17). */
   // The batch is deliberately NOT remembered (user decision 2026-09-16). A
   // remembered batch is the one an operator programs a tray into by accident
   // the next morning; picking it is one click and it has to be a decision.
   const [runId, setRunId] = useState<number | null>(null);
   const [versionId, setVersionId] = useStickyState<number | null>("bench.versionv2", null);
   const [simPin, setSimPin] = useState("");
-  // A heartbeat to the bench agent, and nothing more: this bench needs the
-  // agent only before a run (the Chrome grant, socket binding), so it never
-  // polled it — and the agent's own window then said no bench page had ever
-  // connected. One /hello every 10 s makes both sides honest.
+  // A heartbeat to the bench agent: it does every byte of serial work, so
+  // "is it running" is the first thing this page has to be able to say. It
+  // also tells the agent's own window that a bench page is here.
   const [agentUp, setAgentUp] = useState<boolean | null>(null);
   useEffect(() => {
     const a = new MarkAgent();
@@ -93,8 +99,6 @@ export default function FlashBench() {
   // the operator's hand mid-batch.
   const [slots, setSlots] = useState(readStationCount);
 
-  const webSerial = typeof navigator !== "undefined" && "serial" in navigator;
-
   useEffect(() => {
     const ac = new AbortController();
     getProjects(ac.signal)
@@ -122,13 +126,6 @@ export default function FlashBench() {
   }, [validProject]);
 
   /** Every version, grouped by deployment, with channel and status labels. */
-  // The project's test sweep, if it has one. Read from `kind`, never from the
-  // name: renaming "Aqua_V2 test" must not take the Test button away.
-  const testVersionId = useMemo(() => {
-    const test = deployments.find((d) => d.kind === "test");
-    return test?.current_version_id ?? null;
-  }, [deployments]);
-
   const versionOptions = useMemo(
     () =>
       deployments.map((d) => ({
@@ -169,6 +166,9 @@ export default function FlashBench() {
 
   const validRun = runs.some((r) => r.id === runId) ? runId : null;
   const batch = runs.find((r) => r.id === validRun) ?? null;
+  /** A run with no batch is a bench trial: it may run a draft, and it is
+   *  recorded as a trial rather than counted as batch production. */
+  const trial = validRun === null;
 
   /** The version the BATCH says to use: its pinned one, else the version its
    *  channel points at. Null for every batch today — none pins or follows
@@ -186,17 +186,13 @@ export default function FlashBench() {
   }, [batch, deployments]);
 
   const isOverride =
-    mode === "batch" && versionId !== null && assignedVersionId !== null
+    !trial && versionId !== null && assignedVersionId !== null
     && versionId !== assignedVersionId;
 
-  // In batch mode a run with no batch would be recorded as a bench trial —
-  // the operator would be programming a tray into nothing. The stations get no
-  // version until the batch is picked, which is what their own guard reads.
-  const batchMissing = mode === "batch" && validRun === null;
   const chosenVersion = deployments
     .flatMap((d) => d.versions.map((v) => ({ d, v })))
     .find((x) => x.v.id === versionId);
-  const trialIsDraft = mode === "trial" && chosenVersion?.v.status === "draft";
+  const trialIsDraft = trial && chosenVersion?.v.status === "draft";
 
   /** The SIM PIN box belongs to the PROCEDURE, not to the bench. Only a
    *  procedure with an `lte_sim_pin` step can use the value (Dongle_V3
@@ -221,9 +217,10 @@ export default function FlashBench() {
             one USB adapter per station · the engine stores every line as it arrives
           </span>
         </div>
-        {!webSerial ? (
+        {agentUp === false ? (
           <div className="banner-warn">
-            This browser has no Web Serial — use Chrome or Edge on desktop, over localhost or HTTPS.
+            The bench agent is not running on this machine. It does all the serial work, so
+            nothing can be programmed until it is started.
           </div>
         ) : null}
         {error ? <ErrorBanner message={error} /> : null}
@@ -249,38 +246,27 @@ export default function FlashBench() {
             </select>
             <select
               className="row-input"
-              value={mode}
-              title="a batch run uses the batch's published version; a bench trial can run a draft"
-              onChange={(e) => setMode(e.target.value as "batch" | "trial")}
+              value={validRun ?? ""}
+              title="The batch this run belongs to. None = a bench trial: it may run a draft, and it is recorded as a trial rather than counted as production."
+              onChange={(e) => setRunId(e.target.value === "" ? null : Number(e.target.value))}
             >
-              <option value="batch">batch run</option>
-              <option value="trial">bench trial (no batch)</option>
+              <option value="">no batch — bench trial</option>
+              {runs.map((r) => (
+                <option key={r.id} value={r.id}>{r.label}</option>
+              ))}
             </select>
-            {mode === "batch" ? (
-              <select
-                className="row-input"
-                value={validRun ?? ""}
-                title="production batch — the run belongs to it"
-                onChange={(e) => setRunId(e.target.value === "" ? null : Number(e.target.value))}
-              >
-                <option value="">— pick the production batch —</option>
-                {runs.map((r) => (
-                  <option key={r.id} value={r.id}>{r.label}</option>
-                ))}
-              </select>
-            ) : null}
             <select
               className="row-input"
               value={versionId ?? ""}
               title={
-                mode === "batch"
-                  ? "leave empty to use the batch's assigned deployment version"
-                  : "the version to try out — drafts are allowed here"
+                trial
+                  ? "the version to try out — drafts are allowed on a bench trial"
+                  : "leave empty to use the batch's assigned deployment version"
               }
               onChange={(e) => setVersionId(e.target.value === "" ? null : Number(e.target.value))}
             >
               <option value="">
-                {mode === "batch" ? "batch's assigned version" : "— pick a version to try —"}
+                {trial ? "— pick a version to try —" : "batch's assigned version"}
               </option>
               {versionOptions.map((group) => (
                 <optgroup key={group.name} label={group.name}>
@@ -309,15 +295,9 @@ export default function FlashBench() {
               onChange={(e) => setOverrideReason(e.target.value)}
             />
           ) : null}
-          {batchMissing ? (
-            <p className="banner-warn">
-              Pick the production batch this run belongs to, or switch to a bench trial.
-            </p>
-          ) : null}
           <CheckField
             checked={autoStart}
             onChange={setAutoStart}
-            disabled={batchMissing}
             title="Each station starts its own run the moment a device appears on its port. Armed once per device: a finished unit left plugged in is not programmed twice."
           >
             Program automatically when a device is plugged in
@@ -344,15 +324,14 @@ export default function FlashBench() {
               <BenchStation
                 key={i}
                 index={i}
-                productionRunId={mode === "batch" ? validRun : null}
-                deploymentVersionId={batchMissing ? null : versionId}
-                autoStart={autoStart && !batchMissing}
+                productionRunId={validRun}
+                deploymentVersionId={versionId}
+                autoStart={autoStart}
                 overrideReason={overrideReason}
                 // A hidden box must not still be sending a value: switching
                 // from a V3 to a V2 would carry the PIN into a run that has
                 // no step to consume it.
                 simPin={wantsSimPin ? simPin : ""}
-                testVersionId={testVersionId}
                 projectId={validProject}
               />
             ) : (
@@ -402,20 +381,18 @@ function BenchSetupHint({ agentUp }: { agentUp: boolean | null }) {
       ) : agentUp === false ? (
         <strong>Bench agent: not running on this machine.</strong>
       ) : null}{" "}
-      A station owns a USB socket, and the browser cannot see which socket a cable is in — the
-      bench agent answers that.{" "}
+      The bench agent does all the serial work — esptool and the device console — so this
+      browser never opens a port.{" "}
       {mac ? (
         <>
           <a href={benchAgentUrl()} download>
             Download the bench agent
           </a>
-          , expand the zip and open <strong>7Sigma Agent</strong>: it also sets Chrome up for this
-          address on its first start — the port picker stops reappearing, and it needs no
-          administrator. Quit Chrome once after that. A machine with managed Chrome settings needs
-          the profile from its administrator instead.
+          , expand the zip and open <strong>7Sigma Agent</strong>, then give each station a socket.
+          Nothing else is needed: no port picker, no serial permission, no Chrome setting.
         </>
       ) : (
-        <>The agent is macOS only so far; on this system the picker stays.</>
+        <>The agent is macOS only so far, so this system cannot program from the bench yet.</>
       )}
     </p>
   );

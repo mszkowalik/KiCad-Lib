@@ -67,7 +67,6 @@ export default function MarkBench() {
    *  only proof the button did anything. */
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
 
-  const webSerial = typeof navigator !== "undefined" && "serial" in navigator;
 
   useEffect(() => {
     const ac = new AbortController();
@@ -204,12 +203,6 @@ export default function MarkBench() {
         </div>
         {error ? <ErrorBanner message={error} /> : null}
 
-        {!webSerial ? (
-          <div className="banner-warn">
-            This browser has no Web Serial. Use Chrome or Edge — the bench reads the device's identity
-            over its USB port.
-          </div>
-        ) : null}
 
         <div className="card pad stack">
           <FieldRow>
@@ -279,7 +272,6 @@ export default function MarkBench() {
             deploymentVersionId={versionId}
             overrideReason=""
             simPin=""
-            testVersionId={null}
             projectId={validProject}
           />
         </div>

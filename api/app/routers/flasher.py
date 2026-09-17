@@ -2061,6 +2061,12 @@ def bench_agent(request: Request):
 
         # ONE copy of the agent, inside the bundle; both launchers point at it.
         add(f"{_APP}/Contents/Resources/agent.py", (AGENT_SRC / "agent.py").read_text(), 0o644)
+        # esptool + pyserial, pure Python, extracted by the agent on first run
+        # (decision 0023). Stored, not deflated: it is already a zip.
+        vendor = zipfile.ZipInfo(f"{_APP}/Contents/Resources/vendor.zip", (2026, 1, 1, 0, 0, 0))
+        vendor.compress_type = zipfile.ZIP_STORED
+        vendor.external_attr = 0o644 << 16
+        zf.writestr(vendor, (AGENT_SRC / "vendor.zip").read_bytes())
         add(f"{_APP}/Contents/Info.plist", _APP_PLIST, 0o644)
         # 0o755: the execute bit is the whole reason this is an archive. A .app
         # whose executable is not executable does not open at all.

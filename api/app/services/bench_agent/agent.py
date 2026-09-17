@@ -45,6 +45,12 @@ The API, all on 127.0.0.1:19842:
     POST /mark                  {name, lbrn2(base64), start, job_timeout} -> {job}
     GET  /printers              the print queues, and what each one reports
     POST /print                 {value, printer, size, dots, rotate, copies} -> {job}
+    POST /esp                   {op: connect|erase|flash|reset, port, chip, baud, images, flash_config} -> {job}
+    POST /monitor/open          {port, baud, signals} — the device console, held here
+    GET  /monitor?since=<n>&wait=<s>  console lines after `n`; `wait` long-polls
+    POST /monitor/write         {text}
+    POST /monitor/reset         pulse EN for a normal boot
+    POST /monitor/close
     GET  /job/<id>?since=<n>    lines since `n`, and the result once done
 """
 
@@ -55,6 +61,7 @@ import base64
 import collections
 import glob
 import json
+import os
 import plistlib
 import re
 import socket
@@ -561,6 +568,374 @@ class Job:
             return self.lines[n:]
 
 
+# ---------------------------------------------------------------------------
+# Programming an ESP through the vendored esptool.
+#
+# The agent stays ONE downloadable thing, but not one standard-library file any
+# more: `vendor.zip` beside it carries esptool and pyserial (pure Python, no
+# compiled code, ~640 KB), extracted once into the user's cache. Decision 0023
+# says why the browser gave this job up: a deploy invalidated every open bench
+# tab, the CH340 has no serial number for Chrome to remember, and Python's
+# esptool changes baud on the open descriptor where esptool-js reopens the port.
+# ---------------------------------------------------------------------------
+
+VENDOR_ZIP = Path(__file__).resolve().with_name("vendor.zip")
+VENDOR_DIRS = ("esptool", "serial", "bitstring", "ecdsa", "intelhex", "reedsolo.py", "yaml")
+ROM_BAUD = 115200
+BOOT_WAIT_S = 30.0
+
+
+def import_vendor() -> "str | None":
+    """Make esptool importable; return its version, or None with the reason logged.
+
+    Extracted rather than imported from the zip: esptool opens its stub flasher
+    JSON files by path, which zipimport cannot serve. Keyed by the zip's hash so
+    a new agent never runs an old esptool.
+    """
+    import hashlib
+    import zipfile
+    if not VENDOR_ZIP.is_file():
+        say("esptool: vendor.zip is missing beside agent.py — programming through the agent is off")
+        return None
+    digest = hashlib.sha256(VENDOR_ZIP.read_bytes()).hexdigest()[:12]
+    cache = (Path.home() / "Library" / "Caches" / "7Sigma Agent" if sys.platform == "darwin"
+             else Path(tempfile.gettempdir()) / "7sigma-agent") / f"vendor-{digest}"
+    if not (cache / "esptool").is_dir():
+        cache.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(VENDOR_ZIP) as z:
+            z.extractall(cache)
+    sys.path.insert(0, str(cache))
+    try:
+        import esptool  # noqa: F401
+        import serial  # noqa: F401
+    except Exception as exc:  # noqa: BLE001
+        say(f"esptool: cannot import the vendored copy: {exc}")
+        return None
+    return str(getattr(esptool, "__version__", "?"))
+
+
+class _JobWriter:
+    """A file-like sink that turns esptool's prints into job lines.
+
+    esptool reports progress with `\r` and everything else with `\n`; both end
+    a line here, so "Writing at 0x1000... (3%)" arrives one line at a time.
+    """
+
+    def __init__(self, job: "Job", direction: str = "esptool"):
+        self.job, self.direction, self.buf = job, direction, ""
+
+    def isatty(self) -> bool:
+        """False, so esptool's `print_overwrite` ends each progress update with
+        a newline instead of a carriage return. Either is parsed here, but a
+        line is what the page's log and its progress bar expect."""
+        return False
+
+    def write(self, text: str) -> int:
+        self.buf += text
+        while True:
+            cut = min((i for i in (self.buf.find("\n"), self.buf.find("\r")) if i >= 0), default=-1)
+            if cut < 0:
+                break
+            line, self.buf = self.buf[:cut].strip(), self.buf[cut + 1:]
+            if line:
+                self.job.add(self.direction, line)
+        return len(text)
+
+    def flush(self) -> None:
+        if self.buf.strip():
+            self.job.add(self.direction, self.buf.strip())
+        self.buf = ""
+
+
+class EspRun:
+    """One ESP operation on one port: connect, erase, flash or reset.
+
+    The connect LADDER is the browser's, rung for rung (station.ts, 2026-09-16),
+    because every rung was a real V2: default_reset at the fast baud, then at
+    115200, then BOOT held with EN pulsed by us — retried until the operator
+    has the button down or the deadline passes.
+    """
+
+    def __init__(self, job: "Job", body: dict, job_dir: Path):
+        self.job = job
+        self.op = str(body.get("op") or "")
+        self.port = str(body.get("port") or "")
+        self.chip = str(body.get("chip") or "auto").lower().replace("-", "") or "auto"
+        self.fast = int(body.get("baud") or 460800)
+        self.images = list(body.get("images") or [])
+        self.flash_config = dict(body.get("flash_config") or {})
+        self.boot_wait = float(body.get("boot_wait") or BOOT_WAIT_S)
+        self.job_dir = job_dir
+        self.saw_baud_change = False
+
+    # -- esptool as a library, with its stdout caught ---------------------
+
+    def _esptool(self, argv: list) -> list:
+        """Run one esptool command line; return its lines; raise on failure."""
+        import contextlib
+        import esptool
+        writer = _JobWriter(self.job)
+        start = len(self.job.lines)
+        self.job.add("app", "esptool " + " ".join(argv))
+        try:
+            with contextlib.redirect_stdout(writer):
+                esptool.main(argv)
+        except SystemExit as exc:  # argparse, or esptool's own exit code
+            writer.flush()
+            code = exc.code
+            del exc
+            if code not in (0, None):
+                raise MarkError(f"esptool exited with {code}") from None
+        except Exception as exc:  # FatalError and friends
+            writer.flush()
+            # The MESSAGE only. Chaining or keeping `exc` keeps its traceback,
+            # and the traceback keeps esptool's loader and its open port alive
+            # — which is how the agent came to refuse its own port.
+            msg = str(exc)
+            del exc
+            raise MarkError(msg) from None
+        finally:
+            writer.flush()
+        lines = [l["text"] for l in self.job.lines[start:]]
+        if any("Changing baud rate" in l or "Changed." in l for l in lines):
+            self.saw_baud_change = True
+        return lines
+
+    def _pulse_enable(self) -> None:
+        """EN low for 200 ms with IO0 left alone — the operator holds BOOT."""
+        import serial
+        with serial.Serial(self.port, ROM_BAUD, timeout=0.1) as s:
+            s.dtr = False
+            s.rts = True
+            time.sleep(0.2)
+            s.rts = False
+            time.sleep(0.4)
+        self.job.add("app", "EN pulsed while BOOT is held — chip should be in download mode")
+
+    def _common(self, before: str, baud: int, after: str) -> list:
+        return ["--chip", self.chip, "--port", self.port, "--baud", str(baud),
+                "--before", before, "--after", after, "--connect-attempts", "3"]
+
+    def _connect_ladder(self, command: list, after: str) -> str:
+        """Run `command` under each rung until one works; return the rung's name."""
+        rungs = [("default_reset", self.fast, f"{self.fast} baud")]
+        if self.fast != ROM_BAUD:
+            rungs.append(("default_reset", ROM_BAUD, "115200, no baud change"))
+        last = ""
+        for before, baud, why in rungs:
+            failed = ""
+            try:
+                self._esptool(self._common(before, baud, after) + command)
+                self.job.add("app", f"connected: {why}")
+                return why
+            except MarkError as exc:
+                failed = str(exc)
+            # Outside the handler on purpose: inside it the exception — and
+            # through its traceback esptool's loader and the OPEN PORT — is
+            # still alive, and the next rung found the port busy with itself.
+            release_own_port(self.port, self.job)
+            last = failed
+            # A port that cannot be OPENED is not a rung: holding BOOT will
+            # not make a node appear or free it from another process.
+            if ("could not open port" in failed or "busy or doesn't exist" in failed) \
+                    and not _held_by_me(self.port):
+                raise MarkError(f"cannot open {self.port}: unplugged, or held by another program")
+            self.job.add("err", f"{failed} — {why} did not work")
+        # The BOOT rung keeps trying: the operator has to pick the board up.
+        self.job.add("app", "waiting for the BOOT button to be held — retrying until it is")
+        deadline = time.time() + self.boot_wait
+        baud = self.fast
+        for try_no in range(1, 10_000):
+            try:
+                self._pulse_enable()
+                self._esptool(self._common("no_reset", baud, after) + command)
+                why = f"BOOT held, no_reset, {baud} baud"
+                self.job.add("app", f"connected: {why}, attempt {try_no}")
+                return why
+            except (MarkError, OSError) as exc:
+                last = str(exc)
+            # Only reached on failure (success returned above). Outside the
+            # handler, so the failed attempt's port is really let go.
+            release_own_port(self.port, self.job)
+            if baud != ROM_BAUD and self.saw_baud_change:
+                baud = ROM_BAUD
+                self.job.add("app", f"this board will not hold {self.fast} baud — dropping to {ROM_BAUD}")
+            if time.time() > deadline:
+                raise MarkError(f"BOOT was not held within {int(self.boot_wait)}s ({last})")
+            if try_no % 4 == 0:
+                self.job.add("app", f"still waiting for BOOT (attempt {try_no})")
+            time.sleep(1.2)
+        raise MarkError(last or "could not connect")
+
+    # -- the four operations ------------------------------------------------
+
+    def run(self) -> dict:
+        if not self.port:
+            raise MarkError("no port: assign this station's socket first")
+        release_own_port(self.port, self.job)
+        held = "" if _held_by_me(self.port) else _holders([self.port]).get(self.port, "")
+        if held:
+            raise MarkError(f"{self.port} is held by {held} — close it there first")
+        if self.op == "connect":
+            mode = self._connect_ladder(["chip_id"], "no_reset")
+            chip = mac = ""
+            for l in [x["text"] for x in self.job.lines]:
+                if l.startswith("Chip is "):
+                    chip = l[len("Chip is "):].strip()
+                elif l.startswith("MAC:"):
+                    mac = l[4:].strip()
+            if not mac:
+                raise MarkError("esptool reported no MAC")
+            return {"chip": chip, "mac": mac, "connect_mode": mode}
+        if self.op == "erase":
+            mode = self._connect_ladder(["erase_flash"], "no_reset")
+            return {"connect_mode": mode}
+        if self.op == "flash":
+            if not self.images:
+                raise MarkError("flash: no images")
+            argv = ["write_flash", "--flash_size", str(self.flash_config.get("size") or "detect"),
+                    "--flash_mode", str(self.flash_config.get("mode") or "keep"),
+                    "--flash_freq", str(self.flash_config.get("freq") or "keep"), "-z"]
+            for i, img in enumerate(self.images):
+                data = base64.b64decode(img["data"])
+                path = self.job_dir / f"fw-{self.job.id}-{i}.bin"
+                path.write_bytes(data)
+                self.job.add("app", f"image {img.get('name', path.name)} = {len(data)} bytes @ {img['address']}")
+                argv += [str(img["address"]), str(path)]
+            mode = self._connect_ladder(argv, "hard_reset")
+            return {"connect_mode": mode}
+        if self.op == "reset":
+            import serial
+            with serial.Serial(self.port, ROM_BAUD, timeout=0.1) as s:
+                s.dtr = False   # IO0 high: a normal boot
+                s.rts = True    # EN low
+                time.sleep(0.1)
+                s.rts = False
+            self.job.add("app", "hard reset pulsed")
+            return {}
+        raise MarkError(f"unknown esp op {self.op!r}")
+
+
+class Monitor:
+    """The device console, held open by the agent instead of by the browser.
+
+    The console phase is the other half of a run: the engine writes a Tasmota
+    command and reads the answer, with the bench as a dumb byte pipe. It used
+    to be Web Serial in the tab. Here it is one pyserial port and a reader
+    thread, and the page polls the lines the way it polls a job — which is what
+    lets a bench work with NO serial permission, no port picker and no Chrome
+    policy at all (decision 0023).
+
+    Lines are kept in a ring: a boot prints hundreds per second, and the page
+    only ever asks for the ones it has not seen.
+    """
+
+    def __init__(self, port: str, baud: int, signals: "dict | None"):
+        import serial
+        self.port, self.baud = port, baud
+        self.lines: "collections.deque[dict]" = collections.deque(maxlen=4000)
+        self.first = 0  # lines that have already fallen out of the ring
+        # A CONDITION, not just a lock: `since()` blocks on it until there is
+        # something to say, so the page learns of a line within a round trip
+        # instead of within a poll interval. A device dialog is
+        # request/response — the engine drains the queue before every command —
+        # so a console delivered in 150 ms clumps loses replies that arrive in
+        # 3 ms (run 6377, 2026-09-17: SetOption153 answered and was drained).
+        self.lock = threading.Condition()
+        self.closing = False
+        # timeout is the READ deadline, and `read(n)` waits for all n bytes or
+        # for it — so a big n plus a long timeout is a latency floor, not a
+        # buffer size. Kept short, and `_read` asks for one byte at a time and
+        # then drains what is waiting.
+        self.ser = serial.Serial(port, baud, timeout=0.05)
+        if signals is not None:
+            # A profile that says "do not drive these" means exactly that: on
+            # the C6's USB-Serial/JTAG a DTR/RTS move resets the chip.
+            self.ser.dtr = bool(signals.get("dataTerminalReady"))
+            self.ser.rts = bool(signals.get("requestToSend"))
+        self.thread = threading.Thread(target=self._read, daemon=True)
+        self.thread.start()
+
+    def _add(self, text: str) -> None:
+        with self.lock:
+            if len(self.lines) == self.lines.maxlen:
+                self.first += 1
+            self.lines.append({"text": text})
+            self.lock.notify_all()
+
+    def _read(self) -> None:
+        buf = b""
+        while not self.closing:
+            try:
+                # Block for ONE byte, then take everything already buffered.
+                # `read(4096)` waits for the full count or the timeout, which
+                # put a 200 ms floor under every device reply (run 6377,
+                # 2026-09-17: every command paced at about a second).
+                chunk = self.ser.read(1) or b""
+                if chunk and self.ser.in_waiting:
+                    chunk += self.ser.read(self.ser.in_waiting)
+            except Exception as exc:  # noqa: BLE001 — the device left the bus
+                if not self.closing:
+                    self._add(f"[read error: {exc}]")
+                return
+            if chunk:
+                buf += chunk
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    text = line.rstrip(b"\r").decode("utf-8", "replace")
+                    if text.strip():
+                        self._add(text)
+
+    def since(self, n: int, wait: float = 0.0) -> "tuple[int, list]":
+        """Lines after `n`. With `wait`, block until there is one or it expires.
+
+        Long polling rather than a WebSocket, for the same reason the whole
+        agent speaks plain HTTP: no dependency, no install. It costs one held
+        request and buys the latency of a local round trip.
+        """
+        with self.lock:
+            if wait > 0 and not self.closing:
+                self.lock.wait_for(
+                    lambda: self.closing or self.first + len(self.lines) > n, timeout=wait)
+            start = max(0, n - self.first)
+            out = [dict(x) for x in list(self.lines)[start:]]
+            return self.first + len(self.lines), out
+
+    def write(self, text: str) -> None:
+        self.ser.write(text.encode())
+        self.ser.flush()
+
+    def reset(self) -> None:
+        """Pulse EN with IO0 left high: a normal boot, not download mode.
+
+        THE 500 ms BEFORE THE PULSE IS LOAD-BEARING. Tasmota holds a changed
+        setting in RAM and flushes it to flash on its own SaveData timer, about
+        a second later. Pulling EN low the instant the command is confirmed
+        resets the device before the write, and the setting is simply gone —
+        which is how a run could confirm `{"Password1":"GeneralKenobi"}` and
+        then find `"SSId":["",""]` one step later (run 6382, 2026-09-17). The
+        browser implementation had this delay and the agent's first version
+        dropped it; the agent is faster, so it lost the race the browser won by
+        accident. 500 ms hold, then release, matching what was measured.
+        """
+        self.ser.dtr = False   # IO0 high: a normal boot, never download mode
+        self.ser.rts = False
+        time.sleep(0.5)        # let the firmware write its settings first
+        self.ser.rts = True    # EN low
+        time.sleep(0.5)
+        self.ser.rts = False   # EN high: boot
+
+    def close(self) -> None:
+        with self.lock:
+            self.closing = True
+            self.lock.notify_all()  # let a held long poll answer at once
+        try:
+            self.ser.close()
+        except Exception:  # noqa: BLE001
+            pass
+        self.thread.join(timeout=2)
+
+
 class Agent:
     def __init__(self, origins: set[str], lb_host: str, job_dir: Path):
         self.origins = origins
@@ -579,6 +954,11 @@ class Agent:
         # health() reports it as such — a label must not make the laser look
         # busy, and the two hardware pieces are independent.
         self.printing = False
+        # Programming holds a serial port for a minute; one at a time, like a mark.
+        self.flashing = False
+        # The console port, held open between steps for the whole dialog phase.
+        self.monitor: Monitor | None = None
+        self.esptool_version: str | None = None
         self.lock = threading.Lock()
         # One health probe at a time, and its answer kept. Two probes would bind
         # the reply port (19841) twice, and with SO_REUSEADDR either can take
@@ -731,6 +1111,100 @@ class Agent:
             job, pdf, value, queue, size, max(1, min(20, int(body.get("copies") or 1))),
             float(body.get("job_timeout", 120))), daemon=True).start()
         return {"job": job.id}
+
+    # -- the device console, so the browser needs no serial at all ----------
+
+    def monitor_open(self, body: dict) -> dict:
+        port = str(body.get("port") or "")
+        if not port:
+            return {"error": "no port: assign this station's socket first"}
+        if not self.esptool_version:
+            return {"error": "this agent has no pyserial — vendor.zip is missing or broken"}
+        with self.lock:
+            if self.monitor:
+                self.monitor.close()
+                self.monitor = None
+            release_own_port(port)
+            held = "" if _held_by_me(port) else _holders([port]).get(port, "")
+            if held:
+                return {"error": f"{port} is held by {held} — close it there first"}
+            try:
+                self.monitor = Monitor(port, int(body.get("baud") or 115200), body.get("signals"))
+            except Exception as exc:  # noqa: BLE001
+                return {"error": f"could not open {port}: {exc}"}
+        say(f"monitor open on {port} @ {body.get('baud')}")
+        return {"open": True, "port": port}
+
+    def monitor_lines(self, since: int, wait: float = 0.0) -> dict:
+        m = self.monitor
+        if not m:
+            return {"open": False, "seen": since, "lines": []}
+        seen, lines = m.since(since, wait)
+        return {"open": True, "seen": seen, "lines": lines}
+
+    def monitor_write(self, body: dict) -> dict:
+        m = self.monitor
+        if not m:
+            return {"error": "the monitor is not open"}
+        try:
+            m.write(str(body.get("text") or ""))
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"write failed: {exc}"}
+        return {"ok": True}
+
+    def monitor_reset(self, body: dict) -> dict:
+        m = self.monitor
+        if not m:
+            return {"error": "the monitor is not open"}
+        try:
+            m.reset()
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"reset failed: {exc}"}
+        return {"ok": True}
+
+    def monitor_close(self) -> dict:
+        with self.lock:
+            if self.monitor:
+                self.monitor.close()
+                self.monitor = None
+                say("monitor closed")
+        return {"ok": True}
+
+    def start_esp(self, body: dict) -> dict:
+        """Connect to, erase, flash or reset an ESP on one of this machine's ports."""
+        if not self.esptool_version:
+            return {"error": "this agent has no esptool — vendor.zip is missing or broken (see its log)"}
+        with self.lock:
+            if self.flashing:
+                return {"error": "the agent is already programming a device"}
+            self.next_id += 1
+            job = Job(self.next_id)
+            self.jobs[job.id] = job
+            for old in sorted(self.jobs)[:-KEEP_JOBS]:
+                del self.jobs[old]
+            self.flashing = True
+        threading.Thread(target=self._esp, args=(job, body), daemon=True).start()
+        return {"job": job.id}
+
+    def _esp(self, job: Job, body: dict) -> None:
+        result: dict = {"status": "fail"}
+        t0 = time.time()
+        try:
+            info = EspRun(job, body, self.job_dir).run()
+            result = {"status": "pass", "info": info, "job_seconds": time.time() - t0}
+        except (MarkError, OSError) as exc:
+            result["error"] = str(exc)
+            job.add("err", str(exc))
+        except Exception as exc:  # noqa: BLE001 — a bug must surface in the log, not vanish
+            result["error"] = f"{type(exc).__name__}: {exc}"
+            job.add("err", result["error"])
+        finally:
+            with self.lock:
+                self.flashing = False
+            job.result = result
+            job.done = True
+            say(f"esp {body.get('op')} on {body.get('port')}: {result['status']}"
+                + (f" — {result.get('error')}" if result.get("error") else ""))
 
     def _print(self, job: Job, pdf: bytes, value: str, queue: str, size: str,
                copies: int, timeout: float) -> None:
@@ -889,11 +1363,19 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/hello":
             return self.reply(200, {"agent": "7sigma-agent",
                                     "protocol": PROTOCOL_VERSION,
-                                    "lightburn_host": self.agent.lb_host}, origin)
+                                    "lightburn_host": self.agent.lb_host,
+                                    "esptool": self.agent.esptool_version}, origin)
         if url.path == "/health":
             return self.reply(200, self.agent.health(), origin)
         if url.path == "/lasers":
             return self.reply(200, {"lasers": list_lasers()}, origin)
+        if url.path == "/monitor":
+            q = parse_qs(url.query)
+            since = int((q.get("since") or ["0"])[0])
+            # Held for up to `wait` seconds. Capped well under any browser or
+            # proxy idle timeout, and the page simply asks again.
+            wait = max(0.0, min(20.0, float((q.get("wait") or ["0"])[0])))
+            return self.reply(200, self.agent.monitor_lines(since, wait), origin)
         if url.path == "/serial-ports":
             return self.reply(200, {"ports": list_serial_ports()}, origin)
         if url.path == "/printers":
@@ -916,15 +1398,23 @@ class Handler(BaseHTTPRequestHandler):
         if origin is None:
             return self.refuse()
         path = urlparse(self.path).path
-        if path not in ("/mark", "/print"):
+        if path not in ("/mark", "/print", "/esp", "/monitor/open", "/monitor/write",
+                        "/monitor/reset", "/monitor/close"):
             return self.reply(404, {"error": "no such path"}, origin)
         try:
             length = int(self.headers.get("Content-Length") or 0)
             body = json.loads(self.rfile.read(length) or b"{}")
         except (ValueError, TypeError):
             return self.reply(400, {"error": "not JSON"}, origin)
-        out = (self.agent.start_mark(body) if path == "/mark"
-               else self.agent.start_print(body))
+        if path.startswith("/monitor/"):
+            verb = path.rsplit("/", 1)[1]
+            out = ({"open": self.agent.monitor_open, "write": self.agent.monitor_write,
+                    "reset": self.agent.monitor_reset}[verb](body)
+                   if verb != "close" else self.agent.monitor_close())
+        else:
+            out = (self.agent.start_mark(body) if path == "/mark"
+                   else self.agent.start_print(body) if path == "/print"
+                   else self.agent.start_esp(body))
         return self.reply(409 if "error" in out else 200, out, origin)
 
 
@@ -969,6 +1459,36 @@ def _holders(nodes: list[str]) -> dict[str, str]:
     return held
 
 
+def _held_by_me(node: str) -> bool:
+    """Whether THIS process still has `node` open, from lsof on our own pid."""
+    try:
+        out = subprocess.run(["lsof", "-a", "-p", str(os.getpid()), "-F", "n", "--", node],
+                             capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return any(line == f"n{node}" for line in out.splitlines())
+
+
+def release_own_port(node: str, job: "Job | None" = None) -> None:
+    """Drop a port this process is still holding after a failed esptool call.
+
+    esptool opens the port inside its own loader; when a connect fails, the
+    exception's traceback keeps that loader — and its open Serial — alive
+    for as long as the exception object is referenced. The agent then saw its
+    OWN handle in lsof and refused the next run with "held by Python" (bench,
+    2026-09-17). The ladder no longer keeps exception objects, and this forces
+    the collector as a second line.
+    """
+    import gc
+    if not _held_by_me(node):
+        return
+    gc.collect()
+    time.sleep(0.1)
+    if _held_by_me(node):
+        msg = f"{node} is still open in this agent after a failed attempt — it will be reopened"
+        (job.add("app", msg) if job else say(msg))
+
+
 def list_lasers() -> "list[str]":
     """The laser sources LightBurn knows, read from its own preferences.
 
@@ -998,7 +1518,8 @@ def list_lasers() -> "list[str]":
 def list_serial_ports() -> list[dict]:
     nodes = sorted({n for pattern in SERIAL_GLOBS for n in glob.glob(pattern)})
     held = _holders(nodes)
-    return [{"device": n, "held_by": held.get(n, "")} for n in nodes]
+    return [{"device": n, "held_by": ("7Sigma agent" if _held_by_me(n) else held.get(n, ""))}
+            for n in nodes]
 
 
 # ---------------------------------------------------------------------------
@@ -1226,6 +1747,10 @@ def bench_facts(agent: "Agent", port: int) -> "list[tuple[str, str, str]]":
                                         "waiting for a click, or the licence is Core — "
                                         "Core cannot drive a galvo."))
 
+    out.append(("Programming", "ok" if agent.esptool_version else "warn",
+                f"esptool {agent.esptool_version} ready" if agent.esptool_version
+                else "no esptool — vendor.zip missing beside the agent"))
+
     usb = laser_usb()
     if usb["present"] is None:
         out.append(("Laser", "dim", "cannot see the USB bus on this system"))
@@ -1320,7 +1845,7 @@ def run_window(agent: "Agent", port: int) -> None:
 
     root = tk.Tk()
     root.title("7Sigma agent")
-    root.geometry("560x330")
+    root.geometry("560x360")
     url = f"http://127.0.0.1:{port}/"
 
     def open_status() -> None:
@@ -1330,7 +1855,7 @@ def run_window(agent: "Agent", port: int) -> None:
         subprocess.run(["open", str(LOG_PATH)], capture_output=True)
 
     rows: "list[tk.Button]" = []
-    for _ in range(6):
+    for _ in range(7):
         b = tk.Button(root, text="", relief="flat", anchor="w", command=open_status)
         b.pack(fill="x", padx=14, pady=1)
         rows.append(b)
@@ -1400,6 +1925,8 @@ def main() -> int:
     say(f"jobs in {job_dir}")
     say(f"serving {', '.join(sorted(agent.origins))}")
     agent.setup_origins = set(args.origin) or set(DEFAULT_ORIGINS)
+    agent.esptool_version = import_vendor()
+    say(f"esptool: {agent.esptool_version or 'unavailable'} (programming through the agent)")
     if not args.no_browser_setup:
         for origin in sorted(agent.setup_origins):
             install_chrome_policy(origin)

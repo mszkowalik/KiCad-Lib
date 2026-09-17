@@ -1,6 +1,6 @@
 /** One bench slot: a granted serial port, a live log, and the run lifecycle
  *  against the backend engine. Chromium-only (Web Serial). */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   apiBaseUrl,
@@ -10,14 +10,22 @@ import {
   getDeploymentVersion,
   type DeploymentVersionDetail,
 } from "../../api";
-import { runMarkJob, runPrintJob, type AgentPrinter } from "../../flasher/benchAgent";
+import {
+  listSerialPorts,
+  runMarkJob,
+  runPrintJob,
+  type AgentPort,
+  type AgentPrinter,
+} from "../../flasher/benchAgent";
 import { RunClient, type RunSpec } from "../../flasher/runClient";
 import {
   Station,
   readStationName,
+  readStationSocket,
   writeStationName,
   type LogDir,
 } from "../../flasher/station";
+import SocketPicker from "./SocketPicker";
 import { useModal } from "../modal";
 import { useStickyState } from "../../useStickyState";
 
@@ -30,10 +38,6 @@ export interface StationSlotProps {
   simPin: string;
   /** Which project an erased device belongs to, for the run record. */
   projectId: number | null;
-  /** Current version of the project's `kind="test"` deployment, when it has
-   *  one. Absent = no Test button, which is the honest answer for a product
-   *  with no test sweep (the V2 dongle) rather than a button that does nothing. */
-  testVersionId: number | null;
   /** What this slot is for. "mark" drops Erase and Test — a marking bench has
    *  no business wiping a device — and renames Program to Mark. */
   mode?: "flash" | "mark";
@@ -74,6 +78,10 @@ type PortState = "none" | "empty" | "waiting" | "working" | "gone";
  *  V2 dongle (run 6329): 2.8 s. The estimate is deliberately longer than that,
  *  because a bar that stalls at 90% reads better than one that finishes early
  *  and then sits at 100% doing nothing. */
+/** Stations a bench can have, for reading back which sockets are taken.
+ *  Mirrors MAX_STATIONS in FlashBench. */
+const MAX_SLOTS = 4;
+
 const ERASE_ESTIMATE_MS = 6000;
 
 /** What a serial may be, for anything that goes ON a part (user decision
@@ -175,6 +183,32 @@ export default function BenchStation(props: StationSlotProps) {
   /** The two machines are armed separately: a bench may be engraving all day
    *  and printing nothing, or the other way round while the laser is down.
    *  One checkbox for both made the working half wait for the broken one. */
+  /** Nodes the agent can see: the list for Assign socket…, and the answer to
+   *  "is anything plugged into this station's socket". There is no browser path
+   *  any more — all serial work is the agent's (decision 0023). */
+  const [agentPorts, setAgentPorts] = useState<AgentPort[] | null>(null);
+  const [picking, setPicking] = useState(false);
+  /** Open by default: the log is what an operator watches during a run, and a
+   *  fold they have to open every time is one they stop opening. Remembered
+   *  per station once they close it. */
+  const [logOpen, setLogOpen] = useStickyState<boolean>(`flasher.log-open.${nameKey}`, true);
+  useEffect(() => {
+    let alive = true;
+    const look = async () => {
+      try {
+        const ports = await listSerialPorts();
+        if (alive) setAgentPorts(ports);
+      } catch {
+        if (alive) setAgentPorts(null); // the agent is not running
+      }
+    };
+    void look();
+    const t = window.setInterval(() => void look(), 2000);
+    return () => {
+      alive = false;
+      window.clearInterval(t);
+    };
+  }, []);
   const [autoMark, setAutoMark] = useStickyState<boolean>("mark.auto.laser", false);
   const [autoPrint, setAutoPrint] = useStickyState<boolean>("mark.auto.label", false);
   /** Chain the two machines: one press engraves AND labels.
@@ -253,26 +287,20 @@ export default function BenchStation(props: StationSlotProps) {
   const syncPort = useCallback(
     (working = false) => {
       setPortLabel(station.portLabel);
-      setPortState(
-        working
-          ? "working"
-          : !station.port
-            ? station.socket
-              ? "empty" // owns a socket, nothing plugged into it
-              : "none"
-            : station.live
-              ? "waiting"
-              : "gone",
-      );
-      setStatus((cur) => (cur === "empty" && station.port ? "ready" : cur));
+      // The agent's list IS the truth: a node that exists is a cable that is
+      // plugged in. Nothing in this tab holds a handle, so there is no "gone".
+      const node = station.socket;
+      const present = !!node && (agentPorts ?? []).some((p) => p.device === node);
+      setPortState(working ? "working" : !node ? "none" : present ? "waiting" : "empty");
+      setStatus((cur) => (cur === "empty" && present ? "ready" : cur));
     },
-    [station],
+    [station, agentPorts],
   );
 
-  const adopt = useCallback(async () => {
-    await station.resolvePort();
+  // A cable arriving or leaving is a change in the agent's list.
+  useEffect(() => {
     syncPort();
-  }, [station, syncPort]);
+  }, [agentPorts, syncPort]);
 
   // The station talks BEFORE a run too. RunClient wires this up when a run
   // starts, which left port adoption, re-acquisition and every open failure
@@ -285,38 +313,43 @@ export default function BenchStation(props: StationSlotProps) {
     // The slot number is the tie-break when an unclaimed port appears, so it
     // has to be registered before anything can arrive.
     station.register(props.index);
-    void adopt();
     return () => station.unregister();
-  }, [adopt, station, pushLog, props.index]);
+    // NOT `syncPort` or `adopt`: both depend on the agent's port list, which is
+    // re-polled every two seconds, so this effect tore the station down and
+    // built it up again on every poll — visible as "port released" scrolling
+    // through a running flash (bench, 2026-09-17).
+  }, [station, pushLog, props.index]);
 
-  // Re-attach on USB re-enumeration (C6 reboot) and grey out on unplug.
-  useEffect(() => {
-    const onConnect = (e: Event) => {
-      if (!station.noteConnect(e.target as SerialPort)) void adopt();
-      else syncPort();
-    };
-    const onDisconnect = (e: Event) => {
-      station.noteDisconnect(e.target as SerialPort);
-      syncPort();
-    };
-    navigator.serial?.addEventListener("connect", onConnect);
-    navigator.serial?.addEventListener("disconnect", onDisconnect);
-    return () => {
-      navigator.serial?.removeEventListener("connect", onConnect);
-      navigator.serial?.removeEventListener("disconnect", onDisconnect);
-      // Hand the port back when the slot goes away, or lowering the slot count
-      // would leave it claimed by a station nothing can reach.
-    };
-  }, [station, adopt, syncPort]);
+  // No navigator.serial listeners: this tab holds no port, so a plug event
+  // means nothing here. The agent's port list, polled above, is the signal.
 
-  const pickPort = async () => {
-    try {
-      await station.requestPort();
-      syncPort();
-      setError(null);
-    } catch (err) {
-      setError(errorMessage(err));
+  /** Sockets other stations own, so the picker can say so. */
+  const takenBy = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (let i = 0; i < MAX_SLOTS; i++) {
+      if (i === props.index && props.mode !== "mark") continue;
+      const node = readStationSocket(i);
+      if (node) out[node] = readStationName(i) || `Station ${i + 1}`;
     }
+    // The marking station is keyed "mark", not by slot.
+    if (props.mode !== "mark") {
+      const markNode = readStationSocket("mark" as unknown as number);
+      if (markNode) out[markNode] = readStationName("mark") || "Marking station";
+    }
+    return out;
+  }, [props.index, props.mode, picking]);
+
+  /** Assign this station a USB socket.
+   *
+   *  A LIVE list, not Chrome's port picker: the agent sees the real `/dev/cu.*`
+   *  names, and `SocketPicker` watches them while it is open so the operator can
+   *  plug the device in and take the row that appears (decision 0023, user
+   *  request 2026-09-17). Nothing here asks the browser for a serial
+   *  permission, which is what makes the bench browser-independent.
+   */
+  const pickPort = () => {
+    setError(null);
+    setPicking(true);
   };
 
   /** Chip erase, straight from the browser and deliberately NOT a run.
@@ -599,8 +632,8 @@ export default function BenchStation(props: StationSlotProps) {
       setError("Pick a batch, or a deployment version for a bench trial.");
       return;
     }
-    // The port comes FIRST, inside this click. requestPort() needs a user
-    // gesture and the gesture would not survive createProgrammingRun()'s fetch.
+    // Check the socket before creating a run: a station with none cannot
+    // program anything, and a run row that exists for that is noise.
     try {
       await station.ensurePort();
     } catch (err) {
@@ -688,7 +721,8 @@ export default function BenchStation(props: StationSlotProps) {
   };
 
   const busy = status === "busy";
-  const canRun = station.port && !busy && (props.productionRunId || props.deploymentVersionId);
+  const devicePresent = portState === "waiting" || portState === "working";
+  const canRun = devicePresent && !busy && (props.productionRunId || props.deploymentVersionId);
   /** The device answered a moment ago, so the run has nothing to wait for. The
    *  identity is still read inside the run, by the step after this one. */
   const skipRead = preread ? ["wait_boot"] : [];
@@ -1105,16 +1139,10 @@ export default function BenchStation(props: StationSlotProps) {
                   </button>
                   {marking ? null : (
                     <button type="button" className="btn btn-sm" onClick={() => void erase()}
-                            disabled={!station.port || busy}>
+                            disabled={!devicePresent || busy}>
                       Erase
                     </button>
                   )}
-                  {!marking && props.testVersionId ? (
-                    <button type="button" className="btn btn-sm" onClick={() => void run(props.testVersionId)}
-                            disabled={!station.port || busy}>
-                      Test
-                    </button>
-                  ) : null}
                   {busy ? (
                     <button type="button" className="btn btn-danger btn-sm" onClick={abort}>
                       Abort
@@ -1186,7 +1214,11 @@ export default function BenchStation(props: StationSlotProps) {
               </div>
       )}
 
-      <details className="bench-log-wrap">
+      <details
+        className="bench-log-wrap"
+        open={logOpen}
+        onToggle={(e) => setLogOpen((e.currentTarget as HTMLDetailsElement).open)}
+      >
         <summary className="muted">Log ({log.length})</summary>
         <div
           className="flash-log mono"
@@ -1205,6 +1237,18 @@ export default function BenchStation(props: StationSlotProps) {
         </div>
       </details>
 
+      {picking ? (
+        <SocketPicker
+          stationName={name}
+          takenBy={takenBy}
+          onCancel={() => setPicking(false)}
+          onPick={(node) => {
+            setPicking(false);
+            station.assignSocket(node);
+            syncPort();
+          }}
+        />
+      ) : null}
       {prompt ? (
         <div className="modal-backdrop">
           <div className="card pad modal-card" {...modal.cardProps}>

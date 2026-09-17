@@ -340,6 +340,84 @@ export class MarkAgent {
     };
   }
 
+  /** One ESP operation on the agent's own esptool (decision 0023): connect,
+   *  erase, flash or reset, on a port named by its node. The agent walks the
+   *  same connect ladder the tab did, and its log comes back line by line. */
+  async esp(
+    body: { op: string; port: string } & Record<string, unknown>,
+    onLog?: (l: MarkLog) => void,
+  ): Promise<{ status: "pass" | "fail"; error?: string; info?: Record<string, unknown> }> {
+    const timeoutS = body.op === "flash" ? 900 : body.op === "erase" ? 240 : 90;
+    const started = await this.call("/esp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (started.error) throw new Error(String(started.error));
+    const r = await this.watch(Number(started.job), timeoutS, `${body.op} on the agent`, onLog);
+    return {
+      status: r.status,
+      error: r.error,
+      info: (r.info ?? undefined) as Record<string, unknown> | undefined,
+    };
+  }
+
+  /** The device console, held open by the AGENT (decision 0023).
+   *
+   *  The browser never touches the serial port: the agent opens it, reads it in
+   *  a thread, and this polls for the lines. That is what lets a bench run with
+   *  no Web Serial grant, no port picker and no Chrome policy at all.
+   */
+  async monitorOpen(port: string, baud: number, signals: object | null): Promise<void> {
+    const r = await this.call("/monitor/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ port, baud, signals }),
+    });
+    if (r.error) throw new Error(String(r.error));
+  }
+
+  /** @param waitS hold the request open until a line appears, or this expires.
+   *    Long polling, so a device reply reaches the engine in a round trip
+   *    rather than at the next tick of a timer. */
+  async monitorLines(
+    since: number,
+    waitS = 0,
+  ): Promise<{ open: boolean; seen: number; lines: string[] }> {
+    const r = await this.call(`/monitor?since=${since}&wait=${waitS}`);
+    return {
+      open: Boolean(r.open),
+      seen: Number(r.seen ?? since),
+      lines: ((r.lines ?? []) as { text?: string }[]).map((l) => String(l.text ?? "")),
+    };
+  }
+
+  async monitorWrite(text: string): Promise<void> {
+    const r = await this.call("/monitor/write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (r.error) throw new Error(String(r.error));
+  }
+
+  async monitorReset(): Promise<void> {
+    const r = await this.call("/monitor/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (r.error) throw new Error(String(r.error));
+  }
+
+  async monitorClose(): Promise<void> {
+    await this.call("/monitor/close", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+  }
+
   async print(job: PrintJob, onLog?: (l: MarkLog) => void): Promise<PrintResult> {
     const timeout = job.jobTimeoutS ?? 120;
     const started = await this.call("/print", {
