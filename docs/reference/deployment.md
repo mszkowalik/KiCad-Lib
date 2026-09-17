@@ -39,6 +39,21 @@ is very slow under emulation.
   `cache-to` line in `images.yml` or a `cache_from` list silently brings the
   ~10-minute cold rebuild back.
 
+- **A 502 on `/lib/` after a deploy means the shared nginx, not the platform.**
+  The front container `webserver` serves `/lib/` for every stack on that host
+  and resolves `kicadlib-web` ONCE, when its configuration loads. Recreating
+  `kicadlib-web` can give it a new address on the shared network, and nginx
+  keeps proxying to the old one. The api is healthy and the page is a 502.
+  The fix is one command and it touches no other stack:
+
+  ```
+  ssh ubuntu "docker exec webserver nginx -s reload"
+  ```
+
+  Check the api first, so the reload is a diagnosis rather than a reflex:
+  `docker logs --tail 20 kicadlib-api` says `Application startup complete`
+  when the platform itself is fine. (Seen 2026-09-17.)
+
 - **The server is a Proxmox guest, and the field solver feels its size.** The
   server runs as VM 104 (`ubuntu`) on the Proxmox node `pve`
   (`ssh proxmox`), an AMD Ryzen 7 8745H with 8 cores and 16 threads. On
