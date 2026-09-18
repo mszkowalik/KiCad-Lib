@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-18 (a device can be moved to the batch it was really built in)
+
+- **`POST /api/runs/{id}/rebatch` moves devices out of the batch the bench
+  picked by mistake.** The batch on a `produced` event is chosen from a list
+  before the first device of a shift passes, and `mark_produced` refused to say
+  otherwise ever again — so a shift programmed with the wrong batch selected
+  filed every one of its devices against it permanently. That is not cosmetic:
+  a batch's device count is its `built` figure, its stock, and the per-device
+  cost every shipped device carries onto its order. `dry_run` is the default
+  and the plan names each device with the batch it would leave. The event is
+  not replaced: its batch moves, its note keeps where it came from, and the
+  audit row names who moved it. See
+  [decision 0029](docs/decisions/0029-the-batch-on-a-produced-event-is-correctable.md),
+  which also says why this is the only field in the log that works this way.
+
 ## 2026-09-18 (who answered is a glyph, not a word)
 
 - **A verification pill names the actor with one glyph.** `checked (agent)`

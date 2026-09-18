@@ -639,6 +639,39 @@ def reconcile_stock(body: ReconcileIn, request: Request, db: Session = Depends(g
     return plan
 
 
+class RebatchIn(BaseModel):
+    """Devices filed against the wrong batch, by id or by scanned serial."""
+
+    device_ids: list[int] = []
+    serials: list[str] = []
+    note: str = ""
+    dry_run: bool = True
+
+
+@router.post("/runs/{run_id}/rebatch")
+def rebatch(run_id: int, body: RebatchIn, request: Request, db: Session = Depends(get_db)):
+    """Move devices into this batch from the one they were filed against.
+
+    For a bench that had the wrong batch selected. `dry_run` is the default.
+    A device with no `produced` event is not moved here — link it with
+    `POST /api/runs/{id}/produced` instead.
+    """
+    run = db.get(M.ProductionRun, run_id)
+    if run is None:
+        raise HTTPException(404, "no such production run")
+    ids = [*body.device_ids, *(d.id for d in _by_serial(db, body.serials))]
+    actor = actor_of(request)
+    plan = svc.rebatch_devices(db, run, list(dict.fromkeys(ids)), actor=actor, note=body.note,
+                               dry_run=body.dry_run)
+    if body.dry_run:
+        return plan
+    audit(db, "run.rebatch", "production_run", run.id,
+          {"moved": len(plan["moved"]), "from": sorted({m["from_run_id"] for m in plan["moved"]}),
+           "note": body.note}, actor=actor)
+    db.commit()
+    return plan
+
+
 @router.get("/demand")
 def demand(project_id: int | None = None, db: Session = Depends(get_db)):
     """Open order quantity against shelf stock and planned batches, per project."""

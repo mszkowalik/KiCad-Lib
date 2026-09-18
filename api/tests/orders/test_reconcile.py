@@ -312,3 +312,52 @@ def test_a_reversed_shipment_says_it_cannot_be_deleted(world):
     assert row["devices"] == [] and row["qty"] == 0
     assert row["reversed"] == 10
     assert row["deletable"] is False
+
+
+def test_a_device_moves_to_the_batch_it_was_really_built_in(world):
+    """The bench had the wrong batch selected. Decision 0029."""
+    db = world["db"]
+    a, bnew = world["runs"]
+    devs = world["devs"]["A"][:2]
+    assert all(d.production_run_id == a.id for d in devs)
+    plan = svc.rebatch_devices(db, bnew, [d.id for d in devs], actor="test", dry_run=True)
+    assert [m["from_run_id"] for m in plan["moved"]] == [a.id, a.id]
+    assert all(d.production_run_id == a.id for d in devs)  # a dry run moves nothing
+
+    svc.rebatch_devices(db, bnew, [d.id for d in devs], actor="test", note="bench picked wrong",
+                        dry_run=False)
+    db.flush()
+    assert all(d.production_run_id == bnew.id for d in devs)
+    for d in devs:
+        ev = next(e for e in d.events if e.kind == "produced")
+        assert ev.production_run_id == bnew.id
+        assert f"moved from batch {a.id}" in ev.note
+    stock = {r["run_id"]: r for r in svc.run_stock(db, world["proj"].id)}
+    assert stock[a.id]["devices_produced"] == 3
+    assert stock[bnew.id]["devices_produced"] == 7
+
+
+def test_rebatch_says_why_it_skipped_a_device(world):
+    db = world["db"]
+    a, bnew = world["runs"]
+    already = world["devs"]["B"][0]
+    plan = svc.rebatch_devices(db, bnew, [already.id, 999999], actor="test", dry_run=True)
+    assert plan["moved"] == []
+    reasons = {s.get("device_id"): s["reason"] for s in plan["skipped"]}
+    assert reasons[already.id] == "already in this batch"
+    assert reasons[999999] == "no such device"
+
+
+def test_rebatch_refuses_a_device_from_another_project(world):
+    db = world["db"]
+    other = M.Project(name="test-reconcile-other", git_url="https://example.invalid/o.git")
+    db.add(other)
+    db.flush()
+    stray = M.DeviceUnit(project_id=other.id, serial="ZZ9", mac="00:00:00:99:99:99",
+                         first_seen=datetime(2026, 1, 1, tzinfo=UTC))
+    db.add(stray)
+    db.flush()
+    plan = svc.rebatch_devices(db, world["runs"][1], [stray.id], actor="test", dry_run=True)
+    assert plan["moved"] == []
+    assert "another" not in plan["skipped"][0]["reason"]
+    assert "belongs to project" in plan["skipped"][0]["reason"]

@@ -2,7 +2,7 @@
 name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints: where to get the copper, how to publish it, and the index of every footprint rule with the check that now holds it. The rules themselves live in the footprint checklist — read them with get_review_checklist('footprint'). Use when naming, picking or authoring any footprint."
 ---
-<!-- platform-skill: conventions-footprints v48 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v49 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 **The rules are checks now, not prose.** Every convention this document used to
@@ -235,6 +235,36 @@ SOT-23 families are decided that way.
 
 **Say which document and which page in the note**, so the next reader can
 check the limit rather than take the exception on trust.
+
+## The exposed pad takes the next number after the last lead
+
+**A DFN-8's exposed pad is pad 9. A QFN-16's is 17. A VQFN-40's is 41.** The
+pad is numbered `<last lead> + 1`, and the SYMBOL gives its pin the same
+number, so `cmp.pins_to_pads` matches and the net reaches the copper.
+
+Mateusz Kowalik, 2026-09-18: "house standard is to number this pad as 9 for
+DFN8."
+
+Measured the same day across every footprint in the library that carries a
+`pad_prop_heatsink` pad — **15 of 15 follow it**, from `SOIC-8-1EP` (EP 9) and
+`HVSSOP-10-1EP` (EP 11) up to `QFN-68-1EP` (EP 69).
+
+**The number is ours, not the datasheet's, and that is the normal case.** Most
+manufacturers draw the pad and dimension it but never put it in the pin table:
+AOS gives the AON7264E's package as "DFN 3x3 EP" and numbers only 1–8; UMW
+dimensions the PCF8574's pad at D1 = E1 = 1.55/1.75 in §14.2 and numbers only
+1–16. So do not read an unnumbered pad as an undocumented one, and do not
+invent a different number to match a datasheet that has none.
+
+**What the house number does NOT decide is what the pad connects to.** That is
+`cmp.exposed_pad_documented`, it is answered from the datasheet, and the two
+are independent: TI states outright that the TXS0104E's pad "must be connected
+to ground", while for the PCF8574 it says only that the pad "must be soldered
+to the printed circuit board for thermal and mechanical performance". Name the
+symbol pin for what the datasheet supports — `GND` and `power_in` when it says
+ground, `EP` and `passive` when it says only that the pad exists and must be
+soldered. `passive` is also the right ERC for must-be-soldered: clean when
+wired, an error when left open.
 
 ## Pad placement grid — still prose, because no check holds it
 

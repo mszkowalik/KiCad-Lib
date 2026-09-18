@@ -150,6 +150,55 @@ def link_devices_to_run(db: Session, run: M.ProductionRun, device_ids: list[int]
     return {"linked": linked, "skipped": skipped}
 
 
+def rebatch_devices(db: Session, run: M.ProductionRun, device_ids: list[int], *,
+                    actor: str = "", note: str = "", dry_run: bool = True) -> dict:
+    """Move devices to the batch they were really built in (decision 0029).
+
+    The batch on a `produced` event is chosen by whoever was standing at the
+    bench, from a list, before the first device of the shift passes. Pick the
+    wrong row and every device of that shift is filed against the wrong batch,
+    and `mark_produced` refuses to say otherwise ever again — a device is
+    produced once.
+
+    This is the ONE reference in the log that a later correction may rewrite,
+    because it records a CHOICE MADE AT THE BENCH rather than something that
+    happened. The event is not replaced and nothing is reversed: its
+    `production_run_id` moves, its note keeps where it came from, and the audit
+    row names who moved it. Everything else in a device's history stays
+    append-only — a delivery is undone by `unshipped`, never by editing.
+    """
+    moved, skipped = [], []
+    for did in device_ids:
+        d = db.get(M.DeviceUnit, did)
+        if d is None:
+            skipped.append({"device_id": did, "reason": "no such device"})
+            continue
+        if d.project_id != run.project_id:
+            skipped.append({"device_id": did, "serial": d.serial,
+                            "reason": f"device belongs to project {d.project_id}, the batch to "
+                                      f"{run.project_id}"})
+            continue
+        ev = next((e for e in d.events if e.kind == "produced"), None)
+        if ev is None:
+            skipped.append({"device_id": did, "serial": d.serial,
+                            "reason": "never produced; link it with POST /api/runs/{id}/produced"})
+            continue
+        if ev.production_run_id == run.id:
+            skipped.append({"device_id": did, "serial": d.serial, "reason": "already in this batch"})
+            continue
+        moved.append({"device_id": d.id, "serial": d.serial, "from_run_id": ev.production_run_id,
+                      "to_run_id": run.id})
+        if not dry_run:
+            was = ev.production_run_id
+            ev.production_run_id = run.id
+            ev.note = ((ev.note + " · ") if ev.note else "") + f"moved from batch {was}" + (
+                f": {note}" if note else "")
+            d.production_run_id = run.id
+    if not dry_run:
+        db.flush()
+    return {"dry_run": dry_run, "run_id": run.id, "moved": moved, "skipped": skipped}
+
+
 # ------------------------------------------------------------------- stock
 
 
