@@ -484,6 +484,7 @@ def patch_shipment_line(line_id: int, body: ShipmentLinePatch, request: Request,
     if run is not None and line is not None and run.project_id != line.project_id:
         raise HTTPException(422, f"batch {run.label!r} builds project {run.project_id}, "
                                  f"the order line is project {line.project_id}")
+    svc.check_unserialized_source(db, body.source_run_id, sl.qty_unserialized or 0)
     before = sl.source_run_id
     sl.source_run_id = body.source_run_id
     audit(db, "order.shipment_line.source", "shipment", sl.shipment_id,
@@ -643,7 +644,6 @@ class ReconcileIn(BaseModel):
     device_ids: list[int] = []
     serials: list[str] = []
     refill: str = "same_batch"  # same_batch | any_batch | none
-    keep_count: bool = False
     note: str = ""
     dry_run: bool = True
 
@@ -664,14 +664,14 @@ def reconcile_stock(body: ReconcileIn, request: Request, db: Session = Depends(g
             devices.append(d)
             seen.add(d.id)
     actor = actor_of(request)
-    plan = svc.reconcile_shelf(db, devices, refill=body.refill, keep_count=body.keep_count,
+    plan = svc.reconcile_shelf(db, devices, refill=body.refill,
                                note=body.note, actor=actor, dry_run=body.dry_run)
     if body.dry_run:
         return plan
     audit(db, "stock.reconcile", "project", devices[0].project_id,
           {"counted": len(devices), "freed": len(plan["freed"]),
            "refilled": len(plan["refilled"]), "unfilled": len(plan["unfilled"]),
-           "keep_count": body.keep_count, "note": body.note}, actor=actor)
+           "note": body.note}, actor=actor)
     db.commit()
     return plan
 

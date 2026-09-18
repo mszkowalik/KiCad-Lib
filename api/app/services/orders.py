@@ -269,6 +269,32 @@ def run_stock(db: Session, project_id: int | None = None) -> list[dict]:
     return out
 
 
+def check_unserialized_source(db: Session, run_id: int | None, qty: int) -> None:
+    """Refuse an anonymous unit drawn from a batch that knows its own units.
+
+    A unit with no serial only exists because its batch was made before the
+    flasher recorded MACs (decision 0003 §8), and `run_stock` says so in
+    arithmetic: a batch with ANY device record has a legacy pool of ZERO. Every
+    unit charged to it beyond that is `overdrawn` — a figure that reads as a
+    warning about the batch when it is really a contradiction in the shipment.
+
+    Writing them anyway is what put 40 impossible units on two orders on
+    2026-09-17. The rule is now enforced where they are written, not reported
+    afterwards on a page nobody was looking at (user decision 2026-09-18).
+    """
+    if not run_id or qty <= 0:
+        return
+    run = db.get(M.ProductionRun, run_id)
+    if run is None:
+        raise HTTPException(404, f"no run {run_id}")
+    n = (db.query(M.DeviceUnit).filter(M.DeviceUnit.production_run_id == run_id).count())
+    if n:
+        raise HTTPException(409, {
+            "error": "that batch records its devices, so it has no units without a serial",
+            "run_id": run_id, "label": run.label, "device_records": n, "requested": qty,
+            "hint": "name the devices, or charge the units to a batch the flasher never recorded"})
+
+
 def _device_counts(db: Session, rids: list[int]):
     from sqlalchemy import func
     return (db.query(M.DeviceUnit.production_run_id, M.DeviceUnit.state, func.count(M.DeviceUnit.id))
@@ -475,6 +501,7 @@ def create_shipment(db: Session, order: M.SalesOrder, *, kind: str = "delivery",
         if unser > 0:
             src = spec.get("source_run_id")
             if src:
+                check_unserialized_source(db, int(src), unser)
                 avail = next((s for s in run_stock(db, li.project_id) if s["run_id"] == int(src)), None)
                 if avail is None:
                     raise HTTPException(404, f"no run {src} in project {li.project_id}")
@@ -669,8 +696,7 @@ def _refill_pool(db: Session, project_id: int, exclude: set[int]) -> list[M.Devi
 
 
 def reconcile_shelf(db: Session, devices: list[M.DeviceUnit], *, refill: str = "same_batch",
-                    keep_count: bool = False, note: str = "", actor: str = "",
-                    dry_run: bool = True) -> dict:
+                    note: str = "", actor: str = "", dry_run: bool = True) -> dict:
     """A stock count corrects the FIFO guesses that contradict it (decision 0027).
 
     `devices` is what a physical count found on the shelf. Any of them the
@@ -680,11 +706,11 @@ def reconcile_shelf(db: Session, devices: list[M.DeviceUnit], *, refill: str = "
     stock. A `shipped` event somebody typed is never touched: the count says
     where a device is, not who is wrong about it.
 
-    The shipment's QUANTITY is what the customer was invoiced for. When no
-    device is left to refill a slot, `keep_count` decides which of two true
-    statements the record makes: the quantity stands and one unit goes back to
-    being anonymous (§8), or the quantity falls and the order shows the
-    shortfall. There is no third option where both stay comfortable.
+    A slot nothing can refill LOWERS what the order counts as delivered. There
+    is no second option: the freed device's own batch records that device, so
+    it has no anonymous unit to offer in its place (decision 0031, which
+    narrows 0027 §5). Either another real device fills the slot or the
+    quantity falls.
     """
     if refill not in ("same_batch", "any_batch", "none"):
         raise HTTPException(422, "refill is same_batch, any_batch or none")
@@ -732,7 +758,6 @@ def reconcile_shelf(db: Session, devices: list[M.DeviceUnit], *, refill: str = "
     freed: list[dict] = []
     refilled: list[dict] = []
     unfilled: list[dict] = []
-    unser: dict[tuple[int, int, int | None], int] = defaultdict(int)
     delta: dict[int, int] = defaultdict(int)  # order_line_id -> change in counted units
 
     for d, ev in slots:
@@ -761,10 +786,7 @@ def reconcile_shelf(db: Session, devices: list[M.DeviceUnit], *, refill: str = "
                          "order_line_id": ev.order_line_id,
                          "production_run_id": d.production_run_id, "counts": counts})
         if counts:
-            if keep_count:
-                unser[(sh.id, ev.order_line_id, d.production_run_id)] += 1
-            else:
-                delta[ev.order_line_id] -= 1
+            delta[ev.order_line_id] -= 1
 
     lines = {li.id: li for li in db.query(M.SalesOrderLine)
              .filter(M.SalesOrderLine.id.in_([f["order_line_id"] for f in freed] or [-1])).all()}
@@ -777,11 +799,9 @@ def reconcile_shelf(db: Session, devices: list[M.DeviceUnit], *, refill: str = "
                        "qty_shipped_after": before + delta[lid],
                        "status_before": li.order.status})
     plan = {
-        "dry_run": dry_run, "refill": refill, "keep_count": keep_count,
+        "dry_run": dry_run, "refill": refill,
         "already_in_stock": already, "skipped": skipped,
         "freed": freed, "refilled": refilled, "unfilled": unfilled,
-        "unserialized": [{"shipment_id": s, "order_line_id": l, "source_run_id": r, "qty": n}
-                         for (s, l, r), n in sorted(unser.items(), key=lambda kv: kv[0][:2])],
         "lines": effect,
     }
     if dry_run:
@@ -799,16 +819,6 @@ def reconcile_shelf(db: Session, devices: list[M.DeviceUnit], *, refill: str = "
                      order_line_id=ev.order_line_id, shipment_id=ev.shipment_id,
                      replaces_device_id=ev.replaces_device_id,
                      note=f"refill: takes the slot of {d.serial or d.id}, which the count found on the shelf")
-    for (ship_id, line_id, run_id), n in unser.items():
-        row = (db.query(M.ShipmentLine)
-               .filter(M.ShipmentLine.shipment_id == ship_id,
-                       M.ShipmentLine.order_line_id == line_id,
-                       M.ShipmentLine.source_run_id == run_id).first())
-        if row is None:
-            row = M.ShipmentLine(shipment_id=ship_id, order_line_id=line_id,
-                                 qty_unserialized=0, source_run_id=run_id)
-            db.add(row)
-        row.qty_unserialized = (row.qty_unserialized or 0) + n
     db.flush()
     for li in lines.values():
         db.expire(li.order, ["shipments", "lines"])

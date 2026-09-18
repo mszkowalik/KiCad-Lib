@@ -115,23 +115,23 @@ def test_same_batch_refill_will_not_cross_batches(world):
 def test_nothing_to_refill_with_drops_the_count(world):
     db, line = world["db"], world["line"]
     counted = world["devs"]["A"][:3]
-    plan = svc.reconcile_shelf(db, counted, refill="any_batch", keep_count=False,
-                               actor="test", dry_run=False)
+    plan = svc.reconcile_shelf(db, counted, refill="any_batch", actor="test", dry_run=False)
     assert len(plan["unfilled"]) == 3
     assert svc.line_shipped(line) == 7
     assert plan["lines"][0]["qty_shipped_after"] == 7
     assert world["order"].status == "partial"
 
 
-def test_keep_count_turns_the_slot_anonymous(world):
+def test_a_slot_nothing_can_refill_always_lowers_the_count(world):
+    """There is no second option. The freed device's own batch records that
+    device, so it has no anonymous unit to put in its place (decision 0031)."""
     db, line = world["db"], world["line"]
     counted = world["devs"]["A"][:3]
-    plan = svc.reconcile_shelf(db, counted, refill="any_batch", keep_count=True,
-                               actor="test", dry_run=False)
+    plan = svc.reconcile_shelf(db, counted, refill="any_batch", actor="test", dry_run=False)
     assert len(plan["unfilled"]) == 3
-    assert sum(u["qty"] for u in plan["unserialized"]) == 3
-    assert svc.line_shipped(line) == 10
-    assert world["order"].status == "fulfilled"
+    assert "unserialized" not in plan
+    assert svc.line_shipped(line) == 7
+    assert world["order"].status == "partial"
 
 
 def test_a_typed_shipment_is_never_overruled(world):
@@ -460,3 +460,45 @@ def test_a_shipment_line_cannot_name_another_project_s_batch(world):
         router.patch_shipment_line(sl.id, router.ShipmentLinePatch(source_run_id=alien.id),
                                    _Req(), db=db)
     assert e.value.status_code == 422
+
+
+def test_a_batch_that_records_devices_has_no_anonymous_units(world):
+    """The guard that would have stopped 40 impossible units on 2026-09-17."""
+    from fastapi import HTTPException
+
+    db, line, order = world["db"], world["line"], world["order"]
+    real = world["runs"][0]  # five device records
+    db.refresh(order)
+    with pytest.raises(HTTPException) as e:
+        svc.create_shipment(db, order, shipped_at="2026-04-01",
+                            lines=[{"order_line_id": line.id, "qty_unserialized": 2,
+                                    "source_run_id": real.id}], actor="test")
+    assert e.value.status_code == 409
+    assert e.value.detail["device_records"] == 5
+    assert e.value.detail["label"] == real.label
+
+
+def test_a_legacy_batch_still_hands_out_anonymous_units(world):
+    db, line, order = world["db"], world["line"], world["order"]
+    legacy = M.ProductionRun(project_id=world["proj"].id, label="pre-flasher", run_date="2023-01-01",
+                             status="completed", qty=9)
+    db.add(legacy)
+    db.flush()
+    db.refresh(order)
+    svc.create_shipment(db, order, shipped_at="2023-02-01",
+                        lines=[{"order_line_id": line.id, "qty_unserialized": 4,
+                                "source_run_id": legacy.id}], actor="test")
+    db.flush()
+    stock = {r["run_id"]: r for r in svc.run_stock(db, world["proj"].id)}
+    assert stock[legacy.id]["legacy_stock"] == 5
+    assert stock[legacy.id]["overdrawn"] == 0
+
+
+def test_a_count_no_longer_offers_to_invent_the_missing_unit(world):
+    """`keep_count` invented the unit and left `overdrawn` to report it later.
+    It is gone: the count falls instead (decision 0031)."""
+    db = world["db"]
+    counted = world["devs"]["A"][:2]
+    plan = svc.reconcile_shelf(db, counted, refill="none", actor="test", dry_run=True)
+    assert len(plan["unfilled"]) == 2
+    assert plan["lines"][0]["qty_shipped_after"] == plan["lines"][0]["qty_shipped_before"] - 2

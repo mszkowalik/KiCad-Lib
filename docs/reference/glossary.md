@@ -59,5 +59,5 @@ it.
 | **built** | finished AND passed (decision [0007](../decisions/0007-built-means-finished-and-passed.md)) — not assembled, not shipped |
 | **stock** | devices whose newest event leaves them `in_stock`. An `allocated` device is on the shelf but is NOT stock |
 | **delivered** | `shipped` events that no `unshipped` event reversed, plus unserialized units (decision [0027](../decisions/0027-a-stock-count-corrects-a-fifo-guess.md)) |
-| **without a serial** | a unit on a shipment that names no device, from a batch that has no device records (decision 0003 §8) |
+| **without a serial** | a unit on a shipment that names no device, from a batch that has no device records (decision 0003 §8). A batch the flasher recorded has none, and the platform refuses to write one (decision 0031) |
 | **overdrawn** | more units shipped from a batch than it is recorded to hold — a quantity on the run is wrong, or a shipment is |

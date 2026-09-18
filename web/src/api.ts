@@ -7261,7 +7261,6 @@ export interface StockCountIn {
   device_ids?: number[];
   serials?: string[];
   refill?: "same_batch" | "any_batch" | "none";
-  keep_count?: boolean;
   note?: string;
   dry_run: boolean;
 }
@@ -7280,7 +7279,6 @@ export interface StockCountSlot {
 export interface StockCountPlan {
   dry_run: boolean;
   refill: string;
-  keep_count: boolean;
   already_in_stock: number[];
   skipped: { device_id: number; serial: string; state: string; reason: string }[];
   freed: StockCountSlot[];
@@ -7294,7 +7292,6 @@ export interface StockCountPlan {
     production_run_id: number | null;
   }[];
   unfilled: StockCountSlot[];
-  unserialized: { shipment_id: number; order_line_id: number; source_run_id: number | null; qty: number }[];
   lines: {
     order_line_id: number;
     order_id: number;

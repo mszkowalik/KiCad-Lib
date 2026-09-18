@@ -36,7 +36,7 @@ import {
   type ProjectInfo,
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
-import Field, { CheckField, FieldRow } from "../components/Field";
+import Field, { FieldRow } from "../components/Field";
 import AutoTextarea from "../components/AutoTextarea";
 import { useDialog } from "../components/Dialog";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
@@ -632,7 +632,6 @@ function CountShelfCard({ onApplied }: { onApplied: () => void }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [refill, setRefill] = useState<"same_batch" | "any_batch" | "none">("same_batch");
-  const [keepCount, setKeepCount] = useState(true);
   const [note, setNote] = useState("");
   const [plan, setPlan] = useState<StockCountPlan | null>(null);
   const [unknown, setUnknown] = useState<string[]>([]);
@@ -647,7 +646,7 @@ function CountShelfCard({ onApplied }: { onApplied: () => void }) {
     setError(null);
     setUnknown([]);
     try {
-      const p = await reconcileStock({ serials, refill, keep_count: keepCount, note: note.trim(), dry_run: dry });
+      const p = await reconcileStock({ serials, refill, note: note.trim(), dry_run: dry });
       if (dry) {
         setPlan(p);
         setDone(null);
@@ -743,14 +742,6 @@ function CountShelfCard({ onApplied }: { onApplied: () => void }) {
               />
             </Field>
           </FieldRow>
-          <CheckField
-            checked={keepCount}
-            onChange={setKeepCount}
-            title="What the customer was invoiced for does not change; the unit simply stops naming a device."
-          >
-            Keep the invoiced quantity when nothing is left to refill a place — the unit becomes one
-            without a serial
-          </CheckField>
           <div className="btn-row">
             <button type="button" className="btn" disabled={busy || !serials.length} onClick={() => run(true)}>
               {busy && !plan ? "Counting…" : "Show me the plan"}
@@ -794,15 +785,18 @@ function CountPlan({ plan, busy, onApply }: { plan: StockCountPlan; busy: boolea
     return [...m.entries()].sort((a, b) => a[1].shipped_at.localeCompare(b[1].shipped_at));
   }, [plan]);
 
-  const anon = plan.unserialized.reduce((s, u) => s + u.qty, 0);
-
   return (
     <div className="count-plan">
       <h3 className="card-subtitle">
         {plan.already_in_stock.length} already on the shelf · {plan.freed.length} deliveries taken
         back · {plan.refilled.length} refilled · {plan.unfilled.length} left empty
-        {anon ? ` · ${anon} become units without a serial` : ""}
       </h3>
+      {plan.unfilled.length ? (
+        <p className="muted">
+          A place nothing can refill lowers what its order counts as delivered. The batch that
+          device came from records it, so it has no unit without a serial to put in its place.
+        </p>
+      ) : null}
       {plan.skipped.length ? (
         <p className="muted">
           {plan.skipped.length} counted device{plan.skipped.length === 1 ? "" : "s"} the count cannot

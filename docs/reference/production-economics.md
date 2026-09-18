@@ -87,6 +87,15 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
     device with several runs, never several devices. Known gap: the engine's
     first-pass rule keeps `produced` when a later run fails — add a
     failed-after-pass event before relying on live runs for stock.
+  - **A batch that records its devices has NO units without a serial**
+    (`check_unserialized_source`, decision
+    [0031](../decisions/0031-a-batch-that-records-its-devices-has-no-anonymous-units.md)):
+    `run_stock` gives such a batch a legacy pool of zero, so charging one to it
+    anyway only ever produced an `overdrawn` flag after the fact. Every path
+    that writes one — `create_shipment`, `reconcile_shelf`,
+    `PATCH /api/shipment-lines/{id}` — refuses with 409 and names the batch. A
+    stock-count slot that nothing can refill therefore LOWERS what its order
+    counts as delivered; there is no option to invent the missing unit.
   - **Good units are COUNTED, never typed** (`run_actuals.good_units`, decision
     [0030](../decisions/0030-good-units-are-counted-not-typed.md)): every
     per-device divisor — per-device actuals, the register's per-run quantity

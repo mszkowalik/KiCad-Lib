@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-09-18 (no serial, no production)
+
+- **A batch that records its devices can no longer supply a unit "without a
+  serial".** `run_stock` already said so in arithmetic — such a batch has a
+  legacy pool of zero — but only after the fact, as an `overdrawn` flag that
+  reads as a warning about the batch when it is really a contradiction in the
+  shipment. Nothing enforced it where the unit was written, so a stock count
+  wrote 40 of them on 2026-09-17 against batches holding 521 and 1025 device
+  records. Every path that can write one now refuses with 409 naming the batch.
+- **The "keep the invoiced quantity" option is gone.** It could only ever draw
+  from the freed device's own batch, which records that device by definition,
+  so it can never be honoured. A slot nothing can refill now lowers what its
+  order counts as delivered — either a real device fills it or the quantity
+  falls. See
+  [decision 0031](docs/decisions/0031-a-batch-that-records-its-devices-has-no-anonymous-units.md).
+
 ## 2026-09-18 (money charged to nobody stops looking settled)
 
 - **A document whose money is wholly excluded is badged `excluded`, not
