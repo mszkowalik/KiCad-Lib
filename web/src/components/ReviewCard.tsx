@@ -28,7 +28,7 @@ import InfoTip from "./InfoTip";
 const LIMITS = { note: 400, passNote: 300, revokeReason: 300 } as const;
 
 
-import { ErrorBanner, ReviewPill, Spinner } from "./Ui";
+import { ErrorBanner, ReviewPill, Spinner, actorMark } from "./Ui";
 
 /** Documentation verification for one component / symbol / footprint.
  *
@@ -559,7 +559,7 @@ export default function ReviewCard({
                     }${a.note ? ` — ${a.note}` : ""}`}
                   >
                     {isWarning(a) ? "warning" : a.result}
-                    {a.actor_type !== "human" ? ` (${a.actor_type})` : ""}
+                    {actorMark(a.actor_type) ? ` ${actorMark(a.actor_type)}` : ""}
                   </span>
                 ) : (
                   <span className="pill neutral">open</span>

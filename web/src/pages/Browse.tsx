@@ -348,8 +348,8 @@ export default function Browse() {
     {
       key: "review",
       label: COL_LABELS.review,
-      // Wider than sign-off: ReviewPill prints the provenance too
-      // ("checked (agent)"), which is the state most rows are in.
+      // Wider than sign-off: ReviewPill adds the actor glyph too
+      // ("checked 🤖"), which is the state most rows are in.
       width: 10,
       className: "ctr",
       get: (c) => {

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-18 (who answered is a glyph, not a word)
+
+- **A verification pill names the actor with one glyph.** `checked (agent)`
+  and `failed (machine)` — uppercased by the pill style into `CHECKED (AGENT)`
+  — were the widest things a review column printed, and narrow cells clipped
+  them. The pill now reads `checked 🤖` (an agent run) or `checked ⚙` (the
+  validator on publish); a human answer carries no mark. The full word is still
+  in the pill's tooltip. One map, `actorMark` in `Ui.tsx`, serves both the
+  aggregate pill and the per-item pills on the verification card.
+
 ## 2026-09-18 (a pin-1 mark that exists is not a pin-1 mark that reads)
 
 - **New derived fact `$footprint_pin1_marks_offspec`.** `fp.pin1_mark` only

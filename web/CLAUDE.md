@@ -203,8 +203,10 @@ component:
   column prints. A `.pill` is `inline-block`, so the column's ellipsis cannot
   shorten it — too narrow simply cuts the word in half. A sign-off pill needs
   about 9% of a full-width table ("not signed"), a review pill about 10%
-  (`ReviewPill` prints the provenance too: "checked (agent)"). Free text may
-  truncate, a pill may not.
+  (`ReviewPill` adds the actor glyph too: "checked 🤖"). Free text may
+  truncate, a pill may not. The actor is one glyph, never a word: `actorMark`
+  in `Ui.tsx` is the single map (⚙ machine, 🤖 agent, nothing for a human),
+  and every pill that names who answered uses it.
 
   Browse is the cautionary tale. Its widths used to live in `styles.css` as
   `.browse-table th:nth-child(n)` rules, with a comment explaining the 9%. When

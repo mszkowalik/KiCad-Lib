@@ -143,6 +143,19 @@ const REVIEW_TONES: Record<string, [string, string]> = {
   unreviewed: ["neutral", "unreviewed"],
 };
 
+/** Who answered, as one glyph: ⚙ the validator on publish, 🤖 an agent run.
+ *
+ *  A human answer carries no mark — it is the default and the strongest claim.
+ *  The pills used to spell the word (`checked (agent)`, uppercased by the pill
+ *  style into `CHECKED (AGENT)`), which was the widest thing a review column
+ *  printed and got clipped in every narrow cell (user report 2026-09-18). The
+ *  full word still reaches the reader through the pill's `title`. */
+export const ACTOR_MARK: Record<string, string> = { machine: "⚙", agent: "🤖" };
+
+export function actorMark(actor: string | null | undefined): string | null {
+  return actor ? (ACTOR_MARK[actor] ?? null) : null;
+}
+
 /** The review state, and — when the caller has them — the two facts underneath.
  *
  *  One word was doing three jobs. `partial` meant "nobody has looked", "a
@@ -178,11 +191,11 @@ export function ReviewPill({
   } | null;
 }) {
   const [tone, label] = REVIEW_TONES[(state ?? "").toLowerCase()] ?? ["neutral", "unreviewed"];
-  const suffix = state === "checked" && provenance && provenance !== "human" ? ` (${provenance})` : "";
+  const mark = state === "checked" ? actorMark(provenance) : null;
   const pill = (
-    <span className={`pill ${tone}`} title={title}>
+    <span className={`pill ${tone}`} title={title ?? (mark ? `checked by ${provenance}` : undefined)}>
       {label}
-      {suffix}
+      {mark ? ` ${mark}` : ""}
     </span>
   );
   if (!detail) return pill;
