@@ -457,6 +457,43 @@ class ReverseShipmentIn(BaseModel):
     dry_run: bool = True
 
 
+class ShipmentLinePatch(BaseModel):
+    """The batch a shipment's UNSERIALISED units came from."""
+
+    source_run_id: int | None = None
+
+
+@router.patch("/shipment-lines/{line_id}")
+def patch_shipment_line(line_id: int, body: ShipmentLinePatch, request: Request,
+                        db: Session = Depends(get_db)):
+    """Name the batch that supplied a shipment's units without a serial.
+
+    A unit with no serial is charged to the batch its line names (decision 0003
+    §8); a line that names none is delivered but uncosted, and its batch keeps
+    counting the units as stock it still holds. That happens whenever the batch
+    is created AFTER the delivery was recorded, which is the normal order of
+    events for a prototype run reconstructed from its invoices.
+    """
+    sl = db.get(M.ShipmentLine, line_id)
+    if sl is None:
+        raise HTTPException(404, "shipment line not found")
+    line = db.get(M.SalesOrderLine, sl.order_line_id)
+    run = db.get(M.ProductionRun, body.source_run_id) if body.source_run_id else None
+    if body.source_run_id and run is None:
+        raise HTTPException(404, "no such production run")
+    if run is not None and line is not None and run.project_id != line.project_id:
+        raise HTTPException(422, f"batch {run.label!r} builds project {run.project_id}, "
+                                 f"the order line is project {line.project_id}")
+    before = sl.source_run_id
+    sl.source_run_id = body.source_run_id
+    audit(db, "order.shipment_line.source", "shipment", sl.shipment_id,
+          {"line_id": sl.id, "from": before, "to": body.source_run_id,
+           "qty_unserialized": sl.qty_unserialized}, actor=actor_of(request))
+    db.commit()
+    return {"id": sl.id, "shipment_id": sl.shipment_id, "order_line_id": sl.order_line_id,
+            "qty_unserialized": sl.qty_unserialized, "source_run_id": sl.source_run_id}
+
+
 @router.post("/shipments/{shipment_id}/reverse")
 def reverse_shipment(shipment_id: int, body: ReverseShipmentIn, request: Request,
                      db: Session = Depends(get_db)):

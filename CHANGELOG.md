@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-09-18 (money charged to nobody stops looking settled)
+
+- **A document whose money is wholly excluded is badged `excluded`, not
+  `assigned`.** `excluded` means "recorded so the document reconciles, charged
+  to NOBODY on purpose" — reclaimable import tax, or the prepaid-component
+  share of a populated-board price. It counts as fully assigned, so such a
+  document showed a green `assigned` pill beside an empty destination and the
+  "only unfinished" filter hid it. Three whole JLCPCB board invoices sat that
+  way from 2023 until somebody went looking: `2014632A202310101833996`
+  ($991.93), `2014632A202312121800359` ($2,054.51) and
+  `2014632A202402200414673` ($902.04). The destination column now names the
+  excluded amount too.
+- **`PATCH /api/shipment-lines/{id}` names the batch behind a shipment's units
+  without a serial.** Such a unit is costed from the batch its line names
+  (decision 0003 §8); a line naming none is delivered but uncosted, and the
+  batch goes on counting those units as stock it still holds. There was no way
+  to fill it in afterwards, which is exactly what a prototype batch
+  reconstructed from its invoices needs — the batch is created long after the
+  delivery was recorded.
+
 ## 2026-09-18 (per-device cost divides by the devices that passed)
 
 - **Every per-device figure now counts the device records instead of reading a

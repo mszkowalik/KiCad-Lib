@@ -386,7 +386,13 @@ export default function Invoices() {
                     dest.push(`${reg.projects[pid] || `project ${pid}`}: ${plain(amount)}`);
                   }
                   if (a.pool) dest.push(`pool: ${plain(a.pool)}`);
+                  if (a.excluded) dest.push(`excluded: ${plain(a.excluded)}`);
                   const destText = dest.join(" · ") || "—";
+                  // Money charged to NOBODY on purpose is not money that found a
+                  // home. It read `assigned` in green with an empty destination,
+                  // which is how three whole JLC board invoices sat unnoticed
+                  // from 2023 until somebody went looking (2026-09-18).
+                  const wholly = (a.excluded ?? 0) > 0 && !dest.some((t) => !t.startsWith("excluded"));
                   const open = expanded === d.id;
                   return (
                     <Fragment key={d.id}>
@@ -411,6 +417,10 @@ export default function Invoices() {
                             <span className="pill warn">{plain(a.unassigned)} unassigned</span>
                           ) : a.residual ? (
                             <span className="pill warn">{plain(a.residual)} residual</span>
+                          ) : wholly ? (
+                            <span className="pill neutral" title="Charged to nobody on purpose — reclaimable tax, or a board nothing in the platform carries">
+                              excluded
+                            </span>
                           ) : (
                             <span className="pill ok">assigned</span>
                           )}

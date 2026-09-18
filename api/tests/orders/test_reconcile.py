@@ -405,3 +405,58 @@ def test_rebatching_moves_the_cost_basis_with_the_device(world):
     svc.rebatch_devices(db, b, [d.id for d in world["devs"]["A"][:2]], actor="test", dry_run=False)
     db.flush()
     assert (run_actuals.good_units(db, a), run_actuals.good_units(db, b)) == (3, 7)
+
+
+def test_naming_the_batch_behind_unserialised_units_draws_them_down(world):
+    """A prototype batch reconstructed after the delivery was recorded: until
+    the shipment line names it, the batch counts the units as stock it holds."""
+    from app.routers import orders as router
+
+    db, line, order = world["db"], world["line"], world["order"]
+    proto = M.ProductionRun(project_id=world["proj"].id, label="prototypes", run_date="2023-12-25",
+                            status="completed", qty=20)
+    db.add(proto)
+    db.flush()
+    db.refresh(order)
+    svc.create_shipment(db, order, shipped_at="2023-12-30",
+                        lines=[{"order_line_id": line.id, "qty_unserialized": 20}], actor="test")
+    db.flush()
+    stock = {r["run_id"]: r for r in svc.run_stock(db, world["proj"].id)}
+    assert stock[proto.id]["legacy_stock"] == 20  # nothing has drawn it down yet
+
+    sl = (db.query(M.ShipmentLine)
+          .filter(M.ShipmentLine.order_line_id == line.id,
+                  M.ShipmentLine.qty_unserialized == 20).one())
+    out = router.patch_shipment_line(sl.id, router.ShipmentLinePatch(source_run_id=proto.id),
+                                     _Req(), db=db)
+    assert out["source_run_id"] == proto.id
+    stock = {r["run_id"]: r for r in svc.run_stock(db, world["proj"].id)}
+    assert stock[proto.id]["legacy_stock"] == 0
+    assert stock[proto.id]["unserialized_shipped"] == 20
+    assert stock[proto.id]["overdrawn"] == 0
+
+
+def test_a_shipment_line_cannot_name_another_project_s_batch(world):
+    from fastapi import HTTPException
+
+    from app.routers import orders as router
+
+    db, line, order = world["db"], world["line"], world["order"]
+    other = M.Project(name="test-reconcile-other-2", git_url="https://example.invalid/o2.git")
+    db.add(other)
+    db.flush()
+    alien = M.ProductionRun(project_id=other.id, label="alien", run_date="2024-01-01",
+                            status="completed", qty=5)
+    db.add(alien)
+    db.flush()
+    db.refresh(order)
+    svc.create_shipment(db, order, shipped_at="2024-01-02",
+                        lines=[{"order_line_id": line.id, "qty_unserialized": 2}], actor="test")
+    db.flush()
+    sl = (db.query(M.ShipmentLine)
+          .filter(M.ShipmentLine.order_line_id == line.id,
+                  M.ShipmentLine.qty_unserialized == 2).one())
+    with pytest.raises(HTTPException) as e:
+        router.patch_shipment_line(sl.id, router.ShipmentLinePatch(source_run_id=alien.id),
+                                   _Req(), db=db)
+    assert e.value.status_code == 422
