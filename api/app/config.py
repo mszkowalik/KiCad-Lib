@@ -176,6 +176,15 @@ class Settings(BaseSettings):
     # Exchange-rate auto-refresh (frankfurter.app — ECB daily rates, no key).
     fx_autofetch: bool = True
 
+    # NOTE — THE MQTT BROKER IS DELIBERATELY ABSENT FROM THIS FILE.
+    # Host, credentials and the on/off switch live in the `mqtt_config` table,
+    # Fernet-encrypted, writable only by an admin on the Admin page (user
+    # decision 2026-09-18). They are NOT environment variables and NOT
+    # appconfig knobs: the credential is a live fleet credential that reads
+    # every customer device, so it must not sit in a compose file, a .env, a
+    # shell history or a CI secret store that more people can read than should.
+    # See services/mqtt_config.py and docs/reference/mqtt-presence.md.
+
     # Refresh LCSC price ladders older than this many days on startup.
     price_ladder_max_age_days: int = 30
     price_ladder_autofetch: bool = True

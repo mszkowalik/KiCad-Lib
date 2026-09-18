@@ -30,6 +30,7 @@ from .routers import (
     ledger,
     libraries,
     models3d,
+    mqtt,
     production_runs,
     projects,
     reviews,
@@ -110,6 +111,7 @@ app.include_router(jlc_import.router)
 app.include_router(ledger.router)
 app.include_router(run_costs.router)
 app.include_router(flasher.router)
+app.include_router(mqtt.router)
 app.include_router(orders.router)
 
 # Published-state file mirror, served read-only (sync + downloads).
@@ -1082,6 +1084,27 @@ def startup() -> None:
         from .services.datasheet_store import start_nightly_recheck
 
         start_nightly_recheck(settings.datasheet_recheck_hour)
+
+    # Read-only subscriber on the fleet's MQTT broker, keeping
+    # `device_presence` current. It subscribes to four LEAF topics and never
+    # publishes — the traffic budget and the reasoning are in
+    # services/mqtt_monitor.py and docs/reference/mqtt-presence.md.
+    #
+    # Unconditional here, because the switch is NOT an environment variable:
+    # `start()` reads the admin-owned `mqtt_config` row and returns False when
+    # the monitor is disabled or unconfigured, which is the normal case.
+    try:
+        from .db import SessionLocal
+        from .services.mqtt_monitor import link_devices, start as start_mqtt
+
+        db = SessionLocal()
+        try:
+            link_devices(db)
+            start_mqtt(db)
+        finally:
+            db.close()
+    except Exception as e:  # noqa: BLE001 — a broker outage never blocks startup
+        log.warning(f"MQTT monitor did not start: {type(e).__name__}: {e}")
 
     # Tag documents archived before the classifier existed as searchable or
     # scanned. Unconditional and self-limiting: it only touches rows with

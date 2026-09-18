@@ -19,6 +19,9 @@ dependencies = [
     # question; it does pull onnxruntime (MIT) for its OCR-decision model.
     "pymupdf4llm>=1.28",
     "minio>=7.2",
+    # MQTT client for app/services/mqtt_monitor.py — the read-only fleet
+    # presence watcher. EPL-2.0 / EDL-1.0, pure Python, no build step.
+    "paho-mqtt>=2.1",
     "cryptography>=42",
     "python-multipart>=0.0.9",
     # Password hashing for the login page. argon2id is the current OWASP

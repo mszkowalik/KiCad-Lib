@@ -110,6 +110,11 @@ KNOBS: tuple[Knob, ...] = (
          "Ladders older than this are refreshed."),
     Knob("fx_autofetch", "Pricing", "Refresh exchange rates", "bool",
          "Daily ECB rates via frankfurter.app.", restart=True),
+    # NO MQTT KNOBS HERE, ON PURPOSE. The broker credential reads every
+    # customer device on the fleet, so it is admin-only and encrypted at rest
+    # in its own table rather than sitting in `app_settings` beside the render
+    # theme. Setup-page knobs are readable by anyone who can reach the page.
+    # See services/mqtt_config.py.
     # Its choices are DERIVED from the exchange rates that exist — see
     # `_choices_for`. A frozen list would let somebody select a currency the
     # platform cannot convert into.

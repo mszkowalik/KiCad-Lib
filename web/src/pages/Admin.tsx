@@ -16,6 +16,7 @@ import {
 import { useAuth } from "../auth";
 import SettingsCard from "../components/SettingsCard";
 import UsersCard from "../components/UsersCard";
+import MqttCard from "../components/MqttCard";
 import DataTable, { type Column } from "../components/DataTable";
 import { useDialog } from "../components/Dialog";
 import { ErrorBanner, Spinner } from "../components/Ui";
@@ -60,6 +61,9 @@ export default function Admin() {
         </div>
 
         <DatasheetCard />
+        {/* Admin only: the stored credential reads every customer device on
+            the fleet broker, so this is not a Setup-page knob. */}
+        {isAdmin ? <MqttCard /> : null}
         <FxCard />
         <HealthCard />
 

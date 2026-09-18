@@ -20,6 +20,7 @@ in one document. Open the document before you change the module.
 | SPICE runs, netlists, harnesses, the live sketch | `sim_spice.py`, `project_ops.py`, `sch_lib.py`, `sim_scenario.py` | [docs/reference/spice-runs.md](../../../docs/reference/spice-runs.md) |
 | What a publish CORRECTS for you, before it parses | `geometry_proposals.py` | [docs/reference/publish-sanitization.md](../../../docs/reference/publish-sanitization.md) |
 | The agent tool surface | `jaravis.py` | [docs/reference/jaravis.md](../../../docs/reference/jaravis.md) |
+| Device presence from the fleet MQTT broker | `mqtt_monitor.py`, `mqtt_config.py` | [docs/reference/mqtt-presence.md](../../../docs/reference/mqtt-presence.md) |
 | PCM package retention and the personal repository | `pcm.py` | [docs/reference/pcm-packaging.md](../../../docs/reference/pcm-packaging.md) |
 | The HTTP catalog and KiCad field visibility | `generator.py`, `mirror.py` | [docs/reference/kicad-integration.md](../../../docs/reference/kicad-integration.md) |
 | The 2D field solver | `fieldsolver/` | `fieldsolver/CLAUDE.md` |

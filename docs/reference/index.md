@@ -27,6 +27,7 @@ edited.
 | [kicad-integration.md](kicad-integration.md) | How the library reaches KiCad, the HTTP catalog, field visibility | `services/generator.py`, `mirror.py`, the plugin |
 | [deployment.md](deployment.md) | Images, GHCR, the build cache, the server | a Dockerfile, a compose file, the workflow |
 | [bench-serial-ports.md](bench-serial-ports.md) | How a bench station is bound to a USB socket — the node name IS the socket, the V2 bridge has no serial number, and why this needs the agent | `web/src/flasher/station.ts`, `SocketPicker.tsx`, the bench port rules |
+| [mqtt-presence.md](mqtt-presence.md) | What the fleet MQTT broker carries, why the subscription is LEAF topics only, the three presence states, and the rule that the broker may fill a missing MAC but never change one | `services/mqtt_monitor.py`, `mqtt_config.py`, `routers/mqtt.py`, the topic list |
 | [laser-marking.md](laser-marking.md) | Running a marking bench, authoring a marking procedure, what the BSL controller is and why the platform drives LightBurn instead | `api/app/services/bench_agent/`, `mark_laser`, decision 0020 |
 | [label-printing.md](label-printing.md) | How a serial becomes a Code 128 label, why the agent lays it out, the roll table, and the four measurements that make a label scannable | `api/app/services/bench_agent/`, `print_label`, decision 0022 |
 | [simulator-audits.md](simulator-audits.md) | Two read-throughs of the simulator and what they found | `web/src/sim/` |

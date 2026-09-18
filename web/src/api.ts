@@ -4510,7 +4510,186 @@ export interface DeviceDetailPayload extends Omit<DeviceListRow, "batch" | "runs
     test_run: DeviceRunBrief | null;
     erased_after: DeviceRunBrief | null;
   };
+  /** What the MQTT broker says about this device RIGHT NOW — a different axis
+   *  from `checks`, which is history the bench proved and cannot change.
+   *  `null` means the broker has never been heard to mention this device: it
+   *  may never have been deployed, or the monitor may be off. That is NOT the
+   *  same as `online: false`, which is the broker saying the device is gone. */
+  presence: DevicePresence | null;
   runs: ProgrammingRunSummary[];
+}
+
+/** One device as the fleet MQTT broker sees it. Every field is a cache of the
+ *  newest message on that device's topic — see api/app/services/mqtt_monitor.py. */
+export interface DevicePresence {
+  topic: string;
+  /** true = Online, false = Offline, null = an LWT we could not read. */
+  online: boolean | null;
+  lwt: string;
+  /** ANY message from the device, so it survives a device that dropped off
+   *  without publishing a clean "Offline". This is the honest "last online". */
+  last_seen_at: string | null;
+  last_online_at: string | null;
+  last_offline_at: string | null;
+  first_seen_at: string | null;
+  temperature_c: number | null;
+  temperature_at: string | null;
+  wifi_ping_ms: number | null;
+  inverter: string;
+  inverter_sn: string;
+  dongle_version: string;
+  persist: Record<string, unknown> | null;
+  persist_at: string | null;
+  updated_at: string | null;
+  /** The MAC the topic encodes, when it encodes one ("" for the 6-hex V2-era
+   *  topics, which carry only the last three bytes). Shown so a mismatch
+   *  against the programmed MAC is visible rather than silent. */
+  mac_from_topic: string;
+  /** The MAC the DEVICE ITSELF reported (stat/<id>/STATUS5 -> StatusNET.Mac).
+   *  Stronger evidence than the topic, and empty until something asks a device
+   *  for its status — the platform never asks. */
+  reported_mac: string;
+  /** Where in the payload it was found, e.g. "StatusNET.Mac". */
+  reported_mac_field: string;
+  reported_mac_at: string | null;
+}
+
+/** A device of one project, with the broker's view attached. */
+export interface ProjectDeviceRow {
+  id: number;
+  tasmota_id: string;
+  mac: string;
+  serial: string;
+  state: string;
+  last_status: string;
+  production_run_id: number | null;
+  presence: {
+    online: boolean | null;
+    last_seen_at: string | null;
+    last_online_at: string | null;
+    temperature_c: number | null;
+    wifi_ping_ms: number | null;
+    inverter: string;
+    inverter_sn: string;
+    dongle_version: string;
+  } | null;
+}
+
+export interface ProjectDevicesPayload {
+  items: ProjectDeviceRow[];
+  /** Counted over the WHOLE project, never over the filtered page. */
+  summary: { total: number; online: number; offline: number; unknown: number };
+  truncated: boolean;
+}
+
+export function getProjectDevices(
+  projectId: number,
+  opts: { state?: string; presence?: string; q?: string } = {},
+  signal?: AbortSignal,
+): Promise<ProjectDevicesPayload> {
+  const qs = new URLSearchParams();
+  if (opts.state) qs.set("state", opts.state);
+  if (opts.presence) qs.set("presence", opts.presence);
+  if (opts.q) qs.set("q", opts.q);
+  const tail = qs.toString();
+  return request(`/api/projects/${projectId}/devices${tail ? `?${tail}` : ""}`, { signal });
+}
+
+// ------------------------------------------------------------------ MQTT
+// ADMIN ONLY. Every route below answers 403 to a non-admin. The broker
+// password is never returned by the API — `password_set` is all there is, and
+// an omitted `password` on save keeps the stored one (send "" to clear it).
+
+export interface MqttConfigPayload {
+  enabled: boolean;
+  host: string;
+  port: number;
+  tls: boolean;
+  username: string;
+  password_set: boolean;
+  flush_s: number;
+  keepalive_s: number;
+  client_id: string;
+  updated_by: string;
+  updated_at: string | null;
+}
+
+export interface MqttStatusPayload {
+  monitor: {
+    enabled: boolean;
+    connected: boolean;
+    host: string;
+    started_at: string | null;
+    connected_at: string | null;
+    last_message_at: string | null;
+    last_flush_at: string | null;
+    messages: number;
+    flushed: number;
+    errors: number;
+    last_error: string;
+    subscriptions: string[];
+  };
+  configured: MqttConfigPayload;
+  topics: number;
+  online: number;
+  offline: number;
+  unlinked: number;
+  /** Devices whose programmed MAC disagrees with the broker's. Never repaired
+   *  automatically — a disagreement needs a person. */
+  mac_mismatches: number;
+}
+
+export interface MacMismatchRow {
+  device_id: number;
+  topic: string;
+  programmed_mac: string;
+  broker_mac: string;
+  /** "device_report" (the device answered a status query) or "mqtt_topic". */
+  source: string;
+  reported_mac_field: string;
+  online: boolean | null;
+  last_seen_at: string | null;
+}
+
+export function getMacMismatches(signal?: AbortSignal): Promise<{ items: MacMismatchRow[] }> {
+  return request("/api/mqtt/mac-mismatches", { signal });
+}
+
+export interface MqttUnlinkedRow {
+  topic: string;
+  online: boolean | null;
+  last_seen_at: string | null;
+  first_seen_at: string | null;
+  inverter: string;
+  inverter_sn: string;
+  dongle_version: string;
+  mac_from_topic: string;
+}
+
+export function getMqttStatus(signal?: AbortSignal): Promise<MqttStatusPayload> {
+  return request("/api/mqtt/status", { signal });
+}
+
+/** Omit `password` to keep the stored one; pass "" to clear it. */
+export function saveMqttConfig(
+  body: Partial<Omit<MqttConfigPayload, "password_set" | "updated_by" | "updated_at">> & {
+    password?: string;
+  },
+): Promise<MqttConfigPayload & { restart_required: boolean; running: boolean }> {
+  return request("/api/mqtt/config", {
+    method: "PUT",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export function getMqttUnlinked(signal?: AbortSignal): Promise<{ items: MqttUnlinkedRow[] }> {
+  return request("/api/mqtt/unlinked", { signal });
+}
+
+/** Re-link presence rows AND fill missing device MACs. Never overwrites one. */
+export function linkMqttDevices(): Promise<{ linked: number; macs_filled: number }> {
+  return request("/api/mqtt/link", { method: "POST" });
 }
 
 export interface ProgrammingStepRow {

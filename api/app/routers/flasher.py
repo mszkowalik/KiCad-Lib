@@ -38,6 +38,7 @@ from ..db import get_db
 from .. import models as M
 from ..services import storage
 from ..services import crypto
+from ..services import mqtt_monitor
 from ..services.flasher import (bundle, checks as checks_svc,
                                 params as params_svc, transports, validate)
 from ..services.flasher import engine as engine_mod
@@ -1543,6 +1544,49 @@ def _identity_rows(db: Session, dev: M.DeviceUnit) -> list[dict]:
     return rows
 
 
+def _presence_json(db: Session, dev: M.DeviceUnit) -> dict | None:
+    """The broker's view of one device, or None if it was never heard.
+
+    Matched by `device_unit_id` first and by topic second: a presence row
+    discovered before the device was imported may not be linked yet, and the
+    device page is exactly where somebody notices.
+    """
+    row = db.scalar(
+        select(M.DevicePresence).where(M.DevicePresence.device_unit_id == dev.id)
+    )
+    if row is None and dev.tasmota_id:
+        row = db.scalar(
+            select(M.DevicePresence).where(M.DevicePresence.topic == dev.tasmota_id)
+        )
+    if row is None:
+        return None
+    return {
+        "topic": row.topic,
+        "online": row.online,
+        "lwt": row.lwt,
+        "last_seen_at": _iso(row.last_seen_at),
+        "last_online_at": _iso(row.last_online_at),
+        "last_offline_at": _iso(row.last_offline_at),
+        "first_seen_at": _iso(row.first_seen_at),
+        "temperature_c": row.temperature_c,
+        "temperature_at": _iso(row.temperature_at),
+        "wifi_ping_ms": row.wifi_ping_ms,
+        "inverter": row.inverter,
+        "inverter_sn": row.inverter_sn,
+        "dongle_version": row.dongle_version,
+        "persist": row.persist,
+        "persist_at": _iso(row.persist_at),
+        "updated_at": _iso(row.updated_at),
+        # The MAC the topic encodes, when it encodes one. Shown so a mismatch
+        # against the programmed MAC is visible rather than silent.
+        "mac_from_topic": mqtt_monitor.mac_from_topic(row.topic),
+        # The device's OWN answer, when anything has ever asked it.
+        "reported_mac": row.reported_mac,
+        "reported_mac_field": row.reported_mac_field,
+        "reported_mac_at": _iso(row.reported_mac_at),
+    }
+
+
 @router.get("/devices/{device_id}")
 def device_detail(device_id: int, reveal: bool = False, db: Session = Depends(get_db)):
     d = db.get(M.DeviceUnit, device_id)
@@ -1593,6 +1637,10 @@ def device_detail(device_id: int, reveal: bool = False, db: Session = Depends(ge
                         "started_at": _iso(newest["started_at"])} if newest is not None else None),
         # Is it programmed — config, then an active test, then no erase since.
         "verdict": verdict,
+        # What the BROKER says, which is a different axis from what the bench
+        # proved: `checks` is history that cannot change, `presence` is now.
+        # None when the monitor has never heard this topic.
+        "presence": _presence_json(db, d),
         "runs": [_run_summary_json(r, db) for r in d.runs],
     }
 

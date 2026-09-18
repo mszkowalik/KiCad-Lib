@@ -123,6 +123,18 @@ once and shared. They are stated in
 [docs/reference/datasheets.md](docs/reference/datasheets.md), with the reasoning
 in [docs/decisions/0004](docs/decisions/0004-datasheet-identity-and-storage.md).
 
+## The fleet MQTT broker
+
+A read-only watcher keeps each device's online state, last-seen time,
+temperature and inverter configuration current. Three rules are expensive to get
+wrong — subscribe to LEAF topics and never a subtree, **never publish** (a
+`cmnd/` message commands a customer's device), and the broker may FILL a missing
+MAC but never CHANGE one. They are stated in
+[docs/reference/mqtt-presence.md](docs/reference/mqtt-presence.md), with the
+reasoning in
+[docs/decisions/0033](docs/decisions/0033-the-broker-observes-devices-it-never-commands.md).
+The credential is admin-only and encrypted — never an env var, never a Setup knob.
+
 ## Access control
 
 The platform is on the internet at `https://disfunction.cc/lib` and the API is

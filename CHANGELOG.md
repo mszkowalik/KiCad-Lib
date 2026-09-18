@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-09-18 (the platform can see the fleet)
+
+The platform now knows what its devices are doing after they leave the bench.
+A read-only watcher subscribes to the fleet's MQTT broker and keeps each
+device's live state current — `api/app/services/mqtt_monitor.py`, with the
+reasoning in
+[0033](docs/decisions/0033-the-broker-observes-devices-it-never-commands.md)
+and the topic map in [mqtt-presence.md](docs/reference/mqtt-presence.md).
+
+- **A device page shows a Broker card**: online or offline, when it was last
+  heard, its ESP32 temperature, its WiFi ping, and the inverter model, inverter
+  serial and dongle firmware the device reports about itself. "Never seen" is a
+  THIRD state and is kept apart from "offline" — a device that was never
+  deployed has nothing to report, and that is not a fault.
+- **A project has a Devices tab**, beside Orders: every device built for it,
+  with a live online/offline/never-seen count and filters. Orders is the demand
+  side; this is the supply side.
+- **The broker is watched read-only and never commanded.** Four leaf topics,
+  never a subtree — `tele/#` would carry about 2,500 Modbus messages a second
+  across the fleet. Nothing is ever published, so no command reaches a
+  customer's device. `_assert_leaf_topics` refuses to start on a subtree.
+- **Devices the platform does not know about are surfaced**, not hidden: 68
+  were live on the broker on the first run. The presence table is keyed by MQTT
+  topic, so an unrecognised device still gets a row and adopts its history if it
+  is imported later.
+- **The broker may FILL a missing MAC and may never CHANGE one.** Most V2-era
+  devices were imported from reports that never carried a MAC, and those now get
+  one. A device whose programmed MAC disagrees with the broker is reported to an
+  admin and left untouched — a mismatch means a swapped board or a cloned
+  configuration, and picking a side would destroy the evidence.
+- **Broker settings are admin-only and encrypted at rest**, on the Admin page.
+  Deliberately not an environment variable and not a Setup knob: the credential
+  reads every customer device on the fleet. No endpoint ever returns the
+  password.
+
 ## 2026-09-18 (no serial, no production)
 
 - **A batch that records its devices can no longer supply a unit "without a

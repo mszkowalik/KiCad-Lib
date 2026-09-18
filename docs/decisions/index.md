@@ -60,6 +60,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0030](0030-good-units-are-counted-not-typed.md) | Count the devices that passed instead of typing what a batch yielded — every per-device figure divides by the device records, never by the boards ordered from JLC (applies [0007](0007-built-means-finished-and-passed.md) to cost) | Backend, frontend, production, economics |
 | [0031](0031-a-batch-that-records-its-devices-has-no-anonymous-units.md) | Refuse an anonymous unit from a batch that records its devices, and drop the option to invent one (narrows [0027](0027-a-stock-count-corrects-a-fifo-guess.md) §5 and [0003](0003-orders-shipments-and-device-history.md) §8) | Backend, frontend, production, orders |
 | [0029](0029-a-release-is-a-file-set.md) | A release is a content-addressed file set, platform wide, and a deployment version pins the set — no per-file versions, no bundle beside the pins (supersedes [0026](0026-a-device-file-carries-its-kind-and-enters-by-upload.md)) | Backend, frontend, production, flasher, storage |
+| [0033](0033-the-broker-observes-devices-it-never-commands.md) | Watch the fleet MQTT broker read-only — subscribe to LEAF topics, never publish to a customer device, and let the broker FILL a missing MAC but never CHANGE one | Backend, frontend, production, flasher, access control |
 
 ## Proposed
 

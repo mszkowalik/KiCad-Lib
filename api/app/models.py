@@ -2895,6 +2895,147 @@ class DeviceConfigValue(Base):
     __table_args__ = (Index("ix_device_config_key", "device_unit_id", "key"),)
 
 
+class DevicePresence(Base):
+    """What the MQTT broker says about one device, kept current by
+    `services/mqtt_monitor.py`. One row per TOPIC, not per device unit.
+
+    **The topic is the key, and `device_unit_id` is nullable, on purpose.** The
+    broker is the wider fleet: it carries devices this platform never
+    programmed (field replacements, units from before the flasher existed, and
+    whatever else was provisioned by hand). Keying on the topic means an
+    unrecognised device still gets a row and shows up in the "unlinked" list,
+    which is the whole point of watching the broker — discovering devices we do
+    not know about. `link_devices()` resolves the pointer whenever a matching
+    `DeviceUnit.tasmota_id` appears, so a device imported later adopts its
+    history instead of starting a second one.
+
+    DERIVED AND DISPOSABLE. Every column here is a cache of the newest MQTT
+    message on that topic. Truncate the table and a reconnect rebuilds the
+    retained half of it (`LWT`, `PERSIST_SAVE`) within seconds, because the
+    broker replays retained messages to a fresh subscriber. Nothing here is a
+    source of truth and nothing here may gate a business decision — a device
+    that is `offline` is a device the broker has not heard from, which is not
+    the same claim as a device that is broken.
+
+    `last_seen_at` is the honest "last time online": it advances on ANY message
+    from the topic, so it survives a device that drops off without a clean
+    `Offline` LWT.
+    """
+
+    __tablename__ = "device_presence"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # The Tasmota topic, e.g. "dongle_D4E9F4F48380". UNIQUE — it is the identity.
+    topic: Mapped[str] = mapped_column(String(120), unique=True)
+    # Resolved against DeviceUnit.tasmota_id. NULL = on the broker, not in the
+    # platform. See the class docstring.
+    device_unit_id: Mapped[int | None] = mapped_column(
+        ForeignKey("device_units.id"), nullable=True
+    )
+    # "" until the first LWT arrives; then "Online" / "Offline" verbatim.
+    lwt: Mapped[str] = mapped_column(String(20), default="")
+    online: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # When the LWT last CHANGED state, not when it was last received.
+    last_online_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    last_offline_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # Any message at all on this topic — the real "last heard from".
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # tele/<id>/SENSOR -> ESP32.Temperature, degrees C.
+    temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    temperature_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # tele/<id>/STATE -> Wifi.Ping, milliseconds. These builds publish a
+    # TRIMMED state (Time + Wifi only) — no MAC, no uptime, no firmware
+    # version. See docs/reference/mqtt-presence.md.
+    wifi_ping_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # tele/<id>/PERSIST_SAVE, retained: the device's own configuration —
+    # inverter model and serial, dongle type and version, smart meter.
+    # Stored whole because the schema is the dongle firmware's, not ours, and
+    # it changes without telling us.
+    persist: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    persist_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # The MAC the DEVICE ITSELF reported, from `stat/<id>/STATUS5`. Distinct
+    # from the one the topic encodes: this one is the device speaking, the
+    # topic is a string it was configured with. Empty until something asks a
+    # device for its status — this module never asks (mqtt_monitor rule 2).
+    reported_mac: Mapped[str] = mapped_column(String(20), default="")
+    # WHERE in the payload the MAC was found, e.g. "StatusNET.Mac". Recorded
+    # rather than assumed, so the schema actually seen is on the record.
+    reported_mac_field: Mapped[str] = mapped_column(String(120), default="")
+    reported_mac_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    # From the retained `tasmota/discovery/<mac>/config` announcement: the
+    # hardware build the firmware was compiled for ("CE_Dongle_v1"), the
+    # Tasmota version, and the address the device last had on its own LAN.
+    # The IP is a fact about somebody else's network — useful for support, and
+    # never an identity.
+    hw_model: Mapped[str] = mapped_column(String(60), default="")
+    tasmota_version: Mapped[str] = mapped_column(String(40), default="")
+    ip_address: Mapped[str] = mapped_column(String(45), default="")
+    # Flattened out of `persist` so the device list can filter and sort on them.
+    inverter: Mapped[str] = mapped_column(String(60), default="")
+    inverter_sn: Mapped[str] = mapped_column(String(60), default="")
+    dongle_version: Mapped[str] = mapped_column(String(40), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    device: Mapped[DeviceUnit | None] = relationship()
+
+    __table_args__ = (
+        Index("ix_device_presence_device", "device_unit_id"),
+        Index("ix_device_presence_online", "online"),
+        Index("ix_device_presence_seen", "last_seen_at"),
+    )
+
+
+class MqttConfig(Base):
+    """How to reach the fleet's MQTT broker. ONE row, id = 1.
+
+    **Not an `AppSetting` and not an environment variable, deliberately** (user
+    decision 2026-09-18). The stored credential is a live fleet credential: it
+    reads the topics of every customer device on the broker. That puts it in a
+    different class from the render theme and the KiCad refresh interval, which
+    is what `app_settings` and the Setup page are for.
+
+    So it lives here instead, with three properties those do not have:
+
+      * `secrets_enc` is Fernet-encrypted at rest (services/crypto.py), like
+        `ParamSet` and `GitCredential` and for the same reason.
+      * Every route that reads or writes it requires `role == "admin"`.
+      * The password is never returned by any endpoint — responses say whether
+        one is set, never what it is. There is no `reveal` parameter, because
+        nobody needs to read it back out of the UI.
+
+    Keeping it out of the environment is the point of the table: a compose
+    file, a `.env`, a shell history and a CI secret store are all readable by
+    more people than should hold a key to the whole fleet.
+    """
+
+    __tablename__ = "mqtt_config"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    host: Mapped[str] = mapped_column(String(200), default="")
+    port: Mapped[int] = mapped_column(Integer, default=8883)
+    tls: Mapped[bool] = mapped_column(Boolean, default=True)
+    username: Mapped[str] = mapped_column(String(120), default="")
+    # JSON {"password": "…"}, Fernet-encrypted. A blob rather than a column so
+    # a second secret later needs no migration.
+    secrets_enc: Mapped[str] = mapped_column(Text, default="")
+    # Seconds between buffer flushes to Postgres. See services/mqtt_monitor.py.
+    flush_s: Mapped[int] = mapped_column(Integer, default=15)
+    keepalive_s: Mapped[int] = mapped_column(Integer, default=60)
+    # Prefix only — the monitor appends a per-process suffix, so this can never
+    # collide with a real device's client id and disconnect it.
+    client_id: Mapped[str] = mapped_column(String(60), default="7sigma-platform")
+    updated_by: Mapped[str] = mapped_column(String(100), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 # ------------------------------------------------------------------- settings
 class AppSetting(Base):
     """A runtime override for one `Settings` field, editable in the UI.

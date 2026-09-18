@@ -929,3 +929,97 @@ def refresh_price_points(comp_id: int, db: Session = Depends(get_db)):
     if not ladder.refresh_component(db, comp_id, lcsc):
         raise HTTPException(502, "neither JLCPCB nor LCSC returned a price ladder")
     return list_price_points(comp_id, db)
+
+
+# ------------------------------------------------------- devices of a project
+@router.get("/projects/{project_id}/devices")
+def project_devices(
+    project_id: int,
+    state: str = Query("", description="in_stock | allocated | shipped | returned | disposed"),
+    presence: str = Query("", description="online | offline | unknown"),
+    q: str = Query(""),
+    limit: int = Query(500, le=2000),
+    db: Session = Depends(get_db),
+):
+    """Every device built for this project, with what the broker says about it.
+
+    This is the fleet view the Devices tab draws: what was produced, where it
+    went, and which of them are talking to the broker right now.
+
+    **Presence is a LEFT JOIN and is allowed to be missing.** A device with no
+    presence row was never heard on the broker — it may never have been
+    deployed, or the monitor may be switched off. `presence: null` says "we do
+    not know", which is a different claim from `online: false` ("the broker
+    says it is gone"), and the UI must keep them apart.
+    """
+    project = db.get(M.Project, project_id)
+    if project is None:
+        raise HTTPException(404, "no such project")
+
+    rows = (
+        db.query(M.DeviceUnit, M.DevicePresence)
+        .outerjoin(M.DevicePresence, M.DevicePresence.device_unit_id == M.DeviceUnit.id)
+        .filter(M.DeviceUnit.project_id == project_id)
+    )
+    if state:
+        rows = rows.filter(M.DeviceUnit.state == state)
+    if q:
+        like = f"%{q.strip()}%"
+        rows = rows.filter(
+            M.DeviceUnit.tasmota_id.ilike(like)
+            | M.DeviceUnit.mac.ilike(like)
+            | M.DeviceUnit.serial.ilike(like)
+        )
+    if presence == "online":
+        rows = rows.filter(M.DevicePresence.online.is_(True))
+    elif presence == "offline":
+        rows = rows.filter(M.DevicePresence.online.is_(False))
+    elif presence == "unknown":
+        rows = rows.filter(M.DevicePresence.id.is_(None))
+
+    rows = rows.order_by(M.DeviceUnit.id.desc()).limit(limit).all()
+
+    def _iso(dt):
+        return dt.isoformat() if dt else None
+
+    items = [
+        {
+            "id": d.id,
+            "tasmota_id": d.tasmota_id,
+            "mac": d.mac or "",
+            "serial": d.serial,
+            "state": d.state,
+            "last_status": d.last_status,
+            "production_run_id": d.production_run_id,
+            "presence": (
+                {
+                    "online": p.online,
+                    "last_seen_at": _iso(p.last_seen_at),
+                    "last_online_at": _iso(p.last_online_at),
+                    "temperature_c": p.temperature_c,
+                    "wifi_ping_ms": p.wifi_ping_ms,
+                    "inverter": p.inverter,
+                    "inverter_sn": p.inverter_sn,
+                    "dongle_version": p.dongle_version,
+                }
+                if p is not None
+                else None
+            ),
+        }
+        for d, p in rows
+    ]
+    # Counted over the WHOLE project, not over the page, so the summary does
+    # not change meaning when a filter or the limit is applied.
+    base = (
+        db.query(M.DeviceUnit.id, M.DevicePresence.online)
+        .outerjoin(M.DevicePresence, M.DevicePresence.device_unit_id == M.DeviceUnit.id)
+        .filter(M.DeviceUnit.project_id == project_id)
+        .all()
+    )
+    summary = {
+        "total": len(base),
+        "online": sum(1 for _, o in base if o is True),
+        "offline": sum(1 for _, o in base if o is False),
+        "unknown": sum(1 for _, o in base if o is None),
+    }
+    return {"items": items, "summary": summary, "truncated": len(items) >= limit}
