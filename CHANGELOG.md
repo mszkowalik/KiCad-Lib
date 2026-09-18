@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-09-18 (per-device cost divides by the devices that passed)
+
+- **Every per-device figure now counts the device records instead of reading a
+  typed quantity.** `qty_good` is documented as "units that actually passed,
+  actual per-device cost divides by THIS" and was NULL on every production run
+  in the platform — so was `plan_qty` — so every figure fell through to `qty`,
+  the boards **ordered from JLC**. Decision
+  [0007](docs/decisions/0007-built-means-finished-and-passed.md) settled this
+  for stock two years ago; the register never followed.
+  **Twelve batches change unit cost**, and order margins move with them:
+  CE_Aqua_V2 Batch 5 $19.81 → $27.06 (250 boards ordered, 183 passed),
+  CE_Aqua_V2 Batch 3 $19.80 → $15.09, CE_Dongle_V2 Batch 5 $16.33 → $13.08
+  (455 ordered, 568 passed). The new figures are the correct ones. See
+  [decision 0030](docs/decisions/0030-good-units-are-counted-not-typed.md).
+- **The run editor no longer offers to type "Units good"** for a batch the
+  flasher recorded, and the run page says when a figure fell back to a typed
+  quantity instead of counting devices.
+- **A glossary**, because two words in this platform each name two unrelated
+  things: "run" is a manufacturing batch AND one attempt at programming one
+  device; "order" is a customer order AND a purchase from JLC. It also sets out
+  what `qty`, `plan_qty`, `qty_good` and `qty_sold` each mean, and why
+  `Batch 7 — 1000 pcs` is a purchase order rather than a count of what exists.
+  [docs/reference/glossary.md](docs/reference/glossary.md).
+
 ## 2026-09-18 (a device can be moved to the batch it was really built in)
 
 - **`POST /api/runs/{id}/rebatch` moves devices out of the batch the bench

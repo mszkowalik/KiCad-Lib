@@ -3068,7 +3068,14 @@ export interface RunActuals {
                doc_date: string; amount_usd: number | null }[];
   }[];
   qty_planned: number;
+  /** units that PASSED, derived from the device records when the batch has any
+   *  (decision 0030) — the denominator of every per-device figure */
   qty_good: number | null;
+  /** "devices" = counted from `produced` events; "typed" = the legacy field,
+   *  or the boards ordered from JLC when that is empty too */
+  qty_good_source?: "devices" | "typed";
+  /** what is still stored on the run, for the legacy editor only */
+  qty_good_typed?: number | null;
   qty_sold: number | null;
   sale_unit_price: number | null;
   sale_currency: string;

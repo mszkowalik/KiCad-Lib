@@ -112,7 +112,38 @@ def effective_qty(li: M.RunCostLine, doc: M.RunCostDocument | None = None,
     run = db.get(M.ProductionRun, run_id)
     if run is None:
         return qty
-    return qty * max(run.qty_good or run.plan_qty or run.qty or 1, 1)
+    return qty * good_units(db, run)
+
+
+def produced_counts(db: Session, run_ids: list[int]) -> dict[int, int]:
+    """Device records per production run — one grouped query, never one per run."""
+    from sqlalchemy import func
+
+    if not run_ids:
+        return {}
+    return {rid: n for rid, n in
+            db.query(M.DeviceUnit.production_run_id, func.count(M.DeviceUnit.id))
+            .filter(M.DeviceUnit.production_run_id.in_(run_ids))
+            .group_by(M.DeviceUnit.production_run_id).all() if rid is not None}
+
+
+def good_units(db: Session, run: M.ProductionRun, counts: dict[int, int] | None = None) -> int:
+    """Units that PASSED — the denominator of every per-device figure.
+
+    DERIVED from the device records (decision 0030). The flasher writes a
+    `produced` event on a device's first pass, so counting those records IS
+    what passed, and the answer stays right when a device is added or moved
+    between batches (decision 0029). Pass `counts` from `produced_counts` when
+    resolving many runs.
+
+    The fallbacks are for a batch that has no device records at all — the
+    legacy runs from before the flasher. `qty_good` was meant to hold this and
+    was never filled on a single run; `qty` is boards ORDERED FROM JLC, which
+    is the last resort and not the answer, because a batch routinely yields
+    more than were ordered (CE_Dongle_V2 Batch 5: 455 ordered, 568 passed).
+    """
+    n = (counts if counts is not None else produced_counts(db, [run.id])).get(run.id) or 0
+    return n or max(run.qty_good or run.plan_qty or run.qty or 1, 1)
 
 
 def header_ids(db: Session, document_id: int | None = None) -> set[int]:
@@ -923,7 +954,7 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
 
     total_usd = comp_usd + direct_usd + attrition_usd
     qty_plan = max(run.plan_qty or run.qty or 1, 1)
-    good = max(run.qty_good or run.plan_qty or run.qty or 1, 1)
+    good = good_units(db, run)
 
     planned = None
     eff_totals: dict = {}
@@ -1038,7 +1069,7 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
     # by_run_usd), else at the run's pricing date.
     revenue = None
     if run.sale_unit_price:
-        sold = run.qty_sold or run.qty_good or run.plan_qty or run.qty or 0
+        sold = run.qty_sold or good_units(db, run)
         sale_cur = (run.sale_currency or cur).upper()
         gross = (run.sale_unit_price or 0) * sold
         if sale_cur == cur.upper():
@@ -1053,7 +1084,13 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
     return {
         "currency": cur,
         "qty_planned": qty_plan,
-        "qty_good": run.qty_good,
+        # The DERIVED figure (decision 0030), so every reader divides by what
+        # passed. `qty_good_source` says where it came from: "devices" is the
+        # count of `produced` events, "typed" is the legacy field or, failing
+        # that, the boards ordered from JLC.
+        "qty_good": good,
+        "qty_good_source": "devices" if produced_counts(db, [run.id]).get(run.id) else "typed",
+        "qty_good_typed": run.qty_good,
         "qty_sold": run.qty_sold,
         "sale_unit_price": run.sale_unit_price,
         "sale_currency": run.sale_currency or cur,
@@ -1066,7 +1103,7 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
         # decision is made against. Null when nothing has been priced.
         "margin_pct": (_round(margin / revenue * 100) if revenue not in (None, 0) else None),
         "margin_per_device": (
-            _round(margin / max(run.qty_sold or run.qty_good or run.plan_qty or run.qty or 1, 1))
+            _round(margin / max(run.qty_sold or good_units(db, run), 1))
             if margin is not None else None
         ),
         "components": _round(to_display(comp_usd)),
@@ -1262,7 +1299,7 @@ def _run_money(db: Session, rid: int, direct_usd: float, components_usd: float,
     cost = direct_usd + components_usd
     revenue = None
     if run is not None and run.sale_unit_price:
-        sold = run.qty_sold or run.qty_good or run.plan_qty or run.qty or 0
+        sold = run.qty_sold or good_units(db, run)
         gross = run.sale_unit_price * sold
         cur = (run.sale_currency or "USD").upper()
         if cur == "USD":
@@ -1323,14 +1360,16 @@ def invoice_register(db: Session) -> dict:
         return value
 
     projects = {p.id: p.name for p in db.query(M.Project).all()}
+    _all_runs = db.query(M.ProductionRun).all()
+    _counts = produced_counts(db, [r.id for r in _all_runs])
     runs = {
         r.id: {"label": r.label or f"run {r.id}", "project_id": r.project_id,
-               "run_date": r.run_date or "", "qty": r.qty_good or r.plan_qty or r.qty,
+               "run_date": r.run_date or "", "qty": good_units(db, r, _counts),
                # sale side, so income sits beside cost in the register
                "qty_sold": r.qty_sold, "sale_unit_price": r.sale_unit_price,
                "sale_currency": r.sale_currency or "", "customer": r.customer,
                "order_ref": r.order_ref, "order_date": r.order_date}
-        for r in db.query(M.ProductionRun).all()
+        for r in _all_runs
     }
 
     rows: list[dict] = []
@@ -1495,7 +1534,7 @@ def consume_from_bom(db: Session, run: M.ProductionRun, basis: str = "bom",
     snap = db.get(M.ProjectSnapshot, run.snapshot_id)
     if snap is None:
         return {"created": 0, "unpriced": [], "error": "snapshot not found"}
-    volume = max(run.qty_good or run.plan_qty or run.qty or 1, 1)
+    volume = good_units(db, run)
     # Price the draw from the pool AS IT STOOD at the run's date.
     pool = pool_state(db, run.project_id, as_of=(consumed_at or run.run_date or None))
     bom = (

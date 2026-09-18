@@ -12,6 +12,7 @@ edited.
 
 | Page | Holds | Read it before you change |
 |---|---|---|
+| [glossary.md](glossary.md) | Which "run", which "order" — the two words that each name two unrelated things, every entity once, and what `qty` / `plan_qty` / `qty_good` / `qty_sold` each mean on a production run | saying "run" or "order" to anyone, and any quantity on a batch |
 | [writing-instruction-files.md](writing-instruction-files.md) | The six rules for a `CLAUDE.md` or a page here: line budget, the derivability test, link-never-summarise, narrowest file wins, no `@path` imports, no edit narration | any `CLAUDE.md` or a page in this directory |
 | [datasheets.md](datasheets.md) | Document identity, the fetch ladder, classification, the page index | `services/datasheet_store.py`, `datasheet_pages.py` |
 | [production-economics.md](production-economics.md) | Cost plans, invoices, stock, orders, sales, the built rule | `services/cost_state.py`, `material.py`, `stock.py`, `orders.py` |

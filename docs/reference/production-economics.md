@@ -87,6 +87,16 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
     device with several runs, never several devices. Known gap: the engine's
     first-pass rule keeps `produced` when a later run fails — add a
     failed-after-pass event before relying on live runs for stock.
+  - **Good units are COUNTED, never typed** (`run_actuals.good_units`, decision
+    [0030](../decisions/0030-good-units-are-counted-not-typed.md)): every
+    per-device divisor — per-device actuals, the register's per-run quantity
+    and so `per_device_cost_usd`, a `per_device` invoice line scaled to the
+    batch, the BOM draw, the revenue fallback under `qty_sold` — divides by the
+    device records of that batch. `qty_good` is a fallback for a batch that has
+    NO device records, and `qty` under it is **boards ordered from JLC**, which
+    is neither what arrived nor what passed. `run_stock`'s `qty_recorded` stays
+    the typed quantity on purpose: it is printed beside `built` so the two can
+    be compared.
   - **Demand is derived, never stored** (`project_demand`, `GET /api/demand`):
     open = unshipped order-line quantity, supply = shelf stock + devices
     ALLOCATED to those same open lines + the quantity of every run still

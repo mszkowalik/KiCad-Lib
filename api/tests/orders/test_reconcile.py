@@ -361,3 +361,47 @@ def test_rebatch_refuses_a_device_from_another_project(world):
     assert plan["moved"] == []
     assert "another" not in plan["skipped"][0]["reason"]
     assert "belongs to project" in plan["skipped"][0]["reason"]
+
+
+def test_good_units_counts_the_devices_not_the_boards_ordered(world):
+    """Decision 0030. `qty` is boards ORDERED from JLC; a batch routinely
+    yields a different number, and every per-device figure must divide by what
+    passed."""
+    from app.services import run_actuals
+
+    db = world["db"]
+    a = world["runs"][0]
+    a.qty, a.plan_qty, a.qty_good = 3, None, None  # the run says three boards
+    db.flush()
+    assert run_actuals.good_units(db, a) == 5  # five devices of it are recorded
+
+    counts = run_actuals.produced_counts(db, [r.id for r in world["runs"]])
+    assert counts[a.id] == 5
+    assert run_actuals.good_units(db, a, counts) == 5
+
+
+def test_good_units_falls_back_only_for_a_batch_with_no_devices(world):
+    from app.services import run_actuals
+
+    db = world["db"]
+    legacy = M.ProductionRun(project_id=world["proj"].id, label="legacy", run_date="2023-01-01",
+                             status="completed", qty=40)
+    db.add(legacy)
+    db.flush()
+    assert run_actuals.good_units(db, legacy) == 40
+    legacy.qty_good = 37
+    db.flush()
+    assert run_actuals.good_units(db, legacy) == 37
+
+
+def test_rebatching_moves_the_cost_basis_with_the_device(world):
+    """The point of deriving it: 0029 moved a device, so 0030's denominator
+    follows without anybody retyping a quantity."""
+    from app.services import run_actuals
+
+    db = world["db"]
+    a, b = world["runs"]
+    assert (run_actuals.good_units(db, a), run_actuals.good_units(db, b)) == (5, 5)
+    svc.rebatch_devices(db, b, [d.id for d in world["devs"]["A"][:2]], actor="test", dry_run=False)
+    db.flush()
+    assert (run_actuals.good_units(db, a), run_actuals.good_units(db, b)) == (3, 7)

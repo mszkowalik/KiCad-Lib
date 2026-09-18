@@ -259,10 +259,11 @@ export default function RunCosts({
 
       <div className="card pad">
         <h2 className="card-title">Documents on this batch</h2>
-        {actuals.qty_good === null && (
+        {actuals.qty_good_source === "typed" && (
           <p className="muted">
-            Per-device figures use the planned quantity ({qty}) — set Units good on the
-            Overview tab for a real yield-based figure.
+            Per-device figures divide by {actuals.qty_good ?? qty} — the quantity typed on the
+            batch, because no device of it was ever recorded. A batch the flasher recorded
+            divides by the devices that passed instead.
           </p>
         )}
         <div className="btn-row">

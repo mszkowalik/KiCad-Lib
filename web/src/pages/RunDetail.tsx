@@ -242,7 +242,7 @@ export default function RunDetail() {
                     {actuals ? money(actuals.per_device, actuals.currency) : "—"}
                   </div>
                   <div className="muted">
-                    per device{actuals?.qty_good == null ? ` (over planned ${run.qty})` : ""}
+                    per device{actuals?.qty_good_source === "typed" ? ` (over ${actuals.qty_good ?? run.qty} typed)` : ""}
                   </div>
                 </div>
                 {/* the server converts revenue into the display currency
@@ -582,6 +582,14 @@ function SaleCard({
           <input
             className="text num"
             inputMode="numeric"
+            title={
+              actuals?.qty_good_source === "devices"
+                ? `Ignored: ${actuals.qty_good} devices of this batch are recorded, and that is what ` +
+                  "every per-device figure divides by (decision 0030). The box is kept for a batch " +
+                  "the flasher never recorded."
+                : undefined
+            }
+            disabled={actuals?.qty_good_source === "devices"}
             value={qtyGood}
             placeholder={String(run.qty)}
             onChange={(e) => setQtyGood(e.target.value)}
