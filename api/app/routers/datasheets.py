@@ -1,5 +1,15 @@
 """Datasheet endpoints: versioned local storage, per-version files, and the
-background fetch-all worker. See services/datasheet_store.py for semantics."""
+background fetch-all worker. See services/datasheet_store.py for semantics.
+
+**The ARCHIVE-WIDE jobs are admin-only** (decision 0045) — fetch-all,
+classify, the index worker, the broken purge, the restamp collapse and the
+storage reclaim. Each one walks every document, several write new versions
+that bump components, and two delete. The PER-DATASHEET routes are NOT gated:
+fetching or uploading one part's document is ordinary library work, the same
+class as editing a component, and gating it would put an admin in the middle
+of normal verification. Every read stays open, so a non-admin can still see
+what the archive holds and when the nightly runs.
+"""
 from __future__ import annotations
 
 import httpx
@@ -36,6 +46,7 @@ from ..services.datasheet_store import (
     store_upload,
 )
 from ..services.mirror import top_level_of, update_mirror_symbols
+from .users import require_admin
 from .util import actor_of
 
 router = APIRouter(prefix="/api/datasheets", tags=["datasheets"])
@@ -46,7 +57,7 @@ class FetchAllBody(BaseModel):
 
 
 @router.post("/fetch-all")
-def fetch_all(body: FetchAllBody):
+def fetch_all(body: FetchAllBody, admin: M.User = Depends(require_admin)):
     if body.mode not in ("missing", "all"):
         raise HTTPException(422, "mode must be 'missing' or 'all'")
     if not start_fetch_all(body.mode):
@@ -69,7 +80,7 @@ class ClassifyBody(BaseModel):
 
 
 @router.post("/classify")
-def classify(body: ClassifyBody):
+def classify(body: ClassifyBody, admin: M.User = Depends(require_admin)):
     """Re-run searchable-PDF detection. 'missing' picks up documents stored
     before the classifier existed (the startup sweep does this by itself);
     'all' re-reads every document, for when the thresholds change."""
@@ -94,7 +105,8 @@ def broken(db: Session = Depends(get_db)):
 
 
 @router.delete("/broken")
-def purge(request: Request, db: Session = Depends(get_db)):
+def purge(request: Request, db: Session = Depends(get_db),
+          admin: M.User = Depends(require_admin)):
     """Remove every document `GET /broken` lists. Audited per row."""
     res = purge_broken(db, actor=actor_of(request))
     if res.get("documents_dropped"):
@@ -116,7 +128,8 @@ def restamps(db: Session = Depends(get_db)):
 
 
 @router.post("/restamps/collapse")
-def restamps_collapse(request: Request, db: Session = Depends(get_db)):
+def restamps_collapse(request: Request, db: Session = Depends(get_db),
+                      admin: M.User = Depends(require_admin)):
     """Fold every restamped version into the one it repeats: pins move, the
     survivor keeps the newest validators, orphaned documents are deleted.
     Audited per row. A table rewrite starts afterwards to hand the disk
@@ -143,7 +156,7 @@ def storage(db: Session = Depends(get_db)):
 
 
 @router.post("/storage/reclaim")
-def storage_reclaim():
+def storage_reclaim(admin: M.User = Depends(require_admin)):
     """Rewrite the datasheet tables so deleted files leave the disk. Takes an
     exclusive lock on them for the duration, so it runs in the background."""
     from ..db import engine
@@ -159,7 +172,7 @@ class IndexBody(BaseModel):
 
 
 @router.post("/index")
-def index_pages(body: IndexBody):
+def index_pages(body: IndexBody, admin: M.User = Depends(require_admin)):
     """Extract per-page text for the archived documents.
 
     'missing' is the retroactive backfill (versions never indexed) and is what
@@ -174,7 +187,7 @@ def index_pages(body: IndexBody):
 
 
 @router.post("/index/stop")
-def index_stop():
+def index_stop(admin: M.User = Depends(require_admin)):
     """Stop a running page-index sweep at the next version boundary. Never
     mid-document — a half-extracted document would read as complete."""
     if not stop_index():

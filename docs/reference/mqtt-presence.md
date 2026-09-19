@@ -136,8 +136,8 @@ adopts the history it already accumulated.
 
 ## Configuration
 
-Admin only, on the Admin page. **Not an environment variable and not a Setup
-knob** — the stored credential reads every customer device on the broker, which
+Admin only, on **Admin → Fleet broker**. **Not an environment variable and not
+a Configuration knob** — the stored credential reads every customer device on the broker, which
 is a different class of secret from the render theme. It is Fernet-encrypted
 (`services/crypto.py`), and no endpoint returns it: `GET /api/mqtt/config`
 reports `password_set` and nothing more.

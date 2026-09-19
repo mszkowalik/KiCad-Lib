@@ -2774,47 +2774,88 @@ table.kv { border-collapse: collapse; }
 table.kv td { padding: 3px 14px 3px 0; vertical-align: top; }
 table.kv td:first-child { color: var(--ink-3, #697280); }
 
-/* The Configuration card's key/value table (SettingsCard).
+/* The Configuration card's settings table (SettingsCard).
    `.kv` has no width, so it shrinks to fit its content — and every value cell
-   holds a `.row-input`, which is `width: 100%` and therefore contributes
-   nothing to the intrinsic minimum. The table collapsed to the width of the
-   longest WORD in the help text: labels wrapped one word per line and every
-   input rendered about 50px wide, showing "http:" and nothing else.
-   Fixed layout with explicit columns is the fix — the value column now has a
-   width of its own instead of inheriting zero from its content. */
-/* The explanation column is prose and the value column holds one input, so
-   neither wants the whole of a wide page: at 60/40 of 1368px a label and its
-   field ended up half a screen apart (2026-09-12, when the Admin page stopped
-   being capped at 860px). Cap the TABLE rather than the page — the cards below
-   it use the full width legitimately. */
-/* The value column has to hold the longest placeholder a setting uses —
-   "set — type a new value to replace" — or the field reads as broken before
-   anybody types in it. The explanation column is prose and wraps happily, so
-   it gives up the width. Capping the TABLE rather than the page keeps the
-   cards below it (Users, the rates) on the full page width. */
+   holds a `.row-input`, which contributes nothing to the intrinsic minimum.
+   The table collapsed to the width of the longest WORD in the help text:
+   labels wrapped one word per line and every input rendered about 50px wide,
+   showing "http:" and nothing else. Fixed layout with explicit columns is the
+   fix — the value column now has a width of its own instead of inheriting
+   zero from its content.
+
+   THREE columns, ONE LINE PER SETTING (2026-09-19). The help text sat under
+   the label and the buttons under the field, so each of the 24 settings was
+   about 100px tall and the card was four screens long. The help is an
+   `InfoTip` on the name now and the buttons share the row, which takes a
+   setting down to the height of one `.row-input`. The value column still has
+   to hold the longest placeholder a setting uses — "set — type a new value to
+   replace" — or the field reads as broken before anybody types in it. Capping
+   the TABLE rather than the page keeps the other panels on the full width. */
 table.kv.settings-table {
   width: 100%;
   max-width: 1120px;
   table-layout: fixed;
 }
+/* `.kv td` is top-aligned, which is right for a two-line cell and wrong for a
+   row whose three cells are a name, a control and two buttons. */
+table.kv.settings-table td {
+  vertical-align: middle;
+  padding: 3px 14px 3px 0;
+}
+/* 42 / 44 / 14, and the numbers were measured, not chosen. The name column
+   has to hold the longest label ("Part detail refresh in KiCad (seconds)")
+   NEXT TO both pills — a setting that is overridden AND read only at startup
+   carries `stored` and `restart` at once — which clipped the name by 31px at
+   38%. The action column holds Save beside Revert and needs no more than
+   150px. */
 table.kv.settings-table td:nth-child(1) {
-  width: 48%;
-  padding-right: 24px;
+  width: 42%;
+  color: var(--text);
 }
 table.kv.settings-table td:nth-child(2) {
-  width: 52%;
+  width: 44%;
 }
-/* `.text` carries no width, so a settings field sat at the browser's default
-   ~176 px however wide its column was, and "set — type a new value to replace"
-   was cut off in every secret field. Fill the cell. */
+table.kv.settings-table td:nth-child(3) {
+  width: 14%;
+  padding-right: 0;
+}
+/* `.text`/`.row-input` carry no width, so a settings field sat at the
+   browser's default ~176px however wide its column was. Fill the cell. */
 table.kv.settings-table td:nth-child(2) > input,
 table.kv.settings-table td:nth-child(2) > select {
   width: 100%;
 }
-/* The label line and its pills sit on one row; only the help text wraps. */
-table.kv.settings-table td:nth-child(1) > div:first-child {
-  color: var(--text);
-  margin-bottom: 2px;
+/* The name, its ⓘ and its pills are one line that never wraps a pill onto its
+   own row: the name gives way first and truncates, the markers do not. The
+   flex box is a DIV inside the cell, never the cell — `display: flex` on a
+   `<td>` takes it out of the table layout, and the fixed column widths above
+   stop applying to it. */
+.set-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.set-head .set-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.set-head .info-tip,
+.set-head .pill {
+  flex: none;
+}
+/* `.field-check` carries `margin: 6px 0` for a form; in a row it is 12px of
+   height on the three boolean settings and nothing else. */
+table.kv.settings-table .field-check {
+  margin: 0;
+}
+/* `.btn-row` brings `margin: 8px 0`, which is half the height of the row it
+   now sits inside. The buttons stay hard against the field they act on — a
+   right-aligned Save sat 170px from its own input. */
+table.kv.settings-table .btn-row {
+  margin: 0;
+  flex-wrap: nowrap;
 }
 .kicad-ds-stat { margin: 4px 0 8px; }
 

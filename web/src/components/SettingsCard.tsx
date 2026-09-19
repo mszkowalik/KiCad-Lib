@@ -1,4 +1,4 @@
-/** Editable runtime configuration — the first card on the Admin page.
+/** Editable runtime configuration — the Admin page's Configuration tab.
  *
  * Values come from `Settings` on the API, which reads the environment; saving
  * one writes a database override that wins over it, and Revert drops the
@@ -21,7 +21,9 @@ import {
   type SettingGroup,
   type SettingItem,
 } from "../api";
+import { CheckField } from "./Field";
 import { useDialog } from "./Dialog";
+import InfoTip from "./InfoTip";
 import { ErrorBanner, Spinner } from "./Ui";
 
 /** The value as it should appear in a text input. */
@@ -99,23 +101,20 @@ export default function SettingsCard() {
     const current = pending ?? asText(it);
     const set = (v: string) => setEdits((prev) => ({ ...prev, [it.key]: v }));
 
+    // `.row-input` and not `.text`: these ARE table rows now, and the compact
+    // size is what keeps a setting to one line. See `web/CLAUDE.md`, "there
+    // are exactly TWO input sizes".
     if (it.kind === "bool") {
       const on = (pending ?? String(it.value)) === "true";
       return (
-        <label className="muted">
-          <input
-            type="checkbox"
-            checked={on}
-            disabled={busy === it.key}
-            onChange={(e) => set(e.target.checked ? "true" : "false")}
-          />{" "}
+        <CheckField checked={on} disabled={busy === it.key} onChange={(v) => set(v ? "true" : "false")}>
           {on ? "on" : "off"}
-        </label>
+        </CheckField>
       );
     }
     if (it.choices.length > 0) {
       return (
-        <select className="text" value={current} disabled={busy === it.key} onChange={(e) => set(e.target.value)}>
+        <select className="row-input" value={current} disabled={busy === it.key} onChange={(e) => set(e.target.value)}>
           {it.choices.map((c) => (
             <option key={c} value={c}>
               {c}
@@ -126,7 +125,7 @@ export default function SettingsCard() {
     }
     return (
       <input
-        className="text mono"
+        className="row-input mono"
         type={it.secret ? "password" : it.kind === "int" ? "number" : "text"}
         value={current}
         disabled={busy === it.key}
@@ -149,10 +148,13 @@ export default function SettingsCard() {
     <div className="card pad">
       <h2>Configuration</h2>
       <p className="muted">
-        Values fall back to the environment; saving one stores an override that wins over it, and
-        Revert drops it. Infrastructure settings are deliberately absent — the database URL, the
-        object-storage credentials and <code>SECRET_KEY</code> cannot be changed under a running
-        platform (the last one decrypts stored git tokens, so a new value would orphan them).
+        A value falls back to the environment. Saving one stores an override that wins over it,
+        and Revert drops it.{" "}
+        <InfoTip label="Why some settings are missing">
+          Infrastructure settings are deliberately absent — the database URL, the object-storage
+          credentials and SECRET_KEY cannot be changed under a running platform. The last one
+          decrypts stored git tokens, so a new value would orphan them.
+        </InfoTip>
       </p>
       <ErrorBanner message={error} />
       {restartKeys.length > 0 && (
@@ -162,9 +164,19 @@ export default function SettingsCard() {
         </div>
       )}
 
+      {/* ONE LINE PER SETTING. The help text used to sit under the label and
+          the buttons under the field, which made every one of the 24 settings
+          about 100 px tall — the Render group was four screens below the
+          Address group. The help is now an `InfoTip`, which shows more of it
+          than the old two-line clamp did, and the buttons share the row.
+          Save appears only when something differs from what is stored, the
+          rule `.param-save` already follows — including on a SECRET, which
+          used to carry a standing Save button because its field always reads
+          empty. That button wrote the empty string, which is not how a stored
+          secret is cleared (Revert is); typing is what makes the row dirty. */}
       {(groups ?? []).map((g) => (
         <div key={g.group}>
-          <h3>{g.group}</h3>
+          <h3 className="card-subtitle">{g.group}</h3>
           <table className="kv settings-table">
             <tbody>
               {g.items.map((it) => {
@@ -172,23 +184,25 @@ export default function SettingsCard() {
                 return (
                   <tr key={it.key}>
                     <td>
-                      <div>
-                        {it.label}{" "}
-                        {it.source === "database" && <span className="pill neutral">stored</span>}{" "}
+                      <div className="set-head">
+                        <span className="set-name" title={it.label}>{it.label}</span>
+                        {it.help ? <InfoTip label={`About ${it.label}`}>{it.help}</InfoTip> : null}
+                        {it.source === "database" && <span className="pill neutral">stored</span>}
                         {it.restart && <span className="pill warn">restart</span>}
                       </div>
-                      {it.help && <div className="muted">{it.help}</div>}
                     </td>
+                    <td>{field(it)}</td>
                     <td>
-                      {field(it)}
                       <div className="btn-row">
-                        <button
-                          className="btn btn-sm btn-primary"
-                          disabled={busy === it.key || (!dirty && !it.secret)}
-                          onClick={() => save(it)}
-                        >
-                          {busy === it.key ? "Saving…" : "Save"}
-                        </button>
+                        {dirty ? (
+                          <button
+                            className="btn btn-sm btn-primary"
+                            disabled={busy === it.key}
+                            onClick={() => save(it)}
+                          >
+                            {busy === it.key ? "Saving…" : "Save"}
+                          </button>
+                        ) : null}
                         {it.source === "database" && (
                           <button
                             className="btn btn-sm"

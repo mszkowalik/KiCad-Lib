@@ -640,9 +640,11 @@ export default function FieldSolver() {
                   </option>
                 ))}
               </select>
-              <button type="button" className="btn btn-sm" onClick={() => setEditRules(true)}>
-                edit
-              </button>
+              {isAdmin ? (
+                <button type="button" className="btn btn-sm" onClick={() => setEditRules(true)}>
+                  edit
+                </button>
+              ) : null}
             </span>
             {warnings.length ? <span className="fs-warn">{warnings.join(" · ")}</span> : null}
           </label>

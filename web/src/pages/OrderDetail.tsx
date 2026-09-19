@@ -171,7 +171,7 @@ export default function OrderDetail() {
               {eco && eco.unknown_currencies.length ? (
                 <div className="banner-warn">
                   No exchange rate stored for {eco.unknown_currencies.join(", ")}; those amounts are
-                  not converted. Add it under <Link to="/admin">Admin → Exchange rates</Link>.
+                  not converted. Add it under <Link to="/admin?tab=rates">Admin → Exchange rates</Link>.
                 </div>
               ) : null}
               <p className="muted">

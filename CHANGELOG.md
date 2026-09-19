@@ -1,5 +1,65 @@
 # Changelog
 
+## 2026-09-19 (configuration is an administrator's surface)
+
+An audit of the role model found 16 of about 440 API routes gated on the
+administrator role, and `/api/settings` was not one of them. Any signed-in user
+could write the deployment's own configuration, and a write lands on the next
+request rather than at the next restart — so an ordinary account could rotate
+the KiCad library token and break every installed `.kicad_httplib`, move the
+public base URL out from under every generated link, or repoint the render
+service. Nothing had gone wrong. The gap was that nothing would have said so.
+
+- **The Configuration tab is admin-only**, and so are all three of its routes.
+  A non-admin now lands on Datasheets and does not see the tab. Secrets were
+  never returned by the API and still are not — it reports only whether one is
+  set.
+- **Field-solver rule sets are admin-only**, matching stackups. Both are the
+  fab's shared facts and are edited from adjacent controls, but only one of
+  them was gated.
+- **Editing an exchange rate is admin-only.** Every document in the register
+  converts through these, so one hand-typed rate moves every batch cost and
+  every order margin at once. The TABLE stays readable by everybody — an
+  "unknown FX rate" warning on an order or a run has to lead somewhere — but
+  Refresh and Override are gone for a non-admin.
+- **The archive-wide datasheet jobs are admin-only**: fetch-all, classify, the
+  page index, the broken purge, the restamp collapse and the storage reclaim.
+  Each walks every document and several bump component versions. Fetching or
+  uploading ONE part's datasheet is unchanged and open — that is ordinary
+  library work. The status readout stays visible to everybody.
+- **The admin-only set is now a test** (`api/tests/auth/test_role_gates.py`).
+  It fails when a gate is dropped AND when one is added without being written
+  down. Before this there was no test of the role model at all.
+
+Unchanged on purpose: the library, reviews, production, orders, invoices,
+projects, the flasher and the agent stay open to every signed-in user. The
+admin role is for the deployment, for other people's credentials, and for the
+shared reference data every project reads — not for deciding who may do their
+job on one part, one batch or one board. Reasoning, and the options rejected,
+in [decision 0045](docs/decisions/0045-configuration-is-an-administrators-surface.md).
+
+## 2026-09-19 (the Admin page is six tabs, and a setting is one line)
+
+Admin stacked six panels on one scroll, and Configuration alone is 24
+settings — each one about 100 px tall, because its help text sat under the
+label and its buttons under the field. The schema readout at the bottom was
+four screens below the tab you arrived for.
+
+- **One tab per subject**: Configuration, Users, Datasheets, Exchange rates,
+  Fleet broker, System. The tab is in the URL (`/admin?tab=users`), so a link
+  can point at one panel, and the two admin-only tabs are hidden from a
+  non-admin rather than shown as controls that can only fail. Links elsewhere
+  in the app that said "Admin → Exchange rates" now land on that tab.
+- **A setting is one row**: name, value, and the buttons beside the field. The
+  help text is the ⓘ beside the name, which shows more of it than the old
+  two-line block did. The whole card is about a third of its former height.
+- **Save appears only when something differs from what is stored.** A secret
+  used to carry a standing Save button, because its field always reads empty;
+  pressing it wrote the empty string, which is not how a stored secret is
+  cleared. Revert is.
+- Schema health and the pointer to your personal KiCad links share the System
+  tab.
+
 ## 2026-09-19 (an invoice line can be pointed at a library part by hand)
 
 The **Component** column on the Invoices line tree links a part position to the

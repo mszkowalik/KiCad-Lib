@@ -118,6 +118,10 @@ def rules(db: Session = Depends(get_db)):
 
 @router.post("/rules")
 def save_rules(f: dict, request: Request, db: Session = Depends(get_db)):
+    """A rule set is the fab's own limits — the same class of shared fact as a
+    stackup, edited from the control beside it — so the same gate applies
+    (decision 0045)."""
+    require_admin(request)
     if not f.get("name"):
         raise HTTPException(400, "name required")
     _sync_library(db)
@@ -132,7 +136,8 @@ def save_rules(f: dict, request: Request, db: Session = Depends(get_db)):
 
 
 @router.delete("/rules/{rid}")
-def delete_rules(rid: str, db: Session = Depends(get_db)):
+def delete_rules(rid: str, request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
     row = db.query(M.FieldRuleSet).filter(M.FieldRuleSet.key == rid).one_or_none()
     if row is None:
         raise HTTPException(400, "not a user rule set")

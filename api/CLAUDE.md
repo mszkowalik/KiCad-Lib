@@ -145,6 +145,55 @@ check. `app/services/CLAUDE.md` states it in full.
 - When a non-obvious backend convention or workaround emerges, record it here.
 
 
+## Authorization — the gate is not the role
+
+`AuthGate` answers "is this a known caller". It never answers "may this caller
+do this", which is per route and lives in `require_admin`
+(`routers/users.py`). Both questions are needed and neither substitutes for
+the other. The rules (decision
+[0045](../docs/decisions/0045-configuration-is-an-administrators-surface.md)):
+
+- **`api/tests/auth/test_role_gates.py` is the list of admin-only routes**, and
+  it is a test, not a comment. Adding an admin route means adding a line to
+  `EXPECTED`; removing a gate fails the suite. It asserts BOTH directions, so a
+  gate nobody wrote down fails too. It needs no database —
+  `python -m pytest tests/auth -q` from `api/`. There was no test of the role
+  model at all until 2026-09-19, which is how `/api/settings` stayed ungated
+  while `/api/users` beside it was gated on every route.
+- **Admin-only is the deployment, other people's credentials, and the SHARED
+  reference data — not the work.** `/api/settings`, `/api/users`,
+  `/api/mqtt`, the field solver's stackups and rule sets, the exchange-rate
+  writes, and the archive-wide datasheet jobs. The review axis, production,
+  orders, invoices, projects, the flasher, the agent and the library itself
+  are open to any signed-in user on purpose. Do not gate a route because it
+  writes something important; gate it because it reconfigures the deployment,
+  touches a credential that is not the caller's, or rewrites a fact every
+  other project reads.
+- **A gated WRITE does not imply a gated READ, and three reads say so.**
+  `GET /api/fx`, `GET /api/fx/at` and `GET /api/datasheets/fetch-status` stay
+  open while their writes do not. `/api/fx/at` backs the invoice pages, and
+  the other two answer a question a non-admin genuinely has ("is HUF
+  missing", "is this datasheet archived"). Hiding the answer as well as the
+  button helps nobody. Same reasoning keeps the PER-DATASHEET
+  `POST /{id}/fetch` and `POST /{id}/upload` open: one part's document is
+  library work, the archive-wide sweep is maintenance.
+- **`require_admin` returns `None` when `auth_enabled` is false**, the dev
+  posture the rest of the API takes. A router that records an actor therefore
+  needs an `_actor(admin)` helper rather than `admin.username` — see
+  `routers/settings.py` and `routers/users.py`.
+- **Two spellings, both fine.** `Depends(require_admin)` on the signature, or
+  a bare `require_admin(request)` first in the body where the function already
+  takes the `Request` (the four field-solver routes). The test accepts either.
+- **Hiding a control in the UI is a courtesy, never the gate.** `web/` gates
+  the Admin tabs and the field-solver Edit buttons on `useAuth().isAdmin` so
+  the page does not offer a control that can only answer 403. The API refuses
+  regardless, and it must keep doing so.
+- **`/api/git-credentials` stays open to any signed-in user** and that is
+  deliberate — setting a raw token on a project always was, so gating one half
+  forbids the safe path and leaves the unsafe one. Decision
+  [0010](../docs/decisions/0010-a-git-token-belongs-to-an-account.md). Revisit
+  the pair together, never one of them.
+
 ## Authentication — default deny, one gate
 
 The platform is reachable from the internet. Before this landed it was

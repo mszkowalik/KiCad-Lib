@@ -266,7 +266,7 @@ export default function RunDetail() {
               {actuals && actuals.unknown_rates.length > 0 && (
                 <div className="banner-warn">
                   No stored FX rate for {actuals.unknown_rates.join(", ")} — those amounts are
-                  converted 1:1. Fix it under <Link to="/admin">Admin → Exchange rates</Link>.
+                  converted 1:1. Fix it under <Link to="/admin?tab=rates">Admin → Exchange rates</Link>.
                 </div>
               )}
             </div>

@@ -30,4 +30,6 @@ controlled-impedance traces against a stackup and draws the solved cross-section
   (`components/project/StackupTab.tsx`) and the "Save to a project" panel inside
   the solver (`ProjectPanel.tsx`). Both go through the same endpoints, and both
   must keep saying that an assignment applies from the chosen commit forward.
-- **Stackup editing is gated on `useAuth().isAdmin`**, matching the API.
+- **Stackup AND rule-set editing are gated on `useAuth().isAdmin`**, matching
+  the API. Hiding the button is a courtesy — the API refuses either way
+  (decision 0045). The rules button was ungated until 2026-09-19.

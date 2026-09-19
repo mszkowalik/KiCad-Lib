@@ -15,6 +15,7 @@ from ..db import get_db
 from ..models import utcnow
 from ..services import cost_state, fx, gitrepo, ladder, project_bom, project_ingest, project_render, storage
 from ..services.crypto import decrypt_token, encrypt_token
+from .users import require_admin
 from .util import audit
 
 router = APIRouter(prefix="/api", tags=["projects"])
@@ -824,8 +825,14 @@ def rates_at_date(date: str = "", db: Session = Depends(get_db)):
     return {"date": d, "rates": fx.rates_at(db, _as_dt(d))}
 
 
+# An exchange rate is not a preference: every document in the register converts
+# through it, so a hand-typed one moves every batch cost and every order margin
+# at once. Writes are admin-only (decision 0045); the two READS stay open,
+# because the invoice pages preview stored figures against `/api/fx/at` and a
+# non-admin still has to be able to see that a currency is missing.
 @router.post("/fx/refresh")
-def refresh_rates(db: Session = Depends(get_db)):
+def refresh_rates(db: Session = Depends(get_db),
+                  admin: M.User = Depends(require_admin)):
     try:
         return fx.refresh_rates(db)
     except Exception as e:
@@ -833,7 +840,8 @@ def refresh_rates(db: Session = Depends(get_db)):
 
 
 @router.put("/fx")
-def set_rate(body: RateIn, db: Session = Depends(get_db)):
+def set_rate(body: RateIn, db: Session = Depends(get_db),
+             admin: M.User = Depends(require_admin)):
     cur = body.currency.strip().upper()
     if not cur or body.rate_usd <= 0:
         raise HTTPException(422, "currency and a positive rate_usd are required")

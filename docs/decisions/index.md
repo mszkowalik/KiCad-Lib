@@ -73,6 +73,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0041](0041-the-supplier-parts-lump-is-a-small-bom.md) | Itemise the parts a SUPPLIER sourced into ordinary cost-line children charged to the batch and never pooled, and check every position's coverage against the supplier's own BOM — `extPrice` is billed on the shop portion only, and `componentNum` is per PANEL | Backend, production, economics |
 | [0042](0042-a-substitution-records-where-the-change-was-defined.md) | A substitution's `source` records WHERE the change was defined — on the supplier's order or here — not who decided it; the common case is us choosing a part on their site while ordering (corrects item 9 of [0038](0038-a-substitution-belongs-to-the-batch.md)) | Backend, frontend, production |
 | [0043](0043-a-batch-costs-an-order-earns-and-a-unit-joins-them.md) | A batch reports COST only and an order reports revenue; a UNIT carries its batch's per-device cost onto the order that ships it, and that cost divides by devices PRODUCED, not boards ordered (completes [0003](0003-orders-shipments-and-device-history.md), narrows [0030](0030-good-units-are-counted-not-typed.md)) | Backend, frontend, production, economics |
+| [0045](0045-configuration-is-an-administrators-surface.md) | Put the deployment's own configuration behind the administrator role, and state the admin-only set in a test (extends [0002](0002-field-solver-in-the-platform.md) to field-solver rule sets) | Backend, frontend, access control |
 
 ## Proposed
 

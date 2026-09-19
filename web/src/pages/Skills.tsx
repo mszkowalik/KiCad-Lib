@@ -525,7 +525,7 @@ export default function Skills() {
 
         <p className="muted dim">
           Using these skills in Claude Code is set up once — see{" "}
-          <Link to="/admin">Admin</Link>.
+          <Link to="/admin?tab=system">Admin</Link>.
         </p>
       </main>
     </div>

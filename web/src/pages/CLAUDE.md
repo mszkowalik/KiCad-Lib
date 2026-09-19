@@ -18,7 +18,16 @@ user's token** — the PCM URL installs a sync plugin with that token inside it,
 and the `.kicad_httplib` embeds it — so they are personal credentials in URL
 form and two people must see two different strings. `GET /api/kicad/config`
 already personalises itself from the caller's session, so the move needed no new
-endpoint. Setup keeps a pointer.
+endpoint. Admin keeps a pointer, on its System tab.
+
+**Admin is SIX TABS, and `TABS` in `pages/Admin.tsx` is the whole list**
+(2026-09-19): Configuration, Users, Datasheets, Exchange rates, Fleet broker,
+System. A row carries its own one-line blurb, printed in the toolbar, and
+`admin: true` on the two the API refuses to a non-admin — those are filtered
+out rather than rendered as controls that can only fail, and a URL naming one
+falls back to Configuration. A new admin panel is a row there, not another
+card appended to a scroll: the six used to be stacked, and the schema readout
+was four screens below the Configuration table.
 
 **Changing your own password is `POST /api/auth/password`, which has existed
 since sign-in was built** — it ends every OTHER session and RE-ISSUES this one,
@@ -157,9 +166,11 @@ and the copy was worse.
 - **Cost-domain primitives live in `components/costs.tsx`**:
   `COST_LINE_KINDS`, `<StepSelect>` (step catalog grouped by stage),
   `<ChargeToSelect>` (run/project/excluded destination). Reuse, never copy.
-- **Tab state goes in the URL** (`?tab=`, see RunDetail/Templates), selection
-  state that should deep-link goes in the path (`/library/skills/:id`).
-  `useStickyState` is only a fallback for bare visits.
+- **Tab state goes in the URL** (`?tab=`, see RunDetail/Templates/Admin),
+  selection state that should deep-link goes in the path
+  (`/library/skills/:id`). `useStickyState` is only a fallback for bare visits.
+  A link from another page that means one panel names it —
+  `/admin?tab=rates`, not `/admin`.
 - **Each number has one home.** Run economics render on the run page and the
   Production overview; stock figures on Production → Stock. Link there
   instead of re-rendering a figure on a new surface.

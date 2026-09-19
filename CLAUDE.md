@@ -142,8 +142,20 @@ The platform is on the internet at `https://disfunction.cc/lib` and the API is
 personal API token. Full rules in `api/CLAUDE.md` (backend) and `web/CLAUDE.md`
 (the sign-in gate). Three facts that belong at this level:
 
-- **Accounts are made by an admin, on the Setup page.** No sign-up, no password
+- **Accounts are made by an admin, on Admin → Users.** No sign-up, no password
   recovery, no endpoint for either.
+- **There are two roles, and the admin one is for the DEPLOYMENT and the
+  SHARED data, not the work.** Admin-only: the Configuration tab
+  (`/api/settings`), Users, the fleet broker, the field solver's stackups and
+  rule sets, editing an exchange rate, and the archive-wide datasheet jobs.
+  Everything else — the library, reviews, production, orders, invoices,
+  projects, the flasher, the agent — is open to any signed-in user on purpose.
+  Reading is gated far less than writing: the rates table and the datasheet
+  status stay visible to everybody, because a warning a non-admin meets has to
+  lead somewhere. The list of gated routes is
+  `api/tests/auth/test_role_gates.py`, which fails both when a gate is dropped
+  and when one is added without being written down. Reasoning in
+  [0045](docs/decisions/0045-configuration-is-an-administrators-surface.md).
 - **Each user gets one URL for KiCad**:
   `…/api/kicad/pcm/repository.json?t=<their token>`. Pasting it into the Plugin
   and Content Manager installs the library, the models, and a sync plugin with

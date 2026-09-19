@@ -23,9 +23,12 @@ record: `docs/decisions/0002-field-solver-in-the-platform.md`.
 - **User-defined stackups and rule sets live in Postgres** (`FieldStackup`,
   `FieldRuleSet`), never in JSON beside the code. The solver keeps them in
   module state because it is a pure library, so every request that reads or
-  solves calls `_sync_library(db)` first — two small selects. Stackup writes are
-  **admin-only** (`require_admin`), because a stackup is a shared fact about how
-  boards are made.
+  solves calls `_sync_library(db)` first — two small selects. Stackup AND rule-set
+  writes are **admin-only** (`require_admin`), because both are shared facts
+  about how boards are made and what the fab can hold. Rule sets were open to
+  any signed-in user until 2026-09-19, although their Edit button sits beside
+  the stackup one in the same form — decision
+  [0045](../../../../docs/decisions/0045-configuration-is-an-administrators-surface.md).
 - **A board's stackup and profiles are commit-versioned** in
   `services/field_state.py`, which mirrors `services/cost_state.py` exactly:
   `revision_for` selects by commit date, `revision_for_edit` copies on write, and

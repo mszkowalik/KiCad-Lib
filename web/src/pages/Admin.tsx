@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   ApiError,
   errorMessage,
@@ -23,56 +23,136 @@ import { ErrorBanner, Spinner } from "../components/Ui";
 
 const POLL_MS = 2000;
 
+type Tab = "config" | "users" | "datasheets" | "rates" | "fleet" | "system";
+
+/** The tabs, in the order they are drawn. `admin` marks the ones the API
+ *  refuses to a non-admin anyway — hiding them keeps the page from offering a
+ *  control that can only fail. */
+const TABS: { id: Tab; label: string; admin?: true; blurb: string }[] = [
+  {
+    id: "config",
+    label: "Configuration",
+    admin: true,
+    blurb: "Runtime knobs. A stored value wins over the environment.",
+  },
+  {
+    id: "users",
+    label: "Users",
+    admin: true,
+    blurb: "Accounts, roles and password resets. There is no sign-up.",
+  },
+  {
+    id: "datasheets",
+    label: "Datasheets",
+    blurb: "The archive job: what is stored, and when it re-checks.",
+  },
+  {
+    id: "rates",
+    label: "Exchange rates",
+    blurb: "What every document is converted to USD with.",
+  },
+  {
+    id: "fleet",
+    label: "Fleet broker",
+    admin: true,
+    blurb: "The read-only MQTT credential that watches customer devices.",
+  },
+  {
+    id: "system",
+    label: "System",
+    blurb: "Schema health, and where the KiCad client links live.",
+  },
+];
+
 /** Administration of the DEPLOYMENT: its shared configuration, other people's
  * accounts, and the jobs and health readouts nobody owns personally. It was
  * called "Setup" until 2026-09-12; anything that belongs to the signed-in user
  * rather than to the deployment lives on `/account` instead.
  *
- * One page for everything that is configured once and then only checked:
- * KiCad clients, Claude Code / MCP, the datasheet archive job, exchange
- * rates, and schema health. Previously spread over the KiCad page and a
- * collapsed block at the bottom of Skills.
+ * One TAB per subject (2026-09-19). The six panels used to be stacked on one
+ * scroll — Configuration alone is 24 settings — so the schema readout at the
+ * bottom was four screens below the tab you arrived for. The active tab is in
+ * the URL (`?tab=users`), the same rule every other tabbed page here follows,
+ * so a link can point at one panel.
+ *
+ * Three tabs are ADMIN ONLY and the API says so first — `routers/settings.py`,
+ * `routers/users.py` and `routers/mqtt.py` all sit behind `require_admin`
+ * (decision 0045). `admin: true` here only stops the page offering a panel
+ * that would answer 403. Never gate a panel here alone: the gate is the API's,
+ * and a hidden tab is a courtesy, not a control.
  */
 export default function Admin() {
   const { isAdmin } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const tabs = useMemo(() => TABS.filter((t) => isAdmin || !t.admin), [isAdmin]);
+  // Never empty — System carries no `admin` flag, so every signed-in user has
+  // at least one panel. The default is whatever comes first for THIS reader,
+  // which is Configuration for an admin and Datasheets for everybody else.
+  const home = tabs[0].id;
+  const param = searchParams.get("tab");
+  // An unknown tab, or an admin one reached by a non-admin, falls back to that
+  // default rather than rendering nothing.
+  const tab: Tab = tabs.some((t) => t.id === param) ? (param as Tab) : home;
+  const setTab = (t: Tab) =>
+    setSearchParams(t === home ? {} : { tab: t }, { replace: true });
 
   return (
     <div className="main-solo">
       <div className="page admin-page">
-        <h1>Admin</h1>
-
-        {/* Configuration first: it is what a visit to this page is usually for. */}
-        <SettingsCard />
-
-        {/* Admin only. The API refuses a non-admin anyway (403 from
-            /api/users) — hiding the card keeps the page from showing a
-            control that can only fail. */}
-        {isAdmin ? <UsersCard /> : null}
-
-        <div className="card pad">
-          <h2>KiCad clients and your API token</h2>
-          <p className="muted">
-            The install links, the .kicad_httplib download, the MCP settings and the
-            effective URLs are on your{" "}
-            <Link className="comp-link" to="/account">Account</Link> page. They carry YOUR
-            token, so they differ per person — this page is the deployment's shared
-            configuration.
-          </p>
+        <div className="toolbar">
+          <h1>Admin</h1>
+          <span className="toolbar-total">
+            {tabs.find((t) => t.id === tab)?.blurb}
+          </span>
         </div>
 
-        <DatasheetCard />
-        {/* Admin only: the stored credential reads every customer device on
-            the fleet broker, so this is not a Setup-page knob. */}
-        {isAdmin ? <MqttCard /> : null}
-        <FxCard />
-        <HealthCard />
+        <div className="seg proj-tabs" role="tablist" aria-label="Administration section">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.id}
+              className={tab === t.id ? "on" : ""}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
 
+        {tab === "config" ? <SettingsCard /> : null}
+        {tab === "users" ? <UsersCard /> : null}
+        {tab === "datasheets" ? <DatasheetCard /> : null}
+        {tab === "rates" ? <FxCard /> : null}
+        {tab === "fleet" ? <MqttCard /> : null}
+        {tab === "system" ? (
+          <>
+            <HealthCard />
+            <div className="card pad">
+              <h2>KiCad clients and your API token</h2>
+              <p className="muted">
+                The install links, the .kicad_httplib download, the MCP settings and the
+                effective URLs are on your{" "}
+                <Link className="comp-link" to="/account">Account</Link> page. They carry YOUR
+                token, so they differ per person — this page is the deployment's shared
+                configuration.
+              </p>
+            </div>
+          </>
+        ) : null}
       </div>
     </div>
   );
 }
 
 function DatasheetCard() {
+  // The READOUT is for everybody — what the archive holds and when the nightly
+  // runs is ordinary library information. The two buttons start a job that
+  // walks every document and can bump component versions, so the API refuses
+  // them to a non-admin (decision 0045) and the page does not offer them.
+  const { isAdmin } = useAuth();
   const [status, setStatus] = useState<DatasheetFetchStatus | null>(null);
   const [error, setError] = useState("");
   const pollRef = useRef<number | null>(null);
@@ -153,25 +233,27 @@ function DatasheetCard() {
               {status.last_error ? ` — last: ${status.last_error}` : ""}
             </p>
           ) : null}
-          <div className="btn-row">
-            <button
-              type="button"
-              className="btn"
-              disabled={status.running}
-              onClick={() => fetchAll("missing")}
-            >
-              Fetch missing
-            </button>
-            <button
-              type="button"
-              className="btn"
-              disabled={status.running}
-              title="Re-downloads every datasheet and creates new PDF versions when content changed (auto-bumps affected components)"
-              onClick={() => fetchAll("all")}
-            >
-              Re-check all (detect changed PDFs)
-            </button>
-          </div>
+          {isAdmin ? (
+            <div className="btn-row">
+              <button
+                type="button"
+                className="btn"
+                disabled={status.running}
+                onClick={() => fetchAll("missing")}
+              >
+                Fetch missing
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={status.running}
+                title="Re-downloads every datasheet and creates new PDF versions when content changed (auto-bumps affected components)"
+                onClick={() => fetchAll("all")}
+              >
+                Re-check all (detect changed PDFs)
+              </button>
+            </div>
+          ) : null}
           <p className="muted">
             PDFs are stored versioned — a changed document creates a new PDF version and
             automatically records a new component version pinning it. Web-page "datasheets"
@@ -186,8 +268,11 @@ function DatasheetCard() {
 /* Was a hand-rolled `<table className="data">` — the same header font as every
    other table, but no sort control and no filter row, so it read as a different
    kind of table. 29 currencies is a list, and a list is sorted and filtered
-   (2026-09-12). `override` is passed in because the action column calls it. */
-function fxCols(override: (r: FxRate) => void): Column<FxRate>[] {
+   (2026-09-12). `override` is passed in because the action column calls it; a
+   null one DROPS that column rather than drawing a dead button, and the width
+   it frees goes back to Updated — the widths are `<col>` percentages and have
+   to sum to 100 either way. Editing a rate is admin-only (decision 0045). */
+function fxCols(override: ((r: FxRate) => void) | null): Column<FxRate>[] {
   return [
     { key: "currency", label: "Currency", width: 16, className: "mono", get: (r) => r.currency },
     { key: "rate", label: "Rate USD", width: 22, numeric: true, className: "mono", get: (r) => r.rate_usd },
@@ -203,35 +288,45 @@ function fxCols(override: (r: FxRate) => void): Column<FxRate>[] {
     {
       key: "updated",
       label: "Updated",
-      width: 24,
+      width: override ? 24 : 42,
       className: "muted dim",
       get: (r) => r.updated_at ?? "",
       title: (r) => r.updated_at ?? undefined,
       render: (r) => <>{r.updated_at ? new Date(r.updated_at).toLocaleDateString() : "—"}</>,
     },
-    {
-      key: "override",
-      label: "",
-      width: 18,
-      interactive: false,
-      get: () => "",
-      render: (r) => (
-        <button
-          type="button"
-          className="btn btn-sm"
-          onClick={(e) => {
-            e.stopPropagation();
-            override(r);
-          }}
-        >
-          Override
-        </button>
-      ),
-    },
+    ...(override
+      ? [
+          {
+            key: "override",
+            label: "",
+            width: 18,
+            interactive: false,
+            get: () => "",
+            render: (r: FxRate) => (
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  override(r);
+                }}
+              >
+                Override
+              </button>
+            ),
+          } satisfies Column<FxRate>,
+        ]
+      : []),
   ];
 }
 
 function FxCard() {
+  // Every document in the register converts through these, so a hand-typed
+  // rate moves every batch cost and every order margin at once — admin-only
+  // on the API (decision 0045). The TABLE stays readable by anybody, because
+  // "no exchange rate for HUF" is a warning a non-admin meets on the order and
+  // run pages and has to be able to look up before asking for it.
+  const { isAdmin } = useAuth();
   const dialog = useDialog();
   const [rates, setRates] = useState<FxRate[] | null>(null);
   const [error, setError] = useState("");
@@ -297,19 +392,25 @@ function FxCard() {
       </p>
       <ErrorBanner message={error} />
       {note ? <div className="banner-ok">{note}</div> : null}
-      <div className="btn-row">
-        <button type="button" className="btn" disabled={busy} onClick={refresh}>
-          Refresh rates
-        </button>
-      </div>
+      {isAdmin ? (
+        <div className="btn-row">
+          <button type="button" className="btn" disabled={busy} onClick={refresh}>
+            Refresh rates
+          </button>
+        </div>
+      ) : null}
       {rates === null ? (
         <Spinner label="loading rates" />
       ) : rates.length === 0 ? (
-        <p className="muted">No rates stored yet — press Refresh rates.</p>
+        <p className="muted">
+          {isAdmin
+            ? "No rates stored yet — press Refresh rates."
+            : "No rates stored yet — an administrator has to fetch them."}
+        </p>
       ) : (
         <div className="table-wrap">
           <DataTable
-            columns={fxCols(override)}
+            columns={fxCols(isAdmin ? override : null)}
             rows={rates}
             rowKey={(r) => r.currency}
             persistKey="fx-rates"
