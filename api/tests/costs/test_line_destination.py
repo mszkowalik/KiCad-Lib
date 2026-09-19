@@ -176,3 +176,57 @@ def test_the_register_identity_holds_with_pooled_lines(db: Session, world):
     after = ra.invoice_register(db)["summary"]["gap_usd"] or 0.0
     assert after == pytest.approx(before, abs=0.005), \
         "a pooled line left money in no bucket at all"
+
+
+# ------------------------------------- the step must survive a plan link
+
+def test_linking_a_cost_item_does_not_replace_the_step(db: Session, world):
+    """The near-miss (2026-09-19, caught by the user asking whether the Invoices
+    UI had been updated).
+
+    `PlanLinkDialog` wrote the cost item's id into `plan_key`. That was harmless
+    while `kind` was a separate field; once the STEP says what a position is, it
+    replaces `parts:pool` with an integer — which is not in `PART_STEPS`, so the
+    line silently stops being a purchase and a real stock position leaves the
+    pool. The link has its own column now, and a non-step `plan_key` is refused.
+    """
+    from fastapi import HTTPException
+
+    from app.routers.run_costs import _check_line, LinePatch
+
+    li = _line(db, world["doc"], plan_key="parts:pool", allocate=ra.POOLED,
+               mpn="DEST-PART-3", qty=5, unit_price=2.0)
+    assert ra.is_stock(li)
+
+    # What the dialog used to send.
+    with pytest.raises(HTTPException) as exc:
+        _check_line(LinePatch(plan_kind="cost", plan_key="1234"))
+    assert exc.value.status_code == 422
+
+    # What it sends now: the link lands beside the step, not on top of it.
+    li.plan_kind, li.plan_item_id = "cost", 1234
+    db.flush()
+    assert li.plan_key == "parts:pool"
+    assert ra.is_stock(li), "a linked position is still a purchase"
+    assert ra.line_destination(li, world["doc"]) == ("pool", None)
+
+
+def test_a_cancelled_position_may_not_be_charged_to_anyone(db: Session, world):
+    """User decision 2026-09-19: the supplier printed the line, nothing was
+    delivered, nobody pays. A rule, not a suggestion — the UI forces it even over
+    an answer already given, and the server refuses anything else."""
+    from fastapi import HTTPException
+
+    from app.routers.run_costs import _check_cancelled
+
+    _check_cancelled("other:cancelled", ra.EXCLUDED, None, None)   # the only legal shape
+    _check_cancelled("other:discount", "none", world["run"].id, None)  # unaffected
+    for allocate, run_id, project_id in (
+        ("none", None, None),                         # undecided
+        (ra.EXCLUDED, world["run"].id, None),         # charged to a batch
+        (ra.EXCLUDED, None, world["proj"].id),        # charged to a project
+        (ra.POOLED, None, None),                      # claimed as stock
+    ):
+        with pytest.raises(HTTPException) as exc:
+            _check_cancelled("other:cancelled", allocate, run_id, project_id)
+        assert exc.value.status_code == 422

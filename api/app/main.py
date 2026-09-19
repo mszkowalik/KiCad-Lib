@@ -617,6 +617,17 @@ _PHASE1_DDL = (
      "UPDATE run_cost_lines SET allocate = 'excluded', exclude_reason = 'payment_fee' "
      "WHERE plan_key = 'other:payment_fee' AND voided_at IS NULL "
      "AND (allocate <> 'excluded' OR exclude_reason IN ('', 'legacy_unstated'))"),
+    # The direct cost-item link gets its own column (decision 0047). It used to
+    # be written into `plan_key`, which is now what says what a position IS —
+    # linking a part line to a cost item would have replaced its step with an
+    # integer and dropped it out of the pool. Measured 0 live rows in the old
+    # form, so there is nothing to move; the column exists so the UI has
+    # somewhere to write that is not the step.
+    ("run_cost_lines.plan_item_id",
+     "ALTER TABLE run_cost_lines ADD COLUMN IF NOT EXISTS plan_item_id integer"),
+    ("run_cost_lines.plan_item_id backfill",
+     "UPDATE run_cost_lines SET plan_item_id = plan_key::integer, plan_key = '' "
+     "WHERE plan_kind = 'cost' AND plan_key ~ '^[0-9]+$'"),
     # LAST. Everything above reads `kind`; nothing below may.
     #
     # The index on it goes first and by name: `create_all` cannot drop an index

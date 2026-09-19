@@ -2382,6 +2382,14 @@ class RunCostLine(Base):
     # Link to the PLANNED line this is the actual for; "" = a genuine late position.
     plan_key: Mapped[str] = mapped_column(String(40), default="")
     plan_kind: Mapped[str] = mapped_column(String(10), default="")  # bom|extra|cost|""
+    #: An explicit link to ONE `ProjectCostItem`, for a position the step catalog
+    #: cannot match on its own. Its own column since decision 0047, because it
+    #: used to be written into `plan_key` — and `plan_key` is now what says what
+    #: the position IS. Linking a part line to a cost item would have replaced
+    #: its step with an integer, dropping it out of `PART_STEPS` and therefore
+    #: out of the pool: a stock purchase silently stops being one. Zero live rows
+    #: were in the old form when this was split out.
+    plan_item_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     plan_ref: Mapped[str] = mapped_column(String(300), default="")  # stable natural key
     # The supplier's own per-lot key (JLC `presaleGoodsKeyId`). A LOT IS THIS
     # ROW — a leaf part line with no run — so naming it here makes lots

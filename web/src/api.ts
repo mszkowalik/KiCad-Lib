@@ -2801,6 +2801,11 @@ export interface RunCostLineRow {
   position: number;
   /** derived from `plan_key` on the server — read-only (decision 0047) */
   kind: CostLineKind;
+  /** an explicit link to one planned cost item. Its own field since decision
+   *  0047: it used to be written into `plan_key`, which now says what the
+   *  position IS, so linking a part line to a cost item dropped it out of the
+   *  pool. */
+  plan_item_id?: number | null;
   basis: "per_device" | "per_run";
   label: string;
   qty: number;
@@ -3068,9 +3073,12 @@ export function splitCostLine(
 
 export function updateCostLine(
   lineId: number,
+  // `kind` is NOT writable — it is derived from `plan_key` on the server
+  // (decision 0047).
   body: Partial<Pick<RunCostLineRow,
-    "run_id" | "project_id" | "label" | "kind" | "basis" | "qty" | "unit_price" |
-    "allocate" | "notes" | "plan_key" | "plan_kind" | "plan_ref" |
+    "run_id" | "project_id" | "label" | "basis" | "qty" | "unit_price" |
+    "allocate" | "exclude_reason" | "notes" |
+    "plan_key" | "plan_kind" | "plan_ref" | "plan_item_id" |
     "component_id" | "mpn" | "lcsc">>,
 ): Promise<RunCostLineRow> {
   return request(`/api/run-cost-lines/${lineId}`, {

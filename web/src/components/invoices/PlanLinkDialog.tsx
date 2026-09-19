@@ -6,7 +6,7 @@
  *  sit side by side with nothing joining them, and the plan-vs-actual delta can
  *  only ever be a whole-run number.
  *
- *  The link is stored on the line as `plan_kind="cost"` + `plan_key=<item id>` +
+ *  The link is stored on the line as `plan_kind="cost"` + `plan_item_id` +
  *  `plan_ref=<label>`: `plan_ref` survives a cost-list revision (items are
  *  copy-on-write per commit, so the id can move) — it is the readable anchor.
  */
@@ -35,7 +35,8 @@ export default function PlanLinkDialog({
 }) {
   const modal = useModal(() => onClose(false));
   const [items, setItems] = useState<CostItem[] | null>(null);
-  const [choice, setChoice] = useState<string>(line.plan_key || "");
+  const [choice, setChoice] = useState<string>(
+    line.plan_item_id != null ? String(line.plan_item_id) : "");
   const [newLabel, setNewLabel] = useState(line.label || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,15 +70,17 @@ export default function PlanLinkDialog({
           notes: `Created from invoice line ${line.id}`,
           position: (items?.length ?? 0) + 1,
         });
+        // `plan_item_id`, NOT `plan_key`: the step says what this position is
+        // and must survive being linked to a planned cost (decision 0047).
         await updateCostLine(line.id, {
-          plan_kind: "cost", plan_key: String(created.id), plan_ref: created.label,
+          plan_kind: "cost", plan_item_id: created.id, plan_ref: created.label,
         });
       } else if (choice === "") {
-        await updateCostLine(line.id, { plan_kind: "", plan_key: "", plan_ref: "" });
+        await updateCostLine(line.id, { plan_kind: "", plan_item_id: null, plan_ref: "" });
       } else {
         const item = (items || []).find((i) => String(i.id) === choice);
         await updateCostLine(line.id, {
-          plan_kind: "cost", plan_key: choice, plan_ref: item?.label || "",
+          plan_kind: "cost", plan_item_id: Number(choice), plan_ref: item?.label || "",
         });
       }
       onClose(true);
@@ -92,7 +95,7 @@ export default function PlanLinkDialog({
       <div className="card pad modal-card" {...modal.cardProps}>
         <h2 className="card-title">Link to a planned cost</h2>
         <p className="card-subtitle">
-          “{line.label || line.kind}” — {amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}{" "}
+          “{line.label || line.plan_key}” — {amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}{" "}
           {currency}, in {projectName}.
         </p>
         {error ? <ErrorBanner message={error} /> : null}

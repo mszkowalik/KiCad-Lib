@@ -403,14 +403,17 @@ export default function InvoiceLinesTable({
                             : stock ? { dest: "pool", how: "pooled" }
                             : v === "logistics:inbound" || v === "logistics:duty"
                               ? { dest: "pool", how: "by_value" }
-                            // A cancelled line has no destination: the supplier
-                            // printed it, nothing was delivered, nobody pays
-                            // (user decision 2026-09-19). Same for a payment fee,
-                            // which is real money attributable to no product.
-                            : v === "other:cancelled"
-                              ? { dest: "nobody", exclude_reason: "cancelled_by_supplier" }
                             : v === "other:payment_fee"
                               ? { dest: "nobody", exclude_reason: "payment_fee" }
+                            : {};
+                          // A cancelled line has NO destination — a rule, not a
+                          // suggestion (user decision 2026-09-19): the supplier
+                          // printed it, nothing was delivered, nobody pays. So
+                          // it overrides an answer already given, where the
+                          // others never would, and the server refuses any other
+                          // destination for it.
+                          const forced = v === "other:cancelled"
+                            ? { dest: "nobody", exclude_reason: "cancelled_by_supplier" }
                             : {};
                           // REPAIR an answer the new step has made illegal: only
                           // a stock position can BE stock. Without this the
@@ -419,7 +422,7 @@ export default function InvoiceLinesTable({
                           // SAVED as stock — a pool entry with no part behind it.
                           const repair = !stock && d.how === "pooled"
                             ? { how: "by_value" } : {};
-                          patch(d.key, { plan_key: v, ...suggest, ...repair });
+                          patch(d.key, { plan_key: v, ...suggest, ...repair, ...forced });
                         }}
                       />
                     )}

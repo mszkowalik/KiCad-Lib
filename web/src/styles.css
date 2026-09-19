@@ -3944,14 +3944,9 @@ table.kv.settings-table .btn-row {
 /* A position staged for voiding: still readable, visibly on its way out. */
 .row-gone td { opacity: 0.45; text-decoration: line-through; }
 
-.invoice-new-lines-table { table-layout: fixed; }
-.invoice-new-lines-table th:nth-child(1), .invoice-new-lines-table td:nth-child(1) { width: 12%; }
-.invoice-new-lines-table th:nth-child(2), .invoice-new-lines-table td:nth-child(2) { width: 32%; }
-.invoice-new-lines-table th:nth-child(3), .invoice-new-lines-table td:nth-child(3) { width: 18%; }
-.invoice-new-lines-table th:nth-child(4), .invoice-new-lines-table td:nth-child(4) { width: 10%; }
-.invoice-new-lines-table th:nth-child(5), .invoice-new-lines-table td:nth-child(5) { width: 12%; }
-.invoice-new-lines-table th:nth-child(6), .invoice-new-lines-table td:nth-child(6) { width: 12%; }
-.data.invoice-new-lines-table th:nth-child(7), .data.invoice-new-lines-table td:nth-child(7) { width: 4%; }
+/* `.invoice-new-lines-table` is gone: the New invoice card and the saved
+   document render the SAME `InvoiceLinesTable`, so they cannot drift, and its
+   widths come from that component. */
 
 .split-rows-table { table-layout: fixed; }
 /* SEVEN since decision 0047 dropped the Kind cell — Label/Part, Amount, %,

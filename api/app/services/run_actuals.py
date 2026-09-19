@@ -275,6 +275,10 @@ def line_json(li: M.RunCostLine, doc: M.RunCostDocument | None = None,
         "description": li.description,
         "plan_key": li.plan_key,
         "plan_kind": li.plan_kind,
+        # The direct link to one planned cost item. Its own field since decision
+        # 0047 — it used to be written into `plan_key`, which now says what the
+        # position IS.
+        "plan_item_id": li.plan_item_id,
         "plan_ref": li.plan_ref,
         "notes": li.notes,
         "ocr_confidence": li.ocr_confidence,

@@ -119,7 +119,10 @@ export default function InvoiceFields({
         </label>
         {withDest ? (
           <label>
-            Charge every position to
+            {/* The DOCUMENT's default, applied to any position that names no
+                destination of its own. Worded like the per-line control it
+                backstops (decision 0045). */}
+            Every position goes to
             <ChargeToSelect
               className="text"
               runs={runs}
@@ -127,7 +130,7 @@ export default function InvoiceFields({
               value={value.dest}
               disabled={disabled}
               onChange={(v) => set({ dest: v })}
-              emptyLabel="— decide per position —"
+              emptyLabel="— each position decides —"
               withExcluded={false}
             />
           </label>

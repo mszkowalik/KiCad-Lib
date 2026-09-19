@@ -41,6 +41,7 @@ class LineIn(BaseModel):
     plan_key: str = ""
     plan_kind: str = ""
     plan_ref: str = ""
+    plan_item_id: int | None = None
     notes: str = ""
     # Why this position is charged to nobody. Stored since the `excluded` bucket
     # got a reason, writable from nowhere until decision 0045.
@@ -163,6 +164,7 @@ class LinePatch(BaseModel):
     plan_key: str | None = None
     plan_kind: str | None = None
     plan_ref: str | None = None
+    plan_item_id: int | None = None
     notes: str | None = None
     exclude_reason: str | None = None
     run_id: int | None = None
@@ -467,8 +469,14 @@ def _check_line(body: LineIn | LinePatch | ChildIn) -> None:
     # bucket derived from it would silently be "other". `c<id>` is the older
     # direct link to one cost item and stays valid. "" means undecided, which is
     # a legal state and shows red (decision 0045).
-    if step and ":" in step and step not in cost_steps.STEPS:
-        raise HTTPException(422, f"unknown production step {step!r}")
+    if step and step not in cost_steps.STEPS:
+        # ANY non-step value, not just one containing a colon. `plan_key` used to
+        # double as the direct cost-item link (a bare integer); that link has its
+        # own column now, and letting an integer back in here would replace what
+        # the position IS with what it is compared against (decision 0047).
+        raise HTTPException(422, f"unknown production step {step!r} — `plan_key` is "
+                                 f"the step catalog key; use `plan_item_id` to link "
+                                 f"a position to a planned cost item")
     if body.basis is not None and body.basis not in BASES:
         raise HTTPException(422, f"basis must be one of {sorted(BASES)}")
     allocate = getattr(body, "allocate", None)
@@ -494,6 +502,25 @@ def _check_allocate(step: str | None, allocate: str | None) -> None:
                      f"the stock, spread it over this document's parts with "
                      f"allocate 'by_value' or 'by_qty'.",
             "step": step, "allocate": allocate,
+        })
+
+
+# A step whose money can never be charged to anyone. `other:cancelled` is the
+# supplier printing a line for something it did not deliver (user decision
+# 2026-09-19): nobody pays for it, so it may not name a batch or a project.
+NEVER_CHARGED = {"other:cancelled"}
+
+
+def _check_cancelled(step: str | None, allocate: str | None,
+                     run_id: int | None, project_id: int | None) -> None:
+    if step not in NEVER_CHARGED:
+        return
+    if run_id is not None or project_id is not None or allocate != run_actuals.EXCLUDED:
+        raise HTTPException(422, {
+            "error": "a cancelled position has no destination — the supplier printed "
+                     "it, nothing was delivered and nobody pays for it. Leave it "
+                     "charged to nobody, on purpose.",
+            "step": step,
         })
 
 
@@ -655,6 +682,7 @@ def _create_document(project_id: int | None, body: DocumentIn, db: Session):
     for li in body.lines:
         _check_line(li)
         _check_allocate(li.plan_key, li.allocate)
+        _check_cancelled(li.plan_key, li.allocate, li.run_id, li.project_id)
     data = body.model_dump(exclude={"lines", "project_id"})
     doc = M.RunCostDocument(project_id=project_id, **data)
     # FX comes from NBP table A at the INVOICE DATE (user decision 2026-07-27).
@@ -816,6 +844,7 @@ def add_line(doc_id: int, body: LineIn, db: Session = Depends(get_db)):
     _guard_closed(db, doc, "adding a position to this document")
     _check_line(body)
     _check_allocate(body.plan_key, body.allocate)
+    _check_cancelled(body.plan_key, body.allocate, body.run_id, body.project_id)
     pos = body.position or (max([li.position for li in doc.lines], default=-1) + 1)
     d = body.model_dump()
     d["position"] = pos
@@ -851,11 +880,14 @@ def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
         _check_line(e)
         # The effective values: a patch may change either half, or neither.
         f = e.model_dump(exclude_unset=True)
-        _check_allocate(f.get("plan_key", by_id[e.id].plan_key),
-                        f.get("allocate", by_id[e.id].allocate))
+        _cur = by_id[e.id]
+        _check_allocate(f.get("plan_key", _cur.plan_key), f.get("allocate", _cur.allocate))
+        _check_cancelled(f.get("plan_key", _cur.plan_key), f.get("allocate", _cur.allocate),
+                         f.get("run_id", _cur.run_id), f.get("project_id", _cur.project_id))
     for c in body.creates:
         _check_line(c)
         _check_allocate(c.plan_key, c.allocate)
+        _check_cancelled(c.plan_key, c.allocate, c.run_id, c.project_id)
 
     # One netted guard for the batch. A deleted line, or one that leaves the
     # pool, contributes its whole quantity as a loss; a re-key moves stock from
@@ -1078,6 +1110,8 @@ def update_line(line_id: int, body: LinePatch, db: Session = Depends(get_db)):
     _check_line(body)
     fields = body.model_dump(exclude_unset=True)
     _check_allocate(fields.get("plan_key", li.plan_key), fields.get("allocate", li.allocate))
+    _check_cancelled(fields.get("plan_key", li.plan_key), fields.get("allocate", li.allocate),
+                     fields.get("run_id", li.run_id), fields.get("project_id", li.project_id))
     # A smaller quantity, or a different pool identity, takes stock away from
     # the key this line was feeding. Charging it to a run does too: a part line
     # with a `run_id` leaves the pool entirely.
