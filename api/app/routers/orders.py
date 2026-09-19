@@ -637,45 +637,6 @@ def link_produced(run_id: int, body: ProducedIn, request: Request, db: Session =
 # ------------------------------------------------------------ stock count
 
 
-class ReconcileIn(BaseModel):
-    """A physical count of one project's shelf. Name the devices by id or by
-    the serial a scanner read — a scan sheet has serials, not ids."""
-
-    device_ids: list[int] = []
-    serials: list[str] = []
-    refill: str = "same_batch"  # same_batch | any_batch | none
-    note: str = ""
-    dry_run: bool = True
-
-
-@router.post("/stock/reconcile")
-def reconcile_stock(body: ReconcileIn, request: Request, db: Session = Depends(get_db)):
-    """Correct the FIFO guesses a stock count contradicts (decision 0027).
-
-    `dry_run` is the DEFAULT: the answer is the plan, and nothing is written
-    until you send it again with `dry_run: false`. This rewrites the device
-    history of shipments that are already invoiced, so seeing the effect first
-    is the point.
-    """
-    devices = [_device(db, did) for did in body.device_ids]
-    seen = {d.id for d in devices}
-    for d in _by_serial(db, body.serials):
-        if d.id not in seen:
-            devices.append(d)
-            seen.add(d.id)
-    actor = actor_of(request)
-    plan = svc.reconcile_shelf(db, devices, refill=body.refill,
-                               note=body.note, actor=actor, dry_run=body.dry_run)
-    if body.dry_run:
-        return plan
-    audit(db, "stock.reconcile", "project", devices[0].project_id,
-          {"counted": len(devices), "freed": len(plan["freed"]),
-           "refilled": len(plan["refilled"]), "unfilled": len(plan["unfilled"]),
-           "note": body.note}, actor=actor)
-    db.commit()
-    return plan
-
-
 class RebatchIn(BaseModel):
     """Devices filed against the wrong batch, by id or by scanned serial."""
 
@@ -704,6 +665,7 @@ def rebatch(run_id: int, body: RebatchIn, request: Request, db: Session = Depend
         return plan
     audit(db, "run.rebatch", "production_run", run.id,
           {"moved": len(plan["moved"]), "from": sorted({m["from_run_id"] for m in plan["moved"]}),
+           "attempts": sum(m["attempts"] for m in plan["moved"]),
            "note": body.note}, actor=actor)
     db.commit()
     return plan

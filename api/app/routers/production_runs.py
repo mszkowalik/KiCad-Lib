@@ -1,6 +1,9 @@
 """Production runs: batches priced on demand from historical pricing at the
 run's date (project_bom.run_effective), with price overrides, file
-attachments (MinIO) and a serial-number registry."""
+attachments (MinIO).
+
+A batch's device count is `DeviceUnit.production_run_id`, never the
+`run_devices` registry — see the note on `device_count`."""
 from __future__ import annotations
 
 import uuid
@@ -8,6 +11,7 @@ import uuid
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models as M
@@ -46,7 +50,8 @@ def _run_snapshot_board(db: Session, r: M.ProductionRun) -> tuple[M.ProjectSnaps
     return snap, board
 
 
-def _run_json(r: M.ProductionRun, db: Session | None = None, with_detail: bool = False) -> dict:
+def _run_json(r: M.ProductionRun, db: Session | None = None, with_detail: bool = False,
+              device_counts: dict[int, int] | None = None) -> dict:
     out = {
         "id": r.id,
         "project_id": r.project_id,
@@ -77,7 +82,21 @@ def _run_json(r: M.ProductionRun, db: Session | None = None, with_detail: bool =
         # be done.
         "requires_test": bool(r.requires_test),
         "attachment_count": len(r.attachments),
-        "device_count": len(r.devices),
+        # HOW MANY DEVICES THIS BATCH MADE, which is `DeviceUnit.production_run_id`
+        # — the batch a device belongs to, and the only copy of it that ever gets
+        # corrected (decision 0029). It is NOT `len(r.devices)`: that is the
+        # hand-typed `run_devices` registry, which has never held a row in any
+        # database, so the column it fed read 0 for every batch ever built
+        # (user report 2026-09-19).
+        #
+        # `device_counts` is the batched map the LIST endpoint passes, because a
+        # count per run turns one page into one query per batch.
+        "device_count": (
+            device_counts.get(r.id, 0) if device_counts is not None
+            else (db.query(func.count(M.DeviceUnit.id))
+                    .filter(M.DeviceUnit.production_run_id == r.id).scalar() or 0)
+            if db is not None else 0
+        ),
         "production_set_count": _pset_count(r),
     }
     if with_detail and db is not None:
@@ -155,7 +174,13 @@ def list_runs(project_id: int, db: Session = Depends(get_db)):
         db.query(M.ProductionRun).filter_by(project_id=project_id)
         .order_by(M.ProductionRun.created_at.desc()).all()
     )
-    return [_run_json(r) for r in runs]
+    # One grouped count for the whole page — see the note on `device_count`.
+    counts = dict(
+        db.query(M.DeviceUnit.production_run_id, func.count(M.DeviceUnit.id))
+        .filter(M.DeviceUnit.production_run_id.in_([r.id for r in runs] or [-1]))
+        .group_by(M.DeviceUnit.production_run_id).all()
+    )
+    return [_run_json(r, device_counts=counts) for r in runs]
 
 
 @router.post("/projects/{project_id}/runs")

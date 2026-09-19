@@ -125,7 +125,16 @@ def _lot_from_goods(g: dict, pob: str, so: dict, presale_type: str, status) -> d
         "sourcing_fee_usd": fee,
         "cost_source": "goodsPaidMoney/settlePresaleNumber",
         # A cancelled row still cost money — it must land as a fee, never as a lot.
-        "fee_only": settled <= 0 and paid > 0,
+        #
+        # CANCELLED is the whole test, not a zero quantity. JLC settles a
+        # cancelled sub-order with `orderStatus=40` and still reports a non-zero
+        # `settlePresaleNumber`: lot 754166 says 3,470 LEDs settled at $19.78,
+        # and JLC's own inventory history for C965790 shows no receipt for any of
+        # them. Testing only `settled <= 0` imported them as stock, which was
+        # 3,470 of the 3,478-piece gap on that part — the largest disagreement in
+        # the platform, chased for a day before this row explained it
+        # (2026-09-18). It is the ONLY `orderStatus=40` lot in the account.
+        "fee_only": (status == 40 or settled <= 0) and paid > 0,
     }
 
 
@@ -159,6 +168,13 @@ def plan_parts_document(pob: str, lots: list[dict], invoice_raw: dict | None) ->
         for lot in real
     ]
     for lot in fees:
+        reason = (
+            f"the sub-order was CANCELLED (order status {lot['order_status']}) "
+            f"and JLC settled it at {lot['qty']:g}"
+            if lot["order_status"] == 40 else
+            f"{lot['qty_ordered']:g} were ordered and NONE settled "
+            f"(order status {lot['order_status']})"
+        )
         lines.append({
             # "fee" is NOT a valid RunCostLine.kind (see run_costs.KINDS);
             # "other" is the honest bucket for money paid against no goods.
@@ -170,12 +186,14 @@ def plan_parts_document(pob: str, lots: list[dict], invoice_raw: dict | None) ->
             "mpn": "",
             "qty": 1,
             "unit_price": lot["paid_usd"],
-            "lot_ref": "",
+            # The lot key is kept even though a fee is not a lot: it is what
+            # `jlc_apply.refresh_parts_document` addresses the line by, so a lot
+            # that changes shape is corrected in place rather than duplicated.
+            "lot_ref": lot["lot_key"],
             "supplier_order_ref": lot["purchase_batch_no"],
             "notes": (
-                f"paid ${lot['paid_usd']} but {lot['qty_ordered']:g} ordered and NONE settled "
-                f"(order status {lot['order_status']}) — real money, no parts, so it is a fee "
-                "rather than a lot"
+                f"paid ${lot['paid_usd']} but {reason} — real money, no parts, so it is "
+                "a fee rather than a lot"
             ),
         })
 
@@ -250,17 +268,25 @@ JLC_PCB_FEE_STEPS: dict[str, tuple[str, str]] = {
 }
 
 
-def _child_kind(step: str) -> str:
-    """A fee child's coarse rollup kind, from the step catalog — EXCEPT `part`.
+def _child_kind(step: str, run_id: int | None = None) -> str:
+    """A fee child's coarse rollup kind, from the step catalog.
 
-    A `part` leaf with no run claims the POOL (`line_destination`), and JLC's
-    `materialMoney` components never enter the consigned stock — they were
-    JLC's own supply, soldered to the boards. Booking them as pool stock would
-    invent inventory, so the child stays `assembly` and the step key
-    (`pcba:parts`) alone says what the money bought.
+    `part` needs one guard. A `part` leaf with NO run claims the POOL
+    (`line_destination`), and JLC's `materialMoney` components never enter the
+    consigned stock — they were JLC's own supply, soldered to the boards, so
+    booking them as pool stock would invent inventory.
+
+    That hazard is the missing RUN, not the kind: a `part` line WITH a run is
+    charged to it directly and stays out of the pool. So a JLC-sourced line that
+    names its batch is `part`, which is what it is, and only the run-less case
+    falls back to `assembly`. Calling every one of them `assembly` made the
+    Materials columns read as labour and left the component link on the wrong
+    row (user report 2026-09-19).
     """
     kind = cost_steps.STEPS.get(step, ("", "other"))[1]
-    return "assembly" if kind == "part" else kind
+    if kind == "part" and run_id is None:
+        return "assembly"
+    return kind
 
 
 def order_fee_components(entry: dict) -> list[dict]:
@@ -499,7 +525,8 @@ def plan_manufacturing_document(inv: dict, decisions: dict[str, dict] | None = N
             # the chargeable slice, each carrying its step key.
             for c in fee_kids:
                 parent["children"].append({
-                    "kind": _child_kind(c["step"]), "plan_key": c["step"],
+                    "kind": _child_kind(c["step"], run_id if stage == "pcba" else None),
+                    "plan_key": c["step"],
                     "allocate": "none",
                     "run_id": run_id if stage == "pcba" else None,
                     "label": f"{c['label']} - {li['order_code']}",
@@ -1058,47 +1085,36 @@ def order_plan_for(db: Session, code: str) -> dict | None:
     return None
 
 
-def external_stock_movements(order_plan: dict, lots: dict[str, dict]) -> list[dict]:
-    """Stock movements for an order charged to NOBODY.
+def stock_plans(inv: dict) -> list[dict]:
+    """The STOCK leg of one parsed invoice: what each assembly order consumed.
 
-    Negative `ComponentStockAdjustment` rows with `charge_run_id` NULL: the stock
-    and its value leave the pool, no run is charged, and both register identities
-    still close (the invoice-allocation identity never saw a stock event; the pool
-    identity counts adjustments as a first-class leg).
+    Deliberately does not go through `plan_orders`. The planner exists to guess
+    which production run an order belongs to and how many devices a panel holds
+    — questions about COST that JLC does not answer. What each order drew from
+    your consigned stock is not a guess at all: `presaleDetailResultVOList`
+    itemises it per lot, and `jlc_invoice.parse` has already checked that those
+    rows sum to the invoice's own prepaid total.
 
-    `reason='external_project'` is load-bearing — a bare negative adjustment reads
-    as attrition, and attrition is a defect signal in this codebase. Consumption
-    by another project is not loss, and conflating them would inflate the apparent
-    attrition rate while hiding real losses.
-
-    `unit_cost_usd` is set explicitly from the lot so the value leaves at what was
-    actually paid; `pool_state` would otherwise fall back to the running average.
+    So the stock side needs none of the planner's machinery, and building it here
+    is what lets stock move on import while attribution waits for a human.
     """
-    out = []
-    for c in order_plan.get("consumption") or []:
-        lot = lots.get(c.get("lot_key") or "")
-        unit = lot["unit_cost_usd"] if lot and lot.get("unit_cost_usd") is not None else None
-        out.append({
-            "lcsc": c["lcsc"],
-            "mpn": c["mpn"],
-            "qty_delta": -abs(c["qty"]),
-            "unit_cost_usd": unit,
-            "reason": "external_project",
-            "charge_run_id": None,
-            # Idempotency as a CONSTRAINT (`uq_stock_adj_import`) rather than the
-            # `note LIKE '%code%'` text scan this used to rely on.
-            "import_ref": (f"jlc:ext:{order_plan['smt_order_code']}:"
-                           f"{c['lcsc'] or c['mpn']}")[:120],
-            "adjusted_at": (order_plan["invoice_date"].isoformat()
-                            if order_plan.get("invoice_date") else ""),
-            "note": (
-                f"consumed by JLC assembly order {order_plan['smt_order_code']} "
-                f"(batch {order_plan['batch_num']}), which builds a project not tracked "
-                f"in this platform — stock only, charged to no run"
-                + (f"; lot {c['lot_key']}" if c.get("lot_key") else "")
-            ),
-        })
-    return out
+    return [{
+        "smt_order_code": o.get("smt_order_code"),
+        "batch_num": inv.get("batch_num"),
+        "invoice_no": inv.get("invoice_no"),
+        "invoice_date": inv.get("invoice_date"),
+        "consumption": o.get("consumption") or [],
+    } for o in (inv.get("assembly_orders") or [])]
+
+
+# `external_stock_movements` has been REMOVED (decision 0034, completed
+# 2026-09-18). It turned an external order's invoice-reported consumption into
+# negative `ComponentStockAdjustment` rows with `reason='external_project'`,
+# because a draw could not exist without a batch and an external order has none.
+# `component_consumptions.run_id` is nullable now, so the same fact is written as
+# an UNCHARGED DRAW and this shape has no writer left. The 27 rows it already
+# wrote stay readable — `pool_state` counts them on `external`, apart from
+# attrition — until they are migrated.
 
 
 # --------------------------------------------------------- staging + queue
@@ -1135,15 +1151,36 @@ def sync_stage(db: Session, limit_pages: int = 4) -> dict:
                           "Check the session."),
                 "batches_visible": len(seen), "previously_staged": prior}
 
-    fetched = refreshed = failed = fees_fetched = 0
+    fetched = refreshed = failed = fees_fetched = boms_fetched = cancelled = 0
     for bn in sorted(seen):
         row = db.query(M.JlcImport).filter_by(kind="assembly", external_id=bn).first()
+        # JLC's own word on the batch, from the listing above. Captured for every
+        # row on every sync, including ones already imported, because a batch can
+        # be cancelled after it was staged.
+        status = str(seen[bn].get("batchStatus") or "")[:20]
+        if row is not None:
+            row.jlc_status = status
         if row is not None and row.payload:
             # Already staged — but the fee breakdown was added later than the
             # invoice cache, so older rows may still miss it.
             if row.fee_info is None and _fetch_fee_info(db, row):
                 fees_fetched += 1
+            # Same for the BOM, which was manual until 2026-09-18. Only walk the
+            # batch when one of ITS orders is still missing one, so a steady
+            # state costs no extra requests.
+            if set(row.panel_info or {}) - set(row.bom_info or {}):
+                boms_fetched += _fetch_boms(db, row)
             refreshed += 1
+            continue
+        if status == "cancelled":
+            # JLC issues no invoice for a cancelled batch, so fetching one every
+            # sync forever buys nothing. The row still exists and still says why.
+            row = row or M.JlcImport(kind="assembly", external_id=bn)
+            row.jlc_status = status
+            row.payload = row.payload if row.payload is not None else {}
+            row.fetched_at = M.utcnow()
+            db.add(row)
+            cancelled += 1
             continue
         try:
             raw = jlc_web.get_manufacturing_invoice(db, bn)
@@ -1155,6 +1192,7 @@ def sync_stage(db: Session, limit_pages: int = 4) -> dict:
         if row is None:
             row = M.JlcImport(kind="assembly", external_id=bn)
             db.add(row)
+        row.jlc_status = status
         row.payload = raw
         row.invoice_no = (parsed or {}).get("invoice_no") or ""
         row.doc_date = (parsed["invoice_date"].isoformat()
@@ -1163,10 +1201,18 @@ def sync_stage(db: Session, limit_pages: int = 4) -> dict:
         row.presale_amount = (parsed or {}).get("totals", {}).get("presale")
         # Panelisation lives on a DIFFERENT endpoint and is the only
         # authoritative device count, so it is fetched and cached alongside.
+        person = None
         try:
-            row.panel_info = jlc_web.panel_factors(jlc_web.get_person_order(db, bn))
+            person = jlc_web.get_person_order(db, bn)
+            row.panel_info = jlc_web.panel_factors(person)
         except jlc_web.JlcWebError as e:
             log.warning(f"no panelisation for {bn}: {e}")
+        # And the BOM, from the same order-centre view. It is the only source of
+        # `componentSource` — who actually supplied each part — and fetching it
+        # was manual until 2026-09-18, which left 31 of 45 orders without one.
+        # This writes EVIDENCE, never money, so it does not breach this
+        # function's rule that a sync may not move the ledger.
+        boms_fetched += _fetch_boms(db, row, person)
         # Same reason for the fee breakdown: the invoice prints one figure per
         # line; only the order detail itemizes it into steps.
         if _fetch_fee_info(db, row):
@@ -1176,7 +1222,44 @@ def sync_stage(db: Session, limit_pages: int = 4) -> dict:
     db.commit()
     return {"batches_visible": len(seen), "fetched": fetched,
             "already_staged": refreshed, "failed": failed,
-            "fee_info_fetched": fees_fetched}
+            "fee_info_fetched": fees_fetched, "boms_fetched": boms_fetched,
+            "cancelled": cancelled}
+
+
+def _fetch_boms(db: Session, row: M.JlcImport, person: dict | None = None) -> int:
+    """Cache JLC's own BOM for every assembly order in one batch.
+
+    An order already in `bom_info` is skipped, so this is safe to call on every
+    sync and costs nothing once a batch is complete. A stored empty list means
+    "fetched, JLC listed no components" — a bare-PCB or stencil order — and is
+    deliberately different from the key being ABSENT, which means never fetched.
+
+    A failure is logged and left absent so the next sync retries, rather than
+    caching a hole that would read as a legitimate empty BOM forever.
+    """
+    from . import jlc_web  # local, same reason as in sync_stage
+
+    try:
+        if person is None:
+            person = jlc_web.get_person_order(db, row.external_id)
+        nums = jlc_web.smt_order_nums(person) or {}
+    except jlc_web.JlcWebError as e:
+        log.warning(f"no order-centre view for {row.external_id}: {e}")
+        return 0
+    merged = dict(row.bom_info or {})
+    got = 0
+    for code, uuid in nums.items():
+        if not uuid or code in merged:
+            continue
+        try:
+            merged[code] = jlc_web.get_smt_order_detail(db, uuid).get("smtBomResult") or []
+        except jlc_web.JlcWebError as e:
+            log.warning(f"no BOM for {code}: {e}")
+            continue
+        got += 1
+    if got:
+        row.bom_info = merged
+    return got
 
 
 def _fetch_fee_info(db: Session, row: M.JlcImport) -> bool:
@@ -1215,6 +1298,9 @@ def decision_queue(db: Session) -> list[dict]:
     runs = db.query(M.ProductionRun).all()
     run_names = {r.id: f"{r.label}" for r in runs}
     decided = {d.smt_order_code: d for d in db.query(M.JlcOrderDecision).all()}
+    # Which orders have JLC's own BOM cached. Without it `componentSource` is
+    # unknown, so which parts JLC supplied itself cannot be checked.
+    with_bom = {code for row in staged for code in (row.bom_info or {})}
     planned = plan_orders(db, invoices, runs)
     panels = effective_panels(db)
     # JLC-sourced parts (`materialMoney`) are not itemised per part, so the BOM
@@ -1261,6 +1347,12 @@ def decision_queue(db: Session) -> list[dict]:
             "bom_vote": prop.get("bom_vote"),
             "jlc_sourced_usd": material.get(code),
             "decided": bool(prop.get("decided")),
+            # A DECISION IS NOT A WRITE. Until it is applied no stock has moved
+            # and no run has been charged, and the old queue counted such an
+            # order as settled and stopped showing it — which is how 441 pieces
+            # sat un-drawn for three weeks (SMT026080463762, decided 2026-08-25).
+            "applied": bool(existing and existing.applied_at),
+            "bom_fetched": code in with_bom,
             "money_usd": p["money_usd"],
             "presale_usd": p["presale_usd"],
             "consumed_value_usd": round(sum(c["money"] for c in cons), 2),

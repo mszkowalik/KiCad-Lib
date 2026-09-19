@@ -238,6 +238,137 @@ def apply_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
             "lines": len(plan["lines"]), "identities": after}
 
 
+def refresh_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
+                           dry_run: bool = True) -> dict:
+    """Re-state an ALREADY IMPORTED parts order from JLC's current answer.
+
+    The importer is a one-shot: `apply_parts_document` refuses a document that
+    exists, which is right — a second document would double the purchase. But a
+    lot can change shape after it was imported, and the platform had no way to
+    take the correction except by hand. Lot 754166 was imported as 3,470 pieces
+    of stock and was afterwards cancelled and refunded; the importer learned to
+    read that (`_lot_from_goods.fee_only`), and this is what lets an existing
+    document learn it too.
+
+    Lines are matched by `lot_ref`, which is JLC's `presaleGoodsKeyId` and is
+    stable across the change — including on a fee line, which is why
+    `plan_parts_document` now keeps it there.
+
+    It REFUSES rather than guesses when:
+
+    * a line the plan no longer knows about exists on the document — that is a
+      key mismatch, not a deletion, and deleting a purchase silently is how a
+      pool loses stock it really has;
+    * a part line whose quantity would drop already has draws bound to it. The
+      binding says the parts were consumed. JLC saying they never arrived and the
+      platform saying they were used is a contradiction a human must settle.
+    """
+    before = identity_snapshot(db)
+    doc = find_document(db, plan["external_id"], plan.get("doc_number") or "")
+    if doc is None:
+        return {"status": "not_imported", "document_id": None,
+                "note": f"{plan['external_id']} is not in the platform — import it first"}
+
+    existing = {}
+    for line in db.query(M.RunCostLine).filter(M.RunCostLine.document_id == doc.id).all():
+        if line.lot_ref:
+            existing.setdefault(line.lot_ref, []).append(line)
+
+    changes: list[dict] = []
+    blockers: list[str] = []
+    # Decided before anything is written. A refusal must not need a rollback:
+    # rolling back inside a service discards whatever else the caller had in the
+    # same transaction, including the journal header that makes a write
+    # reversible.
+    pending: list[tuple] = []
+    for li in plan["lines"]:
+        ref = li.get("lot_ref") or ""
+        rows = existing.pop(ref, []) if ref else []
+        if not ref or not rows:
+            blockers.append(f"plan line {li['label']!r} (lot {ref or '-'}) has no line on "
+                            f"document {doc.id} — refusing to add money to a document "
+                            "that was already reconciled")
+            continue
+        if len(rows) > 1:
+            blockers.append(f"lot {ref} matches {len(rows)} lines on document {doc.id}")
+            continue
+        row = rows[0]
+        diff = {k: (getattr(row, k), v) for k, v in (
+            ("kind", li["kind"]), ("label", li["label"][:300]), ("qty", float(li["qty"])),
+            ("unit_price", float(li["unit_price"] or 0.0)), ("lcsc", li["lcsc"]),
+            ("mpn", li["mpn"][:200]), ("notes", _keep_annotations(row.notes, li["notes"])),
+        ) if _differs(getattr(row, k), v)}
+        if not diff:
+            continue
+        if float(li["qty"]) < float(row.qty or 0):
+            bound = (db.query(M.ComponentConsumptionLot)
+                       .filter(M.ComponentConsumptionLot.lot_line_id == row.id).all())
+            if bound:
+                blockers.append(
+                    f"line {row.id} (lot {ref}) would drop from {row.qty:g} to "
+                    f"{float(li['qty']):g} but {len(bound)} draw(s) are bound to it — "
+                    "JLC says the parts never arrived and the platform says they were "
+                    "used; settle that before refreshing")
+                continue
+        changes.append({"line_id": row.id, "lot_ref": ref,
+                        "was": {k: v[0] for k, v in diff.items()},
+                        "now": {k: v[1] for k, v in diff.items()}})
+        pending.append((row, diff))
+
+    for ref, rows in existing.items():
+        blockers.append(f"document {doc.id} carries lot {ref} (line "
+                        f"{', '.join(str(r.id) for r in rows)}) that JLC no longer reports")
+
+    if blockers:
+        return {"status": "refused", "document_id": doc.id, "blockers": blockers,
+                "changes": changes}
+    if not changes:
+        return {"status": "unchanged", "document_id": doc.id, "changes": []}
+
+    total = round(sum(float(li["qty"]) * float(li["unit_price"] or 0.0)
+                      for li in plan["lines"]), 4)
+    # A dry run does the whole write and the conservation checks, then undoes it
+    # on a SAVEPOINT rather than `db.rollback()`. The preview is only worth
+    # having because it is the same code path — but a plain rollback would also
+    # discard whatever else the caller holds in the transaction, which is how a
+    # preview reached into a test's fixture and undid it.
+    sp = db.begin_nested() if dry_run else None
+    for row, diff in pending:
+        for k, v in diff.items():
+            setattr(row, k, v[1])
+    doc.total_amount = plan["total_amount"]
+    db.flush()
+    run_actuals.resolve_part_lines(db, doc.id)
+    after = _assert_identities(db, before, f"parts refresh {plan['external_id']}")
+    if sp is not None:
+        sp.rollback()
+        return {"status": "dry_run", "document_id": doc.id, "changes": changes,
+                "line_total_usd": total,
+                "identities_before": before, "identities_after": after}
+    _write_audit(db, "jlc.import.parts.refresh", doc.id, plan, actor)
+    return {"status": "refreshed", "document_id": doc.id, "changes": changes,
+            "identities": after}
+
+
+def _keep_annotations(old: str, fresh: str) -> str:
+    """Re-generate a line's note WITHOUT dropping what a person added to it.
+
+    The importer writes one sentence and anything after " | " was written by
+    hand or by a later correction — line 874 carries the record of why its
+    component was restored to TS3625A. A refresh that regenerated the note would
+    silently delete that, and the reason a substitution exists is worth more than
+    the sentence it follows.
+    """
+    tail = (old or "").split(" | ")[1:]
+    return " | ".join([fresh, *tail]) if tail else fresh
+
+
+def _differs(a, b) -> bool:
+    if isinstance(a, float) or isinstance(b, float):
+        return abs(float(a or 0) - float(b or 0)) > 1e-9
+    return (a or "") != (b or "")
+
+
 def apply_manufacturing_document(db: Session, plan: dict, actor: str = "jlc-import",
                                  dry_run: bool = False) -> dict:
     """Create one W batch document with its top-level lines and their children.
@@ -356,67 +487,10 @@ def apply_manufacturing_document(db: Session, plan: dict, actor: str = "jlc-impo
 
 
 # ------------------------------------------------------------- adjustments
-def apply_external_movements(db: Session, order_plan: dict, movements: list[dict],
-                             actor: str = "jlc-import", dry_run: bool = False) -> dict:
-    """Book an assembly order that belongs to a project outside the platform.
-
-    Stock leaves, value leaves the pool, NOTHING is charged to a run. The
-    invoice-allocation identity is untouched (the money was booked `to_pool` when
-    the purchase was entered); the pool identity absorbs it through its
-    adjustments leg.
-    """
-    before = identity_snapshot(db)
-    tag = f"jlc:external:{order_plan['smt_order_code']}"
-
-    _by_lcsc, _by_mpn = _component_index(db)
-    written = unresolved = skipped = 0
-    for m in movements:
-        # Per-movement idempotency on `import_ref`, backed by `uq_stock_adj_import`.
-        # This replaces a `note LIKE '%code%'` scan over the whole table, which was
-        # both a text search standing in for a constraint AND all-or-nothing: one
-        # movement already present made the whole order look booked, so an order
-        # that failed halfway could never be completed.
-        ref = (m.get("import_ref") or "")[:120]
-        if ref and db.query(M.ComponentStockAdjustment).filter_by(import_ref=ref).first():
-            skipped += 1
-            continue
-        cid = resolve_component(_by_lcsc, _by_mpn, m["lcsc"], m.get("mpn") or "")
-        db.add(M.ComponentStockAdjustment(
-            component_id=cid,
-            mpn=m["mpn"][:200],
-            lcsc=m["lcsc"],
-            qty_delta=m["qty_delta"],
-            unit_cost_usd=m["unit_cost_usd"],
-            reason=m["reason"],
-            charge_run_id=None,
-            adjusted_at=m["adjusted_at"],
-            import_ref=ref,
-            actor=actor,
-            note=m["note"][:500],
-        ))
-        written += 1
-        if cid is None:
-            unresolved += 1
-    if not written:
-        return {"status": "exists", "skipped": skipped,
-                "note": f"all {skipped} movement(s) already booked"}
-    db.flush()
-    try:
-        after = _assert_identities(
-            db, before, f"external movements for {order_plan['smt_order_code']}")
-    except ApplyRefused:
-        db.rollback()
-        raise
-    if dry_run:
-        db.rollback()
-        return {"status": "dry_run", "would_write_movements": written,
-                "already_booked": skipped, "unresolved_components": unresolved,
-                "identities_before": before, "identities_after": after}
-    _write_audit(db, "jlc.import.external", None,
-                 {"tag": tag, "movements": written, "unresolved": unresolved,
-                  "already_booked": skipped}, actor)
-    return {"status": "created", "movements": written, "already_booked": skipped,
-            "unresolved_components": unresolved, "identities": after}
+# `apply_external_movements` has been REMOVED (decision 0034, completed
+# 2026-09-18) together with its planner, `jlc_import.external_stock_movements`.
+# An external order's stock now leaves as an uncharged draw, which says the same
+# thing in the shape everything else uses. See `routers/jlc_import._book_external`.
 
 
 def reprice_from_jlc(db: Session, lots_by_key: dict[str, dict],
@@ -916,10 +990,17 @@ def lot_line_index(db: Session) -> dict[str, int]:
     return {li.lot_ref: li.id for li in rows}
 
 
-def apply_draws(db: Session, order_plan: dict, run_id: int, lot_lines: dict[str, int],
+def apply_draws(db: Session, order_plan: dict, run_id: int | None,
+                lot_lines: dict[str, int],
                 actor: str = "jlc-import", dry_run: bool = True) -> dict:
     """Write MEASURED, lot-bound draws for one assembly order and retire the
     BOM forecasts they replace.
+
+    `run_id=None` writes the STOCK MOVEMENT ALONE, charged to nobody. JLC states
+    the consumed lots on the invoice, so the quantity is known the moment the
+    document is imported; which batch pays for it is a separate judgement made
+    later (`charge_draws`). Nothing is superseded on an uncharged write, because
+    a forecast belongs to a run and no run has been named yet.
 
     Shape: one `ComponentConsumption` per (run, part) carrying the qty-weighted
     average, with one `ComponentConsumptionLot` child per JLC row. That keeps
@@ -1047,18 +1128,8 @@ def apply_draws(db: Session, order_plan: dict, run_id: int, lot_lines: dict[str,
     # `void_absent.py` deleted 10 draws during the backfill that could then only
     # be recovered from a database dump. Un-voiding is one UPDATE.
     voided = 0
-    if not dry_run and (parts_touched or components_touched):
-        for old in (run_actuals.live_consumption(db, run_id=run_id)
-                    .filter(M.ComponentConsumption.import_ref == "",
-                            M.ComponentConsumption.basis.in_(("bom", "manual", "allocated")))
-                    .all()):
-            ident = old.lcsc or old.mpn
-            if (ident and ident in parts_touched) or (
-                    old.component_id is not None
-                    and old.component_id in components_touched):
-                old.voided_at = utcnow()
-                old.void_reason = "superseded_by_measured"
-                voided += 1
+    if not dry_run and run_id is not None:
+        voided = _void_superseded(db, run_id, parts_touched, components_touched)
 
     if not dry_run:
         db.flush()
@@ -1084,6 +1155,121 @@ def apply_draws(db: Session, order_plan: dict, run_id: int, lot_lines: dict[str,
             "draws": made, "lot_bindings": len(planned_bindings),
             "voided_forecasts": voided, "unresolved_components": unresolved,
             "identities": after}
+
+
+
+def _void_superseded(db: Session, run_id: int, parts: set[str],
+                     components: set[int]) -> int:
+    """Retire the BOM forecasts a measurement replaces, on ONE run.
+
+    VOID, never delete: this is the row a reversal has to put back, and
+    `void_shop.py` / `void_absent.py` deleted 10 draws during the 2026-07
+    backfill that could then only be recovered from a database dump.
+
+    Identity is matched on the resolved COMPONENT as well as the supplier's text
+    codes, because neither text field is reliable on its own: a BOM forecast
+    resolves to `component_id` and leaves `lcsc` and `mpn` empty, and one
+    physical part can carry two supplier codes (component 218 is XL-1005SURC as
+    both C965790 and C25503345). Either case leaves the forecast un-superseded
+    beside its measurement and charges the run twice.
+    """
+    if not (parts or components):
+        return 0
+    voided = 0
+    for old in (run_actuals.live_consumption(db, run_id=run_id)
+                .filter(M.ComponentConsumption.import_ref == "",
+                        M.ComponentConsumption.basis.in_(("bom", "manual", "allocated")))
+                .all()):
+        ident = old.lcsc or old.mpn
+        if (ident and ident in parts) or (
+                old.component_id is not None and old.component_id in components):
+            old.voided_at = utcnow()
+            old.void_reason = "superseded_by_measured"
+            voided += 1
+    return voided
+
+
+def charge_draws(db: Session, order_plan: dict, run_id: int,
+                 actor: str = "jlc-import", dry_run: bool = True) -> dict:
+    """Point one assembly order's already-written draws at the run that pays.
+
+    The stock left when the invoice was imported (`apply_draws` with no run).
+    This is the second half: the judgement about WHO PAYS, applied to rows that
+    already exist. It UPDATES `run_id` and writes no new draw, so the quantity a
+    supplier reported can never be restated by a decision about cost.
+
+    Deliberately an update and not a delete-and-reinsert: `journal.batch`
+    captures the before-state of every mutated row, so re-pointing is reversible,
+    while re-inserting would break `uq_consumption_import` and lose the lot
+    bindings underneath.
+    """
+    code = order_plan["smt_order_code"]
+    prefix = f"jlc:{order_plan['batch_num']}:{code}:"
+    rows = [c for c in run_actuals.live_consumption(db).all()
+            if (c.import_ref or "").startswith(prefix)]
+    mine = [c for c in rows if c.run_id is None]
+    elsewhere = [c for c in rows if c.run_id is not None and c.run_id != run_id]
+    if elsewhere:
+        # Already charged to a different batch. Silently re-pointing would move
+        # money off a run somebody may have quoted a margin from.
+        raise ApplyRefused(
+            f"{code}: {len(elsewhere)} draw(s) are already charged to run(s) "
+            f"{sorted({c.run_id for c in elsewhere})} — reverse that batch first")
+    out = {"smt_order_code": code, "run_id": run_id,
+           "uncharged_draws": len(mine),
+           "value_usd": round(sum((c.qty or 0) * (c.unit_cost_usd or 0) for c in mine), 2),
+           "already_charged": len(rows) - len(mine) - len(elsewhere)}
+    if dry_run:
+        return {**out, "status": "dry_run"}
+    parts = {c.lcsc or c.mpn for c in mine if (c.lcsc or c.mpn)}
+    components = {c.component_id for c in mine if c.component_id is not None}
+    for c in mine:
+        c.run_id = run_id
+    out["voided_forecasts"] = _void_superseded(db, run_id, parts, components)
+    db.flush()
+    _write_audit(db, "jlc.import.draws.charge", None,
+                 {"order": code, "run_id": run_id, "charged": len(mine)}, actor)
+    return {**out, "status": "charged"}
+
+
+def draw_stock_for_invoice(db: Session, order_plans: list[dict],
+                           actor: str = "jlc-import", dry_run: bool = True) -> dict:
+    """Write the stock every assembly order on one invoice consumed, charged
+    to nobody.
+
+    Called when the manufacturing document is imported, because that document IS
+    the statement of what left the shelf: `presaleDetailResultVOList` itemises
+    each consigned lot per order. Waiting for a human to link the order to a
+    batch first made a supplier's measurement wait on our bookkeeping, and on
+    2026-08-25 that wait became indefinite.
+
+    An order whose lots cannot all be resolved is DEFERRED rather than written
+    unallocated, so the purchase invoice can be imported and the draw picked up
+    on a re-apply (`uq_consumption_import` makes that a no-op for the rest).
+    """
+    lot_lines = lot_line_index(db)
+    written = deferred = nothing = 0
+    detail: list[dict] = []
+    for plan in order_plans:
+        cons = plan.get("consumption") or []
+        if not cons:
+            nothing += 1
+            continue
+        missing = sorted({c.get("lot_key") or "" for c in cons
+                          if not lot_lines.get(c.get("lot_key") or "")})
+        if missing:
+            deferred += 1
+            detail.append({"smt_order_code": plan["smt_order_code"],
+                           "status": "deferred",
+                           "unresolved_lots": len(missing),
+                           "hint": "import the JLC parts invoice that supplied these "
+                                   "lots, then apply this document again"})
+            continue
+        res = apply_draws(db, plan, None, lot_lines, actor=actor, dry_run=dry_run)
+        written += 1
+        detail.append({"smt_order_code": plan["smt_order_code"], **res})
+    return {"orders_written": written, "orders_deferred": deferred,
+            "orders_without_consumption": nothing, "orders": detail}
 
 
 def _lot_unit(db: Session, line_id: int) -> float:

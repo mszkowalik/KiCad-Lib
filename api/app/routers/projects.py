@@ -6,6 +6,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models as M
@@ -936,6 +937,8 @@ def refresh_price_points(comp_id: int, db: Session = Depends(get_db)):
 def project_devices(
     project_id: int,
     state: str = Query("", description="in_stock | allocated | shipped | returned | disposed"),
+    condition: str = Query("", description="ok | faulty | prototype | unidentified"),
+    run_id: int | None = Query(None, description="only devices built in this batch"),
     presence: str = Query("", description="online | offline | unknown"),
     q: str = Query(""),
     limit: int = Query(500, le=2000),
@@ -944,7 +947,13 @@ def project_devices(
     """Every device built for this project, with what the broker says about it.
 
     This is the fleet view the Devices tab draws: what was produced, where it
-    went, and which of them are talking to the broker right now.
+    went, and which of them are talking to the broker right now. With `run_id`
+    it is also the BATCH's device list — the run page draws the same rows.
+
+    **A batch's devices are `DeviceUnit.production_run_id`, never
+    `programming_runs.production_run_id`.** The run carries a copy of the same
+    choice, and the copy is NULL on 6,139 of 6,443 rows because a retro import
+    never guesses a batch. The device answers for every row.
 
     **Presence is a LEFT JOIN and is allowed to be missing.** A device with no
     presence row was never heard on the broker — it may never have been
@@ -963,6 +972,10 @@ def project_devices(
     )
     if state:
         rows = rows.filter(M.DeviceUnit.state == state)
+    if condition:
+        rows = rows.filter(M.DeviceUnit.condition == condition)
+    if run_id is not None:
+        rows = rows.filter(M.DeviceUnit.production_run_id == run_id)
     if q:
         like = f"%{q.strip()}%"
         rows = rows.filter(
@@ -979,6 +992,18 @@ def project_devices(
 
     rows = rows.order_by(M.DeviceUnit.id.desc()).limit(limit).all()
 
+    # Programming attempts per device, one grouped query rather than one per row.
+    ids = [d.id for d, _ in rows]
+    attempts: dict[int, dict] = {}
+    if ids:
+        for dev_id, status, n in (
+            db.query(M.ProgrammingRun.device_unit_id, M.ProgrammingRun.status,
+                     func.count(M.ProgrammingRun.id))
+            .filter(M.ProgrammingRun.device_unit_id.in_(ids))
+            .group_by(M.ProgrammingRun.device_unit_id, M.ProgrammingRun.status).all()
+        ):
+            attempts.setdefault(dev_id, {})[status] = n
+
     def _iso(dt):
         return dt.isoformat() if dt else None
 
@@ -989,8 +1014,14 @@ def project_devices(
             "mac": d.mac or "",
             "serial": d.serial,
             "state": d.state,
+            # WHAT the device is, beside WHERE it is. A unit that is present but
+            # unsellable reads `in_stock` + `faulty`, and collapsing the two is
+            # what once forced 32 shelf units to be filed as destroyed.
+            "condition": d.condition or "ok",
             "last_status": d.last_status,
             "production_run_id": d.production_run_id,
+            # {status: count} over every programming attempt on this device.
+            "attempts": attempts.get(d.id, {}),
             "presence": (
                 {
                     "online": p.online,
@@ -1010,12 +1041,16 @@ def project_devices(
     ]
     # Counted over the WHOLE project, not over the page, so the summary does
     # not change meaning when a filter or the limit is applied.
-    base = (
+    base_q = (
         db.query(M.DeviceUnit.id, M.DevicePresence.online)
         .outerjoin(M.DevicePresence, M.DevicePresence.device_unit_id == M.DeviceUnit.id)
         .filter(M.DeviceUnit.project_id == project_id)
-        .all()
     )
+    # Scoped to the batch when one is asked for, so "3 of 1025" on a run page
+    # does not silently mean "3 of the whole project".
+    if run_id is not None:
+        base_q = base_q.filter(M.DeviceUnit.production_run_id == run_id)
+    base = base_q.all()
     summary = {
         "total": len(base),
         "online": sum(1 for _, o in base if o is True),

@@ -214,6 +214,10 @@ _PHASE1_DDL = (
          WHERE external_line_id = '' AND label ~ 'SMT[A-Za-z0-9-]+'"""),
     # Draws become voidable instead of deletable, so an import that superseded a
     # forecast can be reversed. Every read filters `voided_at IS NULL`.
+    # A draw may now exist with no run: the stock left the shelf, and who pays
+    # is a later, separate judgement. See `ComponentConsumption.run_id`.
+    ("component_consumptions.run_id_nullable",
+     "ALTER TABLE component_consumptions ALTER COLUMN run_id DROP NOT NULL"),
     ("component_consumptions.voided_at",
      "ALTER TABLE component_consumptions ADD COLUMN IF NOT EXISTS voided_at timestamptz"),
     ("component_consumptions.void_reason",
@@ -233,8 +237,11 @@ _PHASE1_DDL = (
     ("deployments.kind",
      "ALTER TABLE deployments ADD COLUMN IF NOT EXISTS "
      "kind varchar(20) NOT NULL DEFAULT 'flash'"),
-    ("deployments.kind.backfill",
-     "UPDATE deployments SET kind = 'test' WHERE kind = 'flash' AND name ILIKE '%% test'"),
+    # The backfill that read a deployment's KIND out of its NAME has been
+    # removed (user decision 2026-09-18). It ran on every boot, so a deployment
+    # created tomorrow and called "… test" would be silently reclassified — a
+    # guess from a text string, stored as a fact about what the bench does.
+    # The historical rows it filled keep their value; new ones are set by hand.
     # The DEFAULT ticked on a new batch of this project. False on every test
     # deployment and true on everything else, so a deploy lands with NO test
     # required anywhere (user decision 2026-09-16): a fleet cannot go unverified
@@ -243,8 +250,8 @@ _PHASE1_DDL = (
     ("deployments.active",
      "ALTER TABLE deployments ADD COLUMN IF NOT EXISTS "
      "active boolean NOT NULL DEFAULT false"),
-    ("deployments.active.backfill",
-     "UPDATE deployments SET active = true WHERE kind <> 'test'"),
+    # Removed with the backfill above, which it depended on: it turned every
+    # deployment the name-guess had NOT called a test into an active one.
     # Whether a batch's units must pass the test, and the copy each programming
     # run keeps of that answer. Both default false: every run already recorded
     # required nothing, and a new rule must never re-judge a finished device.
@@ -265,6 +272,20 @@ _PHASE1_DDL = (
     # JLC's per-(order, part) `componentSource`: who actually supplied the part.
     ("jlc_imports.bom_info",
      "ALTER TABLE jlc_imports ADD COLUMN IF NOT EXISTS bom_info jsonb"),
+    # JLC's own batch status, so a cancelled order stops reading as work to do.
+    ("jlc_imports.jlc_status",
+     "ALTER TABLE jlc_imports ADD COLUMN IF NOT EXISTS "
+     "jlc_status varchar(20) NOT NULL DEFAULT ''"),
+    # WHO SUPPLIED a substituted part, which was being inferred from the
+    # absence of a draw. `create_all` builds a missing TABLE and never a
+    # missing COLUMN, so a field added to a table that already shipped needs
+    # its own line here.
+    ("run_substitutions.supplied_by",
+     "ALTER TABLE run_substitutions ADD COLUMN IF NOT EXISTS "
+     "supplied_by varchar(20) NOT NULL DEFAULT ''"),
+    ("run_substitutions.supplier_source",
+     "ALTER TABLE run_substitutions ADD COLUMN IF NOT EXISTS "
+     "supplier_source varchar(40) NOT NULL DEFAULT ''"),
     # Per-order fee breakdown (orderCountTolls / smtPriceInfo) — what lets an
     # invoice line be split into vendor-neutral production steps.
     ("jlc_imports.fee_info",
@@ -345,6 +366,14 @@ _PHASE1_DDL = (
      "ALTER TABLE device_units ADD COLUMN IF NOT EXISTS state varchar(20) NOT NULL DEFAULT ''"),
     ("device_units.production_run_id",
      "ALTER TABLE device_units ADD COLUMN IF NOT EXISTS production_run_id integer"),
+    # A device's CONDITION, independent of its location. `state` says where the
+    # unit is; this says what it is. Only `ok` may be shipped, so a faulty or
+    # prototype unit can sit in stock, be counted, and never be picked.
+    ("device_units.condition",
+     "ALTER TABLE device_units ADD COLUMN IF NOT EXISTS "
+     "condition varchar(20) NOT NULL DEFAULT 'ok'"),
+    ("ix_device_units_condition",
+     "CREATE INDEX IF NOT EXISTS ix_device_units_condition ON device_units (condition)"),
     ("ix_device_units_state",
      "CREATE INDEX IF NOT EXISTS ix_device_units_state ON device_units (state)"),
     ("ix_device_units_prod_run",
@@ -426,6 +455,22 @@ _PHASE1_DDL = (
     # The device-file pool (`device_files`, `device_file_versions`) is gone:
     # services/flasher/fileset_migrate.py folded it into blobs and file sets
     # (decision 0029) and dropped the tables.
+    #
+    # ONE-OFF, and deliberately NOT a rule. A programming run naming a batch
+    # its device was not built in is NORMAL — a unit reflashed while a later
+    # batch was on the bench belongs to that session's history, and that is the
+    # only place the fact is recorded (user decision 2026-09-19). What happened
+    # on 2026-09-17 was different: the bench had Batch 8 selected, a batch that
+    # is still `planned` and has built nothing, and 31 devices were corrected to
+    # Batch 7 while their 50 attempts kept the mis-selection. Repair exactly
+    # those rows, pinned by batch and date. A general "align the run to its
+    # device" statement would erase every legitimate reflash, on every startup.
+    ("programming_runs.production_run_id 2026-09-17 misselection",
+     "UPDATE programming_runs r SET production_run_id = d.production_run_id "
+     "FROM device_units d WHERE d.id = r.device_unit_id "
+     "AND r.production_run_id = 19 AND d.production_run_id IS NOT NULL "
+     "AND r.production_run_id <> d.production_run_id "
+     "AND r.started_at < '2026-09-18'"),
 )
 
 # name -> "ok" | "failed: ..."; served by GET /api/health/schema.
@@ -580,26 +625,6 @@ def _flasher_bundle_migration(conn) -> None:
         if has_col(table, "deployment_script_version_id") and has_col(table, "deployment_version_id"):
             conn.execute(text(f"ALTER TABLE {table} DROP COLUMN deployment_script_version_id"))
     log.info("flasher: release tables retired")
-
-
-def _migrate_run_sales() -> None:
-    """Decision 0003 §10: a run's sale columns become an order line and one
-    unserialized delivery, once per run (`uq_order_line_migrated_run`). The
-    run's columns stay, so the register's figures do not move."""
-    try:
-        from .db import SessionLocal
-        from .services import orders
-
-        db = SessionLocal()
-        try:
-            res = orders.migrate_from_runs(db)
-            db.commit()
-            if res["lines"]:
-                print(f"sales orders: migrated {res['lines']} run(s) into {res['orders']} new order(s)")
-        finally:
-            db.close()
-    except Exception as e:  # noqa: BLE001 — never block startup on the migration
-        log.warning(f"sales-order migration did not complete: {type(e).__name__}: {e}")
 
 
 @app.on_event("startup")
@@ -925,7 +950,6 @@ def startup() -> None:
     # checked before the old tables are dropped, reported on /health/schema.
     from .services.flasher.fileset_migrate import migrate as migrate_file_sets
     migrate_file_sets(engine)
-    _migrate_run_sales()
     try:
         from .db import SessionLocal
         from .services import appconfig

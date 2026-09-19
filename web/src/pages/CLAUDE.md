@@ -166,28 +166,28 @@ and the copy was worse.
 - **Orders live on Production → Orders** (`pages/Orders.tsx`,
   `pages/OrderDetail.tsx`, decision 0003). The Orders page is also the ONE
   home of finished-device stock ("Devices on the shelf"), which counts
-  recorded devices next to legacy units without a serial. **That card lists
+  recorded devices next to legacy units without a serial. Stock splits into
+  `devices_available` and `devices_held`: only a device whose `condition` is
+  `ok` may ship, so a faulty or prototype unit is counted and visible but
+  never picked (decision 0032). **That card lists
   every batch that was built, empty or not** — it filters on `r.status`
   (planned batches hold nothing yet) and NEVER on what is left on a row.
   Selecting by `stock > 0 || overdrawn > 0` deleted six of seven dongle
   batches from the page the day `built` started counting passed devices
   instead of the typed run quantity (decision 0007), because everything they
   held had shipped. A batch is a fact; its remaining stock is a number on it.
-  `Recorded` (`qty_recorded`, what the run says) sits beside `Built` (devices
-  that passed), and `overbuilt()` marks the row when built is above recorded —
-  the one impossible arithmetic left, since a device-tracked batch can no
-  longer report `overdrawn`. Under-building is ordinary attrition and is not
-  marked. The Ship card
-  draws devices oldest-first from the batches the user ticks; returns,
+  `Recorded` sits beside `Built`, and `overbuilt()` marks a row where built is
+  above recorded. Under-building is ordinary attrition and is not marked. **The Ship card takes SERIALS ONLY** — no quantity, no batch picker,
+  because a number with no device behind it is a guess (decision 0032). Its
+  batch table is read-only, there to show the shelf while you scan; returns,
   repairs and disposals are on the DEVICE page (`components/DeviceHistoryCard.tsx`),
   because they are events in a device's history. The run page's sale card
   stays until the register reads the orders; it now points at the order.
-  **Counting the shelf is on this page too** (`CountShelfCard`, decisions 0027
-  and 0028): it corrects the number the stock card owns, so it presses TWICE —
-  the first press only asks for the plan, which names every order line whose
-  delivered quantity moves, because writing rewrites the history of invoiced
-  shipments. `parseScanSheet` decides nothing: it strips a scanner's CSV and
-  the SERVER names the codes that are not devices, which get a "Drop N" button.
+  **There is no stock-count card any more** (decision 0032): nothing corrects
+  stock automatically, because a mechanism that removes guesses by writing new
+  ones is not a correction. `parseScanSheet` stays and decides nothing — it
+  strips a scanner's CSV export, and the SERVER names any code that is not a
+  device rather than shipping a short list.
   A delivery recorded in error is taken back on its row, never deleted, and the
   `×` follows `sh.deletable`, NOT `sh.devices.length` — a reversed shipment
   carries no device but still carries events. Ship takes scanned serials now.

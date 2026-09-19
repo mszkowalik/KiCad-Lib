@@ -2595,6 +2595,8 @@ export interface RunInfo {
   order_date?: string;
   created_at: string;
   attachment_count: number;
+  /** Devices this batch MADE (`DeviceUnit.production_run_id`), not the retired
+   *  `run_devices` registry. */
   device_count: number;
   effective?: RunEffective | null;
   overrides?: Record<string, unknown>;
@@ -2770,6 +2772,8 @@ export interface RunCostLineRow {
   currency: string;
   allocate: string;
   component_id: number | null;
+  /** the linked library part's name, "" when the line is not linked */
+  component_name?: string;
   mpn: string;
   lcsc: string;
   description: string;
@@ -2859,10 +2863,12 @@ export interface InvoiceRegister {
     direct_usd: number | null;
     components_usd: number | null;
     total_usd: number | null;
-    /** price per device x units billed, converted at the ORDER date */
-    revenue_usd: number | null;
-    margin_usd: number | null;
-    margin_pct: number | null;
+    /** devices recorded as produced on the batch */
+    produced: number;
+    /** what ONE of them cost — the figure a shipped unit carries onto its
+     *  order. Null until the batch has device records. A batch has no revenue
+     *  and no margin (decision 0043). */
+    unit_cost_usd: number | null;
   }>;
   pool: {
     purchased_usd: number | null;
@@ -2925,6 +2931,10 @@ export interface SplitChild {
   /** "excluded" records the share without charging it to anyone */
   allocate?: string;
   mpn?: string;
+  lcsc?: string;
+  /** the library part this share bought, when it bought one */
+  component_id?: number | null;
+  component_name?: string;
   notes?: string;
   plan_key?: string;
   plan_kind?: string;
@@ -2999,13 +3009,130 @@ export function updateCostLine(
   lineId: number,
   body: Partial<Pick<RunCostLineRow,
     "run_id" | "project_id" | "label" | "kind" | "basis" | "qty" | "unit_price" |
-    "allocate" | "notes" | "plan_key" | "plan_kind" | "plan_ref">>,
+    "allocate" | "notes" | "plan_key" | "plan_kind" | "plan_ref" |
+    "component_id" | "mpn" | "lcsc">>,
 ): Promise<RunCostLineRow> {
   return request(`/api/run-cost-lines/${lineId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+/** Apply every staged line edit on a document as ONE transaction.
+ *
+ *  A per-field save cannot express a SWAP: moving the component mapping of
+ *  position A onto B and B's onto A is legal, but either half alone strands the
+ *  draws priced against it. The server guards the batch's NET effect and writes
+ *  all of it or none (decision 0040).
+ */
+export function editDocumentLines(
+  docId: number,
+  body: {
+    /** the header fields, changed in the same transaction as the positions */
+    document?: Partial<Pick<RunCostDocumentRow,
+      "supplier" | "doc_number" | "external_id" | "doc_date" | "currency" |
+      "total_amount" | "doc_type" | "notes" | "paid_at" | "fx_rate_usd">>;
+    updates?: (Partial<RunCostLineRow> & { id: number })[];
+    creates?: Record<string, unknown>[];
+    deletes?: number[];
+  },
+): Promise<{ updated: number; voided: number; created: number; document: RunCostDocumentRow }> {
+  return request(`/api/run-documents/${docId}/lines`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export interface SupplyCoverageRow {
+  lcsc: string;
+  mpn: string;
+  sources: string[];
+  orders: string[];
+  /** what the supplier says came out of OUR stock, so what we must have drawn */
+  expected_from_pool: number;
+  /** what the supplier supplied itself, billed inside the assembly fee */
+  from_supplier: number;
+  total: number;
+  drawn: number;
+  delta: number;
+  supplier_mismatch: boolean;
+  /** pieces this batch bought directly, outside the pool */
+  bought_for_batch?: number;
+  verdict:
+    | "ok"
+    | "no_draw"
+    | "over_drawn"
+    | "short"
+    | "drawn_but_supplier_supplied"
+    | "bought_for_batch_and_drawn"
+    | "supplier_numbers_disagree";
+}
+
+export interface SupplyCoverage {
+  run_id: number;
+  /** false when no linked order has a cached supplier BOM — no verdict is made up */
+  known: boolean;
+  /** the double-supply half needs no supplier BOM and still ran */
+  checked_without_bom: boolean;
+  orders: string[];
+  orders_without_bom: string[];
+  rows: SupplyCoverageRow[];
+  unexpected_draws: { lcsc: string; drawn: number }[];
+  counts: Record<string, number>;
+}
+
+export interface BatchSupplyRow {
+  key: string;
+  lcsc: string;
+  mpn: string;
+  component_id: number | null;
+  qty: number;
+  amount: number;
+  amount_usd: number;
+  unit_usd: number | null;
+  currency: string;
+  suppliers: string[];
+  lines: number[];
+}
+
+/** Parts bought straight for this batch, which never entered the shared pool. */
+export function getBatchSupply(
+  runId: number, signal?: AbortSignal,
+): Promise<{ rows: BatchSupplyRow[] }> {
+  return request(`/api/runs/${runId}/batch-supply`, { signal });
+}
+
+/** Is every part this batch used accounted for exactly once? The supplier's own
+ *  BOM is the expectation (decision 0041). */
+export function getSupplyCoverage(runId: number, signal?: AbortSignal): Promise<SupplyCoverage> {
+  return request(`/api/runs/${runId}/supply-coverage`, { signal });
+}
+
+export interface SupplierBreakdown {
+  ok: boolean;
+  reason?: string;
+  smt_order_code?: string;
+  children: {
+    lcsc: string; mpn: string; designator: string; source: string;
+    qty_supplied: number; unit_price: number; amount: number;
+    qty_from_pool: number; qty_total: number; loss: number;
+    supplier_mismatch: boolean; price_checks: boolean;
+  }[];
+  parts_total?: number;
+  printed_total?: number;
+  residual?: number;
+  reconciles?: boolean;
+  mismatched_rows?: string[];
+  price_check_failed?: string[];
+}
+
+/** What the supplier's own BOM says a parts lump bought. Reads only. */
+export function getSupplierBreakdown(
+  lineId: number, signal?: AbortSignal,
+): Promise<SupplierBreakdown> {
+  return request(`/api/run-cost-lines/${lineId}/supplier-breakdown`, { signal });
 }
 
 export function resolveDocumentParts(
@@ -3076,18 +3203,13 @@ export interface RunActuals {
   qty_good_source?: "devices" | "typed";
   /** what is still stored on the run, for the legacy editor only */
   qty_good_typed?: number | null;
-  qty_sold: number | null;
-  sale_unit_price: number | null;
-  sale_currency: string;
-  customer: string;
-  order_ref: string;
-  order_date: string;
-  /** price per device x units billed, in `currency` */
-  revenue: number | null;
-  margin: number | null;
-  /** margin over REVENUE (gross margin), null when nothing is priced */
-  margin_pct: number | null;
-  margin_per_device: number | null;
+  /** What ONE device of this batch cost, over the devices recorded as produced.
+   *  Null until it has device records — a cost divided by a PLANNED quantity is
+   *  an estimate, and this figure is carried onto real orders.
+   *
+   *  It is the ONLY thing a batch contributes to a sale. Revenue and margin
+   *  belong to the order; the two meet per unit (decision 0043). */
+  per_device_cost: number | null;
   components: number | null;
   components_by_basis: Record<string, number | null>;
   direct: number | null;
@@ -3212,6 +3334,182 @@ export function addRunConsumption(
 ): Promise<{ id: number; unit_cost_usd: number; basis: string }> {
   return request(`/api/runs/${runId}/consumption`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** A part FITTED on a batch where the design specifies another one.
+ *
+ *  Per batch and per designator. The design is never rewritten — the snapshot
+ *  records what was specified, this records what went on the board. */
+export interface RunSubstitution {
+  /** what a READER should see: the library's manufacturer part number when the
+   *  part is in the library, else exactly the string that was entered */
+  specified_name?: string;
+  fitted_name?: string;
+  /** true when `*_name` came from the LIBRARY, so nothing may override it */
+  specified_in_library?: boolean;
+  fitted_in_library?: boolean;
+  id: number;
+  run_id: number;
+  board: string;
+  variant: string;
+  designator: string;
+  /** the supplier's own reference for the same position, when it differs */
+  supplier_designator: string;
+  specified_lcsc: string;
+  specified_mpn: string;
+  specified_component_id: number | null;
+  fitted_lcsc: string;
+  fitted_mpn: string;
+  fitted_component_id: number | null;
+  qty_per_device: number;
+  /** WHO DECIDED: "supplier" — the factory changed it; "us" — we asked for it */
+  source: string;
+  /** WHO SUPPLIED it: "supplier" (their own shelf, billed inside the assembly
+   *  fee, so no pool draw exists), "pool" (our consigned stock), or "both".
+   *  Stored, never inferred from a missing draw — a part we supplied and never
+   *  drew is a missing draw, and reading it the other way would hide it. */
+  supplied_by: string;
+  /** JLC's own word: "shop" | "preSale" | "preSaleAndShop" */
+  supplier_source: string;
+  evidence: string;
+  note: string;
+  /** false while the schematic still specifies the superseded part */
+  design_updated: boolean;
+  decided_by: string;
+  decided_at: string | null;
+}
+
+/** A position the supplier's own BOM says changed, not yet recorded. */
+export interface SubstitutionCandidate {
+  run_id: number;
+  run_label: string;
+  project_id: number;
+  order: string;
+  batch: string;
+  when: string;
+  /** the supplier's reference — their stored BOM may use the board's older numbering */
+  supplier_designator: string;
+  /** the DESIGN's reference, recovered through the part the design still names */
+  designator: string;
+  specified_lcsc: string;
+  specified_mpn: string;
+  specified_component_id: number | null;
+  fitted_lcsc: string;
+  fitted_mpn: string;
+  fitted_describe: string;
+  qty_per_device: number;
+  board: string;
+  variant: string;
+  /** JLC's own word: "update" means a human changed the line, "auto" means their
+   *  matcher resolved the code we uploaded */
+  match_type: string;
+  supplier_source: string;
+  /** "supplier" | "pool" | "both", derived from `supplier_source` */
+  supplied_by: string;
+  /** the superseded part is still in the latest snapshot — the actionable ones */
+  still_in_design: boolean;
+  evidence: string;
+}
+
+/** A recorded substitution whose design has not caught up — the standing
+ *  finding that stops the superseded part being bought again. */
+export interface SubstitutionDrift {
+  substitution_id: number;
+  run_id: number;
+  run_label: string;
+  project_id: number;
+  designator: string;
+  specified_lcsc: string;
+  specified_mpn: string;
+  fitted_lcsc: string;
+  fitted_mpn: string;
+  specified_still_held: number;
+}
+
+/** A design position this batch shows no sign of fitting: absent from the
+ *  supplier's own BOM for the batch and from every draw. */
+export interface UnusedPosition {
+  lcsc: string;
+  mpn: string;
+  refs: string;
+  qty_per_device: number;
+}
+
+export function getRunSubstitutions(
+  runId: number,
+  signal?: AbortSignal,
+): Promise<{
+  substitutions: RunSubstitution[];
+  /** false when no supplier BOM is cached for the batch — then the absence of
+   *  a part means nothing and `unused` is empty by construction */
+  has_supplier_bom: boolean;
+  unused: UnusedPosition[];
+}> {
+  return request(`/api/runs/${runId}/substitutions`, { signal });
+}
+
+export function addRunSubstitution(
+  runId: number,
+  body: {
+    designator: string;
+    fitted_lcsc?: string;
+    fitted_mpn?: string;
+    fitted_component_id?: number | null;
+    specified_lcsc?: string;
+    specified_mpn?: string;
+    specified_component_id?: number | null;
+    qty_per_device?: number;
+    source?: string;
+    supplied_by?: string;
+    supplier_source?: string;
+    supplier_designator?: string;
+    evidence?: string;
+    note?: string;
+    design_updated?: boolean;
+  },
+): Promise<RunSubstitution & { batch_id: number }> {
+  return request(`/api/runs/${runId}/substitutions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateRunSubstitution(
+  subId: number,
+  q: { design_updated?: boolean; note?: string },
+): Promise<RunSubstitution> {
+  const p = new URLSearchParams();
+  if (q.design_updated !== undefined) p.set("design_updated", String(q.design_updated));
+  if (q.note !== undefined) p.set("note", q.note);
+  return request(`/api/substitutions/${subId}?${p.toString()}`, { method: "PUT" });
+}
+
+export function deleteRunSubstitution(subId: number): Promise<{ status: string }> {
+  return request(`/api/substitutions/${subId}`, { method: "DELETE" });
+}
+
+export function getDetectedSubstitutions(
+  signal?: AbortSignal,
+): Promise<{ candidates: SubstitutionCandidate[]; drift: SubstitutionDrift[] }> {
+  return request("/api/substitutions/detected", { signal });
+}
+
+/** Set how much of ONE part a batch used, as an ABSOLUTE figure — the
+ *  end-of-production workflow. Idempotent: sending the same number twice
+ *  changes nothing, and correcting it later is the same call, so a mistake
+ *  never needs a compensating adjustment. Refuses a part JLC reported itself. */
+export function setUsedQty(
+  runId: number,
+  body: { component_id?: number | null; mpn?: string; lcsc?: string; qty: number;
+          consumed_at?: string; note?: string },
+): Promise<{ status: "created" | "updated" | "removed" | "unchanged"; id?: number;
+             qty: number; was?: number; unit_cost_usd?: number; basis?: string }> {
+  return request(`/api/runs/${runId}/consumption/for-part`, {
+    method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -3502,28 +3800,117 @@ export function getJlcStock(currency?: string, signal?: AbortSignal): Promise<Jl
   return request(`/api/jlc/stock${qs}`, { signal });
 }
 
-export function syncJlcStock(): Promise<{ items: number; valued: number; synced_at: string }> {
+export function syncJlcStock(): Promise<{
+  items: number;
+  valued: number;
+  synced_at: string;
+  /** JLC's per-part movement ledger, fetched with the balance. */
+  ledger?: JlcLedgerSync | { error: string };
+}> {
   return request("/api/jlc/stock/sync", { method: "POST" });
 }
 
-export interface JlcUsageRow {
-  project_id: number;
-  project_name: string;
-  parts: {
-    lcsc: string;
-    refs: string;
-    qty_per_device: number;
-    board: string;
-    held: number;
-    /** Soft pointer — NULL when the BOM line matched no library component. */
-    component_id: number | null;
-    mpn: string;
-  }[];
+export interface JlcLedgerSync {
+  parts: number;
+  rows_added: number;
+  replays_to_balance: number;
+  does_not_replay: string[];
+  synced_at: string;
 }
 
-export function getJlcStockUsage(signal?: AbortSignal): Promise<JlcUsageRow[]> {
-  return request("/api/jlc/stock/usage", { signal });
+/** One movement in JLCPCB's OWN ledger for a consigned part. */
+export interface JlcLedgerRow {
+  changed_at: string;
+  change_qty: number;
+  qty_before: number;
+  qty_after: number;
+  paid_usd: number;
+  business_code: string;
+  business_type: number;
+  /** JLC cancelled this movement — it states a quantity but nothing moved. */
+  void: boolean;
+  remark: string;
 }
+
+export interface JlcPartLedger {
+  lcsc: string;
+  mpn: string;
+  rows: JlcLedgerRow[];
+  balance: number;
+}
+
+/** A movement JLC recorded that the platform has no event for. */
+export interface JlcUnexplainedRow {
+  lcsc: string;
+  mpn: string;
+  changed_at: string;
+  change_qty: number;
+  qty_after: number;
+  business_code: string;
+  kind: "smt_order" | "parts_order" | "warehouse" | "other";
+  paid_usd: number;
+  remark: string;
+}
+
+/** A purchase WE booked that JLC's ledger never received — a cancelled lot. */
+export interface JlcUnconfirmedLine {
+  lcsc: string;
+  parts_order: string;
+  line_ids: number[];
+  booked_qty: number;
+  ledger_receipt_qty: number;
+  missing_qty: number;
+  usd: number;
+}
+
+export interface JlcLedgerBookable {
+  change_key_id: number;
+  lcsc: string;
+  mpn: string;
+  qty: number;
+  date: string;
+  business_code: string;
+  remark: string;
+}
+
+export interface JlcLedgerReport {
+  jlc_rows_we_cannot_explain: JlcUnexplainedRow[];
+  our_lines_jlc_never_received: JlcUnconfirmedLine[];
+  bookable: JlcLedgerBookable[];
+  totals: {
+    parts: number;
+    ledger_rows: number;
+    unexplained_rows: number;
+    netted_out_rows: number;
+    unconfirmed_lines: number;
+    unconfirmed_qty: number;
+  };
+}
+
+export function getJlcLedgerReport(signal?: AbortSignal): Promise<JlcLedgerReport> {
+  return request("/api/jlc/stock/ledger", { signal });
+}
+
+export function getJlcPartLedger(lcsc: string, signal?: AbortSignal): Promise<JlcPartLedger> {
+  return request(`/api/jlc/stock/ledger/${encodeURIComponent(lcsc)}`, { signal });
+}
+
+/** Write chosen ledger movements as uncharged draws. Dry run unless told. */
+export function bookJlcLedgerRows(
+  ids: number[],
+  dryRun = true,
+): Promise<{
+  dry_run: boolean;
+  written: (JlcLedgerBookable & { unit_cost_usd: number; usd: number })[];
+  refused: (JlcLedgerBookable & { why: string })[];
+  totals: { rows: number; qty: number; usd: number };
+  batch_id?: number;
+}> {
+  const p = new URLSearchParams({ dry_run: String(dryRun) });
+  if (ids.length) p.set("change_key_ids", ids.join(","));
+  return request(`/api/jlc/stock/ledger/book?${p.toString()}`, { method: "POST" });
+}
+
 
 // ------------------------------------------------------------- parts stock
 // The same parts measured two ways: what JLC physically HOLDS at market price,
@@ -3540,8 +3927,17 @@ export interface PartsStockRow {
   /** money side: pool quantities */
   bought: number;
   drawn: number;
+  /** written off — genuine attrition, and a defect signal */
   lost: number;
+  /** consumed by ANOTHER project's assembly order. Not a loss, so it is kept off
+   *  `lost`: counting the two together reported 1,094 written-off pieces when
+   *  the real attrition was zero. */
+  external: number;
   remaining_qty: number;
+  /** what the pool said we had at the MOMENT JLC counted — `delta_qty` compares
+   *  this against `held_qty`, because comparing today's pool against a snapshot
+   *  measures elapsed time rather than disagreement */
+  remaining_at_sync_qty: number;
   paid_unit_usd: number | null;
   paid_value_usd: number;
   /** physical side: JLC consignment */
@@ -3556,6 +3952,24 @@ export interface PartsStockRow {
    *  jlc_only = JLC holds it and we have NO purchase — a missing invoice */
   state: "both" | "pool_only" | "jlc_only";
   unknown_rate: boolean;
+  /** Where the part is used, from each project's latest READY snapshot — one
+   *  entry per project AND board, since a component appears on several boards of
+   *  one project under different reference designators. */
+  projects: PartUsage[];
+  project_count: number;
+  /** Summed over the boards that use it: what ONE device of everything costs. */
+  qty_per_device: number;
+  /** How many devices the stock on hand covers — JLC's count for a consigned
+   *  part, our own remainder for one JLC never sees. NULL when nothing uses it. */
+  devices_coverable: number | null;
+}
+
+export interface PartUsage {
+  project_id: number;
+  project_name: string;
+  board: string;
+  refs: string;
+  qty_per_device: number;
 }
 
 export interface PartsStock {
@@ -3575,6 +3989,10 @@ export interface PartsStock {
     missing_invoice_value_usd: number | null;
     pool_only_parts: number;
     unvalued_parts: number;
+    /** the date every quantity comparison is made AS OF, in JLC's calendar */
+    compared_as_of: string | null;
+    /** stock events recorded after the snapshot — the count is that far behind */
+    events_since_sync: number;
   };
   last_sync: string | null;
 }
@@ -3670,6 +4088,11 @@ export interface JlcQueueOrder {
   /** "decided" once a decision is recorded — the proposal then restates it. */
   confidence: string;
   decided: boolean;
+  /** A decision that was never applied has written NOTHING — no draw, no charge.
+   *  Treating it as settled is what hid 441 consigned pieces for three weeks. */
+  applied: boolean;
+  /** JLC's own BOM is cached, so `componentSource` (who supplied each part) is known. */
+  bom_fetched: boolean;
   /** What JLC itself reported, kept when a decision overrides `panel_factor`. */
   jlc_panel_factor: number | null;
   /** Parts JLC sourced from its own stock — not itemised, so the BOM vote is a floor. */
@@ -3700,6 +4123,12 @@ export interface JlcQueue {
     pending_invoiced_usd: number;
     /** What booking every pending order as external would remove from run costing. */
     pending_stock_value_usd: number;
+    /** Decided but never applied — nothing written, and NOT a kind of "decided". */
+    stranded: number;
+    stranded_stock_value_usd: number;
+    /** Orders whose JLC BOM was never fetched, so who supplied each part is unknown. */
+    no_bom: number;
+    no_bom_invoiced_usd: number;
   };
 }
 
@@ -3712,6 +4141,11 @@ export function syncJlcImport(): Promise<{
   fetched: number;
   already_staged: number;
   failed: number;
+  /** Batches JLC reports as cancelled — skipped, never invoiced, not an error. */
+  cancelled: number;
+  fee_info_fetched: number;
+  /** Assembly-order BOMs cached this sync — evidence only, no money moves. */
+  boms_fetched: number;
 }> {
   return request("/api/jlc/import/sync", { method: "POST" });
 }
@@ -4043,9 +4477,14 @@ export interface JlcStagedRow {
   doc_date: string;
   total_amount: number | null;
   presale_amount: number | null;
-  /** `staged` until an apply stamps it. Left un-stamped by the 2026-07 backfill,
-   *  which is why 37 rows read `staged` against 24 documents actually imported. */
+  /** OUR lifecycle: `staged` until an apply stamps it `imported`. Left
+   *  un-stamped by the 2026-07 backfill, which is why 37 rows read `staged`
+   *  against 24 documents actually imported. */
   status: string;
+  /** JLC's OWN status for the batch, from the order listing:
+   *  `shipped` | `inProduction` | `cancelled` | `waitPay` | `waitReview`.
+   *  Empty on a row synced before this was captured. */
+  jlc_status: string;
   document_id: number | null;
   has_payload: boolean;
   /** The fetch SUCCEEDED and JLC returned nothing — no invoice issued for this
@@ -4561,8 +5000,13 @@ export interface ProjectDeviceRow {
   mac: string;
   serial: string;
   state: string;
+  /** WHAT the device is, beside WHERE `state` says it is: ok | faulty |
+   *  prototype | unidentified. Only `ok` may ship. */
+  condition: string;
   last_status: string;
   production_run_id: number | null;
+  /** {status: count} over every programming attempt on this device. */
+  attempts: Record<string, number>;
   presence: {
     online: boolean | null;
     last_seen_at: string | null;
@@ -4582,13 +5026,19 @@ export interface ProjectDevicesPayload {
   truncated: boolean;
 }
 
+/** With `runId` this is the BATCH's device list, and `summary` is scoped to it.
+ *  A batch's devices are found by `DeviceUnit.production_run_id`, never by
+ *  `programming_runs.production_run_id` — the run holds a copy of the same
+ *  choice, and the copy is NULL on 6,139 of 6,443 rows. */
 export function getProjectDevices(
   projectId: number,
-  opts: { state?: string; presence?: string; q?: string } = {},
+  opts: { state?: string; condition?: string; runId?: number; presence?: string; q?: string } = {},
   signal?: AbortSignal,
 ): Promise<ProjectDevicesPayload> {
   const qs = new URLSearchParams();
   if (opts.state) qs.set("state", opts.state);
+  if (opts.condition) qs.set("condition", opts.condition);
+  if (opts.runId != null) qs.set("run_id", String(opts.runId));
   if (opts.presence) qs.set("presence", opts.presence);
   if (opts.q) qs.set("q", opts.q);
   const tail = qs.toString();
@@ -7244,12 +7694,19 @@ export interface FinishedStockRow {
   /** the quantity typed on the run (ordered or assembled); `built` counts passed devices instead when the batch has any */
   qty_recorded: number;
   devices_produced: number;
+  /** everything on the shelf, whatever its condition */
   devices_in_stock: number;
+  /** what a shipment may draw: in stock AND condition `ok` */
+  devices_available: number;
+  /** on the shelf but not sellable, by condition — {faulty: 32} */
+  devices_held: Record<string, number>;
   devices_shipped: number;
   unserialized_shipped: number;
   legacy_stock: number;
   overdrawn: number;
   stock: number;
+  /** `stock` minus the units held back */
+  available: number;
   unit_cost_usd?: number | null;
   stock_value_usd?: number | null;
 }
@@ -7433,64 +7890,6 @@ export function reverseShipment(
   });
 }
 
-/** A physical count of one project's shelf, and what it would correct
- *  (decision 0027). `dry_run` is the default on the server too: the first
- *  answer is always the plan. */
-export interface StockCountIn {
-  device_ids?: number[];
-  serials?: string[];
-  refill?: "same_batch" | "any_batch" | "none";
-  note?: string;
-  dry_run: boolean;
-}
-
-export interface StockCountSlot {
-  device_id: number;
-  serial: string;
-  shipment_id: number;
-  shipped_at?: string;
-  order_id?: number;
-  order_line_id: number | null;
-  production_run_id: number | null;
-  counts?: boolean;
-}
-
-export interface StockCountPlan {
-  dry_run: boolean;
-  refill: string;
-  already_in_stock: number[];
-  skipped: { device_id: number; serial: string; state: string; reason: string }[];
-  freed: StockCountSlot[];
-  refilled: {
-    slot_device_id: number;
-    slot_serial: string;
-    by_device_id: number;
-    by_serial: string;
-    shipment_id: number;
-    order_line_id: number | null;
-    production_run_id: number | null;
-  }[];
-  unfilled: StockCountSlot[];
-  lines: {
-    order_line_id: number;
-    order_id: number;
-    order_ref: string;
-    product: string;
-    qty_ordered: number;
-    qty_shipped_before: number;
-    qty_shipped_after: number;
-    status_before: string;
-    status_after?: string;
-  }[];
-}
-
-export function reconcileStock(body: StockCountIn): Promise<StockCountPlan> {
-  return request("/api/stock/reconcile", {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify(body),
-  });
-}
 
 export function getFinishedStock(projectId?: number, signal?: AbortSignal): Promise<FinishedStock> {
   return request(`/api/finished-stock${projectId ? `?project_id=${projectId}` : ""}`, { signal });

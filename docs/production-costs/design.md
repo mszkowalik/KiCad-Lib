@@ -3696,6 +3696,14 @@ finding.** Nothing in the platform compares the pool to the supplier's own count
 precisely why 6,368 phantom units and $167.95 of double-charging sat undetected
 behind two green identities.
 
+> **Resolved 2026-09-19.** The quantity check is `run_actuals.parts_stock`, and
+> the five parts above were not JLC reserving stock: every one is a movement JLC
+> made and stated only in its own inventory ledger — four warehouse picks and 20
+> pieces of C157472 "used in 2nd Process" in 2023. The ledger is synced now
+> ([0037](../decisions/0037-the-supplier-keeps-the-receipts.md)) and all 72 parts
+> agree. `/api/jlc/stock/usage` was REMOVED the same day: it listed only parts JLC
+> holds, and `parts_stock` now carries each part's projects itself.
+
 ---
 
 ## The goal restated, and the four gaps that blocked it (2026-07-28)

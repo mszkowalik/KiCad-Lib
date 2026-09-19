@@ -71,6 +71,7 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
       setSyncMsg(
         `${r.batches_visible} batches visible · ${r.fetched} newly fetched · ` +
           `${r.already_staged} already staged` +
+          (r.boms_fetched ? ` · ${r.boms_fetched} BOMs cached` : "") +
           (r.failed ? ` · ${r.failed} failed` : ""),
       );
       load();
@@ -220,8 +221,12 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
 
   if (loading && !queue) return <Spinner label="Loading JLC import queue…" />;
 
+  // "Unfinished" is undecided OR decided-and-never-applied. The second half
+  // matters: a decision writes nothing by itself, so filtering on "has a
+  // decision" hides orders whose stock has not moved and whose run is still
+  // uncharged — exactly how SMT026080463762 vanished for three weeks.
   const orders = (queue?.orders ?? []).filter((o) =>
-    onlyPending ? !o.decision || o.decision.outcome === "pending" : true,
+    onlyPending ? !o.decision || o.decision.outcome === "pending" || !o.applied : true,
   );
   const c = queue?.counts;
 
@@ -245,7 +250,7 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
             checked={onlyPending}
             onChange={(e) => setOnlyPending(e.target.checked)}
           />{" "}
-          only undecided
+          only unfinished
         </label>
         {syncMsg && <span className="muted">{syncMsg}</span>}
       </div>
@@ -254,17 +259,38 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
         <div className="toolbar">
           <span className="pill neutral">{c.total} orders</span>
           <span className={`pill ${c.pending ? "warn" : "ok"}`}>{c.pending} undecided</span>
-          <span className="pill ok">{c.decided} decided</span>
+          <span className="pill ok">{c.decided - c.stranded} applied</span>
+          {c.stranded > 0 && (
+            <span
+              className="pill err"
+              title="Decided, but never applied — no stock moved and no run was charged."
+            >
+              {c.stranded} decided, not applied
+            </span>
+          )}
+          {c.no_bom > 0 && (
+            <span
+              className="pill warn"
+              title="JLC's own BOM was never fetched, so which parts JLC supplied itself is unknown."
+            >
+              {c.no_bom} without a BOM
+            </span>
+          )}
           <span className="muted">
             awaiting a decision: ${c.pending_invoiced_usd.toLocaleString()} invoiced ·{" "}
             ${c.pending_stock_value_usd.toLocaleString()} of stock drawn
+            {c.stranded > 0
+              ? ` · decided but unwritten: $${c.stranded_stock_value_usd.toLocaleString()} of stock`
+              : ""}
           </span>
         </div>
       )}
 
       {orders.length === 0 && (
         <p className="empty">
-          {onlyPending ? "Every assembly order has been decided." : "Nothing staged yet — run a sync."}
+          {onlyPending
+            ? "Every assembly order has been decided and applied."
+            : "Nothing staged yet — run a sync."}
         </p>
       )}
 

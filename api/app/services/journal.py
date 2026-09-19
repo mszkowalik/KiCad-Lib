@@ -54,6 +54,7 @@ JOURNALLED = {
     "jlc_order_decisions",
     "jlc_imports",
     "run_attachments",
+    "run_substitutions",
 }
 
 

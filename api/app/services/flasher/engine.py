@@ -23,6 +23,7 @@ WebSocket protocol (server view):
   recv {t:"rx", data}                       — one console line per message
   recv {t:"log", dir, text}                 — esptool/app lines for the record
   send {t:"prompt", id, field, label, secret} / recv {t:"prompt_result", id, value}
+  send {t:"notice", id, level, code, text, hint} / recv {t:"notice_ack", id, ok, reason}
   send {t:"state", index, total, label, status}
   recv {t:"abort"}
   send {t:"done", status, error?, results}
@@ -39,7 +40,8 @@ from ...config import settings
 from ...db import SessionLocal
 from ... import models as M
 from .. import crypto
-from . import checks, credentials, params as params_svc, protocol, transports, bundle
+from . import (bench_checks, bundle, checks, credentials, params as params_svc,
+               protocol, transports)
 
 BROWSER_OPS = {
     "esp_connect", "erase", "flash", "esp_reset", "await_reenumerate",
@@ -155,6 +157,9 @@ class RunEngine:
         self._flush_task: asyncio.Task | None = None
         self.device_unit_id: int | None = None
         self.spec: dict = {}
+        # Whose name goes on an acknowledged bench check. Filled from the run
+        # row when the spec is built; "bench" until then.
+        self.operator: str = ""
 
     # ------------------------------------------------------------- DB helpers
 
@@ -217,6 +222,7 @@ class RunEngine:
             # param no longer exists; seeding it here keeps `{operator}` usable
             # in a step without trusting the bench for it.
             params.setdefault("operator", run.operator or "")
+            self.operator = run.operator or ""
             return {
                 "project_id": dep.project_id,
                 "production_run_id": prod.id if prod else None,
@@ -365,7 +371,7 @@ class RunEngine:
                     self.rx_q.put_nowait(line)
                 elif t == "log":
                     self.log(str(msg.get("dir", "app"))[:10], str(msg.get("text", "")))
-                elif t in ("result", "prompt_result"):
+                elif t in ("result", "prompt_result", "notice_ack"):
                     fut = self.pending.pop(int(msg.get("id", -1)), None)
                     if fut and not fut.done():
                         fut.set_result(msg)
@@ -411,6 +417,45 @@ class RunEngine:
         await self._send({"t": "prompt", "id": mid, "field": field, "label": label, "secret": secret})
         msg = await self._await_msg(mid, 600)
         return str(msg.get("value", ""))
+
+    async def notice(self, n: dict) -> None:
+        """Say it, record it, and for a warning wait for somebody to take it.
+
+        A `block` never asks: continuing would write something false, so the
+        run ends. A `warn` is the operator's call and their name goes on it
+        (user decision 2026-09-19) — the reason box is offered, never required,
+        because a rule that demands typing is a rule that gets typed \".\".
+        """
+        from ...routers.util import audit
+
+        self._msg_id += 1
+        mid = self._msg_id
+        level, code = n["level"], n["code"]
+        self.log("app", f"{level}: {n['text']}")
+
+        def record(db, *, ok: bool | None = None, reason: str = ""):
+            audit(db, f"flasher.check.{code}", "programming_run", self.run_id,
+                  {"level": level, "text": n["text"], "data": n.get("data") or {},
+                   **({} if ok is None else {"acknowledged": ok, "reason": reason})},
+                  actor=self.operator or "bench")
+            db.commit()
+
+        if level == "block":
+            await self._db(record)
+            await self._send({"t": "notice", "id": mid, "level": level, "code": code,
+                              "text": n["text"], "hint": n.get("hint") or ""})
+            raise StepFailed(n["text"])
+
+        await self._send({"t": "notice", "id": mid, "level": level, "code": code,
+                          "text": n["text"], "hint": n.get("hint") or ""})
+        msg = await self._await_msg(mid, 600)
+        ok = bool(msg.get("ok", True))
+        reason = str(msg.get("reason", "")).strip()[:300]
+        await self._db(lambda db: record(db, ok=ok, reason=reason))
+        self.log("app", f"{code}: {'continued' if ok else 'stopped'} by "
+                        f"{self.operator or 'operator'}" + (f" — {reason}" if reason else ""))
+        if not ok:
+            raise Aborted()
 
     # --------------------------------------------------------- dialog helpers
 
@@ -638,7 +683,8 @@ class RunEngine:
 
         def upsert(db):
             dev = db.query(M.DeviceUnit).filter(M.DeviceUnit.mac == mac_norm).one_or_none()
-            if dev is None:
+            created = dev is None
+            if created:
                 dev = M.DeviceUnit(
                     project_id=self.spec["project_id"], mac=mac_norm, chip=chip,
                     serial=serial,
@@ -659,9 +705,18 @@ class RunEngine:
                         M.ProgrammingRun.id != self.run_id)
                 .count() + 1
             )
-            return dev.id
+            # Read INSIDE the session that holds the row: `bench_checks` walks
+            # `dev.events` and the batch, and the answer must come from the
+            # state this run just wrote, not from a later one.
+            found = bench_checks.for_device(db, run, dev, created=created,
+                                            project_id=self.spec["project_id"])
+            return dev.id, found
 
-        self.device_unit_id = await self._db(upsert)
+        self.device_unit_id, found = await self._db(upsert)
+        # Outside the DB call: a warning waits for the operator, which must not
+        # hold a session open. Most serious first, and a block never returns.
+        for n in found:
+            await self.notice(n)
         self.vars["mac"] = mac_norm
         self.vars["serial"] = serial
         self.results["chip"] = chip
@@ -675,10 +730,32 @@ class RunEngine:
 
         def write(db):
             dev = db.get(M.DeviceUnit, self.device_unit_id)
+            # Before the columns are overwritten: is one of these already on a
+            # DIFFERENT unit? Afterwards the duplicate would be this device's
+            # own value and nothing would be found.
+            found = bench_checks.for_identity(db, dev, cols)
+            # A REPLACED identity is a fact about the hardware, not a typo to
+            # paint over. Writing the new IMEI/ICCID silently loses the only
+            # record that the SIM in this unit was ever a different one, so a
+            # change is noted on the device (user decision 2026-09-18). Filling
+            # an empty column is not a change and is not noted.
+            changed = []
             for col, val in cols.items():
+                was = (getattr(dev, col, "") or "").strip()
+                if was and was != val:
+                    changed.append(f"{col}: {was} → {val}")
                 setattr(dev, col, val)
+            if changed:
+                stamp = utcnow().strftime("%Y-%m-%d %H:%M")
+                line = f"[{stamp}] identity changed on re-flash — " + "; ".join(changed)
+                dev.notes = f"{dev.notes}\n{line}".strip() if dev.notes else line
+                db.add(M.AuditLog(actor="flasher", action="device.identity_changed",
+                                  entity_type="device_unit", entity_id=str(dev.id),
+                                  details={"serial": dev.serial, "changed": changed}))
+            return found
 
-        await self._db(write)
+        for n in await self._db(write):
+            await self.notice(n)
 
     def _capture(self, step: dict, resp: Any) -> dict[str, Any]:
         got: dict[str, Any] = {}

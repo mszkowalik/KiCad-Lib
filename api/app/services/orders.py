@@ -186,14 +186,23 @@ def rebatch_devices(db: Session, run: M.ProductionRun, device_ids: list[int], *,
         if ev.production_run_id == run.id:
             skipped.append({"device_id": did, "serial": d.serial, "reason": "already in this batch"})
             continue
-        moved.append({"device_id": d.id, "serial": d.serial, "from_run_id": ev.production_run_id,
-                      "to_run_id": run.id})
+        was = ev.production_run_id
+        # The bench wrote the SAME choice onto every attempt it made for this
+        # device, so a correction that moves the produced event and leaves those
+        # behind produces two answers to one question. Only the attempts that
+        # name the batch we are moving AWAY from are the same mis-selection; an
+        # attempt naming some other batch was a different choice and is left
+        # alone, and one naming nothing stays nothing (never guess the batch).
+        runs = [r for r in d.runs if r.production_run_id == was] if was else []
+        moved.append({"device_id": d.id, "serial": d.serial, "from_run_id": was,
+                      "to_run_id": run.id, "attempts": len(runs)})
         if not dry_run:
-            was = ev.production_run_id
             ev.production_run_id = run.id
             ev.note = ((ev.note + " · ") if ev.note else "") + f"moved from batch {was}" + (
                 f": {note}" if note else "")
             d.production_run_id = run.id
+            for r in runs:
+                r.production_run_id = run.id
     if not dry_run:
         db.flush()
     return {"dry_run": dry_run, "run_id": run.id, "moved": moved, "skipped": skipped}
@@ -217,11 +226,18 @@ def run_stock(db: Session, project_id: int | None = None) -> list[dict]:
     rids = [r.id for r in runs]
     produced: dict[int, int] = defaultdict(int)
     in_stock: dict[int, int] = defaultdict(int)
+    available: dict[int, int] = defaultdict(int)
     shipped: dict[int, int] = defaultdict(int)
-    for rid, state, n in _device_counts(db, rids):
+    held: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for rid, state, cond, n in _device_counts(db, rids):
         produced[rid] += n
+        cond = cond or "ok"
         if state == "in_stock":
             in_stock[rid] += n
+            if cond == "ok":
+                available[rid] += n
+            else:
+                held[rid][cond] += n
         elif state == "shipped":
             shipped[rid] += n
     unser: dict[int, int] = defaultdict(int)
@@ -258,6 +274,11 @@ def run_stock(db: Session, project_id: int | None = None) -> list[dict]:
             "qty_recorded": typed,
             "devices_produced": produced[r.id],
             "devices_in_stock": in_stock[r.id],
+            # AVAILABLE is what a shipment may draw; HELD is present but not
+            # sellable, per condition. `devices_in_stock` is their sum, so a
+            # faulty unit is never invisible and never shippable.
+            "devices_available": available[r.id],
+            "devices_held": dict(held[r.id]),
             "devices_shipped": shipped[r.id],
             "unserialized_shipped": unser[r.id],
             "legacy_stock": max(legacy_stock, 0),
@@ -265,6 +286,7 @@ def run_stock(db: Session, project_id: int | None = None) -> list[dict]:
             # a quantity on the run is wrong, or a shipment is.
             "overdrawn": -legacy_stock if legacy_stock < 0 else 0,
             "stock": in_stock[r.id] + max(legacy_stock, 0),
+            "available": available[r.id] + max(legacy_stock, 0),
         })
     return out
 
@@ -296,38 +318,16 @@ def check_unserialized_source(db: Session, run_id: int | None, qty: int) -> None
 
 
 def _device_counts(db: Session, rids: list[int]):
+    """(run, state, condition, n). CONDITION is grouped too, because a unit that
+    is present but unsellable is still in stock and must be counted — it is just
+    not available. Collapsing the two is what forced 32 faulty units to be filed
+    `disposed`, which said they were destroyed."""
     from sqlalchemy import func
-    return (db.query(M.DeviceUnit.production_run_id, M.DeviceUnit.state, func.count(M.DeviceUnit.id))
+    return (db.query(M.DeviceUnit.production_run_id, M.DeviceUnit.state,
+                     M.DeviceUnit.condition, func.count(M.DeviceUnit.id))
             .filter(M.DeviceUnit.production_run_id.in_(rids))
-            .group_by(M.DeviceUnit.production_run_id, M.DeviceUnit.state).all())
-
-
-def fifo_candidates(db: Session, line: M.SalesOrderLine, run_ids: list[int],
-                    board: str = "", variant: str = "") -> list[M.DeviceUnit]:
-    """Oldest produced first, from the batches the user ticked. Devices
-    already `allocated` to this line come before anything else."""
-    q = (db.query(M.DeviceUnit)
-         .filter(M.DeviceUnit.project_id == line.project_id,
-                 M.DeviceUnit.production_run_id.in_(run_ids),
-                 M.DeviceUnit.state.in_(("in_stock", "allocated"))))
-    if board or variant:
-        runs = {r.id: r for r in db.query(M.ProductionRun).filter(M.ProductionRun.id.in_(run_ids))}
-        ok = [rid for rid, r in runs.items()
-              if (not board or r.board == board) and (not variant or r.variant == variant)]
-        q = q.filter(M.DeviceUnit.production_run_id.in_(ok or [-1]))
-    devs = q.order_by(M.DeviceUnit.first_seen, M.DeviceUnit.id).all()
-    mine, free = [], []
-    for d in devs:
-        if d.state == "allocated":
-            ev = last_event(d, "allocated")
-            if ev is not None and ev.order_line_id == line.id:
-                mine.append(d)
-            continue
-        free.append(d)
-    return mine + free
-
-
-# ------------------------------------------------------------------- orders
+            .group_by(M.DeviceUnit.production_run_id, M.DeviceUnit.state,
+                      M.DeviceUnit.condition).all())
 
 
 def refresh_order_status(order: M.SalesOrder) -> str:
@@ -471,18 +471,24 @@ def create_shipment(db: Session, order: M.SalesOrder, *, kind: str = "delivery",
                 raise HTTPException(422, f"device {d.serial or did} belongs to another project")
             if d.state not in ("in_stock", "allocated"):
                 raise HTTPException(409, f"device {d.serial or did} is {d.state or 'unrecorded'}, not in stock")
+            # A unit that is HERE but not sellable is still in stock — that is
+            # the point of `condition`. Only `ok` may leave on a shipment.
+            if (d.condition or "ok") != "ok":
+                raise HTTPException(409, {
+                    "error": f"device {d.serial or did} is {d.condition}, which cannot be shipped",
+                    "device_id": d.id, "serial": d.serial, "condition": d.condition,
+                    "hint": "repair it and set its condition to ok, or ship a different device"})
             picked.append((d, False))
+        # A SHIPMENT NAMES ITS DEVICES. There is no automatic pick: a quantity
+        # with no serials behind it is a guess, and a guess is indistinguishable
+        # from an observation once it is written. 4326 of 4427 deliveries in
+        # this platform were such guesses, and a physical count was the only
+        # thing that could find the wrong ones.
         if qty > 0:
-            if not run_ids:
-                raise HTTPException(422, "pick at least one batch to draw from")
-            cands = [d for d in fifo_candidates(db, li, run_ids, spec.get("board") or "",
-                                                 spec.get("variant") or "")
-                     if d.id not in device_ids]
-            if len(cands) < qty:
-                raise HTTPException(409, {"error": "not enough devices in stock",
-                                          "available": len(cands), "requested": qty,
-                                          "order_line_id": li.id})
-            picked += [(d, True) for d in cands[:qty]]
+            raise HTTPException(422, {
+                "error": "name the devices; a shipment is a set of serials, not a quantity",
+                "order_line_id": li.id, "requested": qty,
+                "hint": "scan or paste the serials that physically left"})
         if replaces is not None and len(picked) != 1:
             raise HTTPException(422, "a replacement shipment names exactly one device")
         for d, auto in picked:
@@ -560,28 +566,37 @@ def reverse_shipment(db: Session, sh: M.Shipment, *, actor: str = "", note: str 
 def return_device(db: Session, device: M.DeviceUnit, *, order_line: M.SalesOrderLine | None,
                   reason: str = "", returned_at: str = "", shipment: M.Shipment | None = None,
                   actor: str = "", note: str = "") -> dict:
-    """A device came back. Three cases (§6):
+    """A device came back from the customer it was shipped to.
 
-    1. It was shipped to that line — plain `returned`.
-    2. It was never assigned there (FIFO guessed another unit, or the unit was
-       never assigned at all) — SWAP: the guessed unit is un-shipped and takes
-       the returned unit's old slot if it had one, the returned unit takes the
-       guessed unit's slot, then it is returned. Both moves are events.
-    3. The line was fulfilled by unserialized units — one anonymous unit
-       becomes this device.
+    It must have a live delivery against the line it is returned from. It used
+    to be accepted against any line, and the platform would then SWAP: un-ship
+    whichever device FIFO had guessed into that slot and put this one there
+    instead, or convert an anonymous unit into this device. That was automatic
+    data fixing dressed as a normal operation — a return quietly rewrote a
+    delivery nobody was looking at.
+
+    A return against a line this device was never shipped to is now an ERROR.
+    Either the delivery record is wrong, in which case correct the shipment, or
+    the device is not the one that came back.
     """
     if device.state == "disposed":
         raise HTTPException(409, "the device was disposed of")
-    last_ship = last_event(device, "shipped") if device.state == "shipped" else None
+    live = live_shipped_of(device)
     if order_line is None:
-        if last_ship is None:
+        ev = live[-1] if live else None
+        if ev is None:
             raise HTTPException(422, "say which order the device came back from")
-        order_line = db.get(M.SalesOrderLine, last_ship.order_line_id)
+        order_line = db.get(M.SalesOrderLine, ev.order_line_id)
+    if not any(e.order_line_id == order_line.id for e in live):
+        raise HTTPException(409, {
+            "error": f"device {device.serial or device.id} was never delivered on that order line, "
+                     f"so it cannot come back from it",
+            "device_id": device.id, "serial": device.serial,
+            "order_line_id": order_line.id, "device_state": device.state,
+            "delivered_on": sorted({e.order_line_id for e in live if e.order_line_id}),
+            "hint": "correct the shipment that is wrong, then record the return"})
     order = order_line.order
     at = _date_at(returned_at)
-    swap: dict | None = None
-    if last_ship is None or last_ship.order_line_id != order_line.id:
-        swap = _swap_into_line(db, device, order_line, last_ship, actor)
     if shipment is None:
         shipment = M.Shipment(order_id=order.id, kind="return", shipped_at=returned_at or "",
                               notes=note or "")
@@ -591,60 +606,7 @@ def return_device(db: Session, device: M.DeviceUnit, *, order_line: M.SalesOrder
                  order_line_id=order_line.id, shipment_id=shipment.id)
     db.flush()
     refresh_order_status(order)
-    return {"shipment_id": shipment.id, "swap": swap}
-
-
-def _swap_into_line(db: Session, device: M.DeviceUnit, line: M.SalesOrderLine,
-                    old_ship: M.DeviceEvent | None, actor: str) -> dict:
-    if device.production_run_id is None:
-        raise HTTPException(409, f"device {device.serial or device.id} is not linked to a batch; "
-                                 "link it to its production run first")
-    deliveries = [sh for sh in line.order.shipments if sh.kind == "delivery"]
-    deliveries.sort(key=lambda s: (s.shipped_at or "", s.id), reverse=True)
-    # 1. a FIFO-guessed device still out on this line, newest delivery first
-    guessed: M.DeviceUnit | None = None
-    target: M.Shipment | None = None
-    for sh in deliveries:
-        evs = (db.query(M.DeviceEvent)
-               .filter(M.DeviceEvent.shipment_id == sh.id, M.DeviceEvent.order_line_id == line.id,
-                       M.DeviceEvent.kind == "shipped", M.DeviceEvent.auto.is_(True))
-               .order_by(M.DeviceEvent.id.desc()).all())
-        for ev in evs:
-            g = db.get(M.DeviceUnit, ev.device_id)
-            if g is not None and g.state == "shipped" and last_event(g, "shipped").id == ev.id:
-                guessed, target = g, sh
-                break
-        if guessed:
-            break
-    if guessed is not None and target is not None:
-        g_ev = last_event(guessed, "shipped")
-        record_event(db, guessed, "unshipped", actor=actor, shipment_id=target.id, auto=True,
-                     note=f"swap: {device.serial or device.id} was the unit actually delivered")
-        if old_ship is not None:
-            # the guessed unit inherits the returned unit's old slot elsewhere
-            record_event(db, guessed, "shipped", at=old_ship.at, actor=actor, auto=True,
-                         order_line_id=old_ship.order_line_id, shipment_id=old_ship.shipment_id,
-                         replaces_device_id=old_ship.replaces_device_id,
-                         note=f"swap: takes the slot of {device.serial or device.id}")
-        record_event(db, device, "shipped", at=g_ev.at, actor=actor, auto=False,
-                     order_line_id=line.id, shipment_id=target.id,
-                     replaces_device_id=g_ev.replaces_device_id,
-                     note=f"swap: replaces the FIFO guess {guessed.serial or guessed.id}")
-        return {"kind": "device", "guessed_device_id": guessed.id, "shipment_id": target.id}
-    # 2. an anonymous unit on this line becomes this device
-    for sh in deliveries:
-        for sl in sh.lines:
-            if sl.order_line_id == line.id and (sl.qty_unserialized or 0) > 0:
-                if old_ship is not None:
-                    raise HTTPException(409, f"device {device.serial or device.id} is recorded as shipped "
-                                             f"on order line {old_ship.order_line_id}; un-ship it there first")
-                sl.qty_unserialized -= 1
-                record_event(db, device, "shipped", at=_date_at(sh.shipped_at), actor=actor, auto=False,
-                             order_line_id=line.id, shipment_id=sh.id,
-                             note="named one unserialized unit on this delivery")
-                return {"kind": "unserialized", "shipment_id": sh.id, "source_run_id": sl.source_run_id}
-    raise HTTPException(409, "nothing on that order line can be swapped for this device: no FIFO-picked "
-                             "device is out and no unserialized units were delivered")
+    return {"shipment_id": shipment.id}
 
 
 def repair_device(db: Session, device: M.DeviceUnit, *, outcome: str = "to_stock",
@@ -683,153 +645,6 @@ def dispose_device(db: Session, device: M.DeviceUnit, *, reason: str = "", dispo
 
 # ------------------------------------------------- correcting a FIFO guess
 
-def _refill_pool(db: Session, project_id: int, exclude: set[int]) -> list[M.DeviceUnit]:
-    """Devices that could take a freed slot: in stock, in this project, and NOT
-    on the shelf the count just proved. Oldest produced first, the order
-    `fifo_candidates` uses, so a refill picks the same device the original
-    shipment would have."""
-    return [d for d in (db.query(M.DeviceUnit)
-                        .filter(M.DeviceUnit.project_id == project_id,
-                                M.DeviceUnit.state == "in_stock")
-                        .order_by(M.DeviceUnit.first_seen, M.DeviceUnit.id).all())
-            if d.id not in exclude]
-
-
-def reconcile_shelf(db: Session, devices: list[M.DeviceUnit], *, refill: str = "same_batch",
-                    note: str = "", actor: str = "", dry_run: bool = True) -> dict:
-    """A stock count corrects the FIFO guesses that contradict it (decision 0027).
-
-    `devices` is what a physical count found on the shelf. Any of them the
-    platform believes is at a customer can only be there because a FIFO pick
-    GUESSED it (decision 0003 §6), so each such guess is reversed with an
-    `unshipped` event and the slot it held on that shipment is refilled from
-    stock. A `shipped` event somebody typed is never touched: the count says
-    where a device is, not who is wrong about it.
-
-    A slot nothing can refill LOWERS what the order counts as delivered. There
-    is no second option: the freed device's own batch records that device, so
-    it has no anonymous unit to offer in its place (decision 0031, which
-    narrows 0027 §5). Either another real device fills the slot or the
-    quantity falls.
-    """
-    if refill not in ("same_batch", "any_batch", "none"):
-        raise HTTPException(422, "refill is same_batch, any_batch or none")
-    if not devices:
-        raise HTTPException(422, "the count names no device")
-    projects = {d.project_id for d in devices}
-    if len(projects) > 1:
-        raise HTTPException(422, "count one project at a time: these devices span "
-                                 f"{sorted(projects)}")
-    on_shelf = {d.id for d in devices}
-    typed: list[str] = []
-    already: list[int] = []
-    skipped: list[dict] = []
-    slots: list[tuple[M.DeviceUnit, M.DeviceEvent]] = []
-    for d in devices:
-        if d.state in ("in_stock", "allocated"):
-            already.append(d.id)
-            continue
-        if d.state != "shipped":
-            skipped.append({"device_id": d.id, "serial": d.serial, "state": d.state or "",
-                            "reason": "not shipped; a count does not undo this state"})
-            continue
-        ev = last_event(d, "shipped")
-        if ev is None or ev.shipment_id is None:
-            skipped.append({"device_id": d.id, "serial": d.serial, "state": d.state,
-                            "reason": "shipped against no shipment"})
-            continue
-        if not ev.auto:
-            typed.append(d.serial or str(d.id))
-            continue
-        slots.append((d, ev))
-    if typed:
-        raise HTTPException(409, {
-            "error": "a person named these devices on a shipment; a stock count does not overrule that",
-            "devices": sorted(typed)})
-
-    # Oldest delivery first, so the batch a 2024 shipment needs is offered to
-    # it before a 2026 one can take it.
-    ships = {s.id: s for s in db.query(M.Shipment)
-             .filter(M.Shipment.id.in_([e.shipment_id for _, e in slots] or [-1])).all()}
-    slots.sort(key=lambda se: (ships[se[1].shipment_id].shipped_at or "", se[1].shipment_id, se[0].id))
-
-    pool = _refill_pool(db, devices[0].project_id, on_shelf) if slots and refill != "none" else []
-    taken: set[int] = set()
-    freed: list[dict] = []
-    refilled: list[dict] = []
-    unfilled: list[dict] = []
-    delta: dict[int, int] = defaultdict(int)  # order_line_id -> change in counted units
-
-    for d, ev in slots:
-        sh = ships[ev.shipment_id]
-        counts = ev.replaces_device_id is None  # a replacement never counted
-        freed.append({"device_id": d.id, "serial": d.serial, "shipment_id": sh.id,
-                      "shipped_at": sh.shipped_at, "order_id": sh.order_id,
-                      "order_line_id": ev.order_line_id, "production_run_id": d.production_run_id,
-                      "counts": counts})
-        pick = None
-        for cand in pool:
-            if cand.id in taken:
-                continue
-            if refill == "same_batch" and cand.production_run_id != d.production_run_id:
-                continue
-            pick = cand
-            break
-        if pick is not None:
-            taken.add(pick.id)
-            refilled.append({"slot_device_id": d.id, "slot_serial": d.serial,
-                             "by_device_id": pick.id, "by_serial": pick.serial,
-                             "shipment_id": sh.id, "order_line_id": ev.order_line_id,
-                             "production_run_id": pick.production_run_id})
-            continue
-        unfilled.append({"device_id": d.id, "serial": d.serial, "shipment_id": sh.id,
-                         "order_line_id": ev.order_line_id,
-                         "production_run_id": d.production_run_id, "counts": counts})
-        if counts:
-            delta[ev.order_line_id] -= 1
-
-    lines = {li.id: li for li in db.query(M.SalesOrderLine)
-             .filter(M.SalesOrderLine.id.in_([f["order_line_id"] for f in freed] or [-1])).all()}
-    effect = []
-    for lid, li in sorted(lines.items()):
-        before = line_shipped(li)
-        effect.append({"order_line_id": lid, "order_id": li.order_id,
-                       "order_ref": li.order.order_ref, "product": li.product,
-                       "qty_ordered": li.qty_ordered, "qty_shipped_before": before,
-                       "qty_shipped_after": before + delta[lid],
-                       "status_before": li.order.status})
-    plan = {
-        "dry_run": dry_run, "refill": refill,
-        "already_in_stock": already, "skipped": skipped,
-        "freed": freed, "refilled": refilled, "unfilled": unfilled,
-        "lines": effect,
-    }
-    if dry_run:
-        return plan
-
-    refill_by_slot = {r["slot_device_id"]: r for r in refilled}
-    for d, ev in slots:
-        record_event(db, d, "unshipped", actor=actor, shipment_id=ev.shipment_id, auto=False,
-                     note=note or "a stock count found this device on the shelf")
-        r = refill_by_slot.get(d.id)
-        if r is None:
-            continue
-        pick = db.get(M.DeviceUnit, r["by_device_id"])
-        record_event(db, pick, "shipped", at=ev.at, actor=actor, auto=True,
-                     order_line_id=ev.order_line_id, shipment_id=ev.shipment_id,
-                     replaces_device_id=ev.replaces_device_id,
-                     note=f"refill: takes the slot of {d.serial or d.id}, which the count found on the shelf")
-    db.flush()
-    for li in lines.values():
-        db.expire(li.order, ["shipments", "lines"])
-        refresh_order_status(li.order)
-    for row in effect:
-        li = lines[row["order_line_id"]]
-        row["qty_shipped_after"] = line_shipped(li)
-        row["status_after"] = li.order.status
-    return plan
-
-
 def allocate_devices(db: Session, line: M.SalesOrderLine, device_ids: list[int], actor: str = "") -> int:
     n = 0
     for did in device_ids:
@@ -845,14 +660,34 @@ def allocate_devices(db: Session, line: M.SalesOrderLine, device_ids: list[int],
 
 
 def per_device_cost_usd(db: Session, register: dict | None = None) -> dict[int, float]:
-    """Actual production cost per GOOD device, per run, in USD — the figure a
-    shipped device carries onto its order."""
+    """Actual production cost per device PRODUCED, per run, in USD — the figure
+    a device carries with it onto whatever order ships it.
+
+    **This is the one link between a batch and an order** (user decision
+    2026-09-19): a batch computes what one unit cost, a unit carries it, and an
+    order's cost is the sum over the units it shipped. Nothing else joins the
+    two, which is why a run no longer records a sale of its own.
+
+    The denominator is the count of `produced` events on the batch — devices
+    the platform can name. It used to be the run's typed `qty`, the boards
+    ORDERED FROM JLC, despite this docstring already claiming otherwise: a batch
+    routinely yields a different number from the one ordered (CE_Dongle_V2 Batch
+    5, 455 ordered against 568 produced), so the figure was wrong by the yield
+    on every batch.
+
+    A batch with no device records yet is ABSENT from the result rather than
+    divided by a guess. An order shipping such a device reports it as
+    `uncosted`, which is true and visible, where a planned-quantity estimate
+    would have been neither.
+    """
     reg = register or run_actuals.invoice_register(db)
+    counts = run_actuals.produced_counts(db, [int(rid) for rid in (reg.get("by_run_usd") or {})])
     out: dict[int, float] = {}
     for rid, money in (reg.get("by_run_usd") or {}).items():
-        info = (reg.get("runs") or {}).get(str(rid)) or {}
-        qty = max(int(info.get("qty") or 0), 1)
-        out[int(rid)] = (money.get("total_usd") or 0.0) / qty
+        made = counts.get(int(rid)) or 0
+        if made <= 0:
+            continue
+        out[int(rid)] = (money.get("total_usd") or 0.0) / made
     return out
 
 
@@ -1103,62 +938,6 @@ def device_history_json(db: Session, device: M.DeviceUnit) -> dict:
 
 
 # ---------------------------------------------------------------- migration
-
-
-def migrate_from_runs(db: Session) -> dict:
-    """Decision 0003 §10: every run with a price becomes an order line, runs
-    that share a non-empty `order_ref` share one order, and what the run says
-    was sold becomes one unserialized delivery dated at the order. Idempotent
-    through `uq_order_line_migrated_run`. The run's own sale columns are left
-    in place: the register still reads them, so its figures cannot move."""
-    runs = (db.query(M.ProductionRun).filter(M.ProductionRun.sale_unit_price.isnot(None))
-            .order_by(M.ProductionRun.order_date, M.ProductionRun.run_date, M.ProductionRun.id).all())
-    done = {li.migrated_from_run_id for li in db.query(M.SalesOrderLine)
-            .filter(M.SalesOrderLine.migrated_from_run_id.isnot(None))}
-    projects = {p.id: p for p in db.query(M.Project).all()}
-    created_orders, created_lines = 0, 0
-    by_ref: dict[str, M.SalesOrder] = {}
-    for o in db.query(M.SalesOrder).all():
-        if o.order_ref:
-            by_ref.setdefault(o.order_ref.strip(), o)
-    for r in runs:
-        if r.id in done:
-            continue
-        if (r.status or "").strip().lower() == "planned":
-            continue  # a priced plan is a quote, not a sale — nothing has shipped
-        ref = (r.order_ref or "").strip()
-        order = by_ref.get(ref) if ref else None
-        if order is None:
-            cust = get_customer(db, r.customer)
-            cur = (r.sale_currency or (projects.get(r.project_id).display_currency
-                                      if projects.get(r.project_id) else "") or "USD").upper()
-            order = M.SalesOrder(customer_id=cust.id, order_ref=ref, order_date=r.order_date or r.run_date or "",
-                                 currency=cur, notes="migrated from the run's sale fields")
-            db.add(order)
-            db.flush()
-            created_orders += 1
-            if ref:
-                by_ref[ref] = order
-        qty = int(r.qty_sold or r.qty_good or r.plan_qty or r.qty or 0)
-        proj = projects.get(r.project_id)
-        line = M.SalesOrderLine(order_id=order.id, project_id=r.project_id, board=r.board or "",
-                                variant=r.variant or "", product=(proj.name if proj else ""),
-                                qty_ordered=qty, unit_price=float(r.sale_unit_price or 0),
-                                position=len(order.lines), migrated_from_run_id=r.id)
-        db.add(line)
-        db.flush()
-        created_lines += 1
-        if qty > 0:
-            sh = M.Shipment(order_id=order.id, kind="delivery", shipped_at=r.order_date or r.run_date or "",
-                            notes=f"migrated: {qty} units the run recorded as sold")
-            db.add(sh)
-            db.flush()
-            db.add(M.ShipmentLine(shipment_id=sh.id, order_line_id=line.id, qty_unserialized=qty,
-                                  source_run_id=r.id))
-        db.expire(order, ["lines", "shipments"])
-        refresh_order_status(order)
-    db.flush()
-    return {"orders": created_orders, "lines": created_lines}
 
 
 def run_sales_json(db: Session, run: M.ProductionRun) -> dict:

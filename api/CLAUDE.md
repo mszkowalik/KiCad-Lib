@@ -37,6 +37,7 @@ new parallel implementations are the main thing to avoid.
 | Properties as a dict | `routers/util.py` → `props_dict(cv)` |
 | Resolve a `{Template}` value | `routers/util.py` → `resolved_value(value, props)` (wraps `services/templates.py`) |
 | Write an audit row | `routers/util.py` → `audit(db, action, entity_type, entity_id, details=…, actor=…)` |
+| What to CALL a part on screen | `routers/util.py` → `part_display_name(db, component_id, lcsc, mpn)` → `(name, in_library)` |
 | DB session in a route | `Depends(get_db)` from `db.py` |
 | Price key → column map | `services/generator.py` → `PRICE_KEY_TO_COL` |
 | Create a draft proposal | the pattern in `services/jaravis.py` (`propose_new_component` / `propose_component_edit`) |

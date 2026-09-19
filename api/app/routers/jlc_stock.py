@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..config import settings
 from ..db import get_db
-from ..services import fx, jlc
+from ..services import fx, jlc, jlc_ledger, jlc_web, journal
 from .util import audit
 
 router = APIRouter(prefix="/api/jlc", tags=["jlc-stock"])
@@ -80,9 +80,102 @@ def sync(db: Session = Depends(get_db)):
         report = jlc.sync(db)
     except jlc.JlcError as e:
         raise HTTPException(502, str(e)) from e
+    # The ledger comes with the balance, not on a second button. A balance alone
+    # can only say THAT we disagree; the ledger says why, and a sync that fetched
+    # one without the other is how a disagreement sits unexplained for a year.
+    # Best effort: the balance is the OpenAPI's and must not fail because the
+    # browser session has lapsed.
+    if jlc_web.available(db):
+        try:
+            report["ledger"] = jlc_ledger.sync(db)
+        except (jlc_web.JlcWebError, jlc_web.JlcSessionExpired) as e:
+            report["ledger"] = {"error": str(e)}
+    else:
+        report["ledger"] = {"error": "no JLCPCB browser session stored"}
     audit(db, "jlc.stock.sync", "jlc_stock", None, report)
     db.commit()
     return report
+
+
+@router.post("/stock/ledger/sync")
+def sync_ledger(only: str = "", db: Session = Depends(get_db)):
+    """Pull JLC's OWN per-part inventory ledger into the platform.
+
+    Separate from `/stock/sync` because it needs the BROWSER session, not the
+    OpenAPI credentials: `customerPresaleStockKeyId` — the ledger's only key —
+    appears in the web stock list and nowhere else.
+
+    `only` takes a comma-separated list of LCSC codes for a single part's
+    history; empty means the whole library (67 parts, 648 rows today).
+    """
+    if not jlc_web.available(db):
+        raise HTTPException(409, "no JLCPCB browser session stored — paste cookies first")
+    try:
+        report = jlc_ledger.sync(db, [c.strip() for c in only.split(",") if c.strip()])
+    except jlc_web.JlcSessionExpired as e:
+        raise HTTPException(401, str(e)) from e
+    except jlc_web.JlcWebError as e:
+        raise HTTPException(502, str(e)) from e
+    audit(db, "jlc.stock.ledger.sync", "jlc_stock", None, report)
+    db.commit()
+    return report
+
+
+@router.get("/stock/ledger")
+def ledger(lcsc: str = "", db: Session = Depends(get_db)):
+    """What JLC's ledger and the platform cannot say about each other.
+
+    Both directions, because they are different defects — a movement we never
+    recorded, and a purchase we recorded that JLC never received.
+    """
+    out = jlc_ledger.unexplained(db, lcsc)
+    out["bookable"] = jlc_ledger.bookable(db)
+    return out
+
+
+@router.get("/stock/ledger/{lcsc}")
+def ledger_for_part(lcsc: str, db: Session = Depends(get_db)):
+    """One part's ledger as JLC keeps it, oldest first."""
+    rows = (db.query(M.JlcStockChange).filter(M.JlcStockChange.lcsc == lcsc.upper())
+              .order_by(M.JlcStockChange.changed_at).all())
+    if not rows:
+        raise HTTPException(404, f"no ledger synced for {lcsc} — run /stock/ledger/sync")
+    return {
+        "lcsc": rows[0].lcsc, "mpn": rows[0].mpn,
+        "rows": [{
+            "changed_at": r.changed_at.astimezone(jlc_ledger.JLC_TZ).isoformat(),
+            "change_qty": r.change_qty, "qty_before": r.qty_before,
+            "qty_after": r.qty_after, "paid_usd": r.paid_usd,
+            "business_code": r.business_code, "business_type": r.business_type,
+            "void": r.change_status == jlc_ledger.STATUS_VOID,
+            "remark": r.remark,
+        } for r in rows],
+        "balance": sum(r.change_qty for r in rows
+                       if r.change_status != jlc_ledger.STATUS_VOID),
+    }
+
+
+@router.post("/stock/ledger/book")
+def book_ledger_rows(change_key_ids: str = "", dry_run: bool = True,
+                     actor: str = "user", db: Session = Depends(get_db)):
+    """Write chosen ledger rows as uncharged draws.
+
+    `change_key_ids` is a comma-separated list from `/stock/ledger`; empty means
+    every bookable row. The caller chooses — nothing here decides on its own
+    that stock should move.
+    """
+    ids = [int(x) for x in change_key_ids.replace(" ", "").split(",") if x]
+    if dry_run:
+        # `book` writes nothing on a dry run — it prices and checks, then
+        # reports. There is no rollback to do.
+        return jlc_ledger.book(db, ids, actor=actor, dry_run=True)
+    with journal.batch(db, kind="jlc.ledger.book", source_ref=change_key_ids or "all",
+                       actor=actor) as h:
+        res = jlc_ledger.book(db, ids, actor=actor, dry_run=False)
+    audit(db, "jlc.stock.ledger.book", "component_consumption", None,
+          {**res["totals"], "batch_id": h["batch_id"]}, actor=actor)
+    db.commit()
+    return {**res, "batch_id": h["batch_id"], "reversible": True}
 
 
 @router.get("/stock/item/{item_id}/raw")
@@ -94,48 +187,3 @@ def raw_item(item_id: int, db: Session = Depends(get_db)):
     return i.raw or {}
 
 
-@router.get("/stock/usage")
-def stock_usage(db: Session = Depends(get_db)):
-    """Where held parts are used: latest ready snapshot of every project."""
-    private = jlc.private_stock_map(db)
-    if not private:
-        return []
-    out = []
-    for p in db.query(M.Project).order_by(M.Project.name).all():
-        latest = (
-            db.query(M.ProjectSnapshot)
-            .filter_by(project_id=p.id, status="ready")
-            .order_by(M.ProjectSnapshot.created_at.desc())
-            .first()
-        )
-        if latest is None:
-            continue
-        lines = (
-            db.query(M.SnapshotBomLine)
-            .filter(
-                M.SnapshotBomLine.snapshot_id == latest.id,
-                M.SnapshotBomLine.lcsc.in_(list(private.keys())),
-                M.SnapshotBomLine.variant == "",
-            )
-            .all()
-        )
-        if lines:
-            out.append(
-                {
-                    "project_id": p.id,
-                    "project_name": p.name,
-                    # `component_id` and `mpn` so the reader can group by PART
-                    # rather than by project: the same component on three boards
-                    # is one thing to decide about, not three rows. It is a soft
-                    # pointer and is legitimately NULL for a line that matched no
-                    # library component, so the client falls back to the LCSC
-                    # code — which is what the JLC stock is keyed on anyway.
-                    "parts": [
-                        {"lcsc": li.lcsc, "refs": li.refs, "qty_per_device": li.qty,
-                         "board": li.board, "held": private.get(li.lcsc, 0),
-                         "component_id": li.component_id, "mpn": li.mpn or li.value}
-                        for li in lines
-                    ],
-                }
-            )
-    return out

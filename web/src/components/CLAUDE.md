@@ -415,10 +415,48 @@ overflow):
    BASIS a sibling button wins against — give the input
    `flex: 1 1 auto; min-width: 0` and the button `flex: none`.
 
+9. **A `DataTable`'s widths live on its `Column` defs, never in `styles.css`.**
+   The component builds a `<colgroup>` from `Column.width` and renders the table
+   as `.data .data-fixed` — it takes no class of its own. A `.stock-table` block
+   with thirteen hand-maintained `nth-child` widths sat in the stylesheet for
+   months applying to nothing, and was maintained twice by people who believed
+   it. Before you edit a `.foo-table` width rule, check that something actually
+   puts that class on a table.
+
 Compound selectors (`.data.users-table td:nth-child(n)`) are needed to
-outrank existing width rules such as `.data td.ctr { width: 1% }`.
+outrank existing width rules such as `.data td.ctr { width: 1% }` — and they
+only apply to tables that CARRY the class (see rule 9).
 
 
+
+## ONE component picker: `ComponentPickDialog.tsx`
+
+Anything that needs a human to name a library part uses this, and there is no
+second one. It takes a `PickSubject` — `{id?, label?, kind?, mpn?,
+component_id?, component_name?}` — rather than any one caller's row, so an
+invoice line satisfies it and so does a BOM position with nothing but a
+designator. It seeds the search from `mpn || label`, so pass the MPN ALONE:
+seeded with `"T491D107K016AT at C2"` it searches for that string and matches
+nothing.
+
+Two modes, and the difference is who writes:
+
+- **`onPick` given** — the dialog RETURNS `(componentId, mpn)` and writes
+  nothing. Required for a subject with no id: a draft invoice line has nothing
+  to PATCH, and a substitution is not a cost line at all.
+- **`onPick` omitted** — it PATCHes `component_id` onto the cost line itself
+  through `updateCostLine`, and fills an empty `mpn` from the chosen part.
+
+`allowFreeText` adds *Use "…" as typed*, returning `(null, typed)` for a part
+that is not in the library. Offer it only where a part legitimately has no
+library entry — one the SUPPLIER provided from its own shelf. A part we bought
+has an invoice line and a cost-pool entry, and keying it by a typed string
+instead of its `component_id` splits that part into two pool entries with two
+moving averages. `title` and `confirmLabel` exist because "Link to a library
+component" is the wrong sentence when the question is which part was fitted.
+
+It lived under `invoices/` until 2026-09-19, which told every reader it
+belonged to one screen — the reliable way to get a second picker written.
 
 ## The change feed (`components/ChangesFeed.tsx`, `ChangeDetail.tsx`)
 

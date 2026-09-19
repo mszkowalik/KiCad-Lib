@@ -12,30 +12,31 @@
  *  unassigned / residual, and the component pool must balance against what has
  *  been drawn from it.
  */
-import { Fragment, useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   attachmentPath,
   createSharedDocument,
   getCostSteps,
-  getNbpRate,
   resolveAllParts,
+  editDocumentLines,
   errorMessage,
   getDocument,
   getDocumentAttachments,
   getInvoiceRegister,
   isAbortError,
   resolveDocumentParts,
-  updateCostLine,
   uploadDocumentAttachment,
-  voidCostLine,
-  type CostLineKind,
   type CostStepCatalog,
   type DocumentAttachment,
   type InvoiceRegister,
   type RunCostDocumentRow,
   type RunCostLineRow,
 } from "../api";
+import { CheckField } from "../components/Field";
 import { useDialog } from "../components/Dialog";
+import InvoiceFields, { type InvoiceHeader } from "../components/invoices/InvoiceFields";
+import InvoiceLinesTable, { blankDraft, draftToLineIn, toDraft, type LineDraft }
+  from "../components/invoices/InvoiceLinesTable";
 import PlanLinkDialog from "../components/invoices/PlanLinkDialog";
 import SplitLineDialog from "../components/invoices/SplitLineDialog";
 import { ErrorBanner, Spinner } from "../components/Ui";
@@ -44,11 +45,23 @@ import { fileHref } from "../viewkind";
 
 import { amount as money, plain } from "../format";
 import {
-  COST_LINE_KINDS as KINDS,
-  ChargeToSelect,
-  StepSelect,
   type RunOption,
 } from "../components/costs";
+
+/** The document's header fields as the shared form holds them. */
+function headerOf(d: RunCostDocumentRow): InvoiceHeader {
+  return {
+    supplier: d.supplier || "",
+    doc_number: d.doc_number || "",
+    external_id: d.external_id || "",
+    doc_date: d.doc_date || "",
+    currency: d.currency || "USD",
+    total: d.total_amount == null ? "" : String(d.total_amount),
+    doc_type: d.doc_type || "invoice",
+    notes: d.notes || "",
+    dest: "",
+  };
+}
 
 /** Depth of a line in its document's tree, for indenting the label. */
 function depthOf(line: RunCostLineRow, byId: Map<number, RunCostLineRow>): number {
@@ -88,17 +101,6 @@ function treeOrder(lines: RunCostLineRow[]): RunCostLineRow[] {
   return out;
 }
 
-interface NewLine {
-  kind: CostLineKind;
-  label: string;
-  qty: string;
-  unit_price: string;
-  mpn: string;
-}
-
-function blankLine(): NewLine {
-  return { kind: "other", label: "", qty: "1", unit_price: "", mpn: "" };
-}
 
 export default function Invoices() {
   const dialog = useDialog();
@@ -109,6 +111,19 @@ export default function Invoices() {
   const [doc, setDoc] = useState<RunCostDocumentRow | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
   const [splitting, setSplitting] = useState<RunCostLineRow | null>(null);
+  // The open document's lines as editable drafts. Rebuilt whenever the document
+  // is (re)loaded; the table stages edits on this copy and writes them as one
+  // batch, so an abandoned edit costs nothing.
+  const [savedRows, setSavedRows] = useState<LineDraft[]>([]);
+  // ONE switch for the whole document: its header fields and every position
+  // become editable together, and one Save writes them in one transaction
+  // (user decision 2026-09-19). A per-row switch could not express a swap
+  // between two positions, and a per-field save could not either.
+  const [editingDoc, setEditingDoc] = useState(false);
+  const [deletedLines, setDeletedLines] = useState<Set<number>>(new Set());
+  const [header, setHeader] = useState<InvoiceHeader | null>(null);
+  const [savingDoc, setSavingDoc] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [linking, setLinking] = useState<RunCostLineRow | null>(null);
   const [adding, setAdding] = useState(false);
   const [onlyProblems, setOnlyProblems] = useStickyState("invoices:problems", false);
@@ -119,17 +134,6 @@ export default function Invoices() {
     return () => ac.abort();
   }, []);
 
-  const setLineStep = async (line: RunCostLineRow, step: string) => {
-    setBusy(true);
-    try {
-      await updateCostLine(line.id, { plan_key: step });
-      refreshAll();
-    } catch (err) {
-      await dialog.alert(errorMessage(err), { title: "Could not set the step" });
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const load = useCallback((signal?: AbortSignal) => {
     getInvoiceRegister(signal)
@@ -196,40 +200,7 @@ export default function Invoices() {
     if (expanded != null) loadDoc(expanded);
   };
 
-  const assignLine = async (line: RunCostLineRow, dest: string) => {
-    const [kind, id] = dest ? dest.split(":") : ["", ""];
-    setBusy(true);
-    try {
-      await updateCostLine(line.id, {
-        // "excluded" is recorded-but-not-charged, so it must clear any destination
-        allocate: dest === "excluded" ? "excluded" : "none",
-        run_id: kind === "run" ? Number(id) : null,
-        project_id: kind === "project" ? Number(id) : null,
-      });
-      refreshAll();
-    } catch (err) {
-      await dialog.alert(errorMessage(err), { title: "Could not reassign the position" });
-    } finally {
-      setBusy(false);
-    }
-  };
 
-  const void_ = async (line: RunCostLineRow) => {
-    const ok = await dialog.confirm(
-      `Void “${line.label || line.kind}”?${line.is_header ? " Its shares are voided too." : ""}`,
-      { title: "Void position", confirmLabel: "Void", tone: "danger" },
-    );
-    if (!ok) return;
-    setBusy(true);
-    try {
-      await voidCostLine(line.id);
-      refreshAll();
-    } catch (err) {
-      await dialog.alert(errorMessage(err), { title: "Could not void the position" });
-    } finally {
-      setBusy(false);
-    }
-  };
 
   /** The global pass — every unresolved part line in every document. */
   const resolveEverywhere = async () => {
@@ -277,6 +248,27 @@ export default function Invoices() {
       </div>
     );
   }
+  // Rebuild the editable copy of the open document's lines whenever a different
+  // document is opened or the open one is refetched. Keyed on the document id
+  // plus its line identities, so an ordinary re-render does not throw away edits
+  // in progress. It sits with the other hooks and ABOVE the loading returns:
+  // placing it after them changed the hook order between renders and blanked the
+  // page (2026-09-19).
+  const rowsKey = `${doc?.id ?? 0}:${(doc?.lines || []).filter((li) => !li.voided)
+    .map((li) => li.id).join(",")}`;
+  const rowsKeyRef = useRef("");
+  useEffect(() => {
+    if (rowsKeyRef.current === rowsKey) return;
+    rowsKeyRef.current = rowsKey;
+    const live = (doc?.lines || []).filter((li) => !li.voided);
+    const byId = new Map((doc?.lines || []).map((li) => [li.id, li]));
+    setSavedRows(treeOrder(live).map((li) => toDraft(li, depthOf(li, byId))));
+    setHeader(doc ? headerOf(doc) : null);
+    setEditingDoc(false);
+    setDeletedLines(new Set());
+    setSaveError(null);
+  }, [rowsKey]);
+
   if (!reg) {
     return (
       <div className="main-solo">
@@ -294,10 +286,56 @@ export default function Invoices() {
   const lineById = new Map((doc?.lines || []).map((li) => [li.id, li]));
   const liveLines = (doc?.lines || []).filter((li) => !li.voided);
   const docCurrency = doc?.currency || "USD";
-  const runForLine = (li: RunCostLineRow) =>
-    li.allocate === "excluded"
-      ? "excluded"
-      : li.run_id ? `run:${li.run_id}` : li.project_id ? `project:${li.project_id}` : "";
+
+  /** The project a line's money belongs to: its own, its run's, or the
+   *  document's. PlanLinkDialog needs it to load that project's cost list. */
+  /** Put the open document back the way the server has it. One act, because a
+   *  batch that is abandoned is abandoned whole. */
+  const cancelDocEdit = () => {
+    if (!doc) return;
+    const live = (doc.lines || []).filter((li) => !li.voided);
+    const byId = new Map((doc.lines || []).map((li) => [li.id, li]));
+    setSavedRows(treeOrder(live).map((li) => toDraft(li, depthOf(li, byId))));
+    setHeader(headerOf(doc));
+    setDeletedLines(new Set());
+    setSaveError(null);
+  };
+
+  /** Header + positions in ONE call, so the document can never be half-written
+   *  and a swap between two positions nets out before the stock guard runs. */
+  const saveDocEdit = async () => {
+    if (!doc || !header) return;
+    setSavingDoc(true);
+    setSaveError(null);
+    try {
+      const total = header.total.trim();
+      await editDocumentLines(doc.id, {
+        document: {
+          supplier: header.supplier.trim(),
+          doc_number: header.doc_number.trim(),
+          external_id: header.external_id.trim(),
+          doc_date: header.doc_date.trim(),
+          currency: header.currency.trim() || "USD",
+          total_amount: total === "" ? null : Number(total),
+          doc_type: header.doc_type,
+          notes: header.notes,
+        },
+        updates: savedRows
+          .filter((r) => r.id != null && !deletedLines.has(r.id))
+          .map((r) => ({ id: r.id as number, ...draftToLineIn(r) })),
+        creates: savedRows.filter((r) => r.id == null).map(draftToLineIn),
+        deletes: [...deletedLines],
+      });
+      setEditingDoc(false);
+      setDeletedLines(new Set());
+      await refreshAll();
+    } catch (err) {
+      setSaveError(errorMessage(err));
+    } finally {
+      setSavingDoc(false);
+    }
+  };
+
   const projectOfLine = (li: RunCostLineRow): number | null => {
     if (li.project_id) return li.project_id;
     if (li.run_id) return reg.runs[String(li.run_id)]?.project_id ?? null;
@@ -344,6 +382,7 @@ export default function Invoices() {
           <NewInvoiceCard
             runs={runOptions}
             projects={projectOptions}
+          stepCatalog={stepCatalog}
             onDone={(created) => {
               setAdding(false);
               load();
@@ -443,9 +482,20 @@ export default function Invoices() {
                               <Spinner label="Loading positions…" />
                             ) : (
                               <>
-                                <p className="muted">
-                                  {d.notes ? d.notes : "No notes on this document."}
-                                </p>
+                                {saveError ? <ErrorBanner message={saveError} /> : null}
+                                {editingDoc && header ? (
+                                  <InvoiceFields
+                                    value={header}
+                                    onChange={setHeader}
+                                    runs={runOptions}
+                                    projects={projectOptions}
+                                    disabled={savingDoc}
+                                  />
+                                ) : (
+                                  <p className="muted">
+                                    {d.notes ? d.notes : "No notes on this document."}
+                                  </p>
+                                )}
                                 <div className="btn-row">
                                   <Originals docId={d.id} onChange={load} />
                                   <button
@@ -456,120 +506,60 @@ export default function Invoices() {
                                   >
                                     Resolve parts
                                   </button>
+                                  <CheckField
+                                    checked={editingDoc}
+                                    disabled={busy || savingDoc}
+                                    onChange={(on) => {
+                                      setEditingDoc(on);
+                                      if (!on) cancelDocEdit();
+                                    }}
+                                  >
+                                    Edit this invoice
+                                  </CheckField>
                                 </div>
-                                <div className="table-wrap">
-                                  <table className="data data-fixed invoice-lines-table">
-                                    <thead>
-                                      <tr>
-                                        <th>Kind</th>
-                                        <th>Position</th>
-                                        <th className="num">Qty</th>
-                                        <th className="num">Unit</th>
-                                        <th className="num">Amount</th>
-                                        <th>Charge to</th>
-                                        <th>Planned as</th>
-                                        <th className="ctr">Split</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {treeOrder(liveLines).map((li) => {
-                                        const d0 = depthOf(li, lineById);
-                                        return (
-                                          <tr key={li.id} className={li.is_header ? "muted" : undefined}>
-                                            <td>{li.kind}</td>
-                                            <td title={li.label}>
-                                              <span className={`tree-indent tree-indent-${Math.min(d0, 3)}`} />
-                                              {li.is_header ? "▾ " : d0 ? "· " : ""}
-                                              {li.label || "—"}
-                                            </td>
-                                            <td className="num">{li.qty_effective ?? li.qty}</td>
-                                            <td className="num">{li.unit_price}</td>
-                                            <td className="num" title={li.is_header ? "split — the shares below carry this money" : undefined}>
-                                              {plain(li.line_total)}
-                                              {li.is_header ? (
-                                                <>
-                                                  {" "}
-                                                  <span className="pill neutral">split</span>
-                                                  {li.residual ? (
-                                                    <span className="pill warn">
-                                                      {plain(li.residual)} left
-                                                    </span>
-                                                  ) : null}
-                                                </>
-                                              ) : null}
-                                            </td>
-                                            <td>
-                                              {li.is_header ? (
-                                                <span className="dim">shares below</span>
-                                              ) : li.kind === "part" && !li.run_id
-                                                  && li.allocate !== "excluded" ? (
-                                                <span className="dim" title="parts feed the shared pool; runs draw from it">
-                                                  pool
-                                                </span>
-                                              ) : (li.allocate === "by_value" || li.allocate === "by_qty")
-                                                  && !li.run_id && !li.project_id ? (
-                                                <span
-                                                  className="dim"
-                                                  title={"landed cost — spread " +
-                                                    (li.allocate === "by_value" ? "by value" : "by quantity") +
-                                                    " over this document's part lines, so it raises their pool unit cost"}
-                                                >
-                                                  pool (spread)
-                                                </span>
-                                              ) : (
-                                                <ChargeToSelect
-                                                  runs={runOptions}
-                                                  projects={projectOptions}
-                                                  value={runForLine(li)}
-                                                  disabled={busy}
-                                                  onChange={(v) => assignLine(li, v)}
-                                                />
-                                              )}
-                                            </td>
-                                            <td title={li.plan_ref || ""}>
-                                              {li.is_header ? (
-                                                <span className="dim">—</span>
-                                              ) : (
-                                                <StepSelect
-                                                  catalog={stepCatalog}
-                                                  className="row-input mono"
-                                                  disabled={busy}
-                                                  value={li.plan_key && li.plan_key.includes(":") ? li.plan_key : ""}
-                                                  title={"production step — invoice money billed under a step is matched to the planned cost item carrying the same step automatically"}
-                                                  onChange={(v) => {
-                                                    if (v === "__link") { setLinking(li); return; }
-                                                    void setLineStep(li, v);
-                                                  }}
-                                                >
-                                                  <option value="__link">link to a specific plan item…</option>
-                                                </StepSelect>
-                                              )}
-                                            </td>
-                                            <td className="ctr">
-                                              <button
-                                                type="button"
-                                                className="btn btn-sm"
-                                                disabled={busy}
-                                                onClick={() => setSplitting(li)}
-                                              >
-                                                {li.is_header ? "edit" : "split"}
-                                              </button>
-                                              <button
-                                                type="button"
-                                                className="btn btn-sm row-del"
-                                                disabled={busy}
-                                                title="Void this position"
-                                                onClick={() => void_(li)}
-                                              >
-                                                ×
-                                              </button>
-                                            </td>
-                                          </tr>
-                                        );
-                                      })}
-                                    </tbody>
-                                  </table>
-                                </div>
+                                <InvoiceLinesTable
+                                  mode="saved"
+                                  rows={savedRows}
+                                  setRows={setSavedRows}
+                                  savedById={lineById}
+                                  editing={editingDoc}
+                                  deleted={deletedLines}
+                                  setDeleted={setDeletedLines}
+                                  runs={runOptions}
+                                  projects={projectOptions}
+                                  stepCatalog={stepCatalog}
+                                  currency={docCurrency}
+                                  busy={busy}
+                                  onSplit={(li) => setSplitting(li)}
+                                  onSaved={refreshAll}
+                                />
+                                {editingDoc ? (
+                                  <div className="btn-row">
+                                    <button
+                                      type="button"
+                                      className="btn btn-primary btn-sm"
+                                      disabled={savingDoc || busy}
+                                      onClick={saveDocEdit}
+                                      title="The header and every position are written in ONE transaction, so a swap between two positions is legal"
+                                    >
+                                      {savingDoc ? "Saving…" : "Save changes"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm"
+                                      disabled={savingDoc}
+                                      onClick={() => { setEditingDoc(false); cancelDocEdit(); }}
+                                    >
+                                      Cancel
+                                    </button>
+                                    <span className="muted">
+                                      Nothing is written until you save.
+                                      {deletedLines.size
+                                        ? ` ${deletedLines.size} position${deletedLines.size === 1 ? "" : "s"} staged for voiding.`
+                                        : ""}
+                                    </span>
+                                  </div>
+                                ) : null}
                               </>
                             )}
                           </td>
@@ -691,55 +681,33 @@ function Originals({ docId, onChange }: { docId: number; onChange: () => void })
 // ------------------------------------------------------------- new invoice form
 
 function NewInvoiceCard({
-  runs, projects, onDone,
+  runs, projects, stepCatalog, onDone,
 }: {
   runs: RunOption[];
   projects: { id: number; name: string }[];
+  stepCatalog: CostStepCatalog | null;
   onDone: (createdId: number | null) => void;
 }) {
-  const [supplier, setSupplier] = useState("");
-  const [docNumber, setDocNumber] = useState("");
-  const [externalId, setExternalId] = useState("");
-  const [docDate, setDocDate] = useState("");
-  const [currency, setCurrency] = useState("USD");
-  const [total, setTotal] = useState("");
-  const [docType, setDocType] = useState("invoice");
-  const [dest, setDest] = useState("");
-  const [notes, setNotes] = useState("");
-  const [lines, setLines] = useState<NewLine[]>([blankLine()]);
+  const [head, setHead] = useState<InvoiceHeader>({
+    supplier: "", doc_number: "", external_id: "", doc_date: "",
+    currency: "USD", total: "", doc_type: "invoice", notes: "", dest: "",
+  });
+  const [lines, setLines] = useState<LineDraft[]>([blankDraft()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [nbp, setNbp] = useState("");
-
-  /** Invoice-date FX convention: the NBP table-A rate at the document date.
-   *  Display-only — the register does its own conversion; this answers
-   *  "what rate should this be" while typing amounts from a PLN invoice. */
-  const lookupNbp = async () => {
-    setNbp("…");
-    try {
-      const r = await getNbpRate(currency.trim(), docDate.trim());
-      setNbp(
-        `1 ${r.currency} = ${r.rate_usd} USD (NBP table A, ${r.effective_date}` +
-          `${r.requested_date_used ? "" : " — previous working day"})`,
-      );
-    } catch (err) {
-      setNbp(errorMessage(err));
-    }
-  };
 
   const sum = lines.reduce((s, l) => s + Number(l.qty || 0) * Number(l.unit_price || 0), 0);
-  const totalNum = total.trim() === "" ? null : Number(total);
+  const currency = head.currency;
+  const totalNum = head.total.trim() === "" ? null : Number(head.total);
   const mismatch = totalNum != null && Math.abs(sum - totalNum) > 0.05;
 
-  const patch = (i: number, next: Partial<NewLine>) =>
-    setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...next } : l)));
 
   const save = async () => {
-    if (!supplier.trim()) {
+    if (!head.supplier.trim()) {
       setError("A supplier is required — it is how the document is recognised later.");
       return;
     }
-    const [kind, id] = dest ? dest.split(":") : ["", ""];
+    const [kind, id] = head.dest ? head.dest.split(":") : ["", ""];
     setBusy(true);
     setError(null);
     try {
@@ -747,26 +715,27 @@ function NewInvoiceCard({
       // several products has no single owner, and positions carry the split.
       // A whole-document destination is applied per line instead.
       const created = await createSharedDocument({
-        doc_type: docType,
-        supplier: supplier.trim(),
-        doc_number: docNumber.trim(),
-        external_id: externalId.trim(),
-        doc_date: docDate.trim(),
-        currency: currency.trim() || "USD",
+        doc_type: head.doc_type,
+        supplier: head.supplier.trim(),
+        doc_number: head.doc_number.trim(),
+        external_id: head.external_id.trim(),
+        doc_date: head.doc_date.trim(),
+        currency: head.currency.trim() || "USD",
         total_amount: totalNum,
-        notes: notes.trim(),
+        notes: head.notes.trim(),
+        // A position with no destination of its own falls back to the
+        // document-wide one, which is what the "charge every position to"
+        // select is for. The per-line control wins when it was used.
         lines: lines
           .filter((l) => l.label.trim() !== "" || Number(l.unit_price || 0) !== 0)
-          .map((l) => ({
-            kind: l.kind,
-            basis: "per_run" as const,
-            label: l.label.trim(),
-            mpn: l.mpn.trim(),
-            qty: Number(l.qty || 0),
-            unit_price: Number(l.unit_price || 0),
-            run_id: kind === "run" ? Number(id) : null,
-            project_id: kind === "project" ? Number(id) : null,
-          })),
+          .map((l) => {
+            const line = draftToLineIn(l);
+            if (!l.dest && head.dest) {
+              line.run_id = kind === "run" ? Number(id) : null;
+              line.project_id = kind === "project" ? Number(id) : null;
+            }
+            return line;
+          }),
       });
       onDone(created.id);
     } catch (err) {
@@ -783,157 +752,26 @@ function NewInvoiceCard({
         invoice can pay for several batches, and a position can be split.
       </p>
       {error ? <ErrorBanner message={error} /> : null}
-      <div className="field-grid">
-        <label>
-          Supplier
-          <input className="text" value={supplier} onChange={(e) => setSupplier(e.target.value)} />
-        </label>
-        <label>
-          Document number
-          <input className="text" value={docNumber} onChange={(e) => setDocNumber(e.target.value)} />
-        </label>
-        <label>
-          Supplier order id
-          <input
-            className="text"
-            value={externalId}
-            placeholder="JLC Batch No, POB0…"
-            onChange={(e) => setExternalId(e.target.value)}
-          />
-        </label>
-        <label>
-          Date
-          <input
-            className="text"
-            value={docDate}
-            placeholder="2025-04-13"
-            onChange={(e) => setDocDate(e.target.value)}
-          />
-        </label>
-        <label>
-          Currency
-          <input className="text" value={currency} onChange={(e) => setCurrency(e.target.value)} />
-          {currency.trim() && currency.trim().toUpperCase() !== "USD" && docDate.trim() ? (
-            <span>
-              <button type="button" className="btn btn-sm" onClick={lookupNbp}>
-                NBP rate at this date
-              </button>{" "}
-              {nbp ? <span className="muted">{nbp}</span> : null}
-            </span>
-          ) : null}
-        </label>
-        <label>
-          Printed total
-          <input className="text num" value={total} onChange={(e) => setTotal(e.target.value)} />
-        </label>
-        <label>
-          Type
-          <select className="text" value={docType} onChange={(e) => setDocType(e.target.value)}>
-            <option value="invoice">invoice</option>
-            <option value="proforma">proforma (not money)</option>
-            <option value="receipt">receipt</option>
-            <option value="credit_note">credit note</option>
-          </select>
-        </label>
-        <label>
-          Charge every position to
-          <ChargeToSelect
-            className="text"
-            runs={runs}
-            projects={projects}
-            value={dest}
-            onChange={setDest}
-            emptyLabel="— decide per position —"
-            withExcluded={false}
-          />
-        </label>
-      </div>
-      <label>
-        Notes
-        <textarea
-          className="note-textarea"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="What this document covers, and any split arithmetic"
-        />
-      </label>
+      <InvoiceFields
+        value={head}
+        onChange={setHead}
+        runs={runs}
+        projects={projects}
+        withDest
+        disabled={busy}
+      />
 
-      <div className="table-wrap">
-        <table className="data data-fixed invoice-new-lines-table">
-          <thead>
-            <tr>
-              <th>Kind</th>
-              <th>Position</th>
-              <th>MPN</th>
-              <th className="num">Qty</th>
-              <th className="num">Unit price</th>
-              <th className="num">Amount</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {lines.map((l, i) => (
-              <tr key={i}>
-                <td>
-                  <select
-                    className="row-input"
-                    value={l.kind}
-                    onChange={(e) => patch(i, { kind: e.target.value as CostLineKind })}
-                  >
-                    {KINDS.map((k) => (
-                      <option key={k} value={k}>{k}</option>
-                    ))}
-                  </select>
-                </td>
-                <td>
-                  <input className="row-input" value={l.label} onChange={(e) => patch(i, { label: e.target.value })} />
-                </td>
-                <td>
-                  <input
-                    className="row-input mono"
-                    value={l.mpn}
-                    placeholder={l.kind === "part" ? "required for parts" : ""}
-                    onChange={(e) => patch(i, { mpn: e.target.value })}
-                  />
-                </td>
-                <td>
-                  <input
-                    className="row-input num"
-                    inputMode="decimal"
-                    value={l.qty}
-                    onChange={(e) => patch(i, { qty: e.target.value })}
-                  />
-                </td>
-                <td>
-                  <input
-                    className="row-input num"
-                    inputMode="decimal"
-                    value={l.unit_price}
-                    onChange={(e) => patch(i, { unit_price: e.target.value })}
-                  />
-                </td>
-                <td className="num">
-                  {plain(Number(l.qty || 0) * Number(l.unit_price || 0))}
-                </td>
-                <td className="ctr">
-                  <button
-                    type="button"
-                    className="btn btn-sm row-del"
-                    onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}
-                  >
-                    ×
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <InvoiceLinesTable
+        mode="draft"
+        rows={lines}
+        setRows={setLines}
+        runs={runs}
+        projects={projects}
+        stepCatalog={stepCatalog}
+        currency={currency}
+      />
 
       <div className="btn-row">
-        <button type="button" className="btn btn-sm" onClick={() => setLines((ls) => [...ls, blankLine()])}>
-          Add position
-        </button>
         <span className={mismatch ? "pill err" : "muted"}>
           positions {plain(sum)} {currency}
           {totalNum != null ? ` · printed ${plain(totalNum)}` : ""}

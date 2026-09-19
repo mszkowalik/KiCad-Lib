@@ -19,7 +19,7 @@ import {
   type AgentPrinter,
   type AgentRoll,
 } from "../../flasher/benchAgent";
-import { RunClient, type RunSpec } from "../../flasher/runClient";
+import { RunClient, type BenchNotice, type RunSpec } from "../../flasher/runClient";
 import {
   Station,
   readStationName,
@@ -28,6 +28,7 @@ import {
   type LogDir,
 } from "../../flasher/station";
 import SocketPicker from "./SocketPicker";
+import Field from "../Field";
 import { useModal } from "../modal";
 import { useStickyState } from "../../useStickyState";
 
@@ -241,9 +242,13 @@ export default function BenchStation(props: StationSlotProps) {
   const statusRef = useRef<string>("pass");
   const errorRef = useRef<string>("");
   const [prompt, setPrompt] = useState<{ label: string; secret: boolean; resolve: (v: string) => void } | null>(null);
+  const [notice, setNotice] = useState<
+    { n: BenchNotice; resolve: (r: { ok: boolean; reason: string }) => void } | null
+  >(null);
   // The SIM PIN prompt has no cancel: the flashing run is waiting on the answer, so
   // Escape and a click outside must not dismiss it. It still locks the page behind it.
   const modal = useModal(null, { active: !!prompt });
+  const noticeModal = useModal(null, { active: !!notice });
   const clientRef = useRef<RunClient | null>(null);
   const logBox = useRef<HTMLDivElement>(null);
   /** Follow the tail only while the operator is already AT the tail. Read on
@@ -699,6 +704,8 @@ export default function BenchStation(props: StationSlotProps) {
       onPrinted: setPrinted,
       onPrompt: (_field, label, secret) =>
         new Promise<string>((resolve) => setPrompt({ label, secret, resolve })),
+      onNotice: (n) =>
+        new Promise<{ ok: boolean; reason: string }>((resolve) => setNotice({ n, resolve })),
       onDone: (st, err, results) => {
         if (err) setHint(hintFor(err));
         if (typeof results.marked === "string") setMarked(results.marked);
@@ -729,6 +736,11 @@ export default function BenchStation(props: StationSlotProps) {
   const answerPrompt = (value: string) => {
     prompt?.resolve(value);
     setPrompt(null);
+  };
+
+  const answerNotice = (ok: boolean, reason: string) => {
+    notice?.resolve({ ok, reason });
+    setNotice(null);
   };
 
   const busy = status === "busy";
@@ -1322,6 +1334,13 @@ export default function BenchStation(props: StationSlotProps) {
           </div>
         </div>
       ) : null}
+      {notice ? (
+        <div className="modal-backdrop">
+          <div className="card pad modal-card" {...noticeModal.cardProps}>
+            <NoticeBody n={notice.n} onAnswer={answerNotice} />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1359,6 +1378,58 @@ function Bar({ label, pct }: { label: string; pct: number | null }) {
     <div className="bench-bar" title={`${label}: ${pct ?? 0}%`}>
       <div className="bench-bar-fill" style={{ width: `${pct ?? 0}%` }} />
     </div>
+  );
+}
+
+/** A bench check, in front of the operator before anything is written.
+ *
+ *  A BLOCK has no choice to offer — the engine ended the run before sending it,
+ *  so the only button closes the box. A WARN asks, and the reason box is
+ *  offered without being required (user decision 2026-09-19): demanding a
+ *  sentence to get past a dialog produces sentences like ".", not reasons.
+ */
+function NoticeBody({
+  n,
+  onAnswer,
+}: {
+  n: BenchNotice;
+  onAnswer: (ok: boolean, reason: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const blocked = n.level === "block";
+  return (
+    <>
+      <h2 className="card-title">{blocked ? "Cannot program this unit" : "Check before you continue"}</h2>
+      <p className={blocked ? "err" : "warn"}>{n.text}</p>
+      {n.hint ? <p className="muted small">{n.hint}</p> : null}
+      {blocked ? (
+        <div className="btn-row modal-actions">
+          <button type="button" className="btn btn-primary" autoFocus onClick={() => onAnswer(false, "")}>
+            Close
+          </button>
+        </div>
+      ) : (
+        <>
+          <Field label="Reason" hint="Optional — it goes in the run’s history with your name.">
+            <input
+              className="row-input"
+              value={reason}
+              autoFocus
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="why this is expected"
+            />
+          </Field>
+          <div className="btn-row modal-actions">
+            <button type="button" className="btn" onClick={() => onAnswer(false, reason.trim())}>
+              Stop the run
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => onAnswer(true, reason.trim())}>
+              Continue
+            </button>
+          </div>
+        </>
+      )}
+    </>
   );
 }
 

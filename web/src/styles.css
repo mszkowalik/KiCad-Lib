@@ -3758,6 +3758,21 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
   overflow-wrap: anywhere;
 }
 
+/* A scrollable result list inside a modal — a search that can return more rows
+   than the dialog is tall. Horizontal scrolling is `table-wrap`'s job; this is
+   the vertical half, so the dialog's actions stay reachable. */
+.pick-list {
+  max-height: 260px;
+  overflow-y: auto;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.pick-list tr {
+  cursor: pointer;
+}
+
 .modal-input {
   width: 100%;
   margin-top: 12px;
@@ -3849,15 +3864,42 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
 
 .invoices-table tr.row-open > td { background: var(--accent-soft); }
 
+/* Supply coverage: six columns summing to 100%. Only the problem rows render,
+   so the part column can afford the width — the list is short by design. */
+/* A supplier breakdown can be 45 rows. Scroll the ROWS, never the dialog:
+   the Split button below them has to stay reachable. */
+.split-rows-scroll {
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.supply-coverage-table { table-layout: fixed; }
+.supply-coverage-table th:nth-child(1), .supply-coverage-table td:nth-child(1) { width: 34%; }
+.supply-coverage-table th:nth-child(2), .supply-coverage-table td:nth-child(2) { width: 16%; }
+.supply-coverage-table th:nth-child(3), .supply-coverage-table td:nth-child(3) { width: 10%; }
+.supply-coverage-table th:nth-child(4), .supply-coverage-table td:nth-child(4) { width: 10%; }
+.supply-coverage-table th:nth-child(5), .supply-coverage-table td:nth-child(5) { width: 10%; }
+.supply-coverage-table th:nth-child(6), .supply-coverage-table td:nth-child(6) { width: 20%; }
+
 .invoice-lines-table { table-layout: fixed; }
+/* EIGHT columns summing to 100% — kind, position, qty, unit, amount, charge to,
+   planned as, split. Position IS the identity: on a part line it holds the
+   component picker, which is why it is the wide one. MPN had its own column
+   until 2026-09-19 and Component until later the same day; both said what
+   Position now says, and the designators a position covers are not read here.
+   COUNT THE COLUMNS before touching these — they have been wrong three times,
+   twice by adding a column and once by removing one. */
 .invoice-lines-table th:nth-child(1), .invoice-lines-table td:nth-child(1) { width: 8%; }
-.invoice-lines-table th:nth-child(2), .invoice-lines-table td:nth-child(2) { width: 26%; }
+.invoice-lines-table th:nth-child(2), .invoice-lines-table td:nth-child(2) { width: 29%; }
 .invoice-lines-table th:nth-child(3), .invoice-lines-table td:nth-child(3) { width: 7%; }
 .invoice-lines-table th:nth-child(4), .invoice-lines-table td:nth-child(4) { width: 8%; }
-.invoice-lines-table th:nth-child(5), .invoice-lines-table td:nth-child(5) { width: 15%; }
-.invoice-lines-table th:nth-child(6), .invoice-lines-table td:nth-child(6) { width: 17%; }
-.invoice-lines-table th:nth-child(7), .invoice-lines-table td:nth-child(7) { width: 11%; }
-.data.invoice-lines-table th:nth-child(8), .data.invoice-lines-table td:nth-child(8) { width: 8%; }
+.invoice-lines-table th:nth-child(5), .invoice-lines-table td:nth-child(5) { width: 11%; }
+.invoice-lines-table th:nth-child(6), .invoice-lines-table td:nth-child(6) { width: 16%; }
+.invoice-lines-table th:nth-child(7), .invoice-lines-table td:nth-child(7) { width: 15%; }
+.data.invoice-lines-table th:nth-child(8), .data.invoice-lines-table td:nth-child(8) { width: 6%; }
+
+/* A position staged for voiding: still readable, visibly on its way out. */
+.row-gone td { opacity: 0.45; text-decoration: line-through; }
 
 .invoice-new-lines-table { table-layout: fixed; }
 .invoice-new-lines-table th:nth-child(1), .invoice-new-lines-table td:nth-child(1) { width: 12%; }
@@ -3887,24 +3929,31 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
 .tree-indent-2 { width: 28px; }
 .tree-indent-3 { width: 42px; }
 
-/* Parts stock: the cost pool and JLC's physical stock on one row. Fixed layout,
-   widths summing to 100%; .data-fixed supplies the ellipsis treatment. */
-/* The merged Stock table: pool quantities, JLC's count and the two gaps on
-   one row. Twelve columns, widths summing to 100%; .data-fixed supplies the
-   ellipsis treatment. */
-.stock-table { table-layout: fixed; }
-.stock-table th:nth-child(1), .stock-table td:nth-child(1) { width: 15%; }
-.stock-table th:nth-child(2), .stock-table td:nth-child(2) { width: 8%; }
-.stock-table th:nth-child(3), .stock-table td:nth-child(3) { width: 7%; }
-.stock-table th:nth-child(4), .stock-table td:nth-child(4) { width: 7%; }
-.stock-table th:nth-child(5), .stock-table td:nth-child(5) { width: 7%; }
-.stock-table th:nth-child(6), .stock-table td:nth-child(6) { width: 7%; }
-.stock-table th:nth-child(7), .stock-table td:nth-child(7) { width: 7%; }
-.stock-table th:nth-child(8), .stock-table td:nth-child(8) { width: 9%; }
-.stock-table th:nth-child(9), .stock-table td:nth-child(9) { width: 8%; }
-.stock-table th:nth-child(10), .stock-table td:nth-child(10) { width: 8%; }
-.stock-table th:nth-child(11), .stock-table td:nth-child(11) { width: 8%; }
-.stock-table th:nth-child(12), .stock-table td:nth-child(12) { width: 9%; }
+/* The Stock table declares NO widths here. `DataTable` builds a <colgroup>
+   from each column's `width`, so the list to keep summing to 100 is in
+   `pages/Stock.tsx`. A `.stock-table` block lived here until 2026-09-19 with
+   thirteen carefully maintained widths that no element ever carried — the
+   table renders as `.data .data-fixed`. */
+/* Substituting a part, inside the Materials row it belongs to. It sits at the
+   top of the fold because it is the only control there that changes what the
+   batch CONSUMED — the price override below it only changes what that cost. */
+.sub-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+.sub-panel > .btn-row { align-items: baseline; }
+.sub-add { flex-wrap: wrap; }
+.sub-add input.text, .sub-add select.text { max-width: 230px; }
+/* the designator checkboxes: one small group, wrapping, not six form rows */
+.unused-flag { margin-left: 4px; }
+.ref-picks { display: inline-flex; flex-wrap: wrap; gap: 2px 10px; align-items: center; }
+.check-inline { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+
+.proj-chips { display: inline-flex; gap: 4px; align-items: center; overflow: hidden; }
+.proj-chips .pill { max-width: 15ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Invoices: the run cost/income table now carries the sale side (9 columns). */
 .invoice-runs-table th:nth-child(1), .invoice-runs-table td:nth-child(1) { width: 17%; }
@@ -3928,13 +3977,6 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
 .ledger-row:hover td { background: var(--surface-2); }
 .ledger-caret { display: inline-block; width: 1em; color: var(--muted); font-size: 0.8em; }
 /* the expansion opts out of the single-line clamp — it is a full-width panel */
-.stock-table td.ledger-cell {
-  white-space: normal;
-  overflow: visible;
-  width: auto;
-  padding: 10px 14px 14px;
-  background: var(--surface-2);
-}
 .ledger-panel { display: flex; flex-direction: column; gap: 10px; }
 .ledger-chart { width: 100%; height: auto; display: block; }
 .ledger-line { fill: none; stroke: var(--accent); stroke-width: 1.6; }
@@ -3953,6 +3995,92 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
 .ledger-table th:nth-child(6), .ledger-table td:nth-child(6) { width: 11%; }
 .ledger-table th:nth-child(7), .ledger-table td:nth-child(7) { width: 10%; }
 .ledger-table th:nth-child(8), .ledger-table td:nth-child(8) { width: 10%; }
+
+/* The three boxes behind a Stock row: where the part is used, what moved it,
+   and what the balance has done. Equal height on purpose — they answer three
+   questions a reader has at once, and a box that grows taller than the others
+   turns the fold into a scroll. Below 1200px they stack, because three tables
+   side by side on a laptop are three unreadable tables. */
+.part-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  padding: 2px 2px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.part-figure { display: flex; flex-direction: column; min-width: 74px; }
+.part-figure-value { font-family: var(--mono); font-size: 13px; }
+.part-figure-label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+.part-boxes {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr 1.15fr;
+  gap: 10px;
+  align-items: stretch;
+}
+@media (max-width: 1200px) { .part-boxes { grid-template-columns: 1fr; } }
+.part-box {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.part-box-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.part-box-head h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.part-box-head .muted { font-size: 11px; }
+/* One height for all three, a little taller than the chart used to be. The
+   movements list is the one that overflows — most recent first, so the rows a
+   reader wants are the ones already in view. */
+.part-box-body { height: 210px; overflow: auto; padding: 0; }
+.part-box-chart { display: flex; align-items: center; padding: 6px; overflow: hidden; }
+.part-box-chart .ledger-chart { width: 100%; height: auto; }
+.part-box-body > p.muted { padding: 8px; }
+.part-box-table { width: 100%; font-size: 11.5px; }
+.part-box-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+.part-box-table td, .part-box-table th { padding: 3px 6px; }
+/* the pill columns size to their content so a label is never clipped; the
+   text columns take what is left and ellipsis there, which is the right way
+   round — a truncated note still reads, a truncated pill does not. */
+.part-box-table td:has(> .pill), .part-box-table th:nth-child(2) {
+  width: 1%;
+  max-width: none;   /* the td rule above sets 0, which clips the pill to "SHEL" */
+  white-space: nowrap;
+}
+/* a date is fixed-length and unreadable truncated — let it size to itself and
+   spend the saved room on the note beside it */
+.part-box-table td.date-cell { width: 1%; max-width: none; white-space: nowrap; }
+.part-box-sub { display: block; color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
+.part-box-table td { max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The SUPPLIER's ledger, shown under ours in the same drill-down. Six columns,
+   not eight, and the last one carries JLC's own wording — which is the whole
+   value of the table, so it gets the room. */
+.jlc-ledger { display: flex; flex-direction: column; gap: 6px; }
+.jlc-ledger h3 { margin: 6px 0 0; font-size: 13px; }
+.jlc-ledger-table { table-layout: fixed; }
+.jlc-ledger-table th:nth-child(1), .jlc-ledger-table td:nth-child(1) { width: 10%; }
+.jlc-ledger-table th:nth-child(2), .jlc-ledger-table td:nth-child(2) { width: 11%; }
+.jlc-ledger-table th:nth-child(3), .jlc-ledger-table td:nth-child(3) { width: 18%; }
+.jlc-ledger-table th:nth-child(4), .jlc-ledger-table td:nth-child(4) { width: 9%; }
+.jlc-ledger-table th:nth-child(5), .jlc-ledger-table td:nth-child(5) { width: 9%; }
+.jlc-ledger-table th:nth-child(6), .jlc-ledger-table td:nth-child(6) { width: 43%; }
+.jlc-ledger-table td:nth-child(6) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ul.tight { margin: 6px 0; padding-left: 18px; }
+ul.tight li { margin: 2px 0; }
 
 /* ---- production dashboard (Invoices view) ---- */
 .dash-tiles {
@@ -4068,16 +4196,33 @@ table.kv.settings-table td:nth-child(1) > div:first-child {
    component. Ten columns, widths summing to 100%. The expansion row (draws,
    lots, override editor) reuses the .ledger-cell opt-out. */
 .run-materials-table { table-layout: fixed; }
-.run-materials-table th:nth-child(1), .run-materials-table td:nth-child(1) { width: 20%; }
+.run-materials-table th:nth-child(1), .run-materials-table td:nth-child(1) { width: 21%; }
 .run-materials-table th:nth-child(2), .run-materials-table td:nth-child(2) { width: 7%; }
 .run-materials-table th:nth-child(3), .run-materials-table td:nth-child(3) { width: 7%; }
-.run-materials-table th:nth-child(4), .run-materials-table td:nth-child(4) { width: 7%; }
-.run-materials-table th:nth-child(5), .run-materials-table td:nth-child(5) { width: 9%; }
-.run-materials-table th:nth-child(6), .run-materials-table td:nth-child(6) { width: 9%; }
-.run-materials-table th:nth-child(7), .run-materials-table td:nth-child(7) { width: 9%; }
-.run-materials-table th:nth-child(8), .run-materials-table td:nth-child(8) { width: 9%; }
+.run-materials-table th:nth-child(4), .run-materials-table td:nth-child(4) { width: 8%; }
+.run-materials-table th:nth-child(5), .run-materials-table td:nth-child(5) { width: 7%; }
+.run-materials-table th:nth-child(6), .run-materials-table td:nth-child(6) { width: 7%; }
+.run-materials-table th:nth-child(7), .run-materials-table td:nth-child(7) { width: 8%; }
+.run-materials-table th:nth-child(8), .run-materials-table td:nth-child(8) { width: 8%; }
 .run-materials-table th:nth-child(9), .run-materials-table td:nth-child(9) { width: 10%; }
-.run-materials-table th:nth-child(10), .run-materials-table td:nth-child(10) { width: 13%; }
+.run-materials-table th:nth-child(10), .run-materials-table td:nth-child(10) { width: 17%; }
+/* The Used column is typed in, not read: a batch's material usage for the parts
+   no supplier reports can only come from somebody counting it. Sized to the
+   column so the table does not reflow when a row becomes editable. */
+.run-materials-table input.text.qty-cell {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 6px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.run-materials-table input.text.qty-cell:not(:focus) {
+  background: transparent;
+  border-color: transparent;
+}
+.run-materials-table tr:hover input.text.qty-cell:not(:focus) {
+  border-color: var(--line);
+}
 .run-materials-table td.ledger-cell {
   white-space: normal;
   overflow: visible;

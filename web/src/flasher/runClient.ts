@@ -40,7 +40,21 @@ export interface RunUiEvents {
   /** Modal for a mid-run operator input (e.g. the SIM PIN). Resolving with
    *  "" tells the engine nothing was provided. */
   onPrompt(field: string, label: string, secret: boolean): Promise<string>;
+  /** A bench check fired. `level: "block"` is shown and the run is over — the
+   *  engine has already ended it, so nothing is asked and nothing is awaited.
+   *  A `"warn"` waits: resolving `{ok: true}` continues and `{ok: false}`
+   *  aborts, and `reason` is offered but never required. */
+  onNotice(n: BenchNotice): Promise<{ ok: boolean; reason: string }>;
   onDone(status: string, error: string | null, results: Record<string, unknown>): void;
+}
+
+export interface BenchNotice {
+  level: "block" | "warn";
+  /** Stable identifier, e.g. `not_in_stock` — the same string the audit row
+   *  carries as `flasher.check.<code>`. */
+  code: string;
+  text: string;
+  hint: string;
 }
 
 interface ActionMsg {
@@ -171,6 +185,24 @@ export class RunClient {
           Boolean(msg.secret),
         );
         this.send({ t: "prompt_result", id: msg.id, value });
+        return;
+      }
+      case "notice": {
+        const n: BenchNotice = {
+          level: msg.level === "block" ? "block" : "warn",
+          code: String(msg.code ?? ""),
+          text: String(msg.text ?? ""),
+          hint: String(msg.hint ?? ""),
+        };
+        this.events.onLog(n.level === "block" ? "err" : "app", `${n.code}: ${n.text}`);
+        // A block is terminal at the engine; showing it must not wait for an
+        // answer that would never be sent.
+        if (n.level === "block") {
+          void this.events.onNotice(n);
+          return;
+        }
+        const { ok, reason } = await this.events.onNotice(n);
+        this.send({ t: "notice_ack", id: msg.id, ok, reason });
         return;
       }
       case "done": {

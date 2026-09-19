@@ -1,5 +1,472 @@
 # Changelog
 
+## 2026-09-19 (an invoice line can be pointed at a library part by hand)
+
+The **Component** column on the Invoices line tree links a part position to the
+library component it bought. Until now the link had two sources only: the
+`Resolve parts` matcher, which needs a unique MPN hit, and an API client setting
+`component_id` itself — which the manual line form never sent. A position the
+matcher could not place stayed unlinked forever, and an unlinked part line keys
+the cost pool by its MPN string rather than by component, so it can never meet a
+BOM draw and the part silently costs nothing.
+
+- Click the cell on any `part` leaf to search the library by MPN, name or
+  manufacturer, then link or unlink. Unlinking splits that part's pool entry in
+  two, which the control says before you do it.
+- Linking fills an EMPTY `mpn` from the chosen part. It never overwrites one the
+  invoice printed.
+- **The parts a supplier sourced itself are itemised, and coverage is checked.**
+  "Components sourced by JLC" was one figure; it is now a child per part, priced
+  exactly as the supplier priced it, charged to the batch and never pooled.
+  `GET /api/runs/{id}/supply-coverage` answers whether every position the batch
+  used is covered exactly once — a part the supplier supplied that was ALSO
+  drawn from our pool is the double charge that previously had to be found and
+  voided by hand. Both are now in the UI: a **supplier** button on the parts
+  position fills it in place, one row per part, and the position folds to
+  `▸ 20 parts` so a breakdown is not in the way until you want it. A **Supply
+  coverage** panel at the top of a batch's Materials tab lists only the
+  positions that do not reconcile. A part share now names a library component
+  and carries a quantity at a price rather than a typed label and a percentage,
+  so a hand-made breakdown and a supplier-read one produce the same rows.
+  Reasoning in
+  [0041](docs/decisions/0041-the-supplier-parts-lump-is-a-small-bom.md).
+- **A part bought for a batch AND drawn from the pool is now caught.** That is a
+  double charge, and it was only detectable on batches whose supplier BOM the
+  importer had cached — a hand-entered invoice had no guard at all. The check
+  compares our own rows, so it needs no supplier feed and runs on every batch.
+- **Fixed:** a substituted row was indistinguishable from an ordinary one. The
+  marker was a worded pill in a fixed-width cell, and a pill cannot be
+  ellipsised — it was simply cut off. It is now a glyph, `⇄` on the design's row
+  and `↳` on the row standing in, with the detail on hover. The two redundant
+  supply pills are merged into one.
+- **Corrected:** a substitution's `source` was described, and labelled, as *who
+  decided* the change — "factory decided". It never recorded that. It records
+  WHERE the change was defined: on the supplier's order, or here by hand. The
+  common case is us choosing a different part on the supplier's site while
+  placing the order, which is our decision made outside the schematic. The pills
+  now read **"chosen in the order"** and **"recorded here"**. No stored value
+  changed. Reasoning in
+  [0042](docs/decisions/0042-a-substitution-records-where-the-change-was-defined.md).
+- **A fully substituted position is now two rows on the Materials tab.** The
+  design's part shows `used = 0` and the part that actually went on sits
+  directly beneath it with its own quantity and cost, instead of the two being
+  summed into one row where neither could be read. The design's row shows no
+  delta — its zero is deliberate, not a shortfall.
+- **A batch's own parts now show on its Materials tab.** Parts bought straight
+  for one batch never enter the shared pool, so no draw reported them and the
+  Materials tab could not see them at all — a position met that way showed an
+  empty Used column while the batch was paying for it. They are matched through
+  the substitution, because the row is keyed by what the design specifies and
+  the batch bought what was fitted. Batch 8's substituted C2 now reads 301.12
+  used against 239.41 planned: a 61.71 overspend that was invisible before.
+- The invoice line table is down to eight columns: **Position holds the
+  component picker** on a part line, and the MPN and Component columns are gone
+  — all three said the same thing.
+- **Fixed:** the Stock page reported "17,647 pieces we booked as bought that JLC
+  never received" once a supplier-parts position was itemised. The ledger
+  reconciliation counted every `part` line as a claim on JLC's warehouse,
+  including parts the factory supplied itself and `excluded` carve-outs, neither
+  of which ever entered our consigned stock.
+- **JLC-sourced component lines are `part`, not `assembly`.** They read as
+  labour on every Materials view because a guard against a run-less part line
+  claiming the pool was applied to lines that always name their run.
+- **A purchase can no longer be edited out from under its draws.** Deleting a
+  document, cutting a part line's quantity, voiding one, splitting one, or
+  changing its component link is refused when the change would leave
+  consumptions with no purchase behind them — the refusal names the short parts
+  and quantities. A change that keeps every part covered still goes through, and
+  `force=true` no longer waives it. Reasoning in
+  [0040](docs/decisions/0040-a-purchase-cannot-be-removed-from-under-its-draws.md).
+- **One line table now serves both entering an invoice and editing a saved one.**
+  The New invoice card gained the MPN, Component, Charge to and exact Planned-as
+  columns it never had, so a hand-typed position no longer has to be finished by
+  reopening the document. **A saved invoice can now be corrected at all**: one
+  "Edit this invoice" checkbox opens its header — supplier, number, supplier
+  order id, date, currency, printed total, type and notes — together with every
+  position, and Save changes writes the lot as ONE transaction. That is what
+  makes swapping the component mapping of two positions possible. Cancel
+  discards everything staged, and changing the currency or date re-resolves the
+  pinned NBP rate.
+- Prototype batches can now be counted without being named — see
+  [0039](docs/decisions/0039-a-prototype-is-counted-without-being-named.md).
+
+## 2026-09-19 (a batch records the part it really fitted)
+
+CE_Dongle_V2 batches 7 and 8 were built with **C7223** where the schematic says
+**C110548**. The change was intended and was never copied into the design, and
+nothing in the platform knew — so on 2026-08-06, three months later, **476 more
+of the superseded part were bought for $585.29** at $1.2296 each against a
+historic $0.34. 500 now sit at JLC with no consumer. Reasoning in
+[0038](docs/decisions/0038-a-substitution-belongs-to-the-batch.md).
+
+- **A substitution is a row on the BATCH**, keyed by designator so it survives a
+  BOM re-export — `run_substitutions`, journalled, one per position. The
+  snapshot is never rewritten: it records what was specified, the row records
+  what went on the board.
+- **The supplier's own BOM is the detector.** JLC states it: `matchType:
+  "update"` at a designator whose part changed. Comparing their orders to each
+  other, per board, needs no mapping between their reference numbering and ours
+  — which matters, because for this board they differ (`C1` against the
+  schematic's `C2`). Nothing is written on its own.
+- **It lives in the Materials row, not beside it.** Unfold a part and the fold
+  offers **Substitute this part**, scoped either to one designator or to every
+  position the part sits at — a BOM row already groups them, so "all of them"
+  is one row either way. What the supplier already reported is offered there
+  with a **Record** button. A folded row then carries a small pill: `→ C7223`
+  on the part the design asks for, `stands in for C110548` on the part that
+  actually went on, and `supplier changed it` where JLC reports a change nobody
+  has recorded.
+- **A substituted part is ONE row on Materials, not two.** Left apart, the
+  design's part read `not drawn` and the part actually fitted read `not
+  planned`, so a batch built correctly showed two faults. The planned side
+  stays the design's — that is what was specified and budgeted — and the used
+  side comes from the draws of the part really fitted, which on batch 7 makes
+  the row read `1,000 / 1,000, Δ 0` and prices the substitution at **+$74.54**.
+  Only when the substitution covers every position on the line: replacing one
+  LED of six means both parts were genuinely used. Nothing is written — the
+  draw stays on the part that really left the pool.
+- **WHO SUPPLIED the part is recorded, not inferred.** `supplied_by` is read
+  from JLC's own `componentSource` — `shop` is theirs, `preSale` is our
+  consigned stock, `preSaleAndShop` is both — and shown on the row: batch 8
+  reads `supplier-supplied`, batch 7 `partly supplier-supplied`. It was briefly
+  inferred from the absence of a draw, which is wrong in both directions: a
+  part WE supplied and never drew is a missing draw, and reading that as
+  supplier-supplied would have hidden it.
+- **The part fitted is chosen with the library's own component picker**
+  (`ComponentLinkDialog`, now general enough to serve something that is not an
+  invoice line). Positions are picked with checkboxes, all ticked by default —
+  the usual answer is "everywhere", the next is "everywhere but one", and
+  neither fits a single-choice control.
+- **A part the supplier provided can be named without being in the library.**
+  The picker offers *Use "…" as typed* only when the supply side says the
+  supplier provided it: a part off OUR shelf was bought, so it has an invoice
+  line and a pool entry, and naming it by string alone would split it in two.
+- **A design part that never went on the board is flagged.** When JLCPCB's own
+  BOM for a batch is cached, a planned position whose part appears in neither
+  that BOM nor any draw gets **⚠ not on the board** at the end of its Materials
+  row. Matched on the LCSC code, never the designator — JLC's numbering is not
+  ours — and through the library component, so one part under two codes is not
+  reported as missing. A part that WAS drawn is never flagged, which is what
+  keeps cartons and enclosures out of it.
+- **A substituted row's Used quantity follows from the substitution and cannot
+  be typed.** It was left blank and editable, which invited a number that would
+  have written a draw against the part the design names — the one that did NOT
+  go on the board — and taken it out of stock. Batch 8 now reads `800 / 800,
+  Δ 0` with the used MONEY blank, because the supplier's part is billed inside
+  the assembly fee and cannot be split out. A position recorded as empty reads
+  `0 / 0` and plans nothing, exactly as a dropped line does.
+- **Recording a substitution clears the flag**, and so does recording that
+  nothing was fitted: a substitution with **quantity 0 and no part named** means
+  the position was left empty. That is what the early batches did with cartons —
+  history, not an error — and it now has a row with an author and an undo
+  instead of a JSON `drop` nobody could see.
+- **There is one component picker, and it is now where a shared component
+  belongs.** `ComponentLinkDialog` under `invoices/` became
+  `components/ComponentPickDialog.tsx`: it takes a `PickSubject` rather than an
+  invoice line, so an invoice line and a BOM position both satisfy it, and it
+  gained `allowFreeText`, `title` and `confirmLabel`. Its old path said it
+  belonged to one screen, which is the reliable way to get a second picker
+  written.
+- **A design that has not caught up is a standing finding on Stock**, naming the
+  batch, the position and how many of the superseded part are still held. That
+  is the part that stops the re-order.
+- **Later batches keeping the substitute get their own row.** Reporting only the
+  moment it changed left batch 8, built identically, looking as though it
+  followed the design.
+- **BOM draws take the fitted part**, noting what it stands in for. The unused
+  `component_id` branch of `ProductionRun.overrides` is gone — it keyed on a
+  snapshot-scoped BOM line id and could never have carried into the next batch.
+
+## 2026-09-19 (the Stock page answers one question, and keeps the rest behind the row)
+
+The parts table went from **thirteen columns to six** — part, LCSC, projects,
+ours, Δ qty, at cost. Every figure that is an *operand* of the comparison rather
+than the comparison itself moved into the row's fold, where there is room to
+read it. JLC's own count went with them: it is `ours + Δ qty`, and printing all
+three spent a column on arithmetic.
+
+- **Unfolding a part gives three boxes of equal height**: where it is used, what
+  moved it, and what the balance has done over time. The movements box carries
+  both ledgers behind one control — ours and JLCPCB's — because a disagreement
+  is settled by reading one against the other, most recent first.
+- **A part now knows its own projects.** `parts_stock` joins each part to every
+  project's latest ready snapshot BY IDENTITY, so a part matched only by MPN or
+  only by `component_id` is still found. The table shows them as chips and the
+  fold as a table with boards, quantities per device and reference designators.
+- **"Held parts used in projects" is gone**, and so is `GET /api/jlc/stock/usage`
+  behind it. It listed only parts JLC holds — an enclosure, which no supplier
+  consigns and whose usage nothing else reports, appeared nowhere. The 7 parts
+  the platform buys itself now show their stock like any other.
+- **"All" is the default filter.** The page is read to look a part up at least as
+  often as to chase a disagreement, and now that the two sides agree the old
+  default opened on an empty table.
+- **A stylesheet block that styled nothing was removed.** `.stock-table` carried
+  thirteen hand-maintained column widths and no table ever had that class —
+  `DataTable` builds its `<colgroup>` from the column definitions. Recorded as
+  rule 9 in `web/src/components/CLAUDE.md`.
+
+## 2026-09-19 (the bench speaks up before it writes)
+
+The bench now checks what the platform already knows about the board in front
+of it, at the moment the MAC is read, and says so. Reasoning in
+[0037](docs/decisions/0037-the-bench-says-what-it-already-knows.md).
+
+**Exactly one check stops a run:** the device belongs to a different project,
+which means the wrong fixture or the wrong project selected, and continuing
+would file a unit where it does not belong. Everything else is a notice the
+operator takes, with their name on it and a reason box that is offered but
+never required.
+
+| Notice | Fires when |
+|---|---|
+| `first_unit_of_batch` | this is the first device ever filed against the batch — the check that would have caught 2026-09-17 at unit one instead of unit 31 |
+| `not_in_stock` | the unit reads shipped, allocated or disposed. Programming it does not book it back in |
+| `built_in_another_batch` | an ordinary reflash. The unit keeps its original batch for cost, this batch keeps the attempt |
+| `online_elsewhere` | the broker says this device is online now, so it cannot also be on your bench |
+| `condition_not_ok` | a faulty or prototype unit — probably a repair, and it stays unsellable until the condition is cleared |
+| `batch_full` | the batch already holds as many units as were planned |
+| `settled_batch` | the batch has taken no unit for 30 days. Adding one re-divides its whole cost pool |
+| `duplicate_imei` / `duplicate_iccid` | that modem or SIM identity is already recorded on another unit |
+
+**A new board, in a running batch, in the right project, produces no notice at
+all.** Every notice is an audit row on the run (`flasher.check.<code>`) and a
+line in the run log, so what somebody continued past is in the history.
+
+## 2026-09-18 (a batch shows the devices it really built)
+
+The batch **Devices** tab now draws the project's own device list scoped to the
+batch, instead of a serial list somebody had to paste in by hand. `run_devices`
+held nothing in the whole database, so the tab was empty for every batch while
+`DeviceUnit.production_run_id` knew all 4,548 of them. The tab gained a
+**Condition** column and a per-device **Attempts** count, and its totals are
+counted over the batch rather than the project.
+
+- **A batch correction now moves both copies of the batch.**
+  [0029](docs/decisions/0029-the-batch-on-a-produced-event-is-correctable.md)
+  made the batch on a `produced` event correctable, but the bench also writes
+  that same choice onto every programming attempt, and the correction never
+  reached those. Fifty of the fifty-four filled rows still named Batch 8 — a
+  batch that has built nothing — while their devices had been corrected to
+  Batch 7 on 2026-09-17. `rebatch_devices` now moves the attempts that named
+  the old batch, reports how many, and records the count in the audit row. An
+  attempt naming some other batch, or naming none, is left alone.
+- **A one-off repair corrects the fifty rows already written**, pinned to that
+  batch and that date. It is not a standing rule: a programming run naming a
+  batch its device was not built in is NORMAL, because a unit reflashed while a
+  later batch was on the bench belongs to that session too, and the run row is
+  the only record of it.
+- **A batch's DEVICES are reached through the device.** The batch filter on the
+  devices list asked the bench's copy, which is NULL on 6,139 of 6,443 rows
+  because a retro import never guesses a batch. Built and programmed are now
+  kept apart as two questions: `good_units`, and so every per-device cost,
+  counts only what a batch built.
+- **Coverage figures need a planned list to mean anything.** Without one, a
+  batch used to report every device it really built as `extra`.
+
+## 2026-09-18 (the dongle stock finally closes)
+
+Every CE_Dongle_V2 device is now accounted for, and the numbers balance on every
+batch. The device log was rebuilt from the facts established over the past week
+rather than corrected in place — 4,326 of its 4,427 deliveries were FIFO guesses
+and only 101 had ever been observed. Reasoning in
+[0036](docs/decisions/0036-the-dongle-device-log-is-rebuilt-from-the-facts.md),
+the facts in
+[dongle-stock-reconciliation.md](docs/reference/dongle-stock-reconciliation.md).
+
+| | Devices |
+|---|---|
+| With customers | 4,502 |
+| On the shelf, faulty | 35 |
+| On the shelf, prototypes | 10 |
+| Scrapped | 1 |
+| **Total** | **4,548** |
+
+- **The 32 old-button units are stock again, not scrap.** They were filed
+  `disposed` because that was the only way to stop a shipment picking them.
+  They now read `in_stock` + `faulty`: present, visible, and unsellable.
+- **Every anonymous unit is gone.** All 75 became named records — 45 `PROTO-nnnn`
+  prototypes from before any batch existed, and 40 `PH-nnnn` placeholders for the
+  2026-09-03 delivery, where 191 units left and only 151 can be named. Each
+  placeholder says so in its note.
+- **Orders 17 and 19 now report what is really owed** — 8 and 500. Every other
+  order reads delivered in full.
+- **The 101 scanned serials survive untouched**, on their own deliveries, marked
+  as observed rather than inferred. They are the only rows in the whole history
+  that ever were.
+- **Batch 1 reads 521 built, 489 shipped, 32 held faulty**, and the invariant
+  `programmed = at customer + in stock + scrapped` balances on all seven batches.
+
+CE_Aqua_V2 and CE_Dongle_V3 are untouched; the shipment headers they share with
+dongle orders were reused, not rebuilt.
+
+## 2026-09-18 (stock moves when JLC says so, not when we agree)
+
+Consigned stock no longer waits for a decision about money. JLC itemises, on
+every manufacturing invoice, which of your lots each assembly order consumed —
+so that draw is now written when the invoice is imported, charged to nobody, and
+a later decision only says which batch pays. Reasoning in
+[0034](docs/decisions/0034-stock-moves-when-the-supplier-says-so.md).
+
+- **A decision that was never applied is no longer counted as settled.** One had
+  been sitting since 2026-08-25 with 441 consigned pieces still on our books:
+  the queue counted it as decided, and the "only undecided" filter hid it. The
+  filter now means *undecided or unapplied*, and the queue reports `stranded`
+  with the stock value behind it.
+- **The Stock page compared two different moments.** `delta_qty` subtracted a
+  pool that runs to today from JLC's count frozen weeks earlier, so every draw
+  made since read as stock JLC held and we never paid for — **33,246 pieces** of
+  phantom gap on 2026-09-18, hiding a real one of 3,866. Both sides are now read
+  at the moment JLC counted. The table gained an **Ours then** column and says
+  how many stock events have happened since.
+- **That comparison is made in JLC's calendar, not UTC.** A parts order placed
+  at 03:18 China time and a stock count fetched 4m44s later read as two
+  different days, so 13 parts came out wrong by exactly their last purchase.
+- **Assembly-order BOMs are fetched automatically on sync.** It was a manual,
+  per-order button, which left 31 of 45 orders without one — and the BOM is the
+  only source of which parts JLC supplied itself. The queue now says how many
+  orders have none and what they are worth. Fetching writes evidence, never
+  money, so a sync still cannot move the ledger.
+- **`invoice_register` reports `pool.uncharged_drawn_usd`** — stock that has
+  left with no run charged. A balance here that stops being transient means
+  orders are not being decided.
+
+Nothing about what a run has already been charged changes. An order imported
+before this keeps the old write path.
+
+### The platform reads JLCPCB's own inventory ledger
+
+**Every part now agrees with JLC to the piece** — 72 parts in the pool, 0
+disagreements, down from 28 parts and 33,246 pieces when this reconciliation
+began. The last two gaps were closed from JLC's own records rather than by hand.
+
+JLC keeps a per-part movement ledger behind the private-library page, with the
+balance before and after every movement and their own wording for it. The
+platform now syncs it with the stock count and reconciles both directions:
+a movement JLC recorded that no document of ours reports, and a purchase we
+booked that JLC's ledger never received. Reasoning in
+[0037](docs/decisions/0037-the-supplier-keeps-the-receipts.md).
+
+- **A cancelled lot is a fee, never stock.** The single largest disagreement —
+  **3,478 LEDs** — was a purchase that never arrived. JLC settled lot `754166`
+  with `orderStatus=40` (cancelled, refunded) and still reported
+  `settlePresaleNumber: 3470`, so the importer, which tested only for a zero
+  settled quantity, booked 3,470 pieces. `_lot_from_goods` now tests
+  `cancelled`, which it was already computing and using for nothing but a
+  display count. It is the only `orderStatus=40` lot in the account, across 17
+  parts orders and 228 lots.
+- **An imported parts order can take a correction.**
+  `POST /api/jlc/import/parts/{pob}/refresh` re-states a document already in the
+  platform from what JLC says today, lot by lot. It decides before it writes,
+  keeps anything a person appended to a line's note, and refuses rather than
+  guesses when a lot has vanished or when shrinking a line would contradict
+  draws bound to it. Without it the cancelled lot could only have been corrected
+  by hand.
+- **Seven movements no invoice can report are now recorded.** JLC tops an order
+  up from the shelf and says so only in the ledger: *"pick 3 pcs of C778132 & 8
+  pcs of C965790 up to complete SMT order"*, and *"used 20pcs in 2nd Process"* —
+  the whole of one part's gap, sitting unexplained since 2023. Each is written
+  as an uncharged draw with JLC's quantity, date and wording, and the Stock page
+  asks before writing any.
+- **A movement JLC cancelled is not a movement.** `changeStatus=3` states a
+  quantity and moves nothing. Excluding it, all 67 parts replay to the balance
+  JLC reports; including it, two do not.
+- **The ledger comes with the balance**, not on a second button. A balance alone
+  can only say THAT the two disagree.
+
+### The 27 legacy adjustments are now draws
+
+`POST /api/jlc/import/adjustments/to-draws` rewrites the pre-0034
+`external_project` adjustments as uncharged draws — dry-run by default,
+journalled, reversible, and refused unless every row reproduces from its order
+plan. Run on 2026-09-18: 27 rows across 7 orders, 1,094 pieces, $21.87.
+
+- **No stock moved.** All 72 part balances are identical before and after; only
+  the shape changed. The pieces now carry lot bindings like every other draw —
+  27 of 27 bound to the purchase they came from, none unresolved.
+- **Attrition and "other projects" both read zero** because neither exists any
+  more: `reason='external_project'` has no rows and no writer, and the platform's
+  recorded attrition was always genuinely nil.
+- `pool.adjustments_usd` is now **0.00**, and the same $21.87 appears as
+  `uncharged_drawn_usd`.
+- The **Other projects** column is gone from the Stock table — permanently empty
+  once nothing writes that shape. Its presence had pushed the table to fourteen
+  columns against twelve declared widths, and `table-layout: fixed` silently
+  squeezed the rest until a four-digit delta rendered as `-3,478…`. The widths
+  now name all thirteen. `pool_state` still counts `external` apart from
+  attrition, so a restored backup cannot quietly read as loss.
+
+### An external order's stock is a draw, not an adjustment
+
+The last writer of `reason='external_project'` is gone. When JLC builds
+something this platform does not track, the stock now leaves as an **uncharged
+draw** like everything else — `external_stock_movements` and
+`apply_external_movements` are removed, and the answer to "what does a new JLC
+usage become" is now unconditional.
+
+- **Before**, `external` fell back to writing adjustments whenever the stock had
+  not already been booked, so the old shape could still appear on new data.
+- **A legacy adjustment now counts as already booked.** Without that, reversing
+  and re-applying one of the seven affected orders would have written uncharged
+  draws on top of its adjustments and removed the same stock twice.
+- The 27 historical rows stay readable and stay on their own axis until they are
+  migrated; nothing writes another.
+
+### A cancelled JLC batch stops looking like work
+
+JLC states a batch's status in the order listing the sync already fetches —
+`shipped | inProduction | cancelled | waitPay | waitReview` — and `sync_stage`
+was keeping only the batch number. Three batches therefore sat in **not
+imported** indefinitely: a cancelled order is never invoiced, and neither is one
+still in production, so an empty payload could not tell them apart.
+
+- **`jlc_imports.jlc_status` records JLC's own word**, refreshed on every sync,
+  kept apart from our `staged -> imported` lifecycle. A cancelled batch is shown
+  as cancelled, excluded from the pending count, and no longer re-fetched every
+  sync for an invoice that will never exist.
+- **Found `W2026061105482196`**, a third cancelled batch nobody had identified —
+  it carries a decision that was recorded and never applied, which is now
+  explained rather than outstanding.
+
+### A batch's material usage is typed in
+
+The Materials tab's **Used** column is now editable, one row per BOM line. At
+the end of production you type what was actually consumed and the batch is done.
+The figure is absolute and idempotent, so correcting it later is the same
+action — no compensating adjustment, which is what attrition was being used for.
+
+- **Only for parts no supplier reports.** Enclosures, antennas and cartons —
+  seven parts, half the pool by value, and every draw against them was BOM
+  quantity x batch size, an estimate. A part JLC reported on its own invoice
+  stays read-only: that is a measurement, not something to retype.
+- **A draw is now priced by identity overlap.** Found while testing this: a draw
+  entered by MPN alone priced at **$0.00** against a real $3.55 average, because
+  the purchases were filed under a component id and the lookup keyed on the MPN
+  — which would also have split the part into a second pool entry. The stock
+  guard passed, so only the money was wrong. Both write paths go through
+  `resolve_pool_identity` now.
+
+### A supplier bills what was ordered
+
+Also today: `effective_qty` multiplied a supplier's per-board rate by the
+devices that PASSED, so LIFTECH's "5 PLN/board x 350" reconciled to 349 boards.
+Because the conservation check reads the register absolutely, that $1.31
+difference **refused every JLC import** from the moment
+[0030](docs/decisions/0030-good-units-are-counted-not-typed.md) landed this
+morning. Reasoning in
+[0035](docs/decisions/0035-a-supplier-bills-what-was-ordered.md).
+
+- **`planned_units` bills, `good_units` costs.** An assembler is paid for the
+  boards they assembled; the yield loss is ours. Per-device cost still divides
+  by the devices that passed — 0030 is unchanged on that point.
+- **A merged assembler invoice is split, not guessed.** One printed position
+  becomes a child per batch, each scaled by its own batch; that mechanism
+  already existed and is now the documented answer.
+- **"Written off" means attrition again.** Stock consumed by another project's
+  assembly order is counted on its own axis. The two together read 1,094
+  written-off pieces when the real attrition was zero, and attrition is a defect
+  signal here. The Stock table gained an **Other projects** column.
+
+
 ## 2026-09-18 (the platform can see the fleet)
 
 The platform now knows what its devices are doing after they leave the bench.
@@ -34,6 +501,93 @@ and the topic map in [mqtt-presence.md](docs/reference/mqtt-presence.md).
   Deliberately not an environment variable and not a Setup knob: the credential
   reads every customer device on the fleet. No endpoint ever returns the
   password.
+
+## 2026-09-18 (four silent writers, found by an audit)
+
+An audit of every write in the backend, prompted by the stock work, looked for
+code that changes stored data as a side effect of something else. Four cases
+were decided and changed:
+
+- **A supplier's PDF edit no longer publishes a component version.** The
+  nightly re-check used to file a PUBLISHED version stamped `approved_by=auto`
+  whenever a datasheet changed. A publish re-runs the carry, so a part could
+  lose its verification and sign-off overnight because a manufacturer re-issued
+  a document. Now a RE-STAMP — same text, new cover date or scan — still
+  publishes, and a real content change files a review request and leaves the
+  current version alone. When the page diff cannot be produced, the change
+  counts as real.
+- **A re-flash records an identity change instead of overwriting it.** The
+  bench wrote whatever IMEI, ICCID, IMSI and modem model it read back over
+  whatever was stored, so a swapped SIM erased the only trace of the previous
+  one. A changed value is now noted on the device and audited; filling an empty
+  column is not a change and is not noted.
+- **Reading a project no longer writes to it.** Fetching a snapshot could
+  materialise a git checkout, classify its board kinds and commit the result.
+  Ingest already does that classification; an older snapshot is now classified
+  in memory on each read.
+- **A deployment is no longer classified by its name.** A startup statement set
+  `kind='test'` on any deployment whose name ended in "test", and another marked
+  everything else active. It ran on every boot, so a deployment created tomorrow
+  would have been reclassified by a text match. Both are removed; the rows they
+  already filled keep their values.
+
+## 2026-09-18 (a shipment names its devices)
+
+- **A shipment is a set of serials, not a quantity.** `create_shipment` refuses
+  a number with no devices behind it. The automatic oldest-first pick is gone,
+  and the Ship card has no quantity box and no batch picker — the batch table is
+  read-only, there to show the shelf while you scan. Measured before the change:
+  **4326 of 4427 deliveries were machine guesses; 101 had ever been named by a
+  person.**
+- **A device now has a CONDITION as well as a location.** `ok`, `faulty`,
+  `prototype`, `unidentified` — and only `ok` may ship. A unit that is here but
+  unsellable stays visible, stays counted and stays put. Until now the only way
+  to stop one shipping was to file it `disposed`, which said it had been
+  destroyed: 32 working units sat that way while stock reported zero.
+  `devices_available` and `devices_held` are reported beside
+  `devices_in_stock`, which is their sum.
+- **Nothing corrects stock automatically any more.** `reconcile_shelf` and
+  `POST /api/stock/reconcile` are removed, and so is the return-swap that let a
+  return against the wrong order line silently un-ship whichever device had been
+  guessed into that place. A return against a line the device was never
+  delivered on is now a 409 that names the lines it WAS delivered on. Correcting
+  a wrong delivery is a deliberate act — `POST /api/shipments/{id}/reverse` —
+  not a side effect of recording something else.
+- **The platform no longer invents sales history at startup.** A migration ran
+  on every boot and turned any production run carrying a sale price into a
+  customer, a sales order and a delivery of units "without a serial" — silently,
+  with no audit row and nothing asking for it. It was not one-shot: a run priced
+  tomorrow would have become an order and a shipment at the next restart, and it
+  bypassed both new rules above. Removed. See
+  [decision 0032](docs/decisions/0032-a-shipment-names-its-devices.md).
+
+## 2026-09-18 (two register rows were describing work already shipped)
+
+- **The manufacturer `one_of` is live** as `cmp.manufacturer_canonical`: a
+  99-name list, warning severity by design, because an off-list name usually
+  means the list is short rather than the data wrong. It carries the names the
+  work list recorded as missing and resolves the `Murata` and `Infineon`
+  duplicates. Two loose ends remain and stay on the register: the list holds
+  both `Kinghelm` and `Shenzhen Kinghelm Elec`, and four names still need a
+  maintainer decision.
+- **"There must be no X" is expressible and authorable**, so the `disallow`
+  half of its row is closed. It ships as `at_most 0` and `absent`, both offered
+  in the checklist editor, and the sentence generator prints them forwards —
+  "No plated holes whose copper is no wider than the drill" — instead of
+  backwards. No assertion named `disallow` was added, and none is needed. Live
+  on `fp.zero_annulus`, `fp.model_path`, `cmp.pins_to_pads` and others.
+
+## 2026-09-18 (the datasheet clean-up is finished on production)
+
+- **The byte-rule history is collapsed and the storage rewrite has run.** The
+  work `docs/todo.md` row 2 tracked is complete: production reports 487
+  documents over 619 versions and **571 MB**, down from 704 versions over 557
+  files and 1079 MB. The local rehearsal had predicted 602 MB, so the outcome
+  landed slightly better than the estimate. `GET /api/datasheets/restamps`
+  returns nothing, and `POST /api/datasheets/restamps/collapse` now finds
+  nothing left to remove. See
+  [decision 0004](docs/decisions/0004-datasheet-identity-and-storage.md) for the
+  identity and storage rules this was applying.
 
 ## 2026-09-18 (no serial, no production)
 

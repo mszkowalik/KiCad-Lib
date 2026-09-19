@@ -13,6 +13,7 @@ and every write path goes through the service layer.
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     Float,
@@ -1450,6 +1451,139 @@ class JlcStockItem(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class RunSubstitution(Base):
+    """A part FITTED on a batch in place of the one the design specifies.
+
+    The design says what was specified; this says what went on the board. The
+    two are separate facts with separate sources and separate correction paths,
+    for the same reason a supplier's draw and the run that pays for it are
+    separate rows ([0034](../../docs/decisions/0034-stock-moves-when-the-supplier-says-so.md)):
+    the snapshot is a record of a moment and must never be rewritten to match
+    what a factory did afterwards.
+
+    **Keyed by DESIGNATOR, not by BOM line id.** `ProductionRun.overrides` —
+    which this replaces for the substitution case — keyed on
+    `b<SnapshotBomLine.id>`, and those ids belong to one snapshot, so every
+    override silently stopped matching the next time the BOM was exported. A
+    designator survives a re-export, which is what a substitution meant to
+    carry into the next batch needs.
+
+    **Per batch, per position.** Per device falls out of it: a device belongs to
+    a batch, so what was fitted on the batch is what is in the device. A batch
+    that split mid-run would need more than this, and none has.
+
+    Found 2026-09-19 on CE_Dongle_V2 C1/C2: batches 7 and 8 were built with
+    C7223 where the schematic says C110548 (KEMET T491D107K016AT). Nothing
+    recorded it, so three months later 476 more of the superseded part were
+    bought at $1.23 against a historic $0.34 — the design was still asking for
+    it.
+    """
+
+    __tablename__ = "run_substitutions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("production_runs.id", ondelete="CASCADE"))
+    board: Mapped[str] = mapped_column(String(200), default="")
+    variant: Mapped[str] = mapped_column(String(100), default="")
+    #: The reference designator as the DESIGN numbers it. JLC's stored BOM for
+    #: an old board can carry the pre-KiCad numbering (`C1` where the schematic
+    #: says `C2`, `USB2` for `J1`), so `supplier_designator` keeps theirs.
+    designator: Mapped[str] = mapped_column(String(100), default="")
+    supplier_designator: Mapped[str] = mapped_column(String(100), default="")
+    specified_component_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    specified_lcsc: Mapped[str] = mapped_column(String(50), default="")
+    specified_mpn: Mapped[str] = mapped_column(String(200), default="")
+    fitted_component_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fitted_lcsc: Mapped[str] = mapped_column(String(50), default="")
+    fitted_mpn: Mapped[str] = mapped_column(String(200), default="")
+    qty_per_device: Mapped[float] = mapped_column(Float, default=1.0)
+    #: WHERE THE CHANGE WAS DEFINED — not who decided it. `supplier`: it lives
+    #: in the supplier's own order and the platform read it from their BOM;
+    #: `us`: somebody recorded it here by hand.
+    #:
+    #: It is NOT "the factory changed it" (user correction 2026-09-19). The
+    #: common case is us picking a different part on the supplier's web page
+    #: while placing the order — our decision, made outside the schematic, which
+    #: is exactly why the design never caught up and why JLC reports
+    #: `matchType: "update"`. Reading `supplier` as "ask the factory about it"
+    #: sends the question to the wrong party. Either way the design still
+    #: specifies the other part until `design_updated` says otherwise.
+    source: Mapped[str] = mapped_column(String(20), default="supplier")
+    #: WHO SUPPLIED the part, which is a different question and was being
+    #: INFERRED from the absence of a draw. `supplier` — the factory's own
+    #: stock, billed inside the assembly fee, so no draw can exist; `pool` —
+    #: our consigned stock, so there is one; `both` when JLC says both.
+    #: Inference was wrong in the other direction too: a part we supplied but
+    #: never drew is a missing draw, and reading it as supplier-supplied would
+    #: have hidden it.
+    supplied_by: Mapped[str] = mapped_column(String(20), default="")
+    #: JLC's own word for it (`shop` | `preSale` | `preSaleAndShop`), kept raw
+    #: because the mapping above is ours and theirs may gain a value.
+    supplier_source: Mapped[str] = mapped_column(String(40), default="")
+    #: What proves it: the SMT order code, and JLC's `matchType` for the line.
+    evidence: Mapped[str] = mapped_column(String(300), default="")
+    #: TRUE while the design has not caught up. It is what makes a substitution
+    #: a standing finding rather than a note nobody reads, and the only thing
+    #: that would have stopped the 2026-08-06 purchase.
+    design_updated: Mapped[bool] = mapped_column(Boolean, default=False)
+    note: Mapped[str] = mapped_column(Text, default="")
+    decided_by: Mapped[str] = mapped_column(String(100), default="")
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("run_id", "board", "variant", "designator",
+                         name="uq_run_substitution_position"),
+    )
+
+
+class JlcStockChange(Base):
+    """One movement in JLCPCB's OWN inventory ledger for one private-library part.
+
+    The only place JLC states WHY a quantity moved, and the only source for a
+    movement no document reports: on 2024-10-22 JLC took 8 pieces of C965790 and
+    3 of C778132 "up to complete SMT order" under code `T241022013`, which
+    appears on no invoice and in no BOM. A cancelled purchase is equally visible
+    here by ABSENCE — lot 754166 settled 3,470 LEDs and the ledger records no
+    receipt for them.
+
+    `qty_before + change_qty == qty_after` on every row JLC has returned, so the
+    ledger replays to the balance `jlc_stock_items.qty` reports, and a part whose
+    ledger does not replay is a fetch problem, not an accounting one.
+
+    Rows are immutable at JLC and keyed by `customerPresaleStockChangeKeyId`, so
+    a sync UPSERTS and never replaces wholesale — unlike `JlcStockItem`, which is
+    a balance and is rewritten every time.
+    """
+
+    __tablename__ = "jlc_stock_changes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    change_key_id: Mapped[int] = mapped_column(BigInteger, unique=True)
+    stock_key_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    lcsc: Mapped[str] = mapped_column(String(50), default="", index=True)
+    mpn: Mapped[str] = mapped_column(String(200), default="")
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    qty_before: Mapped[int] = mapped_column(Integer, default=0)
+    change_qty: Mapped[int] = mapped_column(Integer, default=0)
+    qty_after: Mapped[int] = mapped_column(Integer, default=0)
+    paid_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    # `bussinessCode` (JLC's spelling): POB…/SIP… for a parts order, SMT… for an
+    # assembly order, T… for a warehouse action. `business_type` is JLC's
+    # `bussinessType`: 5 = parts order, 4 = SMT order, 10 = warehouse pick, as
+    # observed across the account — unlisted values are kept, never guessed at.
+    business_code: Mapped[str] = mapped_column(String(60), default="", index=True)
+    business_type: Mapped[int] = mapped_column(Integer, default=0)
+    change_type: Mapped[int] = mapped_column(Integer, default=0)
+    change_status: Mapped[int] = mapped_column(Integer, default=0)
+    remark: Mapped[str] = mapped_column(String(500), default="")
+    raw: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        Index("ix_jlc_stock_changes_part_time", "lcsc", "changed_at"),
+    )
+
+
 class ComponentConsumptionLot(Base):
     """WHICH purchase a draw actually consumed, and at what that lot really cost.
 
@@ -1550,6 +1684,15 @@ class JlcImport(Base):
     # JLC supplied itself were charged to the pool twice. Shape:
     # {smtOrderCode: [{lcsc, mpn, qty, componentSource, ...}]}.
     bom_info: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    #: JLC's OWN status for the batch, copied from the order listing every sync:
+    #: `shipped` | `inProduction` | `cancelled` | `waitPay` | `waitReview`.
+    #:
+    #: Kept apart from `status`, which is OUR lifecycle (staged -> imported).
+    #: A cancelled order is never invoiced, and neither is one still in
+    #: production, so `payload == {}` cannot tell them apart — three batches sat
+    #: in "not imported" indefinitely with nothing to import. The listing
+    #: `sync_stage` already fetches carries the answer and was discarding it.
+    jlc_status: Mapped[str] = mapped_column(String(20), default="", server_default="")
     # Per-order fee breakdown from `orderCenter/selectPersonOrderDetail` — the
     # ONLY place JLC itemizes an order's price (`orderCountTolls` for PCB
     # orders, `smtPriceInfo` for assembly orders; the invoice endpoint prints
@@ -2224,7 +2367,12 @@ class RunCostLine(Base):
 
 
 class ComponentConsumption(Base):
-    """What a production run drew from the component cost pool.
+    """What LEFT the component cost pool, and which run pays for it.
+
+    Those are two facts with two sources. The quantity is reported by the
+    supplier — JLC itemises every consigned lot an assembly order consumed. The
+    run is a judgement someone makes afterwards. `run_id` is therefore nullable:
+    an uncharged draw is stock that has moved and money that has not landed.
 
     The point is SPLITTING INVOICE COST, not tracking inventory (user decision
     2026-07-27) — quantities exist to apportion money. `basis` records how the
@@ -2243,7 +2391,24 @@ class ComponentConsumption(Base):
     __tablename__ = "component_consumptions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    run_id: Mapped[int] = mapped_column(ForeignKey("production_runs.id"))
+    #: WHO PAYS. NULL means the stock left the shelf and nobody has been charged
+    #: yet — a draw JLC reported on an invoice, for an assembly order not yet
+    #: linked to a batch (or deliberately never linked, because JLC built
+    #: something this platform does not track).
+    #:
+    #: Nullable since 2026-09-18. Before that a draw could not exist without a
+    #: run, so the stock movement was gated behind a human decision about COST:
+    #: JLC states on every invoice exactly which consigned lots each order
+    #: consumed, and the platform waited for somebody to agree. A decision
+    #: recorded on 2026-08-25 was never applied and 441 pieces stayed on our
+    #: books for three weeks. Quantity is reported by the supplier; attribution
+    #: is a judgement. They are now written at their own times.
+    #:
+    #: This is the only field on a draw a later correction may move, for the
+    #: same reason as `production_run_id` on a `produced` event
+    #: (decision 0029): it records a CHOICE, not the event.
+    run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("production_runs.id"), nullable=True)
     component_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
     mpn: Mapped[str] = mapped_column(String(200), default="")
     lcsc: Mapped[str] = mapped_column(String(50), default="")
@@ -2674,6 +2839,16 @@ class DeviceUnit(Base):
     # (a legacy unit whose batch was never recorded). See decision 0003.
     #   in_stock | allocated | shipped | returned | disposed
     state: Mapped[str] = mapped_column(String(20), default="")
+    #: WHAT the device is, independent of WHERE it is. `state` answers location
+    #: — in_stock, shipped, returned, disposed — and cannot also say "here, but
+    #: never to be sold". Before this existed the 32 old-button units had to be
+    #: filed `disposed`, which claimed they were destroyed and hid them from
+    #: stock, because `in_stock` would have let a shipment pick them.
+    #:
+    #: `ok` is the only condition a shipment accepts. Every stock figure and
+    #: every pick filters on it, so a unit that is present but unsellable stays
+    #: visible and stays put.
+    condition: Mapped[str] = mapped_column(String(20), default="ok", server_default="ok")
     # The batch the `produced` event named. Soft pointer, cached here so stock
     # per run is one indexed query instead of a scan over the event log.
     production_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -2709,7 +2884,20 @@ class ProgrammingRun(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     device_unit_id: Mapped[int | None] = mapped_column(ForeignKey("device_units.id"), nullable=True)
-    # NULLABLE only for retro imports whose batch is unknown (user decision
+    # WHICH BATCH SESSION THIS ATTEMPT BELONGED TO — a different fact from
+    # `produced.production_run_id`, which says where the device was BUILT, once.
+    # A unit built in Batch 1 and reflashed while Batch 2 was on the bench has
+    # attempts in both, and this column is the ONLY record that Batch 2 ever
+    # touched it: nothing else can reconstruct it, because batches overlap in
+    # time and several can pin the same deployment version. So it is not
+    # redundant with the produced event, and the two disagreeing is normal.
+    # The money never follows it. `good_units` — the denominator of every
+    # per-device figure — counts `produced` events (decision 0030), so a
+    # reflash cannot dilute a batch's cost.
+    # `orders.rebatch_devices` DOES move it, in one case only: the bench had
+    # the wrong batch selected, so the attempts naming that batch were part of
+    # the same mis-selection and belonged to no session (decision 0029).
+    # NULLABLE for retro imports whose batch is unknown (user decision
     # 2026-07-29: never guess the batch). Live run creation still requires it.
     production_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("production_runs.id"), nullable=True

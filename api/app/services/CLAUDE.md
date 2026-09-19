@@ -13,6 +13,7 @@ in one document. Open the document before you change the module.
 |---|---|---|
 | Datasheet identity, fetch, classification, page index | `datasheet_store.py`, `datasheet_pages.py`, `datasheet_migrate.py` | [docs/reference/datasheets.md](../../../docs/reference/datasheets.md) |
 | Cost plans, invoices, stock, orders, sales | `cost_state.py`, `material.py`, `stock.py`, `orders.py` | [docs/reference/production-economics.md](../../../docs/reference/production-economics.md) |
+| What JLCPCB says moved, and what we booked | `jlc_web.py`, `jlc_import.py`, `jlc_apply.py`, `jlc_ledger.py`, `substitutions.py` | [docs/reference/production-economics.md](../../../docs/reference/production-economics.md) |
 | Sign-off, verification, the review record | `signoff.py`, `review.py`, `material.py` | [docs/reference/review-axis.md](../../../docs/reference/review-axis.md) |
 | Renaming a footprint or a base symbol | `rename.py` | [docs/decisions/0012](../../../docs/decisions/0012-rename-a-footprint-or-base-symbol-in-place.md) |
 | Projects, git mirrors, snapshots, exports | `gitrepo.py`, `project_ops.py`, `git_credential_migrate.py` | [docs/reference/projects-module.md](../../../docs/reference/projects-module.md) |
@@ -198,3 +199,79 @@ uploads, and the lifecycle/review lane of the audit log.
   is stale and `current_version(comp)` returns None, silently skipping
   `update_mirror_symbols`. Precedents: `create_version`, `proposals.approve`,
   `components.add_file`.
+
+## The pool is guarded on BOTH sides
+
+`check_shortages` refuses a draw that would take a part below zero. Its mirror,
+`check_purchase_loss`, refuses an edit that takes stock back off a purchase the
+draws depend on — and delegates to it, because removing X units dated D moves
+the balance exactly as adding a draw of X on D does. Never write a second
+timeline replay; the two would drift.
+
+`routers/run_costs.py` calls it through `_guard_purchase_loss` at four places:
+deleting a document, patching a line, voiding one, splitting one. `force=true`
+waives "this document still has live lines", never this. The rule is **"would
+this strand a draw"**, not "has this part been consumed" — the blunt version was
+measured at 260 of 264 pooled part lines locked. Reasoning in
+[0040](../../../docs/decisions/0040-a-purchase-cannot-be-removed-from-under-its-draws.md).
+
+## Parts the SUPPLIER supplied are itemised, and never pooled
+
+`supplier_parts.py` turns an assembly invoice's one-figure parts lump into a
+child per part, and checks that every position a batch used is covered exactly
+once. Reasoning in
+[0041](../../../docs/decisions/0041-the-supplier-parts-lump-is-a-small-bom.md).
+
+Three facts measured across all 46 cached JLC BOMs, two of which were assumed
+wrongly first — read them before touching this:
+
+- **`extPrice == unitPrice * shopStock`** (1021/1021 priced rows). The money is
+  billed on the supplier's portion only, never on the whole position.
+- **`componentSource` has THREE values.** `preSaleAndShop` is a position the
+  factory part-filled from our stock and topped up from its own, and it carried
+  1796.16 of batch 8's 2097.28 lump. Filtering on `shop` alone — which
+  `void_shop_draws` still does — misses it.
+- **`componentNum` is per PANEL, not a piece count.** Use `componentRealCount`,
+  split by `presaleStock` / `shopStock`.
+
+The children keep the parent's `run_id` so they stay OUT of the pool: those
+parts were never our stock and their price is specific to one order. `itemise`
+only returns a plan; `split` applies it, so a hand-typed breakdown and a
+supplier-read one are the same rows under the same guards.
+
+**Double supply is checked from OUR rows, not the supplier's.** `coverage` has
+two halves: "who supplied each position" needs a cached supplier BOM, and "paid
+for twice" — a part charged straight to the batch that was also drawn from the
+pool — needs nothing but our own rows. The second runs whatever `known` says,
+because a hand-entered invoice has no BOM and is precisely the case the first
+half cannot see. Assume every function is reachable from the UI.
+
+**"A part line" is not the same set as "a purchase".** Anything that asks what
+we BOUGHT has to exclude a line with a `run_id` and an `excluded` one — the
+first was bought for one batch and never entered stock, the second is money
+recorded so a document reconciles. `run_actuals.pooled_part_lines` is that test.
+`jlc_ledger._local_index` filtered on `kind == "part"` alone and announced
+"17,647 pieces we booked as bought that JLC never received" the moment a
+supplier-parts position was itemised (2026-09-19). Any new query over part lines
+gets the same filter.
+
+## A batch costs, an order earns, and a UNIT joins them
+
+`run_actuals` returns cost, `produced` and `unit_cost_usd` for a batch — never
+revenue, never margin. Those belong to the order, and the ONLY thing that joins
+the two is the device: `orders.per_device_cost_usd` gives what one unit of a
+batch cost, a shipped device carries it, and `order_economics` sums it over the
+devices an order shipped. Reasoning in
+[0043](../../../docs/decisions/0043-a-batch-costs-an-order-earns-and-a-unit-joins-them.md).
+
+- **The denominator is devices PRODUCED**, from `produced_counts`. It used to be
+  the run's typed `qty` — the boards ordered from JLC — while the docstring
+  already claimed "per GOOD device", so the figure was wrong by the yield on
+  every batch (Batch 5: 455 ordered, 568 produced).
+- **A batch with no device records has NO unit cost.** It is absent from the map
+  and null in the API, and an order shipping such a device counts it
+  `uncosted`. Never substitute a planned quantity: this number lands on
+  invoices.
+- The run's `sale_unit_price` / `qty_sold` / `customer` / `order_ref` columns are
+  HISTORY. Nothing reads them. Do not add a reader — that is how the same
+  revenue came to exist twice and disagree by 153k on one project.

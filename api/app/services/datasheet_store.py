@@ -585,6 +585,21 @@ def datasheet_carries(db: Session, old_cv: M.ComponentVersion,
     return True, ""
 
 
+def _text_changed(change: dict | None) -> bool:
+    """Did the DOCUMENT's content change, or was it only re-stamped?
+
+    Unknown counts as changed. A diff the page index could not produce is not
+    evidence of sameness, and the expensive mistake here is publishing over a
+    part's verification because nobody could tell.
+    """
+    if change is None:
+        return True
+    if change.get("changed_pages") is None:
+        return True
+    return bool(change.get("changed_pages") or change.get("removed_pages")
+                or change.get("parts_table_changed"))
+
+
 def _bump_component_version(
     db: Session,
     ds: M.Datasheet,
@@ -593,14 +608,40 @@ def _bump_component_version(
     created_by: str = "system",
     change: dict | None = None,
 ) -> int | None:
-    """Auto-create a new published component version recording the changed
-    document, through the shared publish path so every carry rule runs, and
-    open a review request so the change reaches the worklist."""
+    """Record a changed document on the component.
+
+    **A publish only happens when the TEXT did not change** (user decision
+    2026-09-18). A supplier re-stamping the same content — a new cover date, a
+    re-issue, a fresh scan — is a document swap and nothing a person needs to
+    look at, so the new version is published and the part carries its
+    verification forward.
+
+    A REAL content change is not published unattended. Publishing re-runs the
+    carry, so it would strip the part's verification and sign-off on a night
+    nobody was watching, because a supplier edited a PDF. That files a review
+    request instead and leaves the current version alone; the new document is
+    stored either way and a person decides what it means.
+    """
     comp = db.get(M.Component, ds.component_id)
     if comp is None or comp.current_version_id is None:
         return None
     cur = db.get(M.ComponentVersion, comp.current_version_id)
     if cur is None or cur.status != "published":
+        return None
+    if _text_changed(change):
+        open_req = (db.query(M.ReviewRequest)
+                    .filter_by(subject_kind="component", subject_id=comp.id, done_at=None)
+                    .first())
+        if open_req is None:
+            db.add(M.ReviewRequest(subject_kind="component", subject_id=comp.id,
+                                   requested_by=created_by,
+                                   note=(change or {}).get("note")))
+        db.add(M.AuditLog(actor=created_by, action="component.datasheet_changed",
+                          entity_type="component", entity_id=str(comp.id),
+                          details={"component": comp.name, "datasheet_id": ds.id,
+                                   "pdf_version": new_dv.version_no, "published": False,
+                                   "why": "the text changed; publishing would strip verification",
+                                   **(change or {})}))
         return None
     from .publish import publish_component_version
 

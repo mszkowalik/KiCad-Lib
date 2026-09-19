@@ -1325,7 +1325,9 @@ def _parse_iso(text: str) -> datetime | None:
 
 def _run_summary_json(r: M.ProgrammingRun, db: Session) -> dict:
     prod = db.get(M.ProductionRun, r.production_run_id) if r.production_run_id else None
-    v = db.get(M.DeploymentVersion, r.deployment_version_id)
+    # NULL for a bench action that runs no procedure - an erase; `db.get`
+    # on a null key warns and will raise in a later SQLAlchemy.
+    v = db.get(M.DeploymentVersion, r.deployment_version_id) if r.deployment_version_id else None
     dep = db.get(M.Deployment, v.deployment_id) if v else None
     return {
         "id": r.id, "status": r.status, "operator": r.operator, "station": r.station,
@@ -1418,13 +1420,10 @@ def list_devices(
     if status:
         query = query.filter(M.DeviceUnit.last_status == status)
     if production_run_id:
-        ids = [
-            r.device_unit_id
-            for r in db.query(M.ProgrammingRun)
-            .filter(M.ProgrammingRun.production_run_id == production_run_id,
-                    M.ProgrammingRun.device_unit_id.isnot(None))
-        ]
-        query = query.filter(M.DeviceUnit.id.in_(ids or [-1]))
+        # The device's own column, matching the comment above and the orders
+        # side. Going through `ProgrammingRun.production_run_id` asked the
+        # bench's copy of the choice instead of the corrected one.
+        query = query.filter(M.DeviceUnit.production_run_id == production_run_id)
     if q:
         like = f"%{q}%"
         query = query.filter(
@@ -1483,7 +1482,8 @@ def list_devices(
             "imsi": d.imsi, "modem_model": d.modem_model,
             "project": {"id": d.project_id, "name": projects.get(d.project_id, "?")},
             "batch": {"id": prod.id, "label": prod.label} if prod else None,
-            "state": d.state, "last_status": d.last_status, "runs": counts.get(d.id, 0),
+            "state": d.state, "condition": d.condition or "ok",
+            "last_status": d.last_status, "runs": counts.get(d.id, 0),
             "first_seen": _iso(d.first_seen), "last_seen": _iso(d.last_seen),
             "notes": d.notes,
         })
@@ -1620,7 +1620,7 @@ def device_detail(device_id: int, reveal: bool = False, db: Session = Depends(ge
         "modem_model": d.modem_model, "modem_fw": d.modem_fw,
         "project": {"id": d.project_id, "name": project.name if project else "?"},
         "first_seen": _iso(d.first_seen), "last_seen": _iso(d.last_seen),
-        "last_status": d.last_status, "notes": d.notes,
+        "last_status": d.last_status, "condition": d.condition or "ok", "notes": d.notes,
         "configs": configs,
         # The identity rows to draw, label and value — see _identity_rows.
         "identity": _identity_rows(db, d),
@@ -1922,13 +1922,24 @@ def batch_programming(production_run_id: int, db: Session = Depends(get_db)):
     prod = db.get(M.ProductionRun, production_run_id)
     if prod is None:
         raise HTTPException(404, "no such production run")
+    # A batch's attempts are the attempts on ITS DEVICES — `DeviceUnit`
+    # carries the corrected batch ([0029](../../../docs/decisions/0029-the-batch-on-a-produced-event-is-correctable.md)),
+    # a programming run carries a copy that `rebatch_devices` keeps in step but
+    # that is NULL on every retro import. The run's own column is still read,
+    # for the attempts that never reached a device and so have no other batch.
     runs = (
         db.query(M.ProgrammingRun)
-        .filter(M.ProgrammingRun.production_run_id == production_run_id)
+        .outerjoin(M.DeviceUnit, M.DeviceUnit.id == M.ProgrammingRun.device_unit_id)
+        .filter((M.DeviceUnit.production_run_id == production_run_id)
+                | ((M.ProgrammingRun.device_unit_id.is_(None))
+                   & (M.ProgrammingRun.production_run_id == production_run_id)))
         .order_by(M.ProgrammingRun.started_at.desc())
         .all()
     )
     norm = lambda s: s.replace(":", "").replace("-", "").upper()  # noqa: E731
+    # The planned serial list, where a batch has one. Most do not — a batch's
+    # real device list is `DeviceUnit.production_run_id`, and `missing` is only
+    # meaningful against a list somebody typed in advance.
     planned = {norm(d.serial): d.serial for d in prod.devices}
     device_ids = {r.device_unit_id for r in runs if r.device_unit_id}
     devices = {
@@ -1937,18 +1948,22 @@ def batch_programming(production_run_id: int, db: Session = Depends(get_db)):
     programmed_ok: set[str] = set()
     seen: set[str] = set()
     for r in runs:
-        if not r.device_unit_id:
+        dev = devices.get(r.device_unit_id) if r.device_unit_id else None
+        if dev is None or not dev.serial:
             continue
-        serial = norm(devices[r.device_unit_id].serial)
+        serial = norm(dev.serial)
         seen.add(serial)
         if r.status == "pass":
             programmed_ok.add(serial)
+    # `extra` and `missing` compare against the planned list and mean nothing
+    # without one — a batch with no typed list would otherwise report every
+    # device it really built as "extra".
     return {
         "planned": len(planned),
-        "programmed_ok": len(programmed_ok & set(planned)),
+        "programmed_ok": len(programmed_ok & set(planned)) if planned else len(programmed_ok),
         "failed_only": sorted(seen - programmed_ok),
-        "extra": sorted(programmed_ok - set(planned)),
-        "missing": sorted(set(planned) - programmed_ok),
+        "extra": sorted(programmed_ok - set(planned)) if planned else [],
+        "missing": sorted(set(planned) - programmed_ok) if planned else [],
         "unidentified_attempts": sum(1 for r in runs if not r.device_unit_id),
         "runs": [_run_summary_json(r, db) for r in runs[:200]],
         "assigned_deployment_version_id": prod.deployment_version_id,

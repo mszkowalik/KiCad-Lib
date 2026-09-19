@@ -8,6 +8,28 @@ Production programming. The wider design is in
 
 Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model it replaced, §13 = the history before that).
 
+- **The bench checks what it already knows when the MAC is read, and exactly
+  ONE check blocks** — the device row names another project
+  ([0037](../../../../docs/decisions/0037-the-bench-says-what-it-already-knows.md)).
+  `bench_checks.py` holds them; `engine.notice()` sends, records an audit row
+  and, for a warning, waits for the operator. Two rules when adding one: it
+  blocks only if continuing would WRITE SOMETHING FALSE, and **the ordinary
+  case must stay silent** — a new board, in a running batch, in the right
+  project, gets nothing. Do not block on `ProductionRun.status`: it is free
+  text set by hand, and every batch here that has devices was still `planned`
+  when its first unit was programmed.
+
+- **"Which devices did this batch BUILD?" and "which did it PROGRAM?" are two
+  questions with two answers.** Built is `DeviceUnit.production_run_id`, set
+  once from the `produced` event and never moved by a later pass — it carries
+  all the money, because `good_units` counts it. Programmed is
+  `ProgrammingRun.production_run_id`, one row per attempt, and a unit reflashed
+  while a later batch was on the bench legitimately appears under both. Neither
+  is derivable from the other. Ask for the one you mean; a per-device cost that
+  reads the programming answer is wrong by however many units were reflashed.
+  The programmed column is NULL on 6,139 of 6,443 rows — a retro import never
+  guesses a batch (user decision 2026-07-29).
+
 - **`programming_logs` is keyed by `(run_id, seq)` and has NO surrogate id**
   (2026-09-12, `services/proglog_migrate.py`). It is the largest row count in
   the database — 2.44 M rows over 6321 runs — and it only grows, because every

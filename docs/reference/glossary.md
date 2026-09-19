@@ -56,8 +56,12 @@ it.
 
 | Word | Here it means |
 |---|---|
+| **planned units** | what was ORDERED (`plan_qty or qty`) — the multiplier for a supplier's per-board rate. NOT `good_units`, which is what passed and divides COST (decision [0035](../decisions/0035-a-supplier-bills-what-was-ordered.md)) |
+| **written off** | genuine attrition, and a defect signal. Stock consumed by ANOTHER project's assembly order is counted on `external` instead — it is not a loss |
 | **built** | finished AND passed (decision [0007](../decisions/0007-built-means-finished-and-passed.md)) — not assembled, not shipped |
 | **stock** | devices whose newest event leaves them `in_stock`. An `allocated` device is on the shelf but is NOT stock |
 | **delivered** | `shipped` events that no `unshipped` event reversed, plus unserialized units (decision [0027](../decisions/0027-a-stock-count-corrects-a-fifo-guess.md)) |
 | **without a serial** | a unit on a shipment that names no device, from a batch that has no device records (decision 0003 §8). A batch the flasher recorded has none, and the platform refuses to write one (decision 0031) |
 | **overdrawn** | more units shipped from a batch than it is recorded to hold — a quantity on the run is wrong, or a shipment is |
+| **uncharged draw** | consigned stock that has LEFT the pool with no run charged: `ComponentConsumption` with `run_id` NULL. JLC reported it on an invoice; who pays has not been decided yet, or never will be because the order builds a project this platform does not track (decision [0034](../decisions/0034-stock-moves-when-the-supplier-says-so.md)) |
+| **stranded decision** | an assembly order that was decided and never applied. Nothing was written for it — no stock moved, no run was charged — so it is NOT a kind of "decided" |

@@ -226,6 +226,202 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
   wins showed the same LED twice — once holding the pool's money with no stock, once
   with 18,488 pieces and a bogus "no invoice" flag. `jlc_codes` on each row names
   every code found.
+- **A CANCELLED parts lot is a fee, never stock.** JLC settles one with
+  `orderStatus=40` and still reports a non-zero `settlePresaleNumber` —
+  lot `754166` said 3,470 LEDs settled at $19.78 and not one arrived.
+  `_lot_from_goods` sets `fee_only` from `cancelled` (status 40 OR settled <= 0),
+  not from the quantity alone; the money still lands so the document reconciles.
+  Testing the quantity alone booked 3,470 phantom pieces and produced the
+  platform's largest stock gap.
+- **JLC's own LEDGER is synced, and it is what a disagreement is settled
+  against.** `myLibrary/selectComponentChanges` returns every movement for one
+  part with the balance before and after, the document that caused it, and JLC's
+  own wording. Invoices show what was billed; the ledger shows what the shelf
+  did, including picks JLC makes outside any BOM (*"pick 3 pcs of C778132 & 8
+  pcs of C965790 up to complete SMT order"*) and work no order mentions at all
+  (*"used 20pcs in 2nd Process"*). Stored in `jlc_stock_changes`, UPSERTED by
+  `customerPresaleStockChangeKeyId` because a row is immutable at JLC — unlike
+  `jlc_stock_items`, which is a balance and is replaced. Full reasoning in
+  [0037](../decisions/0037-the-supplier-keeps-the-receipts.md).
+- **The ledger is keyed by `customerPresaleStockKeyId`, which only the WEB stock
+  list carries.** Not the official OpenAPI library the platform already syncs,
+  which is why the ledger went unnoticed. A request keyed by the LCSC code
+  answers HTTP 200 with an internal 500. `POST /api/jlc/stock/sync` fetches both,
+  best effort on the ledger — the balance must not fail because the browser
+  session lapsed.
+- **`changeStatus=3` is a movement that DID NOT HAPPEN** — a ship-out request
+  JLC cancelled. It still states a quantity and a before/after pair. Excluding
+  it, all 67 parts replay to the balance JLC reports; including it, two do not
+  (C157472, C62102). A part that does not replay is a FETCH problem, never a
+  disagreement about stock.
+- **A pair of ledger rows netting to zero is not a disagreement.** JLC draws an
+  order's parts and returns them when it is cancelled — 44 such rows today under
+  `SMT026061460600` alone. `jlc_ledger.unexplained` nets by document code first.
+- **A ledger row is booked as an UNCHARGED DRAW, and only when a person says
+  so.** `jlc_ledger.book` uses JLC's quantity, date and wording,
+  `basis='measured'`, `import_ref='jlcledger:<changeKeyId>'` so re-booking is a
+  no-op. A row that names a document is NOT bookable — importing that document
+  is the fix, and doing both would take the same stock out twice.
+- **A part FITTED where the design specifies another is a row on the BATCH**,
+  `run_substitutions`, keyed by (run, board, variant, designator) — never by
+  BOM line id, which belongs to one snapshot and stops matching the next time
+  the BOM is exported. The snapshot is never rewritten: it records what was
+  specified, the row records what went on the board. Full reasoning in
+  [0038](../decisions/0038-a-substitution-belongs-to-the-batch.md).
+- **Substitutions are detected from JLC's BOM against JLC's OWN PREVIOUS BOM,
+  per board.** Their stored BOM keeps the board's pre-KiCad reference numbering
+  (`C1` for the schematic's `C2`, `USB2` for `J1`), so matching their
+  designators to ours fails; comparing their orders to each other needs no
+  mapping, and the design's own designator is recovered by looking the
+  superseded part up in the snapshot. Compared globally rather than per board,
+  `U3` on one project is compared with `U3` on another and every board reports
+  substitutions it never made. `matchType == "update"` is JLC saying a HUMAN
+  changed the line; `"auto"` is their matcher resolving the code we uploaded.
+- **Every later batch that keeps the substitute is its own row.** A
+  substitution is per batch, and reporting only the transition left the next
+  batch — built identically — looking as though it followed the design.
+- **`design_updated=false` is a standing finding, and it is the point.** While
+  the schematic still names the superseded part, the Stock page says so and
+  reports how many are still held. Without it, 476 pieces of `C110548` were
+  bought on 2026-08-06 at $1.2296 against a historic $0.336, three months after
+  the position moved to `C7223` — purchasing read the design, and the design
+  still asked for it.
+- **A substituted part is ONE row on the Materials tab.** The planned side is
+  the design's part, the used side is the draws of the part really fitted, and
+  the value delta is then the true cost of the substitution (+$74.54 on batch
+  7). It is a DISPLAY merge: the draw stays on the part that really left the
+  pool, because that is what stock control is about. Merged only when the
+  substitution covers every position on the line — one LED of six replaced
+  means both parts were genuinely used.
+- **`supplied_by` says whose shelf the fitted part came off, and it is STORED,
+  never inferred.** Read from JLC's `componentSource`: `shop` -> `supplier`
+  (billed inside the assembly fee, so no pool draw can exist), `preSale` ->
+  `pool`, `preSaleAndShop` -> `both`. Inferring it from a missing draw is wrong
+  in both directions — a part we supplied and never drew IS a missing draw, and
+  reading it as supplier-supplied hides it.
+- **A part the supplier provided may be named without a library component.**
+  The component picker offers free text only when the supply side says so: a
+  part off our own shelf was bought, so it has an invoice line and a pool entry,
+  and keying it by a typed string would split that part into two pool entries.
+- **A planned part in neither the supplier's BOM nor any draw did not go on the
+  board**, and the Materials row says so. Only answerable when JLC's BOM for
+  the batch is cached — without it the absence of a part means nothing. Matched
+  on the LCSC code and on the library component behind it, never the
+  designator. A part that was DRAWN is never flagged: that is what keeps a
+  carton, which no SMT BOM carries, from being reported on every batch.
+- **A substituted row's Used quantity is derived, never typed.** With draws, it
+  is those draws. Supplier-supplied and therefore drawless, it is the design's
+  planned quantity with the money left blank — the position WAS populated, and
+  its cost sits in the assembly fee where it cannot be split out. Recorded as
+  empty, it is zero on both sides. The cell is read-only in all three: typed,
+  it would write a draw against the part that did not go on the board.
+- **A substitution of quantity ZERO with nothing named means the position was
+  left empty.** The early batches shipped without cartons; that is history, and
+  it silences the flag with an author, a reason and an undo. It replaces the
+  `drop` override for this case, which nothing in the UI could show.
+- **Substituting is done from the part's row on the batch's Materials tab**,
+  scoped to one designator or to every position the part sits at — a BOM row
+  already groups them, and `RunSubstitution` splits a multi-reference
+  designator, so either answer is ONE row rather than a row per reference.
+- **An imported parts order can still take a correction.**
+  `POST /api/jlc/import/parts/{pob}/refresh` re-plans an existing document from
+  what JLC says today and updates lines matched on `presaleGoodsKeyId`. It
+  decides before it mutates, preserves anything appended to a line's note after
+  " | ", and refuses when a lot has vanished or when shrinking a line would
+  contradict draws bound to it. The importer itself refuses a document it
+  already holds, and rightly — a second document doubles the purchase.
+- **JLC states a batch's status; do not infer it.** The order listing
+  `sync_stage` fetches carries `batchStatus` (`shipped` | `inProduction` |
+  `cancelled` | `waitPay` | `waitReview`), stored on `jlc_imports.jlc_status`
+  and refreshed every sync. It is NOT our `status` column, which is the
+  staged -> imported lifecycle. A cancelled batch is never invoiced — and
+  neither is one still in production — so `payload == {}` cannot distinguish
+  them, which is how three batches sat in "not imported" with nothing to import.
+  A cancelled batch is skipped by the sync rather than re-fetched forever.
+- **A draw is priced by identity OVERLAP, never by `_key`.**
+  `run_actuals.resolve_pool_identity` finds the pool entry a part belongs to and
+  the caller ADOPTS its `component_id` / `mpn` / `lcsc` before writing. `_key`
+  alone cannot do this: it PREFERS `component_id`, so a caller who knows only an
+  MPN produces `m<MPN>` while the purchases sit under `c<id>` — the lookup
+  misses, the draw is priced at ZERO, and the part splits into a second pool
+  entry with its own average. Measured 2026-09-18: enclosure `35.0207000.BL` is
+  `c323`, and a draw entered by MPN alone priced at $0.00 against a real $3.55.
+  `check_shortages` already matched on overlap, so the stock guard passed and
+  only the money was wrong. Both write paths (`add_consumption`,
+  `PUT /runs/{id}/consumption/for-part`) go through the resolver.
+- **Material usage for parts JLC never sees is TYPED, not derived.** The batch's
+  Materials tab has an editable Used quantity per row
+  (`PUT /api/runs/{run_id}/consumption/for-part`): absolute, idempotent, one
+  draw per part. Correcting a figure later is the same call, so a mistake never
+  needs a compensating adjustment — which is what attrition adjustments were
+  being used for. The seven parts concerned (enclosures, antennas, cartons) are
+  half the pool's value and no supplier reports their consumption; `basis='bom'`
+  rows are estimates of exactly this, and typing over one replaces it. A part
+  JLC reported itself (`basis='measured'`) is read-only: that is the supplier's
+  measurement of its own consigned stock, not ours to retype.
+- **Two quantities, two names, and picking the wrong one takes the whole import
+  path down** (decision
+  [0035](../decisions/0035-a-supplier-bills-what-was-ordered.md)).
+  `run_actuals.good_units(db, run)` is what PASSED and is the divisor for
+  per-device COST. `run_actuals.planned_units(run)` is `plan_qty or qty` — what
+  was ORDERED — and is the multiplier for a supplier's per-board rate in
+  `effective_qty`. An assembler is paid for the boards they assembled; our yield
+  loss is ours. Using the first where the second belongs made LIFTECH's "5
+  PLN/board x 350" reconcile to 349 boards, and because `_assert_identities`
+  checks the register gap ABSOLUTELY, that $1.31 refused every `jlc_apply` write
+  for the rest of the day.
+- **A merged supplier invoice is SPLIT, never inferred.** Subcontractors bill
+  several batches on one document. `POST /api/run-cost-lines/{id}/split` makes
+  one printed position into children charged to different runs; a child inherits
+  `basis`, so a `per_device` child scales by its own batch. Nothing tries to work
+  out which batches a line covers.
+- **Attrition belongs to the batch that lost it.** The batch's Materials tab
+  writes a `ComponentStockAdjustment` with `charge_run_id` set, so the loss lands
+  in that batch's per-device figure instead of floating at project level. The
+  Stock page keeps the same power for anything the batch view cannot express.
+- **`lost` and `external` are different axes.** `pool_state` counts an
+  `external_project` adjustment — another project's assembly order — on
+  `external`, never on `lost`. Attrition is a defect signal here, and consumption
+  by a project the platform does not track is not a defect. Together they read
+  1,094 written-off pieces on 2026-09-18 when the true attrition was ZERO. Since
+  [0034](../decisions/0034-stock-moves-when-the-supplier-says-so.md) the same
+  fact is written as an uncharged draw, so no new adjustments of this kind
+  appear and the 27 historical rows keep their own column.
+- **A draw has TWO facts with two sources, written at two times** (decision
+  [0034](../decisions/0034-stock-moves-when-the-supplier-says-so.md)). The
+  QUANTITY is reported: a JLC manufacturing invoice itemises every consigned lot
+  each assembly order consumed (`presaleDetailResultVOList`), and
+  `jlc_invoice.parse` checks those rows sum to the invoice's prepaid total. WHO
+  PAYS is inferred later by `plan_orders` and confirmed by a human.
+  `ComponentConsumption.run_id` is therefore **nullable**: NULL means the stock
+  left and no run has been charged.
+  - Importing a manufacturing document writes its draws uncharged
+    (`jlc_apply.draw_stock_for_invoice`, from `jlc_import.stock_plans` — which
+    deliberately bypasses the planner, because the stock side needs none of it).
+  - A decision then calls `jlc_apply.charge_draws`, which UPDATES `run_id` and
+    writes no new row, so a judgement about cost can never restate a supplier's
+    measurement. It refuses an order already charged to another run.
+  - `external` writes nothing for stock — it already left, charged to nobody.
+    `external_stock_movements` survives as a reader for 27 historical rows and
+    is skipped when draws exist, so stock cannot leave twice.
+  - `invoice_register` reports the uncharged value as `pool.uncharged_drawn_usd`
+    instead of filing it under a `None` run. A balance that stops being
+    transient means orders are not being decided.
+- **Compare against JLC's stock count at the MOMENT IT WAS TAKEN, in JLC's
+  calendar.** `JlcStockItem` is a snapshot; the pool runs to today. `parts_stock`
+  therefore computes `remaining_at_sync_qty` with `pool_state(as_of=...)` and
+  reports `delta_qty` against that, with `totals.compared_as_of` and
+  `totals.events_since_sync` saying how stale it is. Two traps, both measured
+  2026-09-18:
+  - Comparing today's pool against an August snapshot reported **33,246 pieces**
+    of phantom gap — almost all of it one batch's draw four weeks later — and
+    buried a real 3,866-piece one.
+  - The cutoff must be the **China-time** date (`run_actuals._jlc_date`). JLC
+    dates orders, invoices and settlements in UTC+8. Parts order
+    `20146320202608060318425` was placed at 03:18 China time, and the stock was
+    fetched 4m44s later at 19:23 UTC *on the 5th* — so a snapshot whose UTC date
+    is the 5th already contains an order dated the 6th. Cutting on the UTC date
+    put 13 parts out by exactly their last purchase.
 - **Stock is event-sourced, and a draw cannot take what was never bought.**
   `_pool_events(db)` is the ONE source of stock events (leaf part purchases,
   draws, adjustments, date-sorted with ties adj < buy < use so a same-day invoice

@@ -15,8 +15,9 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..db import get_db
 from ..models import utcnow
-from ..services import cost_steps, nbp, run_actuals, storage
-from .util import audit
+from ..services import (cost_steps, journal, nbp, run_actuals, storage,
+                        substitutions, supplier_parts)
+from .util import audit, part_display_name
 
 router = APIRouter(prefix="/api", tags=["run-costs"])
 
@@ -141,6 +142,29 @@ class LinePatch(BaseModel):
     project_id: int | None = None
 
 
+class LineEdit(LinePatch):
+    """One line's new values inside a batch. `id` names the row it applies to."""
+
+    id: int
+
+
+class LinesBatchIn(BaseModel):
+    """Everything an operator changed while the document was open, applied as ONE
+    transaction.
+
+    Batch editing exists because a per-field save cannot express a SWAP: moving
+    the component mapping of position A onto B and B's onto A is legal, but
+    either half on its own strands the draws priced against it (user decision
+    2026-09-19). So the whole set is guarded on its NET effect and committed
+    together, or nothing is written.
+    """
+
+    document: DocumentPatch | None = None   # the header fields, changed in the same breath
+    updates: list[LineEdit] = []
+    creates: list[LineIn] = []
+    deletes: list[int] = []   # voided, never hard-deleted — a money row keeps its history
+
+
 class ConsumptionIn(BaseModel):
     component_id: int | None = None
     mpn: str = ""
@@ -170,6 +194,31 @@ KINDS = {"part", "fab", "assembly", "tooling", "freight", "duty", "tax",
 BASES = {"per_device", "per_run"}
 # "excluded" = recorded so the document reconciles, charged to nobody on purpose.
 ALLOCATES = {"none", "by_value", "by_qty", "excluded"}
+def _guard_purchase_loss(db: Session, losses: list[dict], what: str) -> None:
+    """Refuse a change that would leave draws with no purchase behind them.
+
+    The draw side has been guarded since draws existed; this is the purchase
+    side (user decision 2026-09-19). A change that keeps every part covered goes
+    through untouched — the rule is "would this strand a draw", never "has this
+    part ever been consumed".
+    """
+    short = run_actuals.check_purchase_loss(db, losses)
+    if short:
+        # `detail.error` is what the browser shows, so it has to name the parts
+        # itself — the frontend contract forbids leaving a fact only in a
+        # sibling key (web/CLAUDE.md, "request() renders a structured refusal").
+        named = ", ".join(
+            f"{s_.get('label') or s_.get('mpn') or s_.get('component_id')} "
+            f"short {s_.get('short'):.0f}" for s_ in short[:3])
+        more = f" and {len(short) - 3} more" if len(short) > 3 else ""
+        raise HTTPException(409, {
+            "error": f"{what} would leave component draws with no purchase behind "
+                     f"them: {named}{more}. Remove or reduce those draws first, or "
+                     f"record a stock adjustment for the difference.",
+            "shortages": short,
+        })
+
+
 REASONS = {"attrition", "scrap", "miscount", "opening_balance", "correction",
            # Stock consumed by a project outside the platform. Written directly by
            # `jlc_apply.apply_external_movements` since it existed, and REJECTED here
@@ -178,6 +227,171 @@ REASONS = {"attrition", "scrap", "miscount", "opening_balance", "correction",
            # attrition is a defect signal in this codebase; conflating the two
            # inflates the apparent loss rate while hiding real losses.
            "external_project"}
+
+
+class SubstitutionIn(BaseModel):
+    designator: str
+    fitted_lcsc: str = ""
+    fitted_mpn: str = ""
+    fitted_component_id: int | None = None
+    specified_lcsc: str = ""
+    specified_mpn: str = ""
+    specified_component_id: int | None = None
+    qty_per_device: float = 1.0
+    source: str = "supplier"
+    supplied_by: str = ""
+    supplier_source: str = ""
+    supplier_designator: str = ""
+    evidence: str = ""
+    note: str = ""
+    design_updated: bool = False
+
+
+def _sub_json(s: M.RunSubstitution, db: Session | None = None) -> dict:
+    """`*_name` is what a READER should see: the library's manufacturer part
+    number when the part is in the library, and otherwise exactly the string
+    somebody typed. The raw `*_lcsc` / `*_mpn` stay for matching."""
+    named = {}
+    if db is not None:
+        spec_name, spec_lib = part_display_name(db, s.specified_component_id,
+                                                s.specified_lcsc, s.specified_mpn)
+        fit_name, fit_lib = part_display_name(db, s.fitted_component_id,
+                                              s.fitted_lcsc, s.fitted_mpn)
+        named = {
+            "specified_name": spec_name, "specified_in_library": spec_lib,
+            "fitted_name": fit_name, "fitted_in_library": fit_lib,
+        }
+    return {
+        **named,
+        "id": s.id, "run_id": s.run_id, "board": s.board, "variant": s.variant,
+        "designator": s.designator, "supplier_designator": s.supplier_designator,
+        "specified_lcsc": s.specified_lcsc, "specified_mpn": s.specified_mpn,
+        "specified_component_id": s.specified_component_id,
+        "fitted_lcsc": s.fitted_lcsc, "fitted_mpn": s.fitted_mpn,
+        "fitted_component_id": s.fitted_component_id,
+        "qty_per_device": s.qty_per_device, "source": s.source,
+        "supplied_by": s.supplied_by, "supplier_source": s.supplier_source,
+        "evidence": s.evidence, "note": s.note, "design_updated": s.design_updated,
+        "decided_by": s.decided_by,
+        "decided_at": s.decided_at.isoformat() if s.decided_at else None,
+    }
+
+
+@router.get("/runs/{run_id}/substitutions")
+def list_substitutions(run_id: int, db: Session = Depends(get_db)):
+    """What this batch fitted in place of what the design specifies, and what
+    it shows no sign of fitting at all.
+
+    `unused` is only meaningful with `has_supplier_bom`: without the supplier's
+    own BOM for the batch, the absence of a part says nothing.
+    """
+    run = _run(db, run_id)
+    return {"substitutions": [_sub_json(s, db) for s in substitutions.for_run(db, run_id)],
+            **substitutions.unused(db, run)}
+
+
+@router.post("/runs/{run_id}/substitutions")
+def add_substitution(run_id: int, body: SubstitutionIn, actor: str = "user",
+                     db: Session = Depends(get_db)):
+    """Record a part fitted in place of the specified one, for THIS batch.
+
+    Journalled, because it changes what a BOM draw takes out of the pool. It
+    does NOT rewrite the snapshot: the design keeps saying what was specified,
+    which is the whole point of holding the two apart
+    ([0038](../../../docs/decisions/0038-a-substitution-belongs-to-the-batch.md)).
+    """
+    run = _run(db, run_id)
+    if not body.designator.strip():
+        raise HTTPException(422, "name the position: designator")
+    named = bool(body.fitted_lcsc or body.fitted_mpn or body.fitted_component_id)
+    # Quantity ZERO is "nothing was fitted here" — the early batches shipped
+    # without cartons, and that is history rather than an error. It is the same
+    # row because it answers the same question, "why is the design's part not
+    # on this board", and it silences the same warning.
+    if not named and body.qty_per_device != 0:
+        raise HTTPException(422, "name what was fitted, or set qty_per_device to 0 "
+                                 "to record that nothing was")
+    dup = (db.query(M.RunSubstitution)
+             .filter_by(run_id=run_id, board=run.board or "", variant=run.variant or "",
+                        designator=body.designator.strip()).first())
+    if dup is not None:
+        raise HTTPException(409, {"error": "this batch already records a substitution "
+                                           "at that position", "id": dup.id})
+    with journal.batch(db, kind="run.substitution", source_ref=f"run:{run_id}",
+                       actor=actor) as h:
+        row = M.RunSubstitution(
+            run_id=run_id, board=run.board or "", variant=run.variant or "",
+            designator=body.designator.strip(),
+            supplier_designator=body.supplier_designator.strip(),
+            specified_component_id=body.specified_component_id,
+            specified_lcsc=body.specified_lcsc, specified_mpn=body.specified_mpn,
+            fitted_component_id=body.fitted_component_id,
+            fitted_lcsc=body.fitted_lcsc, fitted_mpn=body.fitted_mpn,
+            qty_per_device=body.qty_per_device, source=body.source,
+            supplied_by=body.supplied_by, supplier_source=body.supplier_source,
+            evidence=body.evidence, note=body.note,
+            design_updated=body.design_updated, decided_by=actor)
+        db.add(row)
+        db.flush()
+    audit(db, "run.substitution.add", "run_substitution", row.id,
+          {"run_id": run_id, "designator": row.designator,
+           "from": row.specified_lcsc, "to": row.fitted_lcsc,
+           "batch_id": h["batch_id"]}, actor=actor)
+    db.commit()
+    return {**_sub_json(row, db), "batch_id": h["batch_id"], "reversible": True}
+
+
+@router.put("/substitutions/{sub_id}")
+def update_substitution(sub_id: int, design_updated: bool | None = None,
+                        note: str | None = None, actor: str = "user",
+                        db: Session = Depends(get_db)):
+    """Mark the design as caught up, or correct the note.
+
+    `design_updated` is what clears the standing drift finding — it is a claim
+    that the schematic now says what the factory fitted, so it is the one flag
+    worth setting deliberately.
+    """
+    row = db.get(M.RunSubstitution, sub_id)
+    if row is None:
+        raise HTTPException(404, "substitution not found")
+    with journal.batch(db, kind="run.substitution.edit", source_ref=f"sub:{sub_id}",
+                       actor=actor) as h:
+        if design_updated is not None:
+            row.design_updated = design_updated
+        if note is not None:
+            row.note = note
+        db.flush()
+    audit(db, "run.substitution.update", "run_substitution", sub_id,
+          {"design_updated": row.design_updated, "batch_id": h["batch_id"]}, actor=actor)
+    db.commit()
+    return {**_sub_json(row, db), "batch_id": h["batch_id"], "reversible": True}
+
+
+@router.delete("/substitutions/{sub_id}")
+def delete_substitution(sub_id: int, actor: str = "user", db: Session = Depends(get_db)):
+    row = db.get(M.RunSubstitution, sub_id)
+    if row is None:
+        raise HTTPException(404, "substitution not found")
+    info = {"run_id": row.run_id, "designator": row.designator,
+            "from": row.specified_lcsc, "to": row.fitted_lcsc}
+    with journal.batch(db, kind="run.substitution.delete", source_ref=f"sub:{sub_id}",
+                       actor=actor) as h:
+        db.delete(row)
+        db.flush()
+    audit(db, "run.substitution.delete", "run_substitution", sub_id,
+          {**info, "batch_id": h["batch_id"]}, actor=actor)
+    db.commit()
+    return {"status": "deleted", "batch_id": h["batch_id"], "reversible": True}
+
+
+@router.get("/substitutions/detected")
+def detected_substitutions(db: Session = Depends(get_db)):
+    """Positions the SUPPLIER's own BOM says changed, and the designs that have
+    not caught up with the ones already recorded.
+
+    Candidates only — nothing is written until someone records it.
+    """
+    return {"candidates": substitutions.detect(db), "drift": substitutions.drift(db)}
 
 
 def _run(db: Session, run_id: int) -> M.ProductionRun:
@@ -252,6 +466,28 @@ def _depth(db: Session, li: M.RunCostLine) -> int:
 
 
 # ---------------------------------------------------------------- documents
+
+@router.get("/runs/{run_id}/batch-supply")
+def batch_supply(run_id: int, db: Session = Depends(get_db)):
+    """Parts this batch bought DIRECTLY, outside the shared pool.
+
+    The Materials tab is built from the BOM, the draws, the write-offs and the
+    substitutions — none of which can see a part charged straight to the batch,
+    so a position met that way read as empty while the batch paid for it.
+    """
+    return {"rows": supplier_parts.batch_supply(db, _run(db, run_id))}
+
+
+@router.get("/runs/{run_id}/supply-coverage")
+def supply_coverage(run_id: int, db: Session = Depends(get_db)):
+    """Is every part this batch used accounted for exactly ONCE?
+
+    `drawn_but_supplier_supplied` is the double charge `void_shop_draws` was
+    written to undo by hand; `no_draw` is its mirror, a part we supplied and
+    never booked. Both were previously invisible until somebody went looking.
+    """
+    return supplier_parts.coverage(db, _run(db, run_id))
+
 
 @router.get("/runs/{run_id}/documents")
 def list_run_documents(run_id: int, db: Session = Depends(get_db)):
@@ -421,6 +657,13 @@ def delete_document(doc_id: int, force: bool = False, db: Session = Depends(get_
     live = [li for li in doc.lines if li.voided_at is None]
     if live and not force:
         raise HTTPException(409, f"document has {len(live)} live lines; pass force=true to delete")
+    # `force` waives the "it still has lines" guard, never the stock one: the
+    # draws priced against these purchases outlive the document.
+    hdrs = run_actuals.header_ids(db, doc.id)
+    _guard_purchase_loss(db, [
+        run_actuals.purchase_loss_of(db, li)
+        for li in run_actuals.pooled_part_lines(db, live) if li.id not in hdrs
+    ], "deleting this document")
     audit(db, "run.document.delete", "run_cost_document", doc.id,
           {"supplier": doc.supplier, "doc_number": doc.doc_number, "lines": len(doc.lines)})
     db.delete(doc)
@@ -446,6 +689,134 @@ def add_line(doc_id: int, body: LineIn, db: Session = Depends(get_db)):
     })
     db.commit()
     return run_actuals.line_json(li, doc, db=db)
+
+
+@router.patch("/run-documents/{doc_id}/lines")
+def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
+    """Apply a whole document's line edits at once, or none of them.
+
+    Order matters: everything is validated and the stock guard is run on the
+    batch's NET effect BEFORE a single row is touched, so a refusal leaves the
+    document exactly as it was.
+    """
+    doc = _doc(db, doc_id)
+    by_id = {li.id: li for li in doc.lines if li.voided_at is None}
+
+    touched = {e.id for e in body.updates} | set(body.deletes)
+    missing = sorted(touched - by_id.keys())
+    if missing:
+        raise HTTPException(404, f"no live line {missing} on this document")
+
+    for e in body.updates:
+        _check_line(e)
+    for c in body.creates:
+        _check_line(c)
+
+    # One netted guard for the batch. A deleted line, or one that leaves the
+    # pool, contributes its whole quantity as a loss; a re-key moves stock from
+    # one key to another and nets out when something moves the other way.
+    changes: list[dict] = []
+    for e in body.updates:
+        li = by_id[e.id]
+        f = e.model_dump(exclude_unset=True)
+        leaves = f.get("run_id") is not None or f.get("allocate") == run_actuals.EXCLUDED
+        ch: dict = {"line": li, "qty": None if leaves else f.get("qty"),
+                    "pooled_after": not leaves}
+        for k in ("component_id", "mpn", "lcsc"):
+            if k in f:
+                ch[k] = f[k]
+        changes.append(ch)
+    for line_id in body.deletes:
+        changes.append({"line": by_id[line_id], "pooled_after": False})
+        for kid in _descendants(db, line_id):
+            if kid.voided_at is None:
+                changes.append({"line": kid, "pooled_after": False})
+    short = run_actuals.batch_purchase_losses(db, changes)
+    if short:
+        named = ", ".join(f"{s_.get('label') or s_.get('mpn')} short {s_.get('short'):.0f}"
+                          for s_ in short[:3])
+        more = f" and {len(short) - 3} more" if len(short) > 3 else ""
+        raise HTTPException(409, {
+            "error": f"these edits would leave component draws with no purchase behind "
+                     f"them: {named}{more}. Remove or reduce those draws first, or record "
+                     f"a stock adjustment for the difference.",
+            "shortages": short,
+        })
+
+    changed: list[dict] = []
+    for e in body.updates:
+        li = by_id[e.id]
+        f = e.model_dump(exclude_unset=True)
+        f.pop("id", None)
+        if "run_id" in f or "project_id" in f:
+            _check_destination(db, f.get("run_id", li.run_id), f.get("project_id", li.project_id))
+        before, after = {}, {}
+        for field, value in f.items():
+            if getattr(li, field) != value:
+                before[field], after[field] = getattr(li, field), value
+                setattr(li, field, value)
+        if after:
+            changed.append({"id": li.id, "before": before, "after": after})
+
+    now = utcnow()
+    voided: list[int] = []
+    for line_id in body.deletes:
+        for row in [by_id[line_id], *[k for k in _descendants(db, line_id) if k.voided_at is None]]:
+            row.voided_at = now
+            voided.append(row.id)
+
+    # The header goes in the SAME transaction as its positions. A supplier or a
+    # date corrected in one call and the lines in another leaves a window where
+    # the document says one thing and its money another.
+    doc_before, doc_after = {}, {}
+    if body.document is not None:
+        for field, value in body.document.model_dump(exclude_unset=True).items():
+            if getattr(doc, field) != value:
+                doc_before[field], doc_after[field] = getattr(doc, field), value
+                setattr(doc, field, value)
+        # A changed currency or date invalidates the pinned rate: it was resolved
+        # from NBP table A at the OLD date, so leaving it would price the
+        # document at a rate that never applied to it.
+        if ("currency" in doc_after or "doc_date" in doc_after) \
+                and (doc.currency or "USD").upper() != "USD" and doc.doc_date \
+                and "fx_rate_usd" not in doc_after:
+            try:
+                res = nbp.resolve_for_document(db, doc.currency, doc.doc_date)
+                doc_before["fx_rate_usd"], doc_after["fx_rate_usd"] = doc.fx_rate_usd, res["rate_usd"]
+                doc.fx_rate_usd = res["rate_usd"]
+            except nbp.NbpError as exc:
+                raise HTTPException(502, f"could not resolve an NBP rate: {exc}") from exc
+
+    pos = max([li.position for li in doc.lines], default=-1)
+    created: list[int] = []
+    for c in body.creates:
+        pos += 1
+        d = c.model_dump()
+        d["position"] = d.get("position") or pos
+        row = M.RunCostLine(document_id=doc.id, **d)
+        db.add(row)
+        db.flush()
+        created.append(row.id)
+
+    audit(db, "run.document.lines.batch", "run_cost_document", doc.id,
+          {"document": {"before": doc_before, "after": doc_after} if doc_after else None,
+           "updated": changed, "voided": voided, "created": created})
+    db.commit()
+    db.expire(doc, ["lines"])
+    return {"updated": len(changed), "voided": len(voided), "created": len(created),
+            "header_changed": sorted(doc_after), "document": run_actuals.document_json(doc, db=db)}
+
+
+@router.get("/run-cost-lines/{line_id}/supplier-breakdown")
+def supplier_breakdown(line_id: int, db: Session = Depends(get_db)):
+    """What the supplier's own BOM says this parts lump bought.
+
+    A PLAN, never a write. It is loaded into the split dialog and applied
+    through the ordinary split, so there is exactly one path that turns a lump
+    into positions — a second endpoint that also wrote them would be free to
+    drift from the guards `split` carries.
+    """
+    return supplier_parts.itemise(db, _line(db, line_id))
 
 
 @router.post("/run-cost-lines/{line_id}/split")
@@ -511,6 +882,19 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
             plan_kind=child.plan_kind, plan_ref=child.plan_ref, notes=child.notes,
         ))
 
+    # Splitting a PART line moves stock: the parent becomes a header and stops
+    # being a purchase, the children become the purchases. Whatever the children
+    # do not carry back into the pool — a share charged to a run, an `excluded`
+    # share, or simply a smaller quantity — is stock the pool loses.
+    if parent.kind == run_actuals.PART_KIND and run_actuals.pooled_part_lines(db, [parent]):
+        back = sum(c.qty or 0.0 for c in existing + made
+                   if c.kind == run_actuals.PART_KIND and c.run_id is None
+                   and (c.allocate or "none") != run_actuals.EXCLUDED
+                   and c.component_id == parent.component_id
+                   and (c.mpn or "") == (parent.mpn or ""))
+        _guard_purchase_loss(db, [run_actuals.purchase_loss_of(db, parent, qty=back)],
+                             "this split")
+
     parent_amount = run_actuals.effective_qty(parent, doc, db) * (parent.unit_price or 0)
     child_amount = sum(run_actuals.effective_qty(c, doc, db) * (c.unit_price or 0)
                        for c in existing + made)
@@ -545,6 +929,21 @@ def update_line(line_id: int, body: LinePatch, db: Session = Depends(get_db)):
     li = _line(db, line_id)
     _check_line(body)
     fields = body.model_dump(exclude_unset=True)
+    # A smaller quantity, or a different pool identity, takes stock away from
+    # the key this line was feeding. Charging it to a run does too: a part line
+    # with a `run_id` leaves the pool entirely.
+    if run_actuals.pooled_part_lines(db, [li]) and (
+        "qty" in fields or "component_id" in fields or "mpn" in fields
+        or "lcsc" in fields or fields.get("run_id") is not None
+        or fields.get("allocate") == run_actuals.EXCLUDED
+    ):
+        loses_all = fields.get("run_id") is not None or fields.get("allocate") == run_actuals.EXCLUDED
+        _guard_purchase_loss(db, [run_actuals.purchase_loss_of(
+            db, li,
+            qty=0.0 if loses_all else fields.get("qty"),
+            component_id=fields.get("component_id", ...),
+            mpn=fields.get("mpn"), lcsc=fields.get("lcsc"),
+        )], "this edit")
     if "run_id" in fields or "project_id" in fields:
         _check_destination(db,
                            fields.get("run_id", li.run_id),
@@ -569,6 +968,11 @@ def void_line(line_id: int, db: Session = Depends(get_db)):
     """
     li = _line(db, line_id)
     kids = [c for c in _descendants(db, li.id) if c.voided_at is None]
+    hdrs = run_actuals.header_ids(db)
+    _guard_purchase_loss(db, [
+        run_actuals.purchase_loss_of(db, row)
+        for row in run_actuals.pooled_part_lines(db, [li, *kids]) if row.id not in hdrs
+    ], "voiding this line")
     now = utcnow()
     for row in [li, *kids]:
         row.voided_at = now
@@ -725,16 +1129,21 @@ def add_consumption(run_id: int, body: ConsumptionIn, db: Session = Depends(get_
     if shortages:
         raise HTTPException(409, {"error": "insufficient stock for this draw",
                                   "shortages": shortages})
+    # As of the CONSUMPTION date, never "today": a 2024 draw must not be priced
+    # from purchases made in 2026 (same rule as consume_from_bom). Resolved by
+    # identity OVERLAP, not by `_key`, so a caller who knows only an MPN still
+    # meets purchases filed under a component id — see `resolve_pool_identity`.
+    as_of = body.consumed_at or run.run_date or None
+    pool = run_actuals.resolve_pool_identity(
+        db, body.component_id, body.mpn, body.lcsc, as_of=as_of)
     unit = body.unit_cost_usd
     if unit is None:
-        probe = type("P", (), {"component_id": body.component_id, "mpn": body.mpn, "lcsc": body.lcsc})()
-        # As of the CONSUMPTION date, never "today": a 2024 draw must not be
-        # priced from purchases made in 2026 (same rule as consume_from_bom).
-        as_of = body.consumed_at or run.run_date or None
-        unit = run_actuals.pool_state(db, run.project_id, as_of=as_of).get(
-            run_actuals._key(probe), {}).get("avg_usd", 0.0)
+        unit = pool["avg_usd"] if pool else 0.0
     c = M.ComponentConsumption(
-        run_id=run_id, component_id=body.component_id, mpn=body.mpn, lcsc=body.lcsc,
+        run_id=run_id,
+        component_id=(pool or {}).get("component_id") or body.component_id,
+        mpn=(pool or {}).get("mpn") or body.mpn,
+        lcsc=(pool or {}).get("lcsc") or body.lcsc,
         qty=body.qty, unit_cost_usd=unit, basis=body.basis,
         consumed_at=body.consumed_at or run.run_date or "", note=body.note,
     )
@@ -745,6 +1154,114 @@ def add_consumption(run_id: int, body: ConsumptionIn, db: Session = Depends(get_
     })
     db.commit()
     return {"id": c.id, "unit_cost_usd": c.unit_cost_usd, "basis": c.basis}
+
+
+@router.put("/runs/{run_id}/consumption/for-part")
+def set_used_qty(run_id: int, body: ConsumptionIn, db: Session = Depends(get_db)):
+    """Set how much of ONE part this batch used, as an absolute figure.
+
+    The end-of-production workflow: type what was actually consumed against each
+    BOM row and the batch is done. Idempotent by design — sending the same
+    quantity twice changes nothing, and correcting a number later is the same
+    call again, so a mistake never needs a compensating adjustment.
+
+    Why absolute and not a delta: a delta needs the operator to know the current
+    value, and the whole point is that they are reading a number off the shelf,
+    not off the screen. It EDITS the existing row rather than adding a second
+    one, so the part keeps one draw and one lot binding.
+
+    Refuses a part JLC itself reported (`basis='measured'`). That figure is the
+    supplier's measurement of its own consigned stock
+    ([0034](../../../docs/decisions/0034-stock-moves-when-the-supplier-says-so.md));
+    overwriting it by hand would put a guess where an observation is. Parts
+    bought elsewhere — enclosures, antennas, cartons — are exactly the ones no
+    supplier reports, and are what this is for.
+    """
+    run = _run(db, run_id)
+    qty = max(body.qty or 0.0, 0.0)
+    keys = set(run_actuals._identity_keys(body.component_id, body.mpn, body.lcsc))
+    if not keys:
+        raise HTTPException(422, "name the part: component_id, mpn or lcsc")
+    live = [c for c in run_actuals.live_consumption(db, run_id=run_id).all()
+            if keys & set(run_actuals._identity_keys(c.component_id, c.mpn or "", c.lcsc or ""))]
+    measured = [c for c in live if c.basis == "measured"]
+    if measured:
+        raise HTTPException(409, {
+            "error": "JLC reported this draw itself — it is a measurement, not ours to retype",
+            "consumption_ids": [c.id for c in measured],
+            "qty": sum(c.qty or 0 for c in measured),
+            "hint": "correct it by reversing the import that wrote it"})
+    mine = [c for c in live if c.basis != "measured"]
+    if len(mine) > 1:
+        raise HTTPException(409, {
+            "error": f"{len(mine)} separate draws exist for this part on this batch, "
+                     "so an absolute quantity is ambiguous",
+            "consumption_ids": [c.id for c in mine],
+            "hint": "delete the extras, then set the quantity once"})
+
+    row = mine[0] if mine else None
+    was = row.qty if row else 0.0
+    if qty > was:
+        # Only the INCREASE can overdraw; shrinking a draw always gives back.
+        short = run_actuals.check_shortages(db, [{
+            "component_id": body.component_id, "mpn": body.mpn, "lcsc": body.lcsc,
+            "qty": qty - was, "date": body.consumed_at or run.run_date or "",
+        }])
+        if short:
+            raise HTTPException(409, {"error": "insufficient stock for this draw",
+                                      "shortages": short})
+    if qty <= 0:
+        if row is None:
+            return {"status": "unchanged", "qty": 0.0}
+        audit(db, "run.consumption.delete", "component_consumption", row.id,
+              {"run_id": run_id, "qty": row.qty, "reason": "used qty set to zero"})
+        db.delete(row)
+        db.commit()
+        return {"status": "removed", "qty": 0.0}
+
+    if row is None:
+        as_of = body.consumed_at or run.run_date or None
+        # ADOPT the pool entry's identity. Writing the caller's own spelling
+        # would file the draw under a different key from the purchases and split
+        # one part into two pool entries with two averages.
+        pool = run_actuals.resolve_pool_identity(
+            db, body.component_id, body.mpn, body.lcsc, as_of=as_of)
+        if pool is None:
+            raise HTTPException(409, {
+                "error": "no pool entry for that part, so there is nothing to draw from",
+                "mpn": body.mpn, "lcsc": body.lcsc,
+                "hint": "enter the purchase invoice first, or check the spelling"})
+        unit = body.unit_cost_usd if body.unit_cost_usd is not None else pool["avg_usd"]
+        row = M.ComponentConsumption(
+            run_id=run_id, component_id=pool.get("component_id"),
+            mpn=pool.get("mpn") or body.mpn, lcsc=pool.get("lcsc") or body.lcsc,
+            qty=qty, unit_cost_usd=unit, basis="manual",
+            consumed_at=body.consumed_at or run.run_date or "", note=body.note)
+        db.add(row)
+        db.flush()
+        audit(db, "run.consumption.add", "component_consumption", row.id,
+              {"run_id": run_id, "qty": qty, "unit_cost_usd": row.unit_cost_usd,
+               "basis": "manual", "note": "counted at end of production"})
+        db.commit()
+        return {"status": "created", "id": row.id, "qty": qty,
+                "unit_cost_usd": row.unit_cost_usd, "basis": row.basis}
+
+    if abs(was - qty) < 1e-9:
+        return {"status": "unchanged", "id": row.id, "qty": qty}
+    # The unit cost stays as SNAPSHOTTED. It is what the pool averaged when the
+    # draw was priced, and re-pricing on every correction would let a later
+    # purchase rewrite what a closed batch paid.
+    row.qty = qty
+    was_basis = row.basis
+    row.basis = "manual"
+    if body.note:
+        row.note = body.note[:500]
+    audit(db, "run.consumption.update", "component_consumption", row.id,
+          {"run_id": run_id, "before": {"qty": was, "basis": was_basis},
+           "after": {"qty": qty, "basis": row.basis}})
+    db.commit()
+    return {"status": "updated", "id": row.id, "qty": qty,
+            "was": was, "unit_cost_usd": row.unit_cost_usd, "basis": row.basis}
 
 
 @router.post("/runs/{run_id}/consumption/from-bom")

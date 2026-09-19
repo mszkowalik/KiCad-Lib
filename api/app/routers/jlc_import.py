@@ -60,12 +60,29 @@ def queue(db: Session = Depends(get_db)):
     """Every assembly order with its proposal and the evidence behind it."""
     rows = jlc_import.decision_queue(db)
     pending = [r for r in rows if not r["decision"] or r["decision"]["outcome"] == "pending"]
+    # Decided and never applied. This is NOT a sub-case of "decided": nothing has
+    # been written for these, so the stock they consumed is still on our books and
+    # the run they belong to is still uncharged. Counting them as decided is what
+    # let SMT026080463762 (441 consigned pieces, decided 2026-08-25 by the user)
+    # disappear from the queue without ever being applied.
+    stranded = [r for r in rows
+                if r["decision"] and r["decision"]["outcome"] != "pending"
+                and not r["decision"]["applied_at"]]
+    # Applied with no BOM cached: `componentSource` is unknown, so whether JLC
+    # supplied a part itself was never checked for these.
+    no_bom = [r for r in rows if not r["bom_fetched"]]
     return {
         "orders": rows,
         "counts": {
             "total": len(rows),
             "pending": len(pending),
             "decided": len(rows) - len(pending),
+            "stranded": len(stranded),
+            # The consigned stock that has not moved because of it.
+            "stranded_stock_value_usd": round(
+                sum(r["consumed_value_usd"] or 0 for r in stranded), 2),
+            "no_bom": len(no_bom),
+            "no_bom_invoiced_usd": round(sum(r["money_usd"] or 0 for r in no_bom), 2),
             # The invoiced value of orders AWAITING a decision. Deliberately NOT
             # called "unassigned": that word means something precise in
             # `invoice_register` (money no document allocated), and much of this
@@ -89,7 +106,8 @@ def staged(db: Session = Depends(get_db)):
         {"id": r.id, "kind": r.kind, "external_id": r.external_id,
          "invoice_no": r.invoice_no, "doc_date": r.doc_date,
          "total_amount": r.total_amount, "presale_amount": r.presale_amount,
-         "status": r.status, "document_id": r.document_id,
+         "status": r.status, "jlc_status": r.jlc_status or "",
+         "document_id": r.document_id,
          "has_payload": bool(r.payload),
          # A fetch that FAILED leaves `payload` NULL; a fetch that SUCCEEDED and
          # found nothing leaves `{}` — JLC has issued no invoice for that batch
@@ -242,11 +260,17 @@ def apply_document(external_id: str, dry_run: bool = True, actor: str = "user",
     plan = jlc_import.plan_manufacturing_document(inv, _decisions_map(db),
                                                   fee_info=row.fee_info)
 
+    # The invoice STATES what each assembly order drew from consigned stock, so
+    # the stock leg rides with the document rather than waiting for somebody to
+    # decide which batch pays. See `jlc_import.stock_plans`.
+    stock = jlc_import.stock_plans(inv)
+
     if dry_run:
         try:
             return {"dry_run": True, "plan": {k: v for k, v in plan.items() if k != "lines"},
                     "lines": plan["lines"],
-                    "result": jlc_apply.apply_manufacturing_document(db, plan, dry_run=True)}
+                    "result": jlc_apply.apply_manufacturing_document(db, plan, dry_run=True),
+                    "stock": jlc_apply.draw_stock_for_invoice(db, stock, dry_run=True)}
         except jlc_apply.ApplyRefused as e:
             raise HTTPException(409, str(e)) from e
 
@@ -263,6 +287,8 @@ def apply_document(external_id: str, dry_run: bool = True, actor: str = "user",
                 # designed to answer "what is left?" could not.
                 row.status = "imported"
                 row.document_id = res["document_id"]
+                res["stock"] = jlc_apply.draw_stock_for_invoice(
+                    db, stock, actor=actor, dry_run=False)
     except jlc_apply.ApplyRefused as e:
         raise HTTPException(409, str(e)) from e
     if res.get("status") in ("exists", "probable_duplicate"):
@@ -319,23 +345,18 @@ def list_parts_orders(db: Session = Depends(get_db)):
                            sum(o["paid_usd"] for o in out if not o["document_id"]), 2)}}
 
 
-@router.post("/parts/{pob}/apply")
-def apply_parts(pob: str, dry_run: bool = True, actor: str = "user",
-                db: Session = Depends(get_db)):
-    """Import ONE JLC parts order (POB…) as the purchase document whose lines ARE
-    the lots every later draw binds to.
-
-    Fetched live rather than from staging: `sync` stages assembly batches only, and
-    a lot's quantity and price come from the ORDER page, never the invoice — the
-    invoice understates by JLC's sourcing fee ($1,623.23 across the account).
-    """
+def _parts_plan(db: Session, pob: str) -> dict:
+    """The live plan for one parts order — shared by apply and refresh so the
+    two can never read JLC differently."""
     if not jlc_web.available(db):
         raise HTTPException(409, "no JLCPCB browser session stored — paste cookies first")
     try:
-        raw = jlc_web.list_parts_orders(db)
-        # `index_parts_orders` keys by `presaleGoodsKeyId` — one entry per LOT, not
-        # per order (215 lots across 16 orders). Group by the order each lot names.
-        index = jlc_import.index_parts_orders(raw)
+        # `index_parts_orders` keys by `presaleGoodsKeyId` — one entry per LOT,
+        # not per order (215 lots across 16 orders). Group by the order each lot
+        # names. A lot's quantity and price come from the ORDER page, never the
+        # invoice — the invoice understates by JLC's sourcing fee ($1,623.23
+        # across the account).
+        index = jlc_import.index_parts_orders(jlc_web.list_parts_orders(db))
         lots = [lot for lot in index.values() if lot.get("purchase_batch_no") == pob]
         if not lots:
             known = sorted({lot.get("purchase_batch_no") for lot in index.values()})
@@ -346,8 +367,20 @@ def apply_parts(pob: str, dry_run: bool = True, actor: str = "user",
         raise HTTPException(401, str(e)) from e
     except jlc_web.JlcWebError as e:
         raise HTTPException(502, str(e)) from e
+    return jlc_import.plan_parts_document(pob, lots, invoice_raw)
 
-    plan = jlc_import.plan_parts_document(pob, lots, invoice_raw)
+
+@router.post("/parts/{pob}/apply")
+def apply_parts(pob: str, dry_run: bool = True, actor: str = "user",
+                db: Session = Depends(get_db)):
+    """Import ONE JLC parts order (POB…) as the purchase document whose lines ARE
+    the lots every later draw binds to.
+
+    Fetched live rather than from staging: `sync` stages assembly batches only, and
+    a lot's quantity and price come from the ORDER page, never the invoice — the
+    invoice understates by JLC's sourcing fee ($1,623.23 across the account).
+    """
+    plan = _parts_plan(db, pob)
     if dry_run:
         return {"dry_run": True, "plan": {k: v for k, v in plan.items() if k != "lines"},
                 "lines": plan["lines"],
@@ -361,6 +394,35 @@ def apply_parts(pob: str, dry_run: bool = True, actor: str = "user",
         raise HTTPException(409, {"error": res["status"], **res})
     audit(db, "jlc.import.parts.apply", "run_cost_document", res.get("document_id"),
           details={"pob": pob, "batch_id": h["batch_id"]}, actor=actor)
+    db.commit()
+    return {**res, "batch_id": h["batch_id"], "reversible": True}
+
+
+@router.post("/parts/{pob}/refresh")
+def refresh_parts(pob: str, dry_run: bool = True, actor: str = "user",
+                  db: Session = Depends(get_db)):
+    """Re-state an already-imported parts order from what JLC says TODAY.
+
+    A lot can change after it was imported — lot 754166 settled 3,470 LEDs and
+    was then cancelled and refunded. The importer refuses a document it already
+    holds, and rightly; this is how the correction gets in without anybody
+    retyping a number. Dry run by default, journalled, and it refuses rather
+    than guesses whenever the two sides cannot be matched lot for lot.
+    """
+    plan = _parts_plan(db, pob)
+    # Always planned dry first: a refusal must not open a journal batch, because
+    # the refusal path rolls back and would take the batch header with it.
+    preview = jlc_apply.refresh_parts_document(db, plan, actor=actor, dry_run=True)
+    if dry_run or preview["status"] in ("refused", "not_imported", "unchanged"):
+        if not dry_run and preview["status"] in ("refused", "not_imported"):
+            raise HTTPException(409, preview)
+        return preview
+    with journal.batch(db, kind="jlc.parts.refresh", source_ref=pob, actor=actor,
+                       summary={"total_amount": plan.get("total_amount")}) as h:
+        res = jlc_apply.refresh_parts_document(db, plan, actor=actor, dry_run=False)
+    audit(db, "jlc.import.parts.refresh", "run_cost_document", res.get("document_id"),
+          details={"pob": pob, "changes": len(res.get("changes") or []),
+                   "batch_id": h["batch_id"]}, actor=actor)
     db.commit()
     return {**res, "batch_id": h["batch_id"], "reversible": True}
 
@@ -490,6 +552,165 @@ def void_shop_draws(smt_order_code: str, dry_run: bool = True, actor: str = "use
     return out
 
 
+def _order_draws(db: Session, plan: dict) -> list:
+    """Every live draw already written for one assembly order."""
+    prefix = f"jlc:{plan['batch_num']}:{plan['smt_order_code']}:"
+    return [c for c in run_actuals.live_consumption(db).all()
+            if (c.import_ref or "").startswith(prefix)]
+
+
+def _legacy_movements(db: Session, plan: dict) -> list:
+    """The pre-0034 shape: this order's stock booked as ADJUSTMENTS.
+
+    27 rows across 7 orders, written by the 2026-07-28 backfill when a draw could
+    not exist without a batch. They still hold real stock out of the pool, so an
+    order that has them is already booked — missing that would let a re-apply
+    write uncharged draws ON TOP and take the same stock out twice.
+    """
+    prefix = f"jlc:ext:{plan['smt_order_code']}:"
+    return [a for a in db.query(M.ComponentStockAdjustment)
+            .filter(M.ComponentStockAdjustment.import_ref.startswith(prefix)).all()]
+
+
+def _stock_already_booked(db: Session, plan: dict) -> bool:
+    return bool(_order_draws(db, plan)) or bool(_legacy_movements(db, plan))
+
+
+def _booked(db: Session, plan: dict) -> dict:
+    rows = _order_draws(db, plan)
+    legacy = _legacy_movements(db, plan)
+    return {"draws": len(rows),
+            "uncharged": sum(1 for c in rows if c.run_id is None),
+            "legacy_adjustments": len(legacy),
+            "value_usd": round(
+                sum((c.qty or 0) * (c.unit_cost_usd or 0) for c in rows)
+                + sum(abs(a.qty_delta or 0) * (a.unit_cost_usd or 0) for a in legacy), 2),
+            "note": "stock left the pool when the invoice was imported; "
+                    "an external order simply never gets charged to a run"}
+
+
+def _charge_or_draw(db: Session, plan: dict, run_id: int, actor: str,
+                    dry_run: bool) -> dict:
+    """Point this order's draws at its run, writing them first if they are
+    not there yet.
+
+    Both paths exist because the split landed on 2026-09-18: an invoice imported
+    after it already has its stock written and only needs charging, while one
+    imported before it has no draws at all. The fallback also covers an order
+    `draw_stock_for_invoice` deferred for an unresolved lot.
+    """
+    res = jlc_apply.charge_draws(db, plan, run_id, actor=actor, dry_run=dry_run)
+    if res["uncharged_draws"] or res["already_charged"]:
+        return res
+    return jlc_apply.apply_draws(db, plan, run_id, jlc_apply.lot_line_index(db),
+                                 actor=actor, dry_run=dry_run)
+
+
+def _book_external(db: Session, plan: dict, actor: str, dry_run: bool) -> dict:
+    """Take an external order's stock out of the pool, charged to nobody.
+
+    An UNCHARGED DRAW, never a `ComponentStockAdjustment`. Before
+    `component_consumptions.run_id` became nullable this could not be expressed:
+    a draw required a batch, an external order has none, so the backfill wrote
+    negative adjustments with `reason='external_project'` instead. That put
+    another project's consumption on the same axis as attrition — a defect
+    signal — and reported 1,094 written-off pieces when the real attrition was
+    zero (decision
+    [0034](../../../docs/decisions/0034-stock-moves-when-the-supplier-says-so.md)).
+
+    Reached only when the stock was never booked: the manufacturing document has
+    not been imported, or `draw_stock_for_invoice` deferred this order for an
+    unresolved lot. In the ordinary flow the draws already exist and the caller
+    reports `already_booked` instead.
+    """
+    return jlc_apply.apply_draws(db, plan, None, jlc_apply.lot_line_index(db),
+                                 actor=actor, dry_run=dry_run)
+
+
+@router.post("/adjustments/to-draws")
+def migrate_external_adjustments(dry_run: bool = True, actor: str = "user",
+                                 db: Session = Depends(get_db)):
+    """Rewrite the pre-0034 `external_project` adjustments as uncharged draws.
+
+    One fact, one shape. Those 27 rows are the invoice's own consumption for
+    orders that build projects this platform does not track — verified 27/27
+    against `presaleDetailResultVOList`. They are adjustments only because
+    `component_consumptions.run_id` used to be NOT NULL, so a draw could not
+    exist without a batch.
+
+    The QUANTITIES do not move: the same pieces leave the pool either way, and
+    each adjustment matches its order plan exactly, row for row. What changes is
+    that the stock stops being counted beside attrition — a defect signal — and
+    starts carrying lot bindings like every other draw.
+
+    Refuses unless every adjustment reproduces from its order plan. An adjustment
+    this cannot re-derive is not one to rewrite; it is one to look at.
+    """
+    rows = [a for a in db.query(M.ComponentStockAdjustment)
+            .filter(M.ComponentStockAdjustment.reason == "external_project").all()
+            if (a.import_ref or "").startswith("jlc:ext:")]
+    if not rows:
+        return {"status": "nothing_to_migrate", "adjustments": 0}
+
+    by_code: dict[str, list] = {}
+    for a in rows:
+        by_code.setdefault(a.import_ref.split(":")[2], []).append(a)
+
+    plans, problems = {}, []
+    for code, adjs in by_code.items():
+        plan = jlc_import.order_plan_for(db, code)
+        cons = (plan or {}).get("consumption") or []
+        if plan is None:
+            problems.append({"smt_order_code": code, "why": "no staged invoice holds this order"})
+            continue
+        aq = sum(abs(a.qty_delta or 0) for a in adjs)
+        pq = sum(c["qty"] for c in cons)
+        if len(cons) != len(adjs) or abs(aq - pq) > 1e-6:
+            problems.append({"smt_order_code": code, "why": "plan does not reproduce the adjustments",
+                             "adjustment_rows": len(adjs), "adjustment_qty": aq,
+                             "plan_rows": len(cons), "plan_qty": pq})
+            continue
+        plans[code] = plan
+    if problems:
+        raise HTTPException(409, {
+            "error": "refusing a partial migration — some adjustments do not reproduce",
+            "problems": problems,
+            "hint": "these are the rows worth reading, not rewriting"})
+
+    plan_out = [{"smt_order_code": code,
+                 "batch_num": plans[code]["batch_num"],
+                 "adjustments": len(adjs),
+                 "qty": sum(abs(a.qty_delta or 0) for a in adjs),
+                 "value_usd": round(sum(abs(a.qty_delta or 0) * (a.unit_cost_usd or 0)
+                                        for a in adjs), 4)}
+                for code, adjs in sorted(by_code.items())]
+    if dry_run:
+        return {"status": "dry_run", "adjustments": len(rows), "orders": plan_out,
+                "identities": jlc_apply.identity_snapshot(db)}
+
+    with journal.batch(db, kind="jlc.ext.to_draws", source_ref="external_project",
+                       actor=actor,
+                       summary={"adjustments": len(rows), "orders": len(by_code)}) as h:
+        # Delete FIRST. Writing the draws while the adjustments still stand would
+        # take the same stock out twice at every point in between, and a guard
+        # that reads the pool would be reading a state that never really existed.
+        for a in rows:
+            db.delete(a)
+        db.flush()
+        lot_lines = jlc_apply.lot_line_index(db)
+        drawn = []
+        for code, plan in sorted(plans.items()):
+            res = jlc_apply.apply_draws(db, plan, None, lot_lines,
+                                        actor=actor, dry_run=False)
+            drawn.append({"smt_order_code": code, **res})
+    audit(db, "jlc.ext.to_draws", "component_stock_adjustment", None,
+          details={"adjustments": len(rows), "orders": len(by_code),
+                   "batch_id": h["batch_id"]}, actor=actor)
+    db.commit()
+    return {"status": "migrated", "adjustments_removed": len(rows),
+            "orders": drawn, "batch_id": h["batch_id"], "reversible": True}
+
+
 @router.post("/decision/{smt_order_code}/apply")
 def apply_decision(smt_order_code: str, dry_run: bool = True, actor: str = "user",
                    db: Session = Depends(get_db)):
@@ -517,7 +738,6 @@ def apply_decision(smt_order_code: str, dry_run: bool = True, actor: str = "user
     if plan is None:
         raise HTTPException(404, f"{smt_order_code} is not in any staged invoice")
 
-    lots_by_key = jlc_import.lots_by_key(db)
     out: dict = {"smt_order_code": smt_order_code, "outcome": dec.outcome,
                  "run_id": dec.run_id, "dry_run": dry_run}
     try:
@@ -525,13 +745,11 @@ def apply_decision(smt_order_code: str, dry_run: bool = True, actor: str = "user
             out["lines"] = jlc_apply.reclassify_order_lines(
                 db, smt_order_code, dec.outcome, dec.run_id, dry_run=True)
             if dec.outcome == "link_run":
-                out["draws"] = jlc_apply.apply_draws(
-                    db, plan, dec.run_id, jlc_apply.lot_line_index(db),
-                    actor=actor, dry_run=True)
+                out["draws"] = _charge_or_draw(db, plan, dec.run_id, actor, dry_run=True)
+            elif _stock_already_booked(db, plan):
+                out["movements"] = {"status": "already_booked", **_booked(db, plan)}
             else:
-                movements = jlc_import.external_stock_movements(plan, lots_by_key)
-                out["movements"] = jlc_apply.apply_external_movements(
-                    db, plan, movements, actor=actor, dry_run=True)
+                out["movements"] = _book_external(db, plan, actor, dry_run=True)
             return out
 
         with journal.batch(db, kind="jlc.decision.apply", source_ref=smt_order_code,
@@ -540,13 +758,14 @@ def apply_decision(smt_order_code: str, dry_run: bool = True, actor: str = "user
             out["lines"] = jlc_apply.reclassify_order_lines(
                 db, smt_order_code, dec.outcome, dec.run_id, actor=actor)
             if dec.outcome == "link_run":
-                out["draws"] = jlc_apply.apply_draws(
-                    db, plan, dec.run_id, jlc_apply.lot_line_index(db),
-                    actor=actor, dry_run=False)
+                out["draws"] = _charge_or_draw(db, plan, dec.run_id, actor, dry_run=False)
+            elif _stock_already_booked(db, plan):
+                # The stock left when the invoice was imported, charged to
+                # nobody — which is exactly what "external" means for stock.
+                # Writing it again would take it out twice.
+                out["movements"] = {"status": "already_booked", **_booked(db, plan)}
             else:
-                movements = jlc_import.external_stock_movements(plan, lots_by_key)
-                out["movements"] = jlc_apply.apply_external_movements(
-                    db, plan, movements, actor=actor, dry_run=False)
+                out["movements"] = _book_external(db, plan, actor, dry_run=False)
             dec.applied_at = utcnow()
     except jlc_apply.ApplyRefused as e:
         raise HTTPException(409, str(e)) from e

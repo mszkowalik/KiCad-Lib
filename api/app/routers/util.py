@@ -1,6 +1,7 @@
 """Shared helpers for routers."""
 from __future__ import annotations
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .. import models as M
@@ -137,3 +138,43 @@ def actor_of(request) -> str:
     if u is None:
         return "user"
     return (getattr(u, "display_name", "") or getattr(u, "username", "") or "user").strip() or "user"
+
+
+def part_display_name(db: Session, component_id: int | None = None,
+                      lcsc: str = "", mpn: str = "") -> tuple[str, bool]:
+    """What to CALL a part on screen.
+
+    **In the library — its manufacturer part number**, however it was found:
+    by component id, or by the `LCSC Part` property. An LCSC code names nothing
+    to a reader, and `C7223` on a substitution pill told nobody which capacitor
+    went on the board (user 2026-09-19).
+
+    **Not in the library — exactly the string somebody typed**, which may be an
+    LCSC code, an MPN or any other identifier. A part the SUPPLIER provided off
+    its own shelf legitimately has no library entry, and inventing a name for it
+    would be worse than printing what was entered.
+
+    Returns `(name, in_library)`. The flag matters: a caller that has a BETTER
+    string than the one entered — an invoice line carrying the real part number
+    where the supplier's BOM carried only a value — may use it, but must never
+    override the library.
+    """
+    comp = db.get(M.Component, component_id) if component_id else None
+    if comp is None and (lcsc or "").strip():
+        hit = (db.query(M.ComponentVersion.component_id)
+               .join(M.ComponentProperty,
+                     M.ComponentProperty.component_version_id == M.ComponentVersion.id)
+               .filter(M.ComponentProperty.key == "LCSC Part",
+                       func.upper(M.ComponentProperty.value) == lcsc.strip().upper())
+               .first())
+        if hit:
+            comp = db.get(M.Component, hit[0])
+    if comp is not None:
+        cv = current_version(comp)
+        if cv is not None:
+            name = (props_dict(cv).get("Manufacturer Part Number 1") or "").strip()
+            if name:
+                return name, True
+            if comp.name:
+                return comp.name, True
+    return ((mpn or "").strip() or (lcsc or "").strip()), False

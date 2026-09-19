@@ -139,7 +139,10 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
         (r.board ? ` / ${r.board}` : ""),
     },
     { key: "files", label: "Files", width: 7, numeric: true, get: (r) => r.attachment_count },
-    { key: "serials", label: "Serials", width: 7, numeric: true, get: (r) => r.device_count },
+    // What the batch actually MADE — `DeviceUnit.production_run_id`, counted by
+    // the server. It read "Serials" off the hand-typed `run_devices` registry
+    // until 2026-09-19 and so showed 0 for every batch ever built.
+    { key: "devices", label: "Devices", width: 7, numeric: true, get: (r) => r.device_count },
     {
       key: "actions",
       label: "",

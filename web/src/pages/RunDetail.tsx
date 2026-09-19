@@ -17,11 +17,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { CheckField } from "../components/Field";
 import {
-  addRunDevices,
   deleteRunAttachment,
-  deleteRunDevice,
   errorMessage,
-  getFxAt,
   getProject,
   getRun,
   getRunActuals,
@@ -36,6 +33,7 @@ import {
   type SnapshotInfo,
 } from "../api";
 import { BackLink, ErrorBanner, Spinner } from "../components/Ui";
+import DevicesTab from "../components/project/DevicesTab";
 import ProductionPanel from "../components/project/ProductionPanel";
 import RunCosts from "../components/run/RunCosts";
 import RunMaterials from "../components/run/RunMaterials";
@@ -58,7 +56,6 @@ export default function RunDetail() {
   const [snapshots, setSnapshots] = useState<SnapshotInfo[] | null>(null);
   const [actuals, setActuals] = useState<RunActuals | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [serialsDraft, setSerialsDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
 
   const load = useCallback((signal?: AbortSignal) => {
@@ -237,50 +234,27 @@ export default function RunDetail() {
                   </div>
                   <div className="muted">actual vs plan</div>
                 </div>
+                {/* A BATCH SHOWS COSTS. Revenue and margin belong to the
+                    ORDER, and the two meet per UNIT: a device carries this
+                    figure onto whatever order ships it (user decision
+                    2026-09-19). Three tiles here priced the run's own sale,
+                    which is how the same revenue came to exist in two places
+                    and disagree. */}
                 <div className="count-tile">
                   <div className="v">
-                    {actuals ? money(actuals.per_device, actuals.currency) : "—"}
-                  </div>
-                  <div className="muted">
-                    per device{actuals?.qty_good_source === "typed" ? ` (over ${actuals.qty_good ?? run.qty} typed)` : ""}
-                  </div>
-                </div>
-                {/* the server converts revenue into the display currency
-                    (order-date FX), so these tiles label it as such — the
-                    sale currency would misstate a converted figure */}
-                <div className="count-tile">
-                  <div className="v">
-                    {actuals?.revenue != null ? money(actuals.revenue, actuals.currency) : "—"}
-                  </div>
-                  <div className="muted">revenue</div>
-                </div>
-                <div className="count-tile">
-                  <div className="v">
-                    {actuals?.revenue != null
-                      ? money(
-                          actuals.revenue /
-                            Math.max(actuals.qty_sold ?? actuals.qty_good ?? actuals.qty_planned, 1),
-                          actuals.currency,
-                        )
+                    {actuals?.per_device_cost != null
+                      ? money(actuals.per_device_cost, actuals.currency)
                       : "—"}
                   </div>
-                  <div className="muted">revenue / device</div>
-                </div>
-                <div className="count-tile">
-                  <div
-                    className={
-                      "v" + (actuals?.margin != null && actuals.margin < 0 ? " err-text" : "")
-                    }
-                  >
-                    {actuals?.margin != null
-                      ? `${money(actuals.margin, actuals.currency)}${
-                          actuals.margin_pct != null
-                            ? ` (${actuals.margin_pct.toFixed(1)}%)`
-                            : ""
-                        }`
-                      : "—"}
+                  <div className="muted"
+                       title={actuals?.per_device_cost == null
+                         ? "No devices are recorded as produced on this batch yet. A cost "
+                           + "divided by a planned quantity would be an estimate, and this "
+                           + "figure is carried onto real orders."
+                         : "Cost of one device of this batch, over the devices recorded as "
+                           + "produced. This is what a shipped unit carries onto its order."}>
+                    cost / device{actuals?.qty_good ? ` (over ${actuals.qty_good} produced)` : ""}
                   </div>
-                  <div className="muted">gross margin</div>
                 </div>
               </div>
               {actuals && actuals.unknown_rates.length > 0 && (
@@ -291,7 +265,6 @@ export default function RunDetail() {
               )}
             </div>
 
-            <SaleCard run={run} actuals={actuals} onSaved={() => load()} />
 
             <div className="card pad">
               <h2 className="card-title">Notes</h2>
@@ -369,353 +342,34 @@ export default function RunDetail() {
         )}
 
         {tab === "devices" && (
-          <div className="card pad">
-            {/* The test requirement belongs to the BATCH, and each programming
-                run copies it when it starts — so this decides what is still to
-                be made, never what is already on the shelf. */}
-            <CheckField
-              checked={!!run.requires_test}
-              onChange={(v) => void patchRun({ requires_test: v })}
-              title="Units of this batch count as programmed only after they pass the project's test, run after their last programming run. A test that runs and fails always counts, batch or no batch. Changing this affects runs made from now on — every earlier run keeps the rule it was made under."
-            >
-              Units of this batch must pass the test
-            </CheckField>
-            <div className="field-grid">
-              <label>
-                Serial numbers <span className="muted">(one per line, saved on Add)</span>
-                <textarea
-                  className="note-textarea"
-                  value={serialsDraft}
-                  placeholder={"SN-0001\nSN-0002"}
-                  onChange={(e) => setSerialsDraft(e.target.value)}
-                />
-                <span>
-                  <button
-                    className="btn btn-sm"
-                    disabled={!serialsDraft.trim()}
-                    onClick={() =>
-                      addRunDevices(run.id, serialsDraft).then(() => {
-                        setSerialsDraft("");
-                        load();
-                      })
-                    }
-                  >
-                    Add serials
-                  </button>
-                </span>
-              </label>
+          <>
+            <div className="card pad">
+              {/* The test requirement belongs to the BATCH, and each programming
+                  run copies it when it starts — so this decides what is still to
+                  be made, never what is already on the shelf. */}
+              <CheckField
+                checked={!!run.requires_test}
+                onChange={(v) => void patchRun({ requires_test: v })}
+                title="Units of this batch count as programmed only after they pass the project's test, run after their last programming run. A test that runs and fails always counts, batch or no batch. Changing this affects runs made from now on — every earlier run keeps the rule it was made under."
+              >
+                Units of this batch must pass the test
+              </CheckField>
             </div>
-            {run.devices && run.devices.length > 0 ? (
-              <div className="table-wrap">
-                <table className="data">
-                  <thead>
-                    <tr>
-                      <th>Serial</th>
-                      <th>Note</th>
-                      <th>Added</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {run.devices.map((d) => (
-                      <tr key={d.id}>
-                        <td className="mono">{d.serial}</td>
-                        <td className="muted">{d.note || ""}</td>
-                        <td className="muted">{new Date(d.created_at).toLocaleDateString()}</td>
-                        <td>
-                          <button
-                            className="btn btn-sm btn-danger"
-                            onClick={() => deleteRunDevice(d.id).then(() => load())}
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            {/* The devices this batch actually made, which is what the flasher
+                recorded — not the hand-typed `run_devices` registry this tab
+                used to draw. That table has never held a row in any database,
+                while the batch's real units sit on `DeviceUnit`. */}
+            {project ? (
+              <DevicesTab project={project} runId={run.id} />
             ) : (
-              <p className="muted">No serials registered yet.</p>
+              <div className="card pad">
+                <p className="muted">Loading the project…</p>
+              </div>
             )}
-          </div>
+          </>
         )}
       </div>
     </div>
   );
 }
 
-/** The sale side, inline — previously OrderDialog on the Invoices page.
- *  A price PER DEVICE, never a batch total: the total is derived, and a
- *  per-device figure survives a later quantity correction. Revenue is charged
- *  on the units billed (`qty_sold`), which is routinely neither the planned
- *  quantity nor the number that passed test. */
-function SaleCard({
-  run,
-  actuals,
-  onSaved,
-}: {
-  run: RunInfo;
-  actuals: RunActuals | null;
-  onSaved: () => void;
-}) {
-  const [price, setPrice] = useState(
-    run.sale_unit_price != null ? String(run.sale_unit_price) : "",
-  );
-  const [currency, setCurrency] = useState(run.sale_currency || "");
-  const [qtySold, setQtySold] = useState(run.qty_sold != null ? String(run.qty_sold) : "");
-  const [qtyGood, setQtyGood] = useState(run.qty_good != null ? String(run.qty_good) : "");
-  const [customer, setCustomer] = useState(run.customer || "");
-  const [orderRef, setOrderRef] = useState(run.order_ref || "");
-  const [orderDate, setOrderDate] = useState(run.order_date || "");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const [fxRates, setFxRates] = useState<Record<string, number> | null>(null);
-
-  const num = (s: string): number | null => {
-    const t = s.trim();
-    if (t === "") return null;
-    const v = Number(t);
-    return Number.isFinite(v) ? v : null;
-  };
-
-  const costCur = actuals?.currency || "USD";
-  const saleCur = (currency || costCur).toUpperCase();
-  const comparable = saleCur === costCur.toUpperCase();
-  // FX for the preview at the ORDER date (else run date, else creation) —
-  // the same instants run_actuals resolves at, so the preview matches the
-  // saved figures instead of leaving the margin blank on a currency mismatch.
-  // The run-date fallback is END-of-day (run_pricing_date), the order date is
-  // start-of-day (_as_dt) — pass the exact instant, not just the date.
-  const fxDate =
-    orderDate.trim() ||
-    (run.run_date ? `${run.run_date}T23:59:59` : run.created_at);
-  useEffect(() => {
-    if (comparable) return;
-    const ac = new AbortController();
-    getFxAt(fxDate, ac.signal)
-      .then((r) => setFxRates(r.rates))
-      .catch(() => setFxRates(null));
-    return () => ac.abort();
-  }, [comparable, fxDate]);
-
-  const unit = num(price);
-  // mirrors the server: billed units, else good, else planned
-  const units = num(qtySold) ?? num(qtyGood) ?? run.qty;
-  const revenue = unit != null ? unit * units : null;
-  const cost = actuals?.total ?? null;
-  const srcRate = fxRates?.[saleCur];
-  const tgtRate = fxRates?.[costCur.toUpperCase()];
-  const fxFactor = !comparable && srcRate && tgtRate ? srcRate / tgtRate : null;
-  // revenue in the cost currency: as entered when the currencies match,
-  // else converted at the order-date rate; null when no rate is stored
-  const revenueCost =
-    revenue == null ? null : comparable ? revenue : fxFactor != null ? revenue * fxFactor : null;
-  const margin = revenueCost != null && cost != null ? revenueCost - cost : null;
-
-  const save = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await updateRun(run.id, {
-        sale_unit_price: unit,
-        sale_currency: currency.trim().toUpperCase(),
-        qty_sold: num(qtySold),
-        qty_good: num(qtyGood),
-        customer: customer.trim(),
-        order_ref: orderRef.trim(),
-        order_date: orderDate.trim(),
-      });
-      setSaved(true);
-      onSaved();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="card pad">
-      <h2 className="card-title">Order &amp; sale</h2>
-      <p className="card-subtitle">
-        Price per device, not a batch total. Revenue is charged on the units billed, so a
-        batch that shipped short still reads correctly. Units good is the yield denominator
-        for the per-device cost.
-      </p>
-      {error ? <ErrorBanner message={error} /> : null}
-      {saved ? <div className="banner-ok">Saved.</div> : null}
-
-      <div className="field-grid">
-        <label>
-          Price per device
-          <input
-            className="text num"
-            inputMode="decimal"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-          />
-        </label>
-        <label>
-          Sale currency
-          <input
-            className="text"
-            value={currency}
-            placeholder={costCur}
-            maxLength={3}
-            onChange={(e) => setCurrency(e.target.value.toUpperCase())}
-          />
-        </label>
-        <label>
-          Units billed
-          <input
-            className="text num"
-            inputMode="numeric"
-            value={qtySold}
-            placeholder={String(run.qty_good ?? run.qty)}
-            onChange={(e) => setQtySold(e.target.value)}
-          />
-        </label>
-        <label>
-          Units good
-          <input
-            className="text num"
-            inputMode="numeric"
-            title={
-              actuals?.qty_good_source === "devices"
-                ? `Ignored: ${actuals.qty_good} devices of this batch are recorded, and that is what ` +
-                  "every per-device figure divides by (decision 0030). The box is kept for a batch " +
-                  "the flasher never recorded."
-                : undefined
-            }
-            disabled={actuals?.qty_good_source === "devices"}
-            value={qtyGood}
-            placeholder={String(run.qty)}
-            onChange={(e) => setQtyGood(e.target.value)}
-          />
-        </label>
-        <label>
-          Customer
-          <input
-            className="text"
-            value={customer}
-            onChange={(e) => setCustomer(e.target.value)}
-          />
-        </label>
-        <label>
-          Order reference
-          <input
-            className="text"
-            value={orderRef}
-            placeholder="their PO number"
-            onChange={(e) => setOrderRef(e.target.value)}
-          />
-        </label>
-        <label>
-          Order date
-          <input
-            className="text"
-            value={orderDate}
-            placeholder="2025-09-20"
-            onChange={(e) => setOrderDate(e.target.value)}
-          />
-        </label>
-      </div>
-
-      <div className="table-wrap">
-        <table className="data data-fixed order-preview-table">
-          <thead>
-            <tr>
-              <th className="num">Units billed</th>
-              <th className="num">Revenue</th>
-              <th className="num">Cost (actual)</th>
-              <th className="num">Margin</th>
-              <th className="num">Margin %</th>
-              <th className="num">Per device</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td className="num">{units.toLocaleString()}</td>
-              <td
-                className="num"
-                title={
-                  !comparable && revenueCost != null && revenue != null
-                    ? `${money(revenue, saleCur)} as entered`
-                    : undefined
-                }
-              >
-                {revenueCost != null ? money(revenueCost, costCur) : money(revenue, saleCur)}
-              </td>
-              <td className="num">{money(cost, costCur)}</td>
-              <td className={"num" + (margin != null && margin < 0 ? " err-text" : "")}>
-                {money(margin, costCur)}
-              </td>
-              <td className={"num" + (margin != null && margin < 0 ? " err-text" : "")}>
-                {margin != null && revenueCost
-                  ? `${((margin / revenueCost) * 100).toFixed(1)}%`
-                  : "—"}
-              </td>
-              <td className={"num" + (margin != null && margin < 0 ? " err-text" : "")}>
-                {margin != null ? money(margin / Math.max(units, 1), costCur) : "—"}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      {!comparable && unit != null && fxFactor != null ? (
-        <p className="muted">
-          The sale is in {saleCur}. Revenue and margin above are converted to {costCur} at 1{" "}
-          {saleCur} = {fxFactor.toFixed(4)} {costCur}, the stored rate at{" "}
-          {orderDate.trim() ? `the order date (${orderDate.trim()})` : "the run date"}.
-        </p>
-      ) : null}
-      {!comparable && unit != null && fxFactor == null ? (
-        <div className="banner-warn">
-          The sale is in {saleCur} and the cost in {costCur}, and no rate for {saleCur} is
-          stored — the margin is left blank rather than converted 1:1. Add the rate under{" "}
-          <Link to="/admin">Admin → Exchange rates</Link>.
-        </div>
-      ) : null}
-      {cost == null && unit != null ? (
-        <div className="banner-warn">
-          This run has no actual cost yet, so there is nothing to compare the price against.
-        </div>
-      ) : null}
-
-      <div className="btn-row">
-        <button type="button" className="btn btn-primary" onClick={save} disabled={busy}>
-          {busy ? "Saving…" : "Save sale"}
-        </button>
-      </div>
-      {run.sales ? (
-        <p className="muted">
-          From shipments: {run.sales.qty_sold_derived.toLocaleString()} units of this batch went to{" "}
-          {run.sales.orders.length === 0 ? (
-            "no order yet"
-          ) : (
-            run.sales.orders.map((o, i) => (
-              <span key={o.order_line_id}>
-                {i ? ", " : ""}
-                <Link className="val-link" to={`/production/orders/${o.order_id}`}>
-                  {o.customer}
-                  {o.order_ref ? ` · ${o.order_ref}` : ""}
-                </Link>{" "}
-                ({o.qty_from_run.toLocaleString()})
-              </span>
-            ))
-          )}
-          {run.sales.stock ? (
-            <>
-              {" "}· {run.sales.stock.stock.toLocaleString()} still on the shelf
-              {run.sales.stock.overdrawn ? ` · ${run.sales.stock.overdrawn} more shipped than built` : ""}
-            </>
-          ) : null}
-          . Orders are managed on <Link className="val-link" to="/production/orders">Production → Orders</Link>;
-          the fields above stay until the register reads the orders.
-        </p>
-      ) : null}
-    </div>
-  );
-}

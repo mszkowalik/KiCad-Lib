@@ -93,6 +93,10 @@ _SMT_BASE = "/overseas-smt-component-order-platform/v1/overseasSmtComponentOrder
 PARTS_ORDER_LIST_PATH = f"{_SMT_BASE}/presaleOrder/selectPresaleOrderList"
 PARTS_INVOICE_PATH = f"{_SMT_BASE}/presaleOrder/getInvoiceInfo"
 CUSTOMER_STOCK_PATH = f"{_SMT_BASE}/myLibrary/getCustomerComponentStock"
+# JLC's OWN per-part inventory LEDGER — every receipt, draw and hand correction
+# with a running balance. The private library's only ledger view; everything
+# else JLC exposes is a balance or a document.
+COMPONENT_CHANGES_PATH = f"{_SMT_BASE}/myLibrary/selectComponentChanges"
 
 
 class JlcWebError(RuntimeError):
@@ -731,6 +735,26 @@ def get_customer_component_stock(db: Session, *, page: int = 1, page_size: int =
     params = {"pageNum": page, "pageSize": page_size, "keyWord": keyword,
               "_t": int(time.time() * 1000)}
     data = client.get(CUSTOMER_STOCK_PATH, params).get("data") or {}
+    _mark_ok(db)
+    return data
+
+
+def get_component_changes(db: Session, *, stock_key_id: int, page: int = 1,
+                          page_size: int = 50) -> dict:
+    """ONE part's inventory ledger: `oldOccupyCount` -> `changeCount` ->
+    `realOccupyCount` per movement, with the document that caused it in
+    `bussinessCode`.
+
+    Keyed by `customerPresaleStockKeyId`, which only
+    `get_customer_component_stock` carries — the official OpenAPI library does
+    not. A request keyed by the LCSC code answers HTTP 200 with an internal 500
+    from `CustomerPresaleStockApi#selectComponentChanges`, so the key must be
+    looked up first.
+    """
+    client = _get_client(db)
+    payload = {"customerPresaleStockKeyId": int(stock_key_id),
+               "pageNum": page, "pageSize": page_size}
+    data = client.post(COMPONENT_CHANGES_PATH, payload).get("data") or {}
     _mark_ok(db)
     return data
 

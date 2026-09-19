@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from datetime import timedelta, timezone
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -94,14 +95,40 @@ def _key(row) -> str:
 
 # ------------------------------------------------------------------ payloads
 
+def planned_units(run: M.ProductionRun) -> int:
+    """What we ORDERED, and therefore what a supplier bills us for.
+
+    Deliberately NOT `good_units`. The two answer different questions and were
+    conflated until 2026-09-18:
+
+    - `good_units` is what PASSED. It is the divisor for per-device cost — how
+      much each surviving device cost us
+      ([0030](../../../docs/decisions/0030-good-units-are-counted-not-typed.md)).
+    - `planned_units` is what we ORDERED. It is the multiplier for a supplier's
+      per-board rate. An assembler is paid for the boards they assembled, not
+      for the devices that later passed our test — the yield loss is ours.
+
+    Using the first where the second belongs made a LIFTECH invoice for 350
+    boards reconcile to 349, opening a $1.31 hole in the register that refused
+    every JLC import until it was found (user decision 2026-09-18: "we ordered x
+    units and will pay for x units").
+    """
+    return int(run.plan_qty or run.qty or 0)
+
+
 def effective_qty(li: M.RunCostLine, doc: M.RunCostDocument | None = None,
                   db: Session | None = None) -> float:
     """Quantity the money is actually charged on.
 
     A `per_device` line states a rate per board ("5 PLN/board"), so its real
-    quantity is `qty x the run's units`. Without this, a document whose printed
-    total is the batch total looks unreconciled — the reconciliation would
-    compare 1750 PLN against a bare 5.0.
+    quantity is `qty x the run's PLANNED units`. Without this, a document whose
+    printed total is the batch total looks unreconciled — the reconciliation
+    would compare 1750 PLN against a bare 5.0.
+
+    An assembler who bills several batches on one invoice is handled by SPLITTING
+    the position (`POST /api/run-cost-lines/{id}/split`), one child per run, each
+    scaled by its own batch. Splitting is the mechanism for merged invoices; this
+    function never guesses which batches a line covers.
     """
     qty = li.qty or 0.0
     if li.basis != "per_device":
@@ -112,7 +139,7 @@ def effective_qty(li: M.RunCostLine, doc: M.RunCostDocument | None = None,
     run = db.get(M.ProductionRun, run_id)
     if run is None:
         return qty
-    return qty * good_units(db, run)
+    return qty * planned_units(run)
 
 
 def produced_counts(db: Session, run_ids: list[int]) -> dict[int, int]:
@@ -204,6 +231,14 @@ def line_json(li: M.RunCostLine, doc: M.RunCostDocument | None = None,
         "currency": cur,
         "allocate": li.allocate,
         "component_id": li.component_id,
+        # The library part's name, so the Invoices view can show WHICH part a
+        # line is linked to instead of only an id. `db.get` is a primary-key
+        # lookup served from the identity map after the first hit, so a document
+        # whose lines share a few components costs a few queries, not one a line.
+        "component_name": (
+            (c.name if (c := db.get(M.Component, li.component_id)) is not None else "")
+            if li.component_id and db is not None else ""
+        ),
         "mpn": li.mpn,
         "lcsc": li.lcsc,
         "description": li.description,
@@ -612,6 +647,12 @@ def pool_state(db: Session, project_id: int | None = None, as_of: str | None = N
     pool: dict[str, dict] = defaultdict(
         lambda: {"qty": 0.0, "value_usd": 0.0, "avg_usd": 0.0, "mpn": "", "lcsc": "",
                  "component_id": None, "bought": 0.0, "used": 0.0, "lost": 0.0,
+                 # Stock that left for ANOTHER project's assembly order. Kept
+                 # apart from `lost` because attrition is a defect signal in this
+                 # codebase and consumption by a project we do not track is not a
+                 # defect. Counting them together made "written off" read 1,094
+                 # pieces on 2026-09-18 when the true attrition was ZERO.
+                 "external": 0.0,
                  "value_bought": 0.0, "value_used": 0.0, "value_adj": 0.0,
                  # Basis for the moving average, kept SEPARATE from the reported
                  # figures and never allowed below zero. `qty`/`value_usd` are the
@@ -678,7 +719,15 @@ def pool_state(db: Session, project_id: int | None = None, as_of: str | None = N
                 p["_avg_qty"] -= taken
                 p["_avg_value"] = max(p["_avg_value"] - taken * basis_avg, 0.0)
             if q < 0:
-                p["lost"] += -q
+                # `external_project` is another project's order consuming stock,
+                # recorded as an adjustment because it has no run to charge. Since
+                # decision 0034 the same fact is written as an UNCHARGED DRAW, so
+                # no new rows of this kind appear; the 27 historical ones are
+                # reported on their own axis rather than as loss.
+                if (getattr(row, "reason", "") or "") == "external_project":
+                    p["external"] += -q
+                else:
+                    p["lost"] += -q
         # average of what is genuinely on hand; when nothing is, the last known
         # average is retained so a later purchase blends against a sane figure
         if p["_avg_qty"] > 0.0001:
@@ -741,7 +790,11 @@ def component_ledger(db: Session, component_id: int | None = None,
             aq -= taken
             av = max(av - taken * basis_avg, 0.0)
             run = runs.get(row.run_id)
-            ref = f"run {row.run_id}" + (f" — {run.label}" if run else "")
+            # A draw with no run is UNCHARGED, not a draw against run "None"
+            # (0034). It is an ordinary state now — an order that builds someone
+            # else's project, or a movement JLC made that no batch asked for.
+            ref = ("charged to no batch" if row.run_id is None else
+                   f"run {row.run_id}" + (f" — {run.label}" if run else ""))
             detail = row.note or ""
         else:  # adjustment
             qty_d = row.qty_delta or 0.0
@@ -837,6 +890,147 @@ def check_shortages(db: Session, candidates: list[dict]) -> list[dict]:
         else:
             accepted.append((want, cdate, need))
     return out
+
+
+def check_purchase_loss(db: Session, losses: list[dict]) -> list[dict]:
+    """Would taking this much OFF a purchase strand draws already made?
+
+    The mirror of `check_shortages`, and it delegates to it: removing X units of
+    a purchase dated D lowers the balance from D onward by exactly as much as
+    adding a draw of X on D, so one full-timeline replay answers both questions.
+
+    Only the draw side was ever guarded. Nothing stopped a document being
+    force-deleted, a quantity being cut or a component link being re-keyed out
+    from under the consumptions priced against it — the draws survive the
+    purchase (they are their own rows, and `lot_line_id` is a soft pointer), so
+    the pool went negative and the run went on paying for stock no invoice
+    bought. User decision 2026-09-19: refuse the change that would strand a
+    draw, and allow every change that stays covered. The blunter rule — "this
+    part has any consumption at all" — was measured first and rejected: it
+    locked 260 of 264 pooled part lines, i.e. every parts invoice older than the
+    first batch that used it.
+
+    Each entry is `{component_id?, mpn?, lcsc?, qty, date, label?}` where `qty`
+    is the amount LOST. Entries at or below zero are ignored, so a caller can
+    pass a whole document and let the ones that gain stock fall out.
+    """
+    return check_shortages(db, [dict(x) for x in losses if float(x.get("qty") or 0) > 0])
+
+
+def batch_purchase_losses(db: Session, changes: list[dict]) -> list[dict]:
+    """The NET stock a set of edits takes off each pool key, as check entries.
+
+    Guarding one line at a time is wrong for a batch, and that is the whole
+    reason batch editing exists (user decision 2026-09-19): swapping the
+    component mapping of two positions is legal — each key ends with exactly
+    what it started with — but the first half of the swap, judged alone, looks
+    like a total loss. Netting the batch first is what makes the swap possible.
+
+    Each change is `{line, qty?, component_id?, mpn?, lcsc?, pooled_after?}`:
+    the line as it is now, plus the values it is moving to. `qty=None` keeps the
+    quantity; `pooled_after=False` says the line stops being pool stock at all
+    (deleted, voided, charged to a run, marked excluded).
+
+    The date used for a loss is the EARLIEST document date among the lines that
+    caused it, because that is when the balance starts being short.
+    """
+    delta: dict[str, float] = defaultdict(float)
+    info: dict[str, dict] = {}
+    for ch in changes:
+        li: M.RunCostLine = ch["line"]
+        was_pooled = bool(pooled_part_lines(db, [li]))
+        doc = db.get(M.RunCostDocument, li.document_id)
+        date_iso = (doc.doc_date if doc else "") or ""
+
+        def note(key: str, component_id, mpn, lcsc, label):
+            cur = info.setdefault(key, {"component_id": component_id, "mpn": mpn or "",
+                                        "lcsc": lcsc or "", "date": date_iso, "label": label})
+            if date_iso and (not cur["date"] or date_iso < cur["date"]):
+                cur["date"] = date_iso
+
+        if was_pooled:
+            old_key = _key(li)
+            delta[old_key] -= li.qty or 0.0
+            note(old_key, li.component_id, li.mpn, li.lcsc, li.label or li.mpn or f"line {li.id}")
+
+        if ch.get("pooled_after", True):
+            new_cid = ch["component_id"] if "component_id" in ch else li.component_id
+            new_mpn = ch["mpn"] if "mpn" in ch else li.mpn
+            new_lcsc = ch["lcsc"] if "lcsc" in ch else li.lcsc
+            new_qty = ch["qty"] if ch.get("qty") is not None else (li.qty or 0.0)
+            new_key = (f"c{new_cid}" if new_cid else
+                       f"m{_strip(new_mpn)}" if new_mpn else
+                       f"l{_strip(new_lcsc)}" if new_lcsc else "")
+            if new_key:
+                delta[new_key] += new_qty
+                note(new_key, new_cid, new_mpn, new_lcsc,
+                     ch.get("label") or li.label or new_mpn or f"line {li.id}")
+
+    losses = [dict(info[k], qty=-d) for k, d in delta.items() if d < -1e-9 and k in info]
+    return check_purchase_loss(db, losses)
+
+
+def pooled_part_lines(db: Session, lines: list[M.RunCostLine]) -> list[M.RunCostLine]:
+    """The subset of `lines` that actually feeds the pool, by the SAME test
+    `_pool_events` uses — a live, unallocated, non-excluded part leaf whose
+    document is not a proforma. A header is excluded by the caller, which
+    already knows `header_ids`."""
+    out = []
+    for li in lines:
+        if li.kind != PART_KIND or li.voided_at is not None:
+            continue
+        if li.run_id is not None or (li.allocate or "none") == EXCLUDED:
+            continue
+        doc = db.get(M.RunCostDocument, li.document_id)
+        if doc is None or (doc.doc_type or "invoice") == "proforma":
+            continue
+        out.append(li)
+    return out
+
+
+def purchase_loss_of(db: Session, li: M.RunCostLine, *, qty: float | None = None,
+                     component_id: int | None = ..., mpn: str | None = None,
+                     lcsc: str | None = None) -> dict:
+    """One `check_purchase_loss` entry for taking `li` away, or shrinking it to
+    `qty`. Identity defaults to the line's own; pass `component_id`/`mpn`/`lcsc`
+    to describe a RE-KEY, which is a total loss to the old key."""
+    doc = db.get(M.RunCostDocument, li.document_id)
+    rekeyed = (component_id is not ... and component_id != li.component_id) \
+        or (mpn is not None and mpn != li.mpn) \
+        or (lcsc is not None and lcsc != li.lcsc)
+    lost = (li.qty or 0.0) if (qty is None or rekeyed) else max(0.0, (li.qty or 0.0) - qty)
+    return {"component_id": li.component_id, "mpn": li.mpn or "", "lcsc": li.lcsc or "",
+            "qty": lost, "date": (doc.doc_date if doc else "") or "",
+            "label": li.label or li.mpn or f"line {li.id}"}
+
+
+def resolve_pool_identity(db: Session, component_id: int | None, mpn: str, lcsc: str,
+                          as_of: str | None = None) -> dict | None:
+    """Find the pool entry a part belongs to, by identity-key OVERLAP.
+
+    A draw must land on the SAME key the purchases did, or the part silently
+    splits into two pool entries with two averages — the exact drift `_key`'s
+    docstring exists to prevent. `_key` alone cannot do this: it PREFERS
+    `component_id`, so a caller who knows only an MPN produces `m<MPN>` while the
+    purchases sit under `c<id>`, the lookup misses, and the draw is priced at
+    ZERO and filed under a brand-new key.
+
+    Verified 2026-09-18: enclosure 35.0207000.BL is `c323` in the pool, and a
+    draw entered by MPN alone priced at $0.00 against a real $3.70 average.
+    `check_shortages` already matched on overlap, so the shortage guard passed
+    and only the money was wrong — the worst shape for a bug.
+
+    Returns the pool entry (with its `component_id`, `mpn`, `lcsc` and `avg_usd`)
+    so the caller can adopt the identity, or None when nothing matches.
+    """
+    keys = set(_identity_keys(component_id, mpn or "", lcsc or ""))
+    if not keys:
+        return None
+    for p in pool_state(db, as_of=as_of).values():
+        if keys & set(_identity_keys(p.get("component_id"), p.get("mpn") or "",
+                                     p.get("lcsc") or "")):
+            return p
+    return None
 
 
 def average_cost(db: Session, project_id: int | None, key: str) -> float:
@@ -1061,25 +1255,17 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
 
     actual_total = _round(to_display(total_usd))
 
-    # --- the sale side. Revenue is price-per-device x units BILLED (`qty_sold`),
-    # falling back to good units then planned: a customer is invoiced for what
-    # shipped, which is not always what passed test. Converted into the same
-    # display currency as the cost — at the ORDER date when set (a sale is
-    # struck on a day and its FX must not drift; same rule as the register's
-    # by_run_usd), else at the run's pricing date.
-    revenue = None
-    if run.sale_unit_price:
-        sold = run.qty_sold or good_units(db, run)
-        sale_cur = (run.sale_currency or cur).upper()
-        gross = (run.sale_unit_price or 0) * sold
-        if sale_cur == cur.upper():
-            revenue = gross
-        else:
-            sale_rates = fx.rates_at(db, _as_dt(run.order_date)) if run.order_date else rates
-            revenue, known = fx.convert(gross, sale_cur, cur, sale_rates)
-            if not known:
-                unknown.add(sale_cur)
-    margin = None if revenue is None else revenue - (actual_total or 0)
+    # A BATCH HAS NO SALE. It is a production record: what it cost, and how many
+    # devices it made. Revenue and margin belong to the ORDER, and the two are
+    # joined per UNIT — a device carries its batch's `per_device_cost_usd` onto
+    # whatever order ships it (user decision 2026-09-19).
+    #
+    # The run used to price its own sale from `sale_unit_price` x `qty_sold`.
+    # That could not express one batch serving two orders (CE_Dongle_V2 Batch 7
+    # named both ZAL 03/2026 and 04/2026 in a free-text field), a batch with no
+    # order yet (Batch 8 carried a typed forecast of 176,000 PLN), or a net
+    # against a gross price (run 2164 read 553 where its order reads 450 + 23%
+    # VAT). Decision 0003 retired it; this removes the last reader.
 
     return {
         "currency": cur,
@@ -1091,20 +1277,13 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
         "qty_good": good,
         "qty_good_source": "devices" if produced_counts(db, [run.id]).get(run.id) else "typed",
         "qty_good_typed": run.qty_good,
-        "qty_sold": run.qty_sold,
-        "sale_unit_price": run.sale_unit_price,
-        "sale_currency": run.sale_currency or cur,
-        "customer": run.customer,
-        "order_ref": run.order_ref,
-        "order_date": run.order_date,
-        "revenue": _round(revenue),
-        "margin": _round(margin),
-        # Margin over REVENUE (gross margin), not over cost — the figure a price
-        # decision is made against. Null when nothing has been priced.
-        "margin_pct": (_round(margin / revenue * 100) if revenue not in (None, 0) else None),
-        "margin_per_device": (
-            _round(margin / max(run.qty_sold or good_units(db, run), 1))
-            if margin is not None else None
+        # What one device of this batch cost — the figure it carries onto the
+        # order that ships it, and the only number a batch contributes to a
+        # sale. Null until the batch has device records: a cost divided by a
+        # PLANNED quantity is an estimate wearing an actual's clothes.
+        "per_device_cost": (
+            _round(to_display(total_usd) / produced)
+            if (produced := produced_counts(db, [run.id]).get(run.id) or 0) else None
         ),
         "components": _round(to_display(comp_usd)),
         "components_by_basis": {k: _round(to_display(v)) for k, v in sorted(by_basis.items())},
@@ -1131,6 +1310,61 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
 
 # ------------------------------------------------------------- parts stock
 
+def _attach_projects(db: Session, rows: list[dict]) -> None:
+    """Which projects use each part, from every project's latest READY snapshot.
+
+    Computed here rather than in the browser because the join is by IDENTITY —
+    a BOM line carries `component_id`, `lcsc` and `mpn`, and any one of the three
+    may be the only one that matches (`_identity_keys`). The older
+    `GET /api/jlc/stock/usage` inverted it project-first and matched on the LCSC
+    code alone, which silently skipped every part JLC does not hold — the
+    enclosures and antennas, which are exactly the ones whose usage nobody else
+    reports.
+
+    One entry per project and board, because the same component appears on
+    several boards of one project with different reference designators.
+    """
+    index: dict[str, list[dict]] = {}
+    for proj in db.query(M.Project).order_by(M.Project.name).all():
+        snap = (db.query(M.ProjectSnapshot)
+                  .filter_by(project_id=proj.id, status="ready")
+                  .order_by(M.ProjectSnapshot.created_at.desc()).first())
+        if snap is None:
+            continue
+        for li in (db.query(M.SnapshotBomLine)
+                     .filter(M.SnapshotBomLine.snapshot_id == snap.id,
+                             M.SnapshotBomLine.variant == "").all()):
+            entry = {"project_id": proj.id, "project_name": proj.name,
+                     "board": li.board or "", "refs": li.refs or "",
+                     "qty_per_device": float(li.qty or 0.0)}
+            for key in _identity_keys(li.component_id, li.mpn or "", li.lcsc or ""):
+                index.setdefault(key, []).append(entry)
+
+    for row in rows:
+        seen: dict[tuple, dict] = {}
+        for key in _identity_keys(row.get("component_id"), row.get("mpn") or "",
+                                  row.get("lcsc") or ""):
+            for entry in index.get(key, []):
+                # One row per (project, board): a part matched on two of its
+                # three keys would otherwise be listed twice.
+                seen.setdefault((entry["project_id"], entry["board"]), entry)
+        used = sorted(seen.values(),
+                      key=lambda e: (e["project_name"], e["board"]))
+        row["projects"] = used
+        row["project_count"] = len({e["project_id"] for e in used})
+        # What one device of everything that uses this part costs in stock, and
+        # how many of those JLC's holding covers.
+        per_device = sum(e["qty_per_device"] for e in used)
+        row["qty_per_device"] = round(per_device, 4)
+        # Counted against the stock that can actually be built with: JLC's own
+        # count for a consigned part, our remaining pool for one JLC never sees.
+        # Using JLC's figure for both reported ZERO coverable enclosures while
+        # the shelf held plenty, because JLC has never held an enclosure.
+        on_hand = (row.get("held_qty") or 0) if row.get("state") != "pool_only" \
+            else (row.get("remaining_qty") or 0)
+        row["devices_coverable"] = int(on_hand // per_device) if per_device > 0 else None
+
+
 def _identity_keys(component_id: int | None, mpn: str, lcsc: str) -> list[str]:
     """Every key a part could be known by, so the two sides of `parts_stock` meet
     even when one of them has not been resolved to a library component yet."""
@@ -1142,6 +1376,21 @@ def _identity_keys(component_id: int | None, mpn: str, lcsc: str) -> list[str]:
     if lcsc:
         keys.append(f"l{_strip(lcsc)}")
     return keys
+
+
+#: JLCPCB dates everything — order numbers, invoices, settlements — in China
+#: time. `pool_state` cuts on those same date strings, so a stock snapshot taken
+#: at a UTC instant must be converted before it can be used as a cutoff.
+#: Measured 2026-09-18: parts order `20146320202608060318425` was placed at
+#: 03:18:42 China time and the snapshot fetched 4m44s later, at 19:23:26 UTC on
+#: the 5th. Cutting on the UTC date excludes an order the snapshot already
+#: counts, which put 13 parts out by exactly their last purchase.
+JLC_TZ = timezone(timedelta(hours=8))
+
+
+def _jlc_date(ts) -> str | None:
+    """The JLC-calendar date of an instant, as `pool_state` spells dates."""
+    return ts.astimezone(JLC_TZ).date().isoformat() if ts is not None else None
 
 
 def parts_stock(db: Session) -> dict:
@@ -1174,6 +1423,18 @@ def parts_stock(db: Session) -> dict:
     pool = pool_state(db)
     items = db.query(M.JlcStockItem).all()
 
+    # THE TWO SIDES MUST BE READ AT THE SAME MOMENT. `JlcStockItem` is a snapshot
+    # frozen when someone last pressed sync; the pool runs to today. Subtracting
+    # one from the other reports every draw made SINCE the snapshot as stock JLC
+    # is holding and we never paid for. On 2026-09-18 that was 33,246 pieces of
+    # phantom gap, essentially all of it Batch 8's draw four weeks after the
+    # snapshot, and it hid a real 3,866-piece one.
+    sync_date = _jlc_date(max((i.updated_at for i in items), default=None))
+    pool_at_sync = pool_state(db, as_of=sync_date) if sync_date else {}
+    # How much has moved since, so the page can say the count is out of date
+    # instead of quietly reporting a stale comparison as a discrepancy.
+    events_since = sum(1 for d, _k, _r in _pool_events(db)[0] if sync_date and d > sync_date)
+
     # index JLC stock under every identity it carries, so an unresolved pool line
     # keyed m<MPN> still meets the JLC row keyed c<component_id>. A key maps to a
     # LIST, not one item: JLC lists the same manufacturer part under several LCSC
@@ -1203,6 +1464,9 @@ def parts_stock(db: Session) -> dict:
         matched.update(found)
         it = next(iter(found.values()), None)
         remaining = round(p["qty"], 4)
+        # What WE said we had at the moment JLC counted. A part with no events
+        # before the cutoff is absent from that replay, which means zero.
+        at_sync = round((pool_at_sync.get(key) or {}).get("qty", 0.0), 4)
         paid_value = round(p["value_usd"], 4)
         # quantities ADD across codes — two LCSC codes are two reels of one part
         held = sum(c.qty or 0 for c in found.values())
@@ -1223,14 +1487,18 @@ def parts_stock(db: Session) -> dict:
             "bought": round(p["bought"], 4),
             "drawn": round(p["used"], 4),
             "lost": round(p["lost"], 4),
+            "external": round(p["external"], 4),
             "remaining_qty": remaining,
+            "remaining_at_sync_qty": at_sync,
             "paid_unit_usd": _round(p["avg_usd"]),
             "paid_value_usd": paid_value,
             "held_qty": held,
             "market_unit_usd": market_unit,
             "market_value_usd": market_value,
             "remaining_at_market_usd": remaining_market,
-            "delta_qty": round(held - remaining, 4) if it is not None else None,
+            # Both sides as they stood when JLC counted. Comparing today's pool
+            # against that snapshot measures elapsed time, not disagreement.
+            "delta_qty": round(held - at_sync, 4) if it is not None else None,
             "delta_value_usd": (round(remaining_market - paid_value, 4)
                                 if remaining_market is not None else None),
             "state": "both" if it is not None else "pool_only",
@@ -1248,7 +1516,9 @@ def parts_stock(db: Session) -> dict:
             "component_id": it.component_id,
             "component_name": comp_names.get(it.component_id or -1),
             "mpn": it.mpn or "", "lcsc": it.lcsc or "", "description": it.description or "",
-            "bought": 0.0, "drawn": 0.0, "lost": 0.0, "remaining_qty": 0.0,
+            "bought": 0.0, "drawn": 0.0, "lost": 0.0, "external": 0.0,
+            "remaining_qty": 0.0,
+            "remaining_at_sync_qty": 0.0,
             "paid_unit_usd": None, "paid_value_usd": 0.0,
             "held_qty": it.qty, "market_unit_usd": it.unit_price_usd,
             "market_value_usd": market_value, "remaining_at_market_usd": 0.0,
@@ -1256,6 +1526,7 @@ def parts_stock(db: Session) -> dict:
             "state": "jlc_only", "unknown_rate": False,
         })
 
+    _attach_projects(db, rows)
     rows.sort(key=lambda r: -(r["paid_value_usd"] or 0.0))
     both = [r for r in rows if r["state"] == "both"]
     jlc_only = [r for r in rows if r["state"] == "jlc_only"]
@@ -1283,6 +1554,11 @@ def parts_stock(db: Session) -> dict:
             "pool_only_parts": sum(1 for r in rows if r["state"] == "pool_only"),
             "unvalued_parts": sum(1 for r in rows if r["market_value_usd"] is None
                                   and r["held_qty"]),
+            # Every quantity comparison above is AS OF this date, not today.
+            "compared_as_of": sync_date,
+            # Stock events after the snapshot. Not a fault — just the reason the
+            # comparison is older than the pool, which the page must say out loud.
+            "events_since_sync": events_since,
         },
         "last_sync": (last.isoformat()
                       if (last := max((i.updated_at for i in items), default=None)) else None),
@@ -1294,31 +1570,25 @@ def parts_stock(db: Session) -> dict:
 
 def _run_money(db: Session, rid: int, direct_usd: float, components_usd: float,
                rate_cache: dict, run: M.ProductionRun | None) -> dict:
-    """Cost and income for one run, both in USD so the register compares runs
-    across projects and sale currencies on one scale."""
+    """What one run COST, in USD so the register compares runs across projects
+    on one scale.
+
+    Cost only. A batch earns nothing — an ORDER does, and the two meet per unit
+    (`orders.per_device_cost_usd`). The register used to price the run's own
+    sale here as well, which is how the same revenue came to exist twice and
+    disagree; see the note in `run_actuals` above.
+    """
+    made = produced_counts(db, [rid]).get(rid) or 0
     cost = direct_usd + components_usd
-    revenue = None
-    if run is not None and run.sale_unit_price:
-        sold = run.qty_sold or good_units(db, run)
-        gross = run.sale_unit_price * sold
-        cur = (run.sale_currency or "USD").upper()
-        if cur == "USD":
-            revenue = gross
-        else:
-            # priced at the ORDER date when known, else the run date: a sale is
-            # struck on a day, and its FX should not drift with today's rate
-            key = run.order_date or run.run_date or ""
-            if key not in rate_cache:
-                rate_cache[key] = fx.rates_at(db, _as_dt(key))
-            revenue, _known = fx.convert(gross, cur, "USD", rate_cache[key])
-    margin = None if revenue is None else revenue - cost
     return {
         "direct_usd": _round(direct_usd),
         "components_usd": _round(components_usd),
         "total_usd": _round(cost),
-        "revenue_usd": _round(revenue),
-        "margin_usd": _round(margin),
-        "margin_pct": (_round(margin / revenue * 100) if revenue not in (None, 0) else None),
+        "produced": made,
+        # What one device of this batch cost. Null until it has device records:
+        # dividing by a PLANNED quantity is an estimate, and this figure is
+        # carried onto real orders.
+        "unit_cost_usd": _round(cost / made) if made else None,
     }
 
 
@@ -1408,8 +1678,17 @@ def invoice_register(db: Session) -> dict:
                    .filter(M.ProductionRun.sale_unit_price.isnot(None)).all()}
     pool = pool_state(db)
     drawn_by_run: dict[int, float] = defaultdict(float)
+    # An UNCHARGED draw has no run to add to. The stock has left the pool — which
+    # `pool_state` already counted — but nobody has been charged, so it belongs
+    # in no run's figure. Reported as `uncharged_drawn_usd` below instead of
+    # being silently filed under a `None` key.
+    uncharged_usd = 0.0
     for c in live_consumption(db).all():
-        drawn_by_run[c.run_id] += (c.qty or 0) * (c.unit_cost_usd or 0)
+        value = (c.qty or 0) * (c.unit_cost_usd or 0)
+        if c.run_id is None:
+            uncharged_usd += value
+        else:
+            drawn_by_run[c.run_id] += value
     purchased = sum(p["value_bought"] for p in pool.values())
     used = sum(p["value_used"] for p in pool.values())
     adjusted = sum(p["value_adj"] for p in pool.values())
@@ -1500,6 +1779,12 @@ def invoice_register(db: Session) -> dict:
             "on_hand_usd": _round(on_hand),
             "balanced": abs(purchased + adjusted - used - on_hand) <= 0.5,
             "part_count": len(pool),
+            # Stock that has left the pool with no run charged: JLC reported the
+            # draw on an invoice and nobody has said yet which batch pays (or the
+            # order builds a project this platform does not track, and never
+            # will). The pool identity above still balances — the value left the
+            # pool either way — this only says how much of it landed nowhere.
+            "uncharged_drawn_usd": _round(uncharged_usd),
         },
         "issues": {
             "unreconciled": [
@@ -1551,35 +1836,54 @@ def consume_from_bom(db: Session, run: M.ProductionRun, basis: str = "bom",
     # substitution. Without this the only way to correct a run was to hand-delete
     # draw rows, which leaves no record of the decision.
     #   overrides = {"b12": {"drop": true},                      not used
-    #                "b12": {"component_id": 319},               replaced by another part
     #                "b12": {"qty_total": 900}}                   different quantity
+    # A SUBSTITUTION is no longer an override. It was `{"component_id": 319}`
+    # here and never once used, because the key `b<SnapshotBomLine.id>` belongs
+    # to one snapshot and stops matching the next time the BOM is exported —
+    # useless for a change meant to carry into the next batch. It is now a
+    # `RunSubstitution` row keyed by designator
+    # ([0038](../../../docs/decisions/0038-a-substitution-belongs-to-the-batch.md)).
     overrides = run.overrides or {}
 
     planned: list[dict] = []
 
     def draw(key: str, component_id: int | None, lcsc: str, mpn: str,
-             qty: float, label: str) -> None:
+             qty: float, label: str, extra_note: str = "") -> None:
         ov = overrides.get(key) or {}
         if ov.get("drop"):
             skipped.append({"key": key, "label": label, "reason": ov.get("note") or "not used"})
             return
-        if ov.get("component_id"):
-            component_id, lcsc, mpn = int(ov["component_id"]), "", ""
         if ov.get("qty_total") is not None:
             qty = float(ov["qty_total"])
         if not qty:
             return
         note = f"BOM x {volume}"
+        if extra_note:
+            note += extra_note
         if ov:
             note += f" (override {json.dumps(ov)})"
         planned.append({"component_id": component_id, "lcsc": lcsc, "mpn": mpn,
                         "qty": qty, "label": label, "date": date_iso, "note": note})
 
+    # What was FITTED wins over what the design specifies. A substitution is
+    # recorded per batch and per designator
+    # ([0038](../../../docs/decisions/0038-a-substitution-belongs-to-the-batch.md)),
+    # and keyed that way rather than by BOM line id so it survives the next
+    # snapshot — which is what `run.overrides` could not do.
+    from . import substitutions as _subs
+
+    subs = _subs.by_designator(db, run)
     for li in bom:
         if li.dnp or li.exclude_from_bom:
             continue
-        draw(f"b{li.id}", li.component_id, li.lcsc or "", "", (li.qty or 0) * volume,
-             li.lcsc or li.refs or str(li.component_id))
+        cid, lcsc, note_sub = li.component_id, li.lcsc or "", ""
+        sub = next((subs[r] for r in _subs._refs(li.refs) if r in subs), None)
+        if sub is not None:
+            cid, lcsc = sub.fitted_component_id, sub.fitted_lcsc or ""
+            note_sub = (f" [fitted {sub.fitted_lcsc or sub.fitted_mpn} in place of "
+                        f"{sub.specified_lcsc or sub.specified_mpn}]")
+        draw(f"b{li.id}", cid, lcsc, "", (li.qty or 0) * volume,
+             lcsc or li.refs or str(cid), note_sub)
 
     # EXTRA BOM items too. `project_bom` already counts them in the PLANNED
     # per-device figure, so leaving them out here made plan and actual asymmetric:

@@ -28,6 +28,11 @@ import { fmtWhen } from "../flasher/common";
 
 interface Props {
   project: ProjectInfo;
+  /** Scope to one BATCH. The run page draws the same rows rather than keeping a
+   *  second device list of its own — the batch a device belongs to is
+   *  `DeviceUnit.production_run_id`, and that is the only copy of it that gets
+   *  corrected (decision 0029). */
+  runId?: number;
 }
 
 const PRESENCE_FILTERS = [
@@ -50,7 +55,7 @@ function ago(iso: string | null): string {
   return `${Math.round(hours / 24)} d`;
 }
 
-export default function DevicesTab({ project }: Props) {
+export default function DevicesTab({ project, runId }: Props) {
   const [data, setData] = useState<ProjectDevicesPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [presence, setPresence] = useState("");
@@ -59,7 +64,7 @@ export default function DevicesTab({ project }: Props) {
   useEffect(() => {
     const ac = new AbortController();
     setData(null);
-    getProjectDevices(project.id, { presence }, ac.signal)
+    getProjectDevices(project.id, { presence, runId }, ac.signal)
       .then((d) => {
         setData(d);
         setError(null);
@@ -68,7 +73,7 @@ export default function DevicesTab({ project }: Props) {
         if (!isAbortError(err)) setError(errorMessage(err));
       });
     return () => ac.abort();
-  }, [project.id, presence]);
+  }, [project.id, presence, runId]);
 
   const rows = useMemo(() => data?.items ?? [], [data]);
 
@@ -112,6 +117,39 @@ export default function DevicesTab({ project }: Props) {
       label: "Stock state",
       width: 10,
       get: (r) => r.state || "—",
+    },
+    {
+      // WHERE it is and WHAT it is are two axes. A unit reading `in_stock` +
+      // `faulty` is on the shelf and unsellable, which is a different fact from
+      // `disposed` — and filing the first as the second is what hid 32 units.
+      key: "condition",
+      label: "Condition",
+      width: 10,
+      get: (r) => r.condition || "ok",
+      render: (r) =>
+        r.condition && r.condition !== "ok" ? (
+          <span className={`pill ${r.condition === "faulty" ? "err" : "warn"}`}>{r.condition}</span>
+        ) : (
+          <span className="muted">ok</span>
+        ),
+    },
+    {
+      key: "attempts",
+      label: "Attempts",
+      width: 9,
+      numeric: true,
+      get: (r) => Object.values(r.attempts ?? {}).reduce((a, b) => a + b, 0),
+      render: (r) => {
+        const total = Object.values(r.attempts ?? {}).reduce((a, b) => a + b, 0);
+        if (!total) return <span className="muted">—</span>;
+        const failed = total - (r.attempts.pass ?? 0);
+        return (
+          <span title={Object.entries(r.attempts).map(([k, v]) => `${k}: ${v}`).join(" · ")}>
+            {total}
+            {failed > 0 ? <span className="pill warn"> {failed} not passed</span> : null}
+          </span>
+        );
+      },
     },
     {
       key: "inverter",

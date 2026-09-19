@@ -38,6 +38,9 @@ import {
 } from "../api";
 import { useDialog } from "../components/Dialog";
 import { BackLink, ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import AutoTextarea from "../components/AutoTextarea";
+import Field from "../components/Field";
+import { parseScanSheet } from "./Orders";
 import { amount, plain, usd } from "../format";
 
 const INVOICE_KINDS: OrderInvoiceRow["kind"][] = ["advance", "final", "proforma", "correction"];
@@ -765,14 +768,18 @@ function ShipmentRows({
   );
 }
 
-/** The Ship dialog: per open line, a quantity to draw FIFO from ticked
- *  batches, or pasted serials, or (legacy batches) units without a serial. */
+/** The Ship dialog: per open line, the serials that physically left.
+ *
+ *  There is no quantity and no batch picker. A shipment is a SET OF SERIALS —
+ *  a quantity with no device behind it is a guess, and a guess cannot be told
+ *  from an observation once it is written. The batch table below is read-only,
+ *  there to show what is on the shelf while you scan. */
 function ShipCard({ order, onDone }: { order: OrderRow; onDone: (o: OrderRow) => void }) {
   const [options, setOptions] = useState<Record<string, FinishedStockRow[]> | null>(null);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [note, setNote] = useState("");
   const [tracking, setTracking] = useState("");
-  const [rows, setRows] = useState<Record<number, { qty: string; runs: Set<number>; serials: string; unser: string; unserRun: string }>>({});
+  const [rows, setRows] = useState<Record<number, { serials: string }>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -782,16 +789,7 @@ function ShipCard({ order, onDone }: { order: OrderRow; onDone: (o: OrderRow) =>
       .then((o) => {
         setOptions(o);
         const init: typeof rows = {};
-        for (const li of order.lines) {
-          const opts = o[String(li.id)] ?? [];
-          init[li.id] = {
-            qty: li.qty_open ? String(li.qty_open) : "",
-            runs: new Set(opts.filter((r) => r.devices_in_stock > 0).map((r) => r.run_id)),
-            serials: "",
-            unser: "",
-            unserRun: String(opts.find((r) => r.legacy_stock > 0)?.run_id ?? ""),
-          };
-        }
+        for (const li of order.lines) init[li.id] = { serials: "" };
         setRows(init);
       })
       .catch((err) => {
@@ -806,25 +804,17 @@ function ShipCard({ order, onDone }: { order: OrderRow; onDone: (o: OrderRow) =>
     for (const li of order.lines) {
       const r = rows[li.id];
       if (!r) continue;
-      const serials = r.serials.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean);
-      const qty = Number(r.qty || 0);
-      const unser = Number(r.unser || 0);
-      if (serials.length) {
-        // A scan sheet carries the string on the label; a person reading the
-        // device list has the row id. The endpoint resolves both, and names
-        // any serial it does not know rather than shipping a short list.
-        const ids = serials.filter((s) => /^\d+$/.test(s)).map(Number);
-        const labels = serials.filter((s) => !/^\d+$/.test(s));
-        lines.push({ order_line_id: li.id, device_ids: ids, serials: labels, note: "" });
-      } else if (qty > 0) {
-        lines.push({ order_line_id: li.id, qty, run_ids: [...r.runs] });
-      }
-      if (unser > 0) {
-        lines.push({ order_line_id: li.id, qty_unserialized: unser, source_run_id: Number(r.unserRun) || null });
-      }
+      const serials = parseScanSheet(r.serials);
+      if (!serials.length) continue;
+      // A scan sheet carries the string on the label; a person reading the
+      // device list has the row id. The endpoint resolves both, and names any
+      // serial it does not know rather than shipping a short list.
+      const ids = serials.filter((x) => /^\d+$/.test(x)).map(Number);
+      const labels = serials.filter((x) => !/^\d+$/.test(x));
+      lines.push({ order_line_id: li.id, device_ids: ids, serials: labels, note: "" });
     }
     if (!lines.length) {
-      setError("Nothing to ship: give a quantity, serials, or units without a serial on at least one line.");
+      setError("Nothing to ship: scan or paste the serials that left, on at least one line.");
       return;
     }
     setBusy(true);
@@ -845,9 +835,9 @@ function ShipCard({ order, onDone }: { order: OrderRow; onDone: (o: OrderRow) =>
     <div className="card pad edit-card">
       <h2 className="card-title">Ship</h2>
       <p className="card-subtitle">
-        Devices are drawn oldest-first from the batches you tick. Untick a batch to keep it back.
-        Paste what a scanner read to name them instead of drawing them. A batch from before device
-        records offers units “without a serial” instead.
+        Scan or paste the serials that physically left. A shipment names its devices — there is no
+        quantity to type, because a number with no device behind it is a guess. A device that is
+        faulty or is not in stock is refused by name rather than silently skipped.
       </p>
       {error ? <ErrorBanner message={error} /> : null}
       <div className="field-grid">
@@ -871,7 +861,7 @@ function ShipCard({ order, onDone }: { order: OrderRow; onDone: (o: OrderRow) =>
           const opts = options[String(li.id)] ?? [];
           const r = rows[li.id];
           if (!r) return null;
-          const available = opts.filter((o) => r.runs.has(o.run_id)).reduce((s, o) => s + o.devices_in_stock, 0);
+          const scanned = parseScanSheet(r.serials).length;
           return (
             <div key={li.id} className="ship-line">
               <h3 className="card-subtitle">
@@ -884,68 +874,43 @@ function ShipCard({ order, onDone }: { order: OrderRow; onDone: (o: OrderRow) =>
                   <table className="data order-table ship-batches-table">
                     <thead>
                       <tr>
-                        <th />
                         <th>Batch</th>
-                        <th className="num">Devices in stock</th>
-                        <th className="num">Without a serial</th>
+                        <th className="num">Available</th>
+                        <th className="num">Held back</th>
                         <th className="num">Unit cost</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {opts.map((o) => (
-                        <tr key={o.run_id}>
-                          <td>
-                            <input
-                              type="checkbox"
-                              disabled={o.devices_in_stock === 0}
-                              checked={r.runs.has(o.run_id)}
-                              onChange={(e) => {
-                                const next = new Set(r.runs);
-                                if (e.target.checked) next.add(o.run_id);
-                                else next.delete(o.run_id);
-                                set(li.id, { runs: next });
-                              }}
-                            />
-                          </td>
-                          <td title={o.label}>{o.label} <span className="muted">{o.run_date}</span></td>
-                          <td className="num">{o.devices_in_stock.toLocaleString()}</td>
-                          <td className="num">{o.legacy_stock.toLocaleString()}</td>
-                          <td className="num">{usd(o.unit_cost_usd)}</td>
-                        </tr>
-                      ))}
+                      {opts.map((o) => {
+                        const held = Object.values(o.devices_held ?? {}).reduce((a, b) => a + b, 0);
+                        return (
+                          <tr key={o.run_id}>
+                            <td title={o.label}>{o.label} <span className="muted">{o.run_date}</span></td>
+                            <td className="num">{(o.devices_available ?? o.devices_in_stock).toLocaleString()}</td>
+                            <td className={"num" + (held ? " warn-text" : "")}>
+                              {held ? Object.entries(o.devices_held ?? {}).map(([k, v]) => `${v} ${k}`).join(", ") : "—"}
+                            </td>
+                            <td className="num">{usd(o.unit_cost_usd)}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               )}
-              <div className="field-grid">
-                <label>
-                  Quantity (FIFO, {available.toLocaleString()} available)
-                  <input className="text num" inputMode="numeric" value={r.qty} onChange={(e) => set(li.id, { qty: e.target.value })} />
-                </label>
-                <label>
-                  …or scanned serials
-                  <input
-                    className="text mono"
-                    value={r.serials}
-                    placeholder="D4E9F4F56838 20E7C8929814 …"
-                    title="What the scanner read, or device row ids — both are resolved."
-                    onChange={(e) => set(li.id, { serials: e.target.value })}
-                  />
-                </label>
-                <label>
-                  Units without a serial
-                  <input className="text num" inputMode="numeric" value={r.unser} onChange={(e) => set(li.id, { unser: e.target.value })} />
-                </label>
-                <label>
-                  …from batch
-                  <select className="text" value={r.unserRun} onChange={(e) => set(li.id, { unserRun: e.target.value })}>
-                    <option value="">no batch (built before any run; uncosted)</option>
-                    {opts.filter((o) => o.legacy_stock > 0).map((o) => (
-                      <option key={o.run_id} value={o.run_id}>{o.label} ({o.legacy_stock})</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
+              <Field
+                label="Serials that left"
+                hint={scanned ? `${scanned} scanned` : "One per line, or paste the scanner's CSV export whole."}
+              >
+                <AutoTextarea
+                  className="text mono"
+                  rows={3}
+                  maxRows={14}
+                  value={r.serials}
+                  placeholder={"D4E9F4F56838\n20E7C8929814\n…"}
+                  onChange={(e) => set(li.id, { serials: e.target.value })}
+                />
+              </Field>
             </div>
           );
         })

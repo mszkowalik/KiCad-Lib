@@ -33,14 +33,17 @@ import {
   errorMessage,
   getAllStockAdjustments,
   getJlcStock,
-  getJlcStockUsage,
   getPartsStock,
   isAbortError,
   syncJlcStock,
-  type JlcUsageRow,
   type PartsStock,
   type PartsStockRow,
   type StockAdjustment,
+  bookJlcLedgerRows,
+  getJlcLedgerReport,
+  type JlcLedgerReport,
+  getDetectedSubstitutions,
+  type SubstitutionDrift,
 } from "../api";
 import { useDialog } from "../components/Dialog";
 import DataTable, { type Column } from "../components/DataTable";
@@ -49,30 +52,38 @@ import { ErrorBanner, Spinner } from "../components/Ui";
 import { plain } from "../format";
 import { useStickyState } from "../useStickyState";
 
-const unitPrice = (v: number | null | undefined) => plain(v, 4);
 
 function qty(v: number | null | undefined): string {
   if (v == null) return "—";
   return Math.round(v).toLocaleString();
 }
 
+/** The table asks ONE question — do the two sides agree, and is it worth money.
+ *
+ *  Everything else a reader eventually wants (bought, drawn, written off, the
+ *  two "ours" figures, JLC's own count, both unit prices, the unrealised
+ *  difference) is an operand of that question, and lives in the row's fold.
+ *  JLC's count in particular is `ours + Δ qty` — printing all three spends a
+ *  column on arithmetic the reader can do. Thirteen columns at
+ *  `table-layout: fixed` left every one of them too narrow to read, and the
+ *  part name — the thing you scan for — narrowest of all.
+ *
+ *  `width` on each column below is a PERCENT and the seven must sum to 100 —
+ *  `DataTable` builds the <colgroup> from them. There is no width for this
+ *  table in `styles.css`; a block that looked like one sat there unused for
+ *  months.
+ */
 type ColKey =
-  | "mpn" | "lcsc" | "bought" | "drawn" | "lost" | "remaining_qty" | "held_qty"
-  | "delta_qty" | "paid_unit_usd" | "market_unit_usd" | "paid_value_usd" | "delta_value_usd";
+  | "mpn" | "lcsc" | "project_count" | "remaining_at_sync_qty"
+  | "delta_qty" | "paid_value_usd";
 
 const COL_LABELS: Record<ColKey, string> = {
   mpn: "Part",
   lcsc: "LCSC",
-  bought: "Bought",
-  drawn: "Drawn",
-  lost: "Written off",
-  remaining_qty: "Ours",
-  held_qty: "JLC has",
+  project_count: "Projects",
+  remaining_at_sync_qty: "Ours",
   delta_qty: "Δ qty",
-  paid_unit_usd: "Paid unit",
-  market_unit_usd: "Market unit",
   paid_value_usd: "At cost",
-  delta_value_usd: "Δ value",
 };
 
 /** "disagree" is the working view: only the rows the verdict is about. */
@@ -90,19 +101,27 @@ export default function Stock() {
   const dialog = useDialog();
   const [stock, setStock] = useState<PartsStock | null>(null);
   const [available, setAvailable] = useState<boolean | null>(null);
-  const [usage, setUsage] = useState<JlcUsageRow[] | null>(null);
   const [adjs, setAdjs] = useState<StockAdjustment[] | null>(null);
   const [adjTotals, setAdjTotals] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [filter, setFilter] = useStickyState("stock:filter", "");
-  const [stateFilter, setStateFilter] = useStickyState<StateFilter>("stock:state", "disagree");
+  // "all" is the default: the page is read to look a part up at least as often
+  // as to chase a disagreement, and once the two sides agree the "disagree"
+  // default opened on an empty table.
+  const [stateFilter, setStateFilter] = useStickyState<StateFilter>("stock:state", "all");
   const [showAdjs, setShowAdjs] = useState(false);
   const [adjBusy, setAdjBusy] = useState<number | null>(null);
   // stock-over-time drill-down: which row's ledger is open (not sticky — a
   // reload should come back to the overview, not a stale expansion)
   const [openLedger, setOpenLedger] = useState<string | null>(null);
+  // what JLC's own movement ledger and our events cannot say about each other
+  const [recon, setRecon] = useState<JlcLedgerReport | null>(null);
+  const [booking, setBooking] = useState(false);
+  // substitutions whose design has not caught up — the reason a superseded part
+  // gets bought again
+  const [drift, setDrift] = useState<SubstitutionDrift[]>([]);
 
   const load = useCallback((signal?: AbortSignal) => {
     getPartsStock(signal)
@@ -115,13 +134,14 @@ export default function Stock() {
       });
     // only for the credentials banner — every figure comes from /parts-stock
     getJlcStock(undefined, signal).then((s) => setAvailable(s.available)).catch(() => {});
-    getJlcStockUsage(signal).then(setUsage).catch(() => setUsage(null));
     getAllStockAdjustments("", signal)
       .then((a) => {
         setAdjs(a.adjustments);
         setAdjTotals(a.totals as unknown as Record<string, unknown>);
       })
       .catch(() => setAdjs(null));
+    getJlcLedgerReport(signal).then(setRecon).catch(() => setRecon(null));
+    getDetectedSubstitutions(signal).then((d) => setDrift(d.drift)).catch(() => setDrift([]));
   }, []);
 
   useEffect(() => {
@@ -148,7 +168,16 @@ export default function Stock() {
     syncJlcStock()
       .then((r) => {
         setSyncing(false);
-        setSyncMsg(`Synced ${r.items} part(s), ${r.valued} valued.`);
+        const led = r.ledger && "rows_added" in r.ledger ? r.ledger : null;
+        setSyncMsg(
+          `Synced ${r.items} part(s), ${r.valued} valued.` +
+            (led
+              ? ` JLC's ledger: ${led.rows_added} new movement(s) across ${led.parts} part(s)` +
+                (led.does_not_replay.length
+                  ? `; ${led.does_not_replay.join(", ")} did not replay to JLC's own balance`
+                  : "")
+              : ""),
+        );
         load();
       })
       .catch((err) => {
@@ -156,6 +185,34 @@ export default function Stock() {
         setError(errorMessage(err));
       });
   };
+
+  async function bookLedgerRows() {
+    if (!recon || recon.bookable.length === 0) return;
+    const lines = recon.bookable
+      .map((b) => `  ${b.date}  ${b.qty} × ${b.mpn || b.lcsc}  — ${b.remark}`)
+      .join("\n");
+    const ok = await dialog.confirm(
+      `JLCPCB recorded ${recon.bookable.length} movement(s) that no invoice or BOM ` +
+        `reports:\n\n${lines}\n\nRecord each as a draw charged to no batch, priced ` +
+        `at the pool's average on JLC's own date? Nothing is estimated — the ` +
+        `quantity, the date and the note are JLC's.`,
+      { title: "Record JLC's movements", confirmLabel: "Record" },
+    );
+    if (!ok) return;
+    setBooking(true);
+    try {
+      const res = await bookJlcLedgerRows([], false);
+      setSyncMsg(
+        `Recorded ${res.totals.rows} movement(s), ${res.totals.qty} piece(s), ` +
+          `${plain(res.totals.usd)}. Reversible as batch ${res.batch_id}.`,
+      );
+      load();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBooking(false);
+    }
+  }
 
   async function removeAdj(a: StockAdjustment) {
     const ok = await dialog.confirm(
@@ -177,7 +234,7 @@ export default function Stock() {
     }
   }
 
-  const anyFilter = filter.trim() !== "" || stateFilter !== "disagree";
+  const anyFilter = filter.trim() !== "" || stateFilter !== "all";
 
   const rows = useMemo(() => {
     let out = stock?.parts ?? [];
@@ -232,7 +289,7 @@ export default function Stock() {
     {
       key: "mpn",
       label: COL_LABELS.mpn,
-      width: 15,
+      width: 30,
       get: (r) => r.mpn || r.lcsc || "—",
       title: (r) =>
         (r.mpn || r.lcsc) +
@@ -261,35 +318,41 @@ export default function Stock() {
         </>
       ),
     },
-    { key: "lcsc", label: COL_LABELS.lcsc, width: 8, className: "mono", get: (r) => r.lcsc || "—" },
-    numCol("bought", 7, (r) => <>{qty(r.bought)}</>),
-    numCol("drawn", 7, (r) => <>{qty(r.drawn)}</>),
-    numCol("lost", 9, (r) => (r.lost ? <>{qty(r.lost)}</> : <span className="dim">—</span>)),
-    numCol("remaining_qty", 7, (r) => <>{qty(r.remaining_qty)}</>),
-    numCol("held_qty", 8, (r) => <>{r.state === "pool_only" ? "—" : qty(r.held_qty)}</>),
-    numCol("delta_qty", 8, (r) => <DeltaCell r={r} />),
-    numCol("paid_unit_usd", 8, (r) => <>{unitPrice(r.paid_unit_usd)}</>),
-    numCol("market_unit_usd", 9, (r) => <>{unitPrice(r.market_unit_usd)}</>),
-    numCol("paid_value_usd", 7, (r) => <>{plain(r.paid_value_usd)}</>),
+    { key: "lcsc", label: COL_LABELS.lcsc, width: 10, className: "mono", get: (r) => r.lcsc || "—" },
     {
-      key: "delta_value_usd",
-      label: COL_LABELS.delta_value_usd,
-      width: 7,
-      numeric: true,
-      className: "delta-value",
-      get: (r) => r.delta_value_usd ?? "",
+      key: "project_count",
+      label: COL_LABELS.project_count,
+      width: 26,
+      // Sorted and filtered on the NAMES, so "show me everything on the dongle"
+      // still works from the table; the cell shows them as chips because a
+      // count alone makes the reader open every row to find out which.
+      get: (r) => [...new Set(r.projects.map((p) => p.project_name))].join(", "),
       title: (r) =>
-        r.remaining_at_market_usd != null
-          ? `remainder at market ${plain(r.remaining_at_market_usd)} USD`
-          : "no market price for this part",
-      render: (r) => (
-        <span className={(r.delta_value_usd ?? 0) < 0 ? "err-text" : undefined}>
-          {r.delta_value_usd == null
-            ? "—"
-            : `${r.delta_value_usd >= 0 ? "+" : ""}${plain(r.delta_value_usd)}`}
-        </span>
-      ),
+        r.project_count === 0
+          ? "no project's latest snapshot lists this part"
+          : `${r.qty_per_device} per device` +
+            (r.devices_coverable == null ? "" : ` · stock covers ${r.devices_coverable}`),
+      render: (r) => <ProjectChips r={r} />,
     },
+    {
+      key: "remaining_at_sync_qty",
+      label: COL_LABELS.remaining_at_sync_qty,
+      width: 11,
+      numeric: true,
+      // What we hold. For a CONSIGNED part that is the pool as it stood when JLC
+      // counted, because that is the only figure Δ qty is about; for a part JLC
+      // never sees there is nothing to compare against, so it is today's. The
+      // column used to show "—" for those, which reported the enclosures as
+      // having no stock at all when the shelf held 227.
+      get: (r) => (r.state === "pool_only" ? r.remaining_qty : r.remaining_at_sync_qty),
+      title: (r) =>
+        r.state === "pool_only"
+          ? "our pool today — JLC does not hold this part, so there is nothing to compare"
+          : `our pool on the day JLC counted; today it is ${qty(r.remaining_qty)}`,
+      render: (r) => <>{qty(r.state === "pool_only" ? r.remaining_qty : r.remaining_at_sync_qty)}</>,
+    },
+    numCol("delta_qty", 11, (r) => <DeltaCell r={r} />),
+    numCol("paid_value_usd", 12, (r) => <>{plain(r.paid_value_usd)}</>),
   ];
 
   return (
@@ -310,6 +373,81 @@ export default function Stock() {
 
         {error ? <ErrorBanner message={error} /> : null}
         {syncMsg ? <div className="banner-ok">{syncMsg}</div> : null}
+
+        {stock && stock.totals.events_since_sync > 0 ? (
+          <div className="banner-warn">
+            Every quantity below is compared as of{" "}
+            <b>{stock.totals.compared_as_of}</b>, the day JLC counted.{" "}
+            {stock.totals.events_since_sync} stock event
+            {stock.totals.events_since_sync === 1 ? " has" : "s have"} been recorded
+            since, so <b>Ours</b> and <b>Δ qty</b> are measuring different moments —
+            Δ is the disagreement, Ours is today. Sync the count to close the gap.
+          </div>
+        ) : null}
+
+        {recon &&
+        (recon.totals.unexplained_rows > 0 || recon.totals.unconfirmed_lines > 0) ? (
+          <div className="banner-warn">
+            <b>JLCPCB&rsquo;s own ledger disagrees with ours.</b>{" "}
+            {recon.totals.unexplained_rows > 0 ? (
+              <>
+                {recon.totals.unexplained_rows} movement
+                {recon.totals.unexplained_rows === 1 ? "" : "s"} JLC recorded that no
+                document of ours reports.{" "}
+              </>
+            ) : null}
+            {recon.totals.unconfirmed_lines > 0 ? (
+              <>
+                {recon.totals.unconfirmed_qty.toLocaleString()} piece
+                {recon.totals.unconfirmed_qty === 1 ? "" : "s"} we booked as bought that
+                JLC never received — refresh that parts order to take their correction.{" "}
+              </>
+            ) : null}
+            <ul className="tight">
+              {recon.jlc_rows_we_cannot_explain.slice(0, 8).map((r) => (
+                <li key={`${r.lcsc}:${r.changed_at}:${r.change_qty}`}>
+                  <span className="mono">{r.changed_at.slice(0, 10)}</span>{" "}
+                  {r.change_qty > 0 ? "+" : ""}
+                  {r.change_qty} × {r.mpn || r.lcsc} — {r.remark}
+                </li>
+              ))}
+              {recon.our_lines_jlc_never_received.map((r) => (
+                <li key={`${r.lcsc}:${r.parts_order}`}>
+                  <span className="mono">{r.parts_order}</span> — we hold{" "}
+                  {r.booked_qty.toLocaleString()} of {r.lcsc}, JLC received{" "}
+                  {r.ledger_receipt_qty.toLocaleString()}
+                </li>
+              ))}
+            </ul>
+            {recon.bookable.length > 0 ? (
+              <button className="btn" disabled={booking} onClick={bookLedgerRows}
+                      title="Write each as a draw charged to no batch, using JLC's quantity, date and wording.">
+                {booking ? "Recording…" : `Record ${recon.bookable.length} movement(s) JLC reports`}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
+        {drift.length > 0 ? (
+          <div className="banner-warn">
+            <b>A batch was built with a different part, and the design has not caught up.</b>{" "}
+            Buying against the design will order the superseded part again — which is how 476
+            pieces of one were bought three months after it stopped being fitted.
+            <ul className="tight">
+              {drift.map((d) => (
+                <li key={d.substitution_id}>
+                  <Link to={`/runs/${d.run_id}`}>{d.run_label}</Link> fitted{" "}
+                  <span className="mono">{d.fitted_lcsc || d.fitted_mpn}</span> at{" "}
+                  <span className="mono">{d.designator}</span>, the design still specifies{" "}
+                  <span className="mono">{d.specified_lcsc || d.specified_mpn}</span>
+                  {d.specified_still_held > 0 ? (
+                    <> — <b>{d.specified_still_held.toLocaleString()}</b> still held at JLC</>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         {available === false ? (
           <div className="banner-warn">
@@ -530,21 +668,43 @@ export default function Stock() {
                 openKey={openLedger}
                 onOpenChange={(k) => setOpenLedger(k === null ? null : String(k))}
                 expand={(r) => (
-                  <PartLedgerPanel componentId={r.component_id} mpn={r.mpn} lcsc={r.lcsc} />
+                  <PartLedgerPanel row={r} />
                 )}
                 empty={
-                  stateFilter === "disagree" && !anyFilter
+                  stateFilter === "disagree"
                     ? "Every part JLC holds agrees with the platform, piece for piece."
                     : "No parts match."
                 }
               />
             </div>
 
-            {usage && usage.length > 0 ? <HeldPartsCard usage={usage} /> : null}
           </>
         ) : null}
       </div>
     </div>
+  );
+}
+
+/** The projects that use a part, as chips rather than a count.
+ *
+ *  A count alone ("3") makes the reader open every row to learn which three,
+ *  which is the work the column exists to save. Chips fit because a part is
+ *  rarely on more than three projects; beyond that the rest collapse into a
+ *  "+n" the title spells out.
+ */
+function ProjectChips({ r }: { r: PartsStockRow }) {
+  const names = [...new Set(r.projects.map((p) => p.project_name))];
+  if (names.length === 0) return <span className="dim">—</span>;
+  const SHOWN = 2;
+  return (
+    <span className="proj-chips">
+      {names.slice(0, SHOWN).map((n) => (
+        <span key={n} className="pill neutral">{n}</span>
+      ))}
+      {names.length > SHOWN ? (
+        <span className="pill" title={names.join(", ")}>+{names.length - SHOWN}</span>
+      ) : null}
+    </span>
   );
 }
 
@@ -557,212 +717,12 @@ const ZERO_COST_HINT =
  *  equals JLC's count exactly — meaning the WHOLE difference is an adjustment,
  *  which is exactly what the five invented opening balances looked like. */
 /** The cell's CONTENT — DataTable owns the <td>. */
-/** Every held part, ONE row per part — not per project, and not per board.
- *
- *  It was a table per project, stacked: the same component on three boards was
- *  three rows in three tables that could not be sorted together, and a project
- *  with 46 parts buried everything under it. But a part is the thing you decide
- *  about — "do I have enough of this?" is one question however many boards use
- *  it — so the row is the COMPONENT, and `held` is its single JLC balance
- *  rather than a number repeated per board.
- *
- *  **Where it is used is behind the row.** Unfolding gives the boards and their
- *  reference designators GROUPED BY PROJECT, because refs from two projects
- *  read as one long meaningless list when mixed. Refs are the longest value
- *  here and the least often read — you want them once you have found the part.
- *
- *  **The card itself folds.** 120 parts is most of a screen of scrolling before
- *  anything below it, so it opens at 15 rows.
- */
-function HeldPartsCard({ usage }: { usage: JlcUsageRow[] }) {
-  // Every project shown until one is switched off: the default answer to
-  // "which projects?" is all of them.
-  const [off, setOff] = useState<Set<number>>(new Set());
-  const [openKey, setOpenKey] = useState<string | number | null>(null);
-  const [allRows, setAllRows] = useState(false);
-
-  const rows = useMemo(() => {
-    // key by component, falling back to the LCSC code for a BOM line that
-    // matched no library component — which is what JLC stock is keyed on.
-    const by = new Map<
-      string,
-      {
-        key: string;
-        component_id: number | null;
-        mpn: string;
-        lcsc: string;
-        held: number;
-        qty_per_device: number;
-        projects: { id: number; name: string; board: string; refs: string; qty: number }[];
-      }
-    >();
-    for (const u of usage) {
-      if (off.has(u.project_id)) continue;
-      for (const part of u.parts) {
-        const key = part.component_id ? `c${part.component_id}` : `l${part.lcsc}`;
-        const row =
-          by.get(key) ??
-          {
-            key,
-            component_id: part.component_id,
-            mpn: part.mpn,
-            lcsc: part.lcsc,
-            held: part.held,
-            qty_per_device: 0,
-            projects: [],
-          };
-        // `held` is ONE JLC balance for the part — never a sum over the boards
-        // that use it, which would multiply the same stock by its popularity.
-        row.held = part.held;
-        row.qty_per_device += part.qty_per_device;
-        row.projects.push({
-          id: u.project_id,
-          name: u.project_name,
-          board: part.board,
-          refs: part.refs,
-          qty: part.qty_per_device,
-        });
-        by.set(key, row);
-      }
-    }
-    return [...by.values()].sort((a, b) => a.mpn.localeCompare(b.mpn));
-  }, [usage, off]);
-
-  type Row = (typeof rows)[number];
-
-  const cols: Column<Row>[] = [
-    {
-      key: "mpn",
-      label: "Part",
-      width: 24,
-      get: (r) => r.mpn || r.lcsc,
-      render: (r) =>
-        r.component_id ? (
-          <Link
-            className="comp-link"
-            to={`/library/components/${r.component_id}`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {r.mpn || r.lcsc}
-          </Link>
-        ) : (
-          <>{r.mpn || r.lcsc}</>
-        ),
-    },
-    { key: "lcsc", label: "LCSC", width: 12, className: "mono", get: (r) => r.lcsc },
-    {
-      key: "projects",
-      label: "Used by",
-      width: 26,
-      // The NAMES, so filtering by project still works on the grouped row.
-      get: (r) => [...new Set(r.projects.map((p) => p.name))].join(", "),
-    },
-    {
-      key: "qty",
-      label: "Qty / device",
-      width: 11,
-      numeric: true,
-      // Summed across the boards this part appears on — what one device of
-      // everything that uses it costs in stock.
-      get: (r) => r.qty_per_device,
-    },
-    {
-      key: "held",
-      label: "Held at JLC",
-      width: 12,
-      numeric: true,
-      get: (r) => r.held,
-      render: (r) => <>{r.held.toLocaleString()}</>,
-    },
-    {
-      key: "coverable",
-      label: "Devices coverable",
-      width: 15,
-      numeric: true,
-      get: (r) => (r.qty_per_device > 0 ? Math.floor(r.held / r.qty_per_device) : ""),
-      render: (r) => (
-        <>{r.qty_per_device > 0 ? Math.floor(r.held / r.qty_per_device).toLocaleString() : "—"}</>
-      ),
-    },
-  ];
-
-  const FOLDED = 15;
-  const shown = allRows ? rows : rows.slice(0, FOLDED);
-
-  return (
-    <div className="card pad">
-      <div className="card-title">Held parts used in projects</div>
-      <p className="muted">
-        One row per part, however many boards use it. Click a row for the boards and their
-        reference designators.
-      </p>
-      <div className="seg seg-wrap" role="group" aria-label="Projects shown">
-        {usage.map((u) => (
-          <button
-            key={u.project_id}
-            type="button"
-            className={off.has(u.project_id) ? "" : "on"}
-            title={off.has(u.project_id) ? "Show this project" : "Hide this project"}
-            onClick={() =>
-              setOff((prev) => {
-                const next = new Set(prev);
-                if (!next.delete(u.project_id)) next.add(u.project_id);
-                return next;
-              })
-            }
-          >
-            {u.project_name} <span className="muted">{u.parts.length}</span>
-          </button>
-        ))}
-      </div>
-      <DataTable
-        columns={cols}
-        rows={shown}
-        rowKey={(r) => r.key}
-        persistKey="stock-held-parts"
-        openKey={openKey}
-        onOpenChange={setOpenKey}
-        expand={(r) => (
-          <div className="held-refs">
-            {/* Grouped by project: refs from two projects read as one
-                meaningless list when they are mixed together. */}
-            {[...new Map(r.projects.map((p) => [p.id, p])).values()].map((proj) => (
-              <div key={proj.id} className="held-refs-project">
-                <Link className="comp-link" to={`/projects/${proj.id}`}>
-                  {proj.name}
-                </Link>
-                {r.projects
-                  .filter((q) => q.id === proj.id)
-                  .map((q, i) => (
-                    <div key={i} className="held-refs-board">
-                      <span className="muted">{q.board}</span>{" "}
-                      <span className="mono">{q.refs || "—"}</span>
-                    </div>
-                  ))}
-              </div>
-            ))}
-          </div>
-        )}
-        empty={
-          off.size === usage.length
-            ? "Every project is hidden — switch one back on."
-            : "No held parts on the projects shown."
-        }
-      />
-      {rows.length > FOLDED ? (
-        <button type="button" className="btn btn-sm fold-more" onClick={() => setAllRows(!allRows)}>
-          {allRows ? `Show only ${FOLDED}` : `Show ${rows.length - FOLDED} more parts`}
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
 function DeltaCell({ r }: { r: PartsStockRow }) {
   const d = r.delta_qty;
   if (d == null) return <>—</>;
-  const honest = r.bought - r.drawn - r.lost;
-  const honestAgrees = r.state === "both" && Math.abs(honest - r.held_qty) < 0.5;
+  const honest = r.bought - r.drawn;
+  const honestAgrees =
+    r.state === "both" && r.lost > 0 && Math.abs(honest - r.held_qty) < 0.5;
   return (
     <>
       <span className={`pill ${Math.abs(d) < 0.5 ? "ok" : d > 0 ? "err" : "warn"}`}>

@@ -8,8 +8,9 @@
  *
  *  The per-run bars and the per-run table used to be two renderings of the
  *  same `by_run_usd` stacked on one page; here they are one table with an
- *  inline bar column (cost vs revenue on a shared scale, margin written as a
- *  number, never encoded in color alone).
+ *  inline bar column. COSTS ONLY: a batch earns nothing, and revenue and margin
+ *  live on the ORDER — a device carries its batch's unit cost there, and that
+ *  is the whole link between the two (decision 0043).
  */
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -66,15 +67,9 @@ export default function ProductionOverview() {
               cost: m.total_usd ?? 0,
               direct: m.direct_usd,
               components: m.components_usd,
-              revenue: m.revenue_usd,
-              margin: m.margin_usd,
-              marginPct: m.margin_pct,
-              salePrice: info.sale_unit_price,
-              saleCurrency: info.sale_currency,
-              customer: info.customer,
-              orderRef: info.order_ref,
+              produced: m.produced ?? 0,
+              unitCost: m.unit_cost_usd,
               date: info.run_date || "",
-              priced: info.sale_unit_price != null,
             }
           : null;
       })
@@ -84,19 +79,13 @@ export default function ProductionOverview() {
 
   const totals = useMemo(() => {
     const cost = rows.reduce((s, r) => s + r.cost, 0);
-    const revenue = rows.reduce((s, r) => s + (r.revenue ?? 0), 0);
     const devices = rows.reduce((s, r) => s + r.qty, 0);
-    return {
-      cost,
-      revenue,
-      profit: revenue - cost,
-      devices,
-      marginPct: revenue ? (100 * (revenue - cost)) / revenue : null,
-    };
+    const produced = rows.reduce((s, r) => s + r.produced, 0);
+    return { cost, devices, produced };
   }, [rows]);
 
   const scale = useMemo(
-    () => Math.max(...rows.map((r) => Math.max(r.cost, r.revenue ?? 0)), 1),
+    () => Math.max(...rows.map((r) => r.cost), 1),
     [rows],
   );
 
@@ -109,12 +98,6 @@ export default function ProductionOverview() {
       out.push({
         text: `Placeholder document ${p.doc_number} (${usd(p.total_usd, 2)}) — replace with the real invoice when it surfaces.`,
         to: "/production/invoices",
-      });
-    }
-    for (const r of rows.filter((r) => !r.priced)) {
-      out.push({
-        text: `No sale price on ${r.project} · ${r.label} — revenue and margin are blank there.`,
-        to: `/runs/${r.rid}`,
       });
     }
     for (const u of reg.issues.unreconciled) {
@@ -189,85 +172,35 @@ export default function ProductionOverview() {
     render: (r) => <>{plain(r.cost)}</>,
   },
   {
+    key: "produced",
+    label: "Produced",
+    width: 9,
+    numeric: true,
+    get: (r) => r.produced,
+    title: () => "devices recorded as produced on this batch — the denominator of its unit cost",
+    render: (r) => <>{r.produced || "—"}</>,
+  },
+  {
     key: "cost_dev",
     label: "Cost/dev",
-    width: 8,
-    numeric: true,
-    get: (r) => (r.qty ? r.cost / r.qty : ""),
-    render: (r) => <>{r.qty ? plain(r.cost / r.qty) : "—"}</>,
-  },
-  {
-    key: "sale",
-    label: "Sale",
-    width: 11,
-    numeric: true,
-    interactive: false,
-    get: (r) => r.salePrice ?? "",
-    render: (r) => (
-      <Link
-        className="btn btn-sm"
-        to={`/runs/${r.rid}`}
-        title="The sale is edited on the batch's own page"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {r.salePrice != null ? `${r.salePrice} ${r.saleCurrency || ""}`.trim() : "set price"}
-      </Link>
-    ),
-  },
-  {
-    key: "revenue",
-    label: "Revenue USD",
     width: 9,
     numeric: true,
-    get: (r) => r.revenue ?? "",
-    render: (r) => <>{plain(r.revenue)}</>,
-  },
-  {
-    key: "rev_dev",
-    label: "Rev/dev",
-    width: 7,
-    numeric: true,
-    get: (r) => (r.revenue != null && r.qty ? r.revenue / r.qty : ""),
-    title: () => "revenue over the devices built in this batch",
-    render: (r) => <>{r.revenue != null && r.qty ? plain(r.revenue / r.qty) : "—"}</>,
-  },
-  {
-    key: "margin",
-    label: "Margin USD",
-    width: 9,
-    numeric: true,
-    get: (r) => r.margin ?? "",
-    render: (r) => (
-      <span className={(r.margin ?? 0) < 0 ? "err-text" : undefined}>{plain(r.margin)}</span>
-    ),
-  },
-  {
-    key: "margin_pct",
-    label: "Margin %",
-    width: 8,
-    numeric: true,
-    get: (r) => r.marginPct ?? "",
-    title: (r) =>
-      r.customer || r.orderRef
-        ? `${r.customer}${r.orderRef ? ` · ${r.orderRef}` : ""}`
-        : "no customer recorded",
-    render: (r) => (
-      <span className={(r.marginPct ?? 0) < 0 ? "err-text" : undefined}>
-        {r.marginPct == null ? "—" : `${r.marginPct.toFixed(1)}%`}
-      </span>
-    ),
+    get: (r) => r.unitCost ?? "",
+    title: (r) => r.unitCost == null
+      ? "No devices are recorded as produced yet, so there is nothing to divide by"
+      : "What one device of this batch cost — carried onto whatever order ships it",
+    render: (r) => <>{r.unitCost == null ? "—" : plain(r.unitCost)}</>,
   },
   {
     key: "bar",
-    label: "cost → revenue",
+    label: "cost",
     width: 10,
     interactive: false,
     get: () => "",
     title: (r) =>
-      `wide bar = revenue ${usd(r.revenue ?? 0, 0)} · narrow bar = cost ${usd(r.cost, 0)} — both drawn on one scale shared by every batch, so bar lengths compare across rows`,
+      `cost ${usd(r.cost, 0)} — drawn on one scale shared by every batch, so bar lengths compare across rows`,
     render: (r) => (
       <span className="dash-bar-track">
-        <span className="dash-bar rev" style={{ width: `${(100 * (r.revenue ?? 0)) / scale}%` }} />
         <span className="dash-bar cost" style={{ width: `${(100 * r.cost) / scale}%` }} />
       </span>
     ),
@@ -302,46 +235,33 @@ export default function ProductionOverview() {
         <div className="toolbar">
           <h1>Production</h1>
           <span className="toolbar-total">
-            costs from settled invoices and pool draws · revenue at each order&apos;s FX date
+            costs from settled invoices and pool draws · revenue lives on the orders
           </span>
         </div>
         {error ? <ErrorBanner message={error} /> : null}
 
         <div className="card pad">
           <div className="dash-tiles">
-            <div className="count-tile">
-              <span className="v">{usd(totals.revenue, 0)}</span>
-              <span className="k">revenue</span>
-            </div>
+            {/* COSTS ONLY. A batch earns nothing — revenue and margin live on
+                the ORDER, and a device carries its batch's unit cost there
+                (decision 0043). */}
             <div className="count-tile">
               <span className="v">{usd(totals.cost, 0)}</span>
               <span className="k">production cost</span>
             </div>
             <div className="count-tile">
-              <span className="v">{usd(totals.profit, 0)}</span>
-              <span className="k">gross profit</span>
-            </div>
-            <div className="count-tile">
-              <span className="v">
-                {totals.marginPct != null ? totals.marginPct.toFixed(1) + "%" : "—"}
-              </span>
-              <span className="k">gross margin</span>
-            </div>
-            <div className="count-tile">
               <span className="v">{totals.devices.toLocaleString()}</span>
-              <span className="k">devices built</span>
+              <span className="k">boards ordered</span>
+            </div>
+            <div className="count-tile">
+              <span className="v">{totals.produced.toLocaleString()}</span>
+              <span className="k">devices produced</span>
             </div>
             <div className="count-tile">
               <span className="v">
-                {totals.devices ? usd(totals.cost / totals.devices, 2) : "—"}
+                {totals.produced ? usd(totals.cost / totals.produced, 2) : "—"}
               </span>
-              <span className="k">avg cost / device</span>
-            </div>
-            <div className="count-tile">
-              <span className="v">
-                {totals.devices ? usd(totals.revenue / totals.devices, 2) : "—"}
-              </span>
-              <span className="k">avg revenue / device</span>
+              <span className="k">avg cost / device produced</span>
             </div>
           </div>
 
@@ -365,13 +285,15 @@ export default function ProductionOverview() {
         </div>
 
         <div className="card pad">
-          <h2 className="card-title">What each batch cost, and what it earned</h2>
+          <h2 className="card-title">What each batch cost</h2>
           <p className="card-subtitle">
-            Cost is direct invoice positions plus what the run drew from the component pool.
-            Revenue is the price per device times the units billed, converted at the order
-            date. Wide bar = revenue, narrow bar = cost, shared scale. Margin is gross
+            Cost is direct invoice positions plus what the run drew from the component pool
             (materials, boards, assembly, labour, freight — not firmware, warranty or your
-            time). Every batch links to its own page — click anywhere on its row.
+            time). The bar is cost on a scale shared by every batch. Cost/dev divides by the
+            devices recorded as PRODUCED, which is what a shipped unit carries onto its
+            order; a batch with no device records yet shows no figure rather than an estimate.
+            Revenue and margin are on the orders. Every batch links to its own page — click
+            anywhere on its row.
           </p>
           <div className="table-wrap">
             <DataTable

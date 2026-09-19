@@ -136,7 +136,12 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
   if (loading && !rows) return <Spinner label="loading staged JLC batches" />;
 
   const all = rows ?? [];
-  const pending = all.filter((r) => !r.document_id);
+  // A CANCELLED batch is not work. JLC never invoices one, so it can never be
+  // imported, and counting it as "not imported" left three batches sitting in
+  // the queue indefinitely with nothing anyone could do about them.
+  const cancelled = all.filter((r) => r.jlc_status === "cancelled");
+  const live = all.filter((r) => r.jlc_status !== "cancelled");
+  const pending = live.filter((r) => !r.document_id);
   const shown = onlyPending ? pending : all;
   // A zero-total batch is not a batch. Worth naming, because a document with no
   // value reconciles trivially and so is invisible to the register's own checks.
@@ -158,6 +163,14 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
         <span className={`pill ${pending.length ? "warn" : "ok"}`}>
           {pending.length} not imported
         </span>
+        {cancelled.length > 0 && (
+          <span
+            className="pill neutral"
+            title="JLCPCB reports these as cancelled. They are never invoiced, so there is nothing to import — they are not counted above."
+          >
+            {cancelled.length} cancelled at JLC
+          </span>
+        )}
         <span className="muted">
           {money(pending.reduce((s, r) => s + (r.total_amount ?? 0), 0))} awaiting import
         </span>
@@ -226,7 +239,14 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
                     {r.presale_amount ? money(r.presale_amount) : "—"}
                   </td>
                   <td>
-                    {r.document_id ? (
+                    {r.jlc_status === "cancelled" ? (
+                      <span
+                        className="pill neutral"
+                        title="JLCPCB reports this batch as cancelled. It will never be invoiced."
+                      >
+                        cancelled
+                      </span>
+                    ) : r.document_id ? (
                       <span className="pill ok">document {r.document_id}</span>
                     ) : r.payload_empty ? (
                       <span
@@ -244,7 +264,7 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
                     )}
                   </td>
                   <td>
-                    {!r.document_id && r.has_payload && (
+                    {!r.document_id && r.has_payload && r.jlc_status !== "cancelled" && (
                       <div className="btn-row">
                         <button
                           className="btn btn-sm"

@@ -36,8 +36,10 @@ def db():
 
 @pytest.fixture
 def world(db: Session):
-    """Two batches of five devices, an order for ten, one shipment that took
-    all ten FIFO. Batch A is older, so FIFO emptied it first."""
+    """Two batches of five devices, an order for ten, one shipment carrying all
+    ten by name, oldest first — batch A before batch B. The delivery used to be
+    written as `qty: 10` and let the platform choose; it now names its devices,
+    so the fixture spells out the same ten in the same order."""
     proj = M.Project(name="test-reconcile", git_url="https://example.invalid/test.git")
     db.add(proj)
     db.flush()
@@ -52,7 +54,12 @@ def world(db: Session):
     for r, label in zip(runs, "AB"):
         devs[label] = []
         for i in range(5):
-            d = M.DeviceUnit(project_id=proj.id, serial=f"{label}{i}", mac=f"00:00:00:00:0{r.id}:0{i}",
+            # A MAC is 17 characters and the column is varchar(20), so the run
+            # id must NOT be interpolated raw: this read "00:00:00:00:0{id}:0{i}"
+            # and overflowed the moment a run took a four-digit id (2026-09-19).
+            # Two bytes of the id, wrapped, keeps it a MAC and keeps it unique.
+            d = M.DeviceUnit(project_id=proj.id, serial=f"{label}{i}",
+                             mac=f"00:00:00:{r.id // 256 % 256:02x}:{r.id % 256:02x}:{i:02x}",
                              first_seen=datetime(2026, int(r.run_date[5:7]), 1, 10, i, tzinfo=UTC))
             db.add(d)
             db.flush()
@@ -68,8 +75,9 @@ def world(db: Session):
     db.flush()
     db.refresh(order)
     svc.create_shipment(db, order, shipped_at="2026-03-05",
-                        lines=[{"order_line_id": line.id, "qty": 10,
-                                "run_ids": [r.id for r in runs]}], actor="test")
+                        lines=[{"order_line_id": line.id,
+                                "device_ids": [d.id for d in devs["A"] + devs["B"]]}],
+                        actor="test")
     db.flush()
     return {"db": db, "proj": proj, "runs": runs, "devs": devs, "order": order, "line": line}
 
@@ -80,103 +88,6 @@ def test_fifo_took_everything(world):
     assert all(d.state == "shipped" for ds in world["devs"].values() for d in ds)
 
 
-def test_a_count_frees_the_guess_and_refills_it(world):
-    """Three devices turn up on the shelf. They were FIFO guesses, so they go
-    back to stock and three others take their slots — the count is untouched."""
-    db, line = world["db"], world["line"]
-    # Put three devices back in stock so there is something to refill WITH.
-    spare = world["devs"]["B"][2:]
-    for d in spare:
-        svc.record_event(db, d, "unshipped", shipment_id=None)
-    db.flush()
-    counted = world["devs"]["A"][:3]
-    plan = svc.reconcile_shelf(db, counted, refill="any_batch", actor="test", dry_run=False)
-    assert len(plan["freed"]) == 3
-    assert len(plan["refilled"]) == 3
-    assert plan["unfilled"] == []
-    assert all(d.state == "in_stock" for d in counted)
-    assert {r["by_device_id"] for r in plan["refilled"]} == {d.id for d in spare}
-    assert svc.line_shipped(line) == 10
-
-
-def test_same_batch_refill_will_not_cross_batches(world):
-    """A 2024 slot is not filled by a 2026 device just because one is free."""
-    db = world["db"]
-    spare = world["devs"]["B"][2:]
-    for d in spare:
-        svc.record_event(db, d, "unshipped", shipment_id=None)
-    db.flush()
-    counted = world["devs"]["A"][:3]
-    plan = svc.reconcile_shelf(db, counted, refill="same_batch", actor="test", dry_run=True)
-    assert plan["refilled"] == []
-    assert len(plan["unfilled"]) == 3
-
-
-def test_nothing_to_refill_with_drops_the_count(world):
-    db, line = world["db"], world["line"]
-    counted = world["devs"]["A"][:3]
-    plan = svc.reconcile_shelf(db, counted, refill="any_batch", actor="test", dry_run=False)
-    assert len(plan["unfilled"]) == 3
-    assert svc.line_shipped(line) == 7
-    assert plan["lines"][0]["qty_shipped_after"] == 7
-    assert world["order"].status == "partial"
-
-
-def test_a_slot_nothing_can_refill_always_lowers_the_count(world):
-    """There is no second option. The freed device's own batch records that
-    device, so it has no anonymous unit to put in its place (decision 0031)."""
-    db, line = world["db"], world["line"]
-    counted = world["devs"]["A"][:3]
-    plan = svc.reconcile_shelf(db, counted, refill="any_batch", actor="test", dry_run=False)
-    assert len(plan["unfilled"]) == 3
-    assert "unserialized" not in plan
-    assert svc.line_shipped(line) == 7
-    assert world["order"].status == "partial"
-
-
-def test_a_typed_shipment_is_never_overruled(world):
-    """Somebody named this device by hand. A count says where it is, not who
-    is wrong about it."""
-    from fastapi import HTTPException
-
-    db = world["db"]
-    d = world["devs"]["A"][0]
-    svc.last_event(d, "shipped").auto = False
-    db.flush()
-    with pytest.raises(HTTPException) as e:
-        svc.reconcile_shelf(db, [d], actor="test", dry_run=True)
-    assert e.value.status_code == 409
-    assert d.serial in e.value.detail["devices"]
-
-
-def test_dry_run_writes_nothing(world):
-    db, line = world["db"], world["line"]
-    counted = world["devs"]["A"][:3]
-    before = svc.line_shipped(line)
-    svc.reconcile_shelf(db, counted, refill="any_batch", actor="test", dry_run=True)
-    assert svc.line_shipped(line) == before
-    assert all(d.state == "shipped" for d in counted)
-
-
-def test_a_swap_on_a_return_does_not_count_twice(world):
-    """The regression `live_shipped_events` exists for: a return that corrects
-    a FIFO guess reverses one delivery and makes another. Ten devices went out,
-    and ten is what the line must still say afterwards."""
-    db, line, proj = world["db"], world["line"], world["proj"]
-    spare = M.DeviceUnit(project_id=proj.id, serial="B9", mac="00:00:00:00:09:09",
-                         first_seen=datetime(2026, 2, 1, 11, 0, tzinfo=UTC))
-    db.add(spare)
-    db.flush()
-    svc.record_event(db, spare, "produced", production_run_id=world["runs"][1].id)
-    db.flush()
-    assert svc.line_shipped(line) == 10
-    svc.return_device(db, spare, order_line=line, reason="fault", returned_at="2026-04-01",
-                      actor="test")
-    db.flush()
-    assert svc.line_shipped(line) == 10
-    assert sum(1 for e in spare.events if e.kind == "shipped") == 1
-
-
 class _Req:
     """Enough of a Request for `actor_of`."""
 
@@ -184,40 +95,16 @@ class _Req:
         user = None
 
 
-def test_the_endpoint_resolves_serials_and_defaults_to_a_dry_run(world):
-    """A scan sheet carries serials, and sending one must not write anything
-    until the caller has seen the plan and asked again."""
-    from app.routers import orders as router
-
-    db, line = world["db"], world["line"]
-    counted = world["devs"]["A"][:2]
-    body = router.ReconcileIn(serials=[d.serial for d in counted], refill="any_batch")
-    assert body.dry_run is True
-    plan = router.reconcile_stock(body, _Req(), db=db)
-    assert {f["serial"] for f in plan["freed"]} == {d.serial for d in counted}
-    assert all(d.state == "shipped" for d in counted)
-    assert svc.line_shipped(line) == 10
-
-
-def test_the_endpoint_rejects_a_serial_nothing_carries(world):
-    from fastapi import HTTPException
-
-    from app.routers import orders as router
-
-    body = router.ReconcileIn(serials=["NOPE"])
-    with pytest.raises(HTTPException) as e:
-        router.reconcile_stock(body, _Req(), db=world["db"])
-    assert e.value.status_code == 404
-    assert e.value.detail["serials"] == ["NOPE"]
-
-
 def test_a_reversed_delivery_is_not_a_previous_delivery(world):
-    """The bug this pair of fixes exists for. A count puts three devices back on
-    the shelf; shipping them again on the SAME line must count three deliveries,
-    not three replacements of themselves."""
+    """The bug this pair of fixes exists for. Three deliveries are reversed;
+    shipping those same devices again on the SAME line must count three
+    deliveries, not three replacements of themselves."""
     db, line, order = world["db"], world["line"], world["order"]
     counted = world["devs"]["A"][:3]
-    svc.reconcile_shelf(db, counted, refill="none", actor="test", dry_run=False)
+    for d in counted:
+        svc.record_event(db, d, "unshipped", actor="test",
+                         shipment_id=svc.last_event(d, "shipped").shipment_id, auto=False,
+                         note="recorded in error")
     db.flush()
     assert svc.line_shipped(line) == 7
     db.refresh(order)
@@ -494,11 +381,57 @@ def test_a_legacy_batch_still_hands_out_anonymous_units(world):
     assert stock[legacy.id]["overdrawn"] == 0
 
 
-def test_a_count_no_longer_offers_to_invent_the_missing_unit(world):
-    """`keep_count` invented the unit and left `overdrawn` to report it later.
-    It is gone: the count falls instead (decision 0031)."""
-    db = world["db"]
-    counted = world["devs"]["A"][:2]
-    plan = svc.reconcile_shelf(db, counted, refill="none", actor="test", dry_run=True)
-    assert len(plan["unfilled"]) == 2
-    assert plan["lines"][0]["qty_shipped_after"] == plan["lines"][0]["qty_shipped_before"] - 2
+def test_a_shipment_will_not_take_a_device_that_is_not_ok(world):
+    """Condition is what the device IS; state is where it is. A faulty unit sits
+    in stock, is counted there, and cannot leave. Before `condition` existed the
+    only way to stop one shipping was to file it `disposed`, which said it had
+    been destroyed."""
+    from fastapi import HTTPException
+
+    db, proj, order, line = world["db"], world["proj"], world["order"], world["line"]
+    bad = M.DeviceUnit(project_id=proj.id, serial="FAULTY1", mac="00:00:00:00:fa:01",
+                       first_seen=datetime(2026, 2, 1, 12, 0, tzinfo=UTC), condition="faulty")
+    db.add(bad)
+    db.flush()
+    svc.record_event(db, bad, "produced", production_run_id=world["runs"][1].id)
+    db.flush()
+    assert bad.state == "in_stock"
+    with pytest.raises(HTTPException) as e:
+        svc.create_shipment(db, order, shipped_at="2026-05-01",
+                            lines=[{"order_line_id": line.id, "device_ids": [bad.id]}],
+                            actor="test")
+    assert e.value.status_code == 409
+    assert e.value.detail["condition"] == "faulty"
+    assert bad.state == "in_stock"
+
+
+def test_a_faulty_unit_is_stock_but_not_available(world):
+    """It must stay visible. A unit that cannot be sold but is on the shelf is
+    still ours, still counted, and still worth something."""
+    db, proj = world["db"], world["proj"]
+    run = world["runs"][1]
+    bad = M.DeviceUnit(project_id=proj.id, serial="FAULTY2", mac="00:00:00:00:fa:02",
+                       first_seen=datetime(2026, 2, 1, 12, 5, tzinfo=UTC), condition="faulty")
+    db.add(bad)
+    db.flush()
+    svc.record_event(db, bad, "produced", production_run_id=run.id)
+    db.flush()
+    row = next(r for r in svc.run_stock(db, proj.id) if r["run_id"] == run.id)
+    assert row["devices_in_stock"] >= 1
+    assert row["devices_held"] == {"faulty": 1}
+    assert row["devices_available"] == row["devices_in_stock"] - 1
+
+
+def test_a_quantity_with_no_serials_is_refused(world):
+    """A shipment is a set of serials, not a number. A quantity behind which no
+    device is named is a guess, and a guess cannot be told from an observation
+    once it is written."""
+    from fastapi import HTTPException
+
+    db, order, line = world["db"], world["order"], world["line"]
+    with pytest.raises(HTTPException) as e:
+        svc.create_shipment(db, order, shipped_at="2026-05-02",
+                            lines=[{"order_line_id": line.id, "qty": 3,
+                                    "run_ids": [r.id for r in world["runs"]]}], actor="test")
+    assert e.value.status_code == 422
+    assert "name the devices" in e.value.detail["error"]

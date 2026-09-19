@@ -28,3 +28,7 @@ easyeda_tmp.*
 # scripts/footprint-render.py writes PNGs here. They are throwaway evidence for
 # one verification pass, not artefacts: re-run the script to get them back.
 renders/
+
+# Bench report archive pulled from the Windows production machine 2026-09-18.
+# ~713 MB of JSON, working data for the stock reconciliation, not source.
+/reports/

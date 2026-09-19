@@ -181,9 +181,15 @@ def classify_board(b: dict, checkout: Path) -> None:
 
 
 def ensure_board_kinds(db, snap: "M.ProjectSnapshot") -> list[dict]:
-    """Snapshots ingested before `kind` existed carry none. Classify them from
-    the materialised checkout on first read and persist, so the answer is
-    computed once — and never by name."""
+    """The board kinds of a snapshot, classifying any the ingest did not set.
+
+    **This does not write.** It used to materialise a checkout and commit the
+    result into the snapshot row, which made reading a project a write nobody
+    could see (user decision 2026-09-18). New snapshots get their kinds at
+    ingest; an old one is classified here, in memory, each time it is read.
+
+    `db` is still accepted so callers need not change, and is unused.
+    """
     boards = snap.boards or []
     if not boards or all("kind" in b for b in boards):
         return boards
@@ -195,8 +201,6 @@ def ensure_board_kinds(db, snap: "M.ProjectSnapshot") -> list[dict]:
     for b in fresh:
         if "kind" not in b:
             classify_board(b, checkout)
-    snap.boards = fresh
-    db.commit()
     return fresh
 
 
