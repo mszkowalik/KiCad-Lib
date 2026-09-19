@@ -253,7 +253,13 @@ export default function RunDetail() {
                            + "figure is carried onto real orders."
                          : "Cost of one device of this batch, over the devices recorded as "
                            + "produced. This is what a shipped unit carries onto its order."}>
-                    cost / device{actuals?.qty_good ? ` (over ${actuals.qty_good} produced)` : ""}
+                    {/* Only name the denominator when there IS one. `qty_good`
+                        falls back to a typed figure, so this read "over 800
+                        produced" beside a blank value on a batch with no device
+                        records at all. */}
+                    cost / device{actuals?.per_device_cost != null && actuals.qty_good
+                      ? ` (over ${actuals.qty_good} produced)`
+                      : ""}
                   </div>
                 </div>
               </div>
