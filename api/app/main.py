@@ -471,6 +471,162 @@ _PHASE1_DDL = (
      "AND r.production_run_id = 19 AND d.production_run_id IS NOT NULL "
      "AND r.production_run_id <> d.production_run_id "
      "AND r.started_at < '2026-09-18'"),
+    # Decision 0044: closing the books on a batch. NULL everywhere means "open",
+    # which is every batch that exists today, so nothing changes on deploy day —
+    # the lock only starts applying once somebody closes a batch by hand.
+    ("production_runs.closed_at",
+     "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS closed_at timestamptz"),
+    ("production_runs.closed_by",
+     "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS "
+     "closed_by varchar(100) NOT NULL DEFAULT ''"),
+    ("production_runs.closed_cost_usd",
+     "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS closed_cost_usd double precision"),
+    ("production_runs.closed_units",
+     "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS closed_units integer"),
+    ("ix_production_runs_closed",
+     "CREATE INDEX IF NOT EXISTS ix_production_runs_closed "
+     "ON production_runs (closed_at) WHERE closed_at IS NOT NULL"),
+    # The pointer from a correction back to what it corrects. A soft pointer on
+    # purpose (no FK): deleting the original must not take the correction with
+    # it, because the correction is itself a financial record.
+    ("run_cost_documents.corrects_document_id",
+     "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS "
+     "corrects_document_id integer"),
+    ("ix_run_cost_doc_corrects",
+     "CREATE INDEX IF NOT EXISTS ix_run_cost_doc_corrects "
+     "ON run_cost_documents (corrects_document_id) "
+     "WHERE corrects_document_id IS NOT NULL"),
+    # Decision 0044 item 6: a charged write-off with no pinned unit cost resolved
+    # against the pool average AS IT STANDS ON EVERY READ, so a 2024 attrition
+    # row was priced at a 2026 average and moved again with every later purchase.
+    # New rows pin the average at their own date.
+    #
+    # These existing rows are pinned at what they resolve to TODAY — the figure
+    # every screen has been showing — rather than at the average on their own
+    # date. Freezing the status quo moves no number on deploy day; re-deriving
+    # them would silently restate historical batches in the very act of adding a
+    # rule against restating them. `services/attrition_pin.py` does it, because
+    # the value comes from a replay and not from SQL.
+    #
+    # Decision 0045: say STOCK outright instead of inferring it from `kind`.
+    # `allocate="none"` on a line naming no run and no project meant two
+    # different things — "it goes to the shared pool" when the kind happened to
+    # be `part`, and "nobody has decided yet" otherwise, which the register
+    # reports as `unassigned`. Every line that ALREADY resolves to the pool is
+    # marked `pooled`, so the stored value says what the computed one says and
+    # the two states stop sharing a spelling.
+    #
+    # Mirrors `line_destination` exactly, including its ORDER: a line naming a
+    # run or a project is charged there, and a document naming a run charges its
+    # own lines to that run — neither is stock, so neither is touched. Anything
+    # this does not match keeps resolving exactly as it did, which is the point:
+    # no figure moves, only the reason becomes readable.
+    ("run_cost_lines.allocate pooled backfill",
+     "UPDATE run_cost_lines li SET allocate = 'pooled' "
+     "FROM run_cost_documents d "
+     "WHERE d.id = li.document_id "
+     "AND li.kind = 'part' AND li.allocate = 'none' "
+     "AND li.run_id IS NULL AND li.project_id IS NULL "
+     "AND d.run_id IS NULL"),
+    # ---- Decision 0047: the STEP says what a position is; `kind` is dropped.
+    #
+    # `kind` was a second field saying the same thing more coarsely, typed beside
+    # `plan_key` and free to disagree with it — it did, on 12 rows. Every rule
+    # below was measured against the real table before it was written, and the
+    # counts are what it matched on 2026-09-19.
+    #
+    # ORDER IS LOAD-BEARING. Every leaf must have a step BEFORE the column that
+    # currently classifies it is dropped, and these statements read `kind` to
+    # decide. That is why this is SQL here rather than Python in `startup()`:
+    # this list runs as one ordered sequence, so the fill cannot be separated
+    # from the drop by a later edit. Each statement is idempotent — it only
+    # touches rows that still have no step.
+    #
+    # A HEADER is skipped throughout: it is worth zero, its children carry the
+    # money, and giving it a step would enter it into the plan-vs-actual
+    # comparison a second time.
+    #
+    # By LABEL first, because the supplier prints the same wording every time and
+    # nothing else distinguishes these (5 rows and 2 rows).
+    ("run_cost_lines.plan_key cancelled",
+     "UPDATE run_cost_lines SET plan_key = 'other:cancelled' "
+     "WHERE plan_key = '' AND voided_at IS NULL AND label ILIKE 'cancelled:%' "
+     "AND NOT EXISTS (SELECT 1 FROM run_cost_lines k "
+     "                WHERE k.parent_line_id = run_cost_lines.id AND k.voided_at IS NULL)"),
+    ("run_cost_lines.plan_key payment fee",
+     "UPDATE run_cost_lines SET plan_key = 'other:payment_fee' "
+     "WHERE plan_key = '' AND voided_at IS NULL AND label ILIKE '%payment service charge%' "
+     "AND NOT EXISTS (SELECT 1 FROM run_cost_lines k "
+     "                WHERE k.parent_line_id = run_cost_lines.id AND k.voided_at IS NULL)"),
+    # Then by what the position IS. For a part, WHERE its money goes already
+    # answers which kind of stock position it is (decision 0045): excluded means
+    # prepaid components already in the pool, a named batch means the assembler
+    # sourced it (0041), and the rest is ordinary stock. 0 / 20 / 232 rows.
+    ("run_cost_lines.plan_key parts prepaid",
+     "UPDATE run_cost_lines SET plan_key = 'parts:prepaid' "
+     "WHERE plan_key = '' AND voided_at IS NULL AND kind = 'part' AND allocate = 'excluded' "
+     "AND NOT EXISTS (SELECT 1 FROM run_cost_lines k "
+     "                WHERE k.parent_line_id = run_cost_lines.id AND k.voided_at IS NULL)"),
+    ("run_cost_lines.plan_key parts supplier",
+     "UPDATE run_cost_lines SET plan_key = 'pcba:parts' "
+     "WHERE plan_key = '' AND voided_at IS NULL AND kind = 'part' AND run_id IS NOT NULL "
+     "AND NOT EXISTS (SELECT 1 FROM run_cost_lines k "
+     "                WHERE k.parent_line_id = run_cost_lines.id AND k.voided_at IS NULL)"),
+    ("run_cost_lines.plan_key parts pool",
+     "UPDATE run_cost_lines SET plan_key = 'parts:pool' "
+     "WHERE plan_key = '' AND voided_at IS NULL AND kind = 'part' "
+     "AND NOT EXISTS (SELECT 1 FROM run_cost_lines k "
+     "                WHERE k.parent_line_id = run_cost_lines.id AND k.voided_at IS NULL)"),
+    ("run_cost_lines.plan_key logistics",
+     "UPDATE run_cost_lines SET plan_key = "
+     "  CASE kind WHEN 'freight' THEN 'logistics:inbound' ELSE 'logistics:duty' END "
+     "WHERE plan_key = '' AND voided_at IS NULL AND kind IN ('freight','tax') "
+     "AND NOT EXISTS (SELECT 1 FROM run_cost_lines k "
+     "                WHERE k.parent_line_id = run_cost_lines.id AND k.voided_at IS NULL)"),
+    # RE-STEP the two keys that were standing in for two different real things.
+    # JLC bills a board ASSEMBLED, one price with the bare PCB inside it; the
+    # other 38 rows on `pcba:general` are assembly billed as one figure with the
+    # PCB charged separately, which is different money (user decision, after
+    # reading the invoices). 9 rows.
+    ("run_cost_lines.plan_key populated board",
+     "UPDATE run_cost_lines SET plan_key = 'pcba:populated' "
+     "WHERE plan_key = 'pcba:general' AND voided_at IS NULL "
+     "AND label ILIKE '%fab + assembly%'"),
+    # Italtronic's one-off print set-up is tooling; it shared a key with the
+    # per-unit print, which is a service. 1 row.
+    ("run_cost_lines.plan_key enclosure print setup",
+     "UPDATE run_cost_lines SET plan_key = 'final:enclosure_print_setup' "
+     "WHERE plan_key = 'final:enclosure_print' AND voided_at IS NULL "
+     "AND label ILIKE '%tooling%'"),
+    # A CANCELLED line has no destination (user decision 2026-09-19): the
+    # supplier printed it, nothing was delivered, and nobody pays for it. Four of
+    # the five `Cancelled: <mpn>` rows were already excluded and the fifth was
+    # not — which was the whole of the register's standing `unassigned_usd
+    # 19.78`. A payment fee is the same shape: real money, attributable to no
+    # product.
+    #
+    # `exclude_reason` is `varchar(40)`, and `legacy_unstated` is the deploy-day
+    # lint from the decision that added the column. Naming the real reason is
+    # what clears it.
+    ("run_cost_lines cancelled are excluded",
+     "UPDATE run_cost_lines SET allocate = 'excluded', run_id = NULL, "
+     "project_id = NULL, exclude_reason = 'cancelled_by_supplier' "
+     "WHERE plan_key = 'other:cancelled' AND voided_at IS NULL "
+     "AND (allocate <> 'excluded' OR exclude_reason IN ('', 'legacy_unstated'))"),
+    ("run_cost_lines payment fees are excluded",
+     "UPDATE run_cost_lines SET allocate = 'excluded', exclude_reason = 'payment_fee' "
+     "WHERE plan_key = 'other:payment_fee' AND voided_at IS NULL "
+     "AND (allocate <> 'excluded' OR exclude_reason IN ('', 'legacy_unstated'))"),
+    # LAST. Everything above reads `kind`; nothing below may.
+    #
+    # The index on it goes first and by name: `create_all` cannot drop an index
+    # the model no longer declares, and `DROP COLUMN` would take it silently —
+    # dropping it explicitly is what makes the change visible on
+    # `GET /api/health/schema`.
+    ("ix_run_cost_line_kind drop",
+     "DROP INDEX IF EXISTS ix_run_cost_line_kind"),
+    ("run_cost_lines.kind drop",
+     "ALTER TABLE run_cost_lines DROP COLUMN IF EXISTS kind"),
 )
 
 # name -> "ok" | "failed: ..."; served by GET /api/health/schema.
@@ -945,6 +1101,21 @@ def startup() -> None:
     from .services.proglog_migrate import migrate as migrate_proglog_pk
 
     migrate_proglog_pk(engine)
+    # Decision 0044: a charged write-off with no pinned unit cost was re-priced
+    # by every later purchase. Freeze the ones that exist at today's figure.
+    # Needs a full pool replay, so it is Python and not SQL. Idempotent — it
+    # only ever looks at rows that are still NULL.
+    try:
+        from .db import SessionLocal as _PinSession
+        from .services.attrition_pin import migrate as _pin_attrition
+
+        _pdb = _PinSession()
+        try:
+            _pin_attrition(_pdb)
+        finally:
+            _pdb.close()
+    except Exception as e:  # noqa: BLE001 — never block startup on a migration
+        log.warning(f"attrition pin did not run: {type(e).__name__}: {e}")
     # The per-file version pool becomes blobs + file sets (decision 0029).
     # Runs after create_all built the three new tables; one transaction,
     # checked before the old tables are dropped, reported on /health/schema.

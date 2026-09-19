@@ -1,5 +1,120 @@
 # Changelog
 
+## 2026-09-19 (one field says what an invoice position is)
+
+Every position carried two labels for the same thing: a coarse **Kind**
+(`part`, `fab`, `assembly`, ...) and a precise **production step** ("SMT
+placement", "Bare PCB fabrication"). They are the same fact at two resolutions,
+and the step catalog had always declared which bucket each step belongs to —
+nothing kept the two in step, so they drifted apart on 12 rows.
+
+- **Kind is gone.** The step is the only field, and the bucket is derived from
+  it. The column moved to the front of the line table and is named **What it
+  is** — "Planned as" was a poor name for it, because a step is not a plan.
+- **Reading the 12 disagreements showed the catalog was too coarse**, not that
+  anyone had mis-typed. `pcba:general` ("PCB assembly, unsplit") was also
+  carrying JLC's **populated board** price, which includes the bare PCB and is
+  different money; `final:enclosure_print` was carrying both Italtronic's
+  per-unit print and its one-off set-up. Both now have their own step.
+- **Four new steps**: `pcba:populated`, `final:enclosure_print_setup`,
+  `other:cancelled` and `other:payment_fee`. The last two are for positions that
+  had no step at all and nothing in the catalog that fitted.
+- **260 positions had no step**; every one now has the step it already was.
+  Where a part's money goes decided which: excluded means prepaid components,
+  charged to a batch means the assembler sourced it, the rest is ordinary stock.
+- **The line table is back to eight columns**, paying back the ninth that the
+  Goes to / How split added. Column widths moved onto the header cells after
+  `nth-child` rules got them wrong for the fifth time.
+
+- **A cancelled line has no destination.** The supplier printed it, nothing was
+  delivered, nobody pays. Four of the five `Cancelled: <mpn>` positions were
+  already excluded and the fifth was not — which was the whole of the register's
+  standing `unassigned_usd 19.78`. All five now carry the reason
+  `cancelled_by_supplier`, the two payment fees carry `payment_fee`, and
+  **`unassigned` reads 0.00 for the first time.**
+
+No figure moved except that one: 86 documents, 155,749.3046 USD and gap 0.0271
+before and after, with 19.78 moving from `unassigned` into `excluded`. `by_kind`
+shifts by the 11 rows whose bucket was wrong.
+Reasoning in
+[decision 0047](docs/decisions/0047-the-step-says-what-a-position-is.md).
+
+## 2026-09-19 (the broker names devices the platform had only counted)
+
+The fleet MQTT broker carried **69 topics that matched no device**. They were not
+one thing, and most of them were never missing.
+
+- **28 are devices the platform already holds**, under a different spelling of
+  the topic: the broker says `dongle_449430`, programming recorded
+  `dongle_F8B3B7449430`. Linking compares the two strings exactly, so every
+  disagreement surfaces as "unknown". 12 of the 28 are confirmed by the device's
+  own `tasmota/discovery` MAC, byte for byte against the MAC esptool read at
+  programming. **Nothing was rewritten** - the programmed topic stays as the
+  record of what was programmed.
+- **14 were prototype-era dongles** that the 2026-09-18 reconciliation had
+  already counted, shipped and invoiced as anonymous `PROTO-xxxx` rows, because
+  no serial was kept at the time. Those rows now carry the MAC and topic the
+  broker reports. Both prototype order lines still read 15/15 and 20/20 -
+  filling a row that already existed moves no count.
+- **Those 14 also got real serials.** `PROTO-0001` is now `86A438`, named from
+  the device's own topic. The platform's naming rule
+  `tasmota_id = 'dongle_' || serial` now holds for **4,575 of 4,575** units that
+  carry a MAC, where it previously held for 4,561. The old placeholder number
+  stays in the device's notes.
+- **Two prototype runs now exist as cost pools**, one per prototype order, with
+  `PROTO-0001..0035` pointing at them. They hold the money, not a delivery. They
+  carry no cost documents yet.
+- **15 more were identified the same way**: 7 `CE_Dongle_V3_2` into the blank
+  prototype rows of the V3.3 run, and 8 `CE_Dongle_v2` on Tasmota 14.x into
+  `PH-0001..0008`, the placeholders for the 2026-09-03 delivery. That delivery
+  still reads 292 shipped, measured before and after. Their `condition` was left
+  as `unidentified` on purpose: the device's identity is its own word, but which
+  placeholder it belongs to is a judgement, and a stock check may disagree.
+- Unlinked topics: **69 -> 40**.
+
+Devices were NOT assigned to a batch by MAC proximity. The rule is real - 96.4%
+correct on 4,510 units with a known batch, median address gap 4-8 inside a batch
+- but 39 of the 40 unidentified devices have no neighbour at any distance, and
+the single device it placed confidently turned out to be an `ESP32-DevKit`.
+Reasoning in
+[docs/decisions/0046](docs/decisions/0046-the-broker-names-a-device-the-platform-already-counted.md).
+
+## 2026-09-19 (an invoice position says where its money goes)
+
+The line table's **Charge to** column offered one default, worded `- nobody -`,
+that resolved to **five** different destinations depending on the line's `kind`,
+its `allocate` and the document's own destination - none of which were on the
+screen. A `part` line left alone went to the shared pool. A `freight` line left
+alone became money nobody paid for.
+
+- **Two columns now, "Goes to" and "How".** Goes to names the destination
+  outright: *Stock - the shared pool*, a batch, a project, *Nobody, on purpose*,
+  or *from this document* when the document names one. There is no empty option
+  that means something; a position nobody has decided reads a red
+  `not decided`.
+- **"How" carries the second question** - for stock: is stock, or spread over
+  this invoice's parts by value or by quantity; for a batch: as its own amount,
+  or per device x units; for nobody: a typed reason. **All three of those fields
+  were previously unreachable from the browser.** `basis` was hard-coded
+  `per_run`, `allocate` was only ever written as `excluded`, and
+  `exclude_reason` was stored but returned by no endpoint. A transport line
+  typed onto a parts invoice could not be marked as landed cost at all.
+- **Choosing a kind fills the box in rather than deciding silently.** `part`
+  suggests Stock, `freight` and `duty` suggest spread-by-value, and neither ever
+  overwrites an answer you have already given.
+- **Fixed: moving an excluded position onto a batch left it excluded.** The
+  editor only ever added `allocate: "excluded"` and never cleared it, while
+  `line_destination` tests `excluded` before `run_id` - so the screen showed the
+  batch and the money stayed charged to nobody.
+- **264 existing part lines were marked `pooled`**, which is what they already
+  resolved to. No figure moved: the register reads 86 documents,
+  155,749.3046 USD, gap 0.0271 and unassigned 19.78 before and after.
+
+The one genuinely undecided position in the database - JLCPCB `Cancelled:
+XL-1005SURC`, USD 19.78 - is now red on its row instead of a number on a summary
+line. Reasoning in
+[decision 0045](docs/decisions/0045-a-position-says-where-its-money-goes.md).
+
 ## 2026-09-19 (configuration is an administrator's surface)
 
 An audit of the role model found 16 of about 440 API routes gated on the
@@ -59,6 +174,44 @@ four screens below the tab you arrived for.
   cleared. Revert is.
 - Schema health and the pointer to your personal KiCad links share the System
   tab.
+
+## 2026-09-19 (a batch can close its books, and a correction is a document)
+
+Correcting an old invoice used to change history with nothing to show for it.
+A batch's **direct** costs — assembly, fab, freight, tooling — are recomputed
+from the invoice lines on every read, so fixing a typo on a two-year-old
+assembly invoice moved that batch's total, its per-device cost, and the cost of
+every order that shipped one of its units. Silently, and with no record that the
+figure had ever been different. The component half of the model was never
+exposed to this: a draw snapshots what it paid at the moment it is made.
+
+- **Close the books on a batch** from its page. Every supplier document that
+  charges it — and that was written before the close — becomes read-only, on all
+  seven write paths. What the batch cost is recorded with it, so a later
+  correction shows as a variance against the figure that was quoted instead of
+  as a number that reads as though it was always this way. Reversible: reopen it
+  and the documents are editable again.
+- **A correction is a new document.** `Create correction` on a settled invoice
+  writes one dated today, pointed back at the original, inheriting the
+  supplier, currency, batch and the FX rate the original was pinned at — so a
+  correction in EUR nets against it exactly. A credit is a negative line. The
+  original keeps its printed figures forever. Both documents link to each other.
+- **A write-off charged to a batch pins its unit cost when it is written.** An
+  unpinned one resolved against the pool average *as it stands on every read*,
+  so a 2024 attrition row was priced at a 2026 average and moved again with
+  every later purchase. Existing rows are frozen at what they currently read, so
+  no figure moves on deploy day.
+- **A closed batch refuses `qty`, `qty_good` and `snapshot_id`**, because a
+  per-device invoice line is charged on those. It can still be renamed, re-dated
+  and annotated.
+- **Every change to a batch is now audited with its previous value.** The audit
+  row carried `before` for the seven sale fields and `null` for everything else,
+  so a label, a date, a quantity or the notes could be overwritten with no record
+  of what had been there.
+
+Nothing is locked until somebody closes a batch, so every existing batch is
+unaffected. Reasoning, and what other systems do about the same problem, in
+[decision 0044](docs/decisions/0044-a-correction-is-an-event-not-an-edit-to-the-past.md).
 
 ## 2026-09-19 (an invoice line can be pointed at a library part by hand)
 

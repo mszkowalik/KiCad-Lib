@@ -15,6 +15,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   attachmentPath,
+  createCorrection,
   createSharedDocument,
   getCostSteps,
   resolveAllParts,
@@ -61,6 +62,17 @@ function headerOf(d: RunCostDocumentRow): InvoiceHeader {
     notes: d.notes || "",
     dest: "",
   };
+}
+
+/** What the DOCUMENT itself charges to, worded for the "from this document (…)"
+ *  option. Empty when it names neither, which is the ordinary shared invoice.
+ *  A line that stores no destination falls back to this on the server
+ *  (`run_actuals.line_destination`), so the row has to be able to say so. */
+function docDefaultOf(d: RunCostDocumentRow | null, reg: InvoiceRegister | null): string {
+  if (!d || !reg) return "";
+  if (d.run_id) return reg.runs[String(d.run_id)]?.label || `batch ${d.run_id}`;
+  if (d.project_id) return reg.projects[String(d.project_id)] || `project ${d.project_id}`;
+  return "";
 }
 
 /** Depth of a line in its document's tree, for indenting the label. */
@@ -262,7 +274,8 @@ export default function Invoices() {
     rowsKeyRef.current = rowsKey;
     const live = (doc?.lines || []).filter((li) => !li.voided);
     const byId = new Map((doc?.lines || []).map((li) => [li.id, li]));
-    setSavedRows(treeOrder(live).map((li) => toDraft(li, depthOf(li, byId))));
+    setSavedRows(treeOrder(live).map((li) =>
+      toDraft(li, depthOf(li, byId), !!(doc?.run_id || doc?.project_id))));
     setHeader(doc ? headerOf(doc) : null);
     setEditingDoc(false);
     setDeletedLines(new Set());
@@ -295,7 +308,8 @@ export default function Invoices() {
     if (!doc) return;
     const live = (doc.lines || []).filter((li) => !li.voided);
     const byId = new Map((doc.lines || []).map((li) => [li.id, li]));
-    setSavedRows(treeOrder(live).map((li) => toDraft(li, depthOf(li, byId))));
+    setSavedRows(treeOrder(live).map((li) =>
+      toDraft(li, depthOf(li, byId), !!(doc.run_id || doc.project_id))));
     setHeader(headerOf(doc));
     setDeletedLines(new Set());
     setSaveError(null);
@@ -333,6 +347,39 @@ export default function Invoices() {
       setSaveError(errorMessage(err));
     } finally {
       setSavingDoc(false);
+    }
+  };
+
+  /** Write a CORRECTION of the open document and open it (decision 0044).
+   *
+   *  What a closed batch cost cannot be edited in place — the figure has already
+   *  been carried onto orders — so the change is made as its own dated document
+   *  that says what moved. The original keeps its printed figures.
+   */
+  const makeCorrection = async (d: RunCostDocumentRow) => {
+    const batches = (d.locked || []).map((l) => l.label).join(", ");
+    const ok = await dialog.confirm(
+      `This writes a new document dated today that corrects ${d.supplier} ` +
+        `${d.doc_number || `#${d.id}`}. The original is left exactly as it is.\n\n` +
+        `Put on it only what CHANGED: a credit is a negative amount. It converts at ` +
+        `the rate the original was pinned at, so a correction in ${d.currency} nets ` +
+        `against it exactly.` +
+        (batches ? `\n\nIt will be charged to ${batches}, whose books are closed.` : ""),
+      { title: "Create a correction", confirmLabel: "Create it" },
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const made = await createCorrection(d.id, {});
+      await load();
+      // Open it, but do not force the edit switch on: the effect that rebuilds
+      // the rows for a newly opened document resets it, so setting it here would
+      // flip on and straight back off.
+      setExpanded(made.id);
+    } catch (err) {
+      await dialog.alert(errorMessage(err), { title: "Correction failed" });
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -448,6 +495,24 @@ export default function Invoices() {
                           {destText}
                         </td>
                         <td>
+                          {/* GLYPHS, not pills. The State column is 15% wide and
+                              already carries the money state; a second worded
+                              chip is ellipsised into "…", which is exactly how
+                              the substitution pill was lost (2026-09-19). A pill
+                              cannot be truncated and stay readable — a glyph
+                              cannot be truncated at all. */}
+                          {(d.locked || []).length ? (
+                            <span
+                              title={`The books are closed on ${(d.locked || []).map((l) => l.label).join(", ")}. `
+                                + "This document is read-only — correct it with a new document, "
+                                + "or reopen the batch."}
+                            >
+                              🔒{" "}
+                            </span>
+                          ) : null}
+                          {d.doc_type === "correction" ? (
+                            <span title="A correction of an earlier document">↩{" "}</span>
+                          ) : null}
                           {d.doc_type === "proforma" ? (
                             <span className="pill neutral">proforma</span>
                           ) : !d.reconciled ? (
@@ -496,6 +561,7 @@ export default function Invoices() {
                                     {d.notes ? d.notes : "No notes on this document."}
                                   </p>
                                 )}
+                                <CorrectionLinks doc={doc} onOpen={setExpanded} />
                                 <div className="btn-row">
                                   <Originals docId={d.id} onChange={load} />
                                   <button
@@ -506,16 +572,42 @@ export default function Invoices() {
                                   >
                                     Resolve parts
                                   </button>
-                                  <CheckField
-                                    checked={editingDoc}
-                                    disabled={busy || savingDoc}
-                                    onChange={(on) => {
-                                      setEditingDoc(on);
-                                      if (!on) cancelDocEdit();
-                                    }}
-                                  >
-                                    Edit this invoice
-                                  </CheckField>
+                                  {(doc.locked || []).length ? (
+                                    <>
+                                      {/* A disabled checkbox with nothing beside it reads as a
+                                          bug. The reason and the way forward sit next to it,
+                                          because a refusal the user cannot act on is a dead end. */}
+                                      <CheckField checked={false} disabled onChange={() => {}}>
+                                        Edit this invoice
+                                      </CheckField>
+                                      <button
+                                        type="button"
+                                        className="btn btn-primary btn-sm"
+                                        disabled={busy}
+                                        onClick={() => makeCorrection(doc)}
+                                      >
+                                        Create correction
+                                      </button>
+                                      <span className="muted">
+                                        The books are closed on{" "}
+                                        {(doc.locked || []).map((l) => l.label).join(", ")}, so this
+                                        document is settled — its cost has already gone out on
+                                        orders. Record what changed as a correction dated today, or
+                                        reopen the batch on its own page.
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <CheckField
+                                      checked={editingDoc}
+                                      disabled={busy || savingDoc}
+                                      onChange={(on) => {
+                                        setEditingDoc(on);
+                                        if (!on) cancelDocEdit();
+                                      }}
+                                    >
+                                      Edit this invoice
+                                    </CheckField>
+                                  )}
                                 </div>
                                 <InvoiceLinesTable
                                   mode="saved"
@@ -530,6 +622,8 @@ export default function Invoices() {
                                   stepCatalog={stepCatalog}
                                   currency={docCurrency}
                                   busy={busy}
+                                  docDefault={docDefaultOf(doc, reg)}
+                                  locked={(doc.locked || []).length > 0}
                                   onSplit={(li) => setSplitting(li)}
                                   onSaved={refreshAll}
                                 />
@@ -609,6 +703,53 @@ export default function Invoices() {
 }
 
 // --------------------------------------------------------- supplier originals
+
+/** The correction chain around a document (decision 0044).
+ *
+ *  A document that has been corrected must say so, and from the correction you
+ *  must be able to reach what it corrects. Without both links the correction is
+ *  a second document from the same supplier with a similar number, which is
+ *  exactly the confusion it exists to prevent.
+ */
+function CorrectionLinks({ doc, onOpen }: {
+  doc: RunCostDocumentRow;
+  onOpen: (id: number) => void;
+}) {
+  const corrects = doc.corrects_document_id;
+  const by = doc.corrected_by || [];
+  if (!corrects && !by.length) return null;
+  return (
+    <p className="muted">
+      {corrects ? (
+        <>
+          {/* The generated note above already says WHAT is corrected and that
+              the original is untouched. This line exists to be CLICKABLE, so it
+              stays short rather than repeating it. */}
+          Open{" "}
+          <button type="button" className="linklike" onClick={() => onOpen(corrects)}>
+            document {corrects}
+          </button>
+          .{" "}
+        </>
+      ) : null}
+      {by.length ? (
+        <>
+          Corrected by{" "}
+          {by.map((c, i) => (
+            <Fragment key={c.id}>
+              {i ? ", " : ""}
+              <button type="button" className="linklike" onClick={() => onOpen(c.id)}>
+                {c.doc_number || `document ${c.id}`}
+              </button>
+              {c.doc_date ? ` (${c.doc_date})` : ""}
+            </Fragment>
+          ))}
+          .
+        </>
+      ) : null}
+    </p>
+  );
+}
 
 /** The scanned/PDF original filed with a document. Kept as its own component so
  *  the expanded row does not reload every attachment list on each keystroke. */

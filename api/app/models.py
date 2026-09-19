@@ -2120,6 +2120,27 @@ class ProductionRun(Base):
     customer: Mapped[str] = mapped_column(String(200), default="")
     order_ref: Mapped[str] = mapped_column(String(200), default="")  # customer's PO / order no
     order_date: Mapped[str] = mapped_column(String(20), default="")  # ISO date, like run_date
+    # --- CLOSING THE BOOKS on a batch (decision 0044).
+    #
+    # Set, and this batch's cost stops being editable in place: every document
+    # that charges it AND predates the close is refused by
+    # `run_actuals.closed_lock`, and the only way to change the figure is a
+    # CORRECTION document dated when the correction was made. Nothing is locked
+    # until somebody closes a batch, so an open batch behaves exactly as before.
+    #
+    # Only DIRECT costs are protected here. A `part` line feeding the pool is
+    # already harmless to a closed batch, because its draws snapshot
+    # `unit_cost_usd` at draw time — locking pool invoices would block ordinary
+    # stock corrections and buy nothing.
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_by: Mapped[str] = mapped_column(String(100), default="")
+    #: What the batch cost at the moment it was closed, and over how many units.
+    #: A later correction is then a VISIBLE variance against the figure that was
+    #: quoted, instead of a number that reads as though it was always this way.
+    #: `closed_units` is the `produced` count at that moment (decision 0043), so
+    #: `closed_cost_usd / closed_units` is the per-device cost as it stood.
+    closed_cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    closed_units: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     attachments: Mapped[list["RunAttachment"]] = relationship(
@@ -2221,7 +2242,7 @@ class RunDevice(Base):
 # ------------------------------------------- production cost actuals (post factum)
 class RunCostDocument(Base):
     """A supplier document whose cost is split across production runs —
-    invoice, proforma, receipt or credit note.
+    invoice, proforma, receipt, credit note or correction.
 
     Owned by the PROJECT, not the run (`run_id` is optional), for three
     reasons: an invoice can cover several runs or stock for later; costs like
@@ -2257,6 +2278,18 @@ class RunCostDocument(Base):
     tax_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
     attachment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr → run_attachments
+    #: This document CORRECTS an earlier one (decision 0044). A soft pointer, like
+    #: every other cross-reference here, so deleting the original cannot take the
+    #: correction with it.
+    #:
+    #: A correction is an ordinary document in every other respect — it
+    #: reconciles, it assigns, it feeds the pool or a run — so no money path
+    #: special-cases it. That is the point: once a batch is closed, its documents
+    #: stop being editable and the ONLY way to move its cost is to write a new
+    #: document, dated when the correction was made, that says what changed. A
+    #: credit is simply a negative line. The original keeps its printed figures
+    #: forever, exactly as a split parent does.
+    corrects_document_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_by: Mapped[str] = mapped_column(String(100), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -2278,11 +2311,19 @@ class RunCostDocument(Base):
 class RunCostLine(Base):
     """One actual cost line off a supplier document.
 
-    `kind="part"` with no `run_id` means the line feeds the **component cost
-    pool** — runs draw from it via ComponentConsumption at a moving average.
-    Every other kind (fab, assembly, freight, tooling, …) is a direct cost of
-    its run. There is deliberately no separate purchases table: the pool IS the
-    set of part lines.
+    **`plan_key` — the production STEP — says what this position IS.** A line on
+    a stock step (`parts:pool`, `parts:prepaid`, `parts:attrition`,
+    `pcba:parts`) with no `run_id` feeds the **component cost pool**; runs draw
+    from it via ComponentConsumption at a moving average. Every other step is a
+    direct cost of its run. There is deliberately no separate purchases table:
+    the pool IS the set of stock-step lines.
+
+    There was a second field, `kind`, saying the same thing more coarsely —
+    typed beside the step and free to disagree with it, which it did on 12 rows.
+    It is GONE since decision 0047. The coarse bucket every report still wants
+    ("this is assembly money") is derived with `cost_steps.kind_of(plan_key)`,
+    and `cost_steps.PART_STEPS` / `run_actuals.IS_STOCK` are the one definition
+    of what counts as stock. Do not re-add it.
 
     Rows are never deleted — `voided_at` retires one and `superseded_by_id`
     chains a correction, so a money figure always has a visible history.
@@ -2310,8 +2351,6 @@ class RunCostLine(Base):
     # ordering fragile. Same choice as `superseded_by_id` below.
     parent_line_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     position: Mapped[int] = mapped_column(Integer, default=0)
-    # part|fab|assembly|tooling|freight|duty|tax|rework|packaging|service|other
-    kind: Mapped[str] = mapped_column(String(20), default="part")
     basis: Mapped[str] = mapped_column(String(20), default="per_run")  # per_device|per_run
     label: Mapped[str] = mapped_column(String(300), default="")
     qty: Mapped[float] = mapped_column(Float, default=1.0)
@@ -2361,7 +2400,10 @@ class RunCostLine(Base):
     __table_args__ = (
         Index("ix_run_cost_line_run", "run_id"),
         Index("ix_run_cost_line_component", "component_id"),
-        Index("ix_run_cost_line_kind", "kind"),
+        # The "is this stock" question is asked on the STEP now (decision 0047),
+        # by `run_actuals.IS_STOCK`, and it is the hot one — every pool replay
+        # runs it.
+        Index("ix_run_cost_line_step", "plan_key"),
         Index("ix_run_cost_line_parent", "parent_line_id"),
     )
 

@@ -150,7 +150,7 @@ def batch_supply(db: Session, run: M.ProductionRun) -> list[dict]:
     Grouped by identity, because one position can be billed on several lines.
     """
     rows = (db.query(M.RunCostLine)
-            .filter(M.RunCostLine.kind == run_actuals.PART_KIND,
+            .filter(run_actuals.IS_STOCK,
                     M.RunCostLine.run_id == run.id,
                     M.RunCostLine.voided_at.is_(None),
                     M.RunCostLine.allocate != run_actuals.EXCLUDED)

@@ -14,14 +14,15 @@ import {
   getRunDocuments,
   isAbortError,
   voidCostLine,
-  type CostLineKind,
   type RunActuals,
   type RunCostDocumentRow,
   type RunEffective,
 } from "../../api";
+import { getCostSteps, type CostStepCatalog } from "../../api";
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner } from "../Ui";
-import { COST_LINE_KINDS as KINDS } from "../costs";
+import { StepSelect } from "../costs";
+import { PART_STEPS } from "../invoices/InvoiceLinesTable";
 import { amount as money, plain } from "../../format";
 
 type Props = {
@@ -57,7 +58,17 @@ export default function RunCosts({
   const [forThisRun, setForThisRun] = useState(true);
 
   // new-line draft
-  const [lineKind, setLineKind] = useState<CostLineKind>("assembly");
+  // WHAT the position is, as a production step (decision 0047). It replaced a
+  // `kind` select: the step is the finer answer and the coarse bucket is derived
+  // from it on the server, so asking for both invited them to disagree.
+  const [lineStep, setLineStep] = useState("pcba:general");
+  const [stepCatalog, setStepCatalog] = useState<CostStepCatalog | null>(null);
+  useEffect(() => {
+    const ac = new AbortController();
+    getCostSteps(ac.signal).then(setStepCatalog).catch(() => setStepCatalog(null));
+    return () => ac.abort();
+  }, []);
+  const isStockStep = PART_STEPS.has(lineStep);
   const [lineLabel, setLineLabel] = useState("");
   const [lineMpn, setLineMpn] = useState("");
   const [lineQty, setLineQty] = useState("1");
@@ -113,15 +124,17 @@ export default function RunCosts({
   const submitLine = (docId: number) =>
     act(async () => {
       await addDocumentLine(docId, {
-        kind: lineKind,
+        plan_key: lineStep,
+        plan_kind: "cost",
         basis: linePerDevice ? "per_device" : "per_run",
         label: lineLabel.trim() || lineMpn.trim(),
         mpn: lineMpn.trim(),
         qty: Number(lineQty) || 0,
         unit_price: Number(linePrice) || 0,
-        // A part line stays in the pool (run_id null); anything else is this
-        // batch's direct cost.
-        run_id: lineKind === "part" ? null : runId,
+        // A stock position stays in the pool (run_id null) and says so
+        // (decision 0045); anything else is this batch's direct cost.
+        allocate: isStockStep ? "pooled" : "none",
+        run_id: isStockStep ? null : runId,
       });
       setLineLabel("");
       setLineMpn("");
@@ -421,11 +434,13 @@ export default function RunCosts({
                 </div>
               )}
               <div className="field-grid">
-                <label>Kind
-                  <select className="text" value={lineKind}
-                    onChange={(e) => setLineKind(e.target.value as CostLineKind)}>
-                    {KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
-                  </select>
+                <label>What it is
+                  <StepSelect
+                    catalog={stepCatalog}
+                    className="text mono"
+                    value={lineStep}
+                    onChange={setLineStep}
+                  />
                 </label>
                 <label>Label
                   <input className="text" value={lineLabel}
@@ -443,7 +458,7 @@ export default function RunCosts({
                   <input className="text" value={linePrice}
                     onChange={(e) => setLinePrice(e.target.value)} />
                 </label>
-                {lineKind !== "part" && (
+                {!isStockStep && (
                   <label>
                     <input type="checkbox" checked={linePerDevice}
                       onChange={(e) => setLinePerDevice(e.target.checked)} />{" "}
@@ -452,8 +467,8 @@ export default function RunCosts({
                 )}
               </div>
               <p className="muted">
-                {lineKind === "part"
-                  ? "Part lines go into the component cost pool — batches draw from it on the Materials tab."
+                {isStockStep
+                  ? "Stock positions go into the component cost pool — batches draw from it on the Materials tab."
                   : "This lands directly on this batch's cost."}
               </p>
               <div className="btn-row">

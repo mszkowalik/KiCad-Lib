@@ -304,7 +304,7 @@ def test_a_bom_draw_takes_the_part_that_was_fitted(db, world):
                              doc_date="2026-01-01", currency="USD", total_amount=10.0))
     db.flush()
     doc = db.query(M.RunCostDocument).filter_by(doc_number="S-1").one()
-    db.add(M.RunCostLine(document_id=doc.id, kind="part", label="new part",
+    db.add(M.RunCostLine(document_id=doc.id, plan_key="parts:pool", label="new part",
                          lcsc="CNEW", qty=1000, unit_price=0.01, currency="USD",
                          allocate="none"))
     db.add(M.DeviceUnit(project_id=world["project"].id, production_run_id=run.id,

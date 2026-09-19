@@ -16,7 +16,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { CheckField } from "../components/Field";
+import { useDialog } from "../components/Dialog";
 import {
+  closeRun,
   deleteRunAttachment,
   errorMessage,
   getProject,
@@ -24,6 +26,7 @@ import {
   getRunActuals,
   getSnapshots,
   isAbortError,
+  reopenRun,
   runAttachmentUrl,
   updateRun,
   uploadRunAttachment,
@@ -57,6 +60,8 @@ export default function RunDetail() {
   const [actuals, setActuals] = useState<RunActuals | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
+  const dialog = useDialog();
 
   const load = useCallback((signal?: AbortSignal) => {
     getRun(runId, signal)
@@ -88,6 +93,40 @@ export default function RunDetail() {
     updateRun(runId, body)
       .then((r) => setRun(r))
       .catch((err) => setError(errorMessage(err)));
+
+  /** Close the books on this batch, or reopen them (decision 0044).
+   *
+   *  Closing makes every supplier document that charges the batch read-only and
+   *  records what it cost, so a later correction shows as a variance rather than
+   *  as the figure it always was.
+   */
+  const toggleClosed = async () => {
+    if (!run) return;
+    const open = !run.closed_at;
+    const ok = await dialog.confirm(
+      open
+        ? "Closing the books records what this batch cost right now and makes every "
+          + "supplier document charging it read-only. A batch's costs are recomputed "
+          + "from those documents on every read, so editing one silently moves the "
+          + "per-device cost that has already gone out on orders. After this, the way "
+          + "to change the figure is a correction document, dated when you make it.\n\n"
+          + "You can reopen the batch at any time."
+        : "Reopening makes this batch's documents editable in place again, and clears "
+          + "the cost that was recorded when it closed. The audit log keeps both.",
+      { title: open ? "Close the books" : "Reopen the batch",
+        confirmLabel: open ? "Close the books" : "Reopen" },
+    );
+    if (!ok) return;
+    setClosing(true);
+    try {
+      setRun(open ? await closeRun(runId) : await reopenRun(runId));
+      setError(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setClosing(false);
+    }
+  };
 
   if (error && !run) {
     return (
@@ -263,6 +302,46 @@ export default function RunDetail() {
                   </div>
                 </div>
               </div>
+              {/* THE BOOKS (decision 0044). It sits under the cost tiles because
+                  that is what closing protects: the figure above it, which a
+                  shipped unit carries onto its order. */}
+              <div className="btn-row">
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={closing}
+                  onClick={() => void toggleClosed()}
+                >
+                  {closing ? "…" : run.closed_at ? "Reopen the batch" : "Close the books"}
+                </button>
+                {run.closed_at ? (
+                  <span className="muted">
+                    Closed {run.closed_at.slice(0, 10)}
+                    {run.closed_by ? ` by ${run.closed_by}` : ""} at{" "}
+                    {money(run.closed_cost_usd, "USD")}
+                    {run.closed_units ? ` over ${run.closed_units} produced` : ""}. Its
+                    documents are read-only — change one with a correction on the{" "}
+                    <Link to="/invoices">Invoices</Link> page.
+                  </span>
+                ) : (
+                  <span className="muted">
+                    Open: this batch&apos;s supplier documents can still be edited in place,
+                    and every edit moves the cost above.
+                  </span>
+                )}
+              </div>
+              {/* A number that MOVED after it was quoted is the whole point of
+                  closing, so it gets its own line rather than a tooltip. */}
+              {run.closed_at && run.closed_cost_usd != null
+                && actuals?.total_usd != null
+                && Math.abs(actuals.total_usd - run.closed_cost_usd) > 0.005 ? (
+                <div className="banner-warn">
+                  This batch has cost {money(actuals.total_usd - run.closed_cost_usd, "USD")}{" "}
+                  more than when its books closed ({money(run.closed_cost_usd, "USD")} →{" "}
+                  {money(actuals.total_usd, "USD")}). Corrections posted since the close
+                  account for the difference.
+                </div>
+              ) : null}
               {actuals && actuals.unknown_rates.length > 0 && (
                 <div className="banner-warn">
                   No stored FX rate for {actuals.unknown_rates.join(", ")} — those amounts are

@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..models import utcnow
 from . import jlc_web
+from . import run_actuals
 from .run_actuals import JLC_TZ
 
 log = logging.getLogger(__name__)
@@ -187,7 +188,7 @@ def _local_index(db: Session) -> tuple[dict, dict]:
     purchases: dict[tuple[str, str], list] = {}
     rows = (db.query(M.RunCostLine, M.RunCostDocument.external_id)
               .join(M.RunCostDocument, M.RunCostLine.document_id == M.RunCostDocument.id)
-              .filter(M.RunCostLine.kind == "part",
+              .filter(run_actuals.IS_STOCK,
                       M.RunCostLine.voided_at.is_(None),
                       M.RunCostLine.run_id.is_(None),
                       M.RunCostLine.allocate != "excluded").all())

@@ -129,10 +129,26 @@ MAC the platform holds (3,869 of 3,971 topics); `STATUS5` has supplied none.
 devices this platform never programmed — field replacements, hand-provisioned
 units, anything older than the flasher. Keying on the topic means an
 unrecognised device still gets a row and appears in `GET /api/mqtt/unlinked`,
-which is the point of watching a fleet you do not fully own. 68 such devices
-were found on the first run. `link_devices()` resolves the pointer when a
-matching `DeviceUnit.tasmota_id` appears later, so a device imported afterwards
-adopts the history it already accumulated.
+which is the point of watching a fleet you do not fully own. `link_devices()`
+resolves the pointer when a matching `DeviceUnit.tasmota_id` appears later, so a
+device imported afterwards adopts the history it already accumulated.
+
+**An unlinked row does not mean the platform never made that device.** 69 were
+found on the first run; 28 of them were devices the platform already held, under
+the OTHER spelling of the topic — the broker says `dongle_449430`, programming
+recorded `dongle_F8B3B7449430`. Both spellings are in use (3,172 units carry the
+6-hex form, 2,280 the 12-hex), and `link_devices()` compares the two strings
+exactly, so every disagreement lands here. That also makes this list COMPLETE
+for devices that have reached the broker: a mismatch cannot hide anywhere else.
+
+Read the list with `hw_model` beside it. It carries the firmware's build target
+straight from `tasmota/discovery` (`CE_Dongle_v2`, `CE_Aqua`, `CE_Dongle_v1`,
+`ESP32-DevKit`) and is the strongest provenance the broker offers — stronger
+than the MAC, which cannot tell a dev board from product hardware because both
+came off the same reel. See
+[0046](../decisions/0046-the-broker-names-a-device-the-platform-already-counted.md)
+for what that population turned out to be and why MAC proximity is not a
+batch-assignment rule.
 
 ## Configuration
 

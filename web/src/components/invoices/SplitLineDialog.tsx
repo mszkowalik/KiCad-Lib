@@ -19,13 +19,13 @@
  *  percentage re-derived against a changed base.
  */
 import { useEffect, useMemo, useState } from "react";
+import { PART_STEPS } from "./InvoiceLinesTable";
 import {
   errorMessage,
   getCostSteps,
   resolveDocumentParts,
   splitCostLine,
   type CostStepCatalog,
-  type CostLineKind,
   type RunCostDocumentRow,
   type RunCostLineRow,
   type SplitChild,
@@ -33,7 +33,6 @@ import {
 import { ErrorBanner } from "../Ui";
 import ComponentPickDialog from "../ComponentPickDialog";
 import {
-  COST_LINE_KINDS as KINDS,
   ChargeToSelect,
   StepSelect,
   type RunOption,
@@ -59,7 +58,6 @@ interface Row {
   qty: string;
   unit: string;
   percent: string;
-  kind: CostLineKind | "";
   /** production-step key ("pcba:setup"); becomes the child's plan_key */
   step: string;
   /** "" | "run:<id>" | "project:<id>" */
@@ -69,7 +67,7 @@ interface Row {
 
 function emptyRow(): Row {
   return { label: "", component_id: null, component_name: "", mpn: "", lcsc: "",
-           amount: "", qty: "", unit: "", percent: "", kind: "", step: "", dest: "", notes: "" };
+           amount: "", qty: "", unit: "", percent: "", step: "", dest: "", notes: "" };
 }
 
 function num(s: string): number {
@@ -106,7 +104,6 @@ export default function SplitLineDialog({
           qty: fmt(c.qty ?? 0),
           unit: fmt(c.unit_price ?? 0),
           percent: parentAmount ? fmt(((c.line_total ?? 0) / parentAmount) * 100) : "",
-          kind: c.kind,
           step: c.plan_key && c.plan_key.includes(":") ? c.plan_key : "",
           dest: c.allocate === "excluded"
             ? "excluded"
@@ -165,10 +162,10 @@ export default function SplitLineDialog({
     return () => ac.abort();
   }, []);
 
-  const defaultKindFor = (step: string): CostLineKind | "" =>
-    (catalog?.steps.find((st) => st.key === step)?.default_kind as CostLineKind) ?? "";
 
-  const isPart = line.kind === "part";
+  // A stock position: the STEP says so now, not a second `kind` field
+  // (decision 0047).
+  const isPart = PART_STEPS.has(line.plan_key || "");
   // Charged to a batch and stepped as its parts: never pool stock.
   const supplierLump = isPart && line.plan_key === "pcba:parts" && !!line.run_id;
 
@@ -179,7 +176,7 @@ export default function SplitLineDialog({
     setRows((rs) => [
       ...rs.filter((r) => r.label.trim() !== "" || r.amount.trim() !== ""),
       ...tpl.map((t) => ({ ...emptyRow(), label: t.label, step: t.step,
-                           kind: defaultKindFor(t.step) })),
+                           })),
     ]);
   };
 
@@ -203,7 +200,6 @@ export default function SplitLineDialog({
         ...(isPart
           ? { qty: num(r.qty), unit_price: num(r.unit) }
           : { amount: num(r.amount) }),
-        kind: (r.kind || (r.step ? defaultKindFor(r.step) : "") || undefined) as CostLineKind | undefined,
         plan_key: r.step || undefined,
         // "excluded" records the share for reconciliation without charging it
         allocate: r.dest === "excluded" ? "excluded" : undefined,
@@ -219,7 +215,7 @@ export default function SplitLineDialog({
       // A part share keyed only by MPN can never meet a BOM draw. The importer
       // resolves on every write; a hand-made split has to do the same or the
       // two paths produce different rows from the same facts.
-      if (children.some((c) => c.kind === "part")) {
+      if (children.some((c) => PART_STEPS.has(c.plan_key || ""))) {
         try {
           await resolveDocumentParts(line.document_id);
         } catch {
@@ -262,9 +258,8 @@ export default function SplitLineDialog({
                     <th className="num">%</th>
                   </>
                 )}
-                <th>Step</th>
-                <th>Kind</th>
-                <th>Charge to</th>
+                <th>What it is</th>
+                <th>Goes to</th>
                 <th>Note</th>
                 <th />
               </tr>
@@ -359,20 +354,8 @@ export default function SplitLineDialog({
                       value={r.step}
                       emptyLabel="—"
                       title="production step — carries into plan_key so plan-vs-billed matches automatically"
-                      onChange={(step) => patch(i, { step, kind: r.kind || defaultKindFor(step) })}
+                      onChange={(step) => patch(i, { step })}
                     />
-                  </td>
-                  <td>
-                    <select
-                      className="row-input"
-                      value={r.kind}
-                      onChange={(e) => patch(i, { kind: e.target.value as CostLineKind | "" })}
-                    >
-                      <option value="">{line.kind} (same)</option>
-                      {KINDS.map((k) => (
-                        <option key={k} value={k}>{k}</option>
-                      ))}
-                    </select>
                   </td>
                   <td>
                     <ChargeToSelect

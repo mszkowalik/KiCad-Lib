@@ -81,6 +81,16 @@ def _run_json(r: M.ProductionRun, db: Session | None = None, with_detail: bool =
         # this when it starts, so changing it here only affects work still to
         # be done.
         "requires_test": bool(r.requires_test),
+        # THE BOOKS ON THIS BATCH (decision 0044). `closed_at` set means every
+        # document charging it, written before that moment, is read-only: its
+        # per-device cost has been carried onto orders and must not move without
+        # a dated correction. `closed_cost_usd` / `closed_units` are what the
+        # batch cost when it closed, so a later correction shows as a variance
+        # instead of as a figure that reads as though it was always this way.
+        "closed_at": r.closed_at.isoformat() if r.closed_at else None,
+        "closed_by": r.closed_by or "",
+        "closed_cost_usd": r.closed_cost_usd,
+        "closed_units": r.closed_units,
         "attachment_count": len(r.attachments),
         # HOW MANY DEVICES THIS BATCH MADE, which is `DeviceUnit.production_run_id`
         # — the batch a device belongs to, and the only copy of it that ever gets
@@ -255,22 +265,53 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
 @router.patch("/runs/{run_id}")
 def update_run(run_id: int, body: RunPatch, db: Session = Depends(get_db)):
     r = _run(db, run_id)
+    # A closed batch may still be renamed, re-dated or annotated. What it may not
+    # do is change the numbers its cost is computed FROM (decision 0044): a
+    # `per_device` invoice line is charged at `effective_qty`, which reads `qty`
+    # and `qty_good`, so moving either moves a per-device cost already carried
+    # onto orders — the same silent movement the document lock exists to stop.
+    if r.closed_at is not None:
+        sent = body.model_dump(exclude_unset=True)
+        moves_money = [f for f in ("qty", "qty_good", "snapshot_id")
+                       if f in sent and sent[f] is not None and getattr(r, f) != sent[f]]
+        if moves_money:
+            raise HTTPException(409, {
+                "error": f"batch {r.label} is closed ({r.closed_at.isoformat()[:10]}), so "
+                         f"{', '.join(moves_money)} cannot change — a per-device line is "
+                         f"charged on these and the cost has already gone out on orders. "
+                         f"Reopen the batch if the figure really is wrong.",
+                "closed_at": r.closed_at.isoformat(),
+                "fields": moves_money,
+            })
+    # EVERY field's previous value, not only the sale ones. The audit row used to
+    # carry `before` for the seven sale/yield fields and `null` for everything
+    # else, so a label, a date, a quantity or the notes could be overwritten with
+    # no record of what had been there — which is how run 19's notes had to be
+    # read back off production to be restored (2026-09-19). The api convention is
+    # "every mutation writes an audit row WITH details"; this one did not.
+    before: dict = {}
+
+    def track(field: str, value) -> None:
+        if getattr(r, field) != value:
+            before[field] = getattr(r, field)
+            setattr(r, field, value)
+
     if body.label is not None and body.label.strip():
-        r.label = body.label.strip()
+        track("label", body.label.strip())
     if body.qty is not None:
         if body.qty < 1:
             raise HTTPException(422, "qty must be >= 1")
-        r.qty = body.qty
+        track("qty", body.qty)
     if body.status is not None:
-        r.status = body.status.strip()
+        track("status", body.status.strip())
     if body.requires_test is not None:
-        r.requires_test = body.requires_test
+        track("requires_test", body.requires_test)
     if body.run_date is not None:
-        r.run_date = body.run_date.strip()
+        track("run_date", body.run_date.strip())
     if body.notes is not None:
-        r.notes = body.notes
+        track("notes", body.notes)
     if body.overrides is not None:
-        r.overrides = body.overrides
+        track("overrides", body.overrides)
     if body.snapshot_id is not None:
         snap = db.get(M.ProjectSnapshot, body.snapshot_id)
         if snap is None:
@@ -287,11 +328,10 @@ def update_run(run_id: int, body: RunPatch, db: Session = Depends(get_db)):
                                      f"({', '.join(sorted(stale))}) keyed to snapshot "
                                      f"{r.snapshot_id}; re-key or clear them before "
                                      "moving it to another snapshot")
-        r.snapshot_id = snap.id
+        track("snapshot_id", snap.id)
     # Sale side + yield. Applied only when explicitly present, so a PATCH that
     # touches the label can never blank out a price.
     sale = body.model_dump(exclude_unset=True)
-    before = {}
     for field in ("sale_unit_price", "sale_currency", "qty_sold", "qty_good",
                   "customer", "order_ref", "order_date"):
         if field not in sale:
@@ -299,10 +339,76 @@ def update_run(run_id: int, body: RunPatch, db: Session = Depends(get_db)):
         value = sale[field]
         if isinstance(value, str):
             value = value.strip()
-        if getattr(r, field) != value:
-            before[field] = getattr(r, field)
-            setattr(r, field, value)
+        track(field, value)
     audit(db, "run.update", "production_run", r.id, before or None)
+    db.commit()
+    return _run_json(r, db, with_detail=True)
+
+
+class ClosePatch(BaseModel):
+    """`actor` is who closed the books, for the audit trail and the batch page."""
+
+    actor: str = ""
+    reason: str = ""
+
+
+@router.post("/runs/{run_id}/close")
+def close_run(run_id: int, body: ClosePatch | None = None, db: Session = Depends(get_db)):
+    """Close the books on this batch (decision 0044).
+
+    From now on, every supplier document that charges it — and that existed
+    before this moment — is read-only. A batch's direct costs are recomputed from
+    those lines on every read, so an edit to a two-year-old assembly invoice
+    silently moves the batch's per-device cost and the cost of every order that
+    shipped one of its units. Closing turns that edit into an EVENT: a correction
+    document, dated when the correction is made.
+
+    What the batch cost right now is recorded with it, so a later correction
+    reads as a variance rather than as a number that was always this way.
+
+    Reversible — see `reopen_run`. A lock nobody can undo is a reason to work
+    around the platform instead of using it.
+    """
+    r = _run(db, run_id)
+    body = body or ClosePatch()
+    if r.closed_at is not None:
+        raise HTTPException(409, {
+            "error": f"batch {r.label} is already closed "
+                     f"({r.closed_at.isoformat()[:10]}, by {r.closed_by or 'unknown'}).",
+        })
+    cost_usd, units = run_actuals.close_snapshot(db, r)
+    r.closed_at = M.utcnow()
+    r.closed_by = (body.actor or "").strip()
+    r.closed_cost_usd = cost_usd
+    r.closed_units = units
+    audit(db, "run.close", "production_run", r.id,
+          {"closed_by": r.closed_by, "cost_usd": cost_usd, "units": units,
+           "reason": (body.reason or "").strip()})
+    db.commit()
+    return _run_json(r, db, with_detail=True)
+
+
+@router.post("/runs/{run_id}/reopen")
+def reopen_run(run_id: int, body: ClosePatch | None = None, db: Session = Depends(get_db)):
+    """Reopen a closed batch, making its documents editable again.
+
+    The snapshot taken at close is CLEARED rather than kept, because a batch that
+    has been reopened and closed again has a new "what it cost when the books
+    closed" — keeping the first one would have the page compare against a figure
+    nobody stands behind any more. The audit row keeps both.
+    """
+    r = _run(db, run_id)
+    body = body or ClosePatch()
+    if r.closed_at is None:
+        raise HTTPException(409, {"error": f"batch {r.label} is not closed."})
+    audit(db, "run.reopen", "production_run", r.id,
+          {"was_closed_at": r.closed_at.isoformat(), "was_closed_by": r.closed_by or "",
+           "was_cost_usd": r.closed_cost_usd, "was_units": r.closed_units,
+           "actor": (body.actor or "").strip(), "reason": (body.reason or "").strip()})
+    r.closed_at = None
+    r.closed_by = ""
+    r.closed_cost_usd = None
+    r.closed_units = None
     db.commit()
     return _run_json(r, db, with_detail=True)
 

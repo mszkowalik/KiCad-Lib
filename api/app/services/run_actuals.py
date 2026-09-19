@@ -38,9 +38,22 @@ from .. import models as M
 from . import cost_steps, fx
 from .project_bom import display_currency, run_pricing_date
 
-# Kinds that are component purchases feeding the pool; everything else is a
-# direct run cost (fab, assembly, tooling, freight, …).
-PART_KIND = "part"
+# Money that is STOCK is identified by its production STEP, not by a second
+# `kind` field typed beside it (decision 0047). `cost_steps.PART_STEPS` is the
+# one definition — `parts:pool`, `parts:prepaid`, `parts:attrition` and
+# `pcba:parts` — and `IS_STOCK` is how it reads inside a SQLAlchemy filter.
+#
+# `kind` used to say this, and was free to disagree with the step beside it. It
+# did, on 12 rows. The step is the finer of the two and the bucket is derivable
+# from it (`cost_steps.kind_of`), so the bucket is derived and the column is
+# gone.
+IS_STOCK = M.RunCostLine.plan_key.in_(tuple(cost_steps.PART_STEPS))
+NOT_STOCK = M.RunCostLine.plan_key.notin_(tuple(cost_steps.PART_STEPS))
+
+
+def is_stock(li: M.RunCostLine) -> bool:
+    """The in-Python twin of `IS_STOCK`, for a row already in hand."""
+    return cost_steps.is_stock_step(li.plan_key or "")
 # `allocate` values that spread a non-part line over the same document's parts.
 # Deliberately NOT gated on `kind`: freight and duty are the common cases, but a
 # per-unit surcharge printed as its own position is the same thing — ITALTRONIC
@@ -52,6 +65,17 @@ SPREAD = ("by_value", "by_qty")
 # `allocate` value meaning "recorded so the document reconciles, charged to nobody
 # on purpose". Reclaimable VAT and already-pooled prepaid components.
 EXCLUDED = "excluded"
+# `allocate` value meaning "this line's money is STOCK — it belongs to the shared
+# pool, and somebody said so" (decision 0045).
+#
+# It behaves exactly like `none` in every money path; the whole of its job is to
+# be the difference between the two things `none` used to mean. A line with no
+# run, no project and `allocate="none"` resolved to `pool` when its kind happened
+# to be `part` and to `unassigned` — money nobody pays for — otherwise. One
+# stored value, two outcomes, decided by a field the operator was not being asked
+# about. `POOLED` says it outright, so "nobody has decided yet" stops being
+# spelled the same way as "it goes to stock".
+POOLED = "pooled"
 
 
 def live_consumption(db: Session, **filters):
@@ -221,7 +245,10 @@ def line_json(li: M.RunCostLine, doc: M.RunCostDocument | None = None,
         # freight line used to live in a `notes` string — i.e. it was invisible.
         "residual": _round(total - child_total) if child_total is not None else None,
         "position": li.position,
-        "kind": li.kind,
+        # DERIVED from the step since decision 0047 — the column is gone. Still
+        # emitted because the coarse bucket is what `by_kind` reports and what a
+        # reader recognises ("this is assembly money").
+        "kind": cost_steps.kind_of(li.plan_key or ""),
         "basis": li.basis,
         "label": li.label,
         "qty": li.qty,
@@ -230,6 +257,10 @@ def line_json(li: M.RunCostLine, doc: M.RunCostDocument | None = None,
         "line_total": total,
         "currency": cur,
         "allocate": li.allocate,
+        # WHY a position is charged to nobody. It has been stored since the
+        # `excluded` bucket got a reason column, and emitted nowhere — so the UI
+        # could neither show it nor ask for it (decision 0045).
+        "exclude_reason": li.exclude_reason or "",
         "component_id": li.component_id,
         # The library part's name, so the Invoices view can show WHICH part a
         # line is linked to instead of only an id. `db.get` is a primary-key
@@ -272,9 +303,17 @@ def line_destination(li: M.RunCostLine, doc: M.RunCostDocument | None) -> tuple[
         return "run", li.run_id
     if li.project_id:
         return "project", li.project_id
+    # An explicit "this is stock" beats the DOCUMENT's default destination: a
+    # parts invoice filed against a batch can still carry a position that is
+    # plain stock, and saying so on the line is the only way to express it.
+    if li.allocate == POOLED:
+        return "pool", None
     if doc is not None and doc.run_id:
         return "run", doc.run_id
-    if li.kind == PART_KIND:
+    if is_stock(li):
+        # A `parts:*` or `pcba:parts` step IS the statement that this money is
+        # stock. `allocate="pooled"` (decision 0045) says the same thing on the
+        # destination axis; either is enough.
         return "pool", None  # stockpile: runs reach it through consumption
     if li.allocate in SPREAD:
         # Spread over the same document's parts: landed cost, so the money follows
@@ -282,7 +321,7 @@ def line_destination(li: M.RunCostLine, doc: M.RunCostDocument | None) -> tuple[
         # Only when there ARE parts to carry it — `pool_state` cannot spread a
         # surcharge over nothing, and claiming the bucket anyway would lose it.
         if doc is not None and any(
-            c.kind == PART_KIND and c.run_id is None and c.voided_at is None for c in doc.lines
+            is_stock(c) and c.run_id is None and c.voided_at is None for c in doc.lines
         ):
             return "pool", None
     if doc is not None and doc.project_id:
@@ -291,7 +330,8 @@ def line_destination(li: M.RunCostLine, doc: M.RunCostDocument | None) -> tuple[
 
 
 def document_json(doc: M.RunCostDocument, with_lines: bool = True,
-                  db: Session | None = None) -> dict:
+                  db: Session | None = None,
+                  closed: dict[int, M.ProductionRun] | None = None) -> dict:
     live = [li for li in doc.lines if li.voided_at is None]
     kids: dict[int, float] = defaultdict(float)
     for li in live:
@@ -335,6 +375,22 @@ def document_json(doc: M.RunCostDocument, with_lines: bool = True,
         "tax_amount": doc.tax_amount,
         "notes": doc.notes,
         "attachment_id": doc.attachment_id,
+        # Decision 0044. `locked` non-empty means every write path refuses this
+        # document, because it charges a batch whose books are closed; the fix is
+        # a correction document, which the UI offers in place of the edit switch.
+        # Computed, never stored: reopening a batch must make its documents
+        # editable again with nothing to un-write.
+        "locked": closed_lock(db, doc, closed) if db is not None else [],
+        "corrects_document_id": doc.corrects_document_id,
+        # Only on the full view. The register renders every document and the
+        # back-pointer is not on its row, so this stays off the list path.
+        "corrected_by": (
+            [{"id": c.id, "doc_number": c.doc_number or "", "doc_date": c.doc_date or ""}
+             for c in db.query(M.RunCostDocument)
+             .filter(M.RunCostDocument.corrects_document_id == doc.id)
+             .order_by(M.RunCostDocument.id).all()]
+            if db is not None and with_lines else []
+        ),
         # The supplier's original, filed with the money it evidences.
         "attachment_count": (
             db.query(M.RunAttachment).filter(M.RunAttachment.document_id == doc.id).count()
@@ -405,7 +461,7 @@ def resolve_part_lines(db: Session, document_id: int | None = None) -> dict:
     match is written into the line's notes so a human can audit it.
     """
     q = db.query(M.RunCostLine).filter(
-        M.RunCostLine.kind == PART_KIND,
+        IS_STOCK,
         M.RunCostLine.voided_at.is_(None),
         M.RunCostLine.component_id.is_(None),
         M.RunCostLine.mpn != "",
@@ -532,7 +588,7 @@ def _pool_events(db: Session) -> tuple[list[tuple[str, str, object]], dict, dict
         purchases = (
             db.query(M.RunCostLine)
             .filter(
-                M.RunCostLine.kind == PART_KIND,
+                IS_STOCK,
                 # run_id set = bought FOR that run and charged to it directly
                 # (see run_actuals); only unallocated purchases are pool stock,
                 # otherwise the same money is counted twice.
@@ -551,7 +607,7 @@ def _pool_events(db: Session) -> tuple[list[tuple[str, str, object]], dict, dict
             li for li in (
                 db.query(M.RunCostLine)
                 .filter(
-                    M.RunCostLine.kind != PART_KIND,
+                    NOT_STOCK,
                     M.RunCostLine.allocate.in_(SPREAD),
                     M.RunCostLine.run_id.is_(None),
                     M.RunCostLine.voided_at.is_(None),
@@ -977,7 +1033,7 @@ def pooled_part_lines(db: Session, lines: list[M.RunCostLine]) -> list[M.RunCost
     already knows `header_ids`."""
     out = []
     for li in lines:
-        if li.kind != PART_KIND or li.voided_at is not None:
+        if not is_stock(li) or li.voided_at is not None:
             continue
         if li.run_id is not None or (li.allocate or "none") == EXCLUDED:
             continue
@@ -986,6 +1042,86 @@ def pooled_part_lines(db: Session, lines: list[M.RunCostLine]) -> list[M.RunCost
             continue
         out.append(li)
     return out
+
+
+# ------------------------------------------------- closing the books (0044)
+
+def closed_runs(db: Session) -> dict[int, M.ProductionRun]:
+    """Every batch whose books are closed, by id. One query — `document_json`
+    fetches it once per register and hands it to each document, because the
+    register renders ~90 of them and a query apiece is a query apiece."""
+    return {r.id: r for r in db.query(M.ProductionRun)
+            .filter(M.ProductionRun.closed_at.isnot(None)).all()}
+
+
+def closed_lock(db: Session, doc: M.RunCostDocument,
+                closed: dict[int, M.ProductionRun] | None = None) -> list[dict]:
+    """The CLOSED batches this document charges, or `[]` when it is editable.
+
+    Decision 0044. A batch's direct costs are recomputed from its lines on every
+    read — `qty x unit_price x fx`, nothing snapshotted — so correcting a typo on
+    a 2024 assembly invoice moves that batch's total, its per-device cost, and
+    the cost of every order that shipped one of its units. Closing the batch
+    stops that: the documents behind it become read-only and the only way to move
+    the figure is a CORRECTION document, dated when the correction was made.
+
+    Three rules, and each is load-bearing:
+
+    * **Direct costs only.** A `part` line feeding the pool cannot change a
+      closed batch's cost, because its draws snapshotted `unit_cost_usd` at draw
+      time. Locking pool invoices would block ordinary stock corrections and
+      protect nothing.
+    * **A document that POSTDATES the close is not locked.** That is what makes
+      the correction path work without a special case for it: a document written
+      after the books closed is, by definition, the correction. It also means an
+      ordinary invoice that simply arrived late can still be entered and fixed.
+    * **The whole document locks**, not the offending line. A document with one
+      line on a closed batch and one on an open batch is a single printed page,
+      and re-keying its lines is exactly the kind of edit that would move the
+      closed figure.
+    """
+    live = [li for li in doc.lines if li.voided_at is None]
+    run_ids = {li.run_id for li in live if li.run_id is not None}
+    if doc.run_id is not None:
+        run_ids.add(doc.run_id)
+    if not run_ids:
+        return []
+    if closed is None:
+        closed = closed_runs(db)
+    created = doc.created_at
+    out = []
+    for run in (closed[rid] for rid in run_ids if rid in closed):
+        # A document created after the close is the correction, not the thing
+        # being corrected. `created_at` and `closed_at` are both server-side
+        # timestamps, so the comparison is on one clock.
+        if created is not None and run.closed_at is not None and created > run.closed_at:
+            continue
+        out.append({"run_id": run.id, "label": run.label,
+                    "closed_at": run.closed_at.isoformat() if run.closed_at else None,
+                    "closed_by": run.closed_by or ""})
+    return sorted(out, key=lambda r: r["run_id"])
+
+
+def close_snapshot(db: Session, run: M.ProductionRun,
+                   register: dict | None = None) -> tuple[float, int]:
+    """What this batch costs in USD, and over how many PRODUCED units, right now.
+
+    Recorded on the run when it closes so a later correction reads as a VARIANCE
+    against the figure that was quoted, rather than as a number that was always
+    this way.
+
+    Read from the invoice register's `by_run_usd` rather than from
+    `run_actuals`, for one reason: `by_run_usd` is what `orders.per_device_cost_usd`
+    divides, so it is the figure that actually reaches a customer's invoice
+    (decision 0043). `run_actuals` returns the same arithmetic in the project's
+    DISPLAY currency, which is editable — a snapshot taken in it would mean
+    something different after somebody changed the project's currency.
+    """
+    reg = register if register is not None else invoice_register(db)
+    money = ((reg.get("by_run_usd") or {}).get(str(run.id))
+             or (reg.get("by_run_usd") or {}).get(run.id) or {})
+    made = produced_counts(db, [run.id]).get(run.id, 0)
+    return float(money.get("total_usd") or 0.0), made
 
 
 def purchase_loss_of(db: Session, li: M.RunCostLine, *, qty: float | None = None,
@@ -1105,7 +1241,7 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
     direct_usd = 0.0
     for li in lines:
         doc = db.get(M.RunCostDocument, li.document_id)
-        if li.kind == PART_KIND and li.run_id is None:
+        if is_stock(li) and li.run_id is None:
             continue  # that purchase belongs to the pool, not to this run
         cur_l = li.currency or (doc.currency if doc else "USD")
         # One rule for per_device everywhere (`effective_qty`): charging at
@@ -1118,12 +1254,14 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
             if not known:
                 unknown.add(cur_l)
         direct_usd += usd
-        by_kind[li.kind] += usd
+        # The coarse bucket, DERIVED from the step (decision 0047). It used to be
+        # a column typed beside the step and free to disagree with it.
+        by_kind[cost_steps.kind_of(li.plan_key or "")] += usd
         # Production-step identity (services/cost_steps.py): a line billed
         # under "pcba:setup" is the actual of the planned cost item carrying
         # the same step_key, whatever the vendor called it on paper.
         step = li.plan_key if cost_steps.stage_of(li.plan_key) else ""
-        skey = step or f"~{li.kind}"
+        skey = step or f"~{cost_steps.kind_of(li.plan_key or '')}"
         actual_by_step[skey] += usd
         # remember WHICH document the money came from, so the run view can
         # answer "who billed this step" without a second sweep
@@ -1293,6 +1431,11 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
         "steps": steps_cmp,
         "attrition": _round(to_display(attrition_usd)),
         "total": actual_total,
+        # The same figure in USD. The display currency is a PROJECT setting and
+        # editable, so it cannot be compared against `closed_cost_usd`, which is
+        # pinned in USD at the moment the books closed (decision 0044). The batch
+        # page reads this one for the variance.
+        "total_usd": _round(total_usd),
         "per_device": _round((actual_total or 0) / good) if actual_total is not None else None,
         "planned_total": _round(planned),
         # delta_pct is deliberately null when nothing was planned — a late
@@ -1638,7 +1781,10 @@ def invoice_register(db: Session) -> dict:
                # sale side, so income sits beside cost in the register
                "qty_sold": r.qty_sold, "sale_unit_price": r.sale_unit_price,
                "sale_currency": r.sale_currency or "", "customer": r.customer,
-               "order_ref": r.order_ref, "order_date": r.order_date}
+               "order_ref": r.order_ref, "order_date": r.order_date,
+               # Decision 0044: the Invoices view marks a position charged to a
+               # closed batch, so it is clear BEFORE the edit is refused.
+               "closed_at": r.closed_at.isoformat() if r.closed_at else None}
         for r in _all_runs
     }
 
@@ -1647,8 +1793,11 @@ def invoice_register(db: Session) -> dict:
     by_project: dict[int, float] = defaultdict(float)
     by_run: dict[int, float] = defaultdict(float)
     by_supplier: dict[str, float] = defaultdict(float)
+    # One lookup of the closed batches for the whole register (decision 0044),
+    # instead of one query per document row.
+    closed_by_id = {r.id: r for r in _all_runs if r.closed_at is not None}
     for doc in docs:
-        j = document_json(doc, with_lines=False, db=db)
+        j = document_json(doc, with_lines=False, db=db, closed=closed_by_id)
         a = j["assignment"]
         # The printed total is the truth about how much money left the company;
         # `lines_total` is our transcription of it. Show both, trust the printed.
@@ -1721,7 +1870,7 @@ def invoice_register(db: Session) -> dict:
     pool_doc_ids = {
         li.document_id
         for li in db.query(M.RunCostLine).filter(
-            M.RunCostLine.kind == PART_KIND, M.RunCostLine.run_id.is_(None),
+            IS_STOCK, M.RunCostLine.run_id.is_(None),
             M.RunCostLine.voided_at.is_(None), M.RunCostLine.allocate != EXCLUDED,
             M.RunCostLine.document_id.in_(live_doc_ids or [0])).all()
         if li.id not in hdrs
@@ -1735,7 +1884,8 @@ def invoice_register(db: Session) -> dict:
          "amount": _round((li.qty or 0) * (li.unit_price or 0)),
          "currency": li.currency or doc_map[li.document_id].currency}
         for li in db.query(M.RunCostLine).filter(
-            M.RunCostLine.kind.in_(("freight", "duty")),
+            # Carriage and customs, by step rather than by kind.
+            M.RunCostLine.plan_key.in_(("logistics:inbound", "logistics:duty")),
             M.RunCostLine.voided_at.is_(None),
             M.RunCostLine.run_id.is_(None), M.RunCostLine.project_id.is_(None),
             M.RunCostLine.allocate.notin_((*SPREAD, EXCLUDED)),

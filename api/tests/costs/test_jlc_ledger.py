@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app import models as M
 from app.db import engine
-from app.services import jlc_apply, jlc_import, jlc_ledger as L
+from app.services import cost_steps, jlc_apply, jlc_import, jlc_ledger as L
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ def part(db: Session):
                             doc_date="2026-02-01", currency="USD", total_amount=100.0)
     db.add(doc)
     db.flush()
-    line = M.RunCostLine(document_id=doc.id, kind="part", label="scratch",
+    line = M.RunCostLine(document_id=doc.id, plan_key="parts:pool", label="scratch",
                          lcsc="CLEDGER01", mpn="LEDGER-PART-1", qty=1000,
                          unit_price=0.1, currency="USD", allocate="none",
                          lot_ref="900001")
@@ -209,7 +209,9 @@ def test_refresh_rewrites_a_cancelled_lot_as_a_fee(db, part):
     res = jlc_apply.refresh_parts_document(db, _plan(status=40), dry_run=False)
     assert res["status"] == "refreshed"
     line = db.get(M.RunCostLine, part["line"].id)
-    assert line.kind == "other"
+    # No longer stock: the STEP says so (decision 0047), and the coarse bucket
+    # derives from it.
+    assert not cost_steps.is_stock_step(line.plan_key or "")
     assert line.qty == 1
     assert line.unit_price == 100.0
     assert line.lcsc == ""

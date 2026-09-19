@@ -25,7 +25,9 @@ router = APIRouter(prefix="/api", tags=["run-costs"])
 # ------------------------------------------------------------------ schemas
 
 class LineIn(BaseModel):
-    kind: str = "part"
+    # `kind` is GONE (decision 0047): it was a second field saying what a
+    # position is, typed beside `plan_key` and free to disagree with it. The
+    # coarse bucket is derived from the step by `cost_steps.kind_of`.
     basis: str = "per_run"
     label: str = ""
     qty: float = 1.0
@@ -40,6 +42,9 @@ class LineIn(BaseModel):
     plan_kind: str = ""
     plan_ref: str = ""
     notes: str = ""
+    # Why this position is charged to nobody. Stored since the `excluded` bucket
+    # got a reason, writable from nowhere until decision 0045.
+    exclude_reason: str = ""
     run_id: int | None = None
     project_id: int | None = None
     position: int = 0
@@ -55,7 +60,6 @@ class ChildIn(BaseModel):
     """
 
     label: str = ""
-    kind: str | None = None
     basis: str | None = None
     qty: float = 1.0
     unit_price: float = 0.0
@@ -98,6 +102,7 @@ class DocumentIn(BaseModel):
     tax_amount: float | None = None
     notes: str = ""
     attachment_id: int | None = None
+    corrects_document_id: int | None = None
     created_by: str = ""
     lines: list[LineIn] = []
 
@@ -122,8 +127,29 @@ class DocumentPatch(BaseModel):
     attachment_id: int | None = None
 
 
+class CorrectionIn(BaseModel):
+    """What to change about the correction the platform is about to write.
+
+    Every field is optional: with an empty body the endpoint produces an empty
+    correction dated today, pointed at the original, ready for its positions.
+    """
+
+    doc_date: str = ""          # default: today. A correction is posted WHEN IT IS MADE.
+    doc_number: str = ""        # default: "<original>-C<n>"
+    notes: str = ""             # appended to the generated provenance line
+    total_amount: float | None = None
+    #: Resolve FX at the CORRECTION's date instead of inheriting the original's
+    #: pinned rate. Off by default, and the default is the important one: a
+    #: correction to a EUR invoice is the same purchase transcribed better, so it
+    #: has to convert at the rate that invoice was pinned at — otherwise
+    #: "1651 EUR was really 1551 EUR" nets to a USD figure that is neither.
+    #: Turn it on for money that is genuinely NEW, like a freight bill that
+    #: arrived later at its own rate.
+    own_fx: bool = False
+    lines: list[LineIn] = []
+
+
 class LinePatch(BaseModel):
-    kind: str | None = None
     basis: str | None = None
     label: str | None = None
     qty: float | None = None
@@ -138,6 +164,7 @@ class LinePatch(BaseModel):
     plan_kind: str | None = None
     plan_ref: str | None = None
     notes: str | None = None
+    exclude_reason: str | None = None
     run_id: int | None = None
     project_id: int | None = None
 
@@ -189,11 +216,12 @@ class AdjustmentIn(BaseModel):
     actor: str = ""
 
 
-KINDS = {"part", "fab", "assembly", "tooling", "freight", "duty", "tax",
-         "rework", "packaging", "service", "other"}
 BASES = {"per_device", "per_run"}
 # "excluded" = recorded so the document reconciles, charged to nobody on purpose.
-ALLOCATES = {"none", "by_value", "by_qty", "excluded"}
+# "pooled" = stock, stated outright (decision 0045); "excluded" = recorded and
+# charged to nobody on purpose; "none" = nothing has been said, which on a line
+# naming no run and no project is a DEFECT the register reports as `unassigned`.
+ALLOCATES = {"none", "pooled", "by_value", "by_qty", "excluded"}
 def _guard_purchase_loss(db: Session, losses: list[dict], what: str) -> None:
     """Refuse a change that would leave draws with no purchase behind them.
 
@@ -217,6 +245,31 @@ def _guard_purchase_loss(db: Session, losses: list[dict], what: str) -> None:
                      f"record a stock adjustment for the difference.",
             "shortages": short,
         })
+
+
+def _guard_closed(db: Session, doc: M.RunCostDocument, what: str) -> None:
+    """Refuse an in-place edit to a document that charges a CLOSED batch.
+
+    Decision 0044. A batch's direct costs are recomputed from these lines on
+    every read, so editing one moves a per-device cost that has already been
+    carried onto an order. Closing the batch makes the change an EVENT instead:
+    a correction document, dated when the correction was made.
+
+    The refusal names the batches and the way forward, because `detail.error` is
+    the whole message the browser shows (web/CLAUDE.md).
+    """
+    locked = run_actuals.closed_lock(db, doc)
+    if not locked:
+        return
+    named = ", ".join(f"{r['label']} (closed {(r['closed_at'] or '')[:10]})" for r in locked)
+    raise HTTPException(409, {
+        "error": f"{what} is refused: this document charges a batch whose books are "
+                 f"closed — {named}. Editing it would move a per-device cost that has "
+                 f"already been carried onto orders. Write a CORRECTION document "
+                 f"instead, or reopen the batch if it was closed by mistake.",
+        "locked": locked,
+        "document_id": doc.id,
+    })
 
 
 REASONS = {"attrition", "scrap", "miscount", "opening_balance", "correction",
@@ -409,13 +462,39 @@ def _doc(db: Session, doc_id: int) -> M.RunCostDocument:
 
 
 def _check_line(body: LineIn | LinePatch | ChildIn) -> None:
-    if body.kind is not None and body.kind not in KINDS:
-        raise HTTPException(422, f"kind must be one of {sorted(KINDS)}")
+    step = getattr(body, "plan_key", None)
+    # A step that is not in the catalog cannot say what the position IS, and the
+    # bucket derived from it would silently be "other". `c<id>` is the older
+    # direct link to one cost item and stays valid. "" means undecided, which is
+    # a legal state and shows red (decision 0045).
+    if step and ":" in step and step not in cost_steps.STEPS:
+        raise HTTPException(422, f"unknown production step {step!r}")
     if body.basis is not None and body.basis not in BASES:
         raise HTTPException(422, f"basis must be one of {sorted(BASES)}")
     allocate = getattr(body, "allocate", None)
     if allocate is not None and allocate not in ALLOCATES:
         raise HTTPException(422, f"allocate must be one of {sorted(ALLOCATES)}")
+
+
+def _check_allocate(step: str | None, allocate: str | None) -> None:
+    """Only a position on a STOCK step can BE stock (decisions 0045, 0047).
+
+    `pooled` says "this position enters the shared pool". `_pool_events` only
+    ever treats a `part` line as a purchase, so a `pooled` line of any other kind
+    would be counted in the register's `pool` bucket and never appear in
+    `pool.purchased_usd` — two pool figures, quietly disagreeing. Anything else
+    that belongs on the stock is landed cost and rides on the parts:
+    `by_value` / `by_qty`.
+    """
+    if allocate == run_actuals.POOLED and step is not None \
+            and not cost_steps.is_stock_step(step):
+        raise HTTPException(422, {
+            "error": f"a position on step {step!r} cannot BE stock — only "
+                     f"{sorted(cost_steps.PART_STEPS)} can. To put its money onto "
+                     f"the stock, spread it over this document's parts with "
+                     f"allocate 'by_value' or 'by_qty'.",
+            "step": step, "allocate": allocate,
+        })
 
 
 def _check_destination(db: Session, run_id: int | None, project_id: int | None) -> None:
@@ -575,6 +654,7 @@ def _create_document(project_id: int | None, body: DocumentIn, db: Session):
             raise HTTPException(422, "run belongs to a different project")
     for li in body.lines:
         _check_line(li)
+        _check_allocate(li.plan_key, li.allocate)
     data = body.model_dump(exclude={"lines", "project_id"})
     doc = M.RunCostDocument(project_id=project_id, **data)
     # FX comes from NBP table A at the INVOICE DATE (user decision 2026-07-27).
@@ -611,6 +691,61 @@ def _create_document(project_id: int | None, body: DocumentIn, db: Session):
     return out
 
 
+@router.post("/run-documents/{doc_id}/correction")
+def create_correction(doc_id: int, body: CorrectionIn | None = None,
+                      db: Session = Depends(get_db)):
+    """Write a CORRECTION of this document — the only way to change what a closed
+    batch cost (decision 0044).
+
+    The original is never touched. It keeps the figures it was printed with,
+    exactly as a split parent keeps its printed amount, and the correction stands
+    beside it carrying what actually changed. A credit is a negative line.
+
+    The correction is an ordinary document in every other respect: it
+    reconciles, it assigns, it feeds the pool or a run. Nothing in any money path
+    special-cases it, which is the point — a correction has to be as auditable
+    as the thing it corrects, and a parallel mechanism would be neither.
+
+    Two things are inherited rather than re-derived:
+
+    * **The supplier, currency, project and batch**, because it is the same
+      purchase. Only the numbers are in question.
+    * **The pinned FX rate** (unless `own_fx`). See `CorrectionIn.own_fx`.
+    """
+    src = _doc(db, doc_id)
+    body = body or CorrectionIn()
+    # A correction of a correction is legal and sometimes necessary, but it
+    # points at the document it corrects, never at the root — the chain is the
+    # history.
+    seq = db.query(M.RunCostDocument).filter(
+        M.RunCostDocument.corrects_document_id == src.id).count() + 1
+    number = body.doc_number.strip() or f"{src.doc_number or f'doc {src.id}'}-C{seq}"
+    provenance = (f"Correction of {src.supplier} {src.doc_number or f'#{src.id}'}"
+                  f"{' dated ' + src.doc_date if src.doc_date else ''} (document {src.id}). "
+                  f"The original is unchanged and keeps its printed figures.")
+    payload = DocumentIn(
+        run_id=src.run_id,
+        doc_type="correction",
+        supplier=src.supplier,
+        doc_number=number,
+        # NOT the supplier's order id: that is an idempotency key for imports and
+        # two documents carrying it would make a re-import ambiguous.
+        external_id="",
+        doc_date=body.doc_date.strip() or utcnow().date().isoformat(),
+        currency=src.currency,
+        fx_rate_usd=None if body.own_fx else src.fx_rate_usd,
+        total_amount=body.total_amount,
+        notes=(provenance + ("\n" + body.notes if body.notes.strip() else "")),
+        corrects_document_id=src.id,
+        lines=body.lines,
+    )
+    out = _create_document(src.project_id, payload, db)
+    audit(db, "run.document.correction", "run_cost_document", out["id"],
+          {"corrects": src.id, "doc_number": number, "lines": len(body.lines)})
+    db.commit()
+    return out
+
+
 @router.post("/run-documents/{doc_id}/resolve-parts")
 def resolve_parts(doc_id: int, db: Session = Depends(get_db)):
     """Match this document's part lines to library components by MPN.
@@ -637,6 +772,7 @@ def resolve_parts_all(db: Session = Depends(get_db)):
 @router.patch("/run-documents/{doc_id}")
 def update_document(doc_id: int, body: DocumentPatch, db: Session = Depends(get_db)):
     doc = _doc(db, doc_id)
+    _guard_closed(db, doc, "changing this document")
     before, after = {}, {}
     for field, value in body.model_dump(exclude_unset=True).items():
         old = getattr(doc, field)
@@ -654,6 +790,7 @@ def delete_document(doc_id: int, force: bool = False, db: Session = Depends(get_
     """Refuses while the document still has live lines unless ?force=true — a
     financial record should not vanish by accident."""
     doc = _doc(db, doc_id)
+    _guard_closed(db, doc, "deleting this document")
     live = [li for li in doc.lines if li.voided_at is None]
     if live and not force:
         raise HTTPException(409, f"document has {len(live)} live lines; pass force=true to delete")
@@ -676,7 +813,9 @@ def delete_document(doc_id: int, force: bool = False, db: Session = Depends(get_
 @router.post("/run-documents/{doc_id}/lines")
 def add_line(doc_id: int, body: LineIn, db: Session = Depends(get_db)):
     doc = _doc(db, doc_id)
+    _guard_closed(db, doc, "adding a position to this document")
     _check_line(body)
+    _check_allocate(body.plan_key, body.allocate)
     pos = body.position or (max([li.position for li in doc.lines], default=-1) + 1)
     d = body.model_dump()
     d["position"] = pos
@@ -684,7 +823,7 @@ def add_line(doc_id: int, body: LineIn, db: Session = Depends(get_db)):
     db.add(li)
     db.flush()
     audit(db, "run.cost_line.add", "run_cost_line", li.id, {
-        "document_id": doc.id, "kind": li.kind, "label": li.label,
+        "document_id": doc.id, "step": li.plan_key, "label": li.label,
         "qty": li.qty, "unit_price": li.unit_price,
     })
     db.commit()
@@ -700,6 +839,7 @@ def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
     document exactly as it was.
     """
     doc = _doc(db, doc_id)
+    _guard_closed(db, doc, "editing this document")
     by_id = {li.id: li for li in doc.lines if li.voided_at is None}
 
     touched = {e.id for e in body.updates} | set(body.deletes)
@@ -709,8 +849,13 @@ def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
 
     for e in body.updates:
         _check_line(e)
+        # The effective values: a patch may change either half, or neither.
+        f = e.model_dump(exclude_unset=True)
+        _check_allocate(f.get("plan_key", by_id[e.id].plan_key),
+                        f.get("allocate", by_id[e.id].allocate))
     for c in body.creates:
         _check_line(c)
+        _check_allocate(c.plan_key, c.allocate)
 
     # One netted guard for the batch. A deleted line, or one that leaves the
     # pool, contributes its whole quantity as a loss; a re-key moves stock from
@@ -845,11 +990,12 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
         raise HTTPException(422, "no children given")
     if _depth(db, parent) + 1 > MAX_SPLIT_DEPTH:
         raise HTTPException(422, f"split depth would exceed {MAX_SPLIT_DEPTH}")
-    if parent.kind == run_actuals.PART_KIND and not body.allow_parts:
+    if run_actuals.is_stock(parent) and not body.allow_parts:
         raise HTTPException(422, "part lines feed the component pool, which already splits them by "
                                  "consumption — splitting one per run double counts. Pass "
                                  "allow_parts=true only for parts bought for one specific batch.")
     doc = _doc(db, parent.document_id)
+    _guard_closed(db, doc, "splitting this position")
     existing = [c for c in db.query(M.RunCostLine)
                 .filter(M.RunCostLine.parent_line_id == parent.id,
                         M.RunCostLine.voided_at.is_(None)).all()]
@@ -864,6 +1010,7 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
     pos = max([li.position for li in doc.lines], default=-1)
     for child in body.children:
         _check_line(child)
+        _check_allocate(child.plan_key or parent.plan_key, child.allocate)
         _check_destination(db, child.run_id, child.project_id)
         qty, unit = child.qty, child.unit_price
         if child.amount is not None:
@@ -871,7 +1018,7 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
         pos += 1
         made.append(M.RunCostLine(
             document_id=doc.id, parent_line_id=parent.id, position=pos,
-            kind=child.kind or parent.kind, basis=child.basis or parent.basis,
+            basis=child.basis or parent.basis,
             label=child.label or parent.label, qty=qty, unit_price=unit,
             currency=parent.currency,  # one currency per family, so residual is exact
             allocate=child.allocate or "none",
@@ -886,9 +1033,9 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
     # being a purchase, the children become the purchases. Whatever the children
     # do not carry back into the pool — a share charged to a run, an `excluded`
     # share, or simply a smaller quantity — is stock the pool loses.
-    if parent.kind == run_actuals.PART_KIND and run_actuals.pooled_part_lines(db, [parent]):
+    if run_actuals.is_stock(parent) and run_actuals.pooled_part_lines(db, [parent]):
         back = sum(c.qty or 0.0 for c in existing + made
-                   if c.kind == run_actuals.PART_KIND and c.run_id is None
+                   if run_actuals.is_stock(c) and c.run_id is None
                    and (c.allocate or "none") != run_actuals.EXCLUDED
                    and c.component_id == parent.component_id
                    and (c.mpn or "") == (parent.mpn or ""))
@@ -927,8 +1074,10 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
 @router.patch("/run-cost-lines/{line_id}")
 def update_line(line_id: int, body: LinePatch, db: Session = Depends(get_db)):
     li = _line(db, line_id)
+    _guard_closed(db, _doc(db, li.document_id), "editing this position")
     _check_line(body)
     fields = body.model_dump(exclude_unset=True)
+    _check_allocate(fields.get("plan_key", li.plan_key), fields.get("allocate", li.allocate))
     # A smaller quantity, or a different pool identity, takes stock away from
     # the key this line was feeding. Charging it to a run does too: a part line
     # with a `run_id` leaves the pool entirely.
@@ -967,6 +1116,7 @@ def void_line(line_id: int, db: Session = Depends(get_db)):
     for shares of a position that no longer exists.
     """
     li = _line(db, line_id)
+    _guard_closed(db, _doc(db, li.document_id), "voiding this position")
     kids = [c for c in _descendants(db, li.id) if c.voided_at is None]
     hdrs = run_actuals.header_ids(db)
     _guard_purchase_loss(db, [
@@ -977,7 +1127,7 @@ def void_line(line_id: int, db: Session = Depends(get_db)):
     for row in [li, *kids]:
         row.voided_at = now
     audit(db, "run.cost_line.void", "run_cost_line", li.id,
-          {"kind": li.kind, "label": li.label, "qty": li.qty, "unit_price": li.unit_price,
+          {"step": li.plan_key, "label": li.label, "qty": li.qty, "unit_price": li.unit_price,
            "children_voided": [c.id for c in kids]})
     db.commit()
     return {"voided": line_id, "children_voided": [c.id for c in kids]}
@@ -1352,6 +1502,17 @@ def add_adjustment(project_id: int, body: AdjustmentIn, db: Session = Depends(ge
     if body.charge_run_id is not None:
         _run(db, body.charge_run_id)
     a = M.ComponentStockAdjustment(project_id=project_id, **body.model_dump())
+    # PIN the unit cost when the loss is charged to a batch (decision 0044).
+    # NULL means "price it from the pool", and `run_actuals` resolved that
+    # against the average as it stands ON EVERY READ — so a write-off kept being
+    # re-priced by purchases made after it, and a 2024 attrition row was carrying
+    # a 2026 average. The average AT THE ADJUSTMENT'S OWN DATE is what it should
+    # always have been, and pinning it is what makes it stay.
+    if a.unit_cost_usd is None and a.charge_run_id is not None:
+        entry = run_actuals.resolve_pool_identity(
+            db, a.component_id, a.mpn or "", a.lcsc or "",
+            as_of=a.adjusted_at or None)
+        a.unit_cost_usd = float((entry or {}).get("avg_usd") or 0.0)
     db.add(a)
     db.flush()
     audit(db, "run.stock_adjustment.add", "component_stock_adjustment", a.id, {

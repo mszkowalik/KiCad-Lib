@@ -49,7 +49,7 @@ from datetime import date, datetime
 from sqlalchemy.orm import Session
 
 from .. import models as M
-from . import cost_steps, jlc_invoice
+from . import cost_steps, jlc_invoice, run_actuals
 
 log = logging.getLogger(__name__)
 
@@ -266,27 +266,6 @@ JLC_PCB_FEE_STEPS: dict[str, tuple[str, str]] = {
     "charFontColor":        ("Silkscreen / character option", "fab:other"),
     "noCodeMoney":          ("Remove order number", "fab:other"),
 }
-
-
-def _child_kind(step: str, run_id: int | None = None) -> str:
-    """A fee child's coarse rollup kind, from the step catalog.
-
-    `part` needs one guard. A `part` leaf with NO run claims the POOL
-    (`line_destination`), and JLC's `materialMoney` components never enter the
-    consigned stock — they were JLC's own supply, soldered to the boards, so
-    booking them as pool stock would invent inventory.
-
-    That hazard is the missing RUN, not the kind: a `part` line WITH a run is
-    charged to it directly and stays out of the pool. So a JLC-sourced line that
-    names its batch is `part`, which is what it is, and only the run-less case
-    falls back to `assembly`. Calling every one of them `assembly` made the
-    Materials columns read as labour and left the component link on the wrong
-    row (user report 2026-09-19).
-    """
-    kind = cost_steps.STEPS.get(step, ("", "other"))[1]
-    if kind == "part" and run_id is None:
-        return "assembly"
-    return kind
 
 
 def order_fee_components(entry: dict) -> list[dict]:
@@ -525,7 +504,6 @@ def plan_manufacturing_document(inv: dict, decisions: dict[str, dict] | None = N
             # the chargeable slice, each carrying its step key.
             for c in fee_kids:
                 parent["children"].append({
-                    "kind": _child_kind(c["step"], run_id if stage == "pcba" else None),
                     "plan_key": c["step"],
                     "allocate": "none",
                     "run_id": run_id if stage == "pcba" else None,
@@ -1061,7 +1039,7 @@ def lots_by_key(db: Session) -> dict[str, dict]:
     """
     rows = (db.query(M.RunCostLine)
             .filter(M.RunCostLine.lot_ref != "",
-                    M.RunCostLine.kind == "part",
+                    run_actuals.IS_STOCK,
                     M.RunCostLine.voided_at.is_(None))
             .order_by(M.RunCostLine.id).all())
     return {li.lot_ref: {"unit_cost_usd": li.unit_price, "line_id": li.id,

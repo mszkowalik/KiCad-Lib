@@ -53,9 +53,9 @@ def world(db: Session):
                             total_amount=200.0)
     db.add(doc)
     db.flush()
-    early = M.RunCostLine(document_id=doc.id, kind="part", mpn="GUARD-PART-1",
+    early = M.RunCostLine(document_id=doc.id, plan_key="parts:pool", mpn="GUARD-PART-1",
                           lcsc="CGUARD01", qty=1000, unit_price=0.1, position=0)
-    late = M.RunCostLine(document_id=doc.id, kind="part", mpn="GUARD-PART-1",
+    late = M.RunCostLine(document_id=doc.id, plan_key="parts:pool", mpn="GUARD-PART-1",
                          lcsc="CGUARD01", qty=1000, unit_price=0.1, position=1)
     db.add_all([early, late])
     db.flush()
@@ -93,7 +93,7 @@ def test_a_rekey_is_a_total_loss_to_the_old_key(db: Session, world):
 def test_an_untouched_part_is_never_locked(db: Session, world):
     """The rejected rule would have locked this line too, because its PART has
     consumption. Nothing draws more than is bought, so nothing is stranded."""
-    spare = M.RunCostLine(document_id=world["doc"].id, kind="part", mpn="GUARD-PART-2",
+    spare = M.RunCostLine(document_id=world["doc"].id, plan_key="parts:pool", mpn="GUARD-PART-2",
                           lcsc="CGUARD02", qty=50, unit_price=1.0, position=2)
     db.add(spare)
     db.flush()
@@ -143,9 +143,9 @@ def swap_world(db: Session):
                             total_amount=300.0)
     db.add(doc)
     db.flush()
-    a = M.RunCostLine(document_id=doc.id, kind="part", mpn="SWAP-A", lcsc="CSWAPA",
+    a = M.RunCostLine(document_id=doc.id, plan_key="parts:pool", mpn="SWAP-A", lcsc="CSWAPA",
                       qty=100, unit_price=1.0, position=0)
-    b = M.RunCostLine(document_id=doc.id, kind="part", mpn="SWAP-B", lcsc="CSWAPB",
+    b = M.RunCostLine(document_id=doc.id, plan_key="parts:pool", mpn="SWAP-B", lcsc="CSWAPB",
                       qty=200, unit_price=1.0, position=1)
     db.add_all([a, b])
     db.flush()

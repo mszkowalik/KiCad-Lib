@@ -51,7 +51,7 @@ def world(db: Session):
                             total_amount=100.0)
     db.add(doc)
     db.flush()
-    line = M.RunCostLine(document_id=doc.id, kind="part", description="scratch part",
+    line = M.RunCostLine(document_id=doc.id, plan_key="parts:pool", description="scratch part",
                          lcsc="CTEST001", mpn="TEST-PART-1", qty=1000, unit_price=0.1,
                          currency="USD", allocate="none")
     db.add(line)
@@ -254,7 +254,7 @@ def test_a_per_device_line_is_billed_on_what_was_ordered(db, world):
                             run_id=run.id)
     db.add(doc)
     db.flush()
-    li = M.RunCostLine(document_id=doc.id, kind="assembly", description="5 PLN/board",
+    li = M.RunCostLine(document_id=doc.id, plan_key="pcba:general", description="5 PLN/board",
                        qty=1, unit_price=5.0, currency="PLN", basis="per_device",
                        run_id=run.id, allocate="none")
     db.add(li)

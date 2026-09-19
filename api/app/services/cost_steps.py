@@ -58,10 +58,21 @@ STEPS: dict[str, tuple[str, str]] = {
     "pcba:packaging":     ("Assembler packaging", "packaging"),
     "pcba:other":         ("PCB assembly — other / unexplained remainder", "assembly"),
     "pcba:general":       ("PCB assembly (unsplit)", "assembly"),
+    # A board billed ASSEMBLED, as one price with the bare PCB inside it — what
+    # JLC's populated-board invoices print. Distinct from `pcba:general`, which
+    # is assembly billed as one figure with the PCB charged separately. The two
+    # shared a key until 2026-09-19 and could not, because the kind is derived
+    # from the step now and they are different money (user decision).
+    "pcba:populated":     ("Populated board (fab + assembly, unsplit)", "assembly"),
 
     "final:device":            ("Device assembly", "assembly"),
     "final:enclosure_milling": ("Enclosure modification — milling", "assembly"),
-    "final:enclosure_print":   ("Enclosure modification — printing", "assembly"),
+    # Italtronic bills the per-unit print and its one-off print set-up as
+    # separate positions, so they are separate steps. One key declaring
+    # "assembly" could describe neither: the print is a service bought per
+    # enclosure, the set-up is tooling paid once.
+    "final:enclosure_print":   ("Enclosure modification — printing", "service"),
+    "final:enclosure_print_setup": ("Enclosure printing — one-off set-up", "tooling"),
     "final:enclosure_mod":     ("Enclosure modification (unspecified)", "assembly"),
     "final:marking":           ("Individual marking (serial)", "assembly"),
     "final:programming":       ("Programming / flashing", "assembly"),
@@ -73,7 +84,38 @@ STEPS: dict[str, tuple[str, str]] = {
     "logistics:inbound":  ("Inbound freight", "freight"),
     "logistics:duty":     ("Import taxes / customs (excluded, reclaimable)", "tax"),
     "other:discount":     ("Supplier discount", "other"),
+    # A line item the supplier cancelled and still printed. It is on the
+    # paperwork, so it is entered; whether anybody pays for it is the separate
+    # question `allocate` answers.
+    "other:cancelled":    ("Cancelled order line", "other"),
+    "other:payment_fee":  ("Payment / transfer fee", "service"),
 }
+
+# Steps whose money is STOCK — the set that used to be spelled
+# `kind == "part"`. It lives here, once, because four modules ask the question
+# and a list copied four times becomes four different lists.
+PART_STEPS = frozenset(k for k, (_label, kind) in STEPS.items() if kind == "part")
+
+
+def kind_of(plan_key: str) -> str:
+    """The coarse money bucket a step belongs to.
+
+    `RunCostLine.kind` was a SECOND field saying what a position is, typed
+    beside the step and free to disagree with it — and it did, on 12 rows
+    (user observation 2026-09-19: *"if theres a field that says kind, then
+    perhaps it could be linked with 'planned as'"*). The step is the finer of
+    the two and the bucket is derivable from it, so the bucket is derived.
+
+    An unknown or empty step buckets as `other`: a position whose step nobody
+    has chosen has not said what it is, and guessing would be the inference this
+    change exists to remove.
+    """
+    return STEPS.get(plan_key, ("", "other"))[1]
+
+
+def is_stock_step(plan_key: str) -> bool:
+    """Does money under this step enter the shared pool? The one test."""
+    return plan_key in PART_STEPS
 
 # How a step naturally scales (user rule 2026-07-28): picking a step pre-sets
 # the planned item's basis; overriding it is a conscious act. `:other` and
@@ -97,6 +139,10 @@ DEFAULT_BASIS: dict[str, str] = {
     "final:packing": "per_device", "final:shipping_prep": "per_run",
     "logistics:inbound": "per_run", "logistics:duty": "per_run",
     "other:discount": "per_run",
+    "pcba:populated": "per_device",
+    "final:enclosure_print_setup": "per_run",
+    "other:cancelled": "per_run",
+    "other:payment_fee": "per_run",
 }
 
 # How suppliers word the steps. Keyed by a lowercase substring of the printed
@@ -107,8 +153,8 @@ VENDOR_ALIASES: dict[str, list[tuple[str, str]]] = {
         ("special components", "pcba:special"),   # before bare 'components'
         ("bare pcb", "fab:pcb"),
         ("pcb fabrication", "fab:pcb"),
-        ("fab + assembly", "pcba:general"),
-        ("populated", "pcba:general"),
+        ("fab + assembly", "pcba:populated"),
+        ("populated", "pcba:populated"),
         ("setup fee", "pcba:setup"),
         ("stencil", "pcba:stencil"),
         ("components", "pcba:parts"),          # after 'extended' below — order matters
@@ -130,7 +176,7 @@ VENDOR_ALIASES: dict[str, list[tuple[str, str]]] = {
     ],
     "italtronic": [
         ("dig print", "final:enclosure_print"),
-        ("tooling", "final:enclosure_print"),
+        ("tooling", "final:enclosure_print_setup"),
     ],
 }
 # 'extended components fee' contains 'components'; give it precedence.

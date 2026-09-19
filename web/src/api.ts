@@ -2594,6 +2594,16 @@ export interface RunInfo {
   order_ref?: string;
   order_date?: string;
   created_at: string;
+  /** THE BOOKS (decision 0044). Set means this batch's cost is settled: every
+   *  supplier document charging it, written before this moment, is read-only,
+   *  and the only way to move the figure is a dated correction document.
+   *  `closed_cost_usd` / `closed_units` are what it cost at that moment, so a
+   *  later correction shows as a variance instead of as the figure it always
+   *  was. */
+  closed_at?: string | null;
+  closed_by?: string;
+  closed_cost_usd?: number | null;
+  closed_units?: number | null;
   attachment_count: number;
   /** Devices this batch MADE (`DeviceUnit.production_run_id`), not the retired
    *  `run_devices` registry. */
@@ -2702,6 +2712,29 @@ export function updateRun(runId: number, body: RunPatchBody): Promise<RunInfo> {
   });
 }
 
+/** Close the books on a batch (decision 0044) — its documents become read-only
+ *  and its cost is snapshotted, so a later correction reads as a variance. */
+export function closeRun(runId: number, body: { actor?: string; reason?: string } = {}):
+  Promise<RunInfo> {
+  return request(`/api/runs/${runId}/close`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** Reopen a closed batch, making its documents editable again. The snapshot
+ *  taken at close is cleared: a batch closed twice has a new "what it cost when
+ *  the books closed", and the audit row keeps both. */
+export function reopenRun(runId: number, body: { actor?: string; reason?: string } = {}):
+  Promise<RunInfo> {
+  return request(`/api/runs/${runId}/reopen`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export function deleteRun(runId: number): Promise<{ deleted: number }> {
   return request(`/api/runs/${runId}`, { method: "DELETE" });
 }
@@ -2739,10 +2772,15 @@ export function deleteRunDevice(deviceId: number): Promise<{ deleted: number }> 
 }
 
 // ------------------------------------------- post-factum production costs
-// Supplier documents entered AFTER a run. `kind:"part"` lines with no run feed
-// the component cost pool; runs draw from it (consumption) at a moving average.
-// Attrition is recorded as a stock adjustment, optionally charged to a run.
+// Supplier documents entered AFTER a run. A position on a STOCK step
+// (`parts:pool`, `parts:prepaid`, `parts:attrition`, `pcba:parts`) with no run
+// feeds the component cost pool; runs draw from it (consumption) at a moving
+// average. Attrition is recorded as a stock adjustment, optionally charged to a
+// run.
 
+/** The coarse money bucket. DERIVED on the server from the position's step
+ *  (`cost_steps.kind_of`) since decision 0047 — it is not a field any more and
+ *  cannot be sent. Read it to label a row; never write it. */
 export type CostLineKind =
   | "part" | "fab" | "assembly" | "tooling" | "freight"
   | "duty" | "tax" | "rework" | "packaging" | "service" | "other";
@@ -2761,6 +2799,7 @@ export interface RunCostLineRow {
   /** header only: amount not yet allocated to a child */
   residual?: number | null;
   position: number;
+  /** derived from `plan_key` on the server — read-only (decision 0047) */
   kind: CostLineKind;
   basis: "per_device" | "per_run";
   label: string;
@@ -2770,7 +2809,12 @@ export interface RunCostLineRow {
   unit_price: number;
   line_total: number | null;
   currency: string;
+  /** "none" | "pooled" | "by_value" | "by_qty" | "excluded" — the HOW axis for a
+   *  position that goes to stock, and the marker for one charged to nobody
+   *  (decision 0045) */
   allocate: string;
+  /** why a position is charged to nobody, "" otherwise */
+  exclude_reason?: string;
   component_id: number | null;
   /** the linked library part's name, "" when the line is not linked */
   component_name?: string;
@@ -2800,6 +2844,13 @@ export interface DocumentAssignment {
   fully_assigned: boolean;
 }
 
+export interface DocumentLock {
+  run_id: number;
+  label: string;
+  closed_at: string | null;
+  closed_by: string;
+}
+
 export interface RunCostDocumentRow {
   id: number;
   project_id: number | null;
@@ -2819,6 +2870,15 @@ export interface RunCostDocumentRow {
   attachment_id: number | null;
   /** how many originals are filed with this document */
   attachment_count?: number;
+  /** Batches whose books are CLOSED that this document charges (decision 0044).
+   *  Non-empty means every write path refuses it and the way to change what it
+   *  says is a correction document. Computed server-side on every read, so
+   *  reopening a batch simply empties it. */
+  locked?: DocumentLock[];
+  /** this document CORRECTS that one */
+  corrects_document_id?: number | null;
+  /** documents that correct THIS one (full view only) */
+  corrected_by?: { id: number; doc_number: string; doc_date: string }[];
   created_at: string | null;
   line_count: number;
   lines_total: number | null;
@@ -2843,6 +2903,8 @@ export interface InvoiceRegister {
     label: string; project_id: number; run_date: string; qty: number;
     qty_sold: number | null; sale_unit_price: number | null; sale_currency: string;
     customer: string; order_ref: string; order_date: string;
+    /** set = this batch's books are closed (decision 0044) */
+    closed_at: string | null;
   }>;
   summary: {
     document_count: number;
@@ -2921,7 +2983,6 @@ export function getCostSteps(signal?: AbortSignal): Promise<CostStepCatalog> {
  *  converted in the browser before it is sent, so nothing has to be re-derived. */
 export interface SplitChild {
   label?: string;
-  kind?: CostLineKind;
   basis?: "per_device" | "per_run";
   amount?: number;
   qty?: number;
@@ -3040,6 +3101,35 @@ export function editDocumentLines(
 ): Promise<{ updated: number; voided: number; created: number; document: RunCostDocumentRow }> {
   return request(`/api/run-documents/${docId}/lines`, {
     method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** Write a CORRECTION of a document (decision 0044).
+ *
+ *  The only way to change what a CLOSED batch cost. The original is never
+ *  touched — it keeps the figures it was printed with — and the correction
+ *  stands beside it, dated today, carrying what actually changed. A credit is a
+ *  negative line. It is an ordinary document in every other respect.
+ */
+export function createCorrection(
+  docId: number,
+  body: {
+    doc_date?: string;
+    doc_number?: string;
+    notes?: string;
+    total_amount?: number | null;
+    /** resolve FX at the correction's own date instead of inheriting the
+     *  original's pinned rate. Off by default: a correction to a EUR invoice is
+     *  the same purchase transcribed better, so it must convert at the rate that
+     *  invoice was pinned at. */
+    own_fx?: boolean;
+    lines?: Record<string, unknown>[];
+  } = {},
+): Promise<RunCostDocumentRow> {
+  return request(`/api/run-documents/${docId}/correction`, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -3185,6 +3275,10 @@ export function getFxAt(
 
 export interface RunActuals {
   currency: string;
+  /** the actual total in USD. The `total` beside it is in the project's DISPLAY
+   *  currency, which is editable, so only this one can be compared against a
+   *  batch's `closed_cost_usd` (decision 0044). */
+  total_usd?: number | null;
   /** planned-vs-billed per production step (USD); "~<kind>" keys are
    *  unclassified actuals from lines without a step */
   steps?: {

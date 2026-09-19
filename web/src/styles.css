@@ -3923,21 +3923,23 @@ table.kv.settings-table .btn-row {
 .supply-coverage-table th:nth-child(6), .supply-coverage-table td:nth-child(6) { width: 20%; }
 
 .invoice-lines-table { table-layout: fixed; }
-/* EIGHT columns summing to 100% — kind, position, qty, unit, amount, charge to,
-   planned as, split. Position IS the identity: on a part line it holds the
-   component picker, which is why it is the wide one. MPN had its own column
-   until 2026-09-19 and Component until later the same day; both said what
-   Position now says, and the designators a position covers are not read here.
-   COUNT THE COLUMNS before touching these — they have been wrong three times,
-   twice by adding a column and once by removing one. */
-.invoice-lines-table th:nth-child(1), .invoice-lines-table td:nth-child(1) { width: 8%; }
-.invoice-lines-table th:nth-child(2), .invoice-lines-table td:nth-child(2) { width: 29%; }
-.invoice-lines-table th:nth-child(3), .invoice-lines-table td:nth-child(3) { width: 7%; }
-.invoice-lines-table th:nth-child(4), .invoice-lines-table td:nth-child(4) { width: 8%; }
-.invoice-lines-table th:nth-child(5), .invoice-lines-table td:nth-child(5) { width: 11%; }
-.invoice-lines-table th:nth-child(6), .invoice-lines-table td:nth-child(6) { width: 16%; }
-.invoice-lines-table th:nth-child(7), .invoice-lines-table td:nth-child(7) { width: 15%; }
-.data.invoice-lines-table th:nth-child(8), .data.invoice-lines-table td:nth-child(8) { width: 6%; }
+/* `.invoice-lines-table` has NO per-column widths here, on purpose.
+   They are inline on the `<th>` elements in InvoiceLinesTable.tsx, beside the
+   header row they describe.
+   As `nth-child` rules they were wrong FIVE times: adding or removing a column
+   shifts every rule after it, silently, and the last bad cut rendered
+   "own amount" as "own a". A `<colgroup>` was tried and did not win against
+   whatever styles the cells; an inline width on the first row always does under
+   `table-layout: fixed`. Position IS the identity — on a part line it holds the
+   component picker, which is why it is the wide one. */
+
+/* A question the row has not answered. Not an error — the position may simply
+   be new — but it must not read as settled, because the register counts it as
+   money nobody pays for. */
+.needs-answer {
+  border-color: var(--err) !important;
+  background: var(--err-soft);
+}
 
 /* A position staged for voiding: still readable, visibly on its way out. */
 .row-gone td { opacity: 0.45; text-decoration: line-through; }
@@ -3952,14 +3954,17 @@ table.kv.settings-table .btn-row {
 .data.invoice-new-lines-table th:nth-child(7), .data.invoice-new-lines-table td:nth-child(7) { width: 4%; }
 
 .split-rows-table { table-layout: fixed; }
-.split-rows-table th:nth-child(1), .split-rows-table td:nth-child(1) { width: 20%; }
-.split-rows-table th:nth-child(2), .split-rows-table td:nth-child(2) { width: 11%; }
-.split-rows-table th:nth-child(3), .split-rows-table td:nth-child(3) { width: 7%; }
-.split-rows-table th:nth-child(4), .split-rows-table td:nth-child(4) { width: 14%; }
-.split-rows-table th:nth-child(5), .split-rows-table td:nth-child(5) { width: 11%; }
-.split-rows-table th:nth-child(6), .split-rows-table td:nth-child(6) { width: 19%; }
-.split-rows-table th:nth-child(7), .split-rows-table td:nth-child(7) { width: 14%; }
-.data.split-rows-table th:nth-child(8), .data.split-rows-table td:nth-child(8) { width: 4%; }
+/* SEVEN since decision 0047 dropped the Kind cell — Label/Part, Amount, %,
+   What it is, Goes to, Note, delete. COUNT THEM before editing.
+   22 + 12 + 8 + 22 + 18 + 14 + 4 = 100. The qty/unit variant swaps its two
+   money columns for the same total. */
+.split-rows-table th:nth-child(1), .split-rows-table td:nth-child(1) { width: 22%; }
+.split-rows-table th:nth-child(2), .split-rows-table td:nth-child(2) { width: 12%; }
+.split-rows-table th:nth-child(3), .split-rows-table td:nth-child(3) { width: 8%; }
+.split-rows-table th:nth-child(4), .split-rows-table td:nth-child(4) { width: 22%; }
+.split-rows-table th:nth-child(5), .split-rows-table td:nth-child(5) { width: 18%; }
+.split-rows-table th:nth-child(6), .split-rows-table td:nth-child(6) { width: 14%; }
+.data.split-rows-table th:nth-child(7), .data.split-rows-table td:nth-child(7) { width: 4%; }
 
 /* the split editor needs room for six columns — the default modal is 440px */
 .modal-card-wide { width: min(1000px, 100%); }

@@ -30,6 +30,10 @@ export const DOC_TYPES = [
   ["proforma", "proforma (not money)"],
   ["receipt", "receipt"],
   ["credit_note", "credit note"],
+  // Decision 0044. Written by the `Create correction` button on a document,
+  // which also fills in what it corrects — but it is a type like any other, so a
+  // correction that arrived as its own printed document can be typed in directly.
+  ["correction", "correction (of another document)"],
 ] as const;
 
 export default function InvoiceFields({

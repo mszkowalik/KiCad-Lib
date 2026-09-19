@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..models import utcnow
 from ..routers.util import audit
-from . import jlc_import, jlc_invoice, lots, run_actuals
+from . import cost_steps, jlc_import, jlc_invoice, lots, run_actuals
 
 log = logging.getLogger(__name__)
 
@@ -205,7 +205,6 @@ def apply_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
             document_id=doc.id,
             run_id=None,
             position=pos,
-            kind=li["kind"],
             basis="per_run",
             label=li["label"][:300],
             qty=li["qty"],
@@ -294,7 +293,11 @@ def refresh_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
             continue
         row = rows[0]
         diff = {k: (getattr(row, k), v) for k, v in (
-            ("kind", li["kind"]), ("label", li["label"][:300]), ("qty", float(li["qty"])),
+            # `kind` is gone (decision 0047): the planner's own `step` is what
+            # the row stores, and comparing it compares the same fact the coarse
+            # bucket used to be derived from.
+            ("plan_key", li.get("step") or ""),
+            ("label", li["label"][:300]), ("qty", float(li["qty"])),
             ("unit_price", float(li["unit_price"] or 0.0)), ("lcsc", li["lcsc"]),
             ("mpn", li["mpn"][:200]), ("notes", _keep_annotations(row.notes, li["notes"])),
         ) if _differs(getattr(row, k), v)}
@@ -424,7 +427,6 @@ def apply_manufacturing_document(db: Session, plan: dict, actor: str = "jlc-impo
             document_id=doc.id,
             run_id=li.get("run_id"),
             position=pos,
-            kind=li["kind"],
             basis="per_run",
             label=li["label"][:300],
             qty=li["qty"],
@@ -452,7 +454,6 @@ def apply_manufacturing_document(db: Session, plan: dict, actor: str = "jlc-impo
                 parent_line_id=parent.id,
                 run_id=ch.get("run_id"),
                 position=pos,
-                kind=ch["kind"],
                 basis="per_run",
                 label=ch["label"][:300],
                 qty=ch["qty"],
@@ -542,7 +543,7 @@ def reprice_from_jlc(db: Session, lots_by_key: dict[str, dict],
 
     for line in (
         db.query(M.RunCostLine)
-        .filter(M.RunCostLine.kind == "part", M.RunCostLine.voided_at.is_(None))
+        .filter(run_actuals.IS_STOCK, M.RunCostLine.voided_at.is_(None))
         .all()
     ):
         doc = docs.get(line.document_id)
@@ -617,7 +618,6 @@ def reprice_from_jlc(db: Session, lots_by_key: dict[str, dict],
             db.add(M.RunCostLine(
                 document_id=doc.id, run_id=None,
                 position=9000 + len(added),
-                kind="other" if fee_only else "part",
                 basis="per_run",
                 label=(f"Cancelled: {lot['mpn'] or lot['lcsc']}" if fee_only
                        else (lot["mpn"] or lot["lcsc"])[:300]),
@@ -844,7 +844,10 @@ def backfill_fee_split(db: Session, row: M.JlcImport, actor: str = "jlc-import",
         for li in lines:
             if li.parent_line_id or li.id in header_ids_local or li.id in used_targets:
                 continue
-            if li.allocate == "excluded" or li.kind not in ("assembly", "fab", "tooling", "other"):
+            # Manufacturing money, not stock and not something already excluded.
+            # The bucket is derived from the step now (decision 0047).
+            if li.allocate == "excluded" or cost_steps.kind_of(li.plan_key or "") not in (
+                    "assembly", "fab", "tooling", "other"):
                 continue
             amt = round((li.qty or 0) * (li.unit_price or 0), 2)
             if any(abs(amt - e) <= 0.02 for e in expected):
@@ -926,7 +929,6 @@ def backfill_fee_split(db: Session, row: M.JlcImport, actor: str = "jlc-import",
                 run_id=target.run_id,
                 project_id=target.project_id,
                 position=pos,
-                kind=jlc_import._child_kind(c["step"]),
                 basis="per_run",
                 label=f"{c['label']} - {key}"[:300],
                 qty=1, unit_price=c["amount"],
@@ -984,7 +986,7 @@ def lot_line_index(db: Session) -> dict[str, int]:
     """
     rows = (db.query(M.RunCostLine)
             .filter(M.RunCostLine.lot_ref != "",
-                    M.RunCostLine.kind == "part",
+                    run_actuals.IS_STOCK,
                     M.RunCostLine.voided_at.is_(None))
             .order_by(M.RunCostLine.id).all())
     return {li.lot_ref: li.id for li in rows}

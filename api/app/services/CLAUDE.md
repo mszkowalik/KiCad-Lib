@@ -208,12 +208,97 @@ draws depend on — and delegates to it, because removing X units dated D moves
 the balance exactly as adding a draw of X on D does. Never write a second
 timeline replay; the two would drift.
 
-`routers/run_costs.py` calls it through `_guard_purchase_loss` at four places:
-deleting a document, patching a line, voiding one, splitting one. `force=true`
-waives "this document still has live lines", never this. The rule is **"would
-this strand a draw"**, not "has this part been consumed" — the blunt version was
-measured at 260 of 264 pooled part lines locked. Reasoning in
+`routers/run_costs.py` calls it through `_guard_purchase_loss` at five places:
+deleting a document, patching a line, voiding one, splitting one, and the batch
+line edit. `force=true` waives "this document still has live lines", never this.
+The rule is **"would this strand a draw"**, not "has this part been consumed" —
+the blunt version was measured at 260 of 264 pooled part lines locked. Reasoning
+in
 [0040](../../../docs/decisions/0040-a-purchase-cannot-be-removed-from-under-its-draws.md).
+
+## A position SAYS where its money goes — `kind` no longer decides it
+
+`allocate="none"` on a line naming no run and no project meant two different
+things: **the shared pool** when `kind` happened to be `part`, and
+**`unassigned`** — money nobody pays for, a defect — otherwise. One stored value,
+two outcomes, decided by a field the operator was never asked about.
+
+`allocate` now also takes **`pooled`**: "this position IS stock, and somebody
+said so". It behaves exactly like `none` in every money path — that is the whole
+point, so it needed no new filter anywhere — and its only job is to be the
+difference between the two states. `none` on a line naming nothing stays a
+defect and is still reported.
+
+Three rules for anyone touching this:
+
+- **`line_destination` is the ONE place the order lives**, and the UI mirrors it
+  (`InvoiceLinesTable.goesToOf`). The order matters: `excluded` beats a named
+  run, a named run beats `pooled`, and `pooled` beats the DOCUMENT's own
+  destination. Drift between the two shows the operator a destination the money
+  does not go to.
+- **An editor writes all four of `run_id`, `project_id`, `allocate` and `basis`,
+  never a subset.** The old one only ever ADDED `allocate: "excluded"`, so moving
+  an excluded position onto a batch left it charged to nobody while the screen
+  showed the batch.
+- **A proforma position is not special.** `line_destination` does not look at
+  `doc_type` — a proforma part line reports `pool` like any other, and what makes
+  a proforma different is that `_pool_events` skips the whole document.
+
+`basis`, `allocate` and `exclude_reason` are all settable from the browser since
+this change; before it they were hard-coded, write-only and unreadable
+respectively. Reasoning in
+[0045](../../../docs/decisions/0045-a-position-says-where-its-money-goes.md).
+
+## The STEP says what a position is — there is no `kind`
+
+`run_cost_lines.kind` was a coarse second field beside `plan_key`, saying the
+same thing at lower resolution and free to disagree with it. It did, on 12 rows.
+It is **dropped** (decision 0047). Three rules:
+
+- **`cost_steps.kind_of(plan_key)`** gives the coarse bucket. `line_json` still
+  emits `kind` and `by_kind` still reports — both computed, neither stored.
+- **"Is this stock?" is `cost_steps.PART_STEPS`**, reached as
+  `run_actuals.IS_STOCK` (a SQL expression) or `run_actuals.is_stock(li)` (a
+  row). Six modules ask; there is one definition. Never inline the list.
+- **A step that means two things must become two steps.** Every one of those 12
+  disagreements was a key standing in for two different real things —
+  `pcba:general` also carrying JLC's populated-board price, and
+  `final:enclosure_print` carrying both the per-unit print and its one-off
+  set-up. Adding a step is the fix; re-typing a bucket is not available any more.
+
+The backfill that gave every leaf a step is SQL in `main.py`'s phase-1 list,
+immediately before the `DROP COLUMN`, because those statements read `kind` and
+the order is what keeps the fill from being separated from the drop.
+
+## A closed batch's documents are read-only, and a correction is a DOCUMENT
+
+A batch's DIRECT costs (`fab`, `assembly`, `freight`, `tooling`, …) are
+recomputed from their invoice lines on every read — `qty x unit_price x fx`,
+nothing snapshotted — so editing an old invoice moves that batch's per-device
+cost and every order that shipped one of its units. Components were never
+exposed to this, because a draw snapshots `unit_cost_usd` at draw time.
+
+`run_actuals.closed_lock(db, doc)` is the one place the rule lives, and
+`routers/run_costs.py` calls it through `_guard_closed` on all seven write
+paths. Three things about it are load-bearing:
+
+- **It covers direct costs only.** A pooled `part` line cannot move a closed
+  batch, so locking pool invoices would block stock corrections for nothing.
+- **A document created AFTER the close is not locked.** That is what makes the
+  correction path work with no special case: a document written after the books
+  closed IS the correction. It compares `created_at` against `closed_at`, both
+  server clocks — never `doc_date`, which is what the supplier printed.
+- **A correction is an ordinary document** with `doc_type="correction"` and
+  `corrects_document_id` set. Nothing in any money path special-cases it. It
+  inherits the original's pinned FX rate, so a correction in EUR nets against
+  the original exactly rather than at today's rate.
+
+`production_runs.py` guards `qty`, `qty_good` and `snapshot_id` on a closed
+batch too — a `per_device` line is charged on them through `effective_qty`.
+**Charged attrition pins `unit_cost_usd` at write time**, from the average at
+the adjustment's own date; NULL means "resolve on every read", which had a 2024
+write-off priced at a 2026 average. Reasoning in
+[0044](../../../docs/decisions/0044-a-correction-is-an-event-not-an-edit-to-the-past.md).
 
 ## Parts the SUPPLIER supplied are itemised, and never pooled
 

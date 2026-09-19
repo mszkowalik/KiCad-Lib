@@ -227,12 +227,12 @@ def test_a_run_charged_part_is_not_a_purchase_against_jlcs_warehouse(db: Session
                             doc_date="2026-02-01", currency="USD", total_amount=30.0)
     db.add(doc)
     db.flush()
-    pooled = M.RunCostLine(document_id=doc.id, kind="part", lcsc="CPOOLED",
+    pooled = M.RunCostLine(document_id=doc.id, plan_key="parts:pool", lcsc="CPOOLED",
                            mpn="POOLED-1", qty=10, unit_price=1.0, position=0)
-    supplied = M.RunCostLine(document_id=doc.id, kind="part", lcsc="CSUPPLIED",
+    supplied = M.RunCostLine(document_id=doc.id, plan_key="parts:pool", lcsc="CSUPPLIED",
                              mpn="SUPPLIED-1", qty=3300, unit_price=0.001,
                              run_id=run.id, position=1)
-    carved = M.RunCostLine(document_id=doc.id, kind="part", lcsc="CEXCLUDED",
+    carved = M.RunCostLine(document_id=doc.id, plan_key="parts:pool", lcsc="CEXCLUDED",
                            mpn="EXCLUDED-1", qty=500, unit_price=0.001,
                            allocate="excluded", position=2)
     db.add_all([pooled, supplied, carved])
@@ -268,7 +268,7 @@ def hand_entered(db: Session):
                             total_amount=50.0)
     db.add(doc)
     db.flush()
-    db.add(M.RunCostLine(document_id=doc.id, kind="part", lcsc="CHAND", mpn="HAND-1",
+    db.add(M.RunCostLine(document_id=doc.id, plan_key="parts:pool", lcsc="CHAND", mpn="HAND-1",
                          qty=500, unit_price=0.1, run_id=run.id, position=0))
     db.flush()
     return {"run": run}

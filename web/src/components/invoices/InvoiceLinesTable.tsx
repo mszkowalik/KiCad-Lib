@@ -25,26 +25,54 @@ import {
   getSupplierBreakdown,
   resolveDocumentParts,
   splitCostLine,
-  type CostLineKind,
   type CostStepCatalog,
   type RunCostLineRow,
 } from "../../api";
 import { plain } from "../../format";
-import { ChargeToSelect, StepSelect, type RunOption } from "../costs";
+import { GoesToSelect, HowSelect, StepSelect, type RunOption } from "../costs";
 import ComponentPickDialog from "../ComponentPickDialog";
 import { ErrorBanner } from "../Ui";
 
-export const KINDS: CostLineKind[] = [
-  "part", "fab", "assembly", "tooling", "freight", "duty", "tax",
-  "rework", "packaging", "service", "other",
-];
+/** The production steps whose money is STOCK (decision 0047). Mirrors
+ *  `cost_steps.PART_STEPS`; the catalog is the source, this is the browser's
+ *  copy of the same four keys for the handful of places that cannot wait for it
+ *  to load. */
+export const PART_STEPS = new Set([
+  "parts:pool", "parts:prepaid", "parts:attrition", "pcba:parts",
+]);
+
+export const isPartStep = (step: string) => PART_STEPS.has(step);
+
+/** COLUMN WIDTHS. On the header cells, not in styles.css.
+ *
+ *  They were `nth-child` rules and had been wrong five times: adding or removing
+ *  a column shifts every rule after it, silently. They are here so a column
+ *  added without a width is visible in the same glance as the `<th>` — and
+ *  because a `<colgroup>` was tried first and did not win against whatever
+ *  styles the cells, while an inline style on the first row always does under
+ *  `table-layout: fixed`.
+ *
+ *  MEASURED in the browser at a 1250px table, as "what the widest option in
+ *  that column needs" (px): What it is 154 · Qty 72 · Unit 87 · Goes to 289 ·
+ *  How 156. Position is deliberately short — a component name has no upper
+ *  bound, so it ellipsises and carries a title. They sum to 100.
+ */
+const W = {
+  what:     { width: "13%" },
+  position: { width: "22%" },
+  qty:      { width: "6%" },
+  unit:     { width: "7%" },
+  amount:   { width: "8%" },
+  goesTo:   { width: "24%" },
+  how:      { width: "15%" },
+  split:    { width: "5%" },
+} as const;
 
 /** A row while it is being typed into. Amounts stay STRINGS so a half-typed
  *  "1." is not rounded away under the cursor. */
 export interface LineDraft {
   key: string;
   id: number | null;          // null => a row that does not exist server-side yet
-  kind: CostLineKind;
   label: string;
   mpn: string;
   qty: string;
@@ -54,7 +82,16 @@ export interface LineDraft {
   plan_key: string;
   plan_kind: string;
   plan_ref: string;
-  dest: string;               // "run:5" | "project:2" | "excluded" | ""
+  /** WHERE the money goes: "" (not decided) | "inherit" | "pool" |
+   *  "run:5" | "project:2" | "nobody" — see `GoesToSelect` (decision 0045). */
+  dest: string;
+  /** HOW it gets there. Carries `allocate` when `dest` is "pool"
+   *  ("pooled" | "by_value" | "by_qty") and `basis` when it is a batch or a
+   *  project ("per_run" | "per_device"). Unused for "nobody", which takes a
+   *  typed reason instead. */
+  how: string;
+  /** why this position is charged to nobody — only when `dest` is "nobody" */
+  exclude_reason: string;
   /** tree depth, computed by the caller from parent_line_id */
   depth: number;
 }
@@ -63,17 +100,44 @@ let seq = 0;
 export function blankDraft(): LineDraft {
   seq += 1;
   return {
-    key: `new-${seq}`, id: null, kind: "other", label: "", mpn: "",
+    key: `new-${seq}`, id: null, label: "", mpn: "",
     qty: "1", unit_price: "", component_id: null, component_name: "",
-    plan_key: "", plan_kind: "", plan_ref: "", dest: "", depth: 0,
+    plan_key: "", plan_kind: "", plan_ref: "", dest: "", how: "per_run",
+    exclude_reason: "", depth: 0,
   };
 }
 
-export function toDraft(li: RunCostLineRow, depth = 0): LineDraft {
+/** The stored line as the two questions the UI asks.
+ *
+ *  It MIRRORS `run_actuals.line_destination`, including its order — `excluded`
+ *  beats a named run, and a named run beats a `part` line's implicit pool — so
+ *  what the row shows is what the server will compute. Any drift here shows a
+ *  destination the money does not actually go to, which is the failure this
+ *  whole change exists to end.
+ */
+export function goesToOf(li: RunCostLineRow): string {
+  if (li.allocate === "excluded") return "nobody";
+  if (li.run_id) return `run:${li.run_id}`;
+  if (li.project_id) return `project:${li.project_id}`;
+  if (li.allocate === "pooled" || li.allocate === "by_value" || li.allocate === "by_qty") {
+    return "pool";
+  }
+  // A `part` line written before `pooled` existed. It resolves to the pool on
+  // the server, so it has to read that way here; the backfill has already
+  // marked the ones that were reachable, and this covers a line whose document
+  // names a run (which the server charges to that run, not to stock).
+  if (isPartStep(li.plan_key || "")) return "pool";
+  // Nothing says where this goes, and nothing can be inferred. On a document
+  // that names a destination the caller turns this into "inherit"; otherwise it
+  // is genuinely undecided, and the register reports it as unassigned.
+  return "";
+}
+
+export function toDraft(li: RunCostLineRow, depth = 0, docHasDefault = false): LineDraft {
+  const dest = goesToOf(li);
   return {
     key: `line-${li.id}`,
     id: li.id,
-    kind: li.kind,
     label: li.label,
     mpn: li.mpn || "",
     qty: String(li.qty ?? ""),
@@ -83,9 +147,11 @@ export function toDraft(li: RunCostLineRow, depth = 0): LineDraft {
     plan_key: li.plan_key || "",
     plan_kind: li.plan_kind || "",
     plan_ref: li.plan_ref || "",
-    dest: li.run_id ? `run:${li.run_id}`
-      : li.project_id ? `project:${li.project_id}`
-      : li.allocate === "excluded" ? "excluded" : "",
+    dest: dest === "" && docHasDefault ? "inherit" : dest,
+    how: dest === "pool"
+      ? (li.allocate === "by_value" || li.allocate === "by_qty" ? li.allocate : "pooled")
+      : (li.basis || "per_run"),
+    exclude_reason: li.exclude_reason || "",
     depth,
   };
 }
@@ -94,7 +160,7 @@ export function toDraft(li: RunCostLineRow, depth = 0): LineDraft {
  *  by a draft row that has no server id yet. */
 function asRow(d: LineDraft): RunCostLineRow {
   return {
-    id: d.id ?? -1, document_id: -1, run_id: null, position: 0, kind: d.kind,
+    id: d.id ?? -1, document_id: -1, run_id: null, position: 0,
     basis: "per_run", label: d.label, qty: Number(d.qty || 0),
     unit_price: Number(d.unit_price || 0), line_total: null, currency: "",
     allocate: "none", component_id: d.component_id, component_name: d.component_name,
@@ -103,19 +169,38 @@ function asRow(d: LineDraft): RunCostLineRow {
   } as RunCostLineRow;
 }
 
-function destPatch(dest: string) {
-  const [kind, id] = dest ? dest.split(":") : ["", ""];
+/** The two answers as the three fields the server stores.
+ *
+ *  ALWAYS writes all four of `run_id`, `project_id`, `allocate` and `basis`,
+ *  never a subset. The version this replaces only ever ADDED
+ *  `allocate: "excluded"` and never cleared it, so moving an excluded position
+ *  onto a batch left `allocate` behind — and `line_destination` tests
+ *  `excluded` before it tests `run_id`, so the line stayed charged to nobody
+ *  while the screen showed the batch.
+ */
+function destPatch(d: LineDraft) {
+  const [kind, id] = d.dest.includes(":") ? d.dest.split(":") : ["", ""];
+  const spread = d.how === "by_value" || d.how === "by_qty";
   return {
+    // "inherit" stores nothing and lets the DOCUMENT's destination apply, which
+    // is what the line already did. It is a visible way to say so, not a change.
     run_id: kind === "run" ? Number(id) : null,
     project_id: kind === "project" ? Number(id) : null,
-    ...(dest === "excluded" ? { allocate: "excluded" } : {}),
+    allocate:
+      d.dest === "nobody" ? "excluded"
+      : d.dest === "pool" ? (spread ? d.how : "pooled")
+      : "none",
+    // Only a position charged to a batch or a project can be billed per device;
+    // stock and excluded money have no units to multiply by.
+    basis: (d.dest === "pool" || d.dest === "nobody" || d.dest === ""
+            ? "per_run"
+            : d.how === "per_device" ? "per_device" : "per_run") as "per_run" | "per_device",
+    exclude_reason: d.dest === "nobody" ? d.exclude_reason.trim() : "",
   };
 }
 
 export function draftToLineIn(d: LineDraft) {
   return {
-    kind: d.kind,
-    basis: "per_run" as const,
     label: d.label.trim(),
     mpn: d.mpn.trim(),
     qty: Number(d.qty || 0),
@@ -124,13 +209,14 @@ export function draftToLineIn(d: LineDraft) {
     plan_key: d.plan_key,
     plan_kind: d.plan_kind,
     plan_ref: d.plan_ref,
-    ...destPatch(d.dest),
+    ...destPatch(d),
   };
 }
 
 export default function InvoiceLinesTable({
   mode, rows, setRows, runs, projects, stepCatalog, currency,
-  editing, deleted, setDeleted, savedById, onSplit, onSaved, busy,
+  editing, deleted, setDeleted, savedById, onSplit, onSaved, busy, locked,
+  docDefault = "",
 }: {
   mode: "draft" | "saved";
   rows: LineDraft[];
@@ -149,6 +235,16 @@ export default function InvoiceLinesTable({
   onSplit?: (li: RunCostLineRow) => void;
   onSaved?: () => void;
   busy?: boolean;
+  /** What the DOCUMENT itself charges to, worded — "Batch 8", "CE_Dongle_V2".
+   *  Empty when it names nothing. A line that stores no destination of its own
+   *  falls back to this on the server, so the row offers it as "from this
+   *  document (…)" rather than showing the same blank that means "undecided". */
+  docDefault?: string;
+  /** saved mode: this document charges a CLOSED batch (decision 0044), so the
+   *  server refuses every write to it. `split` and `supplier` fire immediately
+   *  rather than staging into the batch save, so they have to be stopped HERE —
+   *  a button that only ever produces a 409 is worse than one that is not there. */
+  locked?: boolean;
 }) {
   const draftMode = mode === "draft";
   const open = draftMode || !!editing;
@@ -171,7 +267,7 @@ export default function InvoiceLinesTable({
     if (seeded.current === headerIds) return;
     seeded.current = headerIds;
     setCollapsed(new Set(headerIds.split(",").filter(Boolean).map(Number)
-      .filter((id) => savedById?.get(id)?.kind === "part")));
+      .filter((id) => isPartStep(savedById?.get(id)?.plan_key || ""))));
   }, [headerIds]);
 
   const childCount = (id: number) => savedById
@@ -180,7 +276,7 @@ export default function InvoiceLinesTable({
   const partsHeader = (id: number | null) => {
     if (id == null) return false;
     const li = savedById?.get(id);
-    return !!li?.is_header && li.kind === "part";
+    return !!li?.is_header && isPartStep(li.plan_key || "");
   };
   const hidden = (d: LineDraft) => {
     let cur = d.id != null ? savedById?.get(d.id)?.parent_line_id ?? null : null;
@@ -254,14 +350,19 @@ export default function InvoiceLinesTable({
         <table className="data data-fixed invoice-lines-table">
           <thead>
             <tr>
-              <th>Kind</th>
-              <th>Position</th>
-              <th className="num">Qty</th>
-              <th className="num">Unit</th>
-              <th className="num">Amount</th>
-              <th>Charge to</th>
-              <th>Planned as</th>
-              <th className="ctr">{draftMode ? "" : "Split"}</th>
+              {/* "Planned as" was a poor name for it even when there were two
+                  columns: the step is not a plan, it is what the position IS. */}
+              <th style={W.what}>What it is</th>
+              <th style={W.position}>Position</th>
+              <th className="num" style={W.qty}>Qty</th>
+              <th className="num" style={W.unit}>Unit</th>
+              <th className="num" style={W.amount}>Amount</th>
+              {/* "Charge to" was wrong for the commonest answer: nothing is
+                  charged when a position becomes stock. "Goes to" covers a
+                  batch and the shelf equally. */}
+              <th style={W.goesTo}>Goes to</th>
+              <th style={W.how}>How</th>
+              <th className="ctr" style={W.split}>{draftMode ? "" : "Split"}</th>
             </tr>
           </thead>
           <tbody>
@@ -275,16 +376,53 @@ export default function InvoiceLinesTable({
                 : Number(d.qty || 0) * Number(d.unit_price || 0);
               return (
                 <tr key={d.key} className={header ? "muted" : away ? "row-gone" : undefined}>
-                  <td>
-                    {edit ? (
-                      <select
-                        className="row-input"
-                        value={d.kind}
-                        onChange={(e) => patch(d.key, { kind: e.target.value as CostLineKind })}
-                      >
-                        {KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
-                      </select>
-                    ) : d.kind}
+                  {/* WHAT THIS POSITION IS. One field, not two: `kind` was a
+                      coarser second answer typed beside this one and free to
+                      disagree with it (decision 0047). The bucket every report
+                      still wants is derived from the step on the server. */}
+                  <td title={d.plan_ref || ""}>
+                    {header ? (
+                      <span className="dim">—</span>
+                    ) : (
+                      <StepSelect
+                        catalog={stepCatalog}
+                        className={`row-input mono${d.plan_key ? "" : " needs-answer"}`}
+                        disabled={busy || !edit}
+                        value={d.plan_key && d.plan_key.includes(":") ? d.plan_key : ""}
+                        title={d.plan_key
+                          ? "What this position is. Money billed under a step is matched "
+                            + "to the planned cost item carrying the same step automatically."
+                          : "This position has not said what it is."}
+                        onChange={(v) => {
+                          // SUGGEST where it goes, and only into an empty box —
+                          // never overwrite an answer. A stock step IS the
+                          // instruction to pool it; that used to be hidden
+                          // inside `kind` (decisions 0045, 0047).
+                          const stock = isPartStep(v);
+                          const suggest = d.dest !== "" ? {}
+                            : stock ? { dest: "pool", how: "pooled" }
+                            : v === "logistics:inbound" || v === "logistics:duty"
+                              ? { dest: "pool", how: "by_value" }
+                            // A cancelled line has no destination: the supplier
+                            // printed it, nothing was delivered, nobody pays
+                            // (user decision 2026-09-19). Same for a payment fee,
+                            // which is real money attributable to no product.
+                            : v === "other:cancelled"
+                              ? { dest: "nobody", exclude_reason: "cancelled_by_supplier" }
+                            : v === "other:payment_fee"
+                              ? { dest: "nobody", exclude_reason: "payment_fee" }
+                            : {};
+                          // REPAIR an answer the new step has made illegal: only
+                          // a stock position can BE stock. Without this the
+                          // select fell back to the first legal option in the
+                          // DOM while React still held "pooled", and the row
+                          // SAVED as stock — a pool entry with no part behind it.
+                          const repair = !stock && d.how === "pooled"
+                            ? { how: "by_value" } : {};
+                          patch(d.key, { plan_key: v, ...suggest, ...repair });
+                        }}
+                      />
+                    )}
                   </td>
                   <td title={d.component_name || d.mpn || d.label}>
                     {/* Position IS the identity. For a part that means the
@@ -305,7 +443,7 @@ export default function InvoiceLinesTable({
                         </button>{" "}
                         {d.label || "—"}
                       </>
-                    ) : d.kind === "part"
+                    ) : isPartStep(d.plan_key)
                         && savedById?.get(d.id ?? -1)?.allocate !== "excluded" ? (
                       <>
                         <span className={`tree-indent tree-indent-${Math.min(d.depth, 3)}`} />
@@ -370,46 +508,46 @@ export default function InvoiceLinesTable({
                       </>
                     ) : null}
                   </td>
+                  {/* THE TWO QUESTIONS (decision 0045). Where the money goes,
+                      and how it gets there. The read-only spellings that used to
+                      live here — "pool", "pool (spread)" — are gone: the select
+                      now shows the same answer whether or not the document is
+                      open for editing, so there is one wording to keep true
+                      instead of three. */}
                   <td>
                     {header ? (
                       <span className="dim">shares below</span>
-                    ) : !edit && saved && saved.kind === "part" && !saved.run_id
-                        && saved.allocate !== "excluded" ? (
-                      <span className="dim" title="parts feed the shared pool; runs draw from it">
-                        pool
-                      </span>
-                    ) : !edit && saved
-                        && (saved.allocate === "by_value" || saved.allocate === "by_qty")
-                        && !saved.run_id && !saved.project_id ? (
-                      <span
-                        className="dim"
-                        title={"landed cost — spread " +
-                          (saved.allocate === "by_value" ? "by value" : "by quantity") +
-                          " over this document's part lines, so it raises their pool unit cost"}
-                      >
-                        pool (spread)
-                      </span>
                     ) : (
-                      <ChargeToSelect
+                      <GoesToSelect
                         runs={runs}
                         projects={projects}
                         value={d.dest}
+                        docDefault={docDefault}
                         disabled={busy || !edit}
-                        onChange={(v) => patch(d.key, { dest: v })}
+                        onChange={(v) => patch(d.key, {
+                          dest: v,
+                          // The second question changes meaning with the first,
+                          // so its answer cannot carry across. Default to the
+                          // ordinary case for the destination just chosen.
+                          how: v === "pool"
+                            ? (isPartStep(d.plan_key) ? "pooled" : "by_value")
+                            : "per_run",
+                        })}
                       />
                     )}
                   </td>
-                  <td title={d.plan_ref || ""}>
+                  <td>
                     {header ? (
                       <span className="dim">—</span>
                     ) : (
-                      <StepSelect
-                        catalog={stepCatalog}
-                        className="row-input mono"
+                      <HowSelect
+                        goesTo={d.dest}
+                        value={d.how}
+                        reason={d.exclude_reason}
+                        isPart={isPartStep(d.plan_key)}
                         disabled={busy || !edit}
-                        value={d.plan_key && d.plan_key.includes(":") ? d.plan_key : ""}
-                        title="production step — invoice money billed under a step is matched to the planned cost item carrying the same step automatically"
-                        onChange={(v) => patch(d.key, { plan_key: v })}
+                        onChange={(v) => patch(d.key, { how: v })}
+                        onReasonChange={(v) => patch(d.key, { exclude_reason: v })}
                       />
                     )}
                   </td>
@@ -448,8 +586,10 @@ export default function InvoiceLinesTable({
                       <button
                         type="button"
                         className="btn btn-sm"
-                        disabled={busy || loading === d.id}
-                        title="Fill this position from the supplier's own BOM, one row per part"
+                        disabled={busy || locked || loading === d.id}
+                        title={locked
+                          ? "The books are closed on this batch — correct it with a new document"
+                          : "Fill this position from the supplier's own BOM, one row per part"}
                         onClick={() => void loadSupplier(saved)}
                       >
                         {loading === d.id ? "…" : "supplier"}
@@ -458,7 +598,10 @@ export default function InvoiceLinesTable({
                       <button
                         type="button"
                         className="btn btn-sm"
-                        disabled={busy}
+                        disabled={busy || locked}
+                        title={locked
+                          ? "The books are closed on this batch — correct it with a new document"
+                          : undefined}
                         onClick={() => onSplit?.(saved)}
                       >
                         split

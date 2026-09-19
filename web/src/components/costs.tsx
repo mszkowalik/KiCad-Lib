@@ -72,10 +72,156 @@ export function StepSelect({
   );
 }
 
+/** WHERE a cost line's money goes — the first of the two questions an invoice
+ *  position has to answer (decision 0045).
+ *
+ *  Every option names an outcome, and there is no silent default. The control
+ *  this replaces offered one empty value, worded "— nobody —", which resolved to
+ *  FIVE different things depending on the line's `kind`, the line's `allocate`
+ *  and the document's own destination — none of which were on screen. A `part`
+ *  line left alone went to the shared pool; a `freight` line left alone became
+ *  money nobody paid for.
+ *
+ *  `inherit` is only offered when the DOCUMENT names a destination of its own.
+ *  Leaving it selected keeps the line storing nothing, exactly as today — it is
+ *  here so that "the document decides" is a thing you can read, rather than the
+ *  same blank that means "nobody has decided".
+ */
+export type GoesTo = "" | "inherit" | "pool" | "nobody" | string;
+
+export function GoesToSelect({
+  runs, projects, value, onChange, docDefault = "",
+  className = "row-input", disabled,
+}: {
+  runs: RunOption[];
+  projects: ProjectOption[];
+  value: GoesTo;
+  onChange: (value: GoesTo) => void;
+  /** what the DOCUMENT charges to, worded, when it names anything */
+  docDefault?: string;
+  className?: string;
+  disabled?: boolean;
+}) {
+  // A PROFORMA's positions are not special here. `line_destination` does not
+  // look at `doc_type`, so a proforma part line reports "pool" like any other —
+  // what makes a proforma different is that `_pool_events` skips the whole
+  // document, which is the document's business and not the line's. Hiding the
+  // option made the Italtronic proforma read "not decided" beside a register row
+  // saying "pool: 1,651.00".
+  return (
+    <select
+      className={`${className}${value === "" ? " needs-answer" : ""}`}
+      value={value}
+      disabled={disabled}
+      title={value === "" ? "Nobody pays for this position yet — the register "
+        + "reports it as unassigned money" : undefined}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      {/* Not an option anybody should pick, and not hidden either: the rows that
+          are already in this state have to be selectable so they can be read. */}
+      <option value="">⬦ not decided</option>
+      {docDefault ? <option value="inherit">from this document ({docDefault})</option> : null}
+      <option value="pool">Stock — the shared pool</option>
+      {runs.map((r) => (
+        <option key={`run:${r.id}`} value={`run:${r.id}`}>
+          {r.project_name} · {r.label}
+        </option>
+      ))}
+      {projects.map((p) => (
+        <option key={`project:${p.id}`} value={`project:${p.id}`}>
+          {p.name} (no batch)
+        </option>
+      ))}
+      <option value="nobody">Nobody, on purpose</option>
+    </select>
+  );
+}
+
+/** HOW the money reaches wherever it is going — the second question, and the
+ *  one that had no control at all (decision 0045).
+ *
+ *  It carries a different stored field for each destination, because "how" means
+ *  a different thing for each, and all three were previously unreachable from
+ *  the browser:
+ *
+ *  | Goes to | writes | choices |
+ *  |---|---|---|
+ *  | Stock | `allocate` | it IS stock · spread over this document's parts by value / by quantity |
+ *  | a batch or project | `basis` | as its own amount · per device x units built |
+ *  | Nobody | `exclude_reason` | a short reason, typed |
+ *
+ *  `basis` was hard-coded `per_run` in the line table and `allocate` was only
+ *  ever written as `excluded`, so a transport line on a parts invoice could not
+ *  be marked as landed cost at all — it silently became unassigned money.
+ */
+// Worded to FIT. The column is 14% wide and a select cannot be ellipsised
+// usefully — "it is stock" rendered as "it is s…", which says nothing. The long
+// form goes in the title instead.
+export const HOW_FOR_STOCK = [
+  ["pooled", "stock", "This position IS stock. It enters the shared pool and every project draws from it."],
+  ["by_value", "spread by value", "Landed cost: spread over this document's part lines in proportion to their value, so it raises what that stock really cost to arrive."],
+  ["by_qty", "spread by qty", "Landed cost: spread over this document's part lines per piece."],
+] as const;
+
+export const HOW_FOR_CHARGE = [
+  ["per_run", "own amount", "Charged once, as the amount printed on the invoice."],
+  ["per_device", "per device", "A rate per board: charged at this amount times the units the batch was billed for."],
+] as const;
+
+export function HowSelect({
+  goesTo, value, onChange, onReasonChange, reason = "", isPart = false,
+  className = "row-input", disabled,
+}: {
+  goesTo: GoesTo;
+  value: string;
+  onChange: (value: string) => void;
+  onReasonChange?: (value: string) => void;
+  reason?: string;
+  /** only a `part` line can BE stock; anything else can only be spread onto it */
+  isPart?: boolean;
+  className?: string;
+  disabled?: boolean;
+}) {
+  if (goesTo === "nobody") {
+    return (
+      <input
+        className={`${className}${reason.trim() ? "" : " needs-answer"}`}
+        value={reason}
+        disabled={disabled}
+        placeholder="why? e.g. reclaimable VAT"
+        title="Money recorded so the document adds up and charged to nobody on
+purpose. The reason is what makes it auditable rather than merely missing."
+        onChange={(e) => onReasonChange?.(e.target.value)}
+      />
+    );
+  }
+  // Nothing has been decided yet, so there is no second question to ask.
+  if (goesTo === "") return <span className="muted">—</span>;
+  const opts = goesTo === "pool"
+    // A non-part cannot BE stock; it can only ride onto the stock as landed
+    // cost. Offering "it is stock" for a freight line would produce a pool
+    // entry with no part behind it.
+    ? HOW_FOR_STOCK.filter(([v]) => v !== "pooled" || isPart)
+    : HOW_FOR_CHARGE;
+  const why = opts.find(([v]) => v === value)?.[2];
+  return (
+    <select className={className} value={value} disabled={disabled} title={why}
+            onChange={(e) => onChange(e.target.value)}>
+      {opts.map(([v, label, why]) => (
+        <option key={v} value={v} title={why}>{label}</option>
+      ))}
+    </select>
+  );
+}
+
 /** Where a cost line's money goes: a batch (`run:<id>`), a project with no batch
  *  (`project:<id>`), nobody on purpose (`excluded`), or the empty value the
  *  caller words via `emptyLabel`. The value encoding is shared with the API
- *  helpers — do not re-derive it locally. */
+ *  helpers — do not re-derive it locally.
+ *
+ *  Kept for the NEW-invoice header's "charge every position to" field, which
+ *  genuinely is one destination applied to a whole document and has no second
+ *  question to ask. The per-line control is `GoesToSelect` above. */
 export function ChargeToSelect({
   runs,
   projects,
