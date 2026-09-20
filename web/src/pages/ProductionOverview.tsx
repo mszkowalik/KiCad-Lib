@@ -84,11 +84,6 @@ export default function ProductionOverview() {
     return { cost, devices, produced };
   }, [rows]);
 
-  const scale = useMemo(
-    () => Math.max(...rows.map((r) => r.cost), 1),
-    [rows],
-  );
-
   // The single home for "what is still missing before these numbers are
   // final" — every entry links to the page that fixes it.
   const issues = useMemo<Issue[]>(() => {
@@ -152,7 +147,11 @@ export default function ProductionOverview() {
   {
     key: "label",
     label: "Batch",
-    width: 14,
+    // 28, not 24: measured at 1280px, the longest label ("Prototypes 1 —
+    // PROFORMA 1/11/2023") needs 26.8% and was the one cell that clipped. The
+    // four points come from Produced and Cost/dev, which hold at most
+    // "14,263.59" and had room to spare.
+    width: 28,
     get: (r) => r.label,
     render: (r) => (
       <Link className="comp-link" to={`/runs/${r.rid}`} onClick={(e) => e.stopPropagation()}>
@@ -160,12 +159,16 @@ export default function ProductionOverview() {
       </Link>
     ),
   },
-  { key: "project", label: "Project", width: 10, className: "muted", get: (r) => r.project },
-  { key: "qty", label: "Units", width: 6, numeric: true, get: (r) => r.qty },
+  { key: "project", label: "Project", width: 14, className: "muted", get: (r) => r.project },
+  // The batch's start date. It was already on the row and sorted the array; the
+  // table now sorts by it, newest first, so the column has to be VISIBLE — a
+  // default order nothing on screen explains reads as no order at all.
+  { key: "date", label: "Date", width: 12, className: "mono", get: (r) => r.date || "—" },
+  { key: "qty", label: "Units", width: 8, numeric: true, get: (r) => r.qty },
   {
     key: "cost",
     label: "Cost USD",
-    width: 8,
+    width: 14,
     numeric: true,
     get: (r) => r.cost,
     title: (r) => `direct ${plain(r.direct)} + components ${plain(r.components)}`,
@@ -174,7 +177,7 @@ export default function ProductionOverview() {
   {
     key: "produced",
     label: "Produced",
-    width: 9,
+    width: 12,
     numeric: true,
     get: (r) => r.produced,
     title: () => "devices recorded as produced on this batch — the denominator of its unit cost",
@@ -183,27 +186,13 @@ export default function ProductionOverview() {
   {
     key: "cost_dev",
     label: "Cost/dev",
-    width: 9,
+    width: 12,
     numeric: true,
     get: (r) => r.unitCost ?? "",
     title: (r) => r.unitCost == null
       ? "No devices are recorded as produced yet, so there is nothing to divide by"
       : "What one device of this batch cost — carried onto whatever order ships it",
     render: (r) => <>{r.unitCost == null ? "—" : plain(r.unitCost)}</>,
-  },
-  {
-    key: "bar",
-    label: "cost",
-    width: 10,
-    interactive: false,
-    get: () => "",
-    title: (r) =>
-      `cost ${usd(r.cost, 0)} — drawn on one scale shared by every batch, so bar lengths compare across rows`,
-    render: (r) => (
-      <span className="dash-bar-track">
-        <span className="dash-bar cost" style={{ width: `${(100 * r.cost) / scale}%` }} />
-      </span>
-    ),
   },
 ];
 
@@ -289,17 +278,17 @@ export default function ProductionOverview() {
           <p className="card-subtitle">
             Cost is direct invoice positions plus what the run drew from the component pool
             (materials, boards, assembly, labour, freight — not firmware, warranty or your
-            time). The bar is cost on a scale shared by every batch. Cost/dev divides by the
-            devices recorded as PRODUCED, which is what a shipped unit carries onto its
+            time). Cost/dev divides by the devices recorded as PRODUCED, which is what a shipped unit carries onto its
             order; a batch with no device records yet shows no figure rather than an estimate.
-            Revenue and margin are on the orders. Every batch links to its own page — click
-            anywhere on its row.
+            Revenue and margin are on the orders. Newest batch first. Every batch links to its
+            own page — click anywhere on its row.
           </p>
           <div className="table-wrap">
             <DataTable
               columns={runCols}
               rows={rows}
               rowKey={(r) => r.rid}
+              defaultSort={{ key: "date", dir: "desc" }}
               persistKey="production-runs"
               rowClass={() => "ledger-row"}
               onRowClick={(r) => navigate(`/runs/${r.rid}`)}

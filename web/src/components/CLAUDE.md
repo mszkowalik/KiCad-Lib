@@ -423,6 +423,19 @@ overflow):
    it. Before you edit a `.foo-table` width rule, check that something actually
    puts that class on a table.
 
+   **And a stranded `.foo-table` block is not always cosmetic.** Third
+   occurrence, 2026-09-21: `.prod-runs-table .dash-bar-track { display:
+   inline-block }` was the ONLY rule giving a cost bar's `<span>` a box, so when
+   that table became a `DataTable` the whole column rendered EMPTY — a header
+   with nothing under it, no error and nothing in the console. It went unnoticed
+   from 2026-08-25 until a user asked why the column was blank, and the column
+   was then deleted rather than fixed, which is
+   the other half of the lesson: an element whose only styling is borrowed from
+   an ancestor's class is invisible when it breaks, so nothing tells you whether
+   it is still wanted. If a `.foo-table .child` rule sets `display`, `position`
+   or `height` rather than a width, it is load-bearing — move it into the
+   child's own base rule instead of re-attaching the class.
+
 Compound selectors (`.data.users-table td:nth-child(n)`) are needed to
 outrank existing width rules such as `.data td.ctr { width: 1% }` — and they
 only apply to tables that CARRY the class (see rule 9).

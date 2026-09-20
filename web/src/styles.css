@@ -4130,24 +4130,6 @@ ul.tight li { margin: 2px 0; }
   gap: 10px;
   margin: 10px 0 16px;
 }
-.dash-bars { display: flex; flex-direction: column; gap: 6px; }
-.dash-bar-row {
-  display: grid;
-  grid-template-columns: 180px 1fr 230px;
-  gap: 10px;
-  align-items: center;
-}
-.dash-bar-label {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 0.85em; color: var(--muted);
-}
-.dash-bar-track { position: relative; height: 16px; background: var(--surface-2); border-radius: var(--radius); overflow: hidden; }
-.dash-bar { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--radius); }
-.dash-bar.rev { background: var(--accent-soft); }
-.dash-bar.cost { background: var(--copper); opacity: 0.75; }
-.dash-bar-nums { font-size: 0.85em; white-space: nowrap; text-align: right; }
-.dash-margin { color: var(--ok); margin-left: 4px; }
-.dash-legend { font-size: 0.8em; margin-top: 6px; }
 .dash-missing { margin-top: 14px; }
 .dash-missing ul { margin: 6px 0 0 18px; }
 .dash-missing li { margin: 3px 0; }
@@ -4281,22 +4263,6 @@ ul.tight li { margin: 2px 0; }
   padding: 10px 14px 14px;
   background: var(--surface-2);
 }
-
-/* Production overview's per-run table: the 9 money columns plus the inline
-   cost-vs-revenue bar. Widths sum to 100%. */
-.prod-runs-table { table-layout: fixed; }
-.prod-runs-table th:nth-child(1), .prod-runs-table td:nth-child(1) { width: 12%; }
-.prod-runs-table th:nth-child(2), .prod-runs-table td:nth-child(2) { width: 9%; }
-.prod-runs-table th:nth-child(3), .prod-runs-table td:nth-child(3) { width: 6%; }
-.prod-runs-table th:nth-child(4), .prod-runs-table td:nth-child(4) { width: 9%; }
-.prod-runs-table th:nth-child(5), .prod-runs-table td:nth-child(5) { width: 8%; }
-.prod-runs-table th:nth-child(6), .prod-runs-table td:nth-child(6) { width: 9%; }
-.prod-runs-table th:nth-child(7), .prod-runs-table td:nth-child(7) { width: 9%; }
-.prod-runs-table th:nth-child(8), .prod-runs-table td:nth-child(8) { width: 8%; }
-.prod-runs-table th:nth-child(9), .prod-runs-table td:nth-child(9) { width: 8%; }
-.prod-runs-table th:nth-child(10), .prod-runs-table td:nth-child(10) { width: 7%; }
-.prod-runs-table th:nth-child(11), .prod-runs-table td:nth-child(11) { width: 15%; }
-.prod-runs-table .dash-bar-track { display: inline-block; width: 100%; }
 
 /* Three-line clamp for long free text (version comments) with a toggle. */
 .clamp3 {
