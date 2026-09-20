@@ -98,6 +98,13 @@ services:
       # without an image rebuild. uvicorn prepends /srv to sys.path, so the code
       # imported is this mount, not the copy baked into the image.
       - ./api/app:/srv/app
+      # The TESTS too, and for a sharper reason than convenience: without this
+      # `docker compose exec api python -m pytest tests` runs the copy baked
+      # into the image, so an edited or newly written test silently does not
+      # run and the suite reports a pass for code nobody checked. Found
+      # 2026-09-21, after two rounds of "179 tests pass" that never saw the
+      # tests being written.
+      - ./api/tests:/srv/tests
     ports:
       # host 8020 — 8000 is commonly taken by other local apps
       - "127.0.0.1:8020:8000"

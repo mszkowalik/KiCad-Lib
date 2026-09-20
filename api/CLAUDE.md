@@ -24,6 +24,26 @@ A heredoc (`docker compose exec -T api python - <<'PY'`) is safe: `sys.path[0]`
 is then the working directory. Found 2026-09-14, after ~330 component versions
 published against the September 3 copy.
 
+## Running the tests
+
+```
+docker compose exec -T -e PYTHONPATH=/srv api python -m pytest tests -q
+```
+
+Two things this needs, and both have silently produced a false pass:
+
+- **`compose.yaml` mounts `./api/tests` as well as `./api/app`.** Without that
+  mount, `tests/` is the copy baked into the image: an edited or newly written
+  test does not run, and the suite reports a confident pass for code nobody
+  checked. The mount was added 2026-09-21, after two rounds of "179 tests pass"
+  that never saw the tests being written.
+- **`pytest` is not in the image**, so it is `pip install`ed into the RUNNING
+  container — and recreating the container (any `docker compose up -d api`)
+  wipes it. `No module named pytest` means exactly that; install it again.
+
+The tests use the dev database and roll their transaction back, so the database
+must be up and is left untouched.
+
 ## Reuse first — do not reinvent
 
 Before adding a helper, model, status string, or endpoint pattern, **find the
