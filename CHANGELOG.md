@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-21 (production data comes down with one command)
+
+`scripts/sync-prod-to-local.sh` copies the production database, and optionally
+the MinIO objects, into the local dev stack. It only ever runs one way and only
+ever reads production.
+
+- **`--check` compares the two without changing anything**, with EXACT row
+  counts. It is the part that matters: a local copy missing
+  `jlc_order_decisions` had been showing 45 undecided JLC orders that
+  production decided months ago, and four more tables were empty for the same
+  reason. A partial restore is worse than no restore, because it looks like a
+  bug in the code.
+- Rules and traps in
+  [docs/reference/deployment.md](docs/reference/deployment.md).
+
 ## 2026-09-21 (what each batch cost, newest first)
 
 The last column of **Production → What each batch cost** was an empty column

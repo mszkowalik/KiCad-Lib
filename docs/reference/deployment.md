@@ -65,3 +65,38 @@ is very slow under emulation.
   `qm config 104` for the core count and the CPU model FIRST — the solver fans
   out over `FIELDSOLVER_WORKERS` processes, capped by `os.cpu_count()`.
 
+
+## Bringing production data down to local
+
+```
+scripts/sync-prod-to-local.sh --check      # compare, change nothing
+scripts/sync-prod-to-local.sh              # database only
+scripts/sync-prod-to-local.sh --files      # database + the MinIO objects
+scripts/sync-prod-to-local.sh --lean       # skip the 2.5M-row flash logs
+```
+
+The script exists because **a partial restore is worse than no restore.** A
+local copy that was missing `jlc_order_decisions` showed 45 undecided JLC
+orders that production had decided months earlier, and read as a regression in
+code that was fine (2026-09-21). Four more tables — `run_checks`,
+`device_config_values`, `programming_steps`, `run_production_files` — were empty
+for the same reason and nobody had noticed.
+
+Four facts it encodes, each of which cost a failed run to learn:
+
+- **It only goes one way, and it only READS production.** Every prod command is
+  a `pg_dump`, a `tar -c` or a `select`. There is no flag that reverses the
+  direction, on purpose.
+- **`pg_restore --jobs` refuses a dump on standard input.** The dump is copied
+  into the db container first, then restored from a file.
+- **The MinIO image ships no `tar`.** It does not need one: MinIO's data on the
+  server is a host BIND mount (`docker inspect kicadlib-minio` says where), so
+  the files are ordinary files and `tar` runs on the server itself. Locally it
+  is a named volume, written through a throwaway container while the service is
+  stopped.
+- **The comparison uses EXACT counts, never `n_live_tup`.** The estimate cannot
+  tell a real gap from collector drift, and it reported `run_cost_documents 86
+  vs 87` as noise when production had genuinely gained an invoice mid-dump.
+
+A run while somebody is using the platform will show a few tables one row
+apart. That is real — the dump has a timestamp — and `--check` says so.
