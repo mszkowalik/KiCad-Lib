@@ -2,9 +2,10 @@
  *  that fulfil it, and what it earned once every shipped device — replacements
  *  included — carries its batch's real cost (decision 0003 §9).
  *
- *  The Ship dialog draws devices FIFO from the batches the user ticks (§6);
- *  serials can be pasted instead. Returns, repairs and disposals live on the
- *  device page, because they are events in a device's history.
+ *  The Ship dialog takes SERIALS ONLY — there is no quantity and no batch
+ *  picker, because a number with no device behind it is a guess (decisions
+ *  0032, 0049). Returns, repairs and disposals live on the device page,
+ *  because they are events in a device's history.
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -146,7 +147,7 @@ export default function OrderDetail() {
                   </dd>
                   <dt>Devices shipped</dt>
                   <dd>
-                    {(eco.shipped_devices + eco.shipped_unserialized).toLocaleString()}
+                    {eco.shipped_devices.toLocaleString()}
                     {eco.replacements ? <span className="muted"> · {eco.replacements} replacement{eco.replacements === 1 ? "" : "s"}</span> : null}
                   </dd>
                   <dt>Cost of devices</dt>
@@ -382,7 +383,7 @@ function LinesCard({
                 <td className="num">{plain(li.net_total)}</td>
                 <td
                   className="num"
-                  title={`${li.qty_shipped_devices} recorded devices + ${li.qty_shipped_unserialized} without a serial${li.qty_replacements ? ` · ${li.qty_replacements} replacement(s) not counted` : ""}`}
+                  title={`${li.qty_shipped} device${li.qty_shipped === 1 ? "" : "s"} delivered${li.qty_replacements ? ` · ${li.qty_replacements} replacement(s) not counted` : ""}`}
                 >
                   {li.qty_shipped.toLocaleString()}
                   {li.qty_replacements ? <span className="muted"> +{li.qty_replacements}</span> : null}
@@ -647,11 +648,9 @@ function ShipmentsCard({ order, apply }: { order: OrderRow; apply: (w: () => Pro
                   }}
                   onReverse={async () => {
                     const plan = await reverseShipment(sh.id, { dry_run: true });
-                    const units = plan.unserialized.reduce((n, u) => n + u.qty, 0);
-                    const what = [
-                      plan.devices.length ? `${plan.devices.length} device${plan.devices.length === 1 ? "" : "s"}` : "",
-                      units ? `${units} unit${units === 1 ? "" : "s"} without a serial` : "",
-                    ].filter(Boolean).join(" and ");
+                    const what = plan.devices.length
+                      ? `${plan.devices.length} device${plan.devices.length === 1 ? "" : "s"}`
+                      : "";
                     if (
                       await dialog.confirm(
                         `Take this shipment back? ${what} return to stock and the order stops counting them as delivered. ` +
@@ -740,12 +739,6 @@ function ShipmentRows({
       {open ? (
         <tr>
           <td colSpan={6} className="expand-cell">
-            {sh.unserialized.filter((u) => u.qty_unserialized > 0).map((u, i) => (
-              <div key={i} className="muted">
-                {u.qty_unserialized} × {lineName(u.order_line_id)} without a serial
-                {u.source_run_id ? <> from <Link className="val-link" to={`/runs/${u.source_run_id}`}>batch #{u.source_run_id}</Link></> : null}
-              </div>
-            ))}
             {sh.devices.length ? (
               <div className="serial-cloud">
                 {sh.devices.map((d) => (

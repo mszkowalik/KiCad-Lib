@@ -326,9 +326,27 @@ export default function ProductionOverview() {
                   <td className="num">{plain(s.to_pool_usd)}</td>
                   <td
                     className="num muted"
-                    title="reclaimable VAT and prepaid components already in the pool"
+                    title={"Charged to nobody on purpose: reclaimable VAT, and prepaid "
+                      + "components already in the pool.\n\n"
+                      + Object.entries(s.excluded_by_reason_usd || {})
+                          .map(([r, v]) => `${r}: ${plain(v)}`).join("\n")}
                   >
                     {plain(s.excluded_usd)}
+                    {s.excluded_unstated_usd ? (
+                      <>
+                        {" "}
+                        <span
+                          className="pill warn"
+                          title={"This much of the excluded money gives no reason. "
+                            + "`excluded` is a legal bucket in the identity, so an "
+                            + "exclusion is invisible to every other check — which is "
+                            + "how $14,443 of manufacturing once sat charged to nobody "
+                            + "while this page read clean."}
+                        >
+                          {plain(s.excluded_unstated_usd)} unstated
+                        </span>
+                      </>
+                    ) : null}
                   </td>
                   <td className={s.unassigned_usd ? "num" : "num muted"}>
                     {s.unassigned_usd ? (
@@ -344,8 +362,13 @@ export default function ProductionOverview() {
                       plain(s.residual_usd)
                     )}
                   </td>
+                  {/* NO TOLERANCE. This is an invariant on the platform's own
+                      arithmetic, so anything but zero is a bug. It used to print
+                      a green "0" for anything under 0.05, which is how a
+                      permanent 0.0271 stayed invisible for months — the check
+                      was rounding away its own alarm (decision 0048). */}
                   <td className="num">
-                    {Math.abs(s.gap_usd ?? 0) < 0.05 ? (
+                    {(s.gap_usd ?? 0) === 0 ? (
                       <span className="pill ok">0</span>
                     ) : (
                       <span className="pill err">{plain(s.gap_usd)}</span>

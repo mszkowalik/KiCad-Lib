@@ -4,14 +4,10 @@
  *  dongle on one order), is closed by invoices, and is fulfilled by shipments
  *  whose content is a set of devices. Its status is derived from shipments
  *  and never set by hand. The stock card is this number's ONE home: a count
- *  of devices in `in_stock` per batch, plus the units of legacy batches that
- *  were never recorded as devices (§8).
- *
- *  Counting the shelf lives here for the same reason: it CORRECTS that number.
- *  A shipment without serials picks devices FIFO and the pick is a guess
- *  (0003 §6); a person with a scanner is the evidence that settles it
- *  (decision 0027). The card never writes on the first press — it shows the
- *  plan, and the plan names every order whose quantity would move.
+ *  of devices in `in_stock` per batch, and nothing else. A batch that recorded
+ *  no devices holds nothing — the legacy pool it used to hold, and the "No
+ *  serial" column that showed it, are gone with the shipments that drew from
+ *  it (decision 0049).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -250,11 +246,10 @@ export function DemandCard({ rows, title = "Demand" }: { rows: DemandRow[] | nul
   );
 }
 
-/** More devices passed programming than the batch is recorded to hold. Since
- *  `built` counts passed devices, this can no longer show up as `overdrawn`,
- *  and it is the one arithmetic in the card that is impossible rather than
- *  merely unlucky: the run quantity is wrong, or devices were filed under the
- *  wrong batch. Under-building is normal attrition and is not flagged. */
+/** More devices passed programming than the batch is recorded to hold. The one
+ *  arithmetic in the card that is impossible rather than merely unlucky: the run
+ *  quantity is wrong, or devices were filed under the wrong batch. Under-building
+ *  is normal attrition and is not flagged. */
 function overbuilt(r: FinishedStockRow): boolean {
   return r.devices_produced > 0 && r.qty_recorded > 0 && r.built > r.qty_recorded;
 }
@@ -280,17 +275,17 @@ function StockCard({ stock }: { stock: FinishedStock | null }) {
           <span className="toolbar-total">
             {stock.totals.stock.toLocaleString()} devices
             {stock.totals.stock_value_usd != null ? ` · ${usd(stock.totals.stock_value_usd, 0)} at cost` : ""}
-            {stock.totals.legacy_stock ? ` · ${stock.totals.legacy_stock.toLocaleString()} without a serial` : ""}
           </span>
         ) : null}
       </div>
       <p className="card-subtitle">
-        Recorded is the quantity on the production run. Built counts the devices that passed:
-        a device enters the shelf when its newest programming or test run passes, and leaves
-        it on a shipment. A board that never passed is not stock, so built is normally the
-        smaller of the two — built above recorded is impossible and is marked. Every batch
-        stays listed after its last device ships. Only a batch with no device records at all
-        is counted from the batch quantity (“no serial”); a return can name one of those later.
+        Recorded is the quantity on the production run — boards ordered or assembled. Built
+        counts the devices that passed: a device enters the shelf when its newest programming
+        or test run passes, and leaves it on a shipment. A board that never passed is not
+        stock, so built is normally the smaller of the two — built above recorded is
+        impossible and is marked. Every unit here is a named device; a batch with no device
+        records is built 0, whatever quantity was typed on it. Every batch stays listed after
+        its last device ships.
       </p>
       {!stock ? (
         <Spinner label="Counting…" />
@@ -302,7 +297,7 @@ function StockCard({ stock }: { stock: FinishedStock | null }) {
             columns={shelfCols}
             rows={rows}
             rowKey={(r) => r.run_id}
-            rowClass={(r) => (r.overdrawn || overbuilt(r) ? "err-text" : "")}
+            rowClass={(r) => (overbuilt(r) ? "err-text" : "")}
             persistKey="finished-stock"
             empty="No batch has been built yet."
           />
@@ -350,7 +345,7 @@ const shelfCols: Column<FinishedStockRow>[] = [
         ? `${r.built} devices passed programming but the batch is recorded as ${r.qty_recorded} boards — the run quantity is wrong, or devices from another batch were filed here`
         : r.devices_produced
           ? `${r.built} devices passed programming; ${r.qty_recorded - r.built} of the recorded boards never did`
-          : "no device records: counted from the batch quantity",
+          : "no device records on this batch — record them, as placeholders if the units were never serialised",
     render: (r) => <>{r.built.toLocaleString()}</>,
   },
   {
@@ -358,8 +353,8 @@ const shelfCols: Column<FinishedStockRow>[] = [
     label: "Shipped",
     width: 9,
     numeric: true,
-    get: (r) => r.devices_shipped + r.unserialized_shipped,
-    render: (r) => <>{(r.devices_shipped + r.unserialized_shipped).toLocaleString()}</>,
+    get: (r) => r.devices_shipped,
+    render: (r) => <>{r.devices_shipped.toLocaleString()}</>,
   },
   {
     key: "in_stock",
@@ -368,18 +363,6 @@ const shelfCols: Column<FinishedStockRow>[] = [
     numeric: true,
     get: (r) => r.devices_in_stock,
     render: (r) => <>{r.devices_in_stock.toLocaleString()}</>,
-  },
-  {
-    key: "no_serial",
-    label: "No serial",
-    width: 9,
-    numeric: true,
-    get: (r) => (r.overdrawn ? -r.overdrawn : r.legacy_stock),
-    title: (r) =>
-      r.overdrawn
-        ? `${r.overdrawn} more units were shipped from this batch than it is recorded to hold`
-        : "units counted from the batch quantity, not from device records",
-    render: (r) => <>{r.overdrawn ? `−${r.overdrawn}` : r.legacy_stock.toLocaleString()}</>,
   },
   {
     key: "unit_cost",

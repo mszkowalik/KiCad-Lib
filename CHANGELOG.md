@@ -1,5 +1,102 @@
 # Changelog
 
+## 2026-09-21 (what each batch cost, newest first)
+
+The last column of **Production → What each batch cost** was an empty column
+headed "cost", beside a column headed "Cost USD".
+
+- **The empty column is gone.** It held a bar drawing each batch's cost on a
+  shared scale, which had not drawn anything since the page moved to a
+  `DataTable`: the only rule giving the bar's `<span>` a box lived under
+  `.prod-runs-table`, a class the migration dropped. An inline span has no
+  height and no background, so the column rendered nothing, with no error
+  anywhere. The bar is not worth the width, so the column and its styling were
+  removed rather than repaired.
+- **The table has a Date column and sorts newest batch first.** The date was
+  already deciding the row order and was not on screen — a default order nothing
+  explains reads as no order at all.
+- **Batch names no longer clip at 1280px.** Measured: the longest needs 26.8% of
+  the table, and the freed width went to it.
+- **Eleven dead width rules removed**, plus seven unused dashboard rules.
+
+## 2026-09-20 (a delivery names its devices, and nothing else)
+
+`qty_unserialized` is gone from the platform. Decision 0032 made a shipment a
+set of serials and called this field "the exact artefact rules 1 and 2 forbid" —
+but it only removed the AUTOMATIC path. The API still accepted a quantity with a
+batch behind it, and an endpoint existed purely to curate one.
+
+- **`shipment_lines` is dropped.** Its whole content was a quantity and the batch
+  behind it; a shipment's real content is the `shipped` events pointing at it.
+- **Three survivors, 35 units, every one a prototype batch** — and every one
+  double-counted against its own placeholders: run 18 held 5 units `in_stock`
+  *and* a line claiming 5 had shipped from run 18. `run_stock` netted the two to
+  zero, so nothing looked wrong. They were replaced by the serials they stood
+  for, on the same deliveries.
+- **They were all prototypes for one reason**: a `prototype` placeholder cannot
+  ship, so a prototype delivery had nowhere to go but the anonymous count. A
+  prototype that really shipped now carries `condition = ok`, and `prototype`
+  means a unit that never left the building.
+- **A batch with no device records holds nothing, and is built 0.** It used to
+  hold its typed quantity as a pool the anonymous path drew from —
+  `legacy_stock`, `overdrawn` and `unserialized_shipped` are all gone. The
+  pool's last survivor was **"Devices on the shelf"**, whose *Built* column fell
+  back to the typed quantity and whose **"No serial"** column showed the
+  difference. Both are gone: every unit on that card is a named device. Record
+  the devices, even as placeholders, and they count like any other. *Recorded*
+  stays beside *Built* and now says what it is — boards ordered or assembled,
+  not units.
+- **There is no quantity field on a shipment line at all.** Not
+  `qty_unserialized`, and not `qty`: the schema forbids unknown keys, so the API
+  refuses either and names it, and the published OpenAPI carries neither. The
+  sentence decision 0032 chose is still there, on the one guard that states the
+  real rule — a line that moves no device is refused with "the shipment moves
+  nothing — name the devices that left".
+- **Fixed: the finished-stock endpoint would have answered 500.** It went on
+  summing `overdrawn` after the service stopped reporting it. A test now reads
+  the route's whole payload and fails on any key from the old counting path.
+- **Fixed: `/api/health/schema` was red for ever.** Five migration statements
+  read `run_cost_lines.kind`, which the previous release drops, so they failed on
+  every boot afterwards. They are `skipped` now — a health page people are meant
+  to read must not become one they learn to ignore.
+
+Order 13 now counts **40 named devices** where it counted 20 named and 20
+anonymous, with nothing uncosted. No money moved, and no batch in production has
+zero device records, so nothing on the shelf card moves either. Reasoning in
+[decision 0049](docs/decisions/0049-a-delivery-names-its-devices-and-nothing-else.md).
+
+## 2026-09-20 (the register's gap is an invariant, and it reads zero)
+
+`gap_usd` was documented as "a non-zero gap means a bug here, not bad data" and
+read **0.0271** on every measurement for months. Nobody acted on it because it
+was measured against the wrong number and the screen hid it: the production
+overview printed a green `0` for anything under 0.05.
+
+- **`gap_usd` is now the invariant** — our LINES against every bucket derived
+  from them — and reads **exactly 0.0**. The overview has no tolerance: zero is
+  green, anything else is red.
+- **`untranscribed_usd`** is what it was really measuring: `printed - lines`,
+  the money a supplier put on the page that sits on no line of ours. **0.0276**
+  across five documents. It is not fixable by editing a line — JLC prints a
+  rounded total while our unit prices keep more decimals — so it is reported,
+  and `issues.untranscribed` names every document at any size. The existing
+  `unreconciled` check tolerates 5 cents, so it had never named one of them.
+- **`overallocated_usd`** is the twin of `residual`: children claiming more than
+  the header they split. `residual` clamps at zero, so the overshoot lived in
+  the leaves and outside the identity. Four JLCPCB documents overshoot by
+  0.0001-0.0002 and were the last thing keeping the gap from closing.
+- **The totals now accumulate exact values**, not the per-document figures
+  rounded for display. Adding 86 rounded numbers put error into the figure whose
+  job is to prove the arithmetic.
+- **The excluded bucket now says why.** `excluded_by_reason_usd` and
+  `excluded_unstated_usd` are on the register, and the overview marks the
+  unstated part. `excluded` is legal in the identity, so an exclusion is
+  invisible to every other check — which is how $14,443 of manufacturing once
+  sat charged to nobody while the page read clean.
+
+No money moved: every bucket total is unchanged. Reasoning in
+[decision 0048](docs/decisions/0048-the-gap-is-an-invariant-not-a-tolerance.md).
+
 ## 2026-09-19 (one field says what an invoice position is)
 
 Every position carried two labels for the same thing: a coarse **Kind**

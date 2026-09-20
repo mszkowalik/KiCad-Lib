@@ -172,7 +172,7 @@ export default function DeviceHistoryCard({ deviceId, serial }: { deviceId: numb
       ) : hist.events.length === 0 ? (
         <p className="muted">
           No history yet: {serial} predates device records. Link it to its batch from the batch
-          page, or record its return against an order and it will name one unserialized unit.
+          page, or record its return against the order it was delivered on.
         </p>
       ) : (
         <div className="table-wrap">

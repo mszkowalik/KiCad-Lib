@@ -2920,8 +2920,22 @@ export interface InvoiceRegister {
     excluded_usd: number | null;
     unassigned_usd: number | null;
     residual_usd: number | null;
-    /** total minus every bucket — non-zero means a bug, not bad data */
+    /** children claiming MORE than the header they split; sub-cent by
+     *  construction, but it has to be in the identity or it cannot close */
+    overallocated_usd?: number | null;
+    /** what our lines add up to, against `total_usd` which is what was printed */
+    lines_total_usd?: number | null;
+    /** THE INVARIANT: lines minus every bucket. Non-zero means a bug in
+     *  `run_actuals`, and it is now exactly 0 (decision 0048). */
     gap_usd: number | null;
+    /** `printed - lines`: money that left the company and is on no line. Real,
+     *  small, and NOT fixable by editing a line — suppliers print rounded
+     *  totals. `issues.untranscribed` names every document. */
+    untranscribed_usd?: number | null;
+    /** why the excluded money is excluded */
+    excluded_by_reason_usd?: Record<string, number | null>;
+    /** how much of it says nothing — `legacy_unstated` is "never given" */
+    excluded_unstated_usd?: number | null;
     unknown_rates: string[];
     by_supplier_usd: Record<string, number | null>;
   };
@@ -7621,10 +7635,9 @@ export interface OrderLineRow {
   qty_ordered: number;
   unit_price: number;
   net_total: number | null;
+  /** devices delivered on this line, replacements excluded */
   qty_shipped: number;
   qty_open: number;
-  qty_shipped_devices: number;
-  qty_shipped_unserialized: number;
   qty_replacements: number;
   qty_returned: number;
   qty_allocated: number;
@@ -7667,7 +7680,6 @@ export interface ShipmentRow {
   qty: number;
   per_line: Record<string, number>;
   devices: ShipmentDeviceRow[];
-  unserialized: { order_line_id: number; qty_unserialized: number; source_run_id: number | null }[];
   /** deliveries on this shipment that an `unshipped` event took back */
   reversed: number;
   /** false while ANY device event names the shipment, reversed or not — the
@@ -7686,7 +7698,6 @@ export interface OrderEconomics {
   margin_usd: number | null;
   margin_pct: number | null;
   shipped_devices: number;
-  shipped_unserialized: number;
   replacements: number;
   uncosted_units: number;
   unknown_currencies: string[];
@@ -7759,17 +7770,15 @@ export interface InvoiceIn {
   notes?: string;
 }
 
+/** A shipment line NAMES DEVICES. There is no quantity here, and there is no
+ *  quantity on the API either: `qty`, `qty_unserialized`, `run_ids` and
+ *  `source_run_id` are refused by name with 422 (decision 0049). Declaring one
+ *  here would only let the browser build a request the server rejects. */
 export interface ShipmentLineIn {
   order_line_id: number;
   device_ids?: number[];
   /** what a scanner read; resolved to device ids server-side */
   serials?: string[];
-  qty?: number;
-  run_ids?: number[];
-  board?: string;
-  variant?: string;
-  qty_unserialized?: number;
-  source_run_id?: number | null;
   replaces_device_id?: number | null;
   note?: string;
 }
@@ -7782,7 +7791,8 @@ export interface ShipmentIn {
   lines: ShipmentLineIn[];
 }
 
-/** One batch's finished devices, both counting paths (decision 0003 §8). */
+/** One batch's finished devices, counted from the device records and nothing
+ *  else (decision 0003 §8, narrowed by 0049). */
 export interface FinishedStockRow {
   run_id: number;
   label: string;
@@ -7792,8 +7802,10 @@ export interface FinishedStockRow {
   variant: string;
   run_date: string;
   status: string;
+  /** devices that PASSED, counted from the device records. A batch with no
+   *  device records is 0, never its typed quantity. */
   built: number;
-  /** the quantity typed on the run (ordered or assembled); `built` counts passed devices instead when the batch has any */
+  /** the quantity typed on the run — boards ordered or assembled, not devices */
   qty_recorded: number;
   devices_produced: number;
   /** everything on the shelf, whatever its condition */
@@ -7803,9 +7815,6 @@ export interface FinishedStockRow {
   /** on the shelf but not sellable, by condition — {faulty: 32} */
   devices_held: Record<string, number>;
   devices_shipped: number;
-  unserialized_shipped: number;
-  legacy_stock: number;
-  overdrawn: number;
   stock: number;
   /** `stock` minus the units held back */
   available: number;
@@ -7818,8 +7827,6 @@ export interface FinishedStock {
   totals: {
     stock: number;
     devices_in_stock: number;
-    legacy_stock: number;
-    overdrawn: number;
     stock_value_usd: number | null;
   };
 }
@@ -7978,7 +7985,6 @@ export interface ShipmentReversal {
   shipment_id: number;
   order_id: number;
   devices: { device_id: number; order_line_id: number | null }[];
-  unserialized: { order_line_id: number; source_run_id: number | null; qty: number }[];
 }
 
 export function reverseShipment(

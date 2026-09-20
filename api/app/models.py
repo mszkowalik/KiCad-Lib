@@ -3522,8 +3522,10 @@ class OrderInvoice(Base):
 
 class Shipment(Base):
     """A header: when, under which delivery note, which way. Its CONTENT is the
-    set of `shipped` (or `returned`) device events pointing at it, plus a
-    per-line unserialized quantity for stock from before devices were recorded."""
+    set of `shipped` (or `returned`) device events pointing at it — and nothing
+    else. There was a `ShipmentLine` carrying a per-line quantity for stock with
+    no device rows behind it; it is gone (decision 0049), because a quantity is a
+    guess and a guess cannot be told from an observation once it is written."""
 
     __tablename__ = "shipments"
 
@@ -3537,29 +3539,8 @@ class Shipment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     order: Mapped[SalesOrder] = relationship(back_populates="shipments")
-    lines: Mapped[list["ShipmentLine"]] = relationship(
-        back_populates="shipment", cascade="all, delete-orphan"
-    )
 
     __table_args__ = (Index("ix_shipments_order", "order_id"),)
-
-
-class ShipmentLine(Base):
-    """Legacy quantity only (decision 0003 §8): units shipped from a batch that
-    has no device rows to move. A new run never writes one — its units are
-    device events. `source_run_id` says whose per-device cost the units carry."""
-
-    __tablename__ = "shipment_lines"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    shipment_id: Mapped[int] = mapped_column(ForeignKey("shipments.id"))
-    order_line_id: Mapped[int] = mapped_column(ForeignKey("sales_order_lines.id"))
-    qty_unserialized: Mapped[int] = mapped_column(Integer, default=0)
-    source_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft -> production_runs
-
-    shipment: Mapped[Shipment] = relationship(back_populates="lines")
-
-    __table_args__ = (Index("ix_shipment_lines_line", "order_line_id"),)
 
 
 class DeviceEvent(Base):

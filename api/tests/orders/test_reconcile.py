@@ -1,6 +1,10 @@
-"""`reconcile_shelf` against a scratch order, in a transaction that is rolled back.
+"""Shipments and the shelf, against a scratch order, in a transaction that is
+rolled back.
 
-Decision record: docs/decisions/0027-a-stock-count-corrects-a-fifo-guess.md.
+Decision records: docs/decisions/0032-a-shipment-names-its-devices.md and
+docs/decisions/0049-a-delivery-names-its-devices-and-nothing-else.md. The file
+was named for `reconcile_shelf`, which decision 0032 removed — a stock count
+that removes guesses by writing new ones is not a correction.
 
 Run from `api/`, with the dev database up:
     python -m pytest tests/orders -q
@@ -294,91 +298,77 @@ def test_rebatching_moves_the_cost_basis_with_the_device(world):
     assert (run_actuals.good_units(db, a), run_actuals.good_units(db, b)) == (3, 7)
 
 
-def test_naming_the_batch_behind_unserialised_units_draws_them_down(world):
-    """A prototype batch reconstructed after the delivery was recorded: until
-    the shipment line names it, the batch counts the units as stock it holds."""
-    from app.routers import orders as router
+def test_a_shipment_refuses_a_quantity_with_a_batch_behind_it(world):
+    """`qty` was already refused; `qty_unserialized` was the same artefact
+    wearing a batch, and it slipped through the same function.
 
-    db, line, order = world["db"], world["line"], world["order"]
-    proto = M.ProductionRun(project_id=world["proj"].id, label="prototypes", run_date="2023-12-25",
-                            status="completed", qty=20)
-    db.add(proto)
-    db.flush()
-    db.refresh(order)
-    svc.create_shipment(db, order, shipped_at="2023-12-30",
-                        lines=[{"order_line_id": line.id, "qty_unserialized": 20}], actor="test")
-    db.flush()
-    stock = {r["run_id"]: r for r in svc.run_stock(db, world["proj"].id)}
-    assert stock[proto.id]["legacy_stock"] == 20  # nothing has drawn it down yet
-
-    sl = (db.query(M.ShipmentLine)
-          .filter(M.ShipmentLine.order_line_id == line.id,
-                  M.ShipmentLine.qty_unserialized == 20).one())
-    out = router.patch_shipment_line(sl.id, router.ShipmentLinePatch(source_run_id=proto.id),
-                                     _Req(), db=db)
-    assert out["source_run_id"] == proto.id
-    stock = {r["run_id"]: r for r in svc.run_stock(db, world["proj"].id)}
-    assert stock[proto.id]["legacy_stock"] == 0
-    assert stock[proto.id]["unserialized_shipped"] == 20
-    assert stock[proto.id]["overdrawn"] == 0
-
-
-def test_a_shipment_line_cannot_name_another_project_s_batch(world):
-    from fastapi import HTTPException
-
-    from app.routers import orders as router
-
-    db, line, order = world["db"], world["line"], world["order"]
-    other = M.Project(name="test-reconcile-other-2", git_url="https://example.invalid/o2.git")
-    db.add(other)
-    db.flush()
-    alien = M.ProductionRun(project_id=other.id, label="alien", run_date="2024-01-01",
-                            status="completed", qty=5)
-    db.add(alien)
-    db.flush()
-    db.refresh(order)
-    svc.create_shipment(db, order, shipped_at="2024-01-02",
-                        lines=[{"order_line_id": line.id, "qty_unserialized": 2}], actor="test")
-    db.flush()
-    sl = (db.query(M.ShipmentLine)
-          .filter(M.ShipmentLine.order_line_id == line.id,
-                  M.ShipmentLine.qty_unserialized == 2).one())
-    with pytest.raises(HTTPException) as e:
-        router.patch_shipment_line(sl.id, router.ShipmentLinePatch(source_run_id=alien.id),
-                                   _Req(), db=db)
-    assert e.value.status_code == 422
-
-
-def test_a_batch_that_records_devices_has_no_anonymous_units(world):
-    """The guard that would have stopped 40 impossible units on 2026-09-17."""
+    Decision 0032 removed the migration that MINTED these and left the manual
+    write path open. Three survived — all prototype batches, each double-counted
+    against its own placeholders: run 18 held 5 units `in_stock` AND a line
+    claiming 5 shipped from run 18. A batch behind a number does not make it an
+    observation (user decision 2026-09-20, decision 0049).
+    """
     from fastapi import HTTPException
 
     db, line, order = world["db"], world["line"], world["order"]
-    real = world["runs"][0]  # five device records
-    db.refresh(order)
-    with pytest.raises(HTTPException) as e:
-        svc.create_shipment(db, order, shipped_at="2026-04-01",
-                            lines=[{"order_line_id": line.id, "qty_unserialized": 2,
-                                    "source_run_id": real.id}], actor="test")
-    assert e.value.status_code == 409
-    assert e.value.detail["device_records"] == 5
-    assert e.value.detail["label"] == real.label
-
-
-def test_a_legacy_batch_still_hands_out_anonymous_units(world):
-    db, line, order = world["db"], world["line"], world["order"]
-    legacy = M.ProductionRun(project_id=world["proj"].id, label="pre-flasher", run_date="2023-01-01",
-                             status="completed", qty=9)
+    legacy = M.ProductionRun(project_id=world["proj"].id, label="pre-flasher",
+                             run_date="2023-01-01", status="completed", qty=9)
     db.add(legacy)
     db.flush()
     db.refresh(order)
-    svc.create_shipment(db, order, shipped_at="2023-02-01",
-                        lines=[{"order_line_id": line.id, "qty_unserialized": 4,
-                                "source_run_id": legacy.id}], actor="test")
+    # THERE IS NO QUANTITY FIELD. Not `qty`, not `qty_unserialized`. A parameter
+    # that is never valid does not belong on the schema, in the OpenAPI document
+    # or in a generated client, so the SCHEMA refuses one and names it
+    # (decision 0049).
+    from pydantic import ValidationError
+
+    from app.routers.orders import ShipmentLineIn
+
+    assert not {"qty", "qty_unserialized", "source_run_id", "run_ids"} \
+        & set(ShipmentLineIn.model_fields)
+    for bad in ("qty", "qty_unserialized", "source_run_id"):
+        with pytest.raises(ValidationError) as ve:
+            ShipmentLineIn(order_line_id=line.id, **{bad: 4})
+        assert bad in str(ve.value), f"{bad} must be named in the refusal"
+
+    # And the service still refuses to move nothing, which is what a caller that
+    # reached past the schema would otherwise get away with.
+    with pytest.raises(HTTPException) as exc:
+        svc.create_shipment(db, order, shipped_at="2023-02-01",
+                            lines=[{"order_line_id": line.id}], actor="test")
+    assert exc.value.status_code == 422
+    assert "serial" in str(exc.value.detail).lower()
+
+
+def test_a_batch_with_no_device_records_holds_no_stock(world):
+    """It used to hold its typed quantity as a pool an anonymous shipment could
+    draw from. That pool is gone: record the devices, even as placeholders
+    (decision 0039), and they count like any other.
+
+    `built` was the last survivor of that pool. It fell back to the typed
+    quantity, so such a batch still PUT UNITS ON THE SHELF CARD while no serial
+    could ever be produced for one of them (user decision 2026-09-21). The typed
+    quantity stays visible as `qty_recorded`, beside built, to be compared.
+    """
+    db = world["db"]
+    legacy = M.ProductionRun(project_id=world["proj"].id, label="typed-only",
+                             run_date="2023-01-01", status="completed", qty=9)
+    db.add(legacy)
     db.flush()
     stock = {r["run_id"]: r for r in svc.run_stock(db, world["proj"].id)}
-    assert stock[legacy.id]["legacy_stock"] == 5
-    assert stock[legacy.id]["overdrawn"] == 0
+    row = stock[legacy.id]
+    assert row["devices_produced"] == 0
+    assert row["built"] == 0
+    assert row["qty_recorded"] == 9
+    assert row["stock"] == 0 and row["available"] == 0
+    assert "legacy_stock" not in row and "unserialized_shipped" not in row
+
+
+def test_the_shipment_line_table_is_gone(world):
+    """It existed only to carry a quantity. Nothing else referenced it — a
+    shipment's content is the `shipped` events pointing at it."""
+    assert not hasattr(M, "ShipmentLine")
+    assert not hasattr(M.Shipment, "lines") or "lines" not in M.Shipment.__mapper__.relationships
 
 
 def test_a_shipment_will_not_take_a_device_that_is_not_ok(world):
@@ -435,3 +425,18 @@ def test_a_quantity_with_no_serials_is_refused(world):
                                     "run_ids": [r.id for r in world["runs"]]}], actor="test")
     assert e.value.status_code == 422
     assert "name the devices" in e.value.detail["error"]
+
+
+def test_the_shelf_payload_carries_no_quantity_counting_path(world):
+    """What the Orders page reads. Every key that described the second counting
+    path is gone — including `overdrawn`, which the route went on summing after
+    `run_stock` stopped emitting it and would have answered 500."""
+    from app.routers import orders as router
+
+    db, proj = world["db"], world["proj"]
+    payload = router.finished_stock(project_id=proj.id, db=db)
+    gone = {"legacy_stock", "overdrawn", "unserialized_shipped"}
+    assert gone.isdisjoint(payload["totals"])
+    for row in payload["runs"]:
+        assert gone.isdisjoint(row), f"batch {row['run_id']} still counts without serials"
+        assert row["stock"] == row["devices_in_stock"]

@@ -628,6 +628,13 @@ _PHASE1_DDL = (
     ("run_cost_lines.plan_item_id backfill",
      "UPDATE run_cost_lines SET plan_item_id = plan_key::integer, plan_key = '' "
      "WHERE plan_kind = 'cost' AND plan_key ~ '^[0-9]+$'"),
+    # Decision 0049: a delivery names its devices, so `shipment_lines` — which
+    # existed ONLY to carry a quantity with no device behind it — is dropped.
+    # The three surviving rows were replaced by the 35 serials they stood for
+    # before this ran, and the table was empty. Nothing else referenced it: a
+    # shipment's content is the `shipped` events pointing at it.
+    ("shipment_lines drop",
+     "DROP TABLE IF EXISTS shipment_lines"),
     # LAST. Everything above reads `kind`; nothing below may.
     #
     # The index on it goes first and by name: `create_all` cannot drop an index
@@ -644,8 +651,42 @@ _PHASE1_DDL = (
 _SCHEMA_RESULTS: dict[str, str] = {}
 
 
+# A one-shot statement that READS a column another statement later drops. Once
+# the drop has run, it can never apply again and would report `failed` on every
+# boot for ever — which is how a health page people are meant to read becomes a
+# page they learn to ignore. It is SKIPPED instead, which is a state
+# `GET /api/health/schema` already understands (decision 0049).
+#
+# Keyed by the column it needs: (table, column) -> the statements that read it.
+_NEEDS_COLUMN: dict[tuple[str, str], frozenset[str]] = {
+    ("run_cost_lines", "kind"): frozenset({
+        "run_cost_lines.allocate pooled backfill",
+        "run_cost_lines.plan_key cancelled",
+        "run_cost_lines.plan_key payment fee",
+        "run_cost_lines.plan_key parts prepaid",
+        "run_cost_lines.plan_key parts supplier",
+        "run_cost_lines.plan_key parts pool",
+        "run_cost_lines.plan_key logistics",
+    }),
+}
+
+
+def _column_exists(conn, table: str, column: str) -> bool:
+    return bool(conn.execute(text(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = :t AND column_name = :c"), {"t": table, "c": column}).first())
+
+
 def _ensure_phase1_schema() -> None:
+    gone: set[tuple[str, str]] = set()
+    with engine.begin() as conn:
+        for key in _NEEDS_COLUMN:
+            if not _column_exists(conn, *key):
+                gone.add(key)
     for name, ddl in _PHASE1_DDL:
+        if any(name in names for key, names in _NEEDS_COLUMN.items() if key in gone):
+            _SCHEMA_RESULTS[name] = "skipped"
+            continue
         try:
             with engine.begin() as conn:
                 conn.execute(text(ddl))

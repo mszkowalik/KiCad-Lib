@@ -9,10 +9,11 @@ caches of it, rebuilt by `refresh_device_state`. Stock is a count of devices in
 production cost of every device ever shipped to the order, replacements
 included, plus repair cost lines.
 
-Batches from before the flasher recorded MACs have no device rows to move, so
-a shipment line may also carry `qty_unserialized` (§8). Every stock and
-fulfilment figure here counts BOTH paths, and a real return can convert one
-anonymous unit into a named device (`return_device`).
+There is ONE counting path and it is the device records. Every delivery names
+its devices, every batch is built from what it recorded, and there is no
+quantity anywhere in between (decisions 0032 and 0049). A batch from before the
+flasher recorded MACs has no device rows to move: give it placeholder devices
+(decision 0039) rather than a number.
 """
 from __future__ import annotations
 
@@ -216,7 +217,7 @@ def _run_basis_qty(run: M.ProductionRun) -> int:
 
 
 def run_stock(db: Session, project_id: int | None = None) -> list[dict]:
-    """Finished devices per batch, both counting paths side by side (§8, §9)."""
+    """Finished devices per batch. ONE counting path: the device records (§8)."""
     q = db.query(M.ProductionRun)
     if project_id:
         q = q.filter(M.ProductionRun.project_id == project_id)
@@ -240,14 +241,6 @@ def run_stock(db: Session, project_id: int | None = None) -> list[dict]:
                 held[rid][cond] += n
         elif state == "shipped":
             shipped[rid] += n
-    unser: dict[int, int] = defaultdict(int)
-    unser_returned: dict[int, int] = defaultdict(int)
-    for sl, sh in (db.query(M.ShipmentLine, M.Shipment).join(M.Shipment)
-                   .filter(M.ShipmentLine.source_run_id.in_(rids)).all()):
-        if sh.kind == "delivery":
-            unser[sl.source_run_id] += sl.qty_unserialized or 0
-        else:
-            unser_returned[sl.source_run_id] += sl.qty_unserialized or 0
     projects = {p.id: p.name for p in db.query(M.Project).all()}
     out = []
     for r in runs:
@@ -257,15 +250,16 @@ def run_stock(db: Session, project_id: int | None = None) -> list[dict]:
         # BUILT means finished and passed (user rule, 2026-09-10). A batch that
         # has device records is counted from them and from nothing else: the
         # typed quantity is what was ordered or assembled, and boards that never
-        # passed programming are not stock. Only a batch with NO device records
-        # (prototypes from before the flasher wrote records) is counted from its
-        # quantity, and that is the only place an unserialized unit can come from.
-        if produced[r.id]:
-            basis, legacy_pool = produced[r.id], 0
-        else:
-            basis = typed
-            legacy_pool = typed  # units never recorded as devices
-        legacy_stock = legacy_pool - unser[r.id] + unser_returned[r.id]
+        # passed programming are not stock.
+        #
+        # A batch with NO device records is BUILT 0, not "built its typed
+        # quantity". The fallback was the last place a unit was counted without
+        # being named: it let a batch hold a legacy pool that an unserialised
+        # shipment could draw from, and it survived the shipment side being
+        # closed, so the shelf still showed units no serial could be produced
+        # for (user decision 2026-09-21). Record the devices, even as
+        # placeholders (decision 0039), and they count like any other.
+        basis = produced[r.id]
         out.append({
             "run_id": r.id, "label": r.label, "project_id": r.project_id,
             "project": projects.get(r.project_id, "?"), "board": r.board, "variant": r.variant,
@@ -280,41 +274,12 @@ def run_stock(db: Session, project_id: int | None = None) -> list[dict]:
             "devices_available": available[r.id],
             "devices_held": dict(held[r.id]),
             "devices_shipped": shipped[r.id],
-            "unserialized_shipped": unser[r.id],
-            "legacy_stock": max(legacy_stock, 0),
-            # Negative = more units shipped than the batch is recorded to hold:
-            # a quantity on the run is wrong, or a shipment is.
-            "overdrawn": -legacy_stock if legacy_stock < 0 else 0,
-            "stock": in_stock[r.id] + max(legacy_stock, 0),
-            "available": available[r.id] + max(legacy_stock, 0),
+            # `stock` and `available` are the DEVICE counts and nothing else.
+            # They used to add a legacy pool for a batch with no device records.
+            "stock": in_stock[r.id],
+            "available": available[r.id],
         })
     return out
-
-
-def check_unserialized_source(db: Session, run_id: int | None, qty: int) -> None:
-    """Refuse an anonymous unit drawn from a batch that knows its own units.
-
-    A unit with no serial only exists because its batch was made before the
-    flasher recorded MACs (decision 0003 §8), and `run_stock` says so in
-    arithmetic: a batch with ANY device record has a legacy pool of ZERO. Every
-    unit charged to it beyond that is `overdrawn` — a figure that reads as a
-    warning about the batch when it is really a contradiction in the shipment.
-
-    Writing them anyway is what put 40 impossible units on two orders on
-    2026-09-17. The rule is now enforced where they are written, not reported
-    afterwards on a page nobody was looking at (user decision 2026-09-18).
-    """
-    if not run_id or qty <= 0:
-        return
-    run = db.get(M.ProductionRun, run_id)
-    if run is None:
-        raise HTTPException(404, f"no run {run_id}")
-    n = (db.query(M.DeviceUnit).filter(M.DeviceUnit.production_run_id == run_id).count())
-    if n:
-        raise HTTPException(409, {
-            "error": "that batch records its devices, so it has no units without a serial",
-            "run_id": run_id, "label": run.label, "device_records": n, "requested": qty,
-            "hint": "name the devices, or charge the units to a batch the flasher never recorded"})
 
 
 def _device_counts(db: Session, rids: list[int]):
@@ -392,13 +357,9 @@ def live_shipped_of(device: M.DeviceUnit) -> list[M.DeviceEvent]:
 
 def line_shipped(li: M.SalesOrderLine) -> int:
     """Fulfilment: `shipped` events with no replaced device that nothing has
-    reversed, plus unserialized units on delivery shipments."""
+    reversed. One number, from the devices — a delivery names them all."""
     sess = _session_of(li)
-    n = sum(1 for e in live_shipped_events(sess, [li.id]) if e.replaces_device_id is None)
-    u = sum(sl.qty_unserialized or 0 for sl, sh in
-            sess.query(M.ShipmentLine, M.Shipment).join(M.Shipment)
-            .filter(M.ShipmentLine.order_line_id == li.id, M.Shipment.kind == "delivery").all())
-    return n + u
+    return sum(1 for e in live_shipped_events(sess, [li.id]) if e.replaces_device_id is None)
 
 
 def _session_of(obj) -> Session:
@@ -438,9 +399,9 @@ def invoice_due_date(order: M.SalesOrder, issue_date: str) -> str:
 def create_shipment(db: Session, order: M.SalesOrder, *, kind: str = "delivery", shipped_at: str = "",
                     delivery_note: str = "", tracking: str = "", notes: str = "",
                     lines: list[dict], actor: str = "") -> M.Shipment:
-    """A delivery. Each entry in `lines` names an order line and ONE of:
-    explicit `device_ids`, a `qty` to draw FIFO from `run_ids`, or a legacy
-    `qty_unserialized` from `source_run_id`. A `replaces_device_id` marks a
+    """A delivery. Each entry in `lines` names an order line and the DEVICES
+    that left it, as `device_ids` or as `serials` the router resolved. There is
+    no quantity and no automatic pick. A `replaces_device_id` marks a
     single-device warranty replacement charged to the order (§7)."""
     if kind != "delivery":
         raise HTTPException(422, "use return_device for returns")
@@ -459,9 +420,6 @@ def create_shipment(db: Session, order: M.SalesOrder, *, kind: str = "delivery",
             raise HTTPException(422, f"order line {spec.get('order_line_id')} is not on this order")
         replaces = spec.get("replaces_device_id")
         device_ids = [int(x) for x in (spec.get("device_ids") or [])]
-        qty = int(spec.get("qty") or 0)
-        run_ids = [int(x) for x in (spec.get("run_ids") or [])]
-        unser = int(spec.get("qty_unserialized") or 0)
         picked: list[tuple[M.DeviceUnit, bool]] = []
         for did in device_ids:
             d = db.get(M.DeviceUnit, did)
@@ -479,16 +437,6 @@ def create_shipment(db: Session, order: M.SalesOrder, *, kind: str = "delivery",
                     "device_id": d.id, "serial": d.serial, "condition": d.condition,
                     "hint": "repair it and set its condition to ok, or ship a different device"})
             picked.append((d, False))
-        # A SHIPMENT NAMES ITS DEVICES. There is no automatic pick: a quantity
-        # with no serials behind it is a guess, and a guess is indistinguishable
-        # from an observation once it is written. 4326 of 4427 deliveries in
-        # this platform were such guesses, and a physical count was the only
-        # thing that could find the wrong ones.
-        if qty > 0:
-            raise HTTPException(422, {
-                "error": "name the devices; a shipment is a set of serials, not a quantity",
-                "order_line_id": li.id, "requested": qty,
-                "hint": "scan or paste the serials that physically left"})
         if replaces is not None and len(picked) != 1:
             raise HTTPException(422, "a replacement shipment names exactly one device")
         for d, auto in picked:
@@ -504,24 +452,16 @@ def create_shipment(db: Session, order: M.SalesOrder, *, kind: str = "delivery",
                          shipment_id=sh.id, replaces_device_id=rep,
                          note=(spec.get("note") or ""))
             moved += 1
-        if unser > 0:
-            src = spec.get("source_run_id")
-            if src:
-                check_unserialized_source(db, int(src), unser)
-                avail = next((s for s in run_stock(db, li.project_id) if s["run_id"] == int(src)), None)
-                if avail is None:
-                    raise HTTPException(404, f"no run {src} in project {li.project_id}")
-                if avail["legacy_stock"] < unser:
-                    raise HTTPException(409, {"error": "not enough unserialized units in that batch",
-                                              "available": avail["legacy_stock"], "requested": unser,
-                                              "order_line_id": li.id})
-            # No source batch = units the platform never built (prototypes from
-            # before any run): fulfilment counts them, cost reports them uncosted.
-            db.add(M.ShipmentLine(shipment_id=sh.id, order_line_id=li.id,
-                                  qty_unserialized=unser, source_run_id=int(src) if src else None))
-            moved += unser
+    # A SHIPMENT NAMES ITS DEVICES. There is no automatic pick and no quantity
+    # field to fall back on: a quantity with no serials behind it is a guess, and
+    # a guess is indistinguishable from an observation once it is written. 4326
+    # of 4427 deliveries in this platform were such guesses, and a physical count
+    # was the only thing that could find the wrong ones (decisions 0032, 0049).
     if moved == 0:
-        raise HTTPException(422, "the shipment moves nothing")
+        raise HTTPException(422, {
+            "error": "the shipment moves nothing — name the devices that left",
+            "hint": "scan or paste the serials, or pass their device ids; a shipment "
+                    "is a set of serials, never a quantity"})
     db.flush()
     refresh_order_status(order)
     return sh
@@ -531,9 +471,8 @@ def reverse_shipment(db: Session, sh: M.Shipment, *, actor: str = "", note: str 
                      dry_run: bool = True) -> dict:
     """Take back a shipment that was recorded in error.
 
-    Every delivery it still carries is reversed with an `unshipped` event and
-    its anonymous units go to zero, so the shipment counts nothing and its
-    devices are back in stock. The header and the events STAY: decision 0003
+    Every delivery it still carries is reversed with an `unshipped` event, so
+    the shipment counts nothing and its devices are back in stock. The header and the events STAY: decision 0003
     keeps device history, and a delivery that was recorded and withdrawn is
     part of it. Reversing a delivery the customer actually received is a
     RETURN, not this.
@@ -542,12 +481,9 @@ def reverse_shipment(db: Session, sh: M.Shipment, *, actor: str = "", note: str 
             .filter(M.DeviceEvent.shipment_id == sh.id, M.DeviceEvent.kind == "shipped")}
     units = {d.id: d for d in db.query(M.DeviceUnit).filter(M.DeviceUnit.id.in_(dids or [-1])).all()}
     live = [e for d in units.values() for e in live_shipped_of(d) if e.shipment_id == sh.id]
-    unser = [sl for sl in sh.lines if (sl.qty_unserialized or 0) > 0]
     plan = {
         "dry_run": dry_run, "shipment_id": sh.id, "order_id": sh.order_id,
         "devices": [{"device_id": e.device_id, "order_line_id": e.order_line_id} for e in live],
-        "unserialized": [{"order_line_id": sl.order_line_id, "source_run_id": sl.source_run_id,
-                          "qty": sl.qty_unserialized} for sl in unser],
     }
     if dry_run:
         return plan
@@ -555,10 +491,8 @@ def reverse_shipment(db: Session, sh: M.Shipment, *, actor: str = "", note: str 
         record_event(db, db.get(M.DeviceUnit, e.device_id), "unshipped", actor=actor,
                      shipment_id=sh.id, auto=False,
                      note=note or "the shipment was recorded in error and taken back")
-    for sl in unser:
-        sl.qty_unserialized = 0
     db.flush()
-    db.expire(sh.order, ["shipments", "lines"])
+    db.expire(sh.order, ["shipments"])
     refresh_order_status(sh.order)
     return plan
 
@@ -573,7 +507,8 @@ def return_device(db: Session, device: M.DeviceUnit, *, order_line: M.SalesOrder
     whichever device FIFO had guessed into that slot and put this one there
     instead, or convert an anonymous unit into this device. That was automatic
     data fixing dressed as a normal operation — a return quietly rewrote a
-    delivery nobody was looking at.
+    delivery nobody was looking at. (Neither is possible now: no shipment is a
+    guess and no unit is anonymous.)
 
     A return against a line this device was never shipped to is now an ERROR.
     Either the delivery record is wrong, in which case correct the shipment, or
@@ -738,15 +673,6 @@ def order_economics(db: Session, order: M.SalesOrder, unit_cost: dict[int, float
             devices_cost += unit_cost[d.production_run_id]
         else:
             uncosted += 1
-    unser_units = 0
-    for sl, sh in (db.query(M.ShipmentLine, M.Shipment).join(M.Shipment)
-                   .filter(M.ShipmentLine.order_line_id.in_(line_ids or [-1]), M.Shipment.kind == "delivery")):
-        n = sl.qty_unserialized or 0
-        unser_units += n
-        if sl.source_run_id in unit_cost:
-            devices_cost += n * unit_cost[sl.source_run_id]
-        else:
-            uncosted += n
     repair_usd = 0.0
     repair_ids = [e.device_id for e, _ in evs]
     if repair_ids:
@@ -773,7 +699,6 @@ def order_economics(db: Session, order: M.SalesOrder, unit_cost: dict[int, float
         "margin_usd": _round(margin),
         "margin_pct": _round(margin / revenue_usd * 100) if revenue_usd else None,
         "shipped_devices": shipped_devices,
-        "shipped_unserialized": unser_units,
         "replacements": replacements,
         "uncosted_units": uncosted,
         "unknown_currencies": sorted(unknown),
@@ -798,7 +723,7 @@ def invoice_json(i: M.OrderInvoice, order: M.SalesOrder) -> dict:
 
 def _line_counts(db: Session, line_ids: list[int]) -> dict[int, dict]:
     from sqlalchemy import func
-    out = {lid: {"shipped": 0, "replacements": 0, "returned": 0, "unserialized": 0, "allocated": 0}
+    out = {lid: {"shipped": 0, "replacements": 0, "returned": 0, "allocated": 0}
            for lid in line_ids}
     if not line_ids:
         return out
@@ -810,11 +735,6 @@ def _line_counts(db: Session, line_ids: list[int]) -> dict[int, dict]:
                            M.DeviceEvent.kind == "returned")
                    .group_by(M.DeviceEvent.order_line_id).all()):
         out[lid]["returned"] += n
-    for lid, n in (db.query(M.ShipmentLine.order_line_id, func.sum(M.ShipmentLine.qty_unserialized))
-                   .join(M.Shipment).filter(M.ShipmentLine.order_line_id.in_(line_ids),
-                                            M.Shipment.kind == "delivery")
-                   .group_by(M.ShipmentLine.order_line_id).all()):
-        out[lid]["unserialized"] += int(n or 0)
     # allocated NOW = devices whose state is allocated and whose last allocation names this line
     for d in db.query(M.DeviceUnit).filter(M.DeviceUnit.state == "allocated").all():
         ev = last_event(d, "allocated")
@@ -830,14 +750,17 @@ def order_json(db: Session, order: M.SalesOrder, *, with_detail: bool = False,
     lines = []
     for li in order.lines:
         c = counts[li.id]
-        fulfilled = c["shipped"] + c["unserialized"]
+        # ONE number, not two. `qty_shipped` used to be devices PLUS anonymous
+        # units, so `qty_shipped_devices` existed to say how much of it was
+        # real. Both count the same devices now, and a second name for the same
+        # figure is a second thing to keep in step.
+        fulfilled = c["shipped"]
         lines.append({
             "id": li.id, "project_id": li.project_id, "project": projects.get(li.project_id, "?"),
             "board": li.board, "variant": li.variant, "product": li.product,
             "qty_ordered": li.qty_ordered, "unit_price": li.unit_price,
             "net_total": _round((li.qty_ordered or 0) * (li.unit_price or 0)),
             "qty_shipped": fulfilled, "qty_open": max((li.qty_ordered or 0) - fulfilled, 0),
-            "qty_shipped_devices": c["shipped"], "qty_shipped_unserialized": c["unserialized"],
             "qty_replacements": c["replacements"], "qty_returned": c["returned"],
             "qty_allocated": c["allocated"], "migrated_from_run_id": li.migrated_from_run_id,
         })
@@ -886,10 +809,6 @@ def shipment_json(db: Session, sh: M.Shipment) -> dict:
     per_line: dict[int, int] = defaultdict(int)
     for dv in devices:
         per_line[dv["order_line_id"]] += 1
-    unser = [{"order_line_id": sl.order_line_id, "qty_unserialized": sl.qty_unserialized,
-              "source_run_id": sl.source_run_id} for sl in sh.lines]
-    for u in unser:
-        per_line[u["order_line_id"]] += u["qty_unserialized"] or 0
     # `devices` is what the shipment still carries, so a fully reversed
     # delivery shows none — and would read as deletable, which it is not:
     # `delete_shipment` refuses while ANY event names the shipment, reversed
@@ -899,7 +818,7 @@ def shipment_json(db: Session, sh: M.Shipment) -> dict:
     return {"id": sh.id, "order_id": sh.order_id, "kind": sh.kind, "shipped_at": sh.shipped_at,
             "delivery_note": sh.delivery_note, "tracking": sh.tracking, "notes": sh.notes,
             "qty": sum(per_line.values()), "per_line": dict(per_line),
-            "devices": devices, "unserialized": unser,
+            "devices": devices,
             "reversed": reversed_n, "deletable": not evs}
 
 
@@ -948,12 +867,7 @@ def run_sales_json(db: Session, run: M.ProductionRun) -> dict:
                .join(M.DeviceUnit, M.DeviceEvent.device_id == M.DeviceUnit.id)
                .filter(M.DeviceUnit.production_run_id == run.id, M.DeviceEvent.kind == "shipped")
                .scalar() or 0)
-    unser = 0
     lines: dict[int, int] = defaultdict(int)
-    for sl, sh in (db.query(M.ShipmentLine, M.Shipment).join(M.Shipment)
-                   .filter(M.ShipmentLine.source_run_id == run.id, M.Shipment.kind == "delivery")):
-        unser += sl.qty_unserialized or 0
-        lines[sl.order_line_id] += sl.qty_unserialized or 0
     for lid, n in (db.query(M.DeviceEvent.order_line_id, func.count(M.DeviceEvent.id))
                    .join(M.DeviceUnit, M.DeviceEvent.device_id == M.DeviceUnit.id)
                    .filter(M.DeviceUnit.production_run_id == run.id, M.DeviceEvent.kind == "shipped")
@@ -968,7 +882,7 @@ def run_sales_json(db: Session, run: M.ProductionRun) -> dict:
                        "customer": li.order.customer.name, "order_line_id": li.id,
                        "product": li.product, "qty_from_run": n})
     stock = next((s for s in run_stock(db, run.project_id) if s["run_id"] == run.id), None)
-    return {"qty_sold_derived": devices + unser, "orders": orders, "stock": stock}
+    return {"qty_sold_derived": devices, "orders": orders, "stock": stock}
 
 
 def project_demand(db: Session, project_id: int | None = None) -> list[dict]:

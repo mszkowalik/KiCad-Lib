@@ -5,7 +5,7 @@ Decision record 0003. Thin handlers: every rule lives in `services/orders.py`.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from .. import models as M
@@ -285,8 +285,6 @@ def delete_line(line_id: int, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(404, "order line not found")
     if db.query(M.DeviceEvent).filter(M.DeviceEvent.order_line_id == li.id).count():
         raise HTTPException(409, "devices were shipped against this line")
-    if db.query(M.ShipmentLine).filter(M.ShipmentLine.order_line_id == li.id).count():
-        raise HTTPException(409, "units were shipped against this line")
     o = li.order
     audit(db, "order.line.delete", "sales_order", o.id, {"line_id": li.id}, actor=actor_of(request))
     db.delete(li)
@@ -382,15 +380,27 @@ def delete_invoice(invoice_id: int, request: Request, db: Session = Depends(get_
 
 
 class ShipmentLineIn(BaseModel):
+    """One order line's worth of a delivery: the DEVICES that left, by id or by
+    scanned serial.
+
+    **THERE IS NO QUANTITY FIELD.** Not `qty`, not `qty_unserialized`. A shipment
+    is a set of serials (decisions 0032, 0049), so a quantity is never a valid
+    input — and a parameter that is never valid should not be on the schema, in
+    the OpenAPI document, or in a generated client. `extra="forbid"` refuses one
+    and names it; `additionalProperties: false` says so to anything reading the
+    schema.
+
+    `forbid` is doing real work here. Without it pydantic DROPS an unknown key
+    silently, so a caller sending `qty: 20` would get a shipment of nothing and
+    no hint why — which is the only argument for declaring the field, and it is
+    answered better this way.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
     order_line_id: int
     device_ids: list[int] = []
     serials: list[str] = []  # resolved to device ids; a scan sheet has these
-    qty: int = 0
-    run_ids: list[int] = []
-    board: str = ""
-    variant: str = ""
-    qty_unserialized: int = 0
-    source_run_id: int | None = None
     replaces_device_id: int | None = None
     note: str = ""
 
@@ -457,42 +467,12 @@ class ReverseShipmentIn(BaseModel):
     dry_run: bool = True
 
 
-class ShipmentLinePatch(BaseModel):
-    """The batch a shipment's UNSERIALISED units came from."""
-
-    source_run_id: int | None = None
-
-
-@router.patch("/shipment-lines/{line_id}")
-def patch_shipment_line(line_id: int, body: ShipmentLinePatch, request: Request,
-                        db: Session = Depends(get_db)):
-    """Name the batch that supplied a shipment's units without a serial.
-
-    A unit with no serial is charged to the batch its line names (decision 0003
-    §8); a line that names none is delivered but uncosted, and its batch keeps
-    counting the units as stock it still holds. That happens whenever the batch
-    is created AFTER the delivery was recorded, which is the normal order of
-    events for a prototype run reconstructed from its invoices.
-    """
-    sl = db.get(M.ShipmentLine, line_id)
-    if sl is None:
-        raise HTTPException(404, "shipment line not found")
-    line = db.get(M.SalesOrderLine, sl.order_line_id)
-    run = db.get(M.ProductionRun, body.source_run_id) if body.source_run_id else None
-    if body.source_run_id and run is None:
-        raise HTTPException(404, "no such production run")
-    if run is not None and line is not None and run.project_id != line.project_id:
-        raise HTTPException(422, f"batch {run.label!r} builds project {run.project_id}, "
-                                 f"the order line is project {line.project_id}")
-    svc.check_unserialized_source(db, body.source_run_id, sl.qty_unserialized or 0)
-    before = sl.source_run_id
-    sl.source_run_id = body.source_run_id
-    audit(db, "order.shipment_line.source", "shipment", sl.shipment_id,
-          {"line_id": sl.id, "from": before, "to": body.source_run_id,
-           "qty_unserialized": sl.qty_unserialized}, actor=actor_of(request))
-    db.commit()
-    return {"id": sl.id, "shipment_id": sl.shipment_id, "order_line_id": sl.order_line_id,
-            "qty_unserialized": sl.qty_unserialized, "source_run_id": sl.source_run_id}
+# `PATCH /shipment-lines/{id}` is GONE (user decision 2026-09-20). Its whole
+# purpose was to name the batch behind a shipment's UNSERIALISED units, and a
+# shipment has none any more: `create_shipment` refuses a quantity whether or
+# not a batch stands behind it, and the three that existed were replaced by the
+# serials they stood for. Keeping an endpoint to curate an artefact nothing can
+# create is how the artefact comes back.
 
 
 @router.post("/shipments/{shipment_id}/reverse")
@@ -687,6 +667,4 @@ def finished_stock(project_id: int | None = None, db: Session = Depends(get_db))
     return {"runs": rows,
             "totals": {"stock": sum(r["stock"] for r in rows),
                        "devices_in_stock": sum(r["devices_in_stock"] for r in rows),
-                       "legacy_stock": sum(r["legacy_stock"] for r in rows),
-                       "overdrawn": sum(r["overdrawn"] for r in rows),
                        "stock_value_usd": svc._round(sum(r["stock_value_usd"] or 0 for r in rows))}}

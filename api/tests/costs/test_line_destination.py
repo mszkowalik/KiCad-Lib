@@ -230,3 +230,48 @@ def test_a_cancelled_position_may_not_be_charged_to_anyone(db: Session, world):
         with pytest.raises(HTTPException) as exc:
             _check_cancelled("other:cancelled", allocate, run_id, project_id)
         assert exc.value.status_code == 422
+
+
+# --------------------------------------------- the register's own arithmetic
+
+def test_the_register_identity_closes_exactly(db: Session, world):
+    """`lines == runs + projects + pool + excluded + unassigned + residual
+    - overallocated`, to the cent and beyond.
+
+    It used to be measured against the PRINTED total, which made it permanently
+    0.0271 on the real database — five documents whose lines miss what the
+    supplier printed by a cent or two. That is bad DATA, not a bug, so the bug
+    detector could never read zero; and the production overview printed a green
+    "0" for anything under 0.05, so the number nobody could fix was also the
+    number nobody could see (decision 0048).
+    """
+    s = ra.invoice_register(db)["summary"]
+    buckets = (s["to_runs_usd"] + s["to_projects_usd"] + s["to_pool_usd"]
+               + s["excluded_usd"] + s["unassigned_usd"] + s["residual_usd"]
+               - (s["overallocated_usd"] or 0.0))
+    assert s["lines_total_usd"] == pytest.approx(buckets, abs=0.0005)
+    assert s["gap_usd"] == pytest.approx(0.0, abs=0.0005), \
+        "a non-zero gap is a bug in run_actuals, not bad data"
+
+
+def test_over_allocated_children_are_reported_not_clamped(db: Session, world):
+    """A header whose children claim MORE than it holds. `residual` clamps at
+    zero because a header cannot owe a negative amount — so the overshoot had to
+    get its own name, or it stayed in the leaves and out of the identity. Four
+    JLCPCB documents overshoot by 0.0001-0.0002 and kept the gap from closing."""
+    doc = M.RunCostDocument(project_id=None, doc_type="invoice", supplier="DESTCO",
+                            doc_number="D-0004", doc_date="2026-01-04",
+                            currency="USD", total_amount=100.0)
+    db.add(doc)
+    db.flush()
+    parent = _line(db, doc, plan_key="pcba:general", qty=1, unit_price=100.0)
+    child = M.RunCostLine(document_id=doc.id, parent_line_id=parent.id, position=1,
+                          plan_key="pcba:general", qty=1, unit_price=100.02,
+                          run_id=world["run"].id)
+    db.add(child)
+    db.flush()
+    j = ra.document_json(doc, db=db)
+    assert j["assignment"]["residual"] == pytest.approx(0.0)
+    assert j["assignment"]["overallocated"] == pytest.approx(0.02, abs=0.0005)
+    leaves = j["assignment"]["run"] or 0.0
+    assert leaves - j["assignment"]["overallocated"] == pytest.approx(100.0, abs=0.0005)

@@ -358,8 +358,20 @@ def document_json(doc: M.RunCostDocument, with_lines: bool = True,
             by_run[ref] += amount
         elif dest == "project" and ref:
             by_project[ref] += amount
+    # A header's money that no child claimed. Clamped at zero because a header
+    # cannot owe a negative amount — but the clamp DROPS the opposite case, so
+    # its twin below reports it instead of losing it.
     residual = sum(
         max(effective_qty(li, doc, db) * (li.unit_price or 0) - kids[li.id], 0.0)
+        for li in live if li.id in kids
+    )
+    # Children totalling MORE than the header they split. `split_line` refuses
+    # over-allocation beyond half a cent, so what survives is sub-cent — but the
+    # leaves carry it and the clamped residual does not, which is why the
+    # register's own identity could never read zero (decision 0048): four JLCPCB
+    # documents overshoot by 0.0001-0.0002 each.
+    overallocated = sum(
+        max(kids[li.id] - effective_qty(li, doc, db) * (li.unit_price or 0), 0.0)
         for li in live if li.id in kids
     )
     out = {
@@ -418,6 +430,8 @@ def document_json(doc: M.RunCostDocument, with_lines: bool = True,
             "excluded": _round(by_dest.get("excluded", 0.0)),
             "unassigned": _round(by_dest.get("unassigned", 0.0)),
             "residual": _round(residual),
+            # The opposite of `residual`: children claiming more than the header.
+            "overallocated": _round(overallocated),
             "by_run": {str(k): _round(v) for k, v in sorted(by_run.items())},
             "by_project": {str(k): _round(v) for k, v in sorted(by_project.items())},
             "fully_assigned": by_dest.get("unassigned", 0.0) <= 0.005 and residual <= 0.005,
@@ -1800,6 +1814,8 @@ def invoice_register(db: Session) -> dict:
     # One lookup of the closed batches for the whole register (decision 0044),
     # instead of one query per document row.
     closed_by_id = {r.id: r for r in _all_runs if r.closed_at is not None}
+    untranscribed: list[dict] = []
+    excl_reason: dict[str, float] = defaultdict(float)
     for doc in docs:
         j = document_json(doc, with_lines=False, db=db, closed=closed_by_id)
         a = j["assignment"]
@@ -1810,15 +1826,43 @@ def invoice_register(db: Session) -> dict:
         j["lines_total_usd"] = _round(to_usd(j["lines_total"] or 0.0, doc))
         j["assignment_usd"] = {k: _round(to_usd(a[k] or 0.0, doc))
                                for k in ("run", "project", "pool", "excluded",
-                                         "unassigned", "residual")}
+                                         "unassigned", "residual", "overallocated")}
         j["project_name"] = projects.get(doc.project_id or 0, "")
         j["run_label"] = (runs.get(doc.run_id or 0) or {}).get("label", "")
         rows.append(j)
         if (doc.doc_type or "invoice") == "proforma":
             continue  # not money: a quote that the real invoice supersedes
-        tot["total"] += j["total_usd"] or 0.0
-        for k in ("run", "project", "pool", "excluded", "unassigned", "residual"):
-            tot[k] += j["assignment_usd"][k] or 0.0
+        # ACCUMULATE THE EXACT VALUES, not the per-document rounded ones. The row
+        # carries figures rounded to 4dp for display, and adding 86 of those up
+        # left the invariant at -0.0005 — an error introduced by the reporting,
+        # in the very number whose job is to prove the arithmetic (decision 0048).
+        tot["total"] += to_usd(printed, doc)
+        # What our LINES say, next to what the supplier PRINTED. The buckets are
+        # derived from the lines, so `lines == buckets` is the platform's own
+        # arithmetic and must hold exactly; `printed - lines` is a transcription
+        # difference and is a fact about the data.
+        tot["lines"] += to_usd(j["lines_total"] or 0.0, doc)
+        for k in ("run", "project", "pool", "excluded", "unassigned", "residual",
+                  "overallocated"):
+            tot[k] += to_usd(a[k] or 0.0, doc)
+        _slip = to_usd(printed, doc) - to_usd(j["lines_total"] or 0.0, doc)
+        if abs(_slip) > 0.0005:
+            untranscribed.append({
+                "document_id": doc.id, "supplier": doc.supplier or "",
+                "doc_number": doc.doc_number or "", "doc_date": doc.doc_date or "",
+                "currency": doc.currency or "USD",
+                "printed": doc.total_amount, "lines_total": j["lines_total"],
+                "difference_usd": _round(_slip),
+            })
+        if (a.get("excluded") or 0.0) > 0.0 or (a.get("excluded") or 0.0) < 0.0:
+            _h = header_ids(db, doc.id)
+            for li in doc.lines:
+                if li.voided_at is not None or li.id in _h:
+                    continue
+                if (li.allocate or "none") != EXCLUDED:
+                    continue
+                excl_reason[li.exclude_reason or "legacy_unstated"] += to_usd(
+                    effective_qty(li, doc, db) * (li.unit_price or 0), doc)
         by_supplier[doc.supplier or "(unnamed)"] += j["total_usd"] or 0.0
         for rid, amount in a["by_run"].items():
             by_run[int(rid)] += to_usd(amount or 0.0, doc)
@@ -1912,10 +1956,42 @@ def invoice_register(db: Session) -> dict:
             "excluded_usd": _round(tot["excluded"]),
             "unassigned_usd": _round(tot["unassigned"]),
             "residual_usd": _round(tot["residual"]),
-            # Everything above is one identity: total == runs + projects + pool
-            # + unassigned + residual. A non-zero gap means a bug here, not bad data.
-            "gap_usd": _round(tot["total"] - tot["run"] - tot["project"] - tot["pool"]
-                              - tot["excluded"] - tot["unassigned"] - tot["residual"]),
+            # Children claiming more than the header they split. Sub-cent by
+            # construction — `split_line` refuses anything larger — but it has to
+            # be in the identity or the identity cannot close.
+            "overallocated_usd": _round(tot["overallocated"]),
+            # WHY the excluded money is excluded, and how much of it says nothing.
+            # `excluded` is a legal bucket in the identity, so an exclusion is
+            # invisible to every check the platform has — which is how $14,443 of
+            # manufacturing sat charged to nobody while the register read clean.
+            # `legacy_unstated` is the deploy-day lint: it means the reason was
+            # never given, not that there is none (decision 0048).
+            "excluded_by_reason_usd": {
+                k: _round(v) for k, v in sorted(excl_reason.items(), key=lambda kv: -kv[1])
+            },
+            "excluded_unstated_usd": _round(
+                sum(v for k, v in excl_reason.items() if k in ("", "legacy_unstated"))),
+            # What our lines add up to, beside what the suppliers printed.
+            "lines_total_usd": _round(tot["lines"]),
+            # THE INVARIANT, and it is about the platform's own arithmetic: every
+            # bucket is derived from the lines, so the buckets must add back up to
+            # them EXACTLY. A non-zero value here is a bug in this module.
+            #
+            # It used to be measured against the PRINTED total instead, which made
+            # it permanently 0.0271 — five documents whose lines miss what the
+            # supplier printed by a cent or two. That is bad DATA, not a bug, and
+            # mixing the two meant the bug detector could never read zero. Worse,
+            # the production overview printed a green "0" for anything under 0.05,
+            # so the number nobody could fix was also the number nobody could see
+            # (decision 0048).
+            "gap_usd": _round(tot["lines"] - tot["run"] - tot["project"] - tot["pool"]
+                              - tot["excluded"] - tot["unassigned"] - tot["residual"]
+                              + tot["overallocated"]),
+            # `printed - lines`, summed: money that left the company and is not on
+            # any line. Real, small and NOT fixable by editing a line — JLC prints
+            # a rounded total while our unit prices carry more decimals. Reported
+            # so it is known, with `issues.untranscribed` naming every document.
+            "untranscribed_usd": _round(tot["total"] - tot["lines"]),
             "unknown_rates": sorted(unknown),
             "by_supplier_usd": {k: _round(v) for k, v in sorted(by_supplier.items(),
                                                                 key=lambda kv: -kv[1])},
@@ -1941,6 +2017,12 @@ def invoice_register(db: Session) -> dict:
             "uncharged_drawn_usd": _round(uncharged_usd),
         },
         "issues": {
+            # Documents whose lines do not add up to what the supplier printed,
+            # by any amount at all. `unreconciled` below uses a 5-cent tolerance
+            # and so never names these; they are the whole of `untranscribed_usd`
+            # (decision 0048).
+            "untranscribed": sorted(untranscribed,
+                                    key=lambda u: -abs(u["difference_usd"] or 0.0)),
             "unreconciled": [
                 {"id": r["id"], "supplier": r["supplier"], "doc_number": r["doc_number"],
                  "doc_date": r["doc_date"], "total_amount": r["total_amount"],

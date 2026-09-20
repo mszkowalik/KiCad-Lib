@@ -63,8 +63,9 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
   rows close it (advance + final + correction should sum to the net total — a
   warning, never a block; a proforma is not money; revenue converts per invoice
   at the invoice date); a `Shipment` is a header whose content is `shipped`
-  device events, plus `qty_unserialized` per line for batches that predate
-  device records (§8). `DeviceEvent` is append-only and its newest row IS the
+  device events and NOTHING ELSE — there is no quantity on a shipment line
+  (decision [0049](../decisions/0049-a-delivery-names-its-devices-and-nothing-else.md)).
+  `DeviceEvent` is append-only and its newest row IS the
   device's state; `DeviceUnit.state` / `.production_run_id` are caches of it.
   Rules that cost something to learn:
   - **A device's log is monotonic.** `record_event` bumps an earlier `at` to
@@ -78,24 +79,27 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
     Order cost counts every shipped device, replacements included, at its
     batch's per-device actual (`per_device_cost_usd`, from the register).
   - **Built means finished and passed** (user rule, 2026-09-10). `run_stock`
-    counts a batch that has ANY device record from its devices only: the typed
-    run quantity is `qty_recorded` for a tooltip and never adds "no serial"
-    units to the shelf. Only a batch with no device records at all (the V3
-    prototypes) is counted from its quantity, and that is the only source of
-    an unserialized unit. A device whose newest run did not pass has no
+    counts a batch from its DEVICE RECORDS and from nothing else: the typed run
+    quantity is `qty_recorded` for a tooltip and never reaches the shelf. A
+    batch with no device records is built 0 — the fallback to its typed
+    quantity was the last place a unit was counted without being named, and it
+    went with the shipments that drew from it (2026-09-21). Record the devices,
+    as placeholders if they were never serialised (decision
+    [0039](../decisions/0039-a-prototype-is-counted-without-being-named.md)).
+    A device whose newest run did not pass has no
     `produced` event and is not stock; several flash cycles of one MAC are one
     device with several runs, never several devices. Known gap: the engine's
     first-pass rule keeps `produced` when a later run fails — add a
     failed-after-pass event before relying on live runs for stock.
-  - **A batch that records its devices has NO units without a serial**
-    (`check_unserialized_source`, decision
-    [0031](../decisions/0031-a-batch-that-records-its-devices-has-no-anonymous-units.md)):
-    `run_stock` gives such a batch a legacy pool of zero, so charging one to it
-    anyway only ever produced an `overdrawn` flag after the fact. Every path
-    that writes one — `create_shipment`, `reconcile_shelf`,
-    `PATCH /api/shipment-lines/{id}` — refuses with 409 and names the batch. A
-    stock-count slot that nothing can refill therefore LOWERS what its order
-    counts as delivered; there is no option to invent the missing unit.
+  - **NO batch has units without a serial** (decision
+    [0031](../decisions/0031-a-batch-that-records-its-devices-has-no-anonymous-units.md),
+    completed by [0049](../decisions/0049-a-delivery-names-its-devices-and-nothing-else.md)).
+    0031 refused an anonymous unit on a batch that had device records; there is
+    no way to write one at all now. `shipment_lines` is DROPPED,
+    `ShipmentLineIn` forbids extra fields so `qty`, `qty_unserialized`,
+    `run_ids` and `source_run_id` are refused by name with 422, and
+    `create_shipment` refuses a line that moves no device. `check_unserialized_source`,
+    `reconcile_shelf` and `PATCH /api/shipment-lines/{id}` are gone with it.
   - **Good units are COUNTED, never typed** (`run_actuals.good_units`, decision
     [0030](../decisions/0030-good-units-are-counted-not-typed.md)): every
     per-device divisor — per-device actuals, the register's per-run quantity
@@ -127,15 +131,15 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
   - **A FIFO pick is a guess, and two things correct it.** A RETURN
     (`return_device`): the returned device takes the place of a FIFO-picked
     device on the same line, which goes back to stock or inherits the returned
-    device's old slot; a line fulfilled by unserialized units converts one of
-    them into the named device instead. A STOCK COUNT
-    (`reconcile_shelf`, `POST /api/stock/reconcile`, decision
-    [0027](../decisions/0027-a-stock-count-corrects-a-fifo-guess.md)): every
-    `auto` pick the count contradicts is reversed and its slot refilled from
-    stock, oldest produced first. `dry_run` is the default and the first answer
-    is the plan. A `shipped` event with `auto = false` is never touched — a
-    person named that device — and `keep_count` decides whether a slot nothing
-    can refill becomes an anonymous unit or a shortfall on the order.
+    device's old slot. The STOCK COUNT that used to be the second correction
+    (`reconcile_shelf`, decision
+    [0027](../decisions/0027-a-stock-count-corrects-a-fifo-guess.md)) is GONE
+    with decision [0032](../decisions/0032-a-shipment-names-its-devices.md): a
+    mechanism that removes guesses by writing new ones is not a correction. No
+    NEW pick is a guess either — `create_shipment` never picks, so every
+    `shipped` event it writes carries `auto = false`. The `auto` flag survives
+    on the historical events it describes, which is why the shipment row still
+    prints "picked FIFO" on some of them.
   - **An `unshipped` event does not delete the `shipped` event it reverses**,
     because the log is append-only. Every fulfilment and cost figure therefore
     reads `live_shipped_events` (per line) or `live_shipped_of` (per device),
@@ -146,8 +150,7 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
     [0028](../decisions/0028-a-shipment-recorded-in-error-is-reversed-not-deleted.md)).
   - **A shipment recorded in error is REVERSED, not deleted**
     (`reverse_shipment`, `POST /api/shipments/{id}/reverse`): every delivery on
-    it gets an `unshipped` event, its `qty_unserialized` goes to zero, the
-    header and the events stay. A shipment the customer RECEIVED comes back
+    it gets an `unshipped` event; the header and the events stay. A shipment the customer RECEIVED comes back
     through `return_device` instead.
   - **The flasher writes `produced` on the first PASS in a batch**
     (`engine.py` → `mark_produced`, idempotent; never on a draft run). Legacy

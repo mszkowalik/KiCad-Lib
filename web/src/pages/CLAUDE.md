@@ -177,13 +177,15 @@ and the copy was worse.
 - **Orders live on Production → Orders** (`pages/Orders.tsx`,
   `pages/OrderDetail.tsx`, decision 0003). The Orders page is also the ONE
   home of finished-device stock ("Devices on the shelf"), which counts
-  recorded devices next to legacy units without a serial. Stock splits into
+  RECORDED DEVICES and nothing else — a batch with no device records is built
+  0, whatever quantity is typed on it, and the "No serial" column that used to
+  hold the difference is gone (decision 0049). Stock splits into
   `devices_available` and `devices_held`: only a device whose `condition` is
   `ok` may ship, so a faulty or prototype unit is counted and visible but
   never picked (decision 0032). **That card lists
   every batch that was built, empty or not** — it filters on `r.status`
   (planned batches hold nothing yet) and NEVER on what is left on a row.
-  Selecting by `stock > 0 || overdrawn > 0` deleted six of seven dongle
+  Selecting by what a row still holds deleted six of seven dongle
   batches from the page the day `built` started counting passed devices
   instead of the typed run quantity (decision 0007), because everything they
   held had shipped. A batch is a fact; its remaining stock is a number on it.
