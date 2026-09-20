@@ -113,6 +113,16 @@ copy of that one. Reasoning in
   Component until later the same day; both said what Position now says, and the
   designators a position covers are not read here. Eight columns, and the
   widths have been wrong three times — count them before you touch them.
+- **A share charged to NOBODY states why, in the same cell.** `allocate:
+  "excluded"` is the one destination that needs no batch and no project, so it
+  is the one a person walks away from — and `excluded` passes every check the
+  register has, so nothing downstream notices. The API refuses it without an
+  `exclude_reason` (422) and the dialog refuses it before the save. The control
+  is `costs.tsx`'s `<ExcludeReasonInput>`, shared with the line table's "How"
+  column: one input, one list of the reasons already in use, so the two paths
+  cannot grow two vocabularies. The dialog had NO field for it until
+  2026-09-21, which is why every prepaid component share JLC's populated-board
+  invoices produce arrived unlabelled.
 - **The pool warning is wrong for a supplier lump and must stay conditional.**
   "Parts feed the shared pool" is true of a purchase; a supplier lump is charged
   to the batch and never pooled, which is the OPPOSITE case. `supplierLump`

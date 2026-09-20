@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-09-21 (every exclusion says what for)
+
+`excluded` money is charged to nobody on purpose, and it passes every other
+check the register has — the gap still closes, nothing reads as unassigned. The
+reason is the only thing that makes it auditable, and **44 positions worth USD
+37,656.66 said nothing at all**.
+
+- **All 44 are labelled**, and `excluded_unstated_usd` reads **0.00**. No money
+  moved: every other figure on the register is unchanged to four decimals.
+  14 lines of import VAT (11,975.90) are `reclaimable_vat`, 12 lines of JLC
+  prepaid components (25,680.76) are `prepaid_components`, and 18 are split
+  headers whose money is on their children.
+- **The API now refuses an exclusion with no reason** (422), on the line editor
+  and on the split.
+- **The split dialog can state one at all.** It could mark a share excluded and
+  had no field for the reason, which is why every prepaid component share from
+  a JLC populated-board invoice arrived unlabelled. A reason box appears under
+  the destination when a share is charged to nobody, with the reasons already in
+  use offered as suggestions.
+- The vocabulary is in the production-run skill (v7), which also drops the last
+  references to the removed `kind` field.
+
 ## 2026-09-21 (production data comes down with one command)
 
 `scripts/sync-prod-to-local.sh` copies the production database, and optionally

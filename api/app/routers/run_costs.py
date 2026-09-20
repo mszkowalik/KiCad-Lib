@@ -53,7 +53,7 @@ class LineIn(BaseModel):
 
 
 class ChildIn(BaseModel):
-    """One share of a split position. `kind`/`basis` default to the parent's.
+    """One share of a split position. `basis` defaults to the parent's.
 
     Amounts are ABSOLUTE. A percentage split is a frontend affordance — the
     browser turns "40%" into a number before it gets here (user decision
@@ -78,6 +78,11 @@ class ChildIn(BaseModel):
     notes: str = ""
     # "excluded" marks a share that is recorded but charged to nobody.
     allocate: str | None = None
+    # ...and WHY. This field did not exist until 2026-09-21, so the split path
+    # could mark a share excluded and had no way to say what for: every prepaid
+    # component share JLC's populated-board invoices produce arrived unlabelled
+    # and had to be corrected by hand afterwards (decision 0048).
+    exclude_reason: str = ""
 
 
 class SplitIn(BaseModel):
@@ -505,6 +510,32 @@ def _check_allocate(step: str | None, allocate: str | None) -> None:
         })
 
 
+def _check_excluded(allocate: str | None, reason: str | None) -> None:
+    """An exclusion has to say WHAT FOR (decision 0048).
+
+    `excluded` is a legal bucket in the register's conservation identity, so an
+    excluded position is invisible to every other check the platform has: the
+    gap still closes, nothing is unassigned, and USD 14,443 of manufacturing sat
+    charged to nobody with every light green. The reason is the only thing that
+    makes it auditable rather than merely missing, and it was reachable from
+    the line editor but NOT from the split dialog — which is where JLC's prepaid
+    component shares are made, and why 26 of them had to be labelled by hand on
+    2026-09-21.
+
+    Free text on purpose: the vocabulary in the production-run skill is a
+    convention, and a closed list here would refuse the first honest reason
+    nobody thought of.
+    """
+    if allocate == run_actuals.EXCLUDED and not (reason or "").strip():
+        raise HTTPException(422, {
+            "error": "an excluded position must say why it is charged to nobody",
+            "hint": "set `exclude_reason` — e.g. reclaimable_vat, "
+                    "prepaid_components, external_project, cancelled_by_supplier, "
+                    "payment_fee. `excluded` passes every other check in the "
+                    "register, so the reason is what makes it auditable.",
+        })
+
+
 # A step whose money can never be charged to anyone. `other:cancelled` is the
 # supplier printing a line for something it did not deliver (user decision
 # 2026-09-19): nobody pays for it, so it may not name a batch or a project.
@@ -682,6 +713,7 @@ def _create_document(project_id: int | None, body: DocumentIn, db: Session):
     for li in body.lines:
         _check_line(li)
         _check_allocate(li.plan_key, li.allocate)
+        _check_excluded(li.allocate, li.exclude_reason)
         _check_cancelled(li.plan_key, li.allocate, li.run_id, li.project_id)
     data = body.model_dump(exclude={"lines", "project_id"})
     doc = M.RunCostDocument(project_id=project_id, **data)
@@ -844,6 +876,7 @@ def add_line(doc_id: int, body: LineIn, db: Session = Depends(get_db)):
     _guard_closed(db, doc, "adding a position to this document")
     _check_line(body)
     _check_allocate(body.plan_key, body.allocate)
+    _check_excluded(body.allocate, body.exclude_reason)
     _check_cancelled(body.plan_key, body.allocate, body.run_id, body.project_id)
     pos = body.position or (max([li.position for li in doc.lines], default=-1) + 1)
     d = body.model_dump()
@@ -882,11 +915,14 @@ def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
         f = e.model_dump(exclude_unset=True)
         _cur = by_id[e.id]
         _check_allocate(f.get("plan_key", _cur.plan_key), f.get("allocate", _cur.allocate))
+        _check_excluded(f.get("allocate", _cur.allocate),
+                        f.get("exclude_reason", _cur.exclude_reason))
         _check_cancelled(f.get("plan_key", _cur.plan_key), f.get("allocate", _cur.allocate),
                          f.get("run_id", _cur.run_id), f.get("project_id", _cur.project_id))
     for c in body.creates:
         _check_line(c)
         _check_allocate(c.plan_key, c.allocate)
+        _check_excluded(c.allocate, c.exclude_reason)
         _check_cancelled(c.plan_key, c.allocate, c.run_id, c.project_id)
 
     # One netted guard for the batch. A deleted line, or one that leaves the
@@ -1043,6 +1079,7 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
     for child in body.children:
         _check_line(child)
         _check_allocate(child.plan_key or parent.plan_key, child.allocate)
+        _check_excluded(child.allocate, child.exclude_reason)
         _check_destination(db, child.run_id, child.project_id)
         qty, unit = child.qty, child.unit_price
         if child.amount is not None:
@@ -1059,6 +1096,7 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
             mpn=child.mpn or parent.mpn, lcsc=child.lcsc or parent.lcsc,
             description=child.description, plan_key=child.plan_key,
             plan_kind=child.plan_kind, plan_ref=child.plan_ref, notes=child.notes,
+            exclude_reason=child.exclude_reason,
         ))
 
     # Splitting a PART line moves stock: the parent becomes a header and stops
@@ -1110,6 +1148,8 @@ def update_line(line_id: int, body: LinePatch, db: Session = Depends(get_db)):
     _check_line(body)
     fields = body.model_dump(exclude_unset=True)
     _check_allocate(fields.get("plan_key", li.plan_key), fields.get("allocate", li.allocate))
+    _check_excluded(fields.get("allocate", li.allocate),
+                    fields.get("exclude_reason", li.exclude_reason))
     _check_cancelled(fields.get("plan_key", li.plan_key), fields.get("allocate", li.allocate),
                      fields.get("run_id", li.run_id), fields.get("project_id", li.project_id))
     # A smaller quantity, or a different pool identity, takes stock away from

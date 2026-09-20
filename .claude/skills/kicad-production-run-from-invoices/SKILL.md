@@ -2,7 +2,7 @@
 name: kicad-production-run-from-invoices
 description: "How to recreate what a production batch really cost from supplier invoices: the cost-pool model, shared vs run documents, splitting one invoice position across runs and into a supplier's own sub-fees, NBP FX at the invoice date, OCR import of JLC component invoices, MPN->component resolution, BOM draws, attrition, and the invoice register that proves no money is unassigned. Use when creating or backfilling a production run, or entering or splitting any supplier invoice."
 ---
-<!-- platform-skill: production-run-from-invoices v6 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: production-run-from-invoices v7 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Creating a production run from supplier invoices
 
 Procedure for recreating what a production batch really cost, from the invoices
@@ -18,10 +18,12 @@ Design background: `docs/production-costs/design.md`. Code:
 
 **Purchases go into a company-wide cost pool; a run pays for what it drew from
 the pool.** Component invoices are stockpile replenishment, so a parts purchase
-is NEVER booked onto a batch. A `run_cost_lines` row with `kind="part"` and no
-`run_id` IS the pool. Every other kind (`fab`, `assembly`, `tooling`, `freight`,
-`duty`, `tax`, `rework`, `packaging`, `service`, `other`) is a direct cost of its
-run. Components reach a run through `component_consumptions`, valued at the
+is NEVER booked onto a batch. A `run_cost_lines` row whose STEP is a part step
+(`parts:pool`, `parts:prepaid`, `parts:attrition`, `pcba:parts`) and which names
+no `run_id` IS the pool. Every other step is a direct cost of its run. There is
+ONE field saying what a position is and it is `plan_key`, the production step
+(decision 0047): the coarse bucket `part`/`fab`/`assembly`/`tooling`/`freight`/
+`tax`/`service`/`other` is DERIVED from it by `cost_steps.kind_of`, never typed. Components reach a run through `component_consumptions`, valued at the
 pool's moving weighted average and snapshotted at that moment. Attrition is
 expected: write it off with `component_stock_adjustments`, optionally charged to
 a run. Quantities exist to split money — they are NOT expected to match JLCPCB's
@@ -73,7 +75,7 @@ POST /api/documents            # shared: components -> pool
 { "supplier": "JLCPCB", "doc_number": "<invoice no>",
   "external_id": "<JLC Batch No, POB0…>",   # idempotency key
   "doc_date": "2024-07-24", "currency": "USD", "total_amount": 6927.33,
-  "lines": [ { "kind": "part", "mpn": "CH340B", "qty": 1051,
+  "lines": [ { "plan_key": "parts:pool", "mpn": "CH340B", "qty": 1051,
                "unit_price": 0.3356041 } ] }
 ```
 
@@ -102,8 +104,13 @@ Rules:
 - **A split invoice keeps `document.run_id` NULL** and allocates per line. A
   document assigned to run A whose line points at run B would otherwise be
   charged to both.
-- **A `part` line WITH a `run_id`** is charged directly to that run and stays out
-  of the pool (that is how JLC-supplied parts on an assembly invoice are booked).
+- **A part-step line WITH a `run_id`** is charged directly to that run and stays
+  out of the pool (that is how JLC-supplied parts on an assembly invoice are
+  booked).
+- **There is no `kind` field, and sending one is SILENTLY DROPPED.** `LineIn`
+  does not forbid unknown keys, so a `"kind": "part"` copied from an older recipe
+  vanishes and the line arrives with NO step — it then reports under `~part` as
+  unclassified actuals and matches no plan. Always send `plan_key`.
 
 ## 2b. Split a position instead of retyping the invoice
 
@@ -143,17 +150,23 @@ Rules the API enforces:
   percentage to an absolute amount before sending it; only absolutes are stored, so
   nothing is re-derived against a base that has since changed. Use "Balance last
   row" so rounding lands in one place instead of leaking a cent.
-- **Splitting a `part` line takes `allow_parts: true`** and is almost always
+- **Splitting a part-step line takes `allow_parts: true`** and is almost always
   wrong: parts feed the pool, which already splits them by consumption. Only use it
   for parts bought for one specific batch.
 - **Voiding a line voids its subtree** — orphaned shares would charge runs for a
   position that no longer exists.
 
 Link a position to the planned cost it is the actual for with
-`plan_kind: "cost"`, `plan_key: <cost item id>`, `plan_ref: <label>` (the
+`plan_kind: "cost"`, **`plan_item_id: <cost item id>`**, `plan_ref: <label>` (the
 Invoices view's "Planned as" column does this, and can create the cost item from
 the line). `plan_ref` is the anchor that survives a cost-list revision, since
 cost items are copy-on-write per commit.
+
+**Never put a cost-item id in `plan_key`.** `plan_key` is the STEP and only a
+catalogue key belongs in it; the router refuses anything else. The plan dialog
+wrote an id there until 2026-09-19, which dropped the position out of the part
+steps and so out of the cost pool — a part line that had silently stopped being
+stock (decision 0047).
 
 ## 3. Import a JLC component invoice from its PDF
 
@@ -269,8 +282,8 @@ the digital print on an enclosure, and its one-off print set-up, as separate lin
 the MRP correctly folds both into the enclosure's unit cost. Importing them as
 `part` lines creates a phantom pool item and leaves the set-up looking like
 unallocated cost. Mark them `allocate: "by_qty"` (per-unit) or `"by_value"`
-(one-off) so they spread onto that document's part lines. `allocate` is NOT gated on
-`kind` — the operator's explicit choice is the signal. Spreading is per-document, so
+(one-off) so they spread onto that document's part lines. `allocate` is NOT gated
+on the step — the operator's explicit choice is the signal. Spreading is per-document, so
 an order placed without the surcharge simply carries none.
 
 Do NOT derive a display label by splitting a formatted number
@@ -295,15 +308,42 @@ error forever. Enter them and set `allocate: "excluded"` — recorded, auditable
 charged to nobody. `"excluded"` is NOT `unassigned`; unassigned means nobody has
 noticed yet and is a defect.
 
+**An exclusion MUST state its reason.** `excluded` is a legal bucket in the
+identity, so an exclusion is invisible to every other check the register has —
+which is how USD 14,443 of manufacturing once sat charged to nobody while the
+page read clean. `exclude_reason` is free text, but use the settled vocabulary
+so the register's `excluded_by_reason_usd` stays readable:
+
+| reason | what it marks |
+|---|---|
+| `reclaimable_vat` | import VAT and customs (`logistics:duty`). Everything here is NET |
+| `prepaid_components` | the JLC `PrePaid Amount` — components already in the pool |
+| `external_project` | work for a product this platform does not track; name the project in the line's notes |
+| `cancelled_by_supplier` | a line the supplier cancelled and still printed |
+| `payment_fee` | a transfer or payment charge nobody's product should carry |
+| `split_across_children` | a HEADER whose money is on its children; it is worth zero either way |
+
+`legacy_unstated` is NOT one of them: it is the deploy-day lint from decision
+0048, and it means the reason was never given, not that there is none. The
+register reports it as `excluded_unstated_usd`, the production overview marks it
+in the Excluded column, and **it must read 0**.
+
+The API enforces it: `allocate: "excluded"` with no `exclude_reason` is refused
+with 422, on the line editor AND on the split. The split could not state a
+reason at all until 2026-09-21 — `ChildIn` had no such field — which is why
+every prepaid component share JLC's populated-board invoices produce arrived
+unlabelled and 26 of them had to be corrected by hand.
+
 Booking a populated-board invoice, per position:
 
 ```
 POST /api/run-cost-lines/{board_line_id}/split
 { "allow_parts": true, "children": [
     { "label": "... — fab + assembly", "amount": <ext - prepaid_share>,
-      "kind": "fab", "run_id": 7 },
+      "plan_key": "pcba:populated", "run_id": 7 },
     { "label": "... — components prepaid (already pooled)", "amount": <prepaid_share>,
-      "kind": "part", "allocate": "excluded" } ] }
+      "plan_key": "parts:prepaid", "allocate": "excluded",
+      "exclude_reason": "prepaid_components" } ] }
 ```
 
 The prepaid lump is not broken down per product on the invoice, so apportion it
@@ -345,10 +385,26 @@ run's prefix, so it survives `delete_run`. Most of these PDFs are real text PDFs
    document naming neither run nor project — money nobody pays for.
 3. **Does the pool balance?** `pool.purchased + adjustments - drawn == on_hand`.
 
-`summary.gap_usd` must be 0: invoiced == runs + projects + pool + excluded +
-unassigned + residual, by construction. A non-zero gap is a bug in the platform, not bad data —
-report it rather than working around it. `by_run_usd` is the same arithmetic as
-each run's own actuals, so the two must agree.
+`summary.gap_usd` must be **exactly 0**, with no tolerance (decision 0048). It is
+an invariant on OUR OWN arithmetic: `lines_total_usd` == runs + projects + pool +
+excluded + unassigned + residual + overallocated, by construction. A non-zero gap
+is a bug in `run_actuals`, not bad data — report it rather than working around
+it. It read 0.0271 for months because it was measured against the PRINTED total
+and the screen rounded anything under 0.05 to a green zero.
+
+Three figures beside it:
+
+- **`untranscribed_usd`** is `printed - lines`: money a supplier put on the page
+  that is on no line of ours. It is real, small (0.0276 across five documents)
+  and NOT fixable by editing a line — JLC prints a rounded total while our unit
+  prices keep more decimals. `issues.untranscribed` names every document.
+- **`overallocated_usd`** is the twin of `residual`: children claiming more than
+  the header they split. `residual` clamps at zero, so an overshoot would
+  otherwise live outside the identity.
+- **`excluded_unstated_usd`** must be 0 — see 2c.
+
+`by_run_usd` is the same arithmetic as each run's own actuals, so the two must
+agree.
 
 ## Verification checklist
 
@@ -365,6 +421,9 @@ Run all of it before calling a batch done:
 5. The freight/shared split's remainder is recorded for the other product.
 6. Compare per-device cost against the MRP's `average_price_per_item` for that
    product; a large gap means a missing document, not a rounding issue.
+7. `GET /api/invoices` — `summary.gap_usd` is exactly 0, `unassigned_usd` and
+   `residual_usd` are 0, and `excluded_unstated_usd` is 0: every exclusion says
+   why.
 
 ## Pitfalls that actually bit
 
@@ -381,3 +440,4 @@ Run all of it before calling a batch done:
   reads too low.
 - **Deleting a run with financial rows** — it is refused (409) by design; remove
   or reassign the documents, draws and adjustments first.
+

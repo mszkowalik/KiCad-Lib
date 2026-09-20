@@ -34,6 +34,7 @@ import { ErrorBanner } from "../Ui";
 import ComponentPickDialog from "../ComponentPickDialog";
 import {
   ChargeToSelect,
+  ExcludeReasonInput,
   StepSelect,
   type RunOption,
 } from "../costs";
@@ -60,14 +61,17 @@ interface Row {
   percent: string;
   /** production-step key ("pcba:setup"); becomes the child's plan_key */
   step: string;
-  /** "" | "run:<id>" | "project:<id>" */
+  /** "" | "run:<id>" | "project:<id>" | "excluded" */
   dest: string;
+  /** WHY, when `dest` is "excluded". The API refuses an exclusion without it. */
+  reason: string;
   notes: string;
 }
 
 function emptyRow(): Row {
   return { label: "", component_id: null, component_name: "", mpn: "", lcsc: "",
-           amount: "", qty: "", unit: "", percent: "", step: "", dest: "", notes: "" };
+           amount: "", qty: "", unit: "", percent: "", step: "", dest: "",
+           reason: "", notes: "" };
 }
 
 function num(s: string): number {
@@ -108,6 +112,7 @@ export default function SplitLineDialog({
           dest: c.allocate === "excluded"
             ? "excluded"
             : c.run_id ? `run:${c.run_id}` : c.project_id ? `project:${c.project_id}` : "",
+          reason: c.exclude_reason || "",
           notes: c.notes,
         }))
       : [emptyRow(), emptyRow()],
@@ -188,6 +193,13 @@ export default function SplitLineDialog({
       setError("Add at least one share with a label or an amount.");
       return;
     }
+    // The API refuses this too, but a share charged to nobody is exactly the
+    // one a person walks away from: it needs no batch, no project and no
+    // further thought, so the prompt has to arrive before the save.
+    if (usable.some((r) => r.dest === "excluded" && !r.reason.trim())) {
+      setError("A share charged to nobody has to say why — fill the reason beside it.");
+      return;
+    }
     const children: SplitChild[] = usable.map((r) => {
       const [kind, id] = r.dest ? r.dest.split(":") : ["", ""];
       return {
@@ -201,8 +213,11 @@ export default function SplitLineDialog({
           ? { qty: num(r.qty), unit_price: num(r.unit) }
           : { amount: num(r.amount) }),
         plan_key: r.step || undefined,
-        // "excluded" records the share for reconciliation without charging it
+        // "excluded" records the share for reconciliation without charging it —
+        // and says what for, because an exclusion nobody explained passes every
+        // other check the register has (decision 0048).
         allocate: r.dest === "excluded" ? "excluded" : undefined,
+        exclude_reason: r.dest === "excluded" ? r.reason.trim() : undefined,
         run_id: kind === "run" ? Number(id) : null,
         project_id: kind === "project" ? Number(id) : null,
         notes: r.notes.trim(),
@@ -365,6 +380,15 @@ export default function SplitLineDialog({
                       emptyLabel="— nobody yet —"
                       onChange={(dest) => patch(i, { dest })}
                     />
+                    {/* Under the destination, not in its own column: it only
+                        applies to one choice, and a column that is empty on
+                        every other row costs width the table does not have. */}
+                    {r.dest === "excluded" ? (
+                      <ExcludeReasonInput
+                        value={r.reason}
+                        onChange={(reason) => patch(i, { reason })}
+                      />
+                    ) : null}
                   </td>
                   <td>
                     <input

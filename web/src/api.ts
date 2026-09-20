@@ -3010,6 +3010,8 @@ export interface SplitChild {
   project_id?: number | null;
   /** "excluded" records the share without charging it to anyone */
   allocate?: string;
+  /** ...and WHY. The API refuses `allocate: "excluded"` without one. */
+  exclude_reason?: string;
   mpn?: string;
   lcsc?: string;
   /** the library part this share bought, when it bought one */

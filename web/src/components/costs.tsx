@@ -1,6 +1,7 @@
 /** Shared cost-domain primitives: the line-kind list, the production-step
  *  select and the charge-to destination select. Each of these existed as
  *  three drifting literal copies before this file. */
+import { useId } from "react";
 import type { ReactNode } from "react";
 import type { CostLineKind, CostStepCatalog } from "../api";
 
@@ -168,6 +169,60 @@ export const HOW_FOR_CHARGE = [
   ["per_device", "per device", "A rate per board: charged at this amount times the units the batch was billed for."],
 ] as const;
 
+/** The reasons in use, offered as suggestions and NOT as a closed list.
+ *
+ *  A select here would refuse the first honest reason nobody thought of, and
+ *  the API takes free text for that reason. But an unlabelled exclusion is
+ *  invisible — `excluded` passes every check the register has — so 44 positions
+ *  reached production saying nothing at all, and consistency is what makes
+ *  `excluded_by_reason_usd` readable instead of a list of near-synonyms.
+ *  The vocabulary itself is in the production-run skill. */
+export const EXCLUDE_REASONS: readonly (readonly [string, string])[] = [
+  ["reclaimable_vat", "import VAT and customs — everything here is recorded net"],
+  ["prepaid_components", "already paid for and already in the pool"],
+  ["external_project", "a product this platform does not track"],
+  ["cancelled_by_supplier", "printed, then cancelled — nobody delivered it"],
+  ["payment_fee", "a transfer charge no product should carry"],
+] as const;
+
+/** WHY a position is charged to nobody. Used by the line table's "How" column
+ *  and by the split dialog, because a share can be excluded from either and the
+ *  split dialog could not state a reason at all until 2026-09-21. */
+export function ExcludeReasonInput({
+  value, onChange, className = "row-input", disabled,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+  disabled?: boolean;
+}) {
+  // A `<datalist>` per input, with an id from `useId`. One shared id would be
+  // the obvious thing and is invalid HTML the moment a document has two
+  // excluded positions — nine copies of `id="exclude-reasons"` appeared on the
+  // first invoice tried. Five options per instance is nothing.
+  const listId = useId();
+  return (
+    <>
+      <input
+        className={`${className}${value.trim() ? "" : " needs-answer"}`}
+        value={value}
+        disabled={disabled}
+        list={listId}
+        placeholder="why? e.g. reclaimable_vat"
+        title="Money recorded so the document adds up and charged to nobody on
+purpose. The reason is what makes it auditable rather than merely missing, and
+the API refuses an exclusion without one."
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <datalist id={listId}>
+        {EXCLUDE_REASONS.map(([v, hint]) => (
+          <option key={v} value={v} label={hint} />
+        ))}
+      </datalist>
+    </>
+  );
+}
+
 export function HowSelect({
   goesTo, value, onChange, onReasonChange, reason = "", isPart = false,
   className = "row-input", disabled,
@@ -184,14 +239,11 @@ export function HowSelect({
 }) {
   if (goesTo === "nobody") {
     return (
-      <input
-        className={`${className}${reason.trim() ? "" : " needs-answer"}`}
+      <ExcludeReasonInput
         value={reason}
         disabled={disabled}
-        placeholder="why? e.g. reclaimable VAT"
-        title="Money recorded so the document adds up and charged to nobody on
-purpose. The reason is what makes it auditable rather than merely missing."
-        onChange={(e) => onReasonChange?.(e.target.value)}
+        className={className}
+        onChange={(v) => onReasonChange?.(v)}
       />
     );
   }

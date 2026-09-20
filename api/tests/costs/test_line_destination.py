@@ -275,3 +275,39 @@ def test_over_allocated_children_are_reported_not_clamped(db: Session, world):
     assert j["assignment"]["overallocated"] == pytest.approx(0.02, abs=0.0005)
     leaves = j["assignment"]["run"] or 0.0
     assert leaves - j["assignment"]["overallocated"] == pytest.approx(100.0, abs=0.0005)
+
+
+# ------------------------------------------------ an exclusion states its reason
+
+def test_an_exclusion_must_say_what_for():
+    """`excluded` is a legal bucket in the conservation identity, so an excluded
+    position passes EVERY other check the register has: the gap still closes and
+    nothing reads as unassigned. The reason is the only thing that makes it
+    auditable, and 44 positions reached production without one.
+
+    The guard is on the schemas rather than on one endpoint, because the hole
+    was the SPLIT path: `ChildIn` had no `exclude_reason` field at all until
+    2026-09-21, so JLC's prepaid component shares could not state a reason even
+    when the operator wanted to (decision 0048).
+    """
+    from fastapi import HTTPException
+
+    from app.routers.run_costs import ChildIn, LineIn, _check_excluded
+
+    assert "exclude_reason" in ChildIn.model_fields, \
+        "a split share must be able to say why it is charged to nobody"
+
+    for allocate, reason in (("excluded", ""), ("excluded", "   ")):
+        with pytest.raises(HTTPException) as e:
+            _check_excluded(allocate, reason)
+        assert e.value.status_code == 422
+        assert "why" in str(e.value.detail).lower()
+
+    # A stated reason passes, and so does every other destination: `excluded` is
+    # the only one that answers to nobody.
+    _check_excluded("excluded", "reclaimable_vat")
+    for allocate in ("none", "pooled", "by_value", "by_qty", None):
+        _check_excluded(allocate, "")
+
+    # The field is on the ordinary line schema too, so the two write paths agree.
+    assert "exclude_reason" in LineIn.model_fields
