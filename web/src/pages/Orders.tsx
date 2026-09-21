@@ -298,6 +298,7 @@ function StockCard({ stock }: { stock: FinishedStock | null }) {
             rows={rows}
             rowKey={(r) => r.run_id}
             rowClass={(r) => (overbuilt(r) ? "err-text" : "")}
+            defaultSort={{ key: "date", dir: "desc" }}
             persistKey="finished-stock"
             empty="No batch has been built yet."
           />
@@ -313,10 +314,14 @@ function StockCard({ stock }: { stock: FinishedStock | null }) {
    version carried is kept: they are the only place the arithmetic is
    explained. */
 const shelfCols: Column<FinishedStockRow>[] = [
-  { key: "project", label: "Project", width: 13, get: (r) => r.project },
+  { key: "project", label: "Project", width: 12, get: (r) => r.project },
   {
     key: "label",
     label: "Batch",
+    // 21, so the nine widths sum to 100. `Prototypes 1 — PROFORMA 1/11/2023`
+    // still clips by ~20px and keeps its full text in the cell title: the
+    // remaining width is in eight columns of figures, which is what this card
+    // is for, and none of them has room to give.
     width: 21,
     get: (r) => r.label,
     render: (r) => (
@@ -325,6 +330,9 @@ const shelfCols: Column<FinishedStockRow>[] = [
       </Link>
     ),
   },
+  // The batch's own date, so the shelf reads newest batch first like every
+  // other batch list. It was sorted by whatever order the API returned.
+  { key: "date", label: "Date", width: 10, className: "mono", get: (r) => r.run_date || "—" },
   {
     key: "recorded",
     label: "Recorded",

@@ -142,6 +142,11 @@ export default function Runs() {
                 columns={cols}
                 rows={runs}
                 rowKey={(r) => r.id}
+                // The server already returns newest first, but a table has to
+                // SAY so: without a default the header shows no arrow, and a
+                // sort the reader set once is remembered under `persistKey` and
+                // silently outlives the visit that set it.
+                defaultSort={{ key: "date", dir: "desc" }}
                 persistKey="all-runs"
                 onRowClick={(r) => navigate(`/runs/${r.id}`)}
                 empty="No production batch exists yet."

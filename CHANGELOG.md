@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-21 (every production list opens newest first)
+
+Invoices, Orders, Overview and Batches all default to their date column,
+descending. Two were already there; two were not, and one of those had no date
+column at all.
+
+- **Batches** states its sort instead of relying on the order the API happened
+  to return.
+- **Devices on the shelf** (on Orders) gains a **Date** column — the batch's own
+  date — and sorts newest batch first. It had no date at all, so it could not be
+  ordered by one.
+- A sort you set yourself is still remembered per table and still wins: this is
+  the default, not an override.
+
 ## 2026-09-21 (a Batches tab, and invoices you can sort)
 
 - **Production → Batches** lists every production batch across every project

@@ -452,3 +452,24 @@ request with `Failed to resolve import`.
 
     docker compose up -d --build --force-recreate --renew-anon-volumes web
 
+
+## A browser check can be testing code that is not on disk
+
+Vite serves each module from a transform cache, and the dev server runs in a
+container watching a bind mount from macOS. Those events are not guaranteed:
+a **NEW file** added while the server is running is the case that bites, and its
+later edits are then served from the version Vite first saw.
+
+The failure is silent and points the wrong way — the page renders, nothing
+errors, and the feature just is not there, which reads as a bug in the code you
+just wrote. Found 2026-09-21: a `defaultSort` prop was on disk, `tsc` was happy,
+and the header showed no sort arrow because Vite was serving the module from
+before the prop existed.
+
+Check what is actually being served before believing a browser result:
+
+    curl -s http://localhost:5173/src/pages/Foo.tsx | grep defaultSort
+
+`touch` is not enough when the watcher missed the file. Restart the service:
+
+    docker compose restart web
