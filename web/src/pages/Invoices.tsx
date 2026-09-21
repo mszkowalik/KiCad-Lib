@@ -40,6 +40,7 @@ import InvoiceLinesTable, { blankDraft, draftToLineIn, toDraft, type LineDraft }
   from "../components/invoices/InvoiceLinesTable";
 import PlanLinkDialog from "../components/invoices/PlanLinkDialog";
 import SplitLineDialog from "../components/invoices/SplitLineDialog";
+import DataTable, { type Column } from "../components/DataTable";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { useStickyState } from "../useStickyState";
 import { fileHref } from "../viewkind";
@@ -391,6 +392,259 @@ export default function Invoices() {
     return null;
   };
 
+  /** WHERE this document's money went, as one line of text. It is the column's
+   *  sort and filter value as well as what it prints, so a filter matches what
+   *  the eye can see. */
+  const destTextOf = (d: RunCostDocumentRow): string => {
+    const a = d.assignment;
+    const dest: string[] = [];
+    for (const [rid, amount] of Object.entries(a.by_run)) {
+      dest.push(`${reg.runs[rid]?.label || `run ${rid}`}: ${plain(amount)}`);
+    }
+    for (const [pid, amount] of Object.entries(a.by_project)) {
+      dest.push(`${reg.projects[pid] || `project ${pid}`}: ${plain(amount)}`);
+    }
+    if (a.pool) dest.push(`pool: ${plain(a.pool)}`);
+    if (a.excluded) dest.push(`excluded: ${plain(a.excluded)}`);
+    return dest.join(" · ") || "—";
+  };
+
+  /** Money charged to NOBODY on purpose is not money that found a home. It read
+   *  `assigned` in green with an empty destination, which is how three whole JLC
+   *  board invoices sat unnoticed from 2023 until somebody went looking
+   *  (2026-09-18). */
+  const whollyExcluded = (d: RunCostDocumentRow): boolean => {
+    const a = d.assignment;
+    if (!(a.excluded ?? 0)) return false;
+    const dest: string[] = [];
+    for (const [rid, amount] of Object.entries(a.by_run)) {
+      dest.push(`${reg.runs[rid]?.label || `run ${rid}`}: ${plain(amount)}`);
+    }
+    for (const [pid] of Object.entries(a.by_project)) dest.push(`project ${pid}`);
+    if (a.pool) dest.push("pool");
+    return dest.length === 0;
+  };
+
+  /** ONE word for the state, and it is what the column sorts and filters on.
+   *  The cell draws a pill from the same answer, so typing "unassigned" in the
+   *  filter box finds exactly the rows showing that pill. */
+  const stateOf = (d: RunCostDocumentRow): string => {
+    if (d.doc_type === "proforma") return "proforma";
+    if (!d.reconciled) return "does not add up";
+    if (d.assignment.unassigned) return "unassigned";
+    if (d.assignment.residual) return "residual";
+    if (whollyExcluded(d)) return "excluded";
+    return "assigned";
+  };
+
+  const docCols: Column<RunCostDocumentRow>[] = [
+    { key: "date", label: "Date", width: 9, className: "mono", get: (d) => d.doc_date || "—" },
+    { key: "supplier", label: "Supplier", width: 21, get: (d) => d.supplier || "—" },
+    {
+      key: "number",
+      label: "Number",
+      width: 20,
+      className: "mono",
+      get: (d) => `${d.doc_number} ${d.external_id}`.trim(),
+      title: (d) => `${d.doc_number} ${d.external_id}`.trim(),
+      render: (d) => <>{d.doc_number || d.external_id || "—"}</>,
+    },
+    {
+      key: "total",
+      label: "Total",
+      width: 12,
+      numeric: true,
+      // Sorts on USD and PRINTS the printed currency: sorting 1,651 EUR beside
+      // 1,651 USD by the number on the page would order them as equal.
+      get: (d) => d.total_usd ?? 0,
+      title: (d) => `${plain(d.total_usd)} USD`,
+      render: (d) => <>{money(d.total_amount, d.currency)}</>,
+    },
+    {
+      key: "dest",
+      label: "Assigned to",
+      width: 14,
+      className: "muted",
+      get: destTextOf,
+      title: destTextOf,
+    },
+    {
+      key: "state",
+      label: "State",
+      width: 16,
+      get: stateOf,
+      render: (d) => {
+        const state = stateOf(d);
+        return (
+          <>
+            {/* GLYPHS, not pills. The column already carries the money state; a
+                second worded chip is ellipsised into "…", which is exactly how
+                the substitution pill was lost (2026-09-19). A pill cannot be
+                truncated and stay readable — a glyph cannot be truncated at
+                all. */}
+            {(d.locked || []).length ? (
+              <span
+                title={`The books are closed on ${(d.locked || []).map((l) => l.label).join(", ")}. `
+                  + "This document is read-only — correct it with a new document, "
+                  + "or reopen the batch."}
+              >
+                🔒{" "}
+              </span>
+            ) : null}
+            {d.doc_type === "correction" ? (
+              <span title="A correction of an earlier document">↩{" "}</span>
+            ) : null}
+            {state === "proforma" ? (
+              <span className="pill neutral">proforma</span>
+            ) : state === "does not add up" ? (
+              <span className="pill err">does not add up</span>
+            ) : state === "unassigned" ? (
+              <span className="pill warn">{plain(d.assignment.unassigned)} unassigned</span>
+            ) : state === "residual" ? (
+              <span className="pill warn">{plain(d.assignment.residual)} residual</span>
+            ) : state === "excluded" ? (
+              <span className="pill neutral" title="Charged to nobody on purpose — reclaimable tax, or a board nothing in the platform carries">
+                excluded
+              </span>
+            ) : (
+              <span className="pill ok">assigned</span>
+            )}
+          </>
+        );
+      },
+    },
+    {
+      key: "lines",
+      label: "Lines",
+      width: 8,
+      numeric: true,
+      get: (d) => d.line_count,
+      title: () => "positions on this document — click the row to open them",
+    },
+  ];
+
+  /** The open document's positions, under its row. `DataTable` only calls this
+   *  for the row that is open, which is what keeps one document request from
+   *  firing for every row on the page. */
+  const renderPositions = (d: RunCostDocumentRow) => (
+    <>
+            {docError ? <ErrorBanner message={docError} /> : null}
+            {!doc || doc.id !== d.id ? (
+              <Spinner label="Loading positions…" />
+            ) : (
+              <>
+                {saveError ? <ErrorBanner message={saveError} /> : null}
+                {editingDoc && header ? (
+                  <InvoiceFields
+                    value={header}
+                    onChange={setHeader}
+                    runs={runOptions}
+                    projects={projectOptions}
+                    disabled={savingDoc}
+                  />
+                ) : (
+                  <p className="muted">
+                    {d.notes ? d.notes : "No notes on this document."}
+                  </p>
+                )}
+                <CorrectionLinks doc={doc} onOpen={setExpanded} />
+                <div className="btn-row">
+                  <Originals docId={d.id} onChange={load} />
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={busy}
+                    onClick={() => resolveParts(d.id)}
+                  >
+                    Resolve parts
+                  </button>
+                  {(doc.locked || []).length ? (
+                    <>
+                      {/* A disabled checkbox with nothing beside it reads as a
+                          bug. The reason and the way forward sit next to it,
+                          because a refusal the user cannot act on is a dead end. */}
+                      <CheckField checked={false} disabled onChange={() => {}}>
+                        Edit this invoice
+                      </CheckField>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        disabled={busy}
+                        onClick={() => makeCorrection(doc)}
+                      >
+                        Create correction
+                      </button>
+                      <span className="muted">
+                        The books are closed on{" "}
+                        {(doc.locked || []).map((l) => l.label).join(", ")}, so this
+                        document is settled — its cost has already gone out on
+                        orders. Record what changed as a correction dated today, or
+                        reopen the batch on its own page.
+                      </span>
+                    </>
+                  ) : (
+                    <CheckField
+                      checked={editingDoc}
+                      disabled={busy || savingDoc}
+                      onChange={(on) => {
+                        setEditingDoc(on);
+                        if (!on) cancelDocEdit();
+                      }}
+                    >
+                      Edit this invoice
+                    </CheckField>
+                  )}
+                </div>
+                <InvoiceLinesTable
+                  mode="saved"
+                  rows={savedRows}
+                  setRows={setSavedRows}
+                  savedById={lineById}
+                  editing={editingDoc}
+                  deleted={deletedLines}
+                  setDeleted={setDeletedLines}
+                  runs={runOptions}
+                  projects={projectOptions}
+                  stepCatalog={stepCatalog}
+                  currency={docCurrency}
+                  busy={busy}
+                  docDefault={docDefaultOf(doc, reg)}
+                  locked={(doc.locked || []).length > 0}
+                  onSplit={(li) => setSplitting(li)}
+                  onSaved={refreshAll}
+                />
+                {editingDoc ? (
+                  <div className="btn-row">
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      disabled={savingDoc || busy}
+                      onClick={saveDocEdit}
+                      title="The header and every position are written in ONE transaction, so a swap between two positions is legal"
+                    >
+                      {savingDoc ? "Saving…" : "Save changes"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={savingDoc}
+                      onClick={() => { setEditingDoc(false); cancelDocEdit(); }}
+                    >
+                      Cancel
+                    </button>
+                    <span className="muted">
+                      Nothing is written until you save.
+                      {deletedLines.size
+                        ? ` ${deletedLines.size} position${deletedLines.size === 1 ? "" : "s"} staged for voiding.`
+                        : ""}
+                    </span>
+                  </div>
+                ) : null}
+              </>
+            )}
+    </>
+  );
+
   return (
     <div className="main-solo">
       <div className="page">
@@ -442,228 +696,19 @@ export default function Invoices() {
         <div className="card pad">
           <h2 className="card-title">Documents</h2>
           <div className="table-wrap">
-            <table className="data data-fixed invoices-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Supplier</th>
-                  <th>Number</th>
-                  <th className="num">Total</th>
-                  <th>Assigned to</th>
-                  <th>State</th>
-                  <th className="ctr">Lines</th>
-                </tr>
-              </thead>
-              <tbody>
-                {docs.length === 0 ? (
-                  <tr>
-                    <td className="empty" colSpan={7}>
-                      {onlyProblems ? "Nothing unfinished — every document is assigned." : "No documents yet."}
-                    </td>
-                  </tr>
-                ) : null}
-                {docs.map((d) => {
-                  const a = d.assignment;
-                  const dest: string[] = [];
-                  for (const [rid, amount] of Object.entries(a.by_run)) {
-                    dest.push(`${reg.runs[rid]?.label || `run ${rid}`}: ${plain(amount)}`);
-                  }
-                  for (const [pid, amount] of Object.entries(a.by_project)) {
-                    dest.push(`${reg.projects[pid] || `project ${pid}`}: ${plain(amount)}`);
-                  }
-                  if (a.pool) dest.push(`pool: ${plain(a.pool)}`);
-                  if (a.excluded) dest.push(`excluded: ${plain(a.excluded)}`);
-                  const destText = dest.join(" · ") || "—";
-                  // Money charged to NOBODY on purpose is not money that found a
-                  // home. It read `assigned` in green with an empty destination,
-                  // which is how three whole JLC board invoices sat unnoticed
-                  // from 2023 until somebody went looking (2026-09-18).
-                  const wholly = (a.excluded ?? 0) > 0 && !dest.some((t) => !t.startsWith("excluded"));
-                  const open = expanded === d.id;
-                  return (
-                    <Fragment key={d.id}>
-                      <tr className={open ? "row-open" : undefined}>
-                        <td className="mono">{d.doc_date || "—"}</td>
-                        <td title={d.supplier}>{d.supplier || "—"}</td>
-                        <td className="mono" title={`${d.doc_number} ${d.external_id}`}>
-                          {d.doc_number || d.external_id || "—"}
-                        </td>
-                        <td className="num" title={`${plain(d.total_usd)} USD`}>
-                          {money(d.total_amount, d.currency)}
-                        </td>
-                        <td className="muted" title={destText}>
-                          {destText}
-                        </td>
-                        <td>
-                          {/* GLYPHS, not pills. The State column is 15% wide and
-                              already carries the money state; a second worded
-                              chip is ellipsised into "…", which is exactly how
-                              the substitution pill was lost (2026-09-19). A pill
-                              cannot be truncated and stay readable — a glyph
-                              cannot be truncated at all. */}
-                          {(d.locked || []).length ? (
-                            <span
-                              title={`The books are closed on ${(d.locked || []).map((l) => l.label).join(", ")}. `
-                                + "This document is read-only — correct it with a new document, "
-                                + "or reopen the batch."}
-                            >
-                              🔒{" "}
-                            </span>
-                          ) : null}
-                          {d.doc_type === "correction" ? (
-                            <span title="A correction of an earlier document">↩{" "}</span>
-                          ) : null}
-                          {d.doc_type === "proforma" ? (
-                            <span className="pill neutral">proforma</span>
-                          ) : !d.reconciled ? (
-                            <span className="pill err">does not add up</span>
-                          ) : a.unassigned ? (
-                            <span className="pill warn">{plain(a.unassigned)} unassigned</span>
-                          ) : a.residual ? (
-                            <span className="pill warn">{plain(a.residual)} residual</span>
-                          ) : wholly ? (
-                            <span className="pill neutral" title="Charged to nobody on purpose — reclaimable tax, or a board nothing in the platform carries">
-                              excluded
-                            </span>
-                          ) : (
-                            <span className="pill ok">assigned</span>
-                          )}
-                        </td>
-                        <td className="ctr">
-                          <button
-                            type="button"
-                            className="btn btn-sm"
-                            onClick={() => setExpanded(open ? null : d.id)}
-                          >
-                            {open ? "Hide" : `${d.line_count}`}
-                          </button>
-                        </td>
-                      </tr>
-                      {open ? (
-                        <tr>
-                          <td className="row-expand" colSpan={7}>
-                            {docError ? <ErrorBanner message={docError} /> : null}
-                            {!doc || doc.id !== d.id ? (
-                              <Spinner label="Loading positions…" />
-                            ) : (
-                              <>
-                                {saveError ? <ErrorBanner message={saveError} /> : null}
-                                {editingDoc && header ? (
-                                  <InvoiceFields
-                                    value={header}
-                                    onChange={setHeader}
-                                    runs={runOptions}
-                                    projects={projectOptions}
-                                    disabled={savingDoc}
-                                  />
-                                ) : (
-                                  <p className="muted">
-                                    {d.notes ? d.notes : "No notes on this document."}
-                                  </p>
-                                )}
-                                <CorrectionLinks doc={doc} onOpen={setExpanded} />
-                                <div className="btn-row">
-                                  <Originals docId={d.id} onChange={load} />
-                                  <button
-                                    type="button"
-                                    className="btn btn-sm"
-                                    disabled={busy}
-                                    onClick={() => resolveParts(d.id)}
-                                  >
-                                    Resolve parts
-                                  </button>
-                                  {(doc.locked || []).length ? (
-                                    <>
-                                      {/* A disabled checkbox with nothing beside it reads as a
-                                          bug. The reason and the way forward sit next to it,
-                                          because a refusal the user cannot act on is a dead end. */}
-                                      <CheckField checked={false} disabled onChange={() => {}}>
-                                        Edit this invoice
-                                      </CheckField>
-                                      <button
-                                        type="button"
-                                        className="btn btn-primary btn-sm"
-                                        disabled={busy}
-                                        onClick={() => makeCorrection(doc)}
-                                      >
-                                        Create correction
-                                      </button>
-                                      <span className="muted">
-                                        The books are closed on{" "}
-                                        {(doc.locked || []).map((l) => l.label).join(", ")}, so this
-                                        document is settled — its cost has already gone out on
-                                        orders. Record what changed as a correction dated today, or
-                                        reopen the batch on its own page.
-                                      </span>
-                                    </>
-                                  ) : (
-                                    <CheckField
-                                      checked={editingDoc}
-                                      disabled={busy || savingDoc}
-                                      onChange={(on) => {
-                                        setEditingDoc(on);
-                                        if (!on) cancelDocEdit();
-                                      }}
-                                    >
-                                      Edit this invoice
-                                    </CheckField>
-                                  )}
-                                </div>
-                                <InvoiceLinesTable
-                                  mode="saved"
-                                  rows={savedRows}
-                                  setRows={setSavedRows}
-                                  savedById={lineById}
-                                  editing={editingDoc}
-                                  deleted={deletedLines}
-                                  setDeleted={setDeletedLines}
-                                  runs={runOptions}
-                                  projects={projectOptions}
-                                  stepCatalog={stepCatalog}
-                                  currency={docCurrency}
-                                  busy={busy}
-                                  docDefault={docDefaultOf(doc, reg)}
-                                  locked={(doc.locked || []).length > 0}
-                                  onSplit={(li) => setSplitting(li)}
-                                  onSaved={refreshAll}
-                                />
-                                {editingDoc ? (
-                                  <div className="btn-row">
-                                    <button
-                                      type="button"
-                                      className="btn btn-primary btn-sm"
-                                      disabled={savingDoc || busy}
-                                      onClick={saveDocEdit}
-                                      title="The header and every position are written in ONE transaction, so a swap between two positions is legal"
-                                    >
-                                      {savingDoc ? "Saving…" : "Save changes"}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="btn btn-sm"
-                                      disabled={savingDoc}
-                                      onClick={() => { setEditingDoc(false); cancelDocEdit(); }}
-                                    >
-                                      Cancel
-                                    </button>
-                                    <span className="muted">
-                                      Nothing is written until you save.
-                                      {deletedLines.size
-                                        ? ` ${deletedLines.size} position${deletedLines.size === 1 ? "" : "s"} staged for voiding.`
-                                        : ""}
-                                    </span>
-                                  </div>
-                                ) : null}
-                              </>
-                            )}
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
+            <DataTable
+              columns={docCols}
+              rows={docs}
+              rowKey={(d) => d.id}
+              persistKey="invoices"
+              defaultSort={{ key: "date", dir: "desc" }}
+              openKey={expanded}
+              onOpenChange={(k) => setExpanded(k == null ? null : Number(k))}
+              expand={renderPositions}
+              empty={onlyProblems
+                ? "Nothing unfinished — every document is assigned."
+                : "No documents yet."}
+            />
           </div>
         </div>
       </div>

@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-09-21 (a Batches tab, and invoices you can sort)
+
+- **Production → Batches** lists every production batch across every project
+  (`/production/runs`). The project's own Batches tab answers "what has this
+  product built"; this answers "what is in production anywhere", which had no
+  home — the only cross-project list was the Overview's cost table, built from
+  the invoice register, so a batch nobody had billed yet was invisible. Status,
+  quantity, devices recorded and whether the books are closed; what each batch
+  COST stays on Overview.
+- **The Invoices document list sorts and filters like every other list.** It was
+  the last hand-rolled table on a main page: 88 rows with no sort, no filter row,
+  and a Lines button as the only way to open one. It is a `DataTable` now.
+- **Clicking anywhere on an invoice row opens its positions**, the way a row
+  opens everywhere else. The open document is still remembered across
+  navigation.
+- Nineteen dead width rules removed with it — `.invoices-table` was stranded by
+  the conversion, and `.invoice-runs-table` had been stranded long enough to
+  grow two contradictory definitions, neither applying to anything.
+
 ## 2026-09-21 (every exclusion says what for)
 
 `excluded` money is charged to nobody on purpose, and it passes every other

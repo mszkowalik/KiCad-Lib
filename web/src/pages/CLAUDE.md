@@ -160,6 +160,18 @@ and the copy was worse.
   sale (price/device, qty_good…), notes, overrides, materials, costs, files,
   serials. The project Runs tab is a plain list. Do not add run-editing UI
   anywhere else.
+- **Batches have TWO lists and they answer different questions.**
+  `components/project/RunsTab.tsx` is "what has this product built", and it
+  creates and deletes. `pages/Runs.tsx` (Production → Batches,
+  `/production/runs`, `GET /api/runs`) is "what is in production anywhere" —
+  every batch across every project, and it creates nothing, because a batch
+  needs a project's snapshot and board. Both are labelled **Batches**; the
+  route is `/production/runs` to match `/runs/:id`.
+  It is NOT the Overview's "What each batch cost": that table is money and is
+  built from the invoice register, so a batch nobody had billed was missing
+  from it. This one is the batches themselves — status, quantity, devices
+  recorded, whether the books are closed — and it links to Overview for the
+  cost rather than printing it again.
 - **Money formatters live in `src/format.ts`** (`usd`, `amount`, `price`,
   `plain`). Never declare a local `money()` — there were eleven copies once,
   and they drifted.
@@ -174,6 +186,18 @@ and the copy was worse.
 - **Each number has one home.** Run economics render on the run page and the
   Production overview; stock figures on Production → Stock. Link there
   instead of re-rendering a figure on a new surface.
+- **The Invoices document list is a `DataTable`, and the ROW is the toggle.**
+  It was the last hand-rolled `<table className="data">` on a main page — no
+  sort, no filters, and a Lines button as the only way to open a document, on a
+  list that had grown to 88 rows. The positions now open by clicking anywhere on
+  the row (`expand`, with `openKey`/`onOpenChange` so the open document survives
+  navigation in `useStickyState`), and `DataTable` only calls `expand` for the
+  open row, which is what keeps one document request from firing per row.
+  `stateOf()` returns the ONE word the State column sorts and filters on, and
+  the cell draws its pill from that same answer — so typing "unassigned" finds
+  exactly the rows showing that pill. Its `.invoices-table` width rules were
+  deleted with it: `DataTable` takes widths from `Column.width` and carries its
+  own `row-expansion` styling.
 - **Orders live on Production → Orders** (`pages/Orders.tsx`,
   `pages/OrderDetail.tsx`, decision 0003). The Orders page is also the ONE
   home of finished-device stock ("Devices on the shelf"), which counts

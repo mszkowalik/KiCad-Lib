@@ -2594,6 +2594,8 @@ export interface RunInfo {
   order_ref?: string;
   order_date?: string;
   created_at: string;
+  /** the project's NAME, on the list endpoints only */
+  project?: string;
   /** THE BOOKS (decision 0044). Set means this batch's cost is settled: every
    *  supplier document charging it, written before this moment, is read-only,
    *  and the only way to move the figure is a dated correction document.
@@ -2690,6 +2692,14 @@ export interface RunPatchBody {
 
 export function getRuns(projectId: number, signal?: AbortSignal): Promise<RunInfo[]> {
   return request(`/api/projects/${projectId}/runs`, { signal });
+}
+
+/** Every batch, across every project, newest run date first. The project tab
+ *  answers "what has this product built"; this answers "what is in production
+ *  anywhere", which had no home — the only cross-project list was the invoice
+ *  register's, so a batch nobody had billed yet was invisible. */
+export function getAllRuns(signal?: AbortSignal): Promise<RunInfo[]> {
+  return request("/api/runs", { signal });
 }
 
 export function createRun(projectId: number, body: RunCreate): Promise<RunInfo> {

@@ -3876,35 +3876,6 @@ table.kv.settings-table .btn-row {
 .invoice-pool-table th:nth-child(5), .invoice-pool-table td:nth-child(5) { width: 10%; }
 .invoice-pool-table th:nth-child(6), .invoice-pool-table td:nth-child(6) { width: 18%; }
 
-.invoice-runs-table { table-layout: fixed; }
-.invoice-runs-table th:nth-child(1), .invoice-runs-table td:nth-child(1) { width: 22%; }
-.invoice-runs-table th:nth-child(2), .invoice-runs-table td:nth-child(2) { width: 20%; }
-.invoice-runs-table th:nth-child(3), .invoice-runs-table td:nth-child(3) { width: 9%; }
-.invoice-runs-table th:nth-child(4), .invoice-runs-table td:nth-child(4) { width: 13%; }
-.invoice-runs-table th:nth-child(5), .invoice-runs-table td:nth-child(5) { width: 13%; }
-.invoice-runs-table th:nth-child(6), .invoice-runs-table td:nth-child(6) { width: 13%; }
-.invoice-runs-table th:nth-child(7), .invoice-runs-table td:nth-child(7) { width: 10%; }
-
-.invoices-table { table-layout: fixed; }
-.invoices-table th:nth-child(1), .invoices-table td:nth-child(1) { width: 10%; }
-.invoices-table th:nth-child(2), .invoices-table td:nth-child(2) { width: 13%; }
-.invoices-table th:nth-child(3), .invoices-table td:nth-child(3) { width: 18%; }
-.invoices-table th:nth-child(4), .invoices-table td:nth-child(4) { width: 13%; }
-.invoices-table th:nth-child(5), .invoices-table td:nth-child(5) { width: 24%; }
-.invoices-table th:nth-child(6), .invoices-table td:nth-child(6) { width: 15%; }
-.data.invoices-table th:nth-child(7), .data.invoices-table td:nth-child(7) { width: 7%; }
-
-/* the positions table spans every column — opt this one cell out of the
-   single-line clamp so the nested table renders at full height */
-.data.invoices-table td.row-expand {
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-  background: var(--surface-2);
-}
-
-.invoices-table tr.row-open > td { background: var(--accent-soft); }
-
 /* Supply coverage: six columns summing to 100%. Only the problem rows render,
    so the part column can afford the width — the list is short by design. */
 /* A supplier breakdown can be 45 rows. Scroll the ROWS, never the dialog:
@@ -3997,16 +3968,6 @@ table.kv.settings-table .btn-row {
 .proj-chips .pill { max-width: 15ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Invoices: the run cost/income table now carries the sale side (9 columns). */
-.invoice-runs-table th:nth-child(1), .invoice-runs-table td:nth-child(1) { width: 17%; }
-.invoice-runs-table th:nth-child(2), .invoice-runs-table td:nth-child(2) { width: 15%; }
-.invoice-runs-table th:nth-child(3), .invoice-runs-table td:nth-child(3) { width: 7%; }
-.invoice-runs-table th:nth-child(4), .invoice-runs-table td:nth-child(4) { width: 11%; }
-.invoice-runs-table th:nth-child(5), .invoice-runs-table td:nth-child(5) { width: 9%; }
-.invoice-runs-table th:nth-child(6), .invoice-runs-table td:nth-child(6) { width: 11%; }
-.invoice-runs-table th:nth-child(7), .invoice-runs-table td:nth-child(7) { width: 11%; }
-.invoice-runs-table th:nth-child(8), .invoice-runs-table td:nth-child(8) { width: 11%; }
-.invoice-runs-table th:nth-child(9), .invoice-runs-table td:nth-child(9) { width: 8%; }
-
 /* the order/price editor needs more room than the 440px default, less than the split editor */
 .modal-card-mid { width: min(720px, 100%); }
 

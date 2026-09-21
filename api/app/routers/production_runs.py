@@ -176,6 +176,44 @@ class RunPatch(BaseModel):
     requires_test: bool | None = None
 
 
+def _runs_payload(db: Session, runs: list[M.ProductionRun]) -> list[dict]:
+    """The list shape, with ONE grouped device count for the whole page — a
+    count per run turns one page into one query per batch."""
+    counts = dict(
+        db.query(M.DeviceUnit.production_run_id, func.count(M.DeviceUnit.id))
+        .filter(M.DeviceUnit.production_run_id.in_([r.id for r in runs] or [-1]))
+        .group_by(M.DeviceUnit.production_run_id).all()
+    )
+    names = {p.id: p.name for p in db.query(M.Project).all()}
+    out = []
+    for r in runs:
+        j = _run_json(r, device_counts=counts)
+        # The cross-project list needs a NAME, not an id, and the per-project
+        # list carries it too so one table component renders both.
+        j["project"] = names.get(r.project_id, "?")
+        out.append(j)
+    return out
+
+
+@router.get("/runs")
+def list_all_runs(project_id: int | None = None, db: Session = Depends(get_db)):
+    """Every production batch, across every project.
+
+    The project tab answers "what has this product built"; this answers "what is
+    in production anywhere", which is a different question and had no home — the
+    only cross-project list was the invoice register's, so a batch nobody had
+    billed yet was invisible. Ordered by run date, newest first, because that is
+    how a batch is looked for; batches with no date fall to the end rather than
+    to the top, where a missing value would otherwise put them.
+    """
+    q = db.query(M.ProductionRun)
+    if project_id is not None:
+        q = q.filter(M.ProductionRun.project_id == project_id)
+    runs = q.order_by(M.ProductionRun.run_date.desc().nullslast(),
+                      M.ProductionRun.created_at.desc()).all()
+    return _runs_payload(db, runs)
+
+
 @router.get("/projects/{project_id}/runs")
 def list_runs(project_id: int, db: Session = Depends(get_db)):
     if db.get(M.Project, project_id) is None:
@@ -184,13 +222,7 @@ def list_runs(project_id: int, db: Session = Depends(get_db)):
         db.query(M.ProductionRun).filter_by(project_id=project_id)
         .order_by(M.ProductionRun.created_at.desc()).all()
     )
-    # One grouped count for the whole page — see the note on `device_count`.
-    counts = dict(
-        db.query(M.DeviceUnit.production_run_id, func.count(M.DeviceUnit.id))
-        .filter(M.DeviceUnit.production_run_id.in_([r.id for r in runs] or [-1]))
-        .group_by(M.DeviceUnit.production_run_id).all()
-    )
-    return [_run_json(r, device_counts=counts) for r in runs]
+    return _runs_payload(db, runs)
 
 
 @router.post("/projects/{project_id}/runs")
