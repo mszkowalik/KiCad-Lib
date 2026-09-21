@@ -1,5 +1,44 @@
 # Changelog
 
+## 2026-09-21 (the shelf, by product — and 13 devices nothing was counting)
+
+The Orders page is cleaned up with it:
+
+- **Four card descriptions were rendering as walls of upper-case mono.**
+  `.card-subtitle` is an 11px letter-spaced LABEL style; a paragraph in it
+  shouts. The label now carries a few words and the explanation sits in ordinary
+  muted prose under it.
+- **Over-built batches mark the two cells that disagree**, Recorded and Built,
+  instead of painting the whole row red. A red date and a red unit cost said
+  those figures were wrong too, so a deliberate flag read as a broken row.
+- **"Sellable now" is no longer cut to "SELLABLE N…"**, and the orders table's
+  Date column takes a fixed width so it cannot be cut to `2026-09-0…` on a
+  narrow screen.
+- **A batch with nothing on the shelf shows — for its value**, not `$0`.
+- The shelf card says how many devices it cannot see, so its total and the
+  Stock page's no longer differ with nothing to explain it.
+
+Production → Stock now opens with **Finished devices we hold**: one row per
+product, not per device. Open a row to see why a unit is not sellable, and click
+a condition to land on that project's Devices tab showing those exact serials.
+
+- **The platform was reporting 93 devices on the shelf while holding 106.**
+  Every finished-stock figure counted per BATCH, so a device that names no batch
+  was invisible to all of them. Thirteen were real: 3 faulty and 10 prototype
+  CE_Dongle_V2 units. `GET /api/finished-products` counts the device records
+  instead, and the card names the unbatched ones in a banner — they are stock,
+  and nothing values them, because per-device cost belongs to a batch.
+- **"On the shelf" on the Orders demand card is now "Sellable now"**, and counts
+  condition `ok` only. A faulty or prototype unit may never ship (decision
+  0032), so counting it as supply said an order could be filled by devices that
+  cannot leave the building — it read 34 dongles of supply against 0 sellable.
+- **A project's Devices tab takes `?state=` and `?condition=`**, and says so on
+  screen with a "Show every device" button. The API had supported both filters
+  since it was written; nothing passed them, so a link could name the project
+  but not the devices.
+- **A project's tab is in the URL** (`?tab=Devices`), like every other tabbed
+  page here. The remembered tab is now the fallback for a bare visit.
+
 ## 2026-09-21 (every production list opens newest first)
 
 Invoices, Orders, Overview and Batches all default to their date column,

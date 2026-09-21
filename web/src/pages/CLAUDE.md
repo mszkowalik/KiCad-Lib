@@ -178,6 +178,16 @@ and the copy was worse.
 - **Cost-domain primitives live in `components/costs.tsx`**:
   `COST_LINE_KINDS`, `<StepSelect>` (step catalog grouped by stage),
   `<ChargeToSelect>` (run/project/excluded destination). Reuse, never copy.
+- **The PROJECT page's tab is in the URL too, and its Devices tab takes
+  filters.** `/projects/:id?tab=Devices&state=in_stock&condition=faulty` shows
+  those devices and nothing else; `getProjectDevices` has taken `state` and
+  `condition` since it was written and the tab simply never passed them, so a
+  link could say which project but not which devices. The sticky value is the
+  fallback for a bare visit, arriving by link makes that tab the remembered
+  one, and leaving the Devices tab drops the two filters from the URL — a
+  narrowing nothing on screen explains is worse than none. The tab NAMES the
+  narrowing in a pill with a "Show every device" button beside it, because a
+  list quietly showing a tenth of the devices reads as a list of all of them.
 - **Tab state goes in the URL** (`?tab=`, see RunDetail/Templates/Admin),
   selection state that should deep-link goes in the path
   (`/library/skills/:id`). `useStickyState` is only a fallback for bare visits.
@@ -198,9 +208,27 @@ and the copy was worse.
   exactly the rows showing that pill. Its `.invoices-table` width rules were
   deleted with it: `DataTable` takes widths from `Column.width` and carries its
   own `row-expansion` styling.
+- **The shelf has TWO cuts and one source each; neither re-derives the other.**
+  Production → **Stock** (`components/FinishedProductsCard.tsx`,
+  `GET /api/finished-products`) is per PRODUCT and counts the DEVICE RECORDS.
+  Production → **Orders** ("Devices on the shelf", `GET /api/finished-stock`)
+  is per BATCH and counts per run. The difference is load-bearing: a device
+  that names no batch is invisible to every per-batch figure, and 13 were on
+  the real shelf on 2026-09-21 — the platform reported 93 devices while
+  holding 106. Such a device is stock and is NOT valued (per-device cost
+  belongs to a batch), so it is counted in `no_batch` and the card says so in
+  a banner rather than averaging it in.
+  A product row opens into its CONDITIONS, and each links to
+  `/projects/:id?tab=Devices&state=in_stock&condition=…` — the exact devices
+  the number counted, as serials.
+- **Supply is what can be SOLD.** The demand card's column is "Sellable now"
+  and counts condition `ok` only. A faulty or prototype unit is on the shelf
+  and a shipment may never draw it (decision 0032), so counting it against
+  open demand says an order can be filled by devices that cannot leave the
+  building — it read 34 dongles of supply against 0 sellable ones (user
+  decision 2026-09-21).
 - **Orders live on Production → Orders** (`pages/Orders.tsx`,
-  `pages/OrderDetail.tsx`, decision 0003). The Orders page is also the ONE
-  home of finished-device stock ("Devices on the shelf"), which counts
+  `pages/OrderDetail.tsx`, decision 0003). Its shelf card counts
   RECORDED DEVICES and nothing else — a batch with no device records is built
   0, whatever quantity is typed on it, and the "No serial" column that used to
   hold the difference is gone (decision 0049). Stock splits into

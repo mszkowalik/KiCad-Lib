@@ -46,6 +46,7 @@ import {
   type SubstitutionDrift,
 } from "../api";
 import { useDialog } from "../components/Dialog";
+import FinishedProductsCard from "../components/FinishedProductsCard";
 import DataTable, { type Column } from "../components/DataTable";
 import PartLedgerPanel from "../components/PartLedgerPanel";
 import { ErrorBanner, Spinner } from "../components/Ui";
@@ -373,6 +374,12 @@ export default function Stock() {
 
         {error ? <ErrorBanner message={error} /> : null}
         {syncMsg ? <div className="banner-ok">{syncMsg}</div> : null}
+
+        {/* FINISHED DEVICES FIRST. "Stock" is asked as "how many dongles can we
+            sell" far more often than "does the component account close", and
+            the component account is the rest of this page. It owns its own
+            fetch, so a slow or failing parts sync never hides it. */}
+        <FinishedProductsCard />
 
         {stock && stock.totals.events_since_sync > 0 ? (
           <div className="banner-warn">

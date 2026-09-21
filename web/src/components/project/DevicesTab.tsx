@@ -13,7 +13,7 @@
  *  publishes (api/app/services/mqtt_monitor.py).
  */
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   errorMessage,
   getProjectDevices,
@@ -42,6 +42,23 @@ const PRESENCE_FILTERS = [
   { key: "unknown", label: "Never seen" },
 ] as const;
 
+/** How a `?state=` / `?condition=` in the URL reads on screen. The server
+ *  already filtered on both (`getProjectDevices` has taken them since it was
+ *  written); this tab simply never passed them, so a link could not say
+ *  "these devices" — only "this project". */
+const STATE_WORD: Record<string, string> = {
+  in_stock: "on the shelf",
+  allocated: "allocated to an order",
+  shipped: "shipped",
+  disposed: "disposed of",
+};
+const CONDITION_WORD: Record<string, string> = {
+  ok: "sellable",
+  faulty: "faulty",
+  prototype: "prototype",
+  unidentified: "unidentified",
+};
+
 function ago(iso: string | null): string {
   if (!iso) return "—";
   const then = new Date(iso).getTime();
@@ -60,11 +77,23 @@ export default function DevicesTab({ project, runId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [presence, setPresence] = useState("");
   const navigate = useNavigate();
+  // THE URL CARRIES THE NARROWING, so the view is linkable and the browser's
+  // back button undoes it. A filter held only in component state would make
+  // "show me the 30 faulty Aquas" impossible to send to anybody.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const state = searchParams.get("state") ?? "";
+  const condition = searchParams.get("condition") ?? "";
+  const clearScope = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("state");
+    next.delete("condition");
+    setSearchParams(next, { replace: true });
+  };
 
   useEffect(() => {
     const ac = new AbortController();
     setData(null);
-    getProjectDevices(project.id, { presence, runId }, ac.signal)
+    getProjectDevices(project.id, { presence, runId, state, condition }, ac.signal)
       .then((d) => {
         setData(d);
         setError(null);
@@ -73,7 +102,7 @@ export default function DevicesTab({ project, runId }: Props) {
         if (!isAbortError(err)) setError(errorMessage(err));
       });
     return () => ac.abort();
-  }, [project.id, presence, runId]);
+  }, [project.id, presence, runId, state, condition]);
 
   const rows = useMemo(() => data?.items ?? [], [data]);
 
@@ -207,6 +236,22 @@ export default function DevicesTab({ project, runId }: Props) {
             <span className="pill ok">{s.online.toLocaleString()} online</span>{" "}
             <span className="pill err">{s.offline.toLocaleString()} offline</span>{" "}
             <span className="pill">{s.unknown.toLocaleString()} never seen</span>
+          </p>
+        ) : null}
+        {state || condition ? (
+          // Named, and removable. A list that is quietly showing a tenth of the
+          // devices reads as a list of every device — which is how somebody
+          // concludes the other nine tenths do not exist.
+          <p className="card-subtitle">
+            <span className="pill neutral">
+              Showing only{" "}
+              {[CONDITION_WORD[condition] ?? condition, STATE_WORD[state] ?? state]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>{" "}
+            <button type="button" className="btn btn-sm" onClick={clearScope}>
+              Show every device
+            </button>
           </p>
         ) : null}
         <p className="muted dim">

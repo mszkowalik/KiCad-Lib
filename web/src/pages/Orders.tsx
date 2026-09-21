@@ -73,19 +73,25 @@ export default function Orders() {
 
   const columns = useMemo<Column<OrderRow>[]>(
     () => [
-      { key: "order_date", label: "Date", width: 8, get: (o) => o.order_date, className: "mono" },
-      { key: "customer", label: "Customer", width: 14, get: (o) => o.customer },
-      { key: "order_ref", label: "Reference", width: 13, get: (o) => o.order_ref || "—", className: "mono" },
+      // A DATE has a hard maximum, so it takes a length rather than a promise
+      // about the window: at 8% it was cut to `2026-09-0…` at 1280px, which is
+      // exactly the case `Column.width`'s string form exists for.
+      { key: "order_date", label: "Date", width: "104px", get: (o) => o.order_date, className: "mono" },
+      { key: "customer", label: "Customer", width: 15, get: (o) => o.customer },
+      { key: "order_ref", label: "Reference", width: 15, get: (o) => o.order_ref || "—", className: "mono" },
       {
         key: "products",
+        // A concatenated list with no maximum — it truncates by design and the
+        // cell's title carries the whole of it. Everything else on this row
+        // fits, so this is the column that pays for them.
         label: "Products",
-        width: 16,
+        width: 13,
         get: (o) => o.lines.map((l) => `${l.qty_ordered} × ${l.product || l.project}`).join(", "),
       },
       {
         key: "shipped",
         label: "Shipped",
-        width: 11,
+        width: 13,
         numeric: true,
         get: (o) => o.qty_shipped,
         render: (o) => (
@@ -97,7 +103,7 @@ export default function Orders() {
       {
         key: "total",
         label: "Net total",
-        width: 12,
+        width: 13,
         numeric: true,
         get: (o) => o.total_net ?? "",
         render: (o) => <>{amount(o.total_net, o.currency)}</>,
@@ -106,7 +112,7 @@ export default function Orders() {
         key: "invoiced",
         // Holds an amount AND an "· n unpaid" tail.
         label: "Invoiced",
-        width: 16,
+        width: 19,
         numeric: true,
         get: (o) => o.invoiced_net ?? "",
         title: (o) =>
@@ -124,7 +130,7 @@ export default function Orders() {
         key: "status",
         // StatusPill is inline-block — an ellipsis cannot shorten it.
         label: "Status",
-        width: 10,
+        width: 12,
         get: (o) => o.status,
         render: (o) => <StatusPill status={o.status} />,
       },
@@ -162,7 +168,7 @@ export default function Orders() {
 
         <div className="card pad">
           <h2 className="card-title">Customer orders</h2>
-          <p className="card-subtitle">
+          <p className="muted dim">
             Status follows the shipments: open, partial, fulfilled. Click a row for its lines,
             invoices and shipments.
           </p>
@@ -190,9 +196,18 @@ export function DemandCard({ rows, title = "Demand" }: { rows: DemandRow[] | nul
   return (
     <div className="card pad">
       <h2 className="card-title">{title}</h2>
-      <p className="card-subtitle">
-        Open is what customers ordered and have not received. Planned counts every batch
-        still in the planned state. Short is what nothing covers yet.
+      {/* `.card-subtitle` is an uppercase mono LABEL, 11px with letter-spacing.
+          A paragraph in it is five lines of shouting — which is what this card
+          and the one below had until 2026-09-21. Explanations go in
+          `muted dim`, the way the devices tab already did it. */}
+      <p className="muted dim">
+        Open is what customers ordered and have not received. <b>Sellable now</b> counts
+        only devices a shipment may draw — condition <code>ok</code>. A faulty or prototype
+        unit is on the shelf and can never leave, so counting it as supply would say an
+        order can be filled by devices that cannot go out of the door; every device we
+        hold, whatever condition, is on <Link to="/production/stock">Stock</Link>. Planned
+        counts every batch still in the planned state, and Short is what nothing covers
+        yet.
       </p>
       {!rows ? (
         <Spinner label="Counting…" />
@@ -206,7 +221,9 @@ export function DemandCard({ rows, title = "Demand" }: { rows: DemandRow[] | nul
                 <th>Project</th>
                 <th className="num">Open</th>
                 <th className="num">Orders</th>
-                <th className="num">On the shelf</th>
+                <th className="num" title="Devices that can actually be sold — condition `ok`. A faulty or prototype unit is on the shelf and a shipment may never draw it, so it is not supply.">
+                  Sellable now
+                </th>
                 <th className="num">Planned</th>
                 <th className="num">Short</th>
                 <th>Planned batches</th>
@@ -270,7 +287,7 @@ function StockCard({ stock }: { stock: FinishedStock | null }) {
   return (
     <div className="card pad">
       <div className="toolbar">
-        <h2 className="card-title">Devices on the shelf</h2>
+        <h2 className="card-title">Devices on the shelf, by batch</h2>
         {stock ? (
           <span className="toolbar-total">
             {stock.totals.stock.toLocaleString()} devices
@@ -278,15 +295,21 @@ function StockCard({ stock }: { stock: FinishedStock | null }) {
           </span>
         ) : null}
       </div>
-      <p className="card-subtitle">
+      <p className="muted dim">
         Recorded is the quantity on the production run — boards ordered or assembled. Built
-        counts the devices that passed: a device enters the shelf when its newest programming
-        or test run passes, and leaves it on a shipment. A board that never passed is not
-        stock, so built is normally the smaller of the two — built above recorded is
-        impossible and is marked. Every unit here is a named device; a batch with no device
-        records is built 0, whatever quantity was typed on it. Every batch stays listed after
-        its last device ships.
+        counts the devices that passed, so it is normally the smaller of the two; built
+        above recorded is impossible and is marked in red. Every batch stays listed after
+        its last device ships. For the shelf by PRODUCT, and what is sellable, see{" "}
+        <Link to="/production/stock">Stock</Link>.
       </p>
+      {stock?.totals.no_batch ? (
+        <div className="banner-warn">
+          <b>{stock.totals.no_batch} device(s) on the shelf name no batch</b>, so no row
+          below holds them and this card&rsquo;s total is that many short of what we
+          actually have. They are counted on{" "}
+          <Link to="/production/stock">Stock</Link>.
+        </div>
+      ) : null}
       {!stock ? (
         <Spinner label="Counting…" />
       ) : rows.length === 0 ? (
@@ -297,7 +320,7 @@ function StockCard({ stock }: { stock: FinishedStock | null }) {
             columns={shelfCols}
             rows={rows}
             rowKey={(r) => r.run_id}
-            rowClass={(r) => (overbuilt(r) ? "err-text" : "")}
+            rowClass={() => ""}
             defaultSort={{ key: "date", dir: "desc" }}
             persistKey="finished-stock"
             empty="No batch has been built yet."
@@ -340,7 +363,9 @@ const shelfCols: Column<FinishedStockRow>[] = [
     numeric: true,
     get: (r) => r.qty_recorded,
     title: () => "the quantity on the production run — boards ordered or assembled",
-    render: (r) => <>{r.qty_recorded.toLocaleString()}</>,
+    render: (r) => (
+      <span className={overbuilt(r) ? "err-text" : undefined}>{r.qty_recorded.toLocaleString()}</span>
+    ),
   },
   {
     key: "built",
@@ -354,7 +379,9 @@ const shelfCols: Column<FinishedStockRow>[] = [
         : r.devices_produced
           ? `${r.built} devices passed programming; ${r.qty_recorded - r.built} of the recorded boards never did`
           : "no device records on this batch — record them, as placeholders if the units were never serialised",
-    render: (r) => <>{r.built.toLocaleString()}</>,
+    render: (r) => (
+      <span className={overbuilt(r) ? "err-text" : undefined}>{r.built.toLocaleString()}</span>
+    ),
   },
   {
     key: "shipped",
@@ -378,7 +405,8 @@ const shelfCols: Column<FinishedStockRow>[] = [
     width: 10,
     numeric: true,
     get: (r) => r.unit_cost_usd ?? "",
-    render: (r) => <>{usd(r.unit_cost_usd)}</>,
+    render: (r) =>
+      r.unit_cost_usd == null ? <span className="muted">—</span> : <>{usd(r.unit_cost_usd)}</>,
   },
   {
     key: "value",
@@ -386,7 +414,8 @@ const shelfCols: Column<FinishedStockRow>[] = [
     width: 11,
     numeric: true,
     get: (r) => r.stock_value_usd ?? "",
-    render: (r) => <>{usd(r.stock_value_usd, 0)}</>,
+    render: (r) =>
+      r.devices_in_stock ? <>{usd(r.stock_value_usd, 0)}</> : <span className="muted">—</span>,
   },
 ];
 

@@ -126,13 +126,13 @@ export default function Runs() {
         {error ? <ErrorBanner message={error} /> : null}
 
         <div className="card pad">
-          <p className="card-subtitle">
-            Every production batch in the platform, newest first. Qty is what was ordered or
-            assembled; Devices is what the batch is recorded to have made, which is the
-            denominator of its per-device cost. What each batch COST is on{" "}
-            <Link to="/production">Overview</Link>, and everything about one batch — economics,
-            materials, files, serials — is on its own page. A batch is created from its project,
-            where the snapshot and board are already chosen.
+          <p className="card-subtitle">Every batch, across every project</p>
+          <p className="muted dim">
+            Qty is what was ordered or assembled; Devices is what the batch is recorded to
+            have made, which is the denominator of its per-device cost. What each batch COST
+            is on <Link to="/production">Overview</Link>, and everything about one batch —
+            economics, materials, files, serials — is on its own page. A batch is created
+            from its project, where the snapshot and board are already chosen.
           </p>
           {!runs ? (
             <Spinner label="Loading batches…" />

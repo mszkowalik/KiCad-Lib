@@ -249,6 +249,14 @@ component:
   reach the server on a paged list must be `interactive: false` rather than
   offering a box that quietly searches one page.
 
+- **`.card-subtitle` is a LABEL, not a paragraph.** It is 11px uppercase mono
+  with letter-spacing, so a sentence in it is a line of shouting and five
+  sentences are a wall of it — which is what the Orders page looked like on
+  2026-09-21. Use it for a few words that qualify the title ("Newest batch
+  first"), and put the explanation in `<p className="muted dim">` underneath.
+  If the qualifier only repeats the title, drop it: two stacked uppercase lines
+  read as the heading said twice.
+
 ### The theme is ONE selector, and JavaScript decides when it applies
 
 `:root` is the LIGHT palette and `:root[data-theme="dark"]` is the dark one.

@@ -657,6 +657,13 @@ def demand(project_id: int | None = None, db: Session = Depends(get_db)):
     return svc.project_demand(db, project_id)
 
 
+@router.get("/finished-products")
+def finished_products(db: Session = Depends(get_db)):
+    """The shelf per PRODUCT, counted from the device records — including the
+    devices that name no batch, which every per-batch figure is blind to."""
+    return {"products": svc.product_stock(db)}
+
+
 @router.get("/finished-stock")
 def finished_stock(project_id: int | None = None, db: Session = Depends(get_db)):
     rows = svc.run_stock(db, project_id)
@@ -664,7 +671,14 @@ def finished_stock(project_id: int | None = None, db: Session = Depends(get_db))
     for r in rows:
         r["unit_cost_usd"] = svc._round(unit_cost.get(r["run_id"]))
         r["stock_value_usd"] = svc._round(r["stock"] * unit_cost[r["run_id"]]) if r["run_id"] in unit_cost else None
+    # `no_batch` is what this endpoint CANNOT see: it counts per batch, so a
+    # device naming none is invisible to every row above. Reporting the number
+    # here stops the two shelf cards printing different totals with nothing to
+    # explain the difference (93 against 106 on 2026-09-21).
+    no_batch = sum(p["no_batch"] for p in svc.product_stock(db)
+                   if project_id is None or p["project_id"] == project_id)
     return {"runs": rows,
             "totals": {"stock": sum(r["stock"] for r in rows),
                        "devices_in_stock": sum(r["devices_in_stock"] for r in rows),
+                       "no_batch": no_batch,
                        "stock_value_usd": svc._round(sum(r["stock_value_usd"] or 0 for r in rows))}}

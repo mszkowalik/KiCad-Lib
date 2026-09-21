@@ -275,13 +275,14 @@ export default function ProductionOverview() {
 
         <div className="card pad">
           <h2 className="card-title">What each batch cost</h2>
-          <p className="card-subtitle">
+          <p className="card-subtitle">Newest batch first</p>
+          <p className="muted dim">
             Cost is direct invoice positions plus what the run drew from the component pool
             (materials, boards, assembly, labour, freight — not firmware, warranty or your
-            time). Cost/dev divides by the devices recorded as PRODUCED, which is what a shipped unit carries onto its
-            order; a batch with no device records yet shows no figure rather than an estimate.
-            Revenue and margin are on the orders. Newest batch first. Every batch links to its
-            own page — click anywhere on its row.
+            time). Cost/dev divides by the devices recorded as PRODUCED, which is what a
+            shipped unit carries onto its order; a batch with no device records yet shows no
+            figure rather than an estimate. Revenue and margin are on the orders. Every
+            batch links to its own page — click anywhere on its row.
           </p>
           <div className="table-wrap">
             <DataTable

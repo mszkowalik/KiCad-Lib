@@ -6565,8 +6565,15 @@ details.not-here > .notes-list {
 
 /* Demand card (Orders page and the project Orders tab). */
 .demand-table { table-layout: fixed; }
-.demand-table th:nth-child(1), .demand-table td:nth-child(1) { width: 18%; }
-.demand-table th:nth-child(n+2):nth-child(-n+6), .demand-table td:nth-child(n+2):nth-child(-n+6) { width: 9%; }
+.demand-table th:nth-child(1), .demand-table td:nth-child(1) { width: 16%; }
+.demand-table th:nth-child(2), .demand-table td:nth-child(2) { width: 9%; }
+.demand-table th:nth-child(3), .demand-table td:nth-child(3) { width: 8%; }
+/* "Sellable now" is the widest header on the row and was cut to "SELLABLE N…"
+   at the 9% every other figure column takes. A header that names the rule the
+   column applies has to be readable, or the rule is not stated anywhere. */
+.demand-table th:nth-child(4), .demand-table td:nth-child(4) { width: 12%; }
+.demand-table th:nth-child(5), .demand-table td:nth-child(5) { width: 9%; }
+.demand-table th:nth-child(6), .demand-table td:nth-child(6) { width: 9%; }
 
 /* Order page: two wide tables on the left (9 and 7 columns), two short cards
    on the right — the generic 40/60 split truncated every header. */

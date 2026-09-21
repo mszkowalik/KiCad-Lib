@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   deleteProject,
   designBoards,
@@ -42,8 +42,38 @@ export default function ProjectDetail() {
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [snapshots, setSnapshots] = useState<SnapshotInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
-  // Remembered per project across navigation (see useStickyState).
-  const [tab, setTab] = useStickyState<Tab>(`project:${projectId}:tab`, "BOM");
+  // THE URL WINS, and the sticky value is the fallback for a bare visit — the
+  // rule every other tabbed page here follows. It had no URL form at all, so a
+  // link from elsewhere could not say which tab it meant: the finished-stock
+  // card on Production -> Stock links straight at this project's Devices tab
+  // with the condition it was counting.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [stickyTab, setStickyTab] = useStickyState<Tab>(`project:${projectId}:tab`, "BOM");
+  const urlTab = searchParams.get("tab");
+  const tab: Tab = (TABS as readonly string[]).includes(urlTab ?? "")
+    ? (urlTab as Tab)
+    : stickyTab;
+  // Arriving by link makes that tab the remembered one too, so coming back to
+  // the project without a query does not snap to whatever was open last week.
+  useEffect(() => {
+    if (urlTab && (TABS as readonly string[]).includes(urlTab) && urlTab !== stickyTab) {
+      setStickyTab(urlTab as Tab);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlTab]);
+  const setTab = (t: Tab) => {
+    setStickyTab(t);
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", t);
+    // `state` and `condition` belong to the Devices tab. Carrying them onto
+    // another tab would leave a filter in the URL that nothing on screen
+    // explains, and put it back the moment the reader returns.
+    if (t !== "Devices") {
+      next.delete("state");
+      next.delete("condition");
+    }
+    setSearchParams(next, { replace: true });
+  };
   const [snapshotId, setSnapshotId] = useStickyState<number | null>(`project:${projectId}:snapshotId`, null);
   const [boardName, setBoardName] = useStickyState<string>(`project:${projectId}:board`, "");
   const [variant, setVariant] = useStickyState<string>(`project:${projectId}:variant`, "");

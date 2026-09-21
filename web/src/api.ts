@@ -7839,6 +7839,8 @@ export interface FinishedStock {
   totals: {
     stock: number;
     devices_in_stock: number;
+    /** devices on the shelf that name NO batch, so no row above holds them */
+    no_batch: number;
     stock_value_usd: number | null;
   };
 }
@@ -8010,6 +8012,29 @@ export function reverseShipment(
   });
 }
 
+
+/** The shelf per PRODUCT, counted from the DEVICE RECORDS. */
+export interface ProductStockRow {
+  project_id: number;
+  project: string;
+  /** every device we hold, whatever condition */
+  in_stock: number;
+  /** condition `ok` — the only devices a shipment may draw */
+  available: number;
+  /** present but not sellable, by condition — {faulty: 35, prototype: 12} */
+  held: Record<string, number>;
+  shipped: number;
+  allocated: number;
+  /** at each batch's own per-device actual; an unbatched device adds nothing */
+  value_usd: number | null;
+  /** on the shelf and naming no batch, so no per-batch figure can see them */
+  no_batch: number;
+  batches: number;
+}
+
+export function getProductStock(signal?: AbortSignal): Promise<{ products: ProductStockRow[] }> {
+  return request("/api/finished-products", { signal });
+}
 
 export function getFinishedStock(projectId?: number, signal?: AbortSignal): Promise<FinishedStock> {
   return request(`/api/finished-stock${projectId ? `?project_id=${projectId}` : ""}`, { signal });

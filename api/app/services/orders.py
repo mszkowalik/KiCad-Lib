@@ -282,6 +282,69 @@ def run_stock(db: Session, project_id: int | None = None) -> list[dict]:
     return out
 
 
+def product_stock(db: Session) -> list[dict]:
+    """The shelf per PRODUCT, counted from the DEVICE RECORDS.
+
+    `run_stock` counts per BATCH, which means it can only see a device that
+    names one: `_device_counts` filters on `production_run_id IN (runs)`. A
+    device with no batch is therefore invisible to every figure derived from it,
+    including the Orders page's shelf card — and 13 of them were sitting on the
+    real shelf when this was written (CE_Dongle_V2: 3 faulty, 10 prototype),
+    so the platform was reporting 93 devices where it held 106.
+
+    A device on the shelf is stock whether or not anybody recorded which batch
+    made it. What it is NOT is costed: per-device cost belongs to a batch, so an
+    unbatched unit contributes nothing to `value_usd` and is counted in
+    `no_batch` instead of being quietly averaged in.
+    """
+    from sqlalchemy import func
+
+    projects = {p.id: p.name for p in db.query(M.Project).all()}
+    unit_cost = per_device_cost_usd(db)
+
+    rows = (db.query(M.DeviceUnit.project_id, M.DeviceUnit.state,
+                     M.DeviceUnit.condition, M.DeviceUnit.production_run_id,
+                     func.count(M.DeviceUnit.id))
+            .group_by(M.DeviceUnit.project_id, M.DeviceUnit.state,
+                      M.DeviceUnit.condition, M.DeviceUnit.production_run_id).all())
+
+    out: dict[int, dict] = {}
+    for pid, state, cond, run_id, n in rows:
+        if pid is None:
+            continue
+        p = out.setdefault(pid, {
+            "project_id": pid, "project": projects.get(pid, "?"),
+            "in_stock": 0, "available": 0, "held": {}, "shipped": 0,
+            "allocated": 0, "value_usd": 0.0, "no_batch": 0, "batches": set(),
+        })
+        cond = cond or "ok"
+        if run_id is not None:
+            p["batches"].add(run_id)
+        if state == "in_stock":
+            p["in_stock"] += n
+            if cond == "ok":
+                p["available"] += n
+            else:
+                p["held"][cond] = p["held"].get(cond, 0) + n
+            if run_id is None:
+                p["no_batch"] += n
+            elif run_id in unit_cost:
+                p["value_usd"] += n * unit_cost[run_id]
+        elif state == "shipped":
+            p["shipped"] += n
+        elif state == "allocated":
+            p["allocated"] += n
+
+    result = []
+    for p in out.values():
+        p["batches"] = len(p["batches"])
+        p["value_usd"] = _round(p["value_usd"])
+        result.append(p)
+    # Biggest shelf first: the page is read to find what there is to sell.
+    result.sort(key=lambda r: (-r["in_stock"], r["project"]))
+    return result
+
+
 def _device_counts(db: Session, rids: list[int]):
     """(run, state, condition, n). CONDITION is grouped too, because a unit that
     is present but unsellable is still in stock and must be counted — it is just
@@ -888,9 +951,16 @@ def run_sales_json(db: Session, run: M.ProductionRun) -> dict:
 def project_demand(db: Session, project_id: int | None = None) -> list[dict]:
     """Open demand against supply, per project — the number the project window
     and the Orders page both ask for. Open demand is the unshipped part of
-    every non-cancelled order line; supply is what is on the shelf, plus the
-    devices ALLOCATED to those same open lines, plus what planned batches will
-    build. Shortfall is what nothing yet covers."""
+    every non-cancelled order line; supply is what is on the shelf AND CAN BE
+    SOLD, plus the devices ALLOCATED to those same open lines, plus what
+    planned batches will build. Shortfall is what nothing yet covers.
+
+    SUPPLY IS `available`, NOT `in_stock` (user decision 2026-09-21). A faulty
+    or prototype unit is on the shelf, counted and ours, and a shipment may
+    never draw it (decision 0032) — so counting it as supply says an order can
+    be filled by devices that cannot leave the building. It read 34 dongles of
+    supply against 0 sellable ones.
+    """
     q = (db.query(M.SalesOrderLine, M.SalesOrder)
          .join(M.SalesOrder)
          .filter(M.SalesOrder.cancelled.is_(False)))
@@ -908,8 +978,13 @@ def project_demand(db: Session, project_id: int | None = None) -> list[dict]:
     shelf: dict[int, int] = defaultdict(int)
     planned: dict[int, int] = defaultdict(int)
     planned_runs: dict[int, list[dict]] = defaultdict(list)
-    for r in run_stock(db, project_id):
-        shelf[r["project_id"]] += r["stock"]
+    # From `product_stock`, not `run_stock`: the latter counts per BATCH and so
+    # cannot see a device that names none, and 13 such devices were on the real
+    # shelf when this changed.
+    for p in product_stock(db):
+        if project_id and p["project_id"] != project_id:
+            continue
+        shelf[p["project_id"]] += p["available"]
     # An ALLOCATED device is on the shelf, reserved for a line whose open
     # quantity is counted above — `run_stock` leaves it out of stock (decision
     # 0003 §9) and the line still asks to be filled, so without this a boxed
