@@ -1,5 +1,65 @@
 # Changelog
 
+## 2026-09-22 (a batch you can edit, and an order you can link to any batch)
+
+**Three screens refused work the API had always accepted.** Each was a control
+that rendered only in the case the platform had already solved, or did not
+exist at all. Mateusz Kowalik, 2026-09-22.
+
+- **A batch's own figures are editable, on the batch page.** `label`, `qty`,
+  `run_date` and `qty_good` are on `PATCH /api/runs/{id}` and had no control
+  anywhere in the app, while the page's own docstring said every field was
+  editable there — so a batch opened for 50 could not be corrected to the 60
+  that were actually built. They are a Batch card at the top of Overview.
+- **That card is deliberately stiff to use.** It reads as a list of facts and
+  becomes a form only on "Edit…"; nothing is sent until Save, Save stays
+  disabled until something differs, and Cancel discards. `qty` and `qty_good`
+  are the denominators every per-device cost is divided by and that cost has
+  already gone out on orders, so a figure that changes while you tab past it is
+  the wrong control. The patch carries only the fields that DIFFER. Both
+  quantities stay read-only while the books are closed, which is the rule the
+  API already enforced.
+
+- **A batch's design commit is now attachable, re-pointable and detachable.**
+  The selector on a batch page was rendered only when the batch already had a
+  snapshot, on the assumption that a snapshot-less batch had chosen to be one.
+  A batch is routinely opened before its design is committed — CE_Dongle_V3
+  Batch 1 was created on 2026-09-19 with its notes saying "no snapshot yet" —
+  and nothing on any screen could then give it one. The selector now carries
+  "— no snapshot (costs only) —" as a real option, so a turnkey batch can also
+  be detached back.
+- `PATCH /api/runs/{id}` reads `snapshot_id` out of the fields actually SENT, so
+  an explicit `null` detaches while an omitted field still means "leave alone".
+  It makes the two checks `create_run` makes and did not: the snapshot must be
+  `ready`, and it must build the run's board. Attaching to a batch with no file
+  set also imports the repo's `production/` dir at that snapshot, as creating
+  the batch with one always did. A closed batch still refuses all of it.
+- **The JLC assembly-order row offers every batch, not the matcher's
+  shortlist.** The quantity matcher scores only runs within the yield tolerance
+  of what JLC says it built, so an order for a batch that was deliberately
+  over-built — a batch for 50, with 60 populated — scored nothing, and
+  the row then showed `External project` as its ONLY button. That is not a
+  smaller version of the right answer: it takes the order's consigned stock out
+  of batch costing, $1,218.98 on SMT026092263197. The decision endpoint always
+  accepted any run; only this control narrowed it.
+- **The same row printed arithmetic that does not hold.** "JLC says 60 boards
+  × 1 per panel = 75 devices" multiplied the BILLED quantity by the panel factor
+  and printed a total derived from JLC's `pasteNumber`. It also said the factor
+  was "derived from the BOM" where JLC had stated it. And the 75 is itself
+  wrong for this order: 75 bare PCBs were made and 60 populated, and the order
+  drew exactly 60 of each 1-per-board part. The two counts differ on 16 of 46
+  orders, so the row now warns whenever they do. The backend still derives
+  devices from `pasteNumber`; changing that is an open question.
+- **The JLC page is readable.** Each assembly order is now a boxed card: the
+  order row and the session strip used `meta-card` alone, a class with no
+  appearance, so they drew no box and ran into each other. An order's
+  quantities are separate labelled chips — assembled, billed, panel, devices —
+  instead of one sentence, and a disagreement between the assembled and billed
+  counts is a warning banner that says how to settle it from the evidence. The
+  session strip puts its facts and its buttons on two rows. Four two-sentence
+  `.card-subtitle` paragraphs, which render as uppercase mono, are now a short
+  label with the explanation in plain text under it.
+
 ## 2026-09-21 (the shelf, by product — and 13 devices nothing was counting)
 
 The Orders page is cleaned up with it:

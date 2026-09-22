@@ -104,9 +104,16 @@ export default function JlcSessionStrip({ onChange }: { onChange?: () => void })
     known === "ok" ? "verified" : known === "dead" ? "dead" : configured ? "configured" : "absent";
 
   return (
-    <div className="meta-card">
+    /* `meta-card` alone has no appearance — it only sets `flex-shrink` — so this
+       strip drew no box at all and its facts ran into the card below it. Every
+       other call site in the app is `card pad meta-card`; this one and the JLC
+       order rows were the two that were not (user report 2026-09-22). The
+       FACTS and the ACTIONS are also two rows now: one `btn-row` put four dim
+       measurements and three buttons on one line, so the buttons landed
+       wherever the text happened to end. */
+    <div className="card pad meta-card">
       <ErrorBanner message={error} />
-      <div className="btn-row">
+      <div className="toolbar">
         <strong>JLCPCB session</strong>
         <span className={`pill ${tone}`}>{word}</span>
         {state?.last_ok_at && (
@@ -134,6 +141,8 @@ export default function JlcSessionStrip({ onChange }: { onChange?: () => void })
             · {state.keepalive_count} keep-alive{state.keepalive_count === 1 ? "" : "s"}
           </span>
         )}
+      </div>
+      <div className="btn-row">
         <button className="btn btn-sm" disabled={!configured || busy === "check"} onClick={check}>
           {busy === "check" ? "checking…" : "Check"}
         </button>

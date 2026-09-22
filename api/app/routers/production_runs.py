@@ -160,9 +160,12 @@ class RunPatch(BaseModel):
     run_date: str | None = None
     notes: str | None = None
     overrides: dict | None = None
-    # Re-point a run at a newer design commit. Needed when a part moves INTO the
-    # schematic (the Dongle enclosure became ENC1), because the run's planned BOM
-    # comes from its snapshot and would otherwise never see it.
+    # Attach, re-point or DETACH the design commit a run's planned BOM comes
+    # from. Re-pointing is needed when a part moves INTO the schematic (the
+    # Dongle enclosure became ENC1); attaching is needed because a batch is
+    # often opened before its design is committed (batch 2164, 2026-09-19).
+    # An explicit `null` detaches — `exclude_unset` tells that apart from
+    # "not sent", so this field's None default does NOT mean "leave alone".
     snapshot_id: int | None = None
     sale_unit_price: float | None = None
     sale_currency: str | None = None
@@ -302,10 +305,14 @@ def update_run(run_id: int, body: RunPatch, db: Session = Depends(get_db)):
     # `per_device` invoice line is charged at `effective_qty`, which reads `qty`
     # and `qty_good`, so moving either moves a per-device cost already carried
     # onto orders — the same silent movement the document lock exists to stop.
+    sent = body.model_dump(exclude_unset=True)
     if r.closed_at is not None:
-        sent = body.model_dump(exclude_unset=True)
+        # `snapshot_id` is the one of the three that arrives as an explicit null:
+        # DETACHING the planned BOM moves the same money as re-pointing it, so
+        # the test is "sent and different", not "sent and non-null".
         moves_money = [f for f in ("qty", "qty_good", "snapshot_id")
-                       if f in sent and sent[f] is not None and getattr(r, f) != sent[f]]
+                       if f in sent and getattr(r, f) != sent[f]
+                       and (f == "snapshot_id" or sent[f] is not None)]
         if moves_money:
             raise HTTPException(409, {
                 "error": f"batch {r.label} is closed ({r.closed_at.isoformat()[:10]}), so "
@@ -344,36 +351,62 @@ def update_run(run_id: int, body: RunPatch, db: Session = Depends(get_db)):
         track("notes", body.notes)
     if body.overrides is not None:
         track("overrides", body.overrides)
-    if body.snapshot_id is not None:
-        snap = db.get(M.ProjectSnapshot, body.snapshot_id)
-        if snap is None:
-            raise HTTPException(404, "snapshot not found")
-        if snap.project_id != r.project_id:
-            raise HTTPException(422, f"snapshot {snap.id} belongs to project "
-                                     f"{snap.project_id}, not {r.project_id}")
+    if "snapshot_id" in sent:
+        # ATTACH and DETACH, not only re-point. A batch opened before its design
+        # was committed starts snapshot-less and is given one later; a turnkey
+        # batch stays snapshot-less on purpose and prices only its extra items
+        # and cost items. `null` is therefore a real value here, which is why
+        # this reads `sent` instead of testing `body.snapshot_id` for None.
+        target = sent["snapshot_id"]
+        snap = None
+        if target is not None:
+            snap = db.get(M.ProjectSnapshot, target)
+            if snap is None:
+                raise HTTPException(404, "snapshot not found")
+            if snap.project_id != r.project_id:
+                raise HTTPException(422, f"snapshot {snap.id} belongs to project "
+                                         f"{snap.project_id}, not {r.project_id}")
+            # The same two checks `create_run` makes. A run pointed at a snapshot
+            # that is still ingesting, or at one that does not build its board,
+            # has a planned BOM of nothing and says so nowhere.
+            if snap.status != "ready":
+                raise HTTPException(409, f"snapshot is {snap.status}")
+            if r.board and r.board not in [b["name"] for b in snap.boards or []]:
+                raise HTTPException(404, f"snapshot {snap.id} does not build board "
+                                         f"{r.board}")
         # `overrides` keyed `b<snapshot_bom_line id>` point at the OLD snapshot's
-        # line ids; a different snapshot has different ones, so a silent re-point
-        # would quietly stop applying them.
+        # line ids; a different snapshot has different ones — and a detached run
+        # has none at all — so a silent re-point would quietly stop applying them.
         stale = [k for k in (r.overrides or {}) if k.startswith("b")]
-        if stale and snap.id != r.snapshot_id:
+        if stale and (snap.id if snap else None) != r.snapshot_id:
             raise HTTPException(409, "this run has BOM-line overrides "
                                      f"({', '.join(sorted(stale))}) keyed to snapshot "
                                      f"{r.snapshot_id}; re-key or clear them before "
                                      "moving it to another snapshot")
-        track("snapshot_id", snap.id)
+        track("snapshot_id", snap.id if snap else None)
     # Sale side + yield. Applied only when explicitly present, so a PATCH that
     # touches the label can never blank out a price.
-    sale = body.model_dump(exclude_unset=True)
     for field in ("sale_unit_price", "sale_currency", "qty_sold", "qty_good",
                   "customer", "order_ref", "order_date"):
-        if field not in sale:
+        if field not in sent:
             continue
-        value = sale[field]
+        value = sent[field]
         if isinstance(value, str):
             value = value.strip()
         track(field, value)
     audit(db, "run.update", "production_run", r.id, before or None)
     db.commit()
+    # Attaching a design commit to a batch that had none is the same act as
+    # creating the batch with one, so it gets the same default production files
+    # (the repo's production/ dir at that snapshot). Only when the batch has no
+    # file set yet — an uploaded or generated set is the operator's, not ours.
+    if before.get("snapshot_id", 0) is None and r.snapshot_id is not None and not _pset_count(r):
+        snap, board = _run_snapshot_board(db, r)
+        if snap is not None and board is not None:
+            try:
+                production.import_from_repo(db, r, snap, board)
+            except Exception:
+                db.rollback()
     return _run_json(r, db, with_detail=True)
 
 

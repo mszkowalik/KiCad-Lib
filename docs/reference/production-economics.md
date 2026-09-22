@@ -587,15 +587,27 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
   invariant break and the user's call, not a robot's.
   `ProductionRun.frozen` is a LEGACY blob from the old
   freeze-at-creation model — kept for archival, never written or read.
-- **A run can be re-pointed at a newer snapshot** (`RunPatch.snapshot_id`) — needed
-  when a part moves INTO the schematic, since the planned BOM comes from the run's
-  snapshot and would otherwise never see it (the Dongle enclosure became `ENC1` in
-  commit a92e8973). The patch refuses (409) while the run carries `b<bom line id>`
-  overrides: those ids belong to the old snapshot's lines, so re-pointing would
-  quietly stop applying them. Runs whose components are charged directly from a
-  turnkey invoice (Dongle Batch 1, `snapshot_id` NULL) must STAY snapshot-less —
-  giving them a BOM invites `consume_from_bom` to draw parts the invoice already paid
-  for.
+- **A run's snapshot can be ATTACHED, re-pointed and DETACHED** (`RunPatch
+  .snapshot_id`). Re-pointing is needed when a part moves INTO the schematic,
+  since the planned BOM comes from the run's snapshot and would otherwise never
+  see it (the Dongle enclosure became `ENC1` in commit a92e8973). Attaching is
+  needed because a batch is routinely opened before its design is committed —
+  CE_Dongle_V3 Batch 1 (run 2164) was created on 2026-09-19 with its notes
+  saying "no snapshot yet", and until 2026-09-22 nothing on any screen could
+  give it one: `RunDetail`'s selector was rendered only when the run already had
+  a snapshot. An explicit `null` detaches; `exclude_unset` tells that apart from
+  "field not sent", so `snapshot_id: None` in a patch body is NOT "leave alone".
+  Attaching also imports the repo's `production/` dir at that snapshot, exactly
+  as `create_run` does, and only when the batch has no file set yet.
+  Three refusals: the snapshot must be `ready` and belong to the run's project,
+  it must build the run's `board`, and the patch 409s while the run carries
+  `b<bom line id>` overrides — those ids belong to the old snapshot's lines, so
+  moving or detaching would quietly stop applying them.
+  **Runs whose components are charged directly from a turnkey invoice (Dongle
+  V2 Batch 1, `snapshot_id` NULL) must still STAY snapshot-less** — giving them
+  a BOM invites `consume_from_bom` to draw parts the invoice already paid for.
+  That is now a judgement the operator makes, not something the screen enforces
+  by hiding the control.
 - **An extra-BOM item and a schematic symbol for the same part double-count.** Once
   an enclosure gets a symbol, its `ProjectExtraBomItem` twin must go or both the plan
   and the draws count it twice (the Aqua plan listed components 324/325 once with

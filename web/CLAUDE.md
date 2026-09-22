@@ -255,7 +255,13 @@ component:
   2026-09-21. Use it for a few words that qualify the title ("Newest batch
   first"), and put the explanation in `<p className="muted dim">` underneath.
   If the qualifier only repeats the title, drop it: two stacked uppercase lines
-  read as the heading said twice.
+  read as the heading said twice. The JLC page carried four of them until
+  2026-09-22.
+
+- **`meta-card` is a MODIFIER, not a card.** It sets `flex-shrink` and nothing
+  else. Every call site is `card pad meta-card`; the JLC session strip and its
+  order rows used it alone, drew no box, and their contents ran into the card
+  below (user report 2026-09-22).
 
 ### The theme is ONE selector, and JavaScript decides when it applies
 

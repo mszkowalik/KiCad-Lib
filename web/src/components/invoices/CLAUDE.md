@@ -127,3 +127,35 @@ copy of that one. Reasoning in
   "Parts feed the shared pool" is true of a purchase; a supplier lump is charged
   to the batch and never pooled, which is the OPPOSITE case. `supplierLump`
   picks the right sentence.
+
+
+## The JLC matcher's shortlist is a SUGGESTION — the picker offers every batch
+
+`PUT /api/jlc/import/decision/{code}` accepts any run that exists; it checks
+nothing else. The only thing that ever narrowed it was this panel, and it
+narrowed it to nothing on the case that needed a human most: the "link to
+another run…" select was rendered only when `candidates.length > 1`, so an
+order the matcher scored no run for showed **`External project` as its one
+button**. That answer is not a smaller version of the right one — it takes the
+order's consigned stock value out of batch costing altogether ($1,218.98 on
+SMT026092263197, reported 2026-09-22).
+
+`RunPicker` therefore always renders, with the shortlist first and every batch
+after it. Two rules for anyone changing it:
+
+- **`propose_run_from_devices` scores only runs within the yield tolerance of
+  what JLC built**, so a batch that was deliberately over-built scores nothing —
+  batch 2164 is for 50 and JLC populated 60, no candidates. A batch being absent
+  from `candidates` says the quantities differ, never that the link is wrong.
+- **Label every count; never print them as one calculation.** `jlc_number` is
+  what the invoice BILLS and `panels_assembled` is JLC's `pasteNumber`, which
+  the backend prefers for `implied_devices`. The row printed "60 boards × 1 per
+  panel = 75 devices" — the billed figure times the factor, beside a total
+  derived from the other one — and called the factor BOM-derived while
+  `panel_source` said JLC had stated it.
+- **`pasteNumber` is NOT reliably the assembled count.** On SMT026092263197 the
+  user ordered 75 bare PCBs and 60 populated: JLC states 75, bills 60, and the
+  order drew exactly 60 of each 1-per-board part. The two figures differ on 16
+  of 46 orders and `pasteNumber` is the round one every time, so the row shows
+  the conflict as a banner instead of trusting either. Whether the backend
+  should switch its source is an open question, not a settled rule.

@@ -150,11 +150,15 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
   const uninvoiced = pending.filter((r) => r.payload_empty);
 
   return (
-    <div className="card">
+    /* `.card-subtitle` is 11px uppercase mono — a LABEL, not a paragraph. Both
+       of this file's were two-sentence explanations and rendered as walls of
+       shouting (user report 2026-09-22); the rule is in components/CLAUDE.md. */
+    <div className="card pad">
       <h2 className="card-title">Staged JLCPCB batches</h2>
-      <p className="card-subtitle">
-        Sync only stages — it never writes a cost row. Importing is the separate,
-        previewable, reversible step.
+      <p className="card-subtitle">Nothing here has moved money yet</p>
+      <p className="muted dim">
+        A sync only stages a batch — it writes no cost row. Importing is the
+        separate step, and it is previewable and reversible.
       </p>
       <ErrorBanner message={error} />
 
@@ -294,10 +298,11 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
       </div>
 
       <h3 className="card-title">Parts orders (the lots)</h3>
-      <p className="card-subtitle">
-        Fetched live from JLCPCB, because sync stages assembly batches only. Each line of one
-        of these documents IS a purchase lot — quantity and price taken from the ORDER page,
-        never the invoice, which understates by JLC&apos;s sourcing fee.
+      <p className="card-subtitle">Fetched live — a sync stages assembly batches only</p>
+      <p className="muted dim">
+        Each line of one of these documents IS a purchase lot. Quantity and price
+        come from the ORDER page, never the invoice, which understates them by
+        JLC&apos;s sourcing fee.
       </p>
       <ErrorBanner message={partsErr} />
       {parts && (

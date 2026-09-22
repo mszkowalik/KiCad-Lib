@@ -4,6 +4,7 @@ import {
   clearJlcDecision,
   errorMessage,
   fetchJlcOrderBom,
+  getAllRuns,
   getJlcQueue,
   isAbortError,
   setJlcDecision,
@@ -12,6 +13,7 @@ import {
   type JlcDecisionApplyResult,
   type JlcQueue,
   type JlcQueueOrder,
+  type RunInfo,
 } from "../../api";
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner } from "../Ui";
@@ -43,6 +45,13 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [onlyPending, setOnlyPending] = useState(true);
+  // EVERY batch, not only the matcher's shortlist. The matcher scores runs on
+  // quantity and date; when it finds none — "JLC says 75 devices; no run has a
+  // matching quantity" — the operator still knows which batch this order built
+  // and must be able to say so. Without this, a real order was linkable only to
+  // "External project", which removes its stock value from batch costing
+  // (reported 2026-09-22, order SMT026092263197 against batch 2164).
+  const [runs, setRuns] = useState<RunInfo[]>([]);
 
   const load = useCallback((signal?: AbortSignal) => {
     setLoading(true);
@@ -60,6 +69,9 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
   useEffect(() => {
     const ac = new AbortController();
     load(ac.signal);
+    getAllRuns(ac.signal)
+      .then(setRuns)
+      .catch(() => {});
     return () => ac.abort();
   }, [load]);
 
@@ -231,12 +243,17 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
   const c = queue?.counts;
 
   return (
-    <div className="card">
+    <div className="card pad">
       <div className="card-title">JLC assembly orders</div>
-      <div className="card-subtitle">
-        One row per assembly order — the unit that maps to a production run. A JLC
-        batch bills several, so the link cannot live on the invoice.
-      </div>
+      {/* `.card-subtitle` is 11px uppercase mono — a LABEL, not a paragraph.
+          Two sentences in it rendered as two lines of shouting across the whole
+          card (user report 2026-09-22); the rule is in components/CLAUDE.md and
+          this was one of the places breaking it. */}
+      <div className="card-subtitle">One row per assembly order</div>
+      <p className="muted dim">
+        The assembly order, not the invoice, is the unit that maps to a production
+        batch: one JLC invoice bills several, so the link cannot live on it.
+      </p>
 
       {error && <ErrorBanner message={error} />}
 
@@ -298,7 +315,7 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
         const isOpen = open === o.smt_order_code;
         const decided = o.decision && o.decision.outcome !== "pending";
         return (
-          <div className="meta-card" key={o.smt_order_code}>
+          <div className="card pad meta-card" key={o.smt_order_code}>
             <div className="btn-row">
               <span className="mono">{o.smt_order_code}</span>
               {o.board_codes.map((b) => (
@@ -324,27 +341,81 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
               </button>
             </div>
 
-            <div className="muted">
-              JLC says {o.jlc_number ?? "?"}{" "}
-              {o.panel_factor && o.panel_factor > 1 ? "panels" : "boards"}
+            {/* THE FACTS, each labelled, one chip each — not a sentence.
+                This was a paragraph that asserted arithmetic: "JLC says 60
+                boards × 1 per panel = 75 devices", which multiplied the BILLED
+                quantity by the panel factor and printed a total derived from
+                `pasteNumber`. Three different numbers read as one calculation,
+                and the reader could not see which was which (user report
+                2026-09-22). Each figure now says what it is and where it came
+                from, and the reason the matcher gave sits under them. */}
+            <div className="toolbar">
+              {o.panels_assembled != null && (
+                <span
+                  className="pill neutral"
+                  title={"JLC's pasteNumber. On some orders this is the bare-PCB count, not "
+                    + "the populated one — compare it with the billed figure."}
+                >
+                  {o.panels_assembled} stated by JLC
+                </span>
+              )}
+              {o.jlc_number != null && (
+                <span className="pill neutral" title="What the invoice bills for">
+                  {o.jlc_number} billed
+                </span>
+              )}
               {o.panel_factor ? (
-                <>
-                  {" "}
-                  × {o.panel_factor} per panel ={" "}
-                  <strong>{o.implied_devices} devices</strong> (factor derived from the BOM,
-                  not stated by JLC)
-                </>
+                <span
+                  className="pill neutral"
+                  title={
+                    o.panel_source === "jlc_panelisation"
+                      ? "Panel factor stated by JLC"
+                      : o.panel_source === "decision"
+                        ? "Panel factor set by hand on this order"
+                        : "Panel factor derived from the BOM — JLC did not state it"
+                  }
+                >
+                  {o.panel_factor}-up panel
+                  {o.panel_source === "jlc_panelisation"
+                    ? ""
+                    : o.panel_source === "decision"
+                      ? " (by hand)"
+                      : " (from the BOM)"}
+                </span>
               ) : (
-                " — no panel factor could be derived"
+                <span className="pill warn" title="Nothing said how many boards a panel holds">
+                  no panel factor
+                </span>
+              )}
+              {o.implied_devices != null && (
+                <span className="pill ok" title="What the platform will treat as the device count">
+                  {o.implied_devices} devices
+                </span>
               )}
               {o.part_count > 0 && (
-                <>
-                  {" · "}
-                  {o.part_count} parts drawn from stock worth $
-                  {(o.consumed_value_usd ?? 0).toLocaleString()} across {o.lot_count} lots
-                </>
+                <span className="muted">
+                  {o.part_count} parts from stock · $
+                  {(o.consumed_value_usd ?? 0).toLocaleString()} · {o.lot_count} lots
+                </span>
               )}
             </div>
+
+            {/* The two counts disagree on 16 of 46 orders and `pasteNumber` is
+                the round one every time. On SMT026092263197 the BILLED 60 is
+                the assembled count — 75 bare PCBs were fabricated, 60 were
+                populated, and the order drew exactly 60 of each 1-per-board
+                part — so the device count is 15 too high. Which one JLC means
+                is unresolved, so the row states the conflict instead of picking
+                a side silently. */}
+            {o.panels_assembled != null && o.jlc_number != null
+              && o.panels_assembled !== o.jlc_number && (
+              <div className="banner-warn">
+                JLC states {o.panels_assembled} boards but bills {o.jlc_number}. The device
+                count above follows the first. Open <strong>evidence</strong> and check a
+                part fitted once per board: if it was drawn {o.jlc_number} times, the
+                billed figure is the real one and the device count is too high.
+              </div>
+            )}
 
             {o.collision_note && <div className="banner-warn">{o.collision_note}</div>}
             {o.reason && <div className="muted dim">{o.reason}</div>}
@@ -377,24 +448,12 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
                     ? ` (−$${(o.consumed_value_usd ?? 0).toLocaleString()} from batch costs)`
                     : ""}
                 </button>
-                {o.candidates.length > 1 && (
-                  <select
-                    className="row-input"
-                    defaultValue=""
-                    disabled={busy === o.smt_order_code}
-                    onChange={(e) =>
-                      e.target.value && decide(o, "link_run", Number(e.target.value))
-                    }
-                  >
-                    <option value="">link to another run…</option>
-                    {o.candidates.map((k) => (
-                      <option key={k.run_id} value={k.run_id}>
-                        {k.run_label} — {k.agree}/{k.voted} parts agree, {k.implied_devices} devices
-                        {k.date_gap_days != null ? `, ${k.date_gap_days}d away` : ""}
-                      </option>
-                    ))}
-                  </select>
-                )}
+                <RunPicker
+                  order={o}
+                  runs={runs}
+                  disabled={busy === o.smt_order_code}
+                  onPick={(runId) => decide(o, "link_run", runId)}
+                />
               </div>
             )}
             {decided && (
@@ -495,6 +554,74 @@ function describe(r: JlcDecisionApplyResult): string {
       `book ${m.would_write_movements ?? m.movements} stock movement(s) out of the pool, charged to nobody`,
     );
   return parts.join(", ");
+}
+
+/**
+ * WHICH BATCH this assembly order built — the matcher's shortlist first, then
+ * every batch in the platform.
+ *
+ * The matcher only ever scores a run whose recorded quantity is within the
+ * yield tolerance of what JLC says it built, so an order for a batch that was
+ * deliberately over-built (50 devices ordered, 75 boards assembled) scores
+ * nothing and used to leave "External project" as the only button on screen.
+ * That answer is not a smaller version of the right one — it takes the order's
+ * consigned stock value out of batch costing altogether.
+ *
+ * The suggestions keep their evidence in the option text, so picking one off
+ * the shortlist still reads as a judgement rather than a guess; the full list
+ * carries each batch's project, recorded quantity and date so an operator can
+ * recognise the one they mean. `PUT /decision` accepts any existing run — this
+ * control was the only thing narrowing it.
+ */
+function RunPicker({
+  order,
+  runs,
+  disabled,
+  onPick,
+}: {
+  order: JlcQueueOrder;
+  runs: RunInfo[];
+  disabled: boolean;
+  onPick: (runId: number) => void;
+}) {
+  const suggested = new Set(order.candidates.map((k) => k.run_id));
+  const rest = runs.filter((r) => !suggested.has(r.id));
+  return (
+    <select
+      className="row-input"
+      value=""
+      disabled={disabled}
+      title="Link this assembly order to a batch — any batch, not only the suggested ones"
+      onChange={(e) => e.target.value && onPick(Number(e.target.value))}
+    >
+      <option value="">link to a batch…</option>
+      {order.candidates.length > 0 && (
+        <optgroup label="Suggested by the quantity match">
+          {order.candidates.map((k) => (
+            <option key={k.run_id} value={k.run_id}>
+              {k.run_label} — {k.agree}/{k.voted} parts agree, {k.implied_devices} devices
+              {k.date_gap_days != null ? `, ${k.date_gap_days}d away` : ""}
+            </option>
+          ))}
+        </optgroup>
+      )}
+      <optgroup label={order.candidates.length > 0 ? "Every other batch" : "Every batch"}>
+        {rest.map((r) => {
+          // The recorded quantity is the number an operator compares against
+          // "JLC says N devices", so it is on every option — except where the
+          // label already says it, which most of them do ("Batch 1 — 50 pcs").
+          const qty = `${r.qty} pcs`;
+          return (
+            <option key={r.id} value={r.id}>
+              {r.project ? `${r.project} · ` : ""}
+              {r.label.includes(qty) ? r.label : `${r.label} — ${qty}`}
+              {r.run_date ? ` · ${r.run_date}` : ""}
+            </option>
+          );
+        })}
+      </optgroup>
+    </select>
+  );
 }
 
 function ConfidencePill({ order }: { order: JlcQueueOrder }) {

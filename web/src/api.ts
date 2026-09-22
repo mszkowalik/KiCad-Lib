@@ -2671,10 +2671,11 @@ export interface RunPatchBody {
   run_date?: string;
   notes?: string;
   overrides?: Record<string, unknown>;
-  /** re-point the run at another snapshot of the same project; the server
-   *  refuses (409) while `b<id>` overrides are keyed to the old snapshot's
-   *  BOM lines. A snapshot cannot be cleared — omit to leave it alone. */
-  snapshot_id?: number;
+  /** attach, re-point or detach the snapshot the run's planned BOM comes from;
+   *  it must belong to the same project, be `ready`, and build the run's board.
+   *  The server refuses (409) while `b<id>` overrides are keyed to the old
+   *  snapshot's BOM lines. `null` DETACHES — omit to leave it alone. */
+  snapshot_id?: number | null;
   /** sale side. Only fields actually present are applied, so patching a label
    *  can never blank a price. `null` clears one deliberately. */
   sale_unit_price?: number | null;
@@ -4202,10 +4203,22 @@ export interface JlcQueueOrder {
   invoice_no: string;
   invoice_date: string;
   board_codes: string[];
-  /** JLC's own count — PANELS when the order was panelised, never devices. */
+  /** What the INVOICE bills — PANELS when the order was panelised, never
+   *  devices. Never multiply this by `panel_factor` and call the answer
+   *  `implied_devices`: that is not where the backend gets it from. */
   jlc_number: number | null;
-  /** Derived from BOM votes, not given by JLC. */
+  /** JLC's `pasteNumber`, when its own order detail was cached. This, not
+   *  `jlc_number`, is what `implied_devices` is computed from whenever it is
+   *  known — and on SMT026092263197 that is demonstrably WRONG: JLC stated 75
+   *  where 60 boards were assembled against 75 bare PCBs, and the order drew
+   *  exactly 60 of each 1-per-board part. The two figures differ on 16 of 46
+   *  orders and `pasteNumber` is the round one every time, so treat it as
+   *  unresolved rather than as the assembled count. */
+  panels_assembled: number | null;
   panel_factor: number | null;
+  /** Where `panel_factor` came from: JLC's own panelisation, our BOM vote, or
+   *  a person's decision. "derived from the BOM" is true for ONE of the three. */
+  panel_source: string;
   implied_devices: number | null;
   money_usd: number | null;
   presale_usd: number | null;

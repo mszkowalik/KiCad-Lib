@@ -156,10 +156,29 @@ and the copy was worse.
   `BackLink` calls `navigate(-1)` when `window.history.state.idx > 0` and falls
   back to its `to` for a directly-opened page, which also keeps a real href for
   middle-click. `to` stays required.
-- **A run is edited only on `/runs/:id`** (`pages/RunDetail.tsx`): status,
-  sale (price/device, qty_good…), notes, overrides, materials, costs, files,
-  serials. The project Runs tab is a plain list. Do not add run-editing UI
-  anywhere else.
+- **A run is edited only on `/runs/:id`** (`pages/RunDetail.tsx`): the Batch
+  card (label, quantity planned, devices produced, run date), status, the
+  design commit, notes, overrides, materials, costs, files, serials. The
+  project Runs tab is a plain list. Do not add run-editing UI anywhere else.
+  **That sentence has to stay literally true, and it was not.** The page
+  claimed every `PATCH /api/runs/{id}` field was editable here while `label`,
+  `qty`, `run_date` and `qty_good` had no control anywhere in the app — so a
+  batch opened for 50 could not be corrected to the 60 that were built, and
+  the only way to change one was the API (user report 2026-09-22). Adding a
+  field to `RunPatch` means adding it to the Batch card, or writing in that
+  file why not. The SALE fields are the standing exception: a batch shows
+  costs, the ORDER carries revenue (decision 2026-09-19).
+  **A figure that MONEY is divided by is edited behind a guard, with Save and
+  Cancel** (user request 2026-09-22). The Batch card reads as a `dl.kv` of
+  facts and turns into a form only on "Edit…"; nothing is sent until Save, and
+  Save is disabled until something differs. Two reasons it is not a row of
+  live boxes. `qty` and `qty_good` are the denominators every per-device cost
+  is divided by and that cost has already gone out on orders, so a value that
+  changes while you tab past it is the wrong affordance. And
+  `NumberInput.onChange` fires per keystroke, so a box wired straight to a
+  PATCH writes qty 6 on the way to typing 60 — two audit rows and a moment
+  where the batch really was 6. The patch carries only the fields that
+  DIFFER, so the audit row names the edit rather than the whole form.
 - **Batches have TWO lists and they answer different questions.**
   `components/project/RunsTab.tsx` is "what has this product built", and it
   creates and deletes. `pages/Runs.tsx` (Production → Batches,

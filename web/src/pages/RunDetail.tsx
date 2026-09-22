@@ -5,17 +5,30 @@
  *  sale (price per device, customer, units billed, qty_good) hid in a dialog
  *  on the Invoices page. Neither surface showed the other's fields, and
  *  `qty_good` — set only in that dialog — was the denominator the run costs
- *  panel complained about. Here every `PATCH /api/runs/{id}` field is visible
- *  and editable in one place.
+ *  panel complained about.
  *
- *  Tabs: Overview (economics + sale + notes) · Materials (planned BOM vs real
+ *  This page is now the ONE place a batch is edited, and that claim has to stay
+ *  literally true. It read "every `PATCH /api/runs/{id}` field is visible and
+ *  editable here" while `label`, `qty`, `run_date` and `qty_good` had no control
+ *  anywhere in the app — a batch opened for 50 could not be corrected to the 60
+ *  actually built (reported 2026-09-22). The Batch card holds those four, behind
+ *  Edit… / Save / Cancel: two of them are denominators of a per-device cost that
+ *  has already gone out on orders, so they are not edited by tabbing through a
+ *  row of live boxes. The SALE fields (`sale_unit_price`, `qty_sold`,
+ *  `customer`, `order_ref`, `order_date`) are the deliberate exception and are
+ *  absent: a batch shows costs, the ORDER carries revenue (decision
+ *  2026-09-19). Adding a field to `RunPatch` means adding it to the Batch card,
+ *  or writing here why not.
+ *
+ *  Tabs: Overview (batch + economics + notes) · Materials (planned BOM vs real
  *  draws, ONE table) · Costs (documents + plan-vs-billed per step) · Files
  *  (production sets + attachments) · Devices (serials). The active tab lives
  *  in the URL (?tab=) so any view is linkable.
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { CheckField } from "../components/Field";
+import Field, { CheckField, FieldGrid } from "../components/Field";
+import NumberInput from "../components/NumberInput";
 import { useDialog } from "../components/Dialog";
 import {
   closeRun,
@@ -60,6 +73,22 @@ export default function RunDetail() {
   const [actuals, setActuals] = useState<RunActuals | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
+  /** The Batch card's unsaved edits. It is a DRAFT and not a set of live
+   *  controls on purpose: `qty` and `qty_good` are the denominators every
+   *  per-device cost is divided by, `NumberInput.onChange` fires per keystroke,
+   *  and a box wired straight to `patchRun` would write qty 6 on the way to
+   *  typing 60 — each an audit row against money already carried onto orders.
+   *  `qtyGood: null` is a real value (count from programming runs), so the
+   *  field is `number | null` and ABSENT means the card is not open. */
+  const [draft, setDraft] = useState<{
+    label?: string;
+    qty?: number | null;
+    qtyGood?: number | null;
+    runDate?: string;
+  }>({});
+  /** The card reads as facts until this is on — see the comment on the card. */
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [closing, setClosing] = useState(false);
   const dialog = useDialog();
 
@@ -69,11 +98,12 @@ export default function RunDetail() {
         setRun(r);
         setError(null);
         getProject(r.project_id, signal).then(setProject).catch(() => {});
-        // a snapshot-less run stays snapshot-less on purpose (turnkey batches),
-        // so the re-point selector — and this fetch — only exist for the rest
-        if (r.snapshot_id !== null) {
-          getSnapshots(r.project_id, signal).then(setSnapshots).catch(() => {});
-        }
+        // Every batch gets the selector, INCLUDING a snapshot-less one. Gating
+        // this fetch on `snapshot_id !== null` assumed a batch with no design
+        // commit had chosen to have none — but a batch is routinely opened
+        // before its design is committed, and then nothing on any screen could
+        // attach one (batch 2164, reported 2026-09-22).
+        getSnapshots(r.project_id, signal).then(setSnapshots).catch(() => {});
       })
       .catch((err) => {
         if (!isAbortError(err)) setError(errorMessage(err));
@@ -93,6 +123,48 @@ export default function RunDetail() {
     updateRun(runId, body)
       .then((r) => setRun(r))
       .catch((err) => setError(errorMessage(err)));
+
+  /** What the Batch card would send — only the fields that actually differ, so
+   *  Save is dead until something changed and the audit row names the real
+   *  edit rather than every field on the form. */
+  const batchPatch = (): Parameters<typeof updateRun>[1] => {
+    if (!run) return {};
+    const body: Parameters<typeof updateRun>[1] = {};
+    const label = (draft.label ?? run.label).trim();
+    if (label && label !== run.label) body.label = label;
+    if (draft.runDate !== undefined && draft.runDate !== run.run_date) {
+      body.run_date = draft.runDate;
+    }
+    // The two quantities are frozen on a closed batch (decision 0044) — the API
+    // refuses them, so the form must not offer them either.
+    if (!run.closed_at) {
+      if (draft.qty != null && draft.qty !== run.qty) body.qty = draft.qty;
+      const good = draft.qtyGood ?? null;
+      if (draft.qtyGood !== undefined && good !== (run.qty_good ?? null)) {
+        body.qty_good = good;
+      }
+    }
+    return body;
+  };
+  const batchChanges = Object.keys(batchPatch()).length;
+
+  const saveBatch = async () => {
+    const body = batchPatch();
+    if (!Object.keys(body).length) return;
+    setSaving(true);
+    try {
+      setRun(await updateRun(runId, body));
+      setError(null);
+      setDraft({});
+      setEditing(false);
+    } catch (err) {
+      // Stay in the form with the draft intact: the server refuses a closed
+      // batch and a stale `b<id>` override, and both are worth another try.
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   /** Close the books on this batch, or reopen them (decision 0044).
    *
@@ -166,23 +238,26 @@ export default function RunDetail() {
             </span>
           </div>
           <div className="btn-row">
-            {/* Re-point the planned BOM at another design commit. The server
-                409s while `b<id>` overrides are keyed to the old snapshot's
-                lines — the error banner carries that instruction, and the
-                select snaps back because only a successful patch sets state. */}
-            {run.snapshot_id !== null && snapshots && (
+            {/* Attach, re-point or detach the planned BOM's design commit. The
+                server 409s while `b<id>` overrides are keyed to the old
+                snapshot's lines — the error banner carries that instruction,
+                and the select snaps back because only a successful patch sets
+                state. "no snapshot" is a real option, not a placeholder: a
+                turnkey batch prices only its extra items and cost items. */}
+            {snapshots && (
               <select
                 className="text"
                 title="Design commit — the snapshot this batch's planned BOM comes from"
-                value={String(run.snapshot_id)}
+                value={run.snapshot_id === null ? "" : String(run.snapshot_id)}
                 onChange={(e) => {
-                  const id = Number(e.target.value);
+                  const id = e.target.value === "" ? null : Number(e.target.value);
                   if (id === run.snapshot_id) return;
                   updateRun(runId, { snapshot_id: id })
                     .then(() => load())
                     .catch((err) => setError(errorMessage(err)));
                 }}
               >
+                <option value="">— no snapshot (costs only) —</option>
                 {snapshots
                   .filter((s) => s.status === "ready" || s.id === run.snapshot_id)
                   .map((s) => {
@@ -242,6 +317,149 @@ export default function RunDetail() {
 
         {tab === "overview" && (
           <>
+            {/* WHAT THE BATCH IS — and a deliberately STIFF way to change it.
+                These four fields had no control anywhere in the app, so a batch
+                opened for 50 could not be corrected to the 60 actually built
+                (reported 2026-09-22). But `qty` and `qty_good` are the
+                denominators every per-device cost is divided by, and that cost
+                has already gone out on orders — so this is not a card you edit
+                by tabbing through it. It reads as facts until you open Edit,
+                and nothing is sent until you press Save (user request
+                2026-09-22).
+
+                The sale fields stay absent: a batch shows costs, the ORDER
+                carries revenue (decision 2026-09-19). */}
+            <div className="card pad">
+              <h2 className="card-title">Batch</h2>
+              <p className="card-subtitle">
+                {run.closed_at
+                  ? "Books closed — quantities are read-only"
+                  : "What this batch is, and how many it is for"}
+              </p>
+              {!editing ? (
+                <>
+                  <dl className="kv">
+                    <dt>Label</dt>
+                    <dd>{run.label}</dd>
+                    <dt>Quantity planned</dt>
+                    <dd>{run.qty}</dd>
+                    <dt>Devices produced</dt>
+                    <dd>
+                      {run.qty_good ?? (
+                        <span className="muted">counted from programming runs</span>
+                      )}
+                    </dd>
+                    <dt>Run date</dt>
+                    <dd>{run.run_date || <span className="muted">none</span>}</dd>
+                  </dl>
+                  <div className="btn-row">
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => {
+                        setDraft({
+                          label: run.label,
+                          qty: run.qty,
+                          qtyGood: run.qty_good ?? null,
+                          runDate: run.run_date,
+                        });
+                        setEditing(true);
+                      }}
+                    >
+                      Edit…
+                    </button>
+                    {run.closed_at && (
+                      <span className="muted dim">
+                        The books are closed, so quantity and devices produced cannot
+                        change. Reopen the batch if one of them really is wrong.
+                      </span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="muted dim">
+                    A per-device cost is charged on both quantities, so changing one moves
+                    the cost that has already gone out on every order shipped from this
+                    batch. Nothing is written until you press Save.
+                  </p>
+                  <FieldGrid>
+                    <Field label="Label">
+                      <input
+                        className="text"
+                        value={draft.label ?? ""}
+                        onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))}
+                      />
+                    </Field>
+                    <Field
+                      label="Quantity planned"
+                      hint="Devices this batch is for. Must be 1 or more."
+                      error={
+                        draft.qty != null && draft.qty < 1 ? "must be 1 or more" : ""
+                      }
+                    >
+                      <NumberInput
+                        className="text"
+                        value={draft.qty ?? null}
+                        min={1}
+                        step={1}
+                        disabled={!!run.closed_at}
+                        onChange={(v) => setDraft((d) => ({ ...d, qty: v }))}
+                      />
+                    </Field>
+                    <Field
+                      label="Devices produced"
+                      hint="Units that passed. Leave empty to count them from programming runs."
+                    >
+                      <NumberInput
+                        className="text"
+                        value={draft.qtyGood ?? null}
+                        min={0}
+                        step={1}
+                        disabled={!!run.closed_at}
+                        onChange={(v) => setDraft((d) => ({ ...d, qtyGood: v }))}
+                        onEmpty={() => setDraft((d) => ({ ...d, qtyGood: null }))}
+                      />
+                    </Field>
+                    <Field label="Run date" hint="The date the planned BOM is priced at.">
+                      <input
+                        className="text"
+                        type="date"
+                        value={draft.runDate ?? ""}
+                        onChange={(e) => setDraft((d) => ({ ...d, runDate: e.target.value }))}
+                      />
+                    </Field>
+                  </FieldGrid>
+                  <div className="btn-row">
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      disabled={saving || !batchChanges || (draft.qty ?? 1) < 1}
+                      onClick={() => void saveBatch()}
+                    >
+                      {saving ? "Saving…" : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={saving}
+                      onClick={() => {
+                        setDraft({});
+                        setEditing(false);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <span className="muted dim">
+                      {batchChanges
+                        ? `${batchChanges} unsaved change(s)`
+                        : "nothing changed yet"}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+
             <div className="card pad">
               <h2 className="card-title">Economics</h2>
               <p className="card-subtitle">
