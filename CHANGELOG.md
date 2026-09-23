@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-09-23 (the broker password file, from the Devices page)
+
+**Production → Devices has a "Mosquitto passwords" button.** It downloads
+`mosquitto_passwords.txt` in PLAINTEXT, one `user:password` line per device.
+This is the format the old production tool wrote. The developer who deploys
+the broker hashes the file with `mosquitto_passwd -U`. Mateusz Kowalik,
+2026-09-23.
+
+- The file follows the project selector and ignores the other filters, because
+  the broker needs every device of a project. "All projects" gives the whole
+  fleet.
+- The file lists every name a device was ever programmed with. 78 units (77
+  CE_Aqua_V2, 1 CE_Dongle_V2) were first programmed with a 6-hex name and
+  later with a 12-hex name, and both names are in the file. On 2026-09-23 the
+  file has 5534 lines for 5456 devices. It contains all 4445 users of the old
+  tool's file, with the same passwords.
+- 237 older CE_Dongle_V2 units had no stored plaintext password. The export
+  derives it again from the username and the fleet salt.
+- The export checks each password against the hash the programming run
+  stored. If a password does not match, the export fails and names the
+  device. It does not write that line.
+- A device appears only if a run derived its credentials. CE_Dongle_V3 has no
+  lines yet.
+- New endpoint `GET /api/flasher/mosquitto?project_id=` (the project is
+  optional). The per-project route gives the same file.
+
 ## 2026-09-22 (a batch you can edit, and an order you can link to any batch)
 
 **Three screens refused work the API had always accepted.** Each was a control

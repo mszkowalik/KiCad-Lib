@@ -456,8 +456,13 @@ Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model
   (`IDENTITY_VARS`: topic→tasmota_id, imei, iccid, imsi, modem_model,
   modem_fw). Device identity is the MAC (`device_units.mac` UNIQUE),
   upserted at `esp_connect` ~2 s into a run, so even early failures are
-  attributed. `mosquitto` export regenerates the broker file from
-  `device_config_values` (`mqtt_creds_line`, `current=True`).
+  attributed. The `mosquitto` export (`GET /api/flasher/mosquitto`, optional
+  `project_id`; the Devices page button) writes the broker file in PLAINTEXT
+  (`user:password`, the old tool's format — the deployer runs
+  `mosquitto_passwd -U`). Each password is checked against the stored
+  `mqtt_creds_line` hash, and derived from it when `mqtt_password` is missing.
+  It lists EVERY name a device ever had (history rows too), not only the
+  current one: 78 units carry both a 6-hex and a 12-hex name.
 - **Credential derivation (`services/flasher/credentials.py`) is frozen** —
   verified byte-for-byte against real `mosquitto_passwords.txt` pairs. Any
   change strands the deployed fleet.

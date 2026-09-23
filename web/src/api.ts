@@ -5773,8 +5773,10 @@ export function assignBatchDeployment(
   });
 }
 
-export function mosquittoExportPath(projectId: number): string {
-  return `${API_URL}/api/flasher/projects/${projectId}/mosquitto`;
+/** The broker password file for every device, or one project's. */
+export function mosquittoExportPath(projectId?: number | null): string {
+  const qs = projectId == null ? "" : `?project_id=${projectId}`;
+  return `${API_URL}/api/flasher/mosquitto${qs}`;
 }
 
 /** ws:// (or wss://) address of a programming run's engine socket.

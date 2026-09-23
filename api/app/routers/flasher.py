@@ -39,7 +39,7 @@ from .. import models as M
 from ..services import storage
 from ..services import crypto
 from ..services import mqtt_monitor
-from ..services.flasher import (bundle, checks as checks_svc,
+from ..services.flasher import (bundle, checks as checks_svc, credentials,
                                 params as params_svc, transports, validate)
 from ..services.flasher import engine as engine_mod
 from ..services.flasher.engine import (SERIAL_MAX, SERIAL_MIN, RunEngine)
@@ -2265,20 +2265,68 @@ def bench_policy(request: Request):
     )
 
 
+def _mosquitto_file(db: Session, project_id: int | None) -> Response:
+    """The broker password file in PLAINTEXT, one `user:password` line per
+    device — the format the old tool appended to mosquitto_passwords.txt
+    (CE_Production_flasher/config.py:52). The developer who deploys the broker
+    hashes it with `mosquitto_passwd -U` (user decision 2026-09-23: plaintext,
+    not the stored `$6$` lines).
+
+    237 legacy CE_Dongle_V2 units carry the `mqtt_creds_line` but no stored
+    `mqtt_password` (2026-09-23). Their password is re-derived from the username
+    and the salt inside that line, and EVERY password — stored or derived — is
+    checked against the line's hash before it is written, so a line in this
+    file is one the device was really programmed with. A mismatch fails the
+    export rather than hand the broker a password that locks a device out.
+
+    EVERY name a device was ever programmed with is listed, not only the
+    current one (user decision 2026-09-23). 78 units (77 CE_Aqua_V2, 1
+    CE_Dongle_V2) were first programmed as `dongle_<6 hex>` and later as `dongle_<12 hex>`; both names
+    stay on the broker, so the file carries 5534 lines for 5456 devices."""
+    q = (
+        db.query(M.DeviceConfigValue.device_unit_id, M.DeviceConfigValue.key,
+                 M.DeviceConfigValue.value, M.DeviceConfigValue.set_by_run_id)
+        .join(M.DeviceUnit, M.DeviceUnit.id == M.DeviceConfigValue.device_unit_id)
+        .filter(M.DeviceConfigValue.key.in_(("mqtt_password", "mqtt_creds_line")))
+    )
+    if project_id is not None:
+        q = q.filter(M.DeviceUnit.project_id == project_id)
+    creds_lines, stored_pw = [], {}
+    for unit_id, key, value, run_id in q.all():
+        if key == "mqtt_creds_line":
+            creds_lines.append((unit_id, run_id, value))
+        else:
+            stored_pw[(unit_id, run_id)] = value  # written by the same run as its line
+    passwords: dict[str, str] = {}
+    broken = set()
+    for unit_id, run_id, line in creds_lines:
+        username, _, rest = line.partition(":")
+        _, _, salt, stored_hash = rest.split("$", 3)
+        password = stored_pw.get((unit_id, run_id)) or credentials.derive(username, "", salt)[1]
+        if credentials.derive(username, password, salt)[3] != stored_hash:
+            broken.add(username)
+        elif passwords.setdefault(username, password) != password:
+            broken.add(username)  # one name, two passwords: the broker can hold only one
+    if broken:
+        raise HTTPException(
+            500, f"{len(broken)} MQTT user(s) whose password does not match the stored hash: "
+                 + ", ".join(sorted(broken)[:20]))
+    body = "\n".join(f"{u}:{p}" for u, p in sorted(passwords.items()))
+    return Response(
+        content=body + ("\n" if body else ""),
+        media_type="text/plain",
+        headers={"Content-Disposition": 'attachment; filename="mosquitto_passwords.txt"'},
+    )
+
+
+@router.get("/mosquitto")
+def mosquitto_export_all(project_id: int | None = None, db: Session = Depends(get_db)):
+    return _mosquitto_file(db, project_id)
+
+
 @router.get("/projects/{project_id}/mosquitto")
 def mosquitto_export(project_id: int, db: Session = Depends(get_db)):
-    """Regenerates the broker password file from device_config_values —
-    replaces the hand-appended mosquitto_passwords.txt."""
-    rows = (
-        db.query(M.DeviceConfigValue)
-        .join(M.DeviceUnit, M.DeviceUnit.id == M.DeviceConfigValue.device_unit_id)
-        .filter(M.DeviceUnit.project_id == project_id,
-                M.DeviceConfigValue.key == "mqtt_creds_line",
-                M.DeviceConfigValue.current.is_(True))
-        .all()
-    )
-    body = "\n".join(sorted(r.value for r in rows))
-    return Response(content=body + ("\n" if body else ""), media_type="text/plain")
+    return _mosquitto_file(db, project_id)
 
 
 # ------------------------------------------------------------------ WebSocket

@@ -13,6 +13,7 @@ import {
   getProjects,
   isAbortError,
   listDevices,
+  mosquittoExportPath,
   type DeviceListRow,
   type ProjectInfo,
 } from "../api";
@@ -222,6 +223,16 @@ export default function Devices() {
           <span className="toolbar-total">
             {rows.length === total ? `${total} devices` : `${rows.length} of ${total} devices`}
           </span>
+          {/* Follows the PROJECT selector only: the broker needs every device of
+              a project, not the rows the result/search filters happen to show. */}
+          <a
+            className="btn btn-sm"
+            href={mosquittoExportPath(projectId)}
+            download="mosquitto_passwords.txt"
+            title="Plaintext user:password file for the MQTT broker. Hash it with mosquitto_passwd -U before you deploy it."
+          >
+            Mosquitto passwords
+          </a>
         </div>
         {error ? <ErrorBanner message={error} /> : null}
         <div className="card">
