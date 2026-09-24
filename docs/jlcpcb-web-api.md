@@ -321,7 +321,9 @@ carries both, every sub-order holds exactly one lot (285 of 285), and the sum
 over an order equals the parts invoice's `paidMoney` on all 20 orders
 (2026-09-24). Until then the platform booked the advance: $1,185.74 of refunds
 as cost (the ESP32 at $2.82/pc, settled $2.2146) and $376.96 of refunded
-cancellations as fees, once misread as a "$1,623.23 sourcing fee".
+cancellations as fees, once misread as a "$1,623.23 sourcing fee". The refund is
+real money back: the user confirmed the $635.67 ESP32 refund on
+POB0202407240206550 arrived (2026-09-24).
 
 **A lot's landed unit cost is the sub-order's `settlePaidMoney / settlePresaleNumber`.**
 
