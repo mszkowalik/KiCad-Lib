@@ -17,9 +17,16 @@ Decision [0052](docs/decisions/0052-a-jlc-lot-costs-what-jlc-settled.md).
   It refuses when such a draw belongs to a closed batch.
 - Production → JLC → Parts orders shows "changed at JLC — refresh" when a
   document's total differs from what JLC settled.
-- 9 existing parts orders were refreshed on 2026-09-24: $1,571.60 less cost
-  in total, spread over the batches that used those lots. The per-order
-  figures are in the refresh journal batches.
+- 10 existing parts orders were refreshed on 2026-09-24 (journal batches 39 to
+  48, each reversible). The documents fell by $1,562.70: $1,185.74 of lots
+  re-priced (refunds less supplements) and $376.96 of refunded cancellations
+  voided. Each document now equals JLC's invoice `paidMoney`.
+- The draws that had used those lots moved with them: batch component cost
+  fell by $1,150.82 in total. By run: 5 −$308.71, 7 −$356.63, 13 −$191.63,
+  14 −$119.80, 8 −$113.13, 16 −$22.80, 9 −$17.41, 10 −$13.15, 15 −$11.28,
+  17 −$2.45, 18 −$1.39, 2164 −$0.84, 19 −$0.79, 20 −$0.15, uncharged
+  draws −$1.89, and 11 +$11.23 (a supplement). The remaining $34.92 is stock
+  still in the pool.
 
 ## 2026-09-24 (a parts order JLC has not finished is not stock, and devices are boards assembled)
 
