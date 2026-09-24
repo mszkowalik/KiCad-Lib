@@ -119,19 +119,23 @@ orderCode, orderType            4 = SMT assembly, 0 = PCB fabrication
 myOrdersRecord.detail.smtDetail
     smtOrderCode                SMT025101662104
     produceOrderCode            P29        <- the PCB order it was built from
-    pasteNumber / allPatchNum   250        <- PANELS when panelised
+    pasteNumber                 250        <- boards FABRICATED, PANELS when panelised
+    allPatchNum                 250        <- boards ASSEMBLED, PANELS when panelised
+    patchType                   all | no   <- "no": only part of the boards populated
     patchLocation, backToSingle
 myOrdersRecord.detail.pcbDetail
     panelX, panelY              2, 2       <- the panelisation
     stencilCounts               250
 ```
 
-**Devices = `pasteNumber × panelX × panelY` of the referenced PCB order.**
+**Devices = `allPatchNum × panelX × panelY` of the referenced PCB order.**
 
-`pasteNumber` is what went through the line; the invoice's `number` is what was
-BILLED, and they differ — 50 pasted against 45 billed, 200 against 187, 25 against
-22. JLC assembles a few spares and charges for what passed. Use `pasteNumber` for
-device counts and the invoice `number` only for money.
+`allPatchNum` is what went through the line and equals the invoice's billed
+`number` on all 46 assembly orders in the account (2026-09-24). `pasteNumber` is
+the boards fabricated: on the 17 orders with `patchType="no"` it is larger — 75
+fabricated / 60 assembled on `SMT026092263197`, 300 / 275, 50 / 45, 200 / 187.
+JLC's BOM agrees with `allPatchNum` (a once-per-board part is placed 45 times on
+the 50 / 45 order), so the gap is bare boards, not assembled spares.
 Verified: P29 is 2×2 so `SMT025101662104` built 250 × 4 = **1000 devices**, while
 P30 is 1×1 so `SMT025101662116` built **250**. Known for **44 of 44** assembly
 orders in the account.
@@ -299,7 +303,7 @@ copy that request as cURL. One capture settles the parameter shape.
 
 Each of these silently produces a wrong number. All were hit for real.
 
-### `number` / `pasteNumber` is PANELS, not devices
+### `number` / `allPatchNum` is PANELS, not devices, and `pasteNumber` is not assembled
 There is no panelisation field on the invoice at all. Taking `number` as a device
 count understated a batch **4×** and inflated every per-device cost by the same
 factor. Get the factor from §3.2, or derive it from the BOM (each part votes

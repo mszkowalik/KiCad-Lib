@@ -195,7 +195,7 @@ def _lot(**kw):
     return base
 
 
-def _plan(status=10, **kw):
+def _plan(status=jlc_import.ORDER_COMPLETE, **kw):
     lots = [jlc_import._lot_from_goods(_lot(**kw), "POBTEST0001",
                                        {"presaleOrderNo": "PF1"}, "buy", status)]
     return jlc_import.plan_parts_document("POBTEST0001", lots,
@@ -259,3 +259,119 @@ def test_refresh_refuses_a_lot_jlc_no_longer_reports(db, part):
     res = jlc_apply.refresh_parts_document(db, plan, dry_run=True)
     assert res["status"] == "refused"
     assert any("no longer reports" in b for b in res["blockers"])
+
+
+# ------------------------------------------- a lot JLC is still sourcing
+
+def _awaiting_plan(pob="POBTEST0002", key="900002"):
+    """POB0202609230016917 lot 2182682 as JLC reported it on 2026-09-24: paid,
+    `settlePresaleNumber` already equal to the order, nothing in storage."""
+    goods = {"presaleGoodsKeyId": key, "componentCode": "CLEDGER02",
+             "componentModel": "LEDGER-PART-2", "settlePresaleNumber": 4000,
+             "presaleNumber": 4000, "goodsPaidMoney": 2384.0, "goodsMoney": 2384.0,
+             "goodsPrice": 0.596, "inStorageNumber": 0}
+    return goods, [jlc_import._lot_from_goods(goods, pob, {"presaleOrderNo": "PF2"}, "buy", 20)]
+
+
+def test_a_lot_still_being_sourced_is_money_not_stock(db):
+    _goods, lots = _awaiting_plan()
+    assert lots[0]["awaiting"] is True
+    assert lots[0]["cancelled"] is False and lots[0]["fee_only"] is False
+    plan = jlc_import.plan_parts_document("POBTEST0002", lots, {"invoiceNo": "AW-1"})
+    [line] = plan["lines"]
+    assert line["plan_key"] == jlc_import.STEP_AWAITING
+    assert not cost_steps.is_stock_step(line["plan_key"])
+    assert line["allocate"] == "excluded" and line["exclude_reason"] == "awaiting_delivery"
+    assert line["lcsc"] == "" and line["qty"] == 1 and line["unit_price"] == 2384.0
+    # the document still reconciles to what left the bank
+    assert plan["total_amount"] == 2384.0 and plan["lot_count"] == 0
+    assert plan["awaiting_count"] == 1
+
+
+def test_an_imported_lot_is_pool_stock(db):
+    """The importer wrote no `plan_key` from 2026-09-19 (decision 0047) until
+    2026-09-24, so a whole parts order landed as unassigned money."""
+    lots = [jlc_import._lot_from_goods(_lot(presaleGoodsKeyId="900003"), "POBTEST0003",
+                                       {"presaleOrderNo": "PF3"}, "stock",
+                                       jlc_import.ORDER_COMPLETE)]
+    plan = jlc_import.plan_parts_document("POBTEST0003", lots, {"invoiceNo": "AW-3"})
+    before = jlc_apply.identity_snapshot(db)
+    res = jlc_apply.apply_parts_document(db, plan)
+    assert res["status"] == "created"
+    line = db.query(M.RunCostLine).filter_by(document_id=res["document_id"]).one()
+    assert line.plan_key == "parts:pool" and line.allocate == "pooled"
+    after = res["identities"]
+    assert round(after["pool_purchased_usd"] - before["pool_purchased_usd"], 4) == 100.0
+    assert round(after["unassigned_usd"] - before["unassigned_usd"], 4) == 0.0
+
+
+def test_a_refresh_turns_an_arrived_lot_into_stock(db):
+    goods, lots = _awaiting_plan()
+    plan = jlc_import.plan_parts_document("POBTEST0002", lots, {"invoiceNo": "AW-1"})
+    before = jlc_apply.identity_snapshot(db)
+    doc_id = jlc_apply.apply_parts_document(db, plan)["document_id"]
+    mid = jlc_apply.identity_snapshot(db)
+    assert round(mid["pool_purchased_usd"] - before["pool_purchased_usd"], 4) == 0.0
+
+    arrived = {**goods, "inStorageNumber": 4000}
+    lots = [jlc_import._lot_from_goods(arrived, "POBTEST0002", {"presaleOrderNo": "PF2"},
+                                       "buy", jlc_import.ORDER_COMPLETE)]
+    plan = jlc_import.plan_parts_document("POBTEST0002", lots, {"invoiceNo": "AW-1"})
+    res = jlc_apply.refresh_parts_document(db, plan, dry_run=False)
+    assert res["status"] == "refreshed"
+    line = db.query(M.RunCostLine).filter_by(document_id=doc_id).one()
+    assert line.plan_key == "parts:pool" and line.allocate == "pooled"
+    assert line.exclude_reason == ""
+    assert line.lcsc == "CLEDGER02" and line.qty == 4000
+    assert round(res["identities"]["pool_purchased_usd"] - mid["pool_purchased_usd"], 4) == 2384.0
+
+
+def test_a_refresh_leaves_a_hand_set_destination_alone(db, part):
+    """Only a lot that changed what it IS moves its money. A line a person
+    charged somewhere keeps that choice across a refresh."""
+    line = db.get(M.RunCostLine, part["line"].id)
+    line.allocate = "excluded"
+    line.exclude_reason = "external_project"
+    db.flush()
+    jlc_apply.refresh_parts_document(db, _plan(), dry_run=False)
+    line = db.get(M.RunCostLine, part["line"].id)
+    assert line.allocate == "excluded" and line.exclude_reason == "external_project"
+    assert line.plan_key == "parts:pool"
+
+
+# ------------------------------------------------- how many boards JLC built
+
+def _person(paste, patched, patch_type, panel=(1, 1)):
+    return {"unionOrderInfoVOList": [
+        {"orderCode": "SMTX", "myOrdersRecord": {"detail": {"smtDetail": {
+            "smtOrderCode": "SMTX", "produceOrderCode": "PX", "pasteNumber": paste,
+            "allPatchNum": patched, "patchType": patch_type}}}},
+        {"orderCode": "PX", "myOrdersRecord": {"detail": {"pcbDetail": {
+            "panelX": panel[0], "panelY": panel[1]}}}},
+    ]}
+
+
+def test_devices_are_the_boards_assembled_not_fabricated():
+    """SMT026092263197: 75 boards fabricated, 60 populated. The invoice bills 60
+    and the order drew exactly 60 of every once-per-board part."""
+    from app.services import jlc_web
+    info = jlc_web.panel_factors(_person(75, 60, "no"))["SMTX"]
+    assert info["devices"] == 60 and info["panels"] == 60
+    assert info["panels_fabricated"] == 75 and info["partial_assembly"] is True
+    assert info["panels_source"] == "allPatchNum"
+    # a panelised order multiplies the ASSEMBLED count
+    assert jlc_web.panel_factors(_person(250, 250, "all", (2, 2)))["SMTX"]["devices"] == 1000
+
+
+def test_repair_adds_a_missing_lot_the_way_the_importer_would(db, part):
+    """`reprice_from_jlc` adds lots no line records. It wrote its own line and
+    no step, so an added lot would have been unassigned money, and a lot JLC
+    was still sourcing would have become stock."""
+    _goods, lots = _awaiting_plan(pob="POBTEST0001", key="900004")
+    fine = jlc_import._lot_from_goods(_lot(), "POBTEST0001", {"presaleOrderNo": "PF1"},
+                                      "buy", jlc_import.ORDER_COMPLETE)
+    res = jlc_apply.reprice_from_jlc(db, {"900001": fine, "900004": lots[0]}, dry_run=True)
+    # the lot the document already records, correctly, is NOT added again
+    [added] = res["added_lines"]
+    assert added["plan_key"] == jlc_import.STEP_AWAITING and added["awaiting"] is True
+

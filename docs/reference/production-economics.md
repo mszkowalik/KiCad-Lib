@@ -232,10 +232,25 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
 - **A CANCELLED parts lot is a fee, never stock.** JLC settles one with
   `orderStatus=40` and still reports a non-zero `settlePresaleNumber` —
   lot `754166` said 3,470 LEDs settled at $19.78 and not one arrived.
-  `_lot_from_goods` sets `fee_only` from `cancelled` (status 40 OR settled <= 0),
-  not from the quantity alone; the money still lands so the document reconciles.
-  Testing the quantity alone booked 3,470 phantom pieces and produced the
-  platform's largest stock gap.
+  `_lot_from_goods` sets `fee_only` from `cancelled` (status 40, or status 30
+  with nothing settled), not from the quantity alone; the money still lands so
+  the document reconciles. Testing the quantity alone booked 3,470 phantom
+  pieces and produced the platform's largest stock gap.
+- **A parts lot is stock only once JLC COMPLETES it (`orderStatus=30`).** A
+  `buy` lot JLC is still sourcing is paid at an advance price and already
+  reports `settlePresaleNumber` equal to the order, with `inStorageNumber=0`
+  and `orderStatus=20` — lot 2182682 (4,000 TMUX1208RSVR) and lot 2182699
+  (300 EG915U at $0.80 against $8.30 on the stock lot), 2026-09-24. Any status
+  other than 30 or 40 imports as ONE line, step `other:awaiting_delivery`,
+  `excluded` with reason `awaiting_delivery`, no `lcsc`/`mpn`: the money
+  reconciles and nothing enters the pool. The Refresh button on the parts order
+  turns it into the lot once JLC completes it.
+- **A parts line is stock because of its STEP.** The importer writes
+  `plan_key="parts:pool"` and `allocate="pooled"` on every lot, and
+  `other:cancelled` / `excluded` / `cancelled_by_supplier` on a cancelled one.
+  A line written without a step lands as unassigned money with nothing added
+  to the pool (decision 0047) — the parts importer did exactly that from
+  2026-09-19 to 2026-09-24.
 - **JLC's own LEDGER is synced, and it is what a disagreement is settled
   against.** `myLibrary/selectComponentChanges` returns every movement for one
   part with the balance before and after, the document that caused it, and JLC's
@@ -331,7 +346,9 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
   what JLC says today and updates lines matched on `presaleGoodsKeyId`. It
   decides before it mutates, preserves anything appended to a line's note after
   " | ", and refuses when a lot has vanished or when shrinking a line would
-  contradict draws bound to it. The importer itself refuses a document it
+  contradict draws bound to it. It moves a line's `allocate` and
+  `exclude_reason` only when the line's step changes (a lot arrived, or was
+  cancelled); otherwise a destination somebody chose survives the refresh. The importer itself refuses a document it
   already holds, and rightly — a second document doubles the purchase.
 - **JLC states a batch's status; do not infer it.** The order listing
   `sync_stage` fetches carries `batchStatus` (`shipped` | `inProduction` |

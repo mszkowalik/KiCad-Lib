@@ -538,7 +538,9 @@ def _check_excluded(allocate: str | None, reason: str | None) -> None:
 # A step whose money can never be charged to anyone. `other:cancelled` is the
 # supplier printing a line for something it did not deliver (user decision
 # 2026-09-19): nobody pays for it, so it may not name a batch or a project.
-NEVER_CHARGED = {"other:cancelled"}
+# `other:awaiting_delivery` is money paid for parts that have not arrived: it is
+# nobody's cost until a refresh turns it into a pool lot (2026-09-24).
+NEVER_CHARGED = {"other:cancelled", "other:awaiting_delivery"}
 
 
 def _check_cancelled(step: str | None, allocate: str | None,
@@ -547,9 +549,12 @@ def _check_cancelled(step: str | None, allocate: str | None,
         return
     if run_id is not None or project_id is not None or allocate != run_actuals.EXCLUDED:
         raise HTTPException(422, {
-            "error": "a cancelled position has no destination — the supplier printed "
-                     "it, nothing was delivered and nobody pays for it. Leave it "
-                     "charged to nobody, on purpose.",
+            "error": ("a cancelled position has no destination — the supplier printed "
+                      "it, nothing was delivered and nobody pays for it. Leave it "
+                      "charged to nobody, on purpose." if step == "other:cancelled" else
+                      "a position awaiting delivery has no destination — the parts have "
+                      "not arrived, so they are nobody's cost yet. Refresh the parts "
+                      "order once they arrive; the line then becomes a pool lot."),
             "step": step,
         })
 

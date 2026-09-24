@@ -1,5 +1,49 @@
 # Changelog
 
+## 2026-09-24 (a parts order JLC has not finished is not stock, and devices are boards assembled)
+
+**Correction: importing a JLC parts order put its money in "unassigned" and
+added nothing to the pool.** The parts importer wrote no production step, and
+since 2026-09-19 the step alone says a line is stock. No parts order was
+imported in that window, so no data is wrong. Each lot now imports as
+`parts:pool` / `pooled`, and a cancelled lot as `other:cancelled` / `excluded`.
+
+**A paid lot that JLC is still sourcing now imports as money awaiting delivery,
+not as stock.** Before this, JLC's settled quantity was booked as stock on hand
+the moment the order was paid, at JLC's advance price. The importer now makes
+such a lot one line with the new step **Paid, awaiting delivery**, charged to
+nobody. It can not be charged to a batch.
+
+- **Production → JLC → Parts orders** shows "(n awaiting)" on an order with
+  such lots, and keeps an imported order in the list while its document still
+  holds one.
+- A new **Refresh** button re-reads an imported parts order from JLC. A lot
+  that has arrived becomes pool stock at the price JLC settled.
+- A refresh changes where a line's money goes only when the lot changed what it
+  is (arrived or cancelled). A destination somebody chose by hand stays.
+- A refresh no longer takes a lot out of the pool. It used to compare the step
+  against a field the parts planner never set.
+
+**Correction: a JLC order's device count now counts the boards JLC
+assembled, not the boards it fabricated.** The importer read `pasteNumber`
+(bare boards) where JLC's `allPatchNum` holds the assembled count. The two
+differ on the 17 orders where only part of the boards was populated.
+`allPatchNum` equals the billed quantity on all 46 assembly orders.
+
+- SMT026092263197 reads 60, not 75. CE_Dongle_V2 Batch 1 reads 250 + 275 =
+  525, not 550, and CE_Aqua_V2 Batch 1 reads 125 + 190 = 315, not 325. Both
+  now equal their run quantity.
+- The next **Sync** on Production → JLC re-reads each cached count once. A row
+  still marked "(old reading)" has not been re-read yet.
+- The queue shows "n assembled" and, where it differs, "n fabricated".
+- Only the queue's run matching and the run-fill check read this count. No
+  money and no stock moved.
+
+**Correction: the JLC repair routine would have added a correct purchase a
+second time.** `reprice_from_jlc` treated a lot whose line needed no change as
+missing. It now also writes a missing lot the way the importer does. Nothing
+calls it yet, so no data is affected.
+
 ## 2026-09-24 (every change names the person who made it)
 
 **Each write through the API or the UI now records the signed-in person.**

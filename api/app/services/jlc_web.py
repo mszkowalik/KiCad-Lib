@@ -529,16 +529,23 @@ def get_person_order(db: Session, batch_num: str) -> dict:
     """Order-centre view of a batch — the ONLY place JLC states panelisation.
 
     `unionOrderInfoVOList[].myOrdersRecord.detail`:
-      * SMT orders (`orderType == 4`) carry `smtDetail.pasteNumber` (the count JLC
-        assembled, in PANELS when panelised) and `smtDetail.produceOrderCode`,
-        which names the PCB order they were built from.
+      * SMT orders (`orderType == 4`) carry `smtDetail.allPatchNum` (the count
+        JLC ASSEMBLED, in PANELS when panelised), `smtDetail.pasteNumber` (the
+        boards FABRICATED for the order) and `smtDetail.produceOrderCode`, which
+        names the PCB order they were built from.
       * PCB orders (`orderType == 0`) carry `pcbDetail.panelX` and `panelY`.
 
-    So devices = `pasteNumber x panelX x panelY` of the referenced PCB order —
+    So devices = `allPatchNum x panelX x panelY` of the referenced PCB order —
     authoritative, and available even for orders whose parts are not in the
     library, unlike the BOM-vote derivation. Verified on W2025101700561735: P29
     is 2x2 so SMT025101662104 built 250 x 4 = 1000 devices, while P30 is 1x1 so
     SMT025101662116 built 250. Both agree exactly with the BOM votes.
+
+    `pasteNumber` is NOT the assembled count. On 2026-09-24 `allPatchNum`
+    equalled the invoice's billed assembly quantity on all 46 assembly orders in
+    the account; `pasteNumber` exceeded it on the 17 with `patchType="no"`
+    (only part of the boards populated): SMT026092263197 fabricated 75 and
+    assembled 60, SMT02404271716797 300 and 275, SMT02407151840885 200 and 190.
     """
     client = _get_client(db)
     data = client.post(ORDER_PERSON_URI, {"batchNum": batch_num, "paySuccess": True})
@@ -561,8 +568,14 @@ def panel_factors(person_order: dict) -> dict[str, dict]:
             pcb[code] = x * y
         d_smt = detail.get("smtDetail") or {}
         if d_smt:
+            assembled = d_smt.get("allPatchNum")
             smt[str(d_smt.get("smtOrderCode") or code)] = {
-                "panels": d_smt.get("pasteNumber"),
+                # What went through the line. Falls back to the fabricated count
+                # only when JLC omits the field, and says so in `panels_source`.
+                "panels": assembled if assembled is not None else d_smt.get("pasteNumber"),
+                "panels_source": "allPatchNum" if assembled is not None else "pasteNumber",
+                "panels_fabricated": d_smt.get("pasteNumber"),
+                "partial_assembly": d_smt.get("patchType") == "no",
                 "pcb_order": str(d_smt.get("produceOrderCode") or ""),
             }
     out: dict[str, dict] = {}
@@ -572,6 +585,9 @@ def panel_factors(person_order: dict) -> dict[str, dict]:
         out[code] = {
             "panel_factor": k,
             "panels": panels,
+            "panels_source": info["panels_source"],
+            "panels_fabricated": info["panels_fabricated"],
+            "partial_assembly": info["partial_assembly"],
             "devices": (panels * k) if (panels and k) else None,
             "pcb_order": info["pcb_order"],
             # `None` means the PCB order was not in this batch — a re-order

@@ -2,7 +2,7 @@
 name: kicad-production-run-from-invoices
 description: "How to recreate what a production batch really cost from supplier invoices: the cost-pool model, shared vs run documents, splitting one invoice position across runs and into a supplier's own sub-fees, NBP FX at the invoice date, OCR import of JLC component invoices, MPN->component resolution, BOM draws, attrition, and the invoice register that proves no money is unassigned. Use when creating or backfilling a production run, or entering or splitting any supplier invoice."
 ---
-<!-- platform-skill: production-run-from-invoices v7 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: production-run-from-invoices v8 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Creating a production run from supplier invoices
 
 Procedure for recreating what a production batch really cost, from the invoices
@@ -320,6 +320,7 @@ so the register's `excluded_by_reason_usd` stays readable:
 | `prepaid_components` | the JLC `PrePaid Amount` — components already in the pool |
 | `external_project` | work for a product this platform does not track; name the project in the line's notes |
 | `cancelled_by_supplier` | a line the supplier cancelled and still printed |
+| `awaiting_delivery` | a paid JLC parts lot still being sourced (step `other:awaiting_delivery`). Not stock yet; **Refresh** on the parts order turns it into the lot once JLC completes it |
 | `payment_fee` | a transfer or payment charge nobody's product should carry |
 | `split_across_children` | a HEADER whose money is on its children; it is worth zero either way |
 

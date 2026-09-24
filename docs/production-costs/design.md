@@ -2050,11 +2050,11 @@ POST /api/overseas-core-platform/orderCenter/selectPersonOrder
 ```
 
 `unionOrderInfoVOList[].myOrdersRecord.detail` carries, for SMT orders
-(`orderType 4`), `smtDetail.pasteNumber` and `smtDetail.produceOrderCode` — the
-PCB order they were built from — and for PCB orders (`orderType 0`),
-`pcbDetail.panelX` / `panelY`.
+(`orderType 4`), `smtDetail.allPatchNum` (assembled), `smtDetail.pasteNumber`
+(fabricated) and `smtDetail.produceOrderCode` — the PCB order they were built
+from — and for PCB orders (`orderType 0`), `pcbDetail.panelX` / `panelY`.
 
-**Devices = `pasteNumber x panelX x panelY`.** Verified on W2025101700561735:
+**Devices = `allPatchNum x panelX x panelY`.** Verified on W2025101700561735:
 P29 is 2x2, so SMT025101662104 built 250 x 4 = **1000 devices**; P30 is 1x1, so
 SMT025101662116 built **250**. Both agree exactly with the BOM-vote derivation,
 which is a strong mutual confirmation — two independent methods, same answers.
@@ -2093,11 +2093,11 @@ factor_conflict  1   JLC and the BOM disagree on the panel factor
 
 Three refinements the real data forced:
 
-- **`pasteNumber` (built) is NOT the invoice's `number` (billed).** Real cases:
-  50 pasted / 45 billed, 200 / 187, 25 / 22. JLC assembles a few spares and bills
-  what passed. The queue must display the pasteNumber-derived device count, or the
-  figure on screen contradicts the proposal's own reasoning — which it did until
-  fixed.
+- **`pasteNumber` is boards FABRICATED; `allPatchNum` is boards ASSEMBLED.**
+  Real cases: 50 fabricated / 45 assembled, 200 / 187, 25 / 22. `allPatchNum`
+  equals the invoice's billed `number` on every order (46 of 46, 2026-09-24),
+  and the device count is derived from it. It was derived from `pasteNumber`
+  until 2026-09-24, which read bare boards as built ones.
 - **A run's `qty` is GOOD units; JLC's device count is units BUILT**, so the match
   is asymmetric: built-slightly-more is a normal yield loss (1000 built -> 945
   good, `YIELD_TOL` 12%), while built-fewer-than-good is impossible and must never

@@ -4207,14 +4207,16 @@ export interface JlcQueueOrder {
    *  devices. Never multiply this by `panel_factor` and call the answer
    *  `implied_devices`: that is not where the backend gets it from. */
   jlc_number: number | null;
-  /** JLC's `pasteNumber`, when its own order detail was cached. This, not
-   *  `jlc_number`, is what `implied_devices` is computed from whenever it is
-   *  known — and on SMT026092263197 that is demonstrably WRONG: JLC stated 75
-   *  where 60 boards were assembled against 75 bare PCBs, and the order drew
-   *  exactly 60 of each 1-per-board part. The two figures differ on 16 of 46
-   *  orders and `pasteNumber` is the round one every time, so treat it as
-   *  unresolved rather than as the assembled count. */
+  /** Boards JLC ASSEMBLED (`allPatchNum`), in panels when panelised — what
+   *  `implied_devices` is computed from. It equals the billed `jlc_number` on
+   *  every order checked (46 of 46, 2026-09-24). */
   panels_assembled: number | null;
+  /** Boards JLC FABRICATED for the order (`pasteNumber`). Larger than
+   *  `panels_assembled` when only part of them was populated. */
+  panels_fabricated: number | null;
+  /** `allPatchNum`, or `pasteNumber` on a count cached before 2026-09-24 that
+   *  the next sync has not re-read yet. */
+  panels_source: string;
   panel_factor: number | null;
   /** Where `panel_factor` came from: JLC's own panelisation, our BOM vote, or
    *  a person's decision. "derived from the BOM" is true for ONE of the three. */
@@ -4287,6 +4289,8 @@ export function syncJlcImport(): Promise<{
   fee_info_fetched: number;
   /** Assembly-order BOMs cached this sync — evidence only, no money moves. */
   boms_fetched: number;
+  /** Batches whose cached device count was re-read from `allPatchNum`. */
+  panels_refreshed: number;
 }> {
   return request("/api/jlc/import/sync", { method: "POST" });
 }
@@ -4373,6 +4377,23 @@ export function applyJlcParts(
   dryRun = true,
 ): Promise<JlcApplyPreview & { batch_id?: number; document_id?: number }> {
   return request(`/api/jlc/import/parts/${encodeURIComponent(pob)}/apply?dry_run=${dryRun}`, {
+    method: "POST",
+  });
+}
+
+/** Re-state an imported parts order from what JLC says today — how a lot that
+ *  was awaiting delivery becomes stock once it arrives. */
+export function refreshJlcParts(
+  pob: string,
+  dryRun = true,
+): Promise<{
+  status: "dry_run" | "refreshed" | "unchanged" | "refused" | "not_imported";
+  document_id: number | null;
+  changes?: { line_id: number; lot_ref: string; was: Record<string, unknown>; now: Record<string, unknown> }[];
+  blockers?: string[];
+  batch_id?: number;
+}> {
+  return request(`/api/jlc/import/parts/${encodeURIComponent(pob)}/refresh?dry_run=${dryRun}`, {
     method: "POST",
   });
 }
@@ -4651,6 +4672,14 @@ export interface JlcPartsOrder {
   pob: string;
   lots: number;
   cancelled_lots: number;
+  /** Paid lots JLC is still sourcing. They import as money awaiting delivery,
+   *  never as stock, until a refresh sees them completed. */
+  awaiting_lots: number;
+  awaiting_usd: number;
+  /** Lines on the imported document still marked awaiting delivery. */
+  awaiting_on_document: number;
+  /** JLC has completed a lot the document still holds as awaiting. */
+  refresh_due: boolean;
   paid_usd: number;
   document_id: number | null;
   /** A fuzzy reference match, REPORTED and never acted on: POB0202510222305546

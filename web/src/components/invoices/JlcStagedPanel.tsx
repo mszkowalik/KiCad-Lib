@@ -6,6 +6,7 @@ import {
   getJlcPartsOrders,
   getJlcStaged,
   isAbortError,
+  refreshJlcParts,
   type JlcPartsOrder,
   type JlcStagedRow,
 } from "../../api";
@@ -113,6 +114,10 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
       `Import parts order ${o.pob} — ${o.lots} lots, $${o.paid_usd.toLocaleString()}? ` +
         `Each line becomes a purchase LOT that later draws bind to, priced at what was ` +
         `actually paid rather than what was quoted.` +
+        (o.awaiting_lots
+          ? ` ${o.awaiting_lots} lot(s) (${money(o.awaiting_usd)}) are still being sourced by JLC: ` +
+            `they import as money awaiting delivery, not stock. Refresh this order once they arrive.`
+          : "") +
         (o.near_duplicate_document_id
           ? ` WARNING: document ${o.near_duplicate_document_id} (${o.near_duplicate_ref}) ` +
             `looks like the same purchase under a mistyped reference.`
@@ -128,6 +133,37 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
       onImported?.();
     } catch (err) {
       await dialog.alert(errorMessage(err), { title: "Import refused" });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Bring an imported order up to what JLC says now. The usual reason: a lot
+   *  imported as "awaiting delivery" has arrived and becomes stock. */
+  async function refreshParts(o: JlcPartsOrder) {
+    setBusy(o.pob);
+    try {
+      const preview = await refreshJlcParts(o.pob, true);
+      if (preview.status === "unchanged") {
+        await dialog.alert(`${o.pob} already matches what JLC reports.`, { title: "Nothing to refresh" });
+        return;
+      }
+      if (preview.status === "refused" || preview.status === "not_imported") {
+        await dialog.alert((preview.blockers ?? []).join(" ") || preview.status, { title: "Refresh refused" });
+        return;
+      }
+      const n = preview.changes?.length ?? 0;
+      const ok = await dialog.confirm(
+        `Refresh ${o.pob} from JLC — ${n} line(s) change. A lot that has arrived becomes ` +
+          `pool stock at the price JLC settled; one still being sourced stays awaiting delivery.`,
+        { title: "Refresh parts order", confirmLabel: "Refresh" },
+      );
+      if (!ok) return;
+      await refreshJlcParts(o.pob, false);
+      load();
+      onImported?.();
+    } catch (err) {
+      await dialog.alert(errorMessage(err), { title: "Refresh refused" });
     } finally {
       setBusy(null);
     }
@@ -307,7 +343,7 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
       <ErrorBanner message={partsErr} />
       {parts && (
         <div className="table-wrap">
-          {parts.every((o) => o.document_id) ? (
+          {parts.every((o) => o.document_id && !o.awaiting_on_document) ? (
             <p className="muted">
               All {parts.length} parts orders are imported ({parts.reduce((s, o) => s + o.lots, 0)}{" "}
               lots).
@@ -325,7 +361,7 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
               </thead>
               <tbody>
                 {parts
-                  .filter((o) => !o.document_id)
+                  .filter((o) => !o.document_id || o.awaiting_on_document > 0)
                   .map((o) => (
                     <tr key={o.pob}>
                       <td className="mono">{o.pob}</td>
@@ -335,6 +371,16 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
                           <span className="muted dim" title="Cancelled sub-orders — no parts delivered.">
                             {" "}
                             ({o.cancelled_lots} cancelled)
+                          </span>
+                        )}
+                        {o.awaiting_lots > 0 && (
+                          <span
+                            className="muted dim"
+                            title={`Paid (${money(o.awaiting_usd)}) and still being sourced by JLC. ` +
+                              "Imported as money awaiting delivery, never as stock, until a refresh sees them arrive."}
+                          >
+                            {" "}
+                            ({o.awaiting_lots} awaiting)
                           </span>
                         )}
                       </td>
@@ -347,18 +393,35 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
                           >
                             maybe already doc {o.near_duplicate_document_id}
                           </span>
+                        ) : o.document_id ? (
+                          <span
+                            className={`pill ${o.refresh_due ? "warn" : "neutral"}`}
+                            title={`Document ${o.document_id} holds ${o.awaiting_on_document} line(s) awaiting delivery.`}
+                          >
+                            {o.refresh_due ? "arrived — refresh" : "awaiting delivery"}
+                          </span>
                         ) : (
                           <span className="pill warn">not imported</span>
                         )}
                       </td>
                       <td>
-                        <button
-                          className="btn btn-primary btn-sm"
-                          disabled={busy === o.pob}
-                          onClick={() => importParts(o)}
-                        >
-                          Import
-                        </button>
+                        {o.document_id ? (
+                          <button
+                            className="btn btn-sm"
+                            disabled={busy === o.pob}
+                            onClick={() => refreshParts(o)}
+                          >
+                            Refresh
+                          </button>
+                        ) : (
+                          <button
+                            className="btn btn-primary btn-sm"
+                            disabled={busy === o.pob}
+                            onClick={() => importParts(o)}
+                          >
+                            Import
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

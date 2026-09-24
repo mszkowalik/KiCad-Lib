@@ -32,8 +32,8 @@ figure.
 
 ## Batches
 
-`Assembled` is what JLC invoiced and is context only — it can count bare boards
-(see Traps). `Programmed` counts device records and is the number to trust.
+`Assembled` is what JLC invoiced and assembled (`allPatchNum`) and is context
+only. `Programmed` counts device records and is the number to trust.
 
 | Batch | JLC invoice | Assembled | Programmed | Shipped | Held | Scrapped | Never programmed | Programming window |
 |---|---|---|---|---|---|---|---|---|
@@ -370,9 +370,10 @@ Copies are in `reports/` at the repository root, split `identified/` and
 
 ## Traps
 
-- **A JLC assembled count can be BARE boards.** On `SMT02404271716797` the
-  invoice shows 300 bare boards ordered and 275 assembled. Row 26 of
-  [../todo.md](../todo.md).
+- **JLC's `pasteNumber` counts BARE boards; `allPatchNum` counts assembled
+  ones.** On `SMT02404271716797` 300 boards were fabricated and 275 assembled.
+  The importer reads `allPatchNum` — see
+  [../jlcpcb-web-api.md](../jlcpcb-web-api.md).
 - **A 6-hex serial is only the last 3 MAC bytes**, so it collides across
   manufacturer prefixes. Match on the tail; never assume it is unique.
 - **Serial logs drop characters.** `dongle-D4EF4F58CA4` is `D4E9F4F58CA4` with a

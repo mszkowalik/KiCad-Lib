@@ -84,6 +84,7 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
         `${r.batches_visible} batches visible · ${r.fetched} newly fetched · ` +
           `${r.already_staged} already staged` +
           (r.boms_fetched ? ` · ${r.boms_fetched} BOMs cached` : "") +
+          (r.panels_refreshed ? ` · ${r.panels_refreshed} device counts re-read` : "") +
           (r.failed ? ` · ${r.failed} failed` : ""),
       );
       load();
@@ -353,10 +354,21 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
               {o.panels_assembled != null && (
                 <span
                   className="pill neutral"
-                  title={"JLC's pasteNumber. On some orders this is the bare-PCB count, not "
-                    + "the populated one — compare it with the billed figure."}
+                  title={o.panels_source === "pasteNumber"
+                    ? "JLC's pasteNumber (boards fabricated), cached before 2026-09-24. "
+                      + "Sync again to re-read the assembled count."
+                    : "JLC's allPatchNum: boards that went through the assembly line."}
                 >
-                  {o.panels_assembled} stated by JLC
+                  {o.panels_assembled} assembled
+                  {o.panels_source === "pasteNumber" ? " (old reading)" : ""}
+                </span>
+              )}
+              {o.panels_fabricated != null && o.panels_fabricated !== o.panels_assembled && (
+                <span
+                  className="pill neutral"
+                  title="JLC's pasteNumber: bare boards fabricated. Only part of them was populated."
+                >
+                  {o.panels_fabricated} fabricated
                 </span>
               )}
               {o.jlc_number != null && (
@@ -400,20 +412,14 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
               )}
             </div>
 
-            {/* The two counts disagree on 16 of 46 orders and `pasteNumber` is
-                the round one every time. On SMT026092263197 the BILLED 60 is
-                the assembled count — 75 bare PCBs were fabricated, 60 were
-                populated, and the order drew exactly 60 of each 1-per-board
-                part — so the device count is 15 too high. Which one JLC means
-                is unresolved, so the row states the conflict instead of picking
-                a side silently. */}
+            {/* `allPatchNum` equalled the billed figure on all 46 orders checked
+                on 2026-09-24, so a difference here is new and worth a look. */}
             {o.panels_assembled != null && o.jlc_number != null
               && o.panels_assembled !== o.jlc_number && (
               <div className="banner-warn">
-                JLC states {o.panels_assembled} boards but bills {o.jlc_number}. The device
-                count above follows the first. Open <strong>evidence</strong> and check a
-                part fitted once per board: if it was drawn {o.jlc_number} times, the
-                billed figure is the real one and the device count is too high.
+                JLC states {o.panels_assembled} boards assembled but bills {o.jlc_number}. The
+                device count above follows the first. Open <strong>evidence</strong> and check a
+                part fitted once per board to see which is right.
               </div>
             )}
 

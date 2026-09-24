@@ -148,14 +148,14 @@ after it. Two rules for anyone changing it:
   batch 2164 is for 50 and JLC populated 60, no candidates. A batch being absent
   from `candidates` says the quantities differ, never that the link is wrong.
 - **Label every count; never print them as one calculation.** `jlc_number` is
-  what the invoice BILLS and `panels_assembled` is JLC's `pasteNumber`, which
+  what the invoice BILLS and `panels_assembled` is JLC's `allPatchNum`, which
   the backend prefers for `implied_devices`. The row printed "60 boards × 1 per
   panel = 75 devices" — the billed figure times the factor, beside a total
   derived from the other one — and called the factor BOM-derived while
   `panel_source` said JLC had stated it.
-- **`pasteNumber` is NOT reliably the assembled count.** On SMT026092263197 the
-  user ordered 75 bare PCBs and 60 populated: JLC states 75, bills 60, and the
-  order drew exactly 60 of each 1-per-board part. The two figures differ on 16
-  of 46 orders and `pasteNumber` is the round one every time, so the row shows
-  the conflict as a banner instead of trusting either. Whether the backend
-  should switch its source is an open question, not a settled rule.
+- **`pasteNumber` is the boards FABRICATED, `allPatchNum` the boards
+  ASSEMBLED.** They differ when only part of the boards is populated
+  (`patchType="no"`): SMT026092263197 fabricated 75 and assembled 60.
+  `allPatchNum` equalled the billed figure on all 46 orders (2026-09-24), so the
+  banner for a billed/assembled gap should never show. A row reading "(old
+  reading)" is a count cached before the switch — the next sync re-reads it.

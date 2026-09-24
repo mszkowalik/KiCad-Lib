@@ -88,6 +88,9 @@ STEPS: dict[str, tuple[str, str]] = {
     # paperwork, so it is entered; whether anybody pays for it is the separate
     # question `allocate` answers.
     "other:cancelled":    ("Cancelled order line", "other"),
+    # Paid to the supplier, not delivered yet: a JLC `buy` lot still being
+    # sourced. Not stock until it arrives, and nobody's cost meanwhile.
+    "other:awaiting_delivery": ("Paid, awaiting delivery", "other"),
     "other:payment_fee":  ("Payment / transfer fee", "service"),
 }
 
@@ -142,6 +145,7 @@ DEFAULT_BASIS: dict[str, str] = {
     "pcba:populated": "per_device",
     "final:enclosure_print_setup": "per_run",
     "other:cancelled": "per_run",
+    "other:awaiting_delivery": "per_run",
     "other:payment_fee": "per_run",
 }
 

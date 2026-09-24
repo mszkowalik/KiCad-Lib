@@ -129,10 +129,11 @@ def set_decision(smt_order_code: str, body: DecisionIn, db: Session = Depends(ge
         if db.get(M.ProductionRun, body.run_id) is None:
             raise HTTPException(404, f"run {body.run_id} not found")
         # SEVERAL assembly orders may build ONE run — confirmed by the user
-        # 2026-07-28: Aqua Batch 1 (315 good) was assembled as 125 in June plus
-        # 200 in July 2024, 325 built. An earlier version refused the second
-        # order as a collision, which was simply wrong about how production
-        # works. So this is allowed, and merely reported.
+        # 2026-07-28: Aqua Batch 1 (315) was assembled as 125 in June plus 190
+        # in July 2024 (JLC's `allPatchNum`; 200 boards were fabricated). An
+        # earlier version refused the second order as a collision, which was
+        # simply wrong about how production works. So this is allowed, and
+        # merely reported.
         siblings = (
             db.query(M.JlcOrderDecision)
             .filter(M.JlcOrderDecision.run_id == body.run_id,
@@ -324,10 +325,24 @@ def list_parts_orders(db: Session = Depends(get_db)):
     for pob, lots in sorted(by_pob.items()):
         doc = jlc_apply.find_document(db, pob, "")
         near = jlc_apply.find_near_duplicate(db, pob) if doc is None else None
+        # Lines on the imported document still waiting for their parts. When
+        # JLC has completed one of them since, a refresh turns it into stock.
+        waiting_lines = (db.query(M.RunCostLine)
+                         .filter(M.RunCostLine.document_id == doc.id,
+                                 M.RunCostLine.voided_at.is_(None),
+                                 M.RunCostLine.plan_key == jlc_import.STEP_AWAITING)
+                         .count()) if doc else 0
+        awaiting = sum(1 for lot in lots if lot.get("awaiting"))
         out.append({
             "pob": pob,
             "lots": len(lots),
             "cancelled_lots": sum(1 for lot in lots if lot.get("cancelled")),
+            # Paid and not delivered yet: imported as money, never as stock.
+            "awaiting_lots": awaiting,
+            "awaiting_usd": round(sum(lot["paid_usd"] for lot in lots if lot.get("awaiting")), 2),
+            "awaiting_on_document": waiting_lines,
+            # The document is behind JLC: a lot it holds as awaiting has arrived.
+            "refresh_due": bool(doc) and waiting_lines > awaiting,
             "paid_usd": round(sum(lot["paid_usd"] for lot in lots), 2),
             "document_id": doc.id if doc else None,
             # A fuzzy reference match is REPORTED, never acted on: `POB0202510222305546`

@@ -71,6 +71,19 @@ PANEL_FRAC_TOL = 0.08
 
 
 # ---------------------------------------------------------------- purchases
+# JLC's `orderStatus` on a parts sub-order. Only these two were ever seen on a
+# finished lot; 20 was seen on a paid `buy` lot still being sourced.
+ORDER_COMPLETE = 30
+ORDER_CANCELLED = 40
+
+# What each kind of parts-order line IS (decision 0047) and where its money
+# goes (decision 0045). The importer must write all three, or the line lands as
+# `plan_key=""` — not stock — and the whole purchase shows as unassigned money.
+STEP_LOT = "parts:pool"
+STEP_CANCELLED = "other:cancelled"
+STEP_AWAITING = "other:awaiting_delivery"
+
+
 def index_parts_orders(raw_list: dict) -> dict:
     """Flatten `selectPresaleOrderList` into lots keyed by `presaleGoodsKeyId`.
 
@@ -105,6 +118,17 @@ def _lot_from_goods(g: dict, pob: str, so: dict, presale_type: str, status) -> d
     # Landed unit = what we actually paid, spread over what actually arrived.
     unit = round(paid / settled, 8) if settled > 0 else None
     fee = round(paid - goods, 4)
+    # A sub-order is stock only once JLC COMPLETES it. Until then a `buy` lot
+    # is paid at an advance price and `settlePresaleNumber` already equals the
+    # ordered quantity while nothing is in storage — POB0202609230016917 lot
+    # 2182682 (4,000 TMUX1208RSVR) and POB0202609230021921 lot 2182699 (300
+    # EG915U at a $0.7998 advance against $8.30 on the stock lot) both read
+    # `orderStatus=20`, `goodsStatus=10`, `inStorageNumber=0` on 2026-09-24.
+    # Across the account's 284 lots that day, every lot in storage was
+    # `orderStatus=30` and every cancelled one `40`; no other value was seen,
+    # so anything that is not 30 or 40 waits rather than becomes stock.
+    awaiting = status not in (ORDER_COMPLETE, ORDER_CANCELLED)
+    cancelled = status == ORDER_CANCELLED or (not awaiting and settled <= 0)
 
     return {
         "lot_key": str(g.get("presaleGoodsKeyId")),
@@ -112,7 +136,11 @@ def _lot_from_goods(g: dict, pob: str, so: dict, presale_type: str, status) -> d
         "purchase_order_no": str(so.get("presaleOrderNo") or ""),
         "presale_type": presale_type,
         "order_status": status,
-        "cancelled": status == 40 or settled <= 0,
+        "cancelled": cancelled,
+        # Paid, not yet delivered: real money, no stock yet. It becomes a lot
+        # when a refresh sees the sub-order completed.
+        "awaiting": awaiting and paid > 0,
+        "in_storage": jlc_invoice._f(g.get("inStorageNumber")),
         "lcsc": str(g.get("componentCode") or ""),
         "mpn": str(g.get("componentModel") or ""),
         "description": str(g.get("description") or "")[:500],
@@ -134,7 +162,7 @@ def _lot_from_goods(g: dict, pob: str, so: dict, presale_type: str, status) -> d
         # 3,470 of the 3,478-piece gap on that part — the largest disagreement in
         # the platform, chased for a day before this row explained it
         # (2026-09-18). It is the ONLY `orderStatus=40` lot in the account.
-        "fee_only": (status == 40 or settled <= 0) and paid > 0,
+        "fee_only": cancelled and paid > 0,
     }
 
 
@@ -143,13 +171,17 @@ def plan_parts_document(pob: str, lots: list[dict], invoice_raw: dict | None) ->
     the lots. `project_id` is None on purpose: a parts purchase is stockpile
     replenishment shared across products, which is the codebase's existing
     shared-document semantics."""
-    real = [lot for lot in lots if not lot["fee_only"]]
+    awaiting = [lot for lot in lots if lot.get("awaiting")]
+    real = [lot for lot in lots
+            if not lot["fee_only"] and not lot.get("awaiting") and not lot["cancelled"]]
     fees = [lot for lot in lots if lot["fee_only"]]
     lines = [
         {
             "kind": "part",
+            "plan_key": STEP_LOT,
             "run_id": None,
-            "allocate": "none",
+            "allocate": run_actuals.POOLED,
+            "exclude_reason": "",
             "label": lot["mpn"] or lot["lcsc"],
             "lcsc": lot["lcsc"],
             "mpn": lot["mpn"],
@@ -179,8 +211,10 @@ def plan_parts_document(pob: str, lots: list[dict], invoice_raw: dict | None) ->
             # "fee" is NOT a valid RunCostLine.kind (see run_costs.KINDS);
             # "other" is the honest bucket for money paid against no goods.
             "kind": "other",
+            "plan_key": STEP_CANCELLED,
             "run_id": None,
-            "allocate": "none",
+            "allocate": run_actuals.EXCLUDED,
+            "exclude_reason": "cancelled_by_supplier",
             "label": f"Cancelled: {lot['mpn'] or lot['lcsc']}",
             "lcsc": "",
             "mpn": "",
@@ -196,6 +230,34 @@ def plan_parts_document(pob: str, lots: list[dict], invoice_raw: dict | None) ->
                 "a fee rather than a lot"
             ),
         })
+    for lot in awaiting:
+        # Paid, not delivered. Entered so the document reconciles to what left
+        # the bank, and excluded so it is neither stock nor anybody's cost: JLC
+        # holds none of it, and the price is an advance that JLC may re-settle.
+        # `lcsc`/`mpn` stay empty for the same reason as on a cancelled line —
+        # every stock reader keys on them. A refresh turns it into the lot.
+        lines.append({
+            "kind": "other",
+            "plan_key": STEP_AWAITING,
+            "run_id": None,
+            "allocate": run_actuals.EXCLUDED,
+            "exclude_reason": "awaiting_delivery",
+            "label": f"Awaiting delivery: {lot['mpn'] or lot['lcsc']}",
+            "lcsc": "",
+            "mpn": "",
+            "qty": 1,
+            "unit_price": lot["paid_usd"],
+            "lot_ref": lot["lot_key"],
+            "supplier_order_ref": lot["purchase_batch_no"],
+            "notes": (
+                f"lot {lot['lot_key']} from {lot['purchase_order_no']} "
+                f"({lot['presale_type']}): {lot['lcsc']} {lot['mpn']}, "
+                f"{lot['qty_ordered']:g} ordered, paid ${lot['paid_usd']} "
+                f"(advance {lot['quoted_unit']}/pc), {lot['in_storage']:g} in storage, "
+                f"order status {lot['order_status']} — not stock until JLC completes "
+                "it; refresh the parts order then"
+            ),
+        })
 
     inv = invoice_raw or {}
     return {
@@ -209,6 +271,8 @@ def plan_parts_document(pob: str, lots: list[dict], invoice_raw: dict | None) ->
         "lines": lines,
         "lot_count": len(real),
         "fee_count": len(fees),
+        "awaiting_count": len(awaiting),
+        "awaiting_usd": round(sum(lot["paid_usd"] for lot in awaiting), 2),
         "sourcing_fee_usd": round(sum(lot["sourcing_fee_usd"] for lot in real), 2),
     }
 
@@ -897,10 +961,10 @@ def plan_orders(db: Session, invoices: list[dict],
 
     # --- cross-order pass: several orders may JOINTLY build one run
     #
-    # Confirmed by the user 2026-07-28: Aqua Batch 1 (315 good) was assembled as
-    # 125 in June plus 200 in July 2024 — 325 built. An earlier version treated
-    # the second order as a collision and demoted it, which was simply wrong
-    # about how production works.
+    # Aqua Batch 1 (315) was assembled by two orders: 125 in June plus 190 in
+    # July 2024 (200 boards fabricated, 190 populated — JLC's `allPatchNum`).
+    # An earlier version treated the second order as a collision and demoted
+    # it, which was simply wrong about how production works.
     #
     # So a second claimant is only a problem when the orders TOGETHER overshoot
     # the run, and it is worth reporting when they undershoot (an order is
@@ -1130,6 +1194,7 @@ def sync_stage(db: Session, limit_pages: int = 4) -> dict:
                 "batches_visible": len(seen), "previously_staged": prior}
 
     fetched = refreshed = failed = fees_fetched = boms_fetched = cancelled = 0
+    panels_refreshed = 0
     for bn in sorted(seen):
         row = db.query(M.JlcImport).filter_by(kind="assembly", external_id=bn).first()
         # JLC's own word on the batch, from the listing above. Captured for every
@@ -1148,6 +1213,17 @@ def sync_stage(db: Session, limit_pages: int = 4) -> dict:
             # state costs no extra requests.
             if set(row.panel_info or {}) - set(row.bom_info or {}):
                 boms_fetched += _fetch_boms(db, row)
+            # A count cached before 2026-09-24 was read from `pasteNumber` (boards
+            # fabricated) rather than `allPatchNum` (boards assembled). Re-read
+            # each such batch once; the new entries name their source.
+            if row.panel_info and any("panels_source" not in v
+                                      for v in row.panel_info.values()):
+                try:
+                    row.panel_info = jlc_web.panel_factors(
+                        jlc_web.get_person_order(db, bn))
+                    panels_refreshed += 1
+                except jlc_web.JlcWebError as e:
+                    log.warning(f"could not re-read panelisation for {bn}: {e}")
             refreshed += 1
             continue
         if status == "cancelled":
@@ -1201,7 +1277,7 @@ def sync_stage(db: Session, limit_pages: int = 4) -> dict:
     return {"batches_visible": len(seen), "fetched": fetched,
             "already_staged": refreshed, "failed": failed,
             "fee_info_fetched": fees_fetched, "boms_fetched": boms_fetched,
-            "cancelled": cancelled}
+            "panels_refreshed": panels_refreshed, "cancelled": cancelled}
 
 
 def _fetch_boms(db: Session, row: M.JlcImport, person: dict | None = None) -> int:
@@ -1302,11 +1378,11 @@ def decision_queue(db: Session) -> list[dict]:
         existing = decided.get(code)
         k = prop.get("panel_factor")
         stated = panels.get(code) or {}
-        # Prefer JLC's own device count. It is derived from `pasteNumber` (what
-        # went through the assembly line), which is NOT the invoice's `number`
-        # (what was billed) — a real invoice bills 45 boards against 50 pasted,
-        # and 187 against 200. Computing devices from the invoice number would
-        # therefore show a figure that contradicts the proposal's own reasoning.
+        # Prefer JLC's own device count: `allPatchNum` (boards assembled) times
+        # the panel factor JLC states. It equals the invoice's billed `number`
+        # on every order in the account; `pasteNumber` is the boards FABRICATED
+        # and exceeds it wherever only part of them was populated (see
+        # `jlc_web.panel_factors`). The billed number is the fallback only.
         devices = stated.get("devices")
         if devices is None and k:
             devices = int((p["jlc_number"] or 0) * k)
@@ -1320,6 +1396,8 @@ def decision_queue(db: Session) -> list[dict]:
             "panel_factor": k,
             "implied_devices": devices,
             "panels_assembled": stated.get("panels"),
+            "panels_fabricated": stated.get("panels_fabricated"),
+            "panels_source": stated.get("panels_source", "pasteNumber" if stated else ""),
             "panel_source": prop.get("panel_source", ""),
             "jlc_panel_factor": stated.get("jlc_panel_factor", stated.get("panel_factor")),
             "bom_vote": prop.get("bom_vote"),

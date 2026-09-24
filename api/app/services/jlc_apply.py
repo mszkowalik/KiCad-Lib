@@ -211,6 +211,12 @@ def apply_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
             unit_price=li["unit_price"] or 0.0,
             currency="USD",
             allocate=li["allocate"],
+            exclude_reason=(li.get("exclude_reason") or "")[:40],
+            # The step is what makes a lot STOCK (decision 0047). Omitted, every
+            # line landed as `plan_key=""` and a whole parts order showed as
+            # unassigned money with nothing added to the pool — the state the
+            # importer was in from 2026-09-19 to 2026-09-24.
+            plan_key=li.get("plan_key") or "",
             lcsc=li["lcsc"],
             mpn=li["mpn"][:200],
             notes=li["notes"],
@@ -292,15 +298,24 @@ def refresh_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
             blockers.append(f"lot {ref} matches {len(rows)} lines on document {doc.id}")
             continue
         row = rows[0]
-        diff = {k: (getattr(row, k), v) for k, v in (
-            # `kind` is gone (decision 0047): the planner's own `step` is what
-            # the row stores, and comparing it compares the same fact the coarse
-            # bucket used to be derived from.
-            ("plan_key", li.get("step") or ""),
+        fields = [
+            # `kind` is gone (decision 0047): the planner's `plan_key` is what
+            # the row stores. This used to read a `step` key the parts planner
+            # never sets, so every refreshed lot was rewritten to `plan_key=""`
+            # and silently left the pool.
+            ("plan_key", li.get("plan_key") or ""),
             ("label", li["label"][:300]), ("qty", float(li["qty"])),
             ("unit_price", float(li["unit_price"] or 0.0)), ("lcsc", li["lcsc"]),
             ("mpn", li["mpn"][:200]), ("notes", _keep_annotations(row.notes, li["notes"])),
-        ) if _differs(getattr(row, k), v)}
+        ]
+        if _differs(row.plan_key, li.get("plan_key") or ""):
+            # The lot changed what it IS — delivered, or cancelled — so where
+            # its money goes changes with it. Otherwise the destination stays a
+            # person's decision and a refresh never overrules it.
+            fields += [("allocate", li["allocate"]),
+                       ("exclude_reason", (li.get("exclude_reason") or "")[:40])]
+        diff = {k: (getattr(row, k), v) for k, v in fields
+                if _differs(getattr(row, k), v)}
         if not diff:
             continue
         if float(li["qty"]) < float(row.qty or 0):
@@ -540,6 +555,7 @@ def reprice_from_jlc(db: Session, lots_by_key: dict[str, dict],
     }
     changes: list[dict] = []
     unmatched: list[dict] = []
+    matched_keys: set[str] = set()
 
     for line in (
         db.query(M.RunCostLine)
@@ -558,12 +574,23 @@ def reprice_from_jlc(db: Session, lots_by_key: dict[str, dict],
         # Quantity, never price — price is the thing being corrected, so it
         # cannot also be the key.
         hit = next((c for c in cands if abs((c["qty"] or 0) - (line.qty or 0)) < 0.5), None)
+        if hit is not None and (hit.get("awaiting") or hit.get("cancelled")):
+            # A stock line matched to a lot JLC has not delivered (or cancelled)
+            # is a contradiction, not a price to correct. Report it.
+            unmatched.append({"line_id": line.id, "pob": pob, "lcsc": line.lcsc,
+                              "our_qty": line.qty, "jlc_qtys": [hit["qty"]],
+                              "why": "awaiting delivery" if hit.get("awaiting") else "cancelled"})
+            continue
         if hit is None:
             if cands:
                 unmatched.append({"line_id": line.id, "pob": pob, "lcsc": line.lcsc,
                                   "our_qty": line.qty,
                                   "jlc_qtys": [c["qty"] for c in cands]})
             continue
+        # Matched, whether or not it needs a change. Recording only CHANGED
+        # lines here let a line that was already right read as a missing lot
+        # below, and the repair would have added the purchase a second time.
+        matched_keys.add(hit["lot_key"])
         new_unit = hit["unit_cost_usd"]
         if new_unit is None:
             continue
@@ -601,7 +628,6 @@ def reprice_from_jlc(db: Session, lots_by_key: dict[str, dict],
     # Without these the document total (corrected to what was paid) exceeds the
     # sum of its lines, and the register refuses the whole correction — which is
     # exactly how they were found.
-    matched_keys = {c["lot_ref"] for c in changes}
     added: list[dict] = []
     for lot in lots_by_key.values():
         if lot["lot_key"] in matched_keys or not lot["paid_usd"]:
@@ -610,31 +636,31 @@ def reprice_from_jlc(db: Session, lots_by_key: dict[str, dict],
                     if (d.external_id or "").strip() == lot["purchase_batch_no"]), None)
         if doc is None:
             continue  # its document is not imported; not this function's job
-        fee_only = lot["fee_only"]
+        # The line is built by the PARTS PLANNER, not here: it is the one place
+        # that knows a lot's step and destination (stock, cancelled, awaiting
+        # delivery). A second copy wrote no `plan_key`, so every lot it added
+        # would have landed as unassigned money rather than stock.
+        [li] = jlc_import.plan_parts_document(lot["purchase_batch_no"], [lot], None)["lines"]
         added.append({"document_id": doc.id, "pob": lot["purchase_batch_no"],
                       "lcsc": lot["lcsc"], "mpn": lot["mpn"], "qty": lot["qty"],
-                      "paid_usd": lot["paid_usd"], "fee_only": fee_only})
+                      "paid_usd": lot["paid_usd"], "plan_key": li["plan_key"],
+                      "fee_only": lot["fee_only"], "awaiting": lot.get("awaiting", False)})
         if not dry_run:
             db.add(M.RunCostLine(
                 document_id=doc.id, run_id=None,
                 position=9000 + len(added),
                 basis="per_run",
-                label=(f"Cancelled: {lot['mpn'] or lot['lcsc']}" if fee_only
-                       else (lot["mpn"] or lot["lcsc"])[:300]),
-                qty=1 if fee_only else lot["qty"],
-                unit_price=lot["paid_usd"] if fee_only else (lot["unit_cost_usd"] or 0.0),
-                currency="USD", allocate="none",
-                lcsc="" if fee_only else lot["lcsc"],
-                mpn="" if fee_only else (lot["mpn"] or "")[:200],
-                lot_ref="" if fee_only else lot["lot_key"],
-                notes=(
-                    f"added 2026-07-28 from the settled JLC order {lot['purchase_order_no']}: "
-                    + (f"paid ${lot['paid_usd']} but {lot['qty_ordered']:g} ordered and NONE "
-                       f"settled (status {lot['order_status']}) — real money, no parts"
-                       if fee_only else
-                       f"paid ${lot['paid_usd']} for {lot['qty']:g} = "
-                       f"${lot['unit_cost_usd']}/pc; never recorded by the original import")
-                )[:8000],
+                label=li["label"][:300],
+                qty=li["qty"],
+                unit_price=li["unit_price"] or 0.0,
+                currency="USD",
+                allocate=li["allocate"],
+                exclude_reason=(li.get("exclude_reason") or "")[:40],
+                plan_key=li["plan_key"],
+                lcsc=li["lcsc"],
+                mpn=li["mpn"][:200],
+                lot_ref=li.get("lot_ref") or "",
+                notes=f"added by reprice_from_jlc: {li['notes']}"[:8000],
             ))
 
     # The DOCUMENT total must move with its lines. Verified: the platform's POB
