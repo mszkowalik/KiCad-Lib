@@ -343,8 +343,12 @@ page** and check the total against the invoice. Two cases once read here as
 "the invoice shows the pre-settlement figure" were supplements read backwards:
 $52.80 → $61.20 on lot 1369417 (unit 0.0176 → 0.0204) and $6.24 → $46.80 on lot
 768185 (0.0031 → 0.0234). The settled figures are the higher ones, and the
-invoices bill them. `totalPayment` can differ from `paidMoney` (POB0202502102244558:
-$11.16 against $11.66, not explained); `paidMoney` is the one that matches.
+invoices bill them. `totalPayment` is the goods alone; `paidMoney` adds the invoice's
+`totalOtherFee`. On POB0202502102244558 that is $11.16 + $0.50 = $11.66. The
+fee sits in each sub-order as `paidMoney - advanceChargeMoney` ($0.23 + $0.27)
+and inside its `settlePaidMoney`, so the lots carry it as landed cost. JLC names
+it only "other fee"; the order is the one of 20 paid by `ADYEN_APPLE_PAY`, so a
+payment surcharge is likely but unconfirmed. `paidMoney` is the figure to match.
 
 ### `presaleMoney` is INSIDE the line total
 An assembly line reading $7,038.51 already contains $5,896.42 of prepaid
