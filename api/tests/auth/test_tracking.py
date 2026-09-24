@@ -117,18 +117,53 @@ def test_editing_an_old_row_does_not_rename_its_author(db):
     assert c.author == "user"
 
 
-def test_acting_name_ignores_a_claimed_name_when_signed_in(as_alice):
-    assert acting_name("mallory") == "Alice Example"
+def test_acting_name_is_the_signed_in_person(as_alice):
+    assert acting_name() == "Alice Example"
 
 
-def test_acting_name_uses_the_claim_only_with_nobody_signed_in():
+def test_acting_name_with_nobody_signed_in_is_the_placeholder():
     ctx = tracking.actor_for(None, tracking.new_request_id(), "none")
     token = tracking.bind(ctx)
     try:
-        assert acting_name("dev-bob") == "dev-bob"
-        assert acting_name("") == "user"
+        assert acting_name() == "user"
     finally:
         tracking.unbind(token)
+
+
+# Parameter names that would let a client say who did something.
+_CLAIMS = {"actor", "author", "created_by", "updated_by", "approved_by", "uploaded_by",
+           "signed_by", "revoked_by", "reviewed_by", "requested_by", "decided_by",
+           "closed_by", "operator"}
+# Where one of those names is a FILTER over the log, not a claim about the caller.
+_FILTERS = {("GET", "/api/changes")}
+
+
+def test_no_route_accepts_a_name_from_the_client():
+    """Who did something comes from the session or the token, never from the
+    request (decision 0050). A route that grows `?actor=` or a body `author`
+    again fails here, whether it would use the value or silently ignore it."""
+    from app.main import app
+    from test_role_gates import _walk
+
+    offenders, seen, routes = [], set(), 0
+    for route in _walk(app.routes):
+        routes += 1
+        dep = route.dependant
+        names = {p.name for p in dep.query_params + dep.body_params}
+        for p in dep.body_params:
+            fields = getattr(p.field_info.annotation, "model_fields", None) or {}
+            names |= set(fields)
+        seen |= names
+        for method in route.methods:
+            if (method, route.path) in _FILTERS:
+                continue
+            for n in sorted(names & _CLAIMS):
+                offenders.append(f"{method} {route.path}: {n}")
+    # Not vacuous: the walk reached the included routers, and it reads both a
+    # query parameter and a field inside a JSON body model.
+    assert routes > 200
+    assert {"dry_run", "reason", "designator"} <= seen
+    assert offenders == []
 
 
 # ------------------------------------------------------------ row entries

@@ -2725,7 +2725,7 @@ export function updateRun(runId: number, body: RunPatchBody): Promise<RunInfo> {
 
 /** Close the books on a batch (decision 0044) — its documents become read-only
  *  and its cost is snapshotted, so a later correction reads as a variance. */
-export function closeRun(runId: number, body: { actor?: string; reason?: string } = {}):
+export function closeRun(runId: number, body: { reason?: string } = {}):
   Promise<RunInfo> {
   return request(`/api/runs/${runId}/close`, {
     method: "POST",
@@ -2737,7 +2737,7 @@ export function closeRun(runId: number, body: { actor?: string; reason?: string 
 /** Reopen a closed batch, making its documents editable again. The snapshot
  *  taken at close is cleared: a batch closed twice has a new "what it cost when
  *  the books closed", and the audit row keeps both. */
-export function reopenRun(runId: number, body: { actor?: string; reason?: string } = {}):
+export function reopenRun(runId: number, body: { reason?: string } = {}):
   Promise<RunInfo> {
   return request(`/api/runs/${runId}/reopen`, {
     method: "POST",
@@ -4899,7 +4899,6 @@ export interface DeploymentDiff {
 export interface ComposeBody {
   from_version_id?: number | null;
   comment?: string;
-  created_by?: string;
   images?: { firmware_asset_id: number; address: string }[];
   /** the sets to pin; null clears, undefined inherits (on compose) or leaves alone (on patch) */
   file_set_id?: number | null;
@@ -5343,7 +5342,7 @@ export function listFirmware(projectId: number, signal?: AbortSignal): Promise<F
 export function uploadFirmware(
   projectId: number,
   file: File,
-  meta: { kind: string; chip?: string; build_label?: string; notes?: string; uploaded_by?: string },
+  meta: { kind: string; chip?: string; build_label?: string; notes?: string },
 ): Promise<FirmwareAssetRow & { existing: boolean; chip_detected: string }> {
   const form = new FormData();
   form.append("file", file);
@@ -5351,7 +5350,6 @@ export function uploadFirmware(
   if (meta.chip) form.append("chip", meta.chip);
   if (meta.build_label) form.append("build_label", meta.build_label);
   if (meta.notes) form.append("notes", meta.notes);
-  if (meta.uploaded_by) form.append("uploaded_by", meta.uploaded_by);
   return request(`/api/flasher/projects/${projectId}/firmware`, { method: "POST", body: form });
 }
 
@@ -5420,7 +5418,7 @@ export function getDeploymentVersion(
 
 export function patchDeploymentVersion(
   versionId: number,
-  body: Omit<ComposeBody, "from_version_id" | "latest_files" | "created_by">,
+  body: Omit<ComposeBody, "from_version_id" | "latest_files">,
 ): Promise<DeploymentVersionRow & { validation: ValidationResult }> {
   return request(`/api/flasher/deployment-versions/${versionId}`, {
     method: "PATCH",
@@ -5548,13 +5546,12 @@ export interface FileSetImportResult {
  *  refuses anything that is not a LightBurn file. */
 export function importFileSet(
   files: File[],
-  meta: { label?: string; comment?: string; created_by?: string; kind?: string } = {},
+  meta: { label?: string; comment?: string; kind?: string } = {},
 ): Promise<FileSetImportResult> {
   const form = new FormData();
   for (const f of files) form.append("files", f);
   if (meta.label) form.append("label", meta.label);
   if (meta.comment) form.append("comment", meta.comment);
-  if (meta.created_by) form.append("created_by", meta.created_by);
   if (meta.kind) form.append("kind", meta.kind);
   return request(`/api/flasher/file-sets/import`, { method: "POST", body: form });
 }
@@ -5569,7 +5566,6 @@ export function deriveFileSet(
     take?: { set_id: number; filename: string }[];
     label?: string;
     comment?: string;
-    created_by?: string;
   },
 ): Promise<FileSetImportResult> {
   const form = new FormData();
@@ -5578,7 +5574,6 @@ export function deriveFileSet(
   form.append("take", JSON.stringify(body.take ?? []));
   if (body.label) form.append("label", body.label);
   if (body.comment) form.append("comment", body.comment);
-  if (body.created_by) form.append("created_by", body.created_by);
   return request(`/api/flasher/file-sets/${setId}/derive`, { method: "POST", body: form });
 }
 

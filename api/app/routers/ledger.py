@@ -41,11 +41,10 @@ def get_batch(batch_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/batches/{batch_id}/reverse")
-def reverse_batch(batch_id: int, dry_run: bool = True, actor: str = "user",
-                  db: Session = Depends(get_db)):
+def reverse_batch(batch_id: int, dry_run: bool = True, db: Session = Depends(get_db)):
     """Undo one batch. `dry_run=true` (the default) reports what it would do and
     every reason it might refuse, without touching anything."""
-    actor = acting_name(actor)
+    actor = acting_name()
     try:
         res = journal.reverse(db, batch_id, actor=actor, dry_run=dry_run)
     except LookupError as e:

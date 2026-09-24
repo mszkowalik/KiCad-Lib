@@ -25,7 +25,6 @@ _TARGETS: dict[str, type] = {
 
 class CommentIn(BaseModel):
     body: str
-    author: str = "user"
 
 
 def _json(c: M.Comment) -> dict:
@@ -64,7 +63,7 @@ def _add(db: Session, target_type: str, target_id: int, body: CommentIn) -> dict
     c = M.Comment(
         target_type=target_type,
         target_id=target_id,
-        author=acting_name(body.author),
+        author=acting_name(),
         body=text,
     )
     db.add(c)

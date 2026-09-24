@@ -3,7 +3,8 @@
 Every change made through the API or the UI is traced to the signed-in person
 who made it. The code is `api/app/services/tracking.py`, bound in
 `api/app/authgate.py`. The reasoning, and the options that were rejected, are
-in [decision 0050](../decisions/0050-every-change-names-the-person-who-made-it.md).
+in decisions [0050](../decisions/0050-every-change-names-the-person-who-made-it.md) and
+[0051](../decisions/0051-no-endpoint-accepts-a-name-from-the-client.md).
 
 ## One log, three kinds of row
 
@@ -36,9 +37,11 @@ copied into the log a second time.
    save writes a dozen `row.*` rows. Filter them out with
    `tracking.REQUEST_ACTION` and `tracking.ROW_ACTION_PREFIX`, as
    `get_audit_log` does, unless the reader is about tracking.
-2. **Do not pass a name you got from the client.** To store a person in a
-   who-column, call `routers/util.py::acting_name(claimed)`. It returns the
-   signed-in person, and uses the claim only when nobody is signed in.
+2. **Never accept a name from the client.** No route takes `actor`, `author`,
+   `created_by` or any other who-name as a parameter or body field, and
+   `test_no_route_accepts_a_name_from_the_client` fails if one does. To store
+   a person, call `routers/util.py::acting_name()`: the signed-in person, or
+   `"user"` when nobody is signed in.
 3. **Leave `audit(..., actor=...)` at its default** for work a person does. A
    robot label (`"jaravis"`, `"review"`) is correct for work a robot does, and
    `user_id` still names the person who started it.

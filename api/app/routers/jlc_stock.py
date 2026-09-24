@@ -157,14 +157,14 @@ def ledger_for_part(lcsc: str, db: Session = Depends(get_db)):
 
 @router.post("/stock/ledger/book")
 def book_ledger_rows(change_key_ids: str = "", dry_run: bool = True,
-                     actor: str = "user", db: Session = Depends(get_db)):
+                     db: Session = Depends(get_db)):
     """Write chosen ledger rows as uncharged draws.
 
     `change_key_ids` is a comma-separated list from `/stock/ledger`; empty means
     every bookable row. The caller chooses — nothing here decides on its own
     that stock should move.
     """
-    actor = acting_name(actor)
+    actor = acting_name()
     ids = [int(x) for x in change_key_ids.replace(" ", "").split(",") if x]
     if dry_run:
         # `book` writes nothing on a dry run — it prices and checks, then

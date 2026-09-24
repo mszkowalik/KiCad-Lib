@@ -411,9 +411,8 @@ def update_run(run_id: int, body: RunPatch, db: Session = Depends(get_db)):
 
 
 class ClosePatch(BaseModel):
-    """`actor` is who closed the books, for the audit trail and the batch page."""
+    """Who closed or reopened the books is the signed-in person (decision 0050)."""
 
-    actor: str = ""
     reason: str = ""
 
 
@@ -443,7 +442,7 @@ def close_run(run_id: int, body: ClosePatch | None = None, db: Session = Depends
         })
     cost_usd, units = run_actuals.close_snapshot(db, r)
     r.closed_at = M.utcnow()
-    r.closed_by = acting_name(body.actor)
+    r.closed_by = acting_name()
     r.closed_cost_usd = cost_usd
     r.closed_units = units
     audit(db, "run.close", "production_run", r.id,
@@ -469,7 +468,7 @@ def reopen_run(run_id: int, body: ClosePatch | None = None, db: Session = Depend
     audit(db, "run.reopen", "production_run", r.id,
           {"was_closed_at": r.closed_at.isoformat(), "was_closed_by": r.closed_by or "",
            "was_cost_usd": r.closed_cost_usd, "was_units": r.closed_units,
-           "actor": acting_name(body.actor), "reason": (body.reason or "").strip()})
+           "actor": acting_name(), "reason": (body.reason or "").strip()})
     r.closed_at = None
     r.closed_by = ""
     r.closed_cost_usd = None

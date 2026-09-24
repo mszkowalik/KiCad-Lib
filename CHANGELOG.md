@@ -18,9 +18,12 @@ Decision [0050](docs/decisions/0050-every-change-names-the-person-who-made-it.md
     stored as its length and SHA-256.
 - An actor of `"user"` is now the person's display name. A robot actor such
   as `jaravis` stays, and `user_id` shows who started it.
-- A name in the body or the query (`author`, `actor`, `created_by`,
-  `approved_by`, `updated_by`, `uploaded_by`, `?actor=`) is ignored when a
-  person is signed in. The platform stores the signed-in person.
+- No endpoint accepts a name from the client any more. The `?actor=` query
+  parameter and the `author`, `actor`, `created_by`, `approved_by`,
+  `updated_by` and `uploaded_by` body and form fields are removed. The name
+  always comes from the session or the personal token. A client that still
+  sends one is not refused; the value is dropped. Decision
+  [0051](docs/decisions/0051-no-endpoint-accepts-a-name-from-the-client.md).
 - The Jaravis chat now records the person who sent the message on the
   agent's writes.
 - New tab **Admin → Activity** (admin only). It lists requests and events,

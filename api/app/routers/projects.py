@@ -703,7 +703,6 @@ def delete_cost_item(item_id: int, snapshot_id: int | None = None,
 
 class NoteIn(BaseModel):
     body: str
-    author: str = "user"
     snapshot_id: int | None = None
 
 
@@ -736,7 +735,7 @@ def add_note(project_id: int, body: NoteIn, db: Session = Depends(get_db)):
         snap = db.get(M.ProjectSnapshot, body.snapshot_id)
         if snap is not None and snap.project_id == project_id:
             sha, ref_name = snap.sha, snap.ref_name
-    n = M.ProjectNote(project_id=project_id, author=acting_name(body.author),
+    n = M.ProjectNote(project_id=project_id, author=acting_name(),
                       body=text, sha=sha, ref_name=ref_name)
     db.add(n)
     db.flush()

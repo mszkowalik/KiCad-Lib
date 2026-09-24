@@ -33,7 +33,6 @@ class DecisionIn(BaseModel):
     run_id: int | None = None
     panel_factor: int | None = None
     note: str = ""
-    actor: str = "user"
 
 
 @router.post("/sync")
@@ -151,7 +150,7 @@ def set_decision(smt_order_code: str, body: DecisionIn, db: Session = Depends(ge
     row.run_id = body.run_id if body.outcome == "link_run" else None
     row.panel_factor = body.panel_factor
     row.note = body.note[:500]
-    row.decided_by = acting_name(body.actor)
+    row.decided_by = acting_name()
     audit(db, "jlc.import.decision", "jlc_order_decision", smt_order_code,
           details={"outcome": body.outcome, "run_id": body.run_id,
                    "panel_factor": body.panel_factor}, actor=row.decided_by)
@@ -245,8 +244,7 @@ def preview(external_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/documents/{external_id}/apply")
-def apply_document(external_id: str, dry_run: bool = True, actor: str = "user",
-                   db: Session = Depends(get_db)):
+def apply_document(external_id: str, dry_run: bool = True, db: Session = Depends(get_db)):
     """Import ONE staged assembly batch as a cost document.
 
     Replaces `import_all.py`. Two things it does that the script did not: it
@@ -254,7 +252,7 @@ def apply_document(external_id: str, dry_run: bool = True, actor: str = "user",
     their run instead of at nobody; and it runs inside a `journal.batch`, so it
     can be undone from the UI.
     """
-    actor = acting_name(actor)
+    actor = acting_name()
     row = _staged(db, external_id)
     from ..services.jlc_invoice import parse
     inv = parse(row.payload)
@@ -372,8 +370,7 @@ def _parts_plan(db: Session, pob: str) -> dict:
 
 
 @router.post("/parts/{pob}/apply")
-def apply_parts(pob: str, dry_run: bool = True, actor: str = "user",
-                db: Session = Depends(get_db)):
+def apply_parts(pob: str, dry_run: bool = True, db: Session = Depends(get_db)):
     """Import ONE JLC parts order (POB…) as the purchase document whose lines ARE
     the lots every later draw binds to.
 
@@ -381,7 +378,7 @@ def apply_parts(pob: str, dry_run: bool = True, actor: str = "user",
     a lot's quantity and price come from the ORDER page, never the invoice — the
     invoice understates by JLC's sourcing fee ($1,623.23 across the account).
     """
-    actor = acting_name(actor)
+    actor = acting_name()
     plan = _parts_plan(db, pob)
     if dry_run:
         return {"dry_run": True, "plan": {k: v for k, v in plan.items() if k != "lines"},
@@ -401,8 +398,7 @@ def apply_parts(pob: str, dry_run: bool = True, actor: str = "user",
 
 
 @router.post("/parts/{pob}/refresh")
-def refresh_parts(pob: str, dry_run: bool = True, actor: str = "user",
-                  db: Session = Depends(get_db)):
+def refresh_parts(pob: str, dry_run: bool = True, db: Session = Depends(get_db)):
     """Re-state an already-imported parts order from what JLC says TODAY.
 
     A lot can change after it was imported — lot 754166 settled 3,470 LEDs and
@@ -411,7 +407,7 @@ def refresh_parts(pob: str, dry_run: bool = True, actor: str = "user",
     retyping a number. Dry run by default, journalled, and it refuses rather
     than guesses whenever the two sides cannot be matched lot for lot.
     """
-    actor = acting_name(actor)
+    actor = acting_name()
     plan = _parts_plan(db, pob)
     # Always planned dry first: a refusal must not open a journal batch, because
     # the refusal path rolls back and would take the batch header with it.
@@ -490,8 +486,7 @@ def fetch_bom(smt_order_code: str, db: Session = Depends(get_db)):
 
 
 @router.post("/decision/{smt_order_code}/void-shop-draws")
-def void_shop_draws(smt_order_code: str, dry_run: bool = True, actor: str = "user",
-                    db: Session = Depends(get_db)):
+def void_shop_draws(smt_order_code: str, dry_run: bool = True, db: Session = Depends(get_db)):
     """Void draws for parts JLC supplied ITSELF, so they are not paid for twice.
 
     A `componentSource='shop'` part was bought by JLC and billed on the assembly
@@ -505,7 +500,7 @@ def void_shop_draws(smt_order_code: str, dry_run: bool = True, actor: str = "use
     "never purchased" — treating it as the latter is what deleted the real KARTON
     packaging draws during the backfill.
     """
-    actor = acting_name(actor)
+    actor = acting_name()
     dec = db.query(M.JlcOrderDecision).filter_by(smt_order_code=smt_order_code).first()
     if dec is None or dec.outcome != "link_run" or not dec.run_id:
         raise HTTPException(409, "only an order linked to a run can have draws to void")
@@ -632,8 +627,7 @@ def _book_external(db: Session, plan: dict, actor: str, dry_run: bool) -> dict:
 
 
 @router.post("/adjustments/to-draws")
-def migrate_external_adjustments(dry_run: bool = True, actor: str = "user",
-                                 db: Session = Depends(get_db)):
+def migrate_external_adjustments(dry_run: bool = True, db: Session = Depends(get_db)):
     """Rewrite the pre-0034 `external_project` adjustments as uncharged draws.
 
     One fact, one shape. Those 27 rows are the invoice's own consumption for
@@ -650,7 +644,7 @@ def migrate_external_adjustments(dry_run: bool = True, actor: str = "user",
     Refuses unless every adjustment reproduces from its order plan. An adjustment
     this cannot re-derive is not one to rewrite; it is one to look at.
     """
-    actor = acting_name(actor)
+    actor = acting_name()
     rows = [a for a in db.query(M.ComponentStockAdjustment)
             .filter(M.ComponentStockAdjustment.reason == "external_project").all()
             if (a.import_ref or "").startswith("jlc:ext:")]
@@ -717,8 +711,7 @@ def migrate_external_adjustments(dry_run: bool = True, actor: str = "user",
 
 
 @router.post("/decision/{smt_order_code}/apply")
-def apply_decision(smt_order_code: str, dry_run: bool = True, actor: str = "user",
-                   db: Session = Depends(get_db)):
+def apply_decision(smt_order_code: str, dry_run: bool = True, db: Session = Depends(get_db)):
     """Move the money a decision implies. Replaces `draws_apply.py`, `fix_alloc.py`,
     `mark_external.py` and `apply_manual.py`.
 
@@ -729,7 +722,7 @@ def apply_decision(smt_order_code: str, dry_run: bool = True, actor: str = "user
     One transaction, one reversible batch, and `applied_at` stamped — which is what
     makes `DELETE /decision/{code}`'s refusal real rather than dead code.
     """
-    actor = acting_name(actor)
+    actor = acting_name()
     dec = (db.query(M.JlcOrderDecision)
              .filter_by(smt_order_code=smt_order_code).first())
     if dec is None or dec.outcome == "pending":
@@ -818,15 +811,14 @@ def refresh_fees(force: bool = False, db: Session = Depends(get_db)):
 
 
 @router.post("/fees/backfill")
-def backfill_fees(external_id: str = "", dry_run: bool = True, actor: str = "user",
-                  db: Session = Depends(get_db)):
+def backfill_fees(external_id: str = "", dry_run: bool = True, db: Session = Depends(get_db)):
     """Split ALREADY-imported batch documents into JLC's own fee itemization.
 
     Each document is one reversible journal batch. Children inherit their
     line's destination, so no money changes owner — only its step grain. Lines
     with hand-made children are skipped and reported, never merged.
     """
-    actor = acting_name(actor)
+    actor = acting_name()
     q = db.query(M.JlcImport).filter_by(kind="assembly")
     if external_id:
         q = q.filter_by(external_id=external_id)

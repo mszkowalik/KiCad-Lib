@@ -109,7 +109,6 @@ class DocumentIn(BaseModel):
     notes: str = ""
     attachment_id: int | None = None
     corrects_document_id: int | None = None
-    created_by: str = ""
     lines: list[LineIn] = []
 
 
@@ -220,7 +219,6 @@ class AdjustmentIn(BaseModel):
     charge_run_id: int | None = None
     adjusted_at: str = ""
     note: str = ""
-    actor: str = ""
 
 
 BASES = {"per_device", "per_run"}
@@ -351,8 +349,7 @@ def list_substitutions(run_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/runs/{run_id}/substitutions")
-def add_substitution(run_id: int, body: SubstitutionIn, actor: str = "user",
-                     db: Session = Depends(get_db)):
+def add_substitution(run_id: int, body: SubstitutionIn, db: Session = Depends(get_db)):
     """Record a part fitted in place of the specified one, for THIS batch.
 
     Journalled, because it changes what a BOM draw takes out of the pool. It
@@ -360,7 +357,7 @@ def add_substitution(run_id: int, body: SubstitutionIn, actor: str = "user",
     which is the whole point of holding the two apart
     ([0038](../../../docs/decisions/0038-a-substitution-belongs-to-the-batch.md)).
     """
-    actor = acting_name(actor)
+    actor = acting_name()
     run = _run(db, run_id)
     if not body.designator.strip():
         raise HTTPException(422, "name the position: designator")
@@ -404,15 +401,14 @@ def add_substitution(run_id: int, body: SubstitutionIn, actor: str = "user",
 
 @router.put("/substitutions/{sub_id}")
 def update_substitution(sub_id: int, design_updated: bool | None = None,
-                        note: str | None = None, actor: str = "user",
-                        db: Session = Depends(get_db)):
+                        note: str | None = None, db: Session = Depends(get_db)):
     """Mark the design as caught up, or correct the note.
 
     `design_updated` is what clears the standing drift finding — it is a claim
     that the schematic now says what the factory fitted, so it is the one flag
     worth setting deliberately.
     """
-    actor = acting_name(actor)
+    actor = acting_name()
     row = db.get(M.RunSubstitution, sub_id)
     if row is None:
         raise HTTPException(404, "substitution not found")
@@ -430,8 +426,8 @@ def update_substitution(sub_id: int, design_updated: bool | None = None,
 
 
 @router.delete("/substitutions/{sub_id}")
-def delete_substitution(sub_id: int, actor: str = "user", db: Session = Depends(get_db)):
-    actor = acting_name(actor)
+def delete_substitution(sub_id: int, db: Session = Depends(get_db)):
+    actor = acting_name()
     row = db.get(M.RunSubstitution, sub_id)
     if row is None:
         raise HTTPException(404, "substitution not found")
@@ -1579,7 +1575,7 @@ def add_adjustment(project_id: int, body: AdjustmentIn, db: Session = Depends(ge
     if body.charge_run_id is not None:
         _run(db, body.charge_run_id)
     a = M.ComponentStockAdjustment(project_id=project_id, **body.model_dump())
-    a.actor = acting_name(body.actor)
+    a.actor = acting_name()
     # PIN the unit cost when the loss is charged to a batch (decision 0044).
     # NULL means "price it from the pool", and `run_actuals` resolved that
     # against the average as it stands ON EVERY READ — so a write-off kept being

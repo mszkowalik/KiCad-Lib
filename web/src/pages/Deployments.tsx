@@ -164,7 +164,7 @@ export default function Deployments() {
         (v) => v.id === (selected.current_version_id ?? selected.versions[0]?.id),
       );
       const made = await composeVersion(selected.id, {
-        from_version_id: from?.id ?? null, comment: "", created_by: "",
+        from_version_id: from?.id ?? null, comment: "",
       });
       // The row must EXIST before it is selected, or the effect that defaults
       // the pane to the live version sees an id that is not in the list yet

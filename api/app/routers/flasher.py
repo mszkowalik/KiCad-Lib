@@ -153,10 +153,9 @@ async def upload_firmware(
     chip: str = Form(""),
     build_label: str = Form(""),
     notes: str = Form(""),
-    uploaded_by: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    uploaded_by = acting_name(uploaded_by)
+    uploaded_by = acting_name()
     if kind not in FIRMWARE_KINDS:
         raise HTTPException(400, f"kind must be one of {FIRMWARE_KINDS}")
     data = await file.read()
@@ -274,7 +273,9 @@ def firmware_bin(asset_id: int, db: Session = Depends(get_db)):
 
 
 class PublishIn(BaseModel):
-    approved_by: str = ""
+    """Publish and reject carry no fields. Who approved is the signed-in person
+    (decision 0050); the model stays so a client that still sends `{}` is
+    accepted."""
 
 
 # ------------------------------------------------------------------ file sets
@@ -401,7 +402,6 @@ async def import_file_set(
     files: list[UploadFile] = File(...),
     label: str = Form(""),
     comment: str = Form(""),
-    created_by: str = Form(""),
     # "" = decide by the extensions; "artwork" = the marking step's upload,
     # refused unless every file is a LightBurn project.
     kind: str = Form(""),
@@ -412,7 +412,7 @@ async def import_file_set(
     one that already exists, whatever the folder was called. This is the ONE
     way content enters the platform; there is no paste editor and no draft.
     """
-    created_by = acting_name(created_by)
+    created_by = acting_name()
     uploads = await _read_uploads(db, files)
     if not uploads:
         raise HTTPException(400, "no files in the upload")
@@ -452,7 +452,6 @@ async def derive_file_set(
     take: str = Form("[]"),
     label: str = Form(""),
     comment: str = Form(""),
-    created_by: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """A new set from an existing one: swap or add files by upload, borrow
@@ -460,7 +459,7 @@ async def derive_file_set(
     version and the hand-picked bundle: "release-1.3.11 with one driver fixed"
     is one call and one new row, and the base stays exactly as it was.
     """
-    created_by = acting_name(created_by)
+    created_by = acting_name()
     base = _set_or_404(db, set_id)
     try:
         drop = set(json.loads(remove or "[]"))
@@ -555,7 +554,6 @@ class ComposeIn(BaseModel):
     """
     from_version_id: int | None = None
     comment: str = ""
-    created_by: str = ""
     # sections — None means "inherit"
     images: list[ImageIn] | None = None
     # the berryware release and the artwork drawing, by set id; -1 clears
@@ -754,7 +752,7 @@ def compose_version(deployment_id: int, body: ComposeIn, db: Session = Depends(g
     version = M.DeploymentVersion(
         deployment_id=d.id,
         version_no=max((v.version_no for v in d.versions), default=0) + 1,
-        status="draft", created_by=acting_name(body.created_by), comment=body.comment,
+        status="draft", created_by=acting_name(), comment=body.comment,
         transport_profile=transport,
         monitor_baud=inherit("monitor_baud", base.monitor_baud if base else 115200,
                              body.monitor_baud),
@@ -799,7 +797,7 @@ def compose_version(deployment_id: int, body: ComposeIn, db: Session = Depends(g
     bundle.stamp(db, version)
     db.commit()
     audit(db, "flasher.version_compose", "deployment_version", version.id,
-          details=f"{d.name} v{version.version_no} (draft)", actor=acting_name(body.created_by))
+          details=f"{d.name} v{version.version_no} (draft)", actor=acting_name())
     return {**bundle.version_json(db, version),
             "validation": validate.check(db, version)}
 
@@ -974,7 +972,7 @@ def publish_deployment_version(version_id: int, body: PublishIn, db: Session = D
     # refused by name instead of failing at the bench (decision 0024).
     v.param_schema = params_svc.build_schema(db, v)
     v.status = "published"
-    v.approved_by = acting_name(body.approved_by)
+    v.approved_by = acting_name()
     d = db.get(M.Deployment, v.deployment_id)
     d.current_version_id = v.id
     db.commit()
@@ -1043,7 +1041,6 @@ def delete_deployment_version(version_id: int, db: Session = Depends(get_db)):
 
 class ChannelIn(BaseModel):
     deployment_version_id: int | None
-    updated_by: str = ""
 
 
 @router.put("/deployments/{deployment_id}/channels/{name}")
@@ -1068,7 +1065,7 @@ def set_channel(deployment_id: int, name: str, body: ChannelIn, db: Session = De
         ch = M.DeploymentChannel(deployment_id=d.id, name=name)
         db.add(ch)
     ch.deployment_version_id = body.deployment_version_id
-    ch.updated_by = acting_name(body.updated_by)
+    ch.updated_by = acting_name()
     ch.updated_at = datetime.now(timezone.utc)
     db.commit()
     audit(db, "flasher.channel_set", "deployment", d.id,
@@ -1081,7 +1078,6 @@ def set_channel(deployment_id: int, name: str, body: ChannelIn, db: Session = De
 
 class ParamSetIn(BaseModel):
     values: dict[str, str | int | float]
-    updated_by: str = ""
     # Why the values changed. It ends up on the revision row, which is the only
     # record that a MEANING changed — a key whose name survives and whose value
     # moves passes every other check the platform has.
@@ -1151,11 +1147,11 @@ def put_param_set(project_id: int, name: str, body: ParamSetIn, db: Session = De
             "breaking": broken,
         })
     rev = params_svc.record_revision(
-        db, ps, old, new_values, acting_name(body.updated_by),
+        db, ps, old, new_values, acting_name(),
         note=(body.note + (" [forced]" if broken and body.force else "")).strip(),
     )
     ps.values_enc = crypto.encrypt_token(json.dumps(new_values))
-    ps.updated_by = acting_name(body.updated_by)
+    ps.updated_by = acting_name()
     ps.updated_at = datetime.now(timezone.utc)
     db.commit()
     audit(db, "flasher.param_set_write", "param_set", ps.id,
@@ -1167,7 +1163,6 @@ def put_param_set(project_id: int, name: str, body: ParamSetIn, db: Session = De
 
 class ParamRevertIn(BaseModel):
     revision_no: int
-    updated_by: str = ""
     note: str = ""
     force: bool = False
 
@@ -1213,11 +1208,11 @@ def revert_param_set(param_set_id: int, body: ParamRevertIn, db: Session = Depen
             old = {}
     note = body.note.strip() or f"reverted to r{rev.revision_no}"
     new_rev = params_svc.record_revision(
-        db, ps, old, values, acting_name(body.updated_by),
+        db, ps, old, values, acting_name(),
         note=note + (" [forced]" if broken and body.force else ""),
     )
     ps.values_enc = crypto.encrypt_token(json.dumps(values))
-    ps.updated_by = acting_name(body.updated_by)
+    ps.updated_by = acting_name()
     ps.updated_at = datetime.now(timezone.utc)
     db.commit()
     audit(db, "flasher.param_set_revert", "param_set", ps.id,
