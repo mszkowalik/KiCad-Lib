@@ -154,8 +154,13 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
       }
       const n = preview.changes?.length ?? 0;
       const ok = await dialog.confirm(
-        `Refresh ${o.pob} from JLC — ${n} line(s) change. A lot that has arrived becomes ` +
-          `pool stock at the price JLC settled; one still being sourced stays awaiting delivery.`,
+        `Refresh ${o.pob} from JLC — ${n} line(s) change` +
+          (preview.repriced_draws?.length
+            ? `, and ${preview.repriced_draws.length} draw(s) bound to a re-priced lot move with it ` +
+              `(${money(preview.repriced_draws.reduce((s, d) => s + d.delta_usd, 0))} across the batches that used it)`
+            : "") +
+          `. A lot that has arrived becomes pool stock at the price JLC settled; a refund or ` +
+          `supplement changes its price; one still being sourced stays awaiting delivery.`,
         { title: "Refresh parts order", confirmLabel: "Refresh" },
       );
       if (!ok) return;
@@ -337,13 +342,13 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
       <p className="card-subtitle">Fetched live — a sync stages assembly batches only</p>
       <p className="muted dim">
         Each line of one of these documents IS a purchase lot. Quantity and price
-        come from the ORDER page, never the invoice, which understates them by
-        JLC&apos;s sourcing fee.
+        come from the ORDER page, at what JLC finally settled: a lot bought at an
+        advance is refunded or charged the difference once the supplier quotes.
       </p>
       <ErrorBanner message={partsErr} />
       {parts && (
         <div className="table-wrap">
-          {parts.every((o) => o.document_id && !o.awaiting_on_document) ? (
+          {parts.every((o) => o.document_id && !o.awaiting_on_document && !o.refresh_due) ? (
             <p className="muted">
               All {parts.length} parts orders are imported ({parts.reduce((s, o) => s + o.lots, 0)}{" "}
               lots).
@@ -361,7 +366,7 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
               </thead>
               <tbody>
                 {parts
-                  .filter((o) => !o.document_id || o.awaiting_on_document > 0)
+                  .filter((o) => !o.document_id || o.awaiting_on_document > 0 || o.refresh_due)
                   .map((o) => (
                     <tr key={o.pob}>
                       <td className="mono">{o.pob}</td>
@@ -396,9 +401,12 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
                         ) : o.document_id ? (
                           <span
                             className={`pill ${o.refresh_due ? "warn" : "neutral"}`}
-                            title={`Document ${o.document_id} holds ${o.awaiting_on_document} line(s) awaiting delivery.`}
+                            title={o.refresh_due
+                              ? `Document ${o.document_id} is behind JLC: a lot arrived, or JLC ` +
+                                "re-settled a price (refund or supplement) since the import."
+                              : `Document ${o.document_id} holds ${o.awaiting_on_document} line(s) awaiting delivery.`}
                           >
-                            {o.refresh_due ? "arrived — refresh" : "awaiting delivery"}
+                            {o.refresh_due ? "changed at JLC — refresh" : "awaiting delivery"}
                           </span>
                         ) : (
                           <span className="pill warn">not imported</span>

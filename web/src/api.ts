@@ -4390,6 +4390,9 @@ export function refreshJlcParts(
   status: "dry_run" | "refreshed" | "unchanged" | "refused" | "not_imported";
   document_id: number | null;
   changes?: { line_id: number; lot_ref: string; was: Record<string, unknown>; now: Record<string, unknown> }[];
+  /** Draws bound to a lot whose price changed, moved with it. */
+  repriced_draws?: { consumption_id: number; run_id: number | null; lcsc: string; qty: number;
+    lot_unit_was: number; lot_unit_now: number; delta_usd: number }[];
   blockers?: string[];
   batch_id?: number;
 }> {
@@ -4678,7 +4681,8 @@ export interface JlcPartsOrder {
   awaiting_usd: number;
   /** Lines on the imported document still marked awaiting delivery. */
   awaiting_on_document: number;
-  /** JLC has completed a lot the document still holds as awaiting. */
+  /** The document is behind JLC: a lot it holds as awaiting has arrived, or
+   *  JLC re-settled a lot's price (refund or supplement) since the import. */
   refresh_due: boolean;
   paid_usd: number;
   document_id: number | null;

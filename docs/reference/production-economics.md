@@ -245,6 +245,13 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
   `excluded` with reason `awaiting_delivery`, no `lcsc`/`mpn`: the money
   reconciles and nothing enters the pool. The Refresh button on the parts order
   turns it into the lot once JLC completes it.
+- **A parts lot costs what JLC SETTLED, and its draws move with it**
+  ([0052](../decisions/0052-a-jlc-lot-costs-what-jlc-settled.md)). The cost is
+  the sub-order's `settlePaidMoney / settlePresaleNumber`, never the advance
+  (`goodsPaidMoney`). A parts refresh re-prices the lot and moves every draw
+  bound to it by the difference, and refuses when one charges a closed batch.
+  The Parts orders list says "changed at JLC — refresh" when a document total
+  differs from JLC's settled total.
 - **A parts line is stock because of its STEP.** The importer writes
   `plan_key="parts:pool"` and `allocate="pooled"` on every lot, and
   `other:cancelled` / `excluded` / `cancelled_by_supplier` on a cancelled one.

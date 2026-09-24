@@ -1032,6 +1032,8 @@ Residual deficits — Batch 1's turnkey surplus and JLC attrition padding — cl
 with ZERO-COST opening balances, and every draw (302 rows) was deleted and re-added
 oldest-first at the corrected pool: +$1,415 of real component cost surfaced.
 
+> **Corrected 2026-09-24.** This reading is wrong. `goodsPaidMoney` is the ADVANCE a `buy` lot is paid at order time; JLC then re-settles it at the supplier's quote and refunds or charges the difference. The $1,623.23 was refunds ($1,246.27 — JLC's `partRefundMoney`) and refunded cancellations ($376.96), not a sourcing fee, and the supplements quoted near here run the other way (0.0031 → 0.0234, 0.0176 → 0.0204). A lot's cost is the sub-order's `settlePaidMoney / settlePresaleNumber`, which sums to the parts invoice's `paidMoney` on every order. See [../jlcpcb-web-api.md](../jlcpcb-web-api.md) and CHANGELOG 2026-09-24.
+
 Then the physical reconciliation the operator asked for: parts-stock rows where the
 pool counted more than JLCPCB physically holds became attrition write-offs (36
 parts, $515.71), charged to the consuming runs pro rata by drawn share — $405 to
@@ -1402,6 +1404,8 @@ platform (2026-07-28). Two POB documents disagreed with `getInvoiceInfo`:
 | POB0202410181631270 | $46.80 | $6.20 | -$40.60 |
 | POB0202509301912457 | $4263.08 | $4254.68 | -$8.40 |
 
+> **Corrected 2026-09-24.** This reading is wrong. `goodsPaidMoney` is the ADVANCE a `buy` lot is paid at order time; JLC then re-settles it at the supplier's quote and refunds or charges the difference. The $1,623.23 was refunds ($1,246.27 — JLC's `partRefundMoney`) and refunded cancellations ($376.96), not a sourcing fee, and the supplements quoted near here run the other way (0.0031 → 0.0234, 0.0176 → 0.0204). A lot's cost is the sub-order's `settlePaidMoney / settlePresaleNumber`, which sums to the parts invoice's `paidMoney` on every order. See [../jlcpcb-web-api.md](../jlcpcb-web-api.md) and CHANGELOG 2026-09-24.
+
 Neither is an error. Both are deliberate hand reconciliations, recorded in the
 line notes: *"unit settled 0.0234 -> 0.0031 per the order page"* and *"unit
 settled 0.0204 -> 0.0176 per the order page ($8.40 refunded, see the
@@ -1552,6 +1556,8 @@ moves every historical planned cost automatically. Both are acceptable here; the
 distinction just has to be stated correctly.
 
 ### `goodsPaidMoney`, NOT `goodsMoney`, is a lot's cost — $1,623.23 understated today
+
+> **Corrected 2026-09-24.** This reading is wrong. `goodsPaidMoney` is the ADVANCE a `buy` lot is paid at order time; JLC then re-settles it at the supplier's quote and refunds or charges the difference. The $1,623.23 was refunds ($1,246.27 — JLC's `partRefundMoney`) and refunded cancellations ($376.96), not a sourcing fee, and the supplements quoted near here run the other way (0.0031 → 0.0234, 0.0176 → 0.0204). A lot's cost is the sub-order's `settlePaidMoney / settlePresaleNumber`, which sums to the parts invoice's `paidMoney` on every order. See [../jlcpcb-web-api.md](../jlcpcb-web-api.md) and CHANGELOG 2026-09-24.
 
 Matching the 209 existing JLCPCB part lines against JLC's 215 purchase goods
 rows: 135 matched on quantity AND price, 13 matched quantity with a differing

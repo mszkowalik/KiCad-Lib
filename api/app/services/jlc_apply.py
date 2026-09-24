@@ -191,10 +191,10 @@ def apply_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
         fx_rate_usd=1.0,
         total_amount=plan["total_amount"],
         notes=(
-            f"Imported from the JLCPCB web API. Lot costs are "
-            f"goodsPaidMoney/settlePresaleNumber (what was actually paid), NOT goodsMoney "
-            f"— the two differ by JLC's sourcing fee on presaleType='buy' sub-orders. "
-            f"This document carries ${plan.get('sourcing_fee_usd', 0)} of such fee."
+            f"Imported from the JLCPCB web API. Lot costs are the sub-order's "
+            f"settlePaidMoney/settlePresaleNumber: what was finally paid after JLC "
+            f"re-settled each 'buy' lot (net ${plan.get('resettled_usd', 0)} against the "
+            f"advance). The total equals the invoice's paidMoney."
         ),
     )
     db.add(doc)
@@ -275,9 +275,14 @@ def refresh_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
                 "note": f"{plan['external_id']} is not in the platform — import it first"}
 
     existing = {}
-    for line in db.query(M.RunCostLine).filter(M.RunCostLine.document_id == doc.id).all():
+    lotless: list[M.RunCostLine] = []
+    for line in (db.query(M.RunCostLine)
+                 .filter(M.RunCostLine.document_id == doc.id,
+                         M.RunCostLine.voided_at.is_(None)).all()):
         if line.lot_ref:
             existing.setdefault(line.lot_ref, []).append(line)
+        else:
+            lotless.append(line)
 
     changes: list[dict] = []
     blockers: list[str] = []
@@ -318,20 +323,50 @@ def refresh_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
                 if _differs(getattr(row, k), v)}
         if not diff:
             continue
-        if float(li["qty"]) < float(row.qty or 0):
-            bound = (db.query(M.ComponentConsumptionLot)
-                       .filter(M.ComponentConsumptionLot.lot_line_id == row.id).all())
-            if bound:
+        bound = (db.query(M.ComponentConsumptionLot)
+                   .filter(M.ComponentConsumptionLot.lot_line_id == row.id).all())
+        if "unit_price" in diff and bound:
+            # The draws bound to this lot were priced at its old cost. They move
+            # with it, or the lot's value goes negative once they have used it
+            # up — unless a batch they charge has CLOSED its books (decision
+            # 0044), where only a correction document may change the figure.
+            closed = _closed_runs_of(db, bound)
+            if closed:
                 blockers.append(
-                    f"line {row.id} (lot {ref}) would drop from {row.qty:g} to "
-                    f"{float(li['qty']):g} but {len(bound)} draw(s) are bound to it — "
-                    "JLC says the parts never arrived and the platform says they were "
-                    "used; settle that before refreshing")
+                    f"line {row.id} (lot {ref}) changes price but draws bound to it charge "
+                    f"closed batch(es) {closed} — enter a correction document instead")
                 continue
+        if float(li["qty"]) < float(row.qty or 0) and bound:
+            blockers.append(
+                f"line {row.id} (lot {ref}) would drop from {row.qty:g} to "
+                f"{float(li['qty']):g} but {len(bound)} draw(s) are bound to it — "
+                "JLC says the parts never arrived and the platform says they were "
+                "used; settle that before refreshing")
+            continue
         changes.append({"line_id": row.id, "lot_ref": ref,
                         "was": {k: v[0] for k, v in diff.items()},
                         "now": {k: v[1] for k, v in diff.items()}})
         pending.append((row, diff))
+
+    # Cancelled lots JLC refunded in full carry no money, so their lines go.
+    # An older import wrote some of them without a lot key; those are matched by
+    # label and the advance they carried, and only when exactly one line fits.
+    voids: list[M.RunCostLine] = []
+    for r in plan.get("refunded") or []:
+        rows = existing.pop(r["lot_ref"], [])
+        if not rows:
+            fits = [li for li in lotless if li not in voids
+                    and li.plan_key == "other:cancelled" and li.label == r["label"]
+                    and abs((li.qty or 0) * (li.unit_price or 0) - r["advance_usd"]) < 0.005]
+            rows = fits if len(fits) == 1 else []
+        for row in rows:
+            if db.query(M.ComponentConsumptionLot).filter_by(lot_line_id=row.id).first():
+                blockers.append(f"line {row.id} (refunded lot {r['lot_ref']}) has draws bound to it")
+                continue
+            voids.append(row)
+            changes.append({"line_id": row.id, "lot_ref": r["lot_ref"],
+                            "was": {"amount": round((row.qty or 0) * (row.unit_price or 0), 4)},
+                            "now": {"voided": "JLC refunded the cancelled lot in full"}})
 
     for ref, rows in existing.items():
         blockers.append(f"document {doc.id} carries lot {ref} (line "
@@ -340,7 +375,8 @@ def refresh_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
     if blockers:
         return {"status": "refused", "document_id": doc.id, "blockers": blockers,
                 "changes": changes}
-    if not changes:
+    total_moves = abs(round((doc.total_amount or 0) - plan["total_amount"], 2)) >= 0.005
+    if not changes and not total_moves:
         return {"status": "unchanged", "document_id": doc.id, "changes": []}
 
     total = round(sum(float(li["qty"]) * float(li["unit_price"] or 0.0)
@@ -351,9 +387,14 @@ def refresh_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
     # discard whatever else the caller holds in the transaction, which is how a
     # preview reached into a test's fixture and undid it.
     sp = db.begin_nested() if dry_run else None
+    repriced: list[dict] = []
     for row, diff in pending:
+        if "unit_price" in diff:
+            repriced += _reprice_bindings(db, row, float(diff["unit_price"][1]))
         for k, v in diff.items():
             setattr(row, k, v[1])
+    for row in voids:
+        row.voided_at = utcnow()
     doc.total_amount = plan["total_amount"]
     db.flush()
     run_actuals.resolve_part_lines(db, doc.id)
@@ -361,11 +402,50 @@ def refresh_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
     if sp is not None:
         sp.rollback()
         return {"status": "dry_run", "document_id": doc.id, "changes": changes,
-                "line_total_usd": total,
+                "line_total_usd": total, "repriced_draws": repriced,
                 "identities_before": before, "identities_after": after}
     _write_audit(db, "jlc.import.parts.refresh", doc.id, plan, actor)
     return {"status": "refreshed", "document_id": doc.id, "changes": changes,
-            "identities": after}
+            "repriced_draws": repriced, "identities": after}
+
+
+def _closed_runs_of(db: Session, bindings: list) -> list[int]:
+    """The closed batches the draws behind these lot bindings are charged to."""
+    runs = set()
+    for b in bindings:
+        c = db.get(M.ComponentConsumption, b.consumption_id)
+        if c is not None and c.run_id is not None and c.voided_at is None:
+            run = db.get(M.ProductionRun, c.run_id)
+            if run is not None and run.closed_at is not None:
+                runs.add(run.id)
+    return sorted(runs)
+
+
+def _reprice_bindings(db: Session, line: M.RunCostLine, new_unit: float) -> list[dict]:
+    """Move every draw bound to `line` to the lot's corrected unit cost.
+
+    A binding carries the lot's price at draw time, and its draw carries the
+    qty-weighted average of its bindings. Only the difference is applied to the
+    draw, so a draw whose other slices are bound elsewhere (or unallocated)
+    keeps their share exactly. Rows are loaded and mutated, never bulk-updated,
+    so the journal can reverse it.
+    """
+    out: list[dict] = []
+    for b in (db.query(M.ComponentConsumptionLot)
+              .filter(M.ComponentConsumptionLot.lot_line_id == line.id).all()):
+        old = float(b.unit_cost_usd or 0.0)
+        if abs(old - new_unit) < 1e-12:
+            continue
+        c = db.get(M.ComponentConsumption, b.consumption_id)
+        delta_value = float(b.qty or 0) * (new_unit - old)
+        b.unit_cost_usd = new_unit
+        if c is not None and (c.qty or 0):
+            was = float(c.unit_cost_usd or 0.0)
+            c.unit_cost_usd = round(was + delta_value / float(c.qty), 8)
+            out.append({"consumption_id": c.id, "run_id": c.run_id, "lcsc": c.lcsc,
+                        "qty": b.qty, "lot_unit_was": old, "lot_unit_now": new_unit,
+                        "delta_usd": round(delta_value, 4)})
+    return out
 
 
 def _keep_annotations(old: str, fresh: str) -> str:
@@ -516,12 +596,13 @@ def reprice_from_jlc(db: Session, lots_by_key: dict[str, dict],
 
     Two independent defects in the hand/OCR-entered data, both verified:
 
-    1. **Price** — lines were recorded from `goodsMoney` (goods value) rather
-       than `goodsPaidMoney` (what left the bank). The two differ by JLC's
-       sourcing fee on `presaleType='buy'` sub-orders, understating the pool by
-       $1,623.23 across $29,639 of spend. The ESP32 reads $2.2146 where every
-       other purchase of the same part sits between $2.79 and $3.02 — the
-       outlier is the error, not the price.
+    1. **Price** — a line must carry what the lot finally cost: the sub-order's
+       `settlePaidMoney` over the settled quantity (`jlc_import._lot_from_goods`).
+       The 2026-07-28 run of this function moved lines the other way, to
+       `goodsPaidMoney` — the advance before JLC's re-settlement refunds — and
+       called the $1,623.23 difference a sourcing fee. It was refunds and
+       refunded cancellations (2026-09-24). A parts refresh is what corrects a
+       document now; this function stays read-only.
     2. **Identity** — no line carries `lot_ref`, so no draw can ever cite WHICH
        purchase it consumed. Stamping it is what makes `source='reported'`
        reachable at all.
@@ -611,11 +692,9 @@ def reprice_from_jlc(db: Session, lots_by_key: dict[str, dict],
                 line.unit_price = new_unit
                 line.notes = (
                     (line.notes or "") +
-                    f" | repriced {old_unit} -> {new_unit} on 2026-07-28 from the settled "
-                    f"JLC order ({hit['presale_type']}): paid ${hit['paid_usd']} for "
-                    f"{hit['qty']:g}. goodsMoney would say "
-                    f"{round((hit['goods_usd'] / hit['qty']), 6) if hit['qty'] else '-'} "
-                    f"and excludes ${hit['sourcing_fee_usd']} of sourcing fee."
+                    f" | repriced {old_unit} -> {new_unit} from the settled JLC order "
+                    f"({hit['presale_type']}): settled ${hit['paid_usd']} for {hit['qty']:g} "
+                    f"(advance ${hit.get('advance_usd', hit['paid_usd'])})."
                 )[:8000]
             line.lot_ref = hit["lot_key"]
 
@@ -688,15 +767,14 @@ def reprice_from_jlc(db: Session, lots_by_key: dict[str, dict],
         if not dry_run:
             doc.total_amount = paid
             doc.notes = ((doc.notes or "") +
-                         f" | total corrected {old} -> {paid} on 2026-07-28: the "
-                         "original figure was JLC's goodsMoney (goods value), not "
-                         "goodsPaidMoney (what was actually paid, including the "
-                         "sourcing fee on 'buy' sub-orders).")[:8000]
+                         f" | total corrected {old} -> {paid}: the sum of the "
+                         "settled lots, which is the invoice's paidMoney.")[:8000]
 
     total_delta = round(sum(c["delta_usd"] for c in changes), 2)
     doc_delta = round(sum(c["delta_usd"] for c in doc_changes), 2)
     if dry_run:
-        db.rollback()
+        # Every write above is guarded by `not dry_run`, so there is nothing to
+        # undo — and `db.rollback()` here discarded the CALLER's transaction.
         return {"status": "dry_run", "changes": changes, "unmatched": unmatched,
                 "line_count": len(changes), "total_delta_usd": total_delta,
                 "document_changes": doc_changes, "document_delta_usd": doc_delta,
@@ -1003,8 +1081,7 @@ def lot_line_index(db: Session) -> dict[str, int]:
     `apply_draws` has always required this mapping and NOTHING produced it — the
     backfill built it inline in a throwaway script. Without it every JLC-reported
     binding silently falls through to `source='unallocated'` priced at JLC's
-    quoted figure instead of the lot's landed cost, which is the difference
-    `reprice_from_jlc` measured at $1,623.23 across $29,639 of spend.
+    quoted figure instead of the lot's landed cost.
 
     A lot IS a leaf part line with no run, so this is a query, not a table.
     Newest line wins a duplicate `lot_ref`: re-importing a corrected POB document

@@ -9,17 +9,24 @@ sync can never move money as a consequence of looking.
 Facts this encodes, all verified against the live account on 2026-07-28. Each was
 a trap that a naive importer falls into:
 
-1. **A lot's cost is `goodsPaidMoney / settlePresaleNumber`, not `goodsMoney`.**
-   Every JLC purchase row carries both, and they differ by JLC's sourcing fee on
-   `presaleType='buy'` sub-orders (never on `'stock'`). Using `goodsMoney`
-   under-costs the existing data by $1,623.23 over $29,639 of spend — the ESP32
-   reads 2.2146 against 2.82 actually paid.
+1. **A lot's cost is its sub-order's `settlePaidMoney / settlePresaleNumber`.**
+   A `buy` lot is paid at an advance (`goodsPaidMoney`) and JLC re-settles it at
+   the supplier's real quote: it refunds the difference (`partRefundMoney`) or
+   charges a supplement. `settlePaidMoney` is the one figure that carries both,
+   and every sub-order holds exactly ONE lot (285 of 285), so it is the lot's
+   money. It equals the parts invoice's `paidMoney` on all 20 orders
+   (2026-09-24). The lot-level `settleGoodsPaidMoney` misses a supplement
+   (lot 768185: $6.24 there, $46.80 settled and invoiced). Using
+   `goodsPaidMoney` booked $1,185.74 of refunds as cost — the ESP32 lot at
+   $2.82/pc where JLC settled $2.2146 and refunded $635.67 — and was once
+   misread as a "$1,623.23 sourcing fee".
 
-2. **`settlePresaleNumber` is the lot size, and it can be 0 with money paid.**
-   Two real rows paid $349.39 and $16.01 for zero delivered parts (cancelled
-   sub-orders, `orderStatus=40`). Dividing by the settled quantity is a division
-   by zero; using `presaleNumber` instead invents stock that never arrived. Such
-   rows become a FEE against no lot.
+2. **`settlePresaleNumber` is the lot size, and it can be 0.** A cancelled
+   sub-order (`orderStatus=40`) that JLC refunded settles at $0 and becomes NO
+   line: $349.39 and $16.01 on POB0202604250307710 were refunded, not lost. One
+   that JLC settled with money kept (lot 754166, $19.78) is a fee against no
+   lot. Dividing by the settled quantity is a division by zero; using
+   `presaleNumber` instead invents stock that never arrived.
 
 3. **`presaleGoodsKeyId` joins consumption to purchase.** Verified 50/50 on
    W2026051200251365, with `componentCode` agreeing on all 50. This is what makes
@@ -111,13 +118,24 @@ def _lot_from_goods(g: dict, pob: str, so: dict, presale_type: str, status) -> d
     so a reader never has to guess which of JLC's two amounts was used."""
     settled = jlc_invoice._f(g.get("settlePresaleNumber"))
     ordered = jlc_invoice._f(g.get("presaleNumber"))
-    paid = jlc_invoice._f(g.get("goodsPaidMoney"))
+    advance = jlc_invoice._f(g.get("goodsPaidMoney"))
     goods = jlc_invoice._f(g.get("goodsMoney"))
     quoted = jlc_invoice._f(g.get("goodsPrice"))
+    # What the lot finally cost: the SUB-ORDER's settled money when the
+    # sub-order holds only this lot (every one does), else the lot's own
+    # settled figure, else the advance for a payload that carries neither.
+    records = so.get("presaleGoodsRecords") or []
+    if len(records) == 1 and so.get("settlePaidMoney") is not None:
+        paid, cost_source = jlc_invoice._f(so.get("settlePaidMoney")), "settlePaidMoney"
+    elif g.get("settleGoodsPaidMoney") is not None:
+        paid, cost_source = jlc_invoice._f(g.get("settleGoodsPaidMoney")), "settleGoodsPaidMoney"
+    else:
+        paid, cost_source = advance, "goodsPaidMoney"
 
-    # Landed unit = what we actually paid, spread over what actually arrived.
+    # Landed unit = what we finally paid, spread over what actually arrived.
     unit = round(paid / settled, 8) if settled > 0 else None
-    fee = round(paid - goods, 4)
+    fee = round(jlc_invoice._f(g.get("settleGoodsPaidMoney") or advance)
+                - jlc_invoice._f(g.get("settleGoodsMoney") or goods), 4)
     # A sub-order is stock only once JLC COMPLETES it. Until then a `buy` lot
     # is paid at an advance price and `settlePresaleNumber` already equals the
     # ordered quantity while nothing is in storage — POB0202609230016917 lot
@@ -147,11 +165,15 @@ def _lot_from_goods(g: dict, pob: str, so: dict, presale_type: str, status) -> d
         "qty_ordered": ordered,
         "qty": settled,
         "unit_cost_usd": unit,
+        # What we finally paid (settled). `advance_usd` is what was paid at
+        # order time; the difference is JLC's refund (negative) or supplement.
         "paid_usd": paid,
+        "advance_usd": advance,
+        "resettled_usd": round(paid - advance, 4),
         "goods_usd": goods,
         "quoted_unit": quoted,
         "sourcing_fee_usd": fee,
-        "cost_source": "goodsPaidMoney/settlePresaleNumber",
+        "cost_source": f"{cost_source}/settlePresaleNumber",
         # A cancelled row still cost money — it must land as a fee, never as a lot.
         #
         # CANCELLED is the whole test, not a zero quantity. JLC settles a
@@ -161,8 +183,10 @@ def _lot_from_goods(g: dict, pob: str, so: dict, presale_type: str, status) -> d
         # them. Testing only `settled <= 0` imported them as stock, which was
         # 3,470 of the 3,478-piece gap on that part — the largest disagreement in
         # the platform, chased for a day before this row explained it
-        # (2026-09-18). It is the ONLY `orderStatus=40` lot in the account.
+        # (2026-09-18). A cancelled lot that settled at $0 — refunded in full,
+        # or never paid (lot 231381) — is neither stock nor a fee.
         "fee_only": cancelled and paid > 0,
+        "refunded": cancelled and paid <= 0,
     }
 
 
@@ -191,8 +215,12 @@ def plan_parts_document(pob: str, lots: list[dict], invoice_raw: dict | None) ->
             "supplier_order_ref": lot["purchase_batch_no"],
             "notes": (
                 f"lot {lot['lot_key']} from {lot['purchase_order_no']} "
-                f"({lot['presale_type']}); paid ${lot['paid_usd']} for {lot['qty']:g} "
+                f"({lot['presale_type']}); settled ${lot['paid_usd']} for {lot['qty']:g} "
                 f"= ${lot['unit_cost_usd']}/pc"
+                + (f" (advance ${lot['advance_usd']}; JLC "
+                   + ("refunded" if lot["resettled_usd"] < 0 else "charged a supplement of")
+                   + f" ${abs(lot['resettled_usd'])})"
+                   if abs(lot["resettled_usd"]) >= 0.005 else "")
                 + (f"; includes ${lot['sourcing_fee_usd']} sourcing fee"
                    if lot["sourcing_fee_usd"] > 0.005 else "")
             ),
@@ -226,8 +254,8 @@ def plan_parts_document(pob: str, lots: list[dict], invoice_raw: dict | None) ->
             "lot_ref": lot["lot_key"],
             "supplier_order_ref": lot["purchase_batch_no"],
             "notes": (
-                f"paid ${lot['paid_usd']} but {reason} — real money, no parts, so it is "
-                "a fee rather than a lot"
+                f"JLC kept ${lot['paid_usd']} of ${lot['advance_usd']} but {reason} — "
+                "real money, no parts, so it is a fee rather than a lot"
             ),
         })
     for lot in awaiting:
@@ -266,8 +294,19 @@ def plan_parts_document(pob: str, lots: list[dict], invoice_raw: dict | None) ->
         "doc_number": str(inv.get("invoiceNo") or ""),
         "doc_date": jlc_invoice.parse_invoice_date(inv.get("invoiceDate")),
         "currency": "USD",
+        # What was finally paid: the sum of the settled lots. It equals the
+        # invoice's `paidMoney` on every order in the account.
         "total_amount": round(sum(lot["paid_usd"] for lot in lots), 2),
         "invoice_total": jlc_invoice._f(inv.get("totalPayment")) if inv else None,
+        "invoice_paid": jlc_invoice._f(inv.get("paidMoney")) if inv else None,
+        "resettled_usd": round(sum(lot.get("resettled_usd", 0.0) for lot in lots), 2),
+        # Cancelled lots JLC refunded in full: no line. A refresh voids a line an
+        # older import wrote for one, matched by lot key or, for a line written
+        # without one, by its label and the advance it carried.
+        "refunded": [{"lot_ref": lot["lot_key"],
+                      "label": f"Cancelled: {lot['mpn'] or lot['lcsc']}",
+                      "advance_usd": lot.get("advance_usd", 0.0)}
+                     for lot in lots if lot.get("refunded")],
         "lines": lines,
         "lot_count": len(real),
         "fee_count": len(fees),

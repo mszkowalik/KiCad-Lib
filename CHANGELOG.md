@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-09-24 (a JLC parts lot costs what JLC settled)
+
+**Correction: JLC parts were costed at the advance, not at what JLC finally
+charged.** JLC sells a sourced (`buy`) lot at an advance and re-settles it when
+the supplier quotes. It refunds the difference or charges a supplement. The
+platform kept the advance. On 2026-07-28 the gap was read as a "$1,623.23
+sourcing fee", and the documents were moved up to the advance. It was refunds.
+Decision [0052](docs/decisions/0052-a-jlc-lot-costs-what-jlc-settled.md).
+
+- A lot now costs its settled amount. The sum over an order equals JLC's
+  invoice `paidMoney` on all 20 parts orders.
+- A cancelled lot that JLC refunded is no line. Before, it was a fee.
+- **Refresh** on a parts order now also re-prices a lot JLC re-settled, and
+  moves the draws that used that lot, so the batches that used it change cost.
+  It refuses when such a draw belongs to a closed batch.
+- Production → JLC → Parts orders shows "changed at JLC — refresh" when a
+  document's total differs from what JLC settled.
+- 9 existing parts orders were refreshed on 2026-09-24: $1,571.60 less cost
+  in total, spread over the batches that used those lots. The per-order
+  figures are in the refresh journal batches.
+
 ## 2026-09-24 (a parts order JLC has not finished is not stock, and devices are boards assembled)
 
 **Correction: importing a JLC parts order put its money in "unassigned" and

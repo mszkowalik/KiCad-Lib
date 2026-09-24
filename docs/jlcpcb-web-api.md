@@ -310,26 +310,39 @@ factor. Get the factor from §3.2, or derive it from the BOM (each part votes
 `consumed / (number × bom_per_device)`; the votes are unanimous when the run is
 right). Never assume 1.
 
-### `goodsPaidMoney`, not `goodsMoney`
-Every purchase row carries both, and they differ by JLC's sourcing fee on
-`presaleType='buy'` sub-orders (never on `'stock'`). Using `goodsMoney`
-understated this account by **$1,623.23** over $29,639 of spend — an ESP32 read
-$2.2146 where every other purchase of the same part sat between $2.79 and $3.02.
+### A `buy` lot is paid at an advance and re-settled later
+`goodsPaidMoney` is the ADVANCE paid at order time. Once the supplier quotes,
+JLC re-settles the sub-order: it refunds the difference (`partRefundMoney`,
+`refundStatus` 30, reason *"the estimated price paid … is higher than the actual
+price quoted by the supplier"*) or charges a supplement (`supplementStatus` 2).
+The lot-level `settleGoodsPaidMoney` carries a refund but NOT a supplement
+(lot 768185: $6.24 there, $46.80 settled). The sub-order's `settlePaidMoney`
+carries both, every sub-order holds exactly one lot (285 of 285), and the sum
+over an order equals the parts invoice's `paidMoney` on all 20 orders
+(2026-09-24). Until then the platform booked the advance: $1,185.74 of refunds
+as cost (the ESP32 at $2.82/pc, settled $2.2146) and $376.96 of refunded
+cancellations as fees, once misread as a "$1,623.23 sourcing fee".
 
-**A lot's landed unit cost is `goodsPaidMoney / settlePresaleNumber`.**
+**A lot's landed unit cost is the sub-order's `settlePaidMoney / settlePresaleNumber`.**
 
-### `settlePresaleNumber` can be 0 with money paid
-Four real rows paid $349.39, $16.01, $8.20 and $3.36 for **zero** delivered parts
-(cancelled sub-orders, `orderStatus=40`). Dividing by the settled quantity is a
-division by zero; using `presaleNumber` invents stock that never arrived. Book
-these as a **fee against no lot**.
+### `settlePresaleNumber` can be 0
+A cancelled sub-order (`orderStatus=40`) settles zero parts. Four real rows paid
+advances of $349.39, $16.01, $8.20 and $3.36 and JLC REFUNDED all four in full
+(`settlePaidMoney` 0, `refundStatus` 40): they are no line at all. Only a
+cancelled sub-order that settled with money kept (lot 754166, $19.78) is a
+**fee against no lot**. Dividing by the settled quantity is a division by zero;
+using `presaleNumber` invents stock that never arrived.
 
-### The invoice is NOT settled truth — the ORDER PAGE is
-Refunds and re-settlements happen after invoicing. Two verified cases: a **$8.40
-refund** (unit 0.0204 → 0.0176) and a correction from 0.0234 → 0.0031. The
-invoice shows the pre-settlement figure; `selectPresaleOrderList` shows what was
-actually paid. **Take lot quantity and price from the order page**; use the
-invoice only for document identity and the printed total.
+### The invoice total is settled; its lines are not itemised
+The parts invoice's `paidMoney` equals the sum of the sub-orders'
+`settlePaidMoney` on all 20 orders (2026-09-24), so it IS the settled figure.
+It prints no per-lot price, so **take lot quantity and price from the order
+page** and check the total against the invoice. Two cases once read here as
+"the invoice shows the pre-settlement figure" were supplements read backwards:
+$52.80 → $61.20 on lot 1369417 (unit 0.0176 → 0.0204) and $6.24 → $46.80 on lot
+768185 (0.0031 → 0.0234). The settled figures are the higher ones, and the
+invoices bill them. `totalPayment` can differ from `paidMoney` (POB0202502102244558:
+$11.16 against $11.66, not explained); `paidMoney` is the one that matches.
 
 ### `presaleMoney` is INSIDE the line total
 An assembly line reading $7,038.51 already contains $5,896.42 of prepaid

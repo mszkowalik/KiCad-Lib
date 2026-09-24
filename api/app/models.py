@@ -1647,7 +1647,7 @@ class ComponentConsumptionLot(Base):
     lot_adjustment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
     qty: Mapped[float] = mapped_column(Float, default=0.0)
     # The LOT's landed unit cost, snapshotted at bind time — never JLC's quoted
-    # component price, which excludes the sourcing fee on `buy` sub-orders.
+    # component price. A parts refresh moves it when JLC re-settles the lot.
     unit_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     source: Mapped[str] = mapped_column(String(20), default="fifo")
     ext_ref: Mapped[str] = mapped_column(String(120), default="")  # presaleGoodsKeyId etc.

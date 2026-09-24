@@ -341,8 +341,12 @@ def list_parts_orders(db: Session = Depends(get_db)):
             "awaiting_lots": awaiting,
             "awaiting_usd": round(sum(lot["paid_usd"] for lot in lots if lot.get("awaiting")), 2),
             "awaiting_on_document": waiting_lines,
-            # The document is behind JLC: a lot it holds as awaiting has arrived.
-            "refresh_due": bool(doc) and waiting_lines > awaiting,
+            # The document is behind JLC: a lot it holds as awaiting has arrived,
+            # or JLC re-settled a lot (refund or supplement) since the import.
+            "refresh_due": bool(doc) and (
+                waiting_lines > awaiting
+                or abs(round((doc.total_amount or 0) - sum(lot["paid_usd"] for lot in lots), 2))
+                >= 0.005),
             "paid_usd": round(sum(lot["paid_usd"] for lot in lots), 2),
             "document_id": doc.id if doc else None,
             # A fuzzy reference match is REPORTED, never acted on: `POB0202510222305546`
@@ -367,9 +371,9 @@ def _parts_plan(db: Session, pob: str) -> dict:
     try:
         # `index_parts_orders` keys by `presaleGoodsKeyId` — one entry per LOT,
         # not per order (215 lots across 16 orders). Group by the order each lot
-        # names. A lot's quantity and price come from the ORDER page, never the
-        # invoice — the invoice understates by JLC's sourcing fee ($1,623.23
-        # across the account).
+        # names. A lot's quantity and price come from the ORDER page, which
+        # itemises them; the invoice prints only the order total, and that total
+        # equals the sum of the settled lots (`jlc_import._lot_from_goods`).
         index = jlc_import.index_parts_orders(jlc_web.list_parts_orders(db))
         lots = [lot for lot in index.values() if lot.get("purchase_batch_no") == pob]
         if not lots:
@@ -390,8 +394,8 @@ def apply_parts(pob: str, dry_run: bool = True, db: Session = Depends(get_db)):
     the lots every later draw binds to.
 
     Fetched live rather than from staging: `sync` stages assembly batches only, and
-    a lot's quantity and price come from the ORDER page, never the invoice — the
-    invoice understates by JLC's sourcing fee ($1,623.23 across the account).
+    a lot's quantity and price come from the ORDER page, never the invoice, which
+    prints only the order total.
     """
     actor = acting_name()
     plan = _parts_plan(db, pob)

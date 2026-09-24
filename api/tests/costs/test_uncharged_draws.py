@@ -422,8 +422,9 @@ def test_a_cancelled_lot_never_becomes_stock(db):
 
 
 def test_a_zero_quantity_lot_is_still_a_fee(db):
-    """The original guard, kept: two real rows paid $349.39 and $16.01 for zero
-    delivered parts."""
+    """The original guard, kept: a lot that settled ZERO pieces is never stock.
+    With money kept it is a fee; the two real rows ($349.39 and $16.01) turned
+    out to be refunded in full, which `test_jlc_ledger` covers."""
     from app.services import jlc_import
     lot = jlc_import._lot_from_goods(
         {"presaleGoodsKeyId": 1, "componentCode": "CX", "componentModel": "X",

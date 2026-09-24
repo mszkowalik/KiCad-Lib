@@ -388,3 +388,98 @@ def test_a_sub_cent_rounding_gap_still_closes_the_line():
     assert round(sum(k["amount"] for k in kids), 4) == round(1680.582 - 1218.98, 4)
     [delta] = [k for k in kids if k["slug"] == "delta"]
     assert delta["amount"] == -0.0025 and "Rounding" in delta["label"]
+
+
+# ------------------------------------------------ JLC re-settles a buy lot
+
+def _settled(key, advance, settled_money, qty=1000, status=None, lcsc="CLEDGER01",
+             mpn="LEDGER-PART-1", lot_settled=None):
+    """A lot the way JLC reports it after re-settlement: one lot per sub-order,
+    the sub-order's `settlePaidMoney` the final money."""
+    g = {"presaleGoodsKeyId": key, "componentCode": lcsc, "componentModel": mpn,
+         "settlePresaleNumber": qty, "presaleNumber": qty or 500,
+         "goodsPaidMoney": advance, "goodsMoney": advance, "goodsPrice": 0.1,
+         "settleGoodsPaidMoney": advance if lot_settled is None else lot_settled}
+    so = {"presaleOrderNo": "PF9", "settlePaidMoney": settled_money,
+          "presaleGoodsRecords": [g]}
+    return jlc_import._lot_from_goods(g, "POBTEST0001", so, "buy",
+                                      status or jlc_import.ORDER_COMPLETE)
+
+
+def test_a_refunded_difference_is_not_cost():
+    """ESP32 lot 649609: paid $2,961.00, JLC settled $2,325.33 and refunded
+    $635.67. The invoice's paidMoney says $2,325.33."""
+    lot = _settled("649609", 2961.0, 2325.33, qty=1050, lot_settled=2325.33)
+    assert lot["paid_usd"] == 2325.33 and lot["unit_cost_usd"] == round(2325.33 / 1050, 8)
+    assert lot["resettled_usd"] == -635.67
+
+
+def test_a_supplement_is_cost_even_when_the_lot_does_not_show_it():
+    """Lot 768185: $6.24 paid, the lot still says $6.24, the sub-order settled
+    and the invoice billed $46.80."""
+    lot = _settled("768185", 6.24, 46.8, qty=2000, lot_settled=6.24)
+    assert lot["paid_usd"] == 46.8 and lot["cost_source"].startswith("settlePaidMoney")
+
+
+def test_a_refunded_cancellation_is_no_line_and_a_refresh_removes_the_old_fee(db, part):
+    """$349.39 on POB0202604250307710 was refunded in full. An older import
+    wrote it as a fee with no lot key; the refresh finds it by label and amount."""
+    fee = M.RunCostLine(document_id=part["doc"].id, plan_key="other:cancelled",
+                        label="Cancelled: LEDGER-PART-3", qty=1, unit_price=349.39,
+                        currency="USD", allocate="excluded",
+                        exclude_reason="cancelled_by_supplier", lot_ref="")
+    db.add(fee)
+    db.flush()
+    keep = _settled("900001", 100.0, 100.0)
+    gone = _settled("900005", 349.39, 0.0, qty=0, status=jlc_import.ORDER_CANCELLED,
+                    lcsc="CLEDGER03", mpn="LEDGER-PART-3")
+    assert gone["refunded"] is True and gone["fee_only"] is False
+    plan = jlc_import.plan_parts_document("POBTEST0001", [keep, gone], {"invoiceNo": "LEDGER-1"})
+    assert [li["lot_ref"] for li in plan["lines"]] == ["900001"]
+    res = jlc_apply.refresh_parts_document(db, plan, dry_run=False)
+    assert res["status"] == "refreshed"
+    assert db.get(M.RunCostLine, fee.id).voided_at is not None
+
+
+def _bind(db, part, qty, unit, run_id=None):
+    draw = M.ComponentConsumption(run_id=run_id, lcsc="CLEDGER01", mpn="LEDGER-PART-1",
+                                  qty=qty, unit_cost_usd=unit, basis="measured",
+                                  consumed_at="2026-03-01")
+    db.add(draw)
+    db.flush()
+    db.add(M.ComponentConsumptionLot(consumption_id=draw.id, lot_line_id=part["line"].id,
+                                     qty=qty, unit_cost_usd=unit, source="reported"))
+    db.flush()
+    return draw
+
+
+def test_a_resettled_lot_moves_the_draws_that_used_it(db, part):
+    """A draw keeps the price it was written with. Left alone, the lot's value
+    goes negative once the draws have used it up."""
+    draw = _bind(db, part, 400, 0.1)
+    plan = jlc_import.plan_parts_document(
+        "POBTEST0001", [_settled("900001", 100.0, 60.0)], {"invoiceNo": "LEDGER-1"})
+    res = jlc_apply.refresh_parts_document(db, plan, dry_run=False)
+    assert res["status"] == "refreshed"
+    assert db.get(M.RunCostLine, part["line"].id).unit_price == 0.06
+    assert round(db.get(M.ComponentConsumption, draw.id).unit_cost_usd, 8) == 0.06
+    [moved] = res["repriced_draws"]
+    assert moved["delta_usd"] == -16.0
+    assert res["identities"]["pool_balanced"]
+
+
+def test_a_resettled_lot_refuses_to_move_a_closed_batch(db, part):
+    """Decision 0044: a closed batch changes only through a correction document."""
+    proj = db.query(M.Project).first()
+    run = M.ProductionRun(project_id=proj.id, label="closed test", board="", variant="",
+                          qty=1, status="done", run_date="2026-03-01", notes="",
+                          closed_at=M.utcnow())
+    db.add(run)
+    db.flush()
+    _bind(db, part, 400, 0.1, run_id=run.id)
+    plan = jlc_import.plan_parts_document(
+        "POBTEST0001", [_settled("900001", 100.0, 60.0)], {"invoiceNo": "LEDGER-1"})
+    res = jlc_apply.refresh_parts_document(db, plan, dry_run=True)
+    assert res["status"] == "refused"
+    assert "closed batch" in res["blockers"][0]
+
