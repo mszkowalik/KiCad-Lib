@@ -39,6 +39,16 @@ differ on the 17 orders where only part of the boards was populated.
 - Only the queue's run matching and the run-fill check read this count. No
   money and no stock moved.
 
+**Correction: the Stock page no longer counts a JLC library entry that holds
+0 pieces as a missing invoice.** Nothing is held, so nothing is missing.
+
+**Correction: a JLC assembly line now closes exactly on its fee breakdown when
+the gap is under a cent.** JLC prints a line as quantity × a unit price rounded
+to 4 decimals, so the line can sit a fraction of a cent under its own fees. The
+importer only added a balancing child from $0.01 up, and the fees then read as
+over-allocated. It now adds a "Rounding in JLC's printed unit price" child for
+any gap. Document 3199 (W2026092300301215) got its $-0.0025 child by hand.
+
 **Correction: the JLC repair routine would have added a correct purchase a
 second time.** `reprice_from_jlc` treated a lot whose line needed no change as
 missing. It now also writes a missing lot the way the importer does. Nothing

@@ -472,9 +472,17 @@ def fee_children_plan(inv: dict, fee_orders: dict[str, dict]) -> dict[str, list[
         # arbitrary, so the noise gets its own signed, visible child.
         target = round(li["total"] - li["presale"], 4)
         delta = round(target - sum(c["amount"] for c in kids), 4)
-        if abs(delta) >= 0.01:
+        # EVERY non-zero delta, not only a cent or more. JLC prints a line as
+        # `number x unitMoney` with the unit rounded to 4 decimals, so the line
+        # can sit a fraction of a cent under its own fee list: SMT026092263197
+        # printed 60 x 28.0097 = 1680.582 against fees of 1680.5845. Skipping a
+        # sub-cent delta left the children OVER the parent, which the register
+        # reports as over-allocated money.
+        if abs(delta) >= 0.0001:
             kids.append({"slug": "delta", "step": "pcba:other", "amount": delta,
-                         "label": "Invoice line allocation difference vs JLC order totals",
+                         "label": ("Invoice line allocation difference vs JLC order totals"
+                                   if abs(delta) >= 0.01 else
+                                   "Rounding in JLC's printed unit price"),
                          "external_line_id": f"{code}:fee:delta"})
         # Keyed by the LINE's identity (order_code carries the board suffix), so
         # the planner and the backfill attach to exactly one parent.

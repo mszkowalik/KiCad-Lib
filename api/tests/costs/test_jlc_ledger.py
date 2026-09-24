@@ -375,3 +375,16 @@ def test_repair_adds_a_missing_lot_the_way_the_importer_would(db, part):
     [added] = res["added_lines"]
     assert added["plan_key"] == jlc_import.STEP_AWAITING and added["awaiting"] is True
 
+
+
+def test_a_sub_cent_rounding_gap_still_closes_the_line():
+    """SMT026092263197 printed 60 x 28.0097 = 1680.582 against fees summing to
+    1680.5845. Without a delta child the children sat $0.0025 over the parent."""
+    inv = {"lines": [{"stage": "pcba", "total": 1680.582, "presale": 1218.98,
+                      "order_code": "SMTX-P50", "smt_order_code": "SMTX"}]}
+    fees = {"SMTX": {"kind": "smt", "dummy": 461.6045, "extra": 0,
+                     "spi": {"padMoney": 461.6045}}}
+    kids = jlc_import.fee_children_plan(inv, fees)["SMTX-P50"]
+    assert round(sum(k["amount"] for k in kids), 4) == round(1680.582 - 1218.98, 4)
+    [delta] = [k for k in kids if k["slug"] == "delta"]
+    assert delta["amount"] == -0.0025 and "Rounding" in delta["label"]

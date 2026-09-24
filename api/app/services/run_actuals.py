@@ -1670,6 +1670,12 @@ def parts_stock(db: Session) -> dict:
     for it in items:
         if it.id in matched:
             continue
+        if (it.qty or 0) <= 0:
+            # An empty library entry holds nothing, so no invoice can be
+            # missing for it. TMUX1208RSVR sat here at 0 pieces while JLC was
+            # still sourcing a paid lot (2026-09-24) and counted as a missing
+            # invoice.
+            continue
         market_value = (round((it.unit_price_usd or 0) * it.qty, 4)
                         if it.unit_price_usd is not None else None)
         rows.append({
