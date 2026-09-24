@@ -47,6 +47,10 @@ import { useModal } from "../modal";
 export type { RunOption };
 
 interface Row {
+  /** The existing child this row edits, updated IN PLACE on save; null for a
+   *  new share. Re-creating an existing child lost what only it carries — the
+   *  importer's `external_line_id`, a plan link. */
+  id: number | null;
   label: string;
   /** part shares only: the library component this share bought */
   component_id: number | null;
@@ -69,7 +73,7 @@ interface Row {
 }
 
 function emptyRow(): Row {
-  return { label: "", component_id: null, component_name: "", mpn: "", lcsc: "",
+  return { id: null, label: "", component_id: null, component_name: "", mpn: "", lcsc: "",
            amount: "", qty: "", unit: "", percent: "", step: "", dest: "",
            reason: "", notes: "" };
 }
@@ -83,6 +87,18 @@ function num(s: string): number {
 function fmt(v: number): string {
   return String(Number(v.toFixed(4)));
 }
+
+/** Round a CALCULATED share DOWN to the 4 decimals money is kept in. Rounding
+ *  to nearest let a split overshoot its position by a fraction of a cent (a
+ *  33.3333 % share rounds up), and the API refuses any overshoot: the register
+ *  counts it as over-allocated money. Down-rounding leaves at most a sub-cent
+ *  residual, which the balancing row then takes. */
+function floor4(v: number): number {
+  return Math.floor(v * 10000 + 1e-7) / 10000;
+}
+
+/** Float dust, not money: the API's own tolerance. */
+const EPS = 1e-6;
 
 export default function SplitLineDialog({
   line, parentAmount, currency, runs, projects, existing, onClose,
@@ -99,6 +115,7 @@ export default function SplitLineDialog({
   const [rows, setRows] = useState<Row[]>(() =>
     existing.length
       ? existing.map((c) => ({
+          id: c.id,
           label: c.label,
           component_id: c.component_id,
           component_name: c.component_name || "",
@@ -117,22 +134,42 @@ export default function SplitLineDialog({
         }))
       : [emptyRow(), emptyRow()],
   );
-  const [replace, setReplace] = useState(existing.length > 0);
   const [allowParts, setAllowParts] = useState(false);
   const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const allocated = useMemo(() => rows.reduce((s, r) => s + num(r.amount), 0), [rows]);
+  // A stock position: the STEP says so now, not a second `kind` field
+  // (decision 0047).
+  const isPart = PART_STEPS.has(line.plan_key || "");
+  // What the API will compute: a part share is qty x unit exactly, never the
+  // rounded figure shown in its amount cell.
+  const value = (r: Row) => (isPart ? num(r.qty) * num(r.unit) : num(r.amount));
+  const allocated = useMemo(() => rows.reduce((s, r) => s + value(r), 0), [rows, isPart]);
   const residual = parentAmount - allocated;
-  const over = residual < -0.005;
+  const over = residual < -EPS;
 
   const patch = (i: number, next: Partial<Row>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...next } : r)));
 
-  /** A percentage is applied at once and forgotten — the amount is the record. */
+  /** A percentage is applied at once and forgotten — the amount is the record.
+   *  Rounded DOWN; when the percentages reach 100 % the last percentage row
+   *  takes what rounding left, so a percentage split always balances exactly. */
   const setPercent = (i: number, pct: string) =>
-    patch(i, { percent: pct, amount: pct.trim() === "" ? "" : fmt((parentAmount * num(pct)) / 100) });
+    setRows((rs) => {
+      const next = rs.map((r, j) => (j === i ? {
+        ...r, percent: pct,
+        amount: pct.trim() === "" ? "" : fmt(floor4((parentAmount * num(pct)) / 100)),
+      } : r));
+      const pctRows = next.map((r, j) => [r, j] as const).filter(([r]) => r.percent.trim() !== "");
+      const pctSum = pctRows.reduce((s, [r]) => s + num(r.percent), 0);
+      if (pctRows.length && Math.abs(pctSum - 100) < 1e-9) {
+        const lastIdx = pctRows[pctRows.length - 1][1];
+        const others = next.reduce((s, r, j) => (j === lastIdx ? s : s + num(r.amount)), 0);
+        next[lastIdx] = { ...next[lastIdx], amount: fmt(floor4(parentAmount - others)) };
+      }
+      return next;
+    });
 
   const setAmount = (i: number, amount: string) =>
     patch(i, {
@@ -140,21 +177,24 @@ export default function SplitLineDialog({
       percent: parentAmount && amount.trim() !== "" ? fmt((num(amount) / parentAmount) * 100) : "",
     });
 
-  /** Put whatever is left on the last row, so rounding never leaks a cent. */
+  /** Put whatever is left on the last row, so rounding never leaks a cent.
+   *  Rounded down: a position priced past 4 decimals (190 x 11.173684) leaves
+   *  a residual of a fraction of a cent rather than an overshoot. It may go
+   *  negative — a rounding share of a supplier's figure is legitimately so. */
   const balanceLast = () => {
     if (!rows.length) return;
-    const others = rows.slice(0, -1).reduce((s, r) => s + num(r.amount), 0);
-    setAmount(rows.length - 1, fmt(Math.max(parentAmount - others, 0)));
+    const others = rows.slice(0, -1).reduce((s, r) => s + value(r), 0);
+    setAmount(rows.length - 1, fmt(floor4(parentAmount - others)));
   };
 
   const splitEvenly = () => {
     const n = rows.length;
     if (!n) return;
-    const each = Number((parentAmount / n).toFixed(4));
+    const each = floor4(parentAmount / n);
     setRows((rs) =>
       rs.map((r, i) => {
-        // last row absorbs the rounding remainder
-        const amount = i === n - 1 ? parentAmount - each * (n - 1) : each;
+        // the last row absorbs the rounding remainder, itself rounded down
+        const amount = i === n - 1 ? floor4(parentAmount - each * (n - 1)) : each;
         return { ...r, amount: fmt(amount), percent: fmt((amount / parentAmount) * 100) };
       }),
     );
@@ -168,9 +208,6 @@ export default function SplitLineDialog({
   }, []);
 
 
-  // A stock position: the STEP says so now, not a second `kind` field
-  // (decision 0047).
-  const isPart = PART_STEPS.has(line.plan_key || "");
   // Charged to a batch and stepped as its parts: never pool stock.
   const supplierLump = isPart && line.plan_key === "pcba:parts" && !!line.run_id;
 
@@ -203,6 +240,7 @@ export default function SplitLineDialog({
     const children: SplitChild[] = usable.map((r) => {
       const [kind, id] = r.dest ? r.dest.split(":") : ["", ""];
       return {
+        id: r.id,
         label: r.label.trim() || r.component_name || r.mpn || line.label,
         component_id: r.component_id,
         mpn: r.mpn.trim(),
@@ -226,7 +264,10 @@ export default function SplitLineDialog({
     setBusy(true);
     setError(null);
     try {
-      const res = await splitCostLine(line.id, children, { replace, allow_parts: allowParts });
+      // The rows ARE the split: an existing share is updated by its id, a new
+      // one created, and a removed one voided (never deleted).
+      const res = await splitCostLine(line.id, children,
+        { replace: existing.length > 0, allow_parts: allowParts });
       // A part share keyed only by MPN can never meet a BOM draw. The importer
       // resolves on every write; a hand-made split has to do the same or the
       // two paths produce different rows from the same facts.
@@ -441,18 +482,23 @@ export default function SplitLineDialog({
         <p className={over ? "banner-error" : "muted"}>
           Allocated {fmt(allocated)} of {fmt(parentAmount)} {currency} ·{" "}
           {over ? (
-            <>over by {fmt(-residual)} — the API will refuse this</>
+            <>
+              over by {-residual < 0.0001 ? (-residual).toPrecision(2) : fmt(-residual)} — the API
+              refuses any overshoot.{" "}
+              <button type="button" className="btn btn-sm" onClick={balanceLast}>
+                Balance last row
+              </button>
+            </>
           ) : (
             <>residual {fmt(residual)}</>
           )}
         </p>
 
         {existing.length ? (
-          <label className="muted">
-            <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} />{" "}
-            Replace the {existing.length} existing share{existing.length === 1 ? "" : "s"} (they are
-            voided, not deleted)
-          </label>
+          <p className="muted">
+            Editing the {existing.length} existing share{existing.length === 1 ? "" : "s"} in place.
+            A row you remove is voided, not deleted.
+          </p>
         ) : null}
         {/* The warning is about a POOLED purchase. A supplier-parts lump is the
             opposite case — it is charged to the batch and never pooled — so

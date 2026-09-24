@@ -55,11 +55,18 @@ class LineIn(BaseModel):
 class ChildIn(BaseModel):
     """One share of a split position. `basis` defaults to the parent's.
 
+    `id` names an EXISTING child to update in place. Re-creating it instead
+    loses what only the original row carries — the importer's
+    `external_line_id`, a plan link, its history — which is why the dialog
+    could not add one rounding share to JLC's fee split without rewriting all
+    nineteen (2026-09-24).
+
     Amounts are ABSOLUTE. A percentage split is a frontend affordance — the
     browser turns "40%" into a number before it gets here (user decision
     2026-07-27), so a stored figure never has to be re-derived and cannot drift.
     """
 
+    id: int | None = None
     label: str = ""
     basis: str | None = None
     qty: float = 1.0
@@ -90,7 +97,9 @@ class SplitIn(BaseModel):
     # Parts belong in the pool, which already splits them by consumption.
     # Splitting them per run by hand double counts, so it takes an explicit flag.
     allow_parts: bool = False
-    replace: bool = False  # void the existing children first
+    # The children sent ARE the split: existing children not named by `id` are
+    # voided. Without it, existing children stay and these are added.
+    replace: bool = False
 
 
 class DocumentIn(BaseModel):
@@ -1071,12 +1080,19 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
     existing = [c for c in db.query(M.RunCostLine)
                 .filter(M.RunCostLine.parent_line_id == parent.id,
                         M.RunCostLine.voided_at.is_(None)).all()]
+    by_id = {c.id: c for c in existing}
+    named = {child.id for child in body.children if child.id is not None}
+    unknown = named - set(by_id)
+    if unknown:
+        raise HTTPException(422, f"line(s) {sorted(unknown)} are not live children of {parent.id}")
     if existing and body.replace:
         for c in existing:
+            if c.id in named:
+                continue
             c.voided_at = utcnow()
             for d in _descendants(db, c.id):
                 d.voided_at = utcnow()
-        existing = []
+        existing = [c for c in existing if c.id in named]
 
     made: list[M.RunCostLine] = []
     pos = max([li.position for li in doc.lines], default=-1)
@@ -1088,6 +1104,25 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
         qty, unit = child.qty, child.unit_price
         if child.amount is not None:
             qty, unit = 1.0, child.amount
+        if child.id is not None:
+            # Update in place: everything the dialog edits, nothing it cannot
+            # see (`external_line_id`, the plan link, `position`).
+            row = by_id[child.id]
+            row.basis = child.basis or row.basis
+            row.label = child.label or row.label
+            row.qty, row.unit_price = qty, unit
+            row.allocate = child.allocate or "none"
+            row.run_id, row.project_id = child.run_id, child.project_id
+            if child.component_id is not None:
+                row.component_id = child.component_id
+            row.mpn, row.lcsc = child.mpn or row.mpn, child.lcsc or row.lcsc
+            row.description = child.description or row.description
+            row.plan_key = child.plan_key
+            row.plan_kind = child.plan_kind or row.plan_kind
+            row.plan_ref = child.plan_ref or row.plan_ref
+            row.notes = child.notes
+            row.exclude_reason = child.exclude_reason
+            continue
         pos += 1
         made.append(M.RunCostLine(
             document_id=doc.id, parent_line_id=parent.id, position=pos,
@@ -1119,9 +1154,14 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
     parent_amount = run_actuals.effective_qty(parent, doc, db) * (parent.unit_price or 0)
     child_amount = sum(run_actuals.effective_qty(c, doc, db) * (c.unit_price or 0)
                        for c in existing + made)
-    if child_amount > parent_amount + 0.005:
+    # No tolerance beyond float noise. It was half a cent, while the register
+    # counts ANY excess as over-allocated money, so splits the API accepted
+    # showed up there as $0.0005 nobody could explain (2026-09-24). The dialog
+    # rounds its calculated shares DOWN so they never overshoot.
+    if child_amount > parent_amount + 1e-6:
         raise HTTPException(409, f"children total {child_amount:.4f} exceeds the position's "
-                                 f"{parent_amount:.4f} {parent.currency or doc.currency}")
+                                 f"{parent_amount:.6f} {parent.currency or doc.currency} by "
+                                 f"{child_amount - parent_amount:.6f} — balance the last share")
     for c in made:
         db.add(c)
     db.flush()
@@ -1131,6 +1171,7 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
                       "project_id": c.project_id, "amount": round(
                           run_actuals.effective_qty(c, doc, db) * (c.unit_price or 0), 4)}
                      for c in made],
+        "updated": sorted(named),
         "replaced": body.replace, "residual": round(parent_amount - child_amount, 4),
     })
     db.commit()

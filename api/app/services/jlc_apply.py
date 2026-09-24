@@ -291,9 +291,17 @@ def refresh_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
     # same transaction, including the journal header that makes a write
     # reversible.
     pending: list[tuple] = []
+    adds: list[dict] = []
     for li in plan["lines"]:
         ref = li.get("lot_ref") or ""
         rows = existing.pop(ref, []) if ref else []
+        if ref.startswith("fee:") and not rows:
+            # The order's payment fee, split OUT of its lots' money: the lots
+            # drop by what this line adds, so the document total does not move.
+            adds.append(li)
+            changes.append({"line_id": None, "lot_ref": ref, "was": {},
+                            "now": {"added": li["label"], "amount": li["unit_price"]}})
+            continue
         if not ref or not rows:
             blockers.append(f"plan line {li['label']!r} (lot {ref or '-'}) has no line on "
                             f"document {doc.id} — refusing to add money to a document "
@@ -395,6 +403,16 @@ def refresh_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
             setattr(row, k, v[1])
     for row in voids:
         row.voided_at = utcnow()
+    pos = max([li.position for li in doc.lines], default=0)
+    for li in adds:
+        pos += 1
+        db.add(M.RunCostLine(
+            document_id=doc.id, run_id=None, position=pos, basis="per_run",
+            label=li["label"][:300], qty=li["qty"], unit_price=li["unit_price"] or 0.0,
+            currency="USD", allocate=li["allocate"],
+            exclude_reason=(li.get("exclude_reason") or "")[:40],
+            plan_key=li.get("plan_key") or "", lcsc=li["lcsc"], mpn=li["mpn"][:200],
+            notes=li["notes"], lot_ref=li.get("lot_ref") or ""))
     doc.total_amount = plan["total_amount"]
     db.flush()
     run_actuals.resolve_part_lines(db, doc.id)
@@ -752,7 +770,8 @@ def reprice_from_jlc(db: Session, lots_by_key: dict[str, dict],
     paid_by_pob: dict[str, float] = {}
     for lot in lots_by_key.values():
         paid_by_pob[lot["purchase_batch_no"]] = (
-            paid_by_pob.get(lot["purchase_batch_no"], 0.0) + lot["paid_usd"])
+            paid_by_pob.get(lot["purchase_batch_no"], 0.0) + lot["paid_usd"]
+            + lot.get("payment_fee_usd", 0.0))
     for doc in docs.values():
         pob = (doc.external_id or "").strip()
         if not pob.startswith("POB") or pob not in paid_by_pob:

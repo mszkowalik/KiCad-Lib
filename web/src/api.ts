@@ -3012,6 +3012,8 @@ export function getCostSteps(signal?: AbortSignal): Promise<CostStepCatalog> {
 /** One share of a split position. Amounts are ABSOLUTE — a percentage entry is
  *  converted in the browser before it is sent, so nothing has to be re-derived. */
 export interface SplitChild {
+  /** An existing child to update in place; omitted for a new share. */
+  id?: number | null;
   label?: string;
   basis?: "per_device" | "per_run";
   amount?: number;

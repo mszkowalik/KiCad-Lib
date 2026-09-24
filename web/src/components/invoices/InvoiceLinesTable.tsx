@@ -309,7 +309,15 @@ export default function InvoiceLinesTable({
       if (!plan.ok) { setLoadError(plan.reason || "no supplier breakdown"); return; }
       await splitCostLine(li.id, plan.children
         .filter((c) => c.qty_supplied > 0)
-        .map((c) => ({
+        .map((c) => c.source === "rounding" ? {
+          // The supplier's billed lump is rounded to the cent; its parts are
+          // not. This share closes the difference so the split balances.
+          label: "Rounding in the supplier's billed parts total",
+          amount: c.amount,
+          plan_key: "pcba:other",
+          run_id: li.run_id,
+          notes: `The parts sum ${-c.amount} over the billed figure.`,
+        } : ({
           label: `${c.mpn || c.lcsc} - ${c.designator}`.slice(0, 200),
           kind: "part" as const,
           // A component share is a QUANTITY at a price. `amount` alone would

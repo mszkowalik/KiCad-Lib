@@ -311,3 +311,80 @@ def test_an_exclusion_must_say_what_for():
 
     # The field is on the ordinary line schema too, so the two write paths agree.
     assert "exclude_reason" in LineIn.model_fields
+
+
+# ------------------------------------------------ a split balances exactly
+
+def _header(db, world, qty, unit, step="pcba:general"):
+    li = M.RunCostLine(document_id=world["doc"].id, plan_key=step, label="header",
+                       qty=qty, unit_price=unit, currency="USD", allocate="none",
+                       basis="per_run", run_id=world["run"].id)
+    db.add(li)
+    db.flush()
+    return li
+
+
+def test_a_split_refuses_any_overshoot(db, world):
+    """It allowed half a cent, and the register counts any excess as
+    over-allocated money: five JLC documents sat $0.0005 over for months."""
+    from fastapi import HTTPException
+
+    from app.routers.run_costs import ChildIn, SplitIn, split_line
+    h = _header(db, world, 190, 11.173684)          # 2122.99996, as JLC's was stored
+    with pytest.raises(HTTPException) as e:
+        split_line(h.id, SplitIn(children=[ChildIn(amount=2000.0, run_id=world["run"].id),
+                                           ChildIn(amount=123.0, run_id=world["run"].id)]), db)
+    assert e.value.status_code == 409 and "balance the last share" in str(e.value.detail)
+    ok = split_line(h.id, SplitIn(children=[ChildIn(amount=2000.0, run_id=world["run"].id),
+                                            ChildIn(amount=122.9999, run_id=world["run"].id)]), db)
+    assert 0 <= ok["residual"] <= 0.0001   # 0.00006, reported to 4 decimals
+
+
+def test_a_split_edits_its_existing_shares_in_place(db, world):
+    """Re-creating a share lost what only the original row carries — here the
+    importer's `external_line_id` — so adding ONE rounding share rewrote all."""
+    from app.routers.run_costs import ChildIn, SplitIn, split_line
+    h = _header(db, world, 1, 100.0)
+    kid = M.RunCostLine(document_id=world["doc"].id, parent_line_id=h.id, plan_key="pcba:smt",
+                        label="SMT", qty=1, unit_price=60.0, currency="USD", allocate="none",
+                        basis="per_run", run_id=world["run"].id, external_line_id="X:fee:padMoney")
+    gone = M.RunCostLine(document_id=world["doc"].id, parent_line_id=h.id, plan_key="pcba:setup",
+                         label="Setup", qty=1, unit_price=10.0, currency="USD", allocate="none",
+                         basis="per_run", run_id=world["run"].id)
+    db.add_all([kid, gone])
+    db.flush()
+    split_line(h.id, SplitIn(replace=True, children=[
+        ChildIn(id=kid.id, label="SMT placement", amount=60.0, plan_key="pcba:smt",
+                run_id=world["run"].id),
+        ChildIn(label="Rounding", amount=-0.0025, plan_key="pcba:other", run_id=world["run"].id),
+    ]), db)
+    db.refresh(kid)
+    assert kid.voided_at is None and kid.external_line_id == "X:fee:padMoney"
+    assert kid.label == "SMT placement"
+    assert db.get(M.RunCostLine, gone.id).voided_at is not None
+    live = db.query(M.RunCostLine).filter(M.RunCostLine.parent_line_id == h.id,
+                                          M.RunCostLine.voided_at.is_(None)).count()
+    assert live == 2
+
+
+def test_a_supplier_parts_lump_closes_on_its_own_rounding():
+    """JLC bills the lump rounded to the cent while its parts keep four
+    decimals: SMT026090162303's parts sum to 2097.2801 against 2097.28."""
+    from types import SimpleNamespace
+
+    from app.services import supplier_parts as sp
+    bom = [{"componentCode": "C1", "componentSource": "shop", "shopStock": 301,
+            "unitPrice": 0.5889, "extPrice": 177.2589, "componentRealCount": 301},
+           {"componentCode": "C2", "componentSource": "shop", "shopStock": 1,
+            "unitPrice": 1.0, "extPrice": 1.0, "componentRealCount": 1}]
+    line = SimpleNamespace(external_line_id="SMTX:fee:materialMoney", unit_price=178.2588,
+                           qty=1, basis="per_run", run_id=None, document_id=None)
+    orig = sp.bom_for_order, sp.run_actuals.effective_qty
+    sp.bom_for_order = lambda db, code: bom
+    sp.run_actuals.effective_qty = lambda li, doc, db: 1
+    try:
+        plan = sp.itemise(None, line)
+    finally:
+        sp.bom_for_order, sp.run_actuals.effective_qty = orig
+    [rounding] = [c for c in plan["children"] if c["source"] == "rounding"]
+    assert rounding["amount"] == -0.0001 and plan["reconciles"]

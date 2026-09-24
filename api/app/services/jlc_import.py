@@ -89,6 +89,7 @@ ORDER_CANCELLED = 40
 STEP_LOT = "parts:pool"
 STEP_CANCELLED = "other:cancelled"
 STEP_AWAITING = "other:awaiting_delivery"
+STEP_PAYMENT_FEE = "other:payment_fee"
 
 
 def index_parts_orders(raw_list: dict) -> dict:
@@ -131,6 +132,18 @@ def _lot_from_goods(g: dict, pob: str, so: dict, presale_type: str, status) -> d
         paid, cost_source = jlc_invoice._f(g.get("settleGoodsPaidMoney")), "settleGoodsPaidMoney"
     else:
         paid, cost_source = advance, "goodsPaidMoney"
+    # A payment surcharge rides inside the sub-order's money: `paidMoney` over
+    # `advanceChargeMoney`. It is the invoice's `totalOtherFee` ($0.50 on
+    # POB0202502102244558, the one order paid by ADYEN_APPLE_PAY: $0.23 + $0.27,
+    # about 2.7 % of each advance). It is not what the parts cost, so it leaves
+    # the lot and becomes its own `other:payment_fee` line. Zero on the other
+    # 282 sub-orders; negative only on an unpaid one, which carries no fee.
+    payment_fee = 0.0
+    if len(records) == 1 and jlc_invoice._f(so.get("paidMoney")) > 0:
+        payment_fee = max(round(jlc_invoice._f(so.get("paidMoney"))
+                                - jlc_invoice._f(so.get("advanceChargeMoney")), 4), 0.0)
+        payment_fee = min(payment_fee, paid)
+        paid = round(paid - payment_fee, 4)
 
     # Landed unit = what we finally paid, spread over what actually arrived.
     unit = round(paid / settled, 8) if settled > 0 else None
@@ -168,6 +181,7 @@ def _lot_from_goods(g: dict, pob: str, so: dict, presale_type: str, status) -> d
         # What we finally paid (settled). `advance_usd` is what was paid at
         # order time; the difference is JLC's refund (negative) or supplement.
         "paid_usd": paid,
+        "payment_fee_usd": payment_fee,
         "advance_usd": advance,
         "resettled_usd": round(paid - advance, 4),
         "goods_usd": goods,
@@ -287,6 +301,29 @@ def plan_parts_document(pob: str, lots: list[dict], invoice_raw: dict | None) ->
             ),
         })
 
+    fee = round(sum(lot.get("payment_fee_usd", 0.0) for lot in lots), 4)
+    if fee > 0:
+        pob_ref = lots[0]["purchase_batch_no"] if lots else pob
+        lines.append({
+            "kind": "service",
+            "plan_key": STEP_PAYMENT_FEE,
+            "run_id": None,
+            "allocate": run_actuals.EXCLUDED,
+            "exclude_reason": "payment_fee",
+            "label": "Payment fee (JLC's 'other fee')",
+            "lcsc": "",
+            "mpn": "",
+            "qty": 1,
+            "unit_price": fee,
+            # One per order, keyed so a refresh can find it again.
+            "lot_ref": f"fee:{pob_ref}",
+            "supplier_order_ref": pob_ref,
+            "notes": ("the invoice's totalOtherFee: paidMoney over advanceChargeMoney on "
+                      + ", ".join(f"{lot['purchase_order_no']} ${lot['payment_fee_usd']}"
+                                  for lot in lots if lot.get("payment_fee_usd"))
+                      + ". JLC names it only 'other fee'; likely a card surcharge."),
+        })
+
     inv = invoice_raw or {}
     return {
         "kind": "parts",
@@ -296,7 +333,9 @@ def plan_parts_document(pob: str, lots: list[dict], invoice_raw: dict | None) ->
         "currency": "USD",
         # What was finally paid: the sum of the settled lots. It equals the
         # invoice's `paidMoney` on every order in the account.
-        "total_amount": round(sum(lot["paid_usd"] for lot in lots), 2),
+        "total_amount": round(sum(lot["paid_usd"] + lot.get("payment_fee_usd", 0.0)
+                                  for lot in lots), 2),
+        "payment_fee_usd": fee,
         "invoice_total": jlc_invoice._f(inv.get("totalPayment")) if inv else None,
         "invoice_paid": jlc_invoice._f(inv.get("paidMoney")) if inv else None,
         "resettled_usd": round(sum(lot.get("resettled_usd", 0.0) for lot in lots), 2),

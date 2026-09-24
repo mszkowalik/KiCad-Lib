@@ -2,7 +2,7 @@
 name: kicad-production-run-from-invoices
 description: "How to recreate what a production batch really cost from supplier invoices: the cost-pool model, shared vs run documents, splitting one invoice position across runs and into a supplier's own sub-fees, NBP FX at the invoice date, OCR import of JLC component invoices, MPN->component resolution, BOM draws, attrition, and the invoice register that proves no money is unassigned. Use when creating or backfilling a production run, or entering or splitting any supplier invoice."
 ---
-<!-- platform-skill: production-run-from-invoices v8 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: production-run-from-invoices v9 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Creating a production run from supplier invoices
 
 Procedure for recreating what a production batch really cost, from the invoices
@@ -139,8 +139,14 @@ Rules the API enforces:
 - **A line with live children is a HEADER worth zero** — the children carry the
   money. Enforced once, in `run_actuals.header_ids`; every money path filters on
   it. Never "fix" a double count by editing a header's amount.
-- **Children may not exceed the parent** (409). Under-allocation is legal and
-  surfaces as `residual`; over-allocation is always a mistake.
+- **Children may not exceed the parent** (409) — by ANY amount, not half a cent.
+  Under-allocation is legal and surfaces as `residual`; over-allocation is always
+  a mistake. A position priced past 4 decimals (190 x 11.173684 = 2122.99996)
+  cannot take cent-rounded shares summing to the printed 2123.00: store its unit
+  price at full precision (printed / qty) instead.
+- **Re-splitting edits the existing shares in place.** Send each existing child
+  with its `id` and `replace: true`; unnamed ones are voided, named ones keep
+  their `external_line_id` and plan link.
 - **The parent keeps the printed figure.** Reconciliation compares the printed
   total against TOP-LEVEL lines only, so splitting can never make a document read
   unreconciled.
@@ -321,7 +327,7 @@ so the register's `excluded_by_reason_usd` stays readable:
 | `external_project` | work for a product this platform does not track; name the project in the line's notes |
 | `cancelled_by_supplier` | a line the supplier cancelled and still printed |
 | `awaiting_delivery` | a paid JLC parts lot still being sourced (step `other:awaiting_delivery`). Not stock yet; **Refresh** on the parts order turns it into the lot once JLC completes it |
-| `payment_fee` | a transfer or payment charge nobody's product should carry |
+| `payment_fee` | a transfer or payment charge nobody's product should carry — including JLC's "other fee" (a card surcharge), which the parts importer splits out of the lots onto its own `other:payment_fee` line |
 | `split_across_children` | a HEADER whose money is on its children; it is worth zero either way |
 
 `legacy_unstated` is NOT one of them: it is the deploy-day lint from decision
@@ -401,7 +407,8 @@ Three figures beside it:
   prices keep more decimals. `issues.untranscribed` names every document.
 - **`overallocated_usd`** is the twin of `residual`: children claiming more than
   the header they split. `residual` clamps at zero, so an overshoot would
-  otherwise live outside the identity.
+  otherwise live outside the identity. It must read 0: the split refuses any
+  overshoot, and a supplier's sub-cent rounding gets its own signed share.
 - **`excluded_unstated_usd`** must be 0 — see 2c.
 
 `by_run_usd` is the same arithmetic as each run's own actuals, so the two must

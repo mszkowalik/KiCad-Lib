@@ -345,9 +345,11 @@ def list_parts_orders(db: Session = Depends(get_db)):
             # or JLC re-settled a lot (refund or supplement) since the import.
             "refresh_due": bool(doc) and (
                 waiting_lines > awaiting
-                or abs(round((doc.total_amount or 0) - sum(lot["paid_usd"] for lot in lots), 2))
-                >= 0.005),
-            "paid_usd": round(sum(lot["paid_usd"] for lot in lots), 2),
+                or abs(round((doc.total_amount or 0)
+                             - sum(lot["paid_usd"] + lot.get("payment_fee_usd", 0.0)
+                                   for lot in lots), 2)) >= 0.005),
+            "paid_usd": round(sum(lot["paid_usd"] + lot.get("payment_fee_usd", 0.0)
+                                  for lot in lots), 2),
             "document_id": doc.id if doc else None,
             # A fuzzy reference match is REPORTED, never acted on: `POB0202510222305546`
             # exists in this database as `POB00202510222305546`, and an importer that

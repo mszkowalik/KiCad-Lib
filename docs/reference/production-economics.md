@@ -33,8 +33,11 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
   the parent must keep what the invoice printed. Related invariants: reconciliation
   compares the printed total against **top-level** lines only (so splitting can
   never make a document read unreconciled); children inherit the parent's
-  currency; over-allocation is refused (409) while under-allocation is legal and
-  reported as `residual`; document-level `run_id` only claims lines that name no
+  currency; over-allocation is refused (409) by ANY amount past float noise
+  (it allowed half a cent until 2026-09-24, and the register counted that as
+  over-allocated money), while under-allocation is legal and reported as
+  `residual`; a split names its existing children by `id` and updates them in
+  place, so re-splitting keeps their `external_line_id` and plan link; document-level `run_id` only claims lines that name no
   destination of their own (an invoice on run A with a line allocated to run B
   used to be charged to both); voiding a line voids its subtree. Percentages are
   a frontend calculator only — the API stores absolute amounts.

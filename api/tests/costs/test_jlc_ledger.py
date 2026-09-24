@@ -483,3 +483,31 @@ def test_a_resettled_lot_refuses_to_move_a_closed_batch(db, part):
     assert res["status"] == "refused"
     assert "closed batch" in res["blockers"][0]
 
+
+
+def test_a_payment_fee_leaves_the_lot_and_gets_its_own_line(db, part):
+    """POB0202502102244558: paid by Apple Pay, the invoice's totalOtherFee
+    ($0.50) rides inside each sub-order as paidMoney over advanceChargeMoney."""
+    g = {"presaleGoodsKeyId": "900001", "componentCode": "CLEDGER01",
+         "componentModel": "LEDGER-PART-1", "settlePresaleNumber": 1000,
+         "presaleNumber": 1000, "goodsPaidMoney": 100.23, "goodsMoney": 100.0,
+         "goodsPrice": 0.1, "settleGoodsPaidMoney": 100.23}
+    so = {"presaleOrderNo": "PF1", "advanceChargeMoney": 100.0, "paidMoney": 100.23,
+          "settlePaidMoney": 100.23, "presaleGoodsRecords": [g]}
+    lot = jlc_import._lot_from_goods(g, "POBTEST0001", so, "buy", jlc_import.ORDER_COMPLETE)
+    assert lot["paid_usd"] == 100.0 and lot["payment_fee_usd"] == 0.23
+    plan = jlc_import.plan_parts_document("POBTEST0001", [lot], {"invoiceNo": "LEDGER-1"})
+    assert plan["total_amount"] == 100.23
+    [fee] = [li for li in plan["lines"] if li["plan_key"] == "other:payment_fee"]
+    assert fee["allocate"] == "excluded" and fee["exclude_reason"] == "payment_fee"
+    # an existing document takes the fee line through a refresh; its total holds
+    doc = db.get(M.RunCostDocument, part["doc"].id)
+    doc.total_amount = 100.23
+    line = db.get(M.RunCostLine, part["line"].id)
+    line.unit_price = 0.10023
+    db.flush()
+    res = jlc_apply.refresh_parts_document(db, plan, dry_run=False)
+    assert res["status"] == "refreshed"
+    assert db.get(M.RunCostLine, part["line"].id).unit_price == 0.1
+    added = db.query(M.RunCostLine).filter_by(document_id=doc.id, lot_ref="fee:POBTEST0001").one()
+    assert added.unit_price == 0.23 and doc.total_amount == 100.23

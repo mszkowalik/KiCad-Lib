@@ -100,12 +100,24 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
     outcome: "link_run" | "external",
     runId?: number | null,
   ) {
+    // Why this batch, or why external — the one thing the numbers on the row
+    // cannot say (SMT026092263197 was linked to a 50-piece batch that JLC had
+    // built 60 of). Optional; cancelling the prompt cancels the decision.
+    const note = await dialog.prompt(
+      outcome === "link_run"
+        ? "Note for this link (optional) — e.g. why this batch, or what the counts do not show."
+        : "Note (optional) — which project this order was for.",
+      { title: outcome === "link_run" ? "Link to batch" : "External project",
+        confirmLabel: "Save decision", maxLength: 500 },
+    );
+    if (note === null) return;
     setBusy(o.smt_order_code);
     try {
       await setJlcDecision(o.smt_order_code, {
         outcome,
         run_id: outcome === "link_run" ? runId ?? o.proposed_run_id : null,
         panel_factor: o.panel_factor,
+        note: note.trim(),
       });
       load();
     } catch (err) {

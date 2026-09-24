@@ -120,8 +120,18 @@ def itemise(db: Session, line: M.RunCostLine) -> dict:
                           f"POST /api/jlc/import/orders/{code}/fetch-bom first",
                 "children": []}
     parts = supplier_lines_from_bom(bom)
-    total = round(sum(p["amount"] for p in parts), 4)
     printed = round(run_actuals.effective_qty(line, None, db) * (line.unit_price or 0), 4)
+    over = round(sum(p["amount"] for p in parts) - printed, 4)
+    if 0 < over < 0.01:
+        # JLC bills the lump rounded to the cent while each part keeps
+        # `unitPrice * shopStock` to four decimals: SMT026090162303's parts sum
+        # to 2097.2801 against 2097.28 billed. A signed share closes it, because
+        # the split refuses children over their parent by any amount.
+        parts.append({"lcsc": "", "mpn": "", "designator": "", "source": "rounding",
+                      "qty_supplied": 1.0, "unit_price": -over, "amount": -over,
+                      "qty_from_pool": 0.0, "qty_total": 0.0, "loss": 0.0,
+                      "supplier_mismatch": False, "price_checks": True})
+    total = round(sum(p["amount"] for p in parts), 4)
     return {
         "ok": bool(parts),
         "smt_order_code": code,

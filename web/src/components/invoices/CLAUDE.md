@@ -100,7 +100,15 @@ copy of that one. Reasoning in
   re-applies when a different document is opened.
 - **It still goes through `split`**, which carries the stock guard and the
   children-may-not-exceed-the-parent rule. One write path, whichever button
-  starts it.
+  starts it. The supplier breakdown adds a negative "rounding" share when the
+  parts sum a fraction of a cent over JLC's billed lump.
+- **`SplitLineDialog` edits existing shares IN PLACE and never overshoots.**
+  Each row keeps its child's `id`; the save sends the whole set, so an edited
+  row is updated, a new one created and a removed one voided. Every CALCULATED
+  amount (percentage, "Split evenly", "Balance last row") is rounded DOWN to 4
+  decimals, and percentages that reach 100 % put the remainder on the last
+  percentage row. The API refuses any overshoot, so "over by …" offers "Balance
+  last row" instead of a save that fails.
 - **A part share is a QUANTITY at a price, never a percentage.** Coverage counts
   pieces, and `amount` alone sets qty to 1 and loses them. `SplitLineDialog`
   shows Qty and Unit instead of Amount and % on a part line, and hides "Split

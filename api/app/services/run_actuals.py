@@ -366,10 +366,8 @@ def document_json(doc: M.RunCostDocument, with_lines: bool = True,
         for li in live if li.id in kids
     )
     # Children totalling MORE than the header they split. `split_line` refuses
-    # over-allocation beyond half a cent, so what survives is sub-cent — but the
-    # leaves carry it and the clamped residual does not, which is why the
-    # register's own identity could never read zero (decision 0048): four JLCPCB
-    # documents overshoot by 0.0001-0.0002 each.
+    # any over-allocation since 2026-09-24 (it allowed half a cent before), so
+    # this should read zero; it is reported rather than lost if it does not.
     overallocated = sum(
         max(kids[li.id] - effective_qty(li, doc, db) * (li.unit_price or 0), 0.0)
         for li in live if li.id in kids

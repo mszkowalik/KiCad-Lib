@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-09-24 (a split balances exactly, and JLC's payment fee is its own line)
+
+**Correction: a split could claim a fraction of a cent more than its
+position.** The API allowed children up to $0.005 over the parent, and the
+invoice register counted any excess as over-allocated money ($0.0005 across
+five JLC documents). It now refuses any overshoot.
+
+- **Invoices → Split** rounds every calculated share DOWN to 4 decimals:
+  percentages, "Split evenly" and "Balance last row". When the percentages
+  reach 100 %, the last percentage row takes the remainder, so the split
+  balances exactly. "Over by …" now offers "Balance last row".
+- **Re-splitting a position edits its existing shares in place.** Before, it
+  voided them all and created new ones, which lost the importer's references
+  and plan links. A removed row is still voided.
+- **The supplier-parts breakdown** adds a negative "rounding" share when JLC's
+  parts sum a fraction of a cent over the billed lump.
+- **Data:** four JLC positions stored as quantity × a unit price rounded to 6
+  decimals now carry the unit price at full precision. One supplier-parts
+  lump got a −$0.0001 rounding share.
+
+**Production → JLC: linking an order or marking it external asks for an
+optional note.** Cancelling the note cancels the decision.
+
+**JLC's "other fee" is booked on its own line.** On an order paid by card
+surcharge (POB0202502102244558, $0.50), the importer takes the fee out of the
+lots and books it as "Payment fee", step `other:payment_fee`, excluded as
+`payment_fee`. The lots now carry exactly the invoice's goods prices. That
+order was refreshed.
+
 ## 2026-09-24 (a JLC parts lot costs what JLC settled)
 
 **Correction: JLC parts were costed at the advance, not at what JLC finally
