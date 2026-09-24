@@ -17,7 +17,7 @@ from ..db import get_db
 from ..models import utcnow
 from ..services import (cost_steps, journal, nbp, run_actuals, storage,
                         substitutions, supplier_parts)
-from .util import audit, part_display_name
+from .util import acting_name, audit, part_display_name
 
 router = APIRouter(prefix="/api", tags=["run-costs"])
 
@@ -360,6 +360,7 @@ def add_substitution(run_id: int, body: SubstitutionIn, actor: str = "user",
     which is the whole point of holding the two apart
     ([0038](../../../docs/decisions/0038-a-substitution-belongs-to-the-batch.md)).
     """
+    actor = acting_name(actor)
     run = _run(db, run_id)
     if not body.designator.strip():
         raise HTTPException(422, "name the position: designator")
@@ -411,6 +412,7 @@ def update_substitution(sub_id: int, design_updated: bool | None = None,
     that the schematic now says what the factory fitted, so it is the one flag
     worth setting deliberately.
     """
+    actor = acting_name(actor)
     row = db.get(M.RunSubstitution, sub_id)
     if row is None:
         raise HTTPException(404, "substitution not found")
@@ -429,6 +431,7 @@ def update_substitution(sub_id: int, design_updated: bool | None = None,
 
 @router.delete("/substitutions/{sub_id}")
 def delete_substitution(sub_id: int, actor: str = "user", db: Session = Depends(get_db)):
+    actor = acting_name(actor)
     row = db.get(M.RunSubstitution, sub_id)
     if row is None:
         raise HTTPException(404, "substitution not found")
@@ -1576,6 +1579,7 @@ def add_adjustment(project_id: int, body: AdjustmentIn, db: Session = Depends(ge
     if body.charge_run_id is not None:
         _run(db, body.charge_run_id)
     a = M.ComponentStockAdjustment(project_id=project_id, **body.model_dump())
+    a.actor = acting_name(body.actor)
     # PIN the unit cost when the loss is charged to a batch (decision 0044).
     # NULL means "price it from the pool", and `run_actuals` resolved that
     # against the average as it stands ON EVERY READ — so a write-off kept being

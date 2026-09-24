@@ -36,7 +36,7 @@ const KINDS: { key: ChangeKind; label: string }[] = [
 
 /** Absolute date plus a relative hint — "when" is usually the first question
  *  and "3 hours ago" answers it faster than a timestamp. */
-function when(iso: string): string {
+export function when(iso: string): string {
   const then = new Date(iso);
   const mins = Math.round((Date.now() - then.getTime()) / 60000);
   if (mins < 1) return "just now";

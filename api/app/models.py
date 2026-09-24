@@ -1289,6 +1289,18 @@ class AuditLog(Base):
     entity_type: Mapped[str] = mapped_column(String(50))
     entity_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # The signed-in person whose request wrote this row, and that request.
+    # Filled by `services/tracking.py` from the request context, never by a
+    # call site — so an `actor` that names a robot ("jaravis", "review") still
+    # says which person set it going. NULL for background jobs. The same module
+    # writes two more kinds of row here: `request` (one per write call) and
+    # `row.insert|update|delete` (one per ORM row changed). Decision 0050.
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    request_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    __table_args__ = (Index("ix_audit_log_user_ts", "user_id", "ts"),
+                      Index("ix_audit_log_request", "request_id"),
+                      Index("ix_audit_log_action", "action"))
 
 
 class WriteBatch(Base):
@@ -1323,11 +1335,18 @@ class WriteBatch(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reversed_by_batch_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    # The signed-in person and the request that ran the batch, from the request
+    # context (decision 0050). `request_id` joins the batch to its `audit_log`
+    # rows, which is how Admin → Activity and the Write log point at each other.
+    # `actor` is that person's name too — never a name the client sent.
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    request_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     rows: Mapped[list["WriteBatchRow"]] = relationship(
         back_populates="batch", cascade="all, delete-orphan")
 
-    __table_args__ = (Index("ix_write_batch_kind", "kind", "created_at"),)
+    __table_args__ = (Index("ix_write_batch_kind", "kind", "created_at"),
+                      Index("ix_write_batch_request", "request_id"))
 
 
 class WriteBatchRow(Base):

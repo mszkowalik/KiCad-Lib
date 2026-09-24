@@ -4109,15 +4109,16 @@ ul.tight li { margin: 2px 0; }
    column is widest because it carries a refusal message naming the rows that
    block the reversal — truncating that would hide the only actionable part. */
 .write-log-table { table-layout: fixed; }
-.write-log-table th:nth-child(1), .write-log-table td:nth-child(1) { width: 6%; }
-.write-log-table th:nth-child(2), .write-log-table td:nth-child(2) { width: 18%; }
-.write-log-table th:nth-child(3), .write-log-table td:nth-child(3) { width: 20%; }
-.write-log-table th:nth-child(4), .write-log-table td:nth-child(4) { width: 16%; }
-.write-log-table th:nth-child(5), .write-log-table td:nth-child(5) { width: 14%; }
-.write-log-table th:nth-child(6), .write-log-table td:nth-child(6) { width: 26%; }
+.write-log-table th:nth-child(1), .write-log-table td:nth-child(1) { width: 5%; }
+.write-log-table th:nth-child(2), .write-log-table td:nth-child(2) { width: 15%; }
+.write-log-table th:nth-child(3), .write-log-table td:nth-child(3) { width: 13%; }
+.write-log-table th:nth-child(4), .write-log-table td:nth-child(4) { width: 17%; }
+.write-log-table th:nth-child(5), .write-log-table td:nth-child(5) { width: 15%; }
+.write-log-table th:nth-child(6), .write-log-table td:nth-child(6) { width: 13%; }
+.write-log-table th:nth-child(7), .write-log-table td:nth-child(7) { width: 22%; }
 /* The refusal text is the exception the table rule allows: it must be readable
    in full, so this one cell opts out of the single-line clamp. */
-.write-log-table td:nth-child(6) .muted.dim { white-space: normal; overflow: visible; }
+.write-log-table td:nth-child(7) .muted.dim { white-space: normal; overflow: visible; }
 
 /* Stock adjustments: stock moving with no invoice behind it. */
 .stock-adj-table { table-layout: fixed; }

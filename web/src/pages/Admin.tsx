@@ -17,13 +17,14 @@ import { useAuth } from "../auth";
 import SettingsCard from "../components/SettingsCard";
 import UsersCard from "../components/UsersCard";
 import MqttCard from "../components/MqttCard";
+import ActivityCard from "../components/ActivityCard";
 import DataTable, { type Column } from "../components/DataTable";
 import { useDialog } from "../components/Dialog";
 import { ErrorBanner, Spinner } from "../components/Ui";
 
 const POLL_MS = 2000;
 
-type Tab = "config" | "users" | "datasheets" | "rates" | "fleet" | "system";
+type Tab = "config" | "users" | "activity" | "datasheets" | "rates" | "fleet" | "system";
 
 /** The tabs, in the order they are drawn. `admin` marks the ones the API
  *  refuses to a non-admin anyway — hiding them keeps the page from offering a
@@ -40,6 +41,12 @@ const TABS: { id: Tab; label: string; admin?: true; blurb: string }[] = [
     label: "Users",
     admin: true,
     blurb: "Accounts, roles and password resets. There is no sign-up.",
+  },
+  {
+    id: "activity",
+    label: "Activity",
+    admin: true,
+    blurb: "Who changed what: every write call, and every row it changed.",
   },
   {
     id: "datasheets",
@@ -75,9 +82,9 @@ const TABS: { id: Tab; label: string; admin?: true; blurb: string }[] = [
  * the URL (`?tab=users`), the same rule every other tabbed page here follows,
  * so a link can point at one panel.
  *
- * Three tabs are ADMIN ONLY and the API says so first — `routers/settings.py`,
- * `routers/users.py` and `routers/mqtt.py` all sit behind `require_admin`
- * (decision 0045). `admin: true` here only stops the page offering a panel
+ * Four tabs are ADMIN ONLY and the API says so first — `routers/settings.py`,
+ * `routers/users.py`, `routers/activity.py` and `routers/mqtt.py` all sit
+ * behind `require_admin` (decisions 0045, 0050). `admin: true` here only stops the page offering a panel
  * that would answer 403. Never gate a panel here alone: the gate is the API's,
  * and a hidden tab is a courtesy, not a control.
  */
@@ -124,6 +131,7 @@ export default function Admin() {
 
         {tab === "config" ? <SettingsCard /> : null}
         {tab === "users" ? <UsersCard /> : null}
+        {tab === "activity" ? <ActivityCard /> : null}
         {tab === "datasheets" ? <DatasheetCard /> : null}
         {tab === "rates" ? <FxCard /> : null}
         {tab === "fleet" ? <MqttCard /> : null}

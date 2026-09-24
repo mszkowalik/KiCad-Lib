@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..db import get_db
 from ..services import jlc_apply, journal
-from .util import audit
+from .util import acting_name, audit
 
 router = APIRouter(prefix="/api/ledger", tags=["ledger"])
 
@@ -45,6 +45,7 @@ def reverse_batch(batch_id: int, dry_run: bool = True, actor: str = "user",
                   db: Session = Depends(get_db)):
     """Undo one batch. `dry_run=true` (the default) reports what it would do and
     every reason it might refuse, without touching anything."""
+    actor = acting_name(actor)
     try:
         res = journal.reverse(db, batch_id, actor=actor, dry_run=dry_run)
     except LookupError as e:

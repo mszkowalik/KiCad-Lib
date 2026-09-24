@@ -8,8 +8,10 @@ from sqlalchemy import text
 from .authgate import AuthGate
 from .config import settings
 from .db import Base, engine
+from .services import tracking
 from .routers import (
     account,
+    activity,
     agent,
     auth as auth_router,
     categories,
@@ -48,6 +50,9 @@ from .routers import (
 log = logging.getLogger(__name__)
 
 settings.ensure_dirs()
+
+# Who-did-it hooks on every session and on the audit log (decision 0050).
+tracking.install()
 
 app = FastAPI(title="Project Management Platform", version="0.1.0")
 
@@ -113,6 +118,7 @@ app.include_router(run_costs.router)
 app.include_router(flasher.router)
 app.include_router(mqtt.router)
 app.include_router(orders.router)
+app.include_router(activity.router)
 
 # Published-state file mirror, served read-only (sync + downloads).
 app.mount("/files", StaticFiles(directory=settings.mirror_dir), name="files")
@@ -635,6 +641,24 @@ _PHASE1_DDL = (
     # shipment's content is the `shipped` events pointing at it.
     ("shipment_lines drop",
      "DROP TABLE IF EXISTS shipment_lines"),
+    # Decision 0050: every audit row names the signed-in person and the request
+    # behind it, and the log also carries `request` and `row.*` rows.
+    ("audit_log.user_id",
+     "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS user_id integer"),
+    ("audit_log.request_id",
+     "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS request_id varchar(32)"),
+    ("ix_audit_log_user_ts",
+     "CREATE INDEX IF NOT EXISTS ix_audit_log_user_ts ON audit_log (user_id, ts)"),
+    ("ix_audit_log_request",
+     "CREATE INDEX IF NOT EXISTS ix_audit_log_request ON audit_log (request_id)"),
+    ("ix_audit_log_action",
+     "CREATE INDEX IF NOT EXISTS ix_audit_log_action ON audit_log (action)"),
+    ("write_batches.user_id",
+     "ALTER TABLE write_batches ADD COLUMN IF NOT EXISTS user_id integer"),
+    ("write_batches.request_id",
+     "ALTER TABLE write_batches ADD COLUMN IF NOT EXISTS request_id varchar(32)"),
+    ("ix_write_batch_request",
+     "CREATE INDEX IF NOT EXISTS ix_write_batch_request ON write_batches (request_id)"),
     # LAST. Everything above reads `kind`; nothing below may.
     #
     # The index on it goes first and by name: `create_all` cannot drop an index

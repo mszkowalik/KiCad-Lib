@@ -39,6 +39,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as M
 from ..models import utcnow
+from . import tracking
 
 log = logging.getLogger("uvicorn.error")
 
@@ -177,6 +178,10 @@ def batch(db: Session, kind: str, source_ref: str = "", actor: str = "",
 
     `identity_before` may be passed in when the caller already took a snapshot,
     to avoid computing the register twice.
+
+    **`actor` is only a fallback.** Inside a request the batch records the
+    signed-in person, their `user_id` and the `request_id` (decision 0050). The
+    argument is used only where nobody is signed in — dev, or a script.
     """
     if db.info.get("wb_rows") is not None:
         raise RuntimeError("a write batch is already open on this session")
@@ -196,8 +201,12 @@ def batch(db: Session, kind: str, source_ref: str = "", actor: str = "",
     if not buf:
         return
 
+    ctx = tracking.current()
     wb = M.WriteBatch(
-        kind=kind, source_ref=source_ref[:200], actor=actor[:100],
+        kind=kind, source_ref=source_ref[:200],
+        actor=(ctx.name if ctx is not None and ctx.name else actor or "user")[:100],
+        user_id=ctx.user_id if ctx is not None else None,
+        request_id=ctx.request_id if ctx is not None else None,
         summary=summary or {}, identity_before=before,
         identity_after=jlc_apply.identity_snapshot(db))
     db.add(wb)
@@ -229,7 +238,8 @@ def _model_for(table_name: str):
 def batch_json(wb: M.WriteBatch, db: Session | None = None, rows: bool = False) -> dict:
     out = {
         "id": wb.id, "kind": wb.kind, "source_ref": wb.source_ref,
-        "actor": wb.actor, "summary": wb.summary or {},
+        "actor": wb.actor, "user_id": wb.user_id, "request_id": wb.request_id,
+        "summary": wb.summary or {},
         "identity_before": wb.identity_before, "identity_after": wb.identity_after,
         "created_at": wb.created_at.isoformat() if wb.created_at else None,
         "reversed_at": wb.reversed_at.isoformat() if wb.reversed_at else None,

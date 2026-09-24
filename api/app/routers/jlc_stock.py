@@ -9,7 +9,7 @@ from .. import models as M
 from ..config import settings
 from ..db import get_db
 from ..services import fx, jlc, jlc_ledger, jlc_web, journal
-from .util import audit
+from .util import acting_name, audit
 
 router = APIRouter(prefix="/api/jlc", tags=["jlc-stock"])
 
@@ -164,6 +164,7 @@ def book_ledger_rows(change_key_ids: str = "", dry_run: bool = True,
     every bookable row. The caller chooses — nothing here decides on its own
     that stock should move.
     """
+    actor = acting_name(actor)
     ids = [int(x) for x in change_key_ids.replace(" ", "").split(",") if x]
     if dry_run:
         # `book` writes nothing on a dry run — it prices and checks, then

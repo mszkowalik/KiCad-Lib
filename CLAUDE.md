@@ -147,7 +147,8 @@ personal API token. Full rules in `api/CLAUDE.md` (backend) and `web/CLAUDE.md`
 - **There are two roles, and the admin one is for the DEPLOYMENT and the
   SHARED data, not the work.** Admin-only: the Configuration tab
   (`/api/settings`), Users, the fleet broker, the field solver's stackups and
-  rule sets, editing an exchange rate, and the archive-wide datasheet jobs.
+  rule sets, editing an exchange rate, the archive-wide datasheet jobs, and
+  the activity log (`/api/activity`, who changed what — decision 0050).
   Everything else — the library, reviews, production, orders, invoices,
   projects, the flasher, the agent — is open to any signed-in user on purpose.
   Reading is gated far less than writing: the rates table and the datasheet

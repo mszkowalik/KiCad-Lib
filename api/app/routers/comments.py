@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as M
 from ..db import get_db
-from .util import audit
+from .util import acting_name, audit
 
 router = APIRouter(prefix="/api", tags=["comments"])
 
@@ -64,7 +64,7 @@ def _add(db: Session, target_type: str, target_id: int, body: CommentIn) -> dict
     c = M.Comment(
         target_type=target_type,
         target_id=target_id,
-        author=body.author.strip() or "user",
+        author=acting_name(body.author),
         body=text,
     )
     db.add(c)

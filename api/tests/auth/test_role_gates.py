@@ -74,6 +74,9 @@ EXPECTED = {
     ("DELETE", "/api/fieldsolver/stackups/{sid}"),
     ("POST", "/api/fieldsolver/rules"),
     ("DELETE", "/api/fieldsolver/rules/{rid}"),
+    # Who did what, across every user's work — decision 0050.
+    ("GET", "/api/activity"),
+    ("GET", "/api/activity/requests/{request_id}"),
 }
 
 

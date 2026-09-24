@@ -1,5 +1,50 @@
 # Changelog
 
+## 2026-09-24 (every change names the person who made it)
+
+**Each write through the API or the UI now records the signed-in person.**
+Before this, 73 of 147 audit call sites wrote `actor: "user"`, and about 25
+endpoints stored a name that the client sent. Mateusz Kowalik, 2026-09-24.
+Decision [0050](docs/decisions/0050-every-change-names-the-person-who-made-it.md).
+
+- The audit log stays the only log. It has two new columns, `user_id` and
+  `request_id`, and two new kinds of row:
+  - `request`: one for each POST, PUT, PATCH and DELETE, with the method,
+    path, status, duration, IP and user agent. It does not store the body or a
+    `t=` token.
+  - `row.insert`, `row.update`, `row.delete`: one for each database row that a
+    request changes, with the old and new values. Passwords, token hashes and
+    encrypted secrets are redacted. A value longer than 1000 characters is
+    stored as its length and SHA-256.
+- An actor of `"user"` is now the person's display name. A robot actor such
+  as `jaravis` stays, and `user_id` shows who started it.
+- A name in the body or the query (`author`, `actor`, `created_by`,
+  `approved_by`, `updated_by`, `uploaded_by`, `?actor=`) is ignored when a
+  person is signed in. The platform stores the signed-in person.
+- The Jaravis chat now records the person who sent the message on the
+  agent's writes.
+- New tab **Admin → Activity** (admin only). It lists requests and events,
+  newest first, with a filter for who and one for what. Unfolding a row shows
+  everything its request wrote. A chip adds the row changes to the list.
+- The agent's `get_audit_log` leaves the `request` and `row.*` rows out,
+  unless it is called with `include_tracking`.
+- **Production → Write log** has a new **by** column. A batch now records the
+  signed-in person, and ignores the `?actor=` the caller sent. Before this, a
+  batch said whatever the caller typed: `user`, `claude`, `claude-local`,
+  `reconciliation`. Those old values stay.
+- A write batch and its request link to each other. Unfolding a request in
+  Admin → Activity names its batch and links to the Write log. Unfolding a
+  batch shows an admin a link to everything its request wrote.
+- Rows written before this change still say `"user"`. Nothing can recover who
+  wrote them.
+
+**Correction: Italtronic invoice FV CEE 300452.** Document 864 was the order
+confirmation OV CEE 263969, entered as a proforma for 1651.00 EUR. The invoice
+arrived on 2026-09-21. The document is now invoice FV CEE 300452, dated
+2026-09-21, for 1738.00 EUR: 500 enclosures at 3.302 EUR, plus 87.00 EUR
+transport on `logistics:inbound`. The NBP rate was fetched again for the new
+date. Both PDFs stay attached.
+
 ## 2026-09-23 (the broker password file, from the Devices page)
 
 **Production → Devices has a "Mosquitto passwords" button.** It downloads

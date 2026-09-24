@@ -4433,7 +4433,11 @@ export interface WriteBatch {
   id: number;
   kind: string;
   source_ref: string;
+  /** The signed-in person who ran it (decision 0050); older batches may say "user". */
   actor: string;
+  user_id: number | null;
+  /** Joins the batch to its rows in Admin → Activity. Null before 2026-09-24. */
+  request_id: string | null;
   summary: Record<string, unknown>;
   identity_before: Record<string, number | boolean> | null;
   identity_after: Record<string, number | boolean> | null;
@@ -8103,4 +8107,73 @@ export function linkDevicesToRun(runId: number, deviceIds: number[]): Promise<{ 
     headers: JSON_HEADERS,
     body: JSON.stringify({ device_ids: deviceIds }),
   });
+}
+
+// ------------------------------------------------------------------ activity
+// Admin → Activity: the whole audit log, including the rows the tracker writes
+// for every write call (`request`) and every database row it changed (`row.*`).
+// Decision 0050; `api/app/routers/activity.py`.
+
+export type ActivityKind = "request" | "event" | "row";
+
+export interface ActivityRow {
+  id: number;
+  ts: string;
+  kind: ActivityKind;
+  actor: string;
+  user_id: number | null;
+  username: string;
+  user_display: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  request_id: string | null;
+  /** Free-form. A `request` row: method, path, query, status, duration_ms, ip,
+   *  user_agent, auth_via. A `row.update`: column -> [old, new]. A
+   *  `row.insert`/`row.delete`: column -> value. An event: whatever it wrote. */
+  details: unknown;
+  /** Only on a `request` row: what that request wrote besides itself. */
+  counts?: { rows: number; events: number };
+}
+
+export interface ActivityPage {
+  rows: ActivityRow[];
+  next_before_id: number | null;
+}
+
+export function listActivity(
+  opts: {
+    kinds: ActivityKind[];
+    who?: string;
+    q?: string;
+    requestId?: string;
+    beforeId?: number | null;
+    limit?: number;
+  },
+  signal?: AbortSignal,
+): Promise<ActivityPage> {
+  const params = new URLSearchParams();
+  params.set("kind", opts.kinds.join(","));
+  if (opts.who) params.set("who", opts.who);
+  if (opts.q) params.set("q", opts.q);
+  if (opts.requestId) params.set("request_id", opts.requestId);
+  if (opts.beforeId) params.set("before_id", String(opts.beforeId));
+  if (opts.limit) params.set("limit", String(opts.limit));
+  return request(`/api/activity?${params.toString()}`, { signal });
+}
+
+/** The undoable batch a request ran, as Production → Write log lists it. */
+export interface ActivityWriteBatch {
+  id: number;
+  kind: string;
+  source_ref: string;
+  reversed_at: string | null;
+  reversed_by_batch_id: number | null;
+}
+
+export function getActivityRequest(
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<{ rows: ActivityRow[]; write_batches: ActivityWriteBatch[] }> {
+  return request(`/api/activity/requests/${encodeURIComponent(requestId)}`, { signal });
 }

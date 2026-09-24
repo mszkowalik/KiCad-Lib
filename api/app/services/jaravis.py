@@ -27,7 +27,7 @@ from .. import models as M
 from ..config import settings
 from ..db import SessionLocal
 from ..routers.util import category_path, current_version, props_dict, resolved_value
-from ..services import memory
+from ..services import memory, tracking
 from ..services.fieldsolver import rules as fs_rules
 from ..services.generator import PRICE_KEY_TO_COL
 from ..services.lcsc import fetch_metadata
@@ -675,25 +675,33 @@ def get_price_history(component: str, limit: int = 12) -> str:
 
 
 @beta_tool
-def get_audit_log(limit: int = 30, entity_type: str = "", actor: str = "") -> str:
+def get_audit_log(limit: int = 30, entity_type: str = "", actor: str = "",
+                  include_tracking: bool = False) -> str:
     """Recent platform audit log entries, newest first: who did what when
     (imports, proposals, approvals, edits...).
 
     Args:
         limit: Max entries (default 30, cap 100).
         entity_type: Optional filter (e.g. "component_version", "symbol_version", "skill_version").
-        actor: Optional filter (e.g. "user", "jaravis", "import").
+        actor: Optional filter (e.g. a person's name, "jaravis", "import").
+        include_tracking: Also return the tracker's rows — `request` (one per
+            write call) and `row.insert|update|delete` (one per database row
+            changed, entity_type = the table). Off by default: one save writes
+            a dozen of them.
     """
     db = SessionLocal()
     try:
         q = db.query(M.AuditLog).order_by(M.AuditLog.ts.desc())
+        if not include_tracking:
+            q = q.filter(M.AuditLog.action != tracking.REQUEST_ACTION,
+                         ~M.AuditLog.action.startswith(tracking.ROW_ACTION_PREFIX))
         if entity_type.strip():
             q = q.filter(M.AuditLog.entity_type == entity_type.strip())
         if actor.strip():
             q = q.filter(M.AuditLog.actor == actor.strip())
         rows = q.limit(max(1, min(limit, 100))).all()
         return json.dumps([
-            {"ts": r.ts.isoformat(), "actor": r.actor, "action": r.action,
+            {"ts": r.ts.isoformat(), "actor": r.actor, "user_id": r.user_id, "action": r.action,
              "entity_type": r.entity_type, "entity_id": r.entity_id, "details": r.details}
             for r in rows
         ])
@@ -2538,7 +2546,7 @@ Read / browse (use these to answer questions directly):
   dimensions). Call without pages first to learn the page count, then request specific
   pages.
 - get_price_history(component) — the append-only price timeline runs are priced from
-- get_audit_log(limit, entity_type, actor) — who changed what, when
+- get_audit_log(limit, entity_type, actor, include_tracking) — who changed what, when
 - list_models3d(query) — stored 3D model files
 - get_skill(name) — read the current text of one of your skill documents
 - list_signoffs(state) — production sign-off state of every component. A sign-off means
@@ -2830,7 +2838,11 @@ def start_session_run(session_id: int, content: str) -> bool:
         if existing is not None and not existing.done:
             return False
         _RUNS[session_id] = _Run(session_id)
-    threading.Thread(target=_run_worker, args=(session_id, content),
+    # The turn runs in the context of the request that started it, so every
+    # write the agent makes is attributed to the person who sent the message
+    # (decision 0050). A bare Thread starts with an EMPTY context.
+    ctx = contextvars.copy_context()
+    threading.Thread(target=ctx.run, args=(_run_worker, session_id, content),
                      name=f"jaravis-run-{session_id}", daemon=True).start()
     return True
 

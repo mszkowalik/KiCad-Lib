@@ -398,7 +398,7 @@ renders INSTEAD of the router.
   not a gate. So the rule runs one way only: never hide a control here without
   the matching `require_admin` on the route, and when you add one, add its
   line to `api/tests/auth/test_role_gates.py`. Gated in the UI today: the
-  Admin page's Configuration, Users and Fleet broker tabs; the Refresh and
+  Admin page's Configuration, Users, Activity and Fleet broker tabs; the Refresh and
   Override controls on Exchange rates and the two job buttons on Datasheets,
   whose tabs stay VISIBLE and read-only; and the field solver's stackup and
   rule-set Edit buttons. **Prefer dropping the control to hiding the panel** —

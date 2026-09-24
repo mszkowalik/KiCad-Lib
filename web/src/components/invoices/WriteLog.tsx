@@ -8,6 +8,8 @@ import {
   type WriteBatch,
   type WriteBatchRow,
 } from "../../api";
+import { Link } from "react-router-dom";
+import { useAuth } from "../../auth";
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner } from "../Ui";
 
@@ -26,6 +28,8 @@ import { ErrorBanner, Spinner } from "../Ui";
  */
 export default function WriteLog({ onReversed }: { onReversed?: () => void } = {}) {
   const dialog = useDialog();
+  // Admin → Activity is admin-only, so only an admin is offered the link to it.
+  const { isAdmin } = useAuth();
   const [batches, setBatches] = useState<WriteBatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -131,6 +135,7 @@ export default function WriteLog({ onReversed }: { onReversed?: () => void } = {
                 <th>what</th>
                 <th>source</th>
                 <th>when</th>
+                <th>by</th>
                 <th>rows</th>
                 <th>undo</th>
               </tr>
@@ -157,6 +162,7 @@ export default function WriteLog({ onReversed }: { onReversed?: () => void } = {
                     <td className="muted dim">
                       {b.created_at ? new Date(b.created_at).toLocaleString() : "—"}
                     </td>
+                    <td title={b.actor}>{b.actor || "—"}</td>
                     <td>
                       {b.row_count} <span className="muted dim">({ops})</span>
                     </td>
@@ -194,7 +200,18 @@ export default function WriteLog({ onReversed }: { onReversed?: () => void } = {
                   </tr>
                   {open === b.id && (
                     <tr>
-                      <td colSpan={6} className="ledger-cell">
+                      <td colSpan={7} className="ledger-cell">
+                        {isAdmin && b.request_id ? (
+                          <p className="muted">
+                            <Link
+                              className="comp-link"
+                              to={`/admin?tab=activity&request=${b.request_id}`}
+                            >
+                              Everything this request wrote →
+                            </Link>{" "}
+                            the request, its events and every row it changed, in Admin → Activity.
+                          </p>
+                        ) : null}
                         {detail[b.id] == null ? (
                           <Spinner label="loading batch rows" />
                         ) : typeof detail[b.id] === "string" ? (

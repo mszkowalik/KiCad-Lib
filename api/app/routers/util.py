@@ -140,6 +140,23 @@ def actor_of(request) -> str:
     return (getattr(u, "display_name", "") or getattr(u, "username", "") or "user").strip() or "user"
 
 
+def acting_name(claimed: str | None = "") -> str:
+    """The name to store in a who-column (`author`, `created_by`, `decided_by`…).
+
+    The SIGNED-IN person, always, when there is one — a name the client sends
+    in the body is a claim, and anyone could type somebody else's (decision
+    0050). The claim is used only when nobody is signed in, which is the dev
+    posture with `auth_enabled` off. Reads the request context that
+    `authgate` binds, so it needs no `Request` parameter.
+    """
+    from ..services import tracking
+
+    ctx = tracking.current()
+    if ctx is not None and ctx.name:
+        return ctx.name[:100]
+    return (claimed or "").strip()[:100] or "user"
+
+
 def part_display_name(db: Session, component_id: int | None = None,
                       lcsc: str = "", mpn: str = "") -> tuple[str, bool]:
     """What to CALL a part on screen.

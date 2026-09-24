@@ -57,6 +57,7 @@ new parallel implementations are the main thing to avoid.
 | Properties as a dict | `routers/util.py` → `props_dict(cv)` |
 | Resolve a `{Template}` value | `routers/util.py` → `resolved_value(value, props)` (wraps `services/templates.py`) |
 | Write an audit row | `routers/util.py` → `audit(db, action, entity_type, entity_id, details=…, actor=…)` |
+| Store WHO did something (`author`, `created_by`, `decided_by`…) | `routers/util.py` → `acting_name(claimed)` — never a name from the body or query. Rules: [change-tracking.md](../docs/reference/change-tracking.md) |
 | What to CALL a part on screen | `routers/util.py` → `part_display_name(db, component_id, lcsc, mpn)` → `(name, in_library)` |
 | DB session in a route | `Depends(get_db)` from `db.py` |
 | Price key → column map | `services/generator.py` → `PRICE_KEY_TO_COL` |
@@ -183,7 +184,8 @@ the other. The rules (decision
 - **Admin-only is the deployment, other people's credentials, and the SHARED
   reference data — not the work.** `/api/settings`, `/api/users`,
   `/api/mqtt`, the field solver's stackups and rule sets, the exchange-rate
-  writes, and the archive-wide datasheet jobs. The review axis, production,
+  writes, the archive-wide datasheet jobs, and `/api/activity` (every user's
+  changes at once — decision 0050). The review axis, production,
   orders, invoices, projects, the flasher, the agent and the library itself
   are open to any signed-in user on purpose. Do not gate a route because it
   writes something important; gate it because it reconfigures the deployment,
@@ -246,6 +248,10 @@ the published port restricts direct LAN access, but `cloudflared` reaches
   credential it can carry — and a token in a URL lands in the nginx and
   Cloudflare access logs, which is why the list is three entries and not a
   global fallback.
+- **The gate also binds WHO is calling, for every request.** Audit rows,
+  who-columns and the `request` / `row.*` log rows read it from a `ContextVar`, so a
+  thread a route starts itself must copy the context or its writes name
+  nobody. See [change-tracking.md](../docs/reference/change-tracking.md).
 - **An open path still resolves identity.** `/api/auth/me` must be reachable
   signed out AND report who you are when signed in. The gate therefore refuses
   only non-open paths, rather than skipping resolution for open ones — the first

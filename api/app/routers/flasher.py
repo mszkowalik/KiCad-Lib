@@ -43,7 +43,7 @@ from ..services.flasher import (bundle, checks as checks_svc, credentials,
                                 params as params_svc, transports, validate)
 from ..services.flasher import engine as engine_mod
 from ..services.flasher.engine import (SERIAL_MAX, SERIAL_MIN, RunEngine)
-from .util import actor_of, audit
+from .util import acting_name, actor_of, audit
 
 router = APIRouter(prefix="/api/flasher", tags=["flasher"])
 
@@ -156,6 +156,7 @@ async def upload_firmware(
     uploaded_by: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    uploaded_by = acting_name(uploaded_by)
     if kind not in FIRMWARE_KINDS:
         raise HTTPException(400, f"kind must be one of {FIRMWARE_KINDS}")
     data = await file.read()
@@ -411,6 +412,7 @@ async def import_file_set(
     one that already exists, whatever the folder was called. This is the ONE
     way content enters the platform; there is no paste editor and no draft.
     """
+    created_by = acting_name(created_by)
     uploads = await _read_uploads(db, files)
     if not uploads:
         raise HTTPException(400, "no files in the upload")
@@ -458,6 +460,7 @@ async def derive_file_set(
     version and the hand-picked bundle: "release-1.3.11 with one driver fixed"
     is one call and one new row, and the base stays exactly as it was.
     """
+    created_by = acting_name(created_by)
     base = _set_or_404(db, set_id)
     try:
         drop = set(json.loads(remove or "[]"))
@@ -751,7 +754,7 @@ def compose_version(deployment_id: int, body: ComposeIn, db: Session = Depends(g
     version = M.DeploymentVersion(
         deployment_id=d.id,
         version_no=max((v.version_no for v in d.versions), default=0) + 1,
-        status="draft", created_by=body.created_by, comment=body.comment,
+        status="draft", created_by=acting_name(body.created_by), comment=body.comment,
         transport_profile=transport,
         monitor_baud=inherit("monitor_baud", base.monitor_baud if base else 115200,
                              body.monitor_baud),
@@ -796,7 +799,7 @@ def compose_version(deployment_id: int, body: ComposeIn, db: Session = Depends(g
     bundle.stamp(db, version)
     db.commit()
     audit(db, "flasher.version_compose", "deployment_version", version.id,
-          details=f"{d.name} v{version.version_no} (draft)", actor=body.created_by)
+          details=f"{d.name} v{version.version_no} (draft)", actor=acting_name(body.created_by))
     return {**bundle.version_json(db, version),
             "validation": validate.check(db, version)}
 
@@ -971,12 +974,12 @@ def publish_deployment_version(version_id: int, body: PublishIn, db: Session = D
     # refused by name instead of failing at the bench (decision 0024).
     v.param_schema = params_svc.build_schema(db, v)
     v.status = "published"
-    v.approved_by = body.approved_by or None
+    v.approved_by = acting_name(body.approved_by)
     d = db.get(M.Deployment, v.deployment_id)
     d.current_version_id = v.id
     db.commit()
     audit(db, "flasher.version_publish", "deployment_version", v.id,
-          details=f"{d.name} v{v.version_no}: {v.comment}", actor=body.approved_by)
+          details=f"{d.name} v{v.version_no}: {v.comment}", actor=v.approved_by)
     return bundle.version_json(db, v)
 
 
@@ -1065,12 +1068,12 @@ def set_channel(deployment_id: int, name: str, body: ChannelIn, db: Session = De
         ch = M.DeploymentChannel(deployment_id=d.id, name=name)
         db.add(ch)
     ch.deployment_version_id = body.deployment_version_id
-    ch.updated_by = body.updated_by
+    ch.updated_by = acting_name(body.updated_by)
     ch.updated_at = datetime.now(timezone.utc)
     db.commit()
     audit(db, "flasher.channel_set", "deployment", d.id,
           details=f"{d.name}: channel {name} -> version id {body.deployment_version_id}",
-          actor=body.updated_by)
+          actor=ch.updated_by)
     return {"ok": True}
 
 
@@ -1148,11 +1151,11 @@ def put_param_set(project_id: int, name: str, body: ParamSetIn, db: Session = De
             "breaking": broken,
         })
     rev = params_svc.record_revision(
-        db, ps, old, new_values, body.updated_by,
+        db, ps, old, new_values, acting_name(body.updated_by),
         note=(body.note + (" [forced]" if broken and body.force else "")).strip(),
     )
     ps.values_enc = crypto.encrypt_token(json.dumps(new_values))
-    ps.updated_by = body.updated_by
+    ps.updated_by = acting_name(body.updated_by)
     ps.updated_at = datetime.now(timezone.utc)
     db.commit()
     audit(db, "flasher.param_set_write", "param_set", ps.id,
@@ -1210,11 +1213,11 @@ def revert_param_set(param_set_id: int, body: ParamRevertIn, db: Session = Depen
             old = {}
     note = body.note.strip() or f"reverted to r{rev.revision_no}"
     new_rev = params_svc.record_revision(
-        db, ps, old, values, body.updated_by,
+        db, ps, old, values, acting_name(body.updated_by),
         note=note + (" [forced]" if broken and body.force else ""),
     )
     ps.values_enc = crypto.encrypt_token(json.dumps(values))
-    ps.updated_by = body.updated_by
+    ps.updated_by = acting_name(body.updated_by)
     ps.updated_at = datetime.now(timezone.utc)
     db.commit()
     audit(db, "flasher.param_set_revert", "param_set", ps.id,

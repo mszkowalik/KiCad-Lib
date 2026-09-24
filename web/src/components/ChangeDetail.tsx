@@ -22,7 +22,7 @@ import { ErrorBanner, Spinner } from "./Ui";
  *  components as a property table, drawings as before/after renders plus the
  *  pin or pad rows behind them, skills as a text diff. */
 
-function KeyValueDiff({ rows }: { rows: { key: string; before?: string; after?: string }[] }) {
+export function KeyValueDiff({ rows }: { rows: { key: string; before?: string; after?: string }[] }) {
   return (
     <table className="data data-fixed">
       <colgroup>

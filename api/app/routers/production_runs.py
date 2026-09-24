@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..db import get_db
 from ..services import orders, production, project_bom, run_actuals, storage
-from .util import audit
+from .util import acting_name, audit
 
 router = APIRouter(prefix="/api", tags=["production-runs"])
 
@@ -443,7 +443,7 @@ def close_run(run_id: int, body: ClosePatch | None = None, db: Session = Depends
         })
     cost_usd, units = run_actuals.close_snapshot(db, r)
     r.closed_at = M.utcnow()
-    r.closed_by = (body.actor or "").strip()
+    r.closed_by = acting_name(body.actor)
     r.closed_cost_usd = cost_usd
     r.closed_units = units
     audit(db, "run.close", "production_run", r.id,
@@ -469,7 +469,7 @@ def reopen_run(run_id: int, body: ClosePatch | None = None, db: Session = Depend
     audit(db, "run.reopen", "production_run", r.id,
           {"was_closed_at": r.closed_at.isoformat(), "was_closed_by": r.closed_by or "",
            "was_cost_usd": r.closed_cost_usd, "was_units": r.closed_units,
-           "actor": (body.actor or "").strip(), "reason": (body.reason or "").strip()})
+           "actor": acting_name(body.actor), "reason": (body.reason or "").strip()})
     r.closed_at = None
     r.closed_by = ""
     r.closed_cost_usd = None

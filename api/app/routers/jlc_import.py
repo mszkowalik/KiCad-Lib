@@ -21,7 +21,7 @@ from .. import models as M
 from ..db import get_db
 from ..models import utcnow
 from ..services import jlc_apply, jlc_import, jlc_web, journal, run_actuals
-from .util import audit
+from .util import acting_name, audit
 
 router = APIRouter(prefix="/api/jlc/import", tags=["jlc-import"])
 
@@ -151,10 +151,10 @@ def set_decision(smt_order_code: str, body: DecisionIn, db: Session = Depends(ge
     row.run_id = body.run_id if body.outcome == "link_run" else None
     row.panel_factor = body.panel_factor
     row.note = body.note[:500]
-    row.decided_by = body.actor[:100]
+    row.decided_by = acting_name(body.actor)
     audit(db, "jlc.import.decision", "jlc_order_decision", smt_order_code,
           details={"outcome": body.outcome, "run_id": body.run_id,
-                   "panel_factor": body.panel_factor}, actor=body.actor)
+                   "panel_factor": body.panel_factor}, actor=row.decided_by)
     db.commit()
 
     # Report the run's fill so an over-assignment is visible immediately. Not an
@@ -254,6 +254,7 @@ def apply_document(external_id: str, dry_run: bool = True, actor: str = "user",
     their run instead of at nobody; and it runs inside a `journal.batch`, so it
     can be undone from the UI.
     """
+    actor = acting_name(actor)
     row = _staged(db, external_id)
     from ..services.jlc_invoice import parse
     inv = parse(row.payload)
@@ -380,6 +381,7 @@ def apply_parts(pob: str, dry_run: bool = True, actor: str = "user",
     a lot's quantity and price come from the ORDER page, never the invoice — the
     invoice understates by JLC's sourcing fee ($1,623.23 across the account).
     """
+    actor = acting_name(actor)
     plan = _parts_plan(db, pob)
     if dry_run:
         return {"dry_run": True, "plan": {k: v for k, v in plan.items() if k != "lines"},
@@ -409,6 +411,7 @@ def refresh_parts(pob: str, dry_run: bool = True, actor: str = "user",
     retyping a number. Dry run by default, journalled, and it refuses rather
     than guesses whenever the two sides cannot be matched lot for lot.
     """
+    actor = acting_name(actor)
     plan = _parts_plan(db, pob)
     # Always planned dry first: a refusal must not open a journal batch, because
     # the refusal path rolls back and would take the batch header with it.
@@ -502,6 +505,7 @@ def void_shop_draws(smt_order_code: str, dry_run: bool = True, actor: str = "use
     "never purchased" — treating it as the latter is what deleted the real KARTON
     packaging draws during the backfill.
     """
+    actor = acting_name(actor)
     dec = db.query(M.JlcOrderDecision).filter_by(smt_order_code=smt_order_code).first()
     if dec is None or dec.outcome != "link_run" or not dec.run_id:
         raise HTTPException(409, "only an order linked to a run can have draws to void")
@@ -646,6 +650,7 @@ def migrate_external_adjustments(dry_run: bool = True, actor: str = "user",
     Refuses unless every adjustment reproduces from its order plan. An adjustment
     this cannot re-derive is not one to rewrite; it is one to look at.
     """
+    actor = acting_name(actor)
     rows = [a for a in db.query(M.ComponentStockAdjustment)
             .filter(M.ComponentStockAdjustment.reason == "external_project").all()
             if (a.import_ref or "").startswith("jlc:ext:")]
@@ -724,6 +729,7 @@ def apply_decision(smt_order_code: str, dry_run: bool = True, actor: str = "user
     One transaction, one reversible batch, and `applied_at` stamped — which is what
     makes `DELETE /decision/{code}`'s refusal real rather than dead code.
     """
+    actor = acting_name(actor)
     dec = (db.query(M.JlcOrderDecision)
              .filter_by(smt_order_code=smt_order_code).first())
     if dec is None or dec.outcome == "pending":
@@ -820,6 +826,7 @@ def backfill_fees(external_id: str = "", dry_run: bool = True, actor: str = "use
     line's destination, so no money changes owner — only its step grain. Lines
     with hand-made children are skipped and reported, never merged.
     """
+    actor = acting_name(actor)
     q = db.query(M.JlcImport).filter_by(kind="assembly")
     if external_id:
         q = q.filter_by(external_id=external_id)
