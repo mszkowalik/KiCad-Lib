@@ -4653,6 +4653,20 @@ ul.tight li { margin: 2px 0; }
    plan a stock count prints before it writes. Same rule, never a second one. */
 .ship-line, .count-plan { border-top: 1px solid var(--line); padding-top: 0.5rem; margin-top: 0.5rem; }
 .serial-cloud { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.4rem; }
+/* The packing station (pages/ShipmentDetail.tsx): SCANNED | arrows | IN THIS
+   SHIPMENT. One column on a narrow screen, arrows in a row between the lists. */
+.ship-pack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin-top: 10px;
+}
+.ship-pack-arrows { display: flex; flex-direction: column; gap: 8px; padding-top: 44px; }
+@media (max-width: 900px) {
+  .ship-pack { grid-template-columns: minmax(0, 1fr); }
+  .ship-pack-arrows { flex-direction: row; padding-top: 0; }
+}
 .device-history-table { table-layout: fixed; }
 .device-history-table th:nth-child(1), .device-history-table td:nth-child(1) { width: 16%; }
 .device-history-table th:nth-child(2), .device-history-table td:nth-child(2) { width: 14%; }

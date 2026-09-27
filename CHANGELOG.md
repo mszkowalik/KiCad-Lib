@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-09-27 (a shipment is packed before it is sent)
+
+**New: Production → Shipments.** Open a shipment for one order, scan devices
+into it while you pack the carton, and mark it as sent when the box closes.
+Decision [0053](docs/decisions/0053-a-shipment-is-packed-before-it-is-sent.md).
+
+- **The packing page has two lists.** *Scanned* takes each code from the scan
+  field (a Zebra's code + CR LF adds one row) and checks it in the background.
+  A code that is unknown, faulty, a prototype, not in stock or already in a box
+  shows the reason. → puts the selected ready devices into *In this shipment*,
+  and ← takes devices out again, back to stock.
+- **A packed device is reserved.** It leaves "available" stock and no other
+  shipment can take it, including the order page's Ship card. Its history shows
+  "packed into shipment #N", and "taken out of shipment #N" if it came out.
+- **Mark as sent** records every packed device as shipped on the date you
+  give, and the order's figures move then, not before. **Cancel shipment**
+  returns every packed device to stock and keeps the shipment, marked
+  cancelled.
+- **The order page has a Pack… button** that opens a shipment for that order.
+  Its shipment list shows open and cancelled shipments with their status.
+- The scanned list is kept in this browser per shipment, so a reload does not
+  lose it. Another PC does not see it until the devices are packed.
+
 ## 2026-09-24 (a split balances exactly, and JLC's payment fee is its own line)
 
 **Correction: a split could claim a fraction of a cent more than its

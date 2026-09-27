@@ -31,6 +31,8 @@ import OrderDetail from "./pages/OrderDetail";
 import ProductionJlc from "./pages/ProductionJlc";
 import ProductionOverview from "./pages/ProductionOverview";
 import ProductionWrites from "./pages/ProductionWrites";
+import ShipmentDetail from "./pages/ShipmentDetail";
+import Shipments from "./pages/Shipments";
 import ProjectDetail from "./pages/ProjectDetail";
 import Projects from "./pages/Projects";
 import Reviews from "./pages/Reviews";
@@ -95,6 +97,7 @@ const REVIEW_LINKS = [
 const PRODUCTION_LINKS = [
   { to: "/production", label: "Overview", end: true },
   { to: "/production/orders", label: "Orders" },
+  { to: "/production/shipments", label: "Shipments" },
   { to: "/production/runs", label: "Batches" },
   { to: "/production/invoices", label: "Invoices" },
   { to: "/production/stock", label: "Stock" },
@@ -211,6 +214,8 @@ function Shell() {
             <Route path="/production" element={<ProductionOverview />} />
             <Route path="/production/orders" element={<Orders />} />
             <Route path="/production/orders/:id" element={<OrderDetail />} />
+            <Route path="/production/shipments" element={<Shipments />} />
+            <Route path="/production/shipments/:id" element={<ShipmentDetail />} />
             <Route path="/production/runs" element={<Runs />} />
             <Route path="/production/invoices" element={<Invoices />} />
             <Route path="/production/stock" element={<Stock />} />

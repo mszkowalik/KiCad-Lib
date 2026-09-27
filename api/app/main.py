@@ -659,6 +659,10 @@ _PHASE1_DDL = (
      "ALTER TABLE write_batches ADD COLUMN IF NOT EXISTS request_id varchar(32)"),
     ("ix_write_batch_request",
      "CREATE INDEX IF NOT EXISTS ix_write_batch_request ON write_batches (request_id)"),
+    # Decision 0053: a shipment can be OPEN (a box being packed) before it is
+    # sent. Every existing row was a delivery that had left, hence 'sent'.
+    ("shipments.status",
+     "ALTER TABLE shipments ADD COLUMN IF NOT EXISTS status varchar(12) NOT NULL DEFAULT 'sent'"),
     # LAST. Everything above reads `kind`; nothing below may.
     #
     # The index on it goes first and by name: `create_all` cannot drop an index

@@ -281,3 +281,16 @@ and the copy was worse.
   quantity against the shelf and the planned batches. Both surfaces share
   the one component so the figure has one rendering.
 
+- **Shipments are packed on Production → Shipments** (`pages/Shipments.tsx`,
+  `pages/ShipmentDetail.tsx`, decision
+  [0053](../../../docs/decisions/0053-a-shipment-is-packed-before-it-is-sent.md)).
+  Three traps:
+  - **A single scan is taken as typed; only a PASTED list goes through
+    `parseScanSheet`.** That parser drops every token with `:` or `-`, so a
+    scanned `PROTO-0045` vanished with no message until the two paths split.
+  - **The scanned list is `localStorage`, not `useStickyState`.** The hook is
+    `sessionStorage` and forbids drafts, and a half-scanned carton must survive
+    a reload. Check results are never stored; they are asked again on load.
+  - **On an OPEN shipment, `devices` and `qty` are the PACKED devices**, not
+    shipped ones. Gate "Take back" on `status === "sent"`, and offer Cancel,
+    not Delete, once `deletable` is false.

@@ -38,7 +38,11 @@ function describe(ev: DeviceEventRow): string {
     case "produced":
       return `passed programming in ${ev.production_run ?? `batch #${ev.production_run_id}`}`;
     case "allocated":
-      return `reserved for ${ev.customer ?? "an order"}${ev.order_ref ? ` · ${ev.order_ref}` : ""}`;
+      return ev.shipment_id
+        ? `packed into shipment #${ev.shipment_id} for ${ev.customer ?? "an order"}${ev.order_ref ? ` · ${ev.order_ref}` : ""}`
+        : `reserved for ${ev.customer ?? "an order"}${ev.order_ref ? ` · ${ev.order_ref}` : ""}`;
+    case "unallocated":
+      return `taken out of shipment #${ev.shipment_id ?? "?"}${ev.note ? ` · ${ev.note}` : ""} — back in stock`;
     case "shipped":
       return (
         `shipped to ${ev.customer ?? "an order"}${ev.order_ref ? ` · ${ev.order_ref}` : ""}` +

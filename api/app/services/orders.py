@@ -30,6 +30,7 @@ from . import fx, run_actuals
 STATE_AFTER = {
     "produced": "in_stock",
     "allocated": "allocated",
+    "unallocated": "in_stock",
     "shipped": "shipped",
     "unshipped": "in_stock",
     "returned": "returned",
@@ -483,7 +484,7 @@ def create_shipment(db: Session, order: M.SalesOrder, *, kind: str = "delivery",
             raise HTTPException(422, f"order line {spec.get('order_line_id')} is not on this order")
         replaces = spec.get("replaces_device_id")
         device_ids = [int(x) for x in (spec.get("device_ids") or [])]
-        picked: list[tuple[M.DeviceUnit, bool]] = []
+        picked: list[M.DeviceUnit] = []
         for did in device_ids:
             d = db.get(M.DeviceUnit, did)
             if d is None:
@@ -492,28 +493,18 @@ def create_shipment(db: Session, order: M.SalesOrder, *, kind: str = "delivery",
                 raise HTTPException(422, f"device {d.serial or did} belongs to another project")
             if d.state not in ("in_stock", "allocated"):
                 raise HTTPException(409, f"device {d.serial or did} is {d.state or 'unrecorded'}, not in stock")
-            # A unit that is HERE but not sellable is still in stock — that is
-            # the point of `condition`. Only `ok` may leave on a shipment.
-            if (d.condition or "ok") != "ok":
-                raise HTTPException(409, {
-                    "error": f"device {d.serial or did} is {d.condition}, which cannot be shipped",
-                    "device_id": d.id, "serial": d.serial, "condition": d.condition,
-                    "hint": "repair it and set its condition to ok, or ship a different device"})
-            picked.append((d, False))
+            # A device packed in another OPEN shipment is in that box. Shipping
+            # it here would leave the other box listing a device that left.
+            box = packed_in(d)
+            if box is not None:
+                raise HTTPException(409, f"device {d.serial or did} is packed in open shipment {box}")
+            _refuse_unsellable(d)
+            picked.append(d)
         if replaces is not None and len(picked) != 1:
             raise HTTPException(422, "a replacement shipment names exactly one device")
-        for d, auto in picked:
-            rep = int(replaces) if replaces is not None else None
-            # Re-shipped after repair: its own replacement, counted once. A
-            # delivery an `unshipped` event REVERSED is not a previous
-            # delivery, so `live_shipped_of` and not `d.events` — otherwise a
-            # device the stock count put back on the shelf ships again as a
-            # replacement and never counts (decision 0027).
-            if rep is None and any(e.order_line_id == li.id for e in live_shipped_of(d)):
-                rep = d.id
-            record_event(db, d, "shipped", at=at, actor=actor, auto=auto, order_line_id=li.id,
-                         shipment_id=sh.id, replaces_device_id=rep,
-                         note=(spec.get("note") or ""))
+        for d in picked:
+            _ship_device(db, sh, li, d, at=at, actor=actor, note=(spec.get("note") or ""),
+                         replaces=int(replaces) if replaces is not None else None)
             moved += 1
     # A SHIPMENT NAMES ITS DEVICES. There is no automatic pick and no quantity
     # field to fall back on: a quantity with no serials behind it is a guess, and
@@ -528,6 +519,222 @@ def create_shipment(db: Session, order: M.SalesOrder, *, kind: str = "delivery",
     db.flush()
     refresh_order_status(order)
     return sh
+
+
+def _refuse_unsellable(d: M.DeviceUnit) -> None:
+    """A unit that is HERE but not sellable is still in stock — that is the
+    point of `condition`. Only `ok` may leave on a shipment."""
+    if (d.condition or "ok") != "ok":
+        raise HTTPException(409, {
+            "error": f"device {d.serial or d.id} is {d.condition}, which cannot be shipped",
+            "device_id": d.id, "serial": d.serial, "condition": d.condition,
+            "hint": "repair it and set its condition to ok, or ship a different device"})
+
+
+def _ship_device(db: Session, sh: M.Shipment, li: M.SalesOrderLine, d: M.DeviceUnit, *,
+                 at: datetime, actor: str, note: str = "", replaces: int | None = None) -> None:
+    # Re-shipped after repair: its own replacement, counted once. A delivery an
+    # `unshipped` event REVERSED is not a previous delivery, so
+    # `live_shipped_of` and not `d.events` — otherwise a device the stock count
+    # put back on the shelf ships again as a replacement and never counts
+    # (decision 0027).
+    if replaces is None and any(e.order_line_id == li.id for e in live_shipped_of(d)):
+        replaces = d.id
+    record_event(db, d, "shipped", at=at, actor=actor, order_line_id=li.id,
+                 shipment_id=sh.id, replaces_device_id=replaces, note=note)
+
+
+# ------------------------------------------------------ open shipments (0053)
+#
+# A shipment can be OPENED before anything leaves: a box being packed. A device
+# put in it gets an `allocated` event naming the shipment and its order line,
+# and taking it out again writes `unallocated` — both stay in the device's
+# history (user decision 2026-09-27). Sending the box writes the `shipped`
+# events, exactly as `create_shipment` does, and from then on it is an ordinary
+# delivery. Nothing is shipped, and no order figure moves, until it is sent.
+
+SHIPMENT_STATUSES = ("open", "sent", "cancelled")
+
+
+def packed_in(d: M.DeviceUnit) -> int | None:
+    """The OPEN shipment this device is packed in, or None. The newest event is
+    the state, so a device is in a box exactly while its newest event is the
+    `allocated` that put it there."""
+    ev = d.events[-1] if d.events else None
+    if ev is not None and ev.kind == "allocated" and ev.shipment_id is not None:
+        return ev.shipment_id
+    return None
+
+
+def packed_devices(db: Session, sh: M.Shipment) -> list[tuple[M.DeviceEvent, M.DeviceUnit]]:
+    """What an open box holds now, in the order it was packed."""
+    ids = [r[0] for r in db.query(M.DeviceEvent.device_id)
+           .filter(M.DeviceEvent.shipment_id == sh.id, M.DeviceEvent.kind == "allocated").distinct()]
+    out = []
+    for d in db.query(M.DeviceUnit).filter(M.DeviceUnit.id.in_(ids)).all() if ids else []:
+        if d.state == "allocated" and packed_in(d) == sh.id:
+            out.append((d.events[-1], d))
+    out.sort(key=lambda p: (p[0].at, p[0].id))
+    return out
+
+
+def _require_open(sh: M.Shipment) -> None:
+    if (sh.status or "sent") != "open":
+        raise HTTPException(409, f"shipment {sh.id} is {sh.status}, not open")
+    if sh.order.cancelled:
+        raise HTTPException(409, "the order is cancelled")
+
+
+def open_shipment(db: Session, order: M.SalesOrder, *, delivery_note: str = "", tracking: str = "",
+                  notes: str = "") -> M.Shipment:
+    if order.cancelled:
+        raise HTTPException(409, "the order is cancelled")
+    sh = M.Shipment(order_id=order.id, kind="delivery", status="open", shipped_at="",
+                    delivery_note=delivery_note or "", tracking=tracking or "", notes=notes or "")
+    db.add(sh)
+    db.flush()
+    return sh
+
+
+def find_device(db: Session, code: str) -> M.DeviceUnit | None:
+    """A scanned code to a device: the serial as printed, then the same with
+    the case and the MAC separators normalised away."""
+    code = (code or "").strip()
+    if not code:
+        return None
+    d = db.query(M.DeviceUnit).filter(M.DeviceUnit.serial == code).first()
+    if d is None:
+        norm = code.upper().replace(":", "").replace("-", "")
+        if norm != code:
+            d = db.query(M.DeviceUnit).filter(M.DeviceUnit.serial == norm).first()
+    return d
+
+
+def _line_for(order: M.SalesOrder, d: M.DeviceUnit, order_line_id: int | None) -> M.SalesOrderLine:
+    """The order line a device goes out on: the one named, or the only line of
+    the device's product. Two lines of one product must be told apart."""
+    if order_line_id:
+        li = next((li for li in order.lines if li.id == order_line_id), None)
+        if li is None:
+            raise HTTPException(422, f"order line {order_line_id} is not on this order")
+        if li.project_id != d.project_id:
+            raise HTTPException(422, f"device {d.serial or d.id} is not the product on order line {li.id}")
+        return li
+    cands = [li for li in order.lines if li.project_id == d.project_id]
+    if not cands:
+        raise HTTPException(422, f"device {d.serial or d.id} is a product this order does not carry")
+    if len(cands) > 1:
+        raise HTTPException(422, f"this order has {len(cands)} lines for that product; name the line")
+    return cands[0]
+
+
+def _assess(d: M.DeviceUnit, sh: M.Shipment, order_line_id: int | None) -> tuple[M.SalesOrderLine | None, str]:
+    """(the line it would go out on, why it may not) — an empty reason means
+    it may go into this box. One answer for the scan check and the pack."""
+    try:
+        li = _line_for(sh.order, d, order_line_id)
+        _refuse_unsellable(d)
+    except HTTPException as e:
+        det = e.detail
+        return None, (det.get("error", str(det)) if isinstance(det, dict) else str(det))
+    box = packed_in(d)
+    if box == sh.id:
+        return li, "already in this shipment"
+    if box is not None:
+        return li, f"packed in open shipment {box}"
+    if d.state != "in_stock":
+        return li, f"{d.state or 'unrecorded'}, not in stock"
+    return li, ""
+
+
+def check_device(db: Session, sh: M.Shipment, code: str, order_line_id: int | None = None) -> dict:
+    """Whether a scanned code may go into this box, without writing anything."""
+    out = {"code": code, "ok": False, "device_id": None, "serial": None, "project": None,
+           "run_id": None, "order_line_id": None, "reason": ""}
+    d = find_device(db, code)
+    if d is None:
+        out["reason"] = "no device carries this serial"
+        return out
+    project = db.get(M.Project, d.project_id)
+    li, reason = _assess(d, sh, order_line_id)
+    out.update(device_id=d.id, serial=d.serial, run_id=d.production_run_id,
+               project=project.name if project else None,
+               order_line_id=li.id if li else None, ok=not reason, reason=reason)
+    return out
+
+
+def pack_devices(db: Session, sh: M.Shipment, device_ids: list[int], *,
+                 order_line_id: int | None = None, actor: str = "") -> int:
+    """Put devices in an open box. All or nothing: the first device that may
+    not go is refused by name and nothing is written."""
+    _require_open(sh)
+    plan = []
+    for did in dict.fromkeys(device_ids):
+        d = db.get(M.DeviceUnit, did)
+        if d is None:
+            raise HTTPException(404, f"no device {did}")
+        li, reason = _assess(d, sh, order_line_id)
+        if reason:
+            raise HTTPException(409, {"error": f"device {d.serial or d.id}: {reason}", "device_id": d.id,
+                                      "serial": d.serial, "reason": reason})
+        plan.append((d, li))
+    for d, li in plan:
+        record_event(db, d, "allocated", actor=actor, order_line_id=li.id, shipment_id=sh.id)
+    db.flush()
+    return len(plan)
+
+
+def unpack_devices(db: Session, sh: M.Shipment, device_ids: list[int], *, actor: str = "") -> int:
+    """Take devices out of an open box; they are back in stock."""
+    _require_open(sh)
+    held = {d.id: (ev, d) for ev, d in packed_devices(db, sh)}
+    wanted = list(dict.fromkeys(device_ids))
+    missing = [did for did in wanted if did not in held]
+    if missing:
+        raise HTTPException(409, {"error": f"{len(missing)} of those devices are not in this shipment",
+                                  "device_ids": missing})
+    for did in wanted:
+        ev, d = held[did]
+        record_event(db, d, "unallocated", actor=actor, order_line_id=ev.order_line_id, shipment_id=sh.id)
+    db.flush()
+    return len(wanted)
+
+
+def send_shipment(db: Session, sh: M.Shipment, *, shipped_at: str = "", delivery_note: str | None = None,
+                  tracking: str | None = None, actor: str = "") -> M.Shipment:
+    """Close the box: every device in it is `shipped` on the line it was
+    packed for, and the order's figures move."""
+    _require_open(sh)
+    packed = packed_devices(db, sh)
+    if not packed:
+        raise HTTPException(422, {"error": "the shipment holds no device — pack the devices that leave first"})
+    if delivery_note is not None:
+        sh.delivery_note = delivery_note
+    if tracking is not None:
+        sh.tracking = tracking
+    sh.shipped_at = (shipped_at or utcnow().date().isoformat())[:10]
+    at = _date_at(sh.shipped_at)
+    lines = {li.id: li for li in sh.order.lines}
+    for ev, d in packed:
+        _refuse_unsellable(d)
+        _ship_device(db, sh, lines[ev.order_line_id], d, at=at, actor=actor)
+    sh.status = "sent"
+    db.flush()
+    refresh_order_status(sh.order)
+    return sh
+
+
+def cancel_shipment(db: Session, sh: M.Shipment, *, actor: str = "") -> int:
+    """Give up on an open box: its devices go back to stock and the header
+    stays, marked cancelled, because their history names it."""
+    _require_open(sh)
+    packed = packed_devices(db, sh)
+    for ev, d in packed:
+        record_event(db, d, "unallocated", actor=actor, order_line_id=ev.order_line_id, shipment_id=sh.id,
+                     note="shipment cancelled")
+    sh.status = "cancelled"
+    db.flush()
+    return len(packed)
 
 
 def reverse_shipment(db: Session, sh: M.Shipment, *, actor: str = "", note: str = "",
@@ -878,11 +1085,37 @@ def shipment_json(db: Session, sh: M.Shipment) -> dict:
     # or not. The row says so itself rather than letting the button promise
     # something the API answers 409 to.
     reversed_n = sum(1 for ev, _ in evs if ev.kind == "unshipped")
-    return {"id": sh.id, "order_id": sh.order_id, "kind": sh.kind, "shipped_at": sh.shipped_at,
+    status = sh.status or "sent"
+    # An OPEN box carries its packed devices, and they are what `qty` counts —
+    # nothing has shipped from it yet, so no order figure includes them.
+    packed = []
+    if status == "open":
+        packed = [{"device_id": d.id, "serial": d.serial, "mac": d.mac or "", "state": d.state,
+                   "order_line_id": ev.order_line_id, "auto": False, "replaces_device_id": None,
+                   "run_id": d.production_run_id, "packed_at": ev.at.isoformat() if ev.at else None}
+                  for ev, d in packed_devices(db, sh)]
+        for dv in packed:
+            per_line[dv["order_line_id"]] += 1
+    # `delete_shipment` refuses while ANY event names the shipment — a packed
+    # and unpacked device included — so this asks the same question.
+    any_event = db.query(M.DeviceEvent.id).filter(M.DeviceEvent.shipment_id == sh.id).first() is not None
+    return {"id": sh.id, "order_id": sh.order_id, "kind": sh.kind, "status": status,
+            "shipped_at": sh.shipped_at,
             "delivery_note": sh.delivery_note, "tracking": sh.tracking, "notes": sh.notes,
+            "created_at": sh.created_at.isoformat() if sh.created_at else None,
             "qty": sum(per_line.values()), "per_line": dict(per_line),
-            "devices": devices,
-            "reversed": reversed_n, "deletable": not evs}
+            "devices": packed if status == "open" else devices,
+            "reversed": reversed_n, "deletable": not any_event}
+
+
+def shipment_list_json(db: Session, sh: M.Shipment, projects: dict[int, str]) -> dict:
+    """One row of the Shipments page: the header, its order, and a count."""
+    base = shipment_json(db, sh)
+    base.pop("devices")
+    o = sh.order
+    base.update(order_ref=o.order_ref, customer=o.customer.name, order_status=o.status,
+                products=sorted({projects.get(li.project_id, "?") for li in o.lines}))
+    return base
 
 
 def device_history_json(db: Session, device: M.DeviceUnit) -> dict:

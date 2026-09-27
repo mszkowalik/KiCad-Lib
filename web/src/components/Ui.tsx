@@ -83,6 +83,9 @@ const STATUS_TONES: Record<string, string> = {
   // did not fail.
   pass: "ok",
   fail: "err",
+  // A shipment's own words (decision 0053). `open` stays neutral: an order
+  // uses the same word and has always been drawn neutral.
+  sent: "ok",
   aborted: "warn",
   draft: "warn",
   pending: "warn",

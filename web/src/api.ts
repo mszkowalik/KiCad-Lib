@@ -7728,12 +7728,20 @@ export interface ShipmentDeviceRow {
   auto: boolean;
   replaces_device_id: number | null;
   run_id: number | null;
+  /** when it went into an OPEN box */
+  packed_at?: string | null;
 }
+
+export type ShipmentStatus = "open" | "sent" | "cancelled";
 
 export interface ShipmentRow {
   id: number;
   order_id: number;
   kind: "delivery" | "return";
+  /** `open` is a box being packed: its devices are `allocated` and nothing has
+   *  shipped. `sent` is a delivery. Decision 0053. */
+  status: ShipmentStatus;
+  created_at: string | null;
   shipped_at: string;
   delivery_note: string;
   tracking: string;
@@ -7896,7 +7904,7 @@ export interface FinishedStock {
 
 export interface DeviceEventRow {
   id: number;
-  kind: "produced" | "allocated" | "shipped" | "unshipped" | "returned" | "repaired" | "disposed";
+  kind: "produced" | "allocated" | "unallocated" | "shipped" | "unshipped" | "returned" | "repaired" | "disposed";
   at: string | null;
   actor: string;
   note: string;
@@ -8040,6 +8048,95 @@ export function createShipment(orderId: number, body: ShipmentIn): Promise<Order
 
 export function deleteShipment(shipmentId: number): Promise<OrderRow> {
   return request(`/api/shipments/${shipmentId}`, { method: "DELETE" });
+}
+
+// ---- open shipments: a box packed device by device, then sent (decision 0053)
+
+export interface ShipmentListRow extends Omit<ShipmentRow, "devices"> {
+  order_ref: string;
+  customer: string;
+  order_status: string;
+  products: string[];
+}
+
+export interface ShipmentDetail extends ShipmentRow {
+  order: OrderRow;
+}
+
+/** One scanned code, judged against an open box. Writes nothing. */
+export interface ShipmentCheck {
+  code: string;
+  ok: boolean;
+  device_id: number | null;
+  serial: string | null;
+  project: string | null;
+  run_id: number | null;
+  order_line_id: number | null;
+  reason: string;
+}
+
+export function listShipments(status?: ShipmentStatus, signal?: AbortSignal): Promise<ShipmentListRow[]> {
+  const q = status ? `?status=${status}` : "";
+  return request(`/api/shipments${q}`, { signal });
+}
+
+export function openShipment(body: {
+  order_id: number;
+  delivery_note?: string;
+  tracking?: string;
+  notes?: string;
+}): Promise<ShipmentDetail> {
+  return request(`/api/shipments`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) });
+}
+
+export function getShipment(id: number, signal?: AbortSignal): Promise<ShipmentDetail> {
+  return request(`/api/shipments/${id}`, { signal });
+}
+
+export function patchShipment(
+  id: number,
+  body: { delivery_note?: string; tracking?: string; notes?: string },
+): Promise<ShipmentDetail> {
+  return request(`/api/shipments/${id}`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(body) });
+}
+
+export function checkShipmentCodes(
+  id: number,
+  codes: string[],
+  orderLineId?: number | null,
+): Promise<ShipmentCheck[]> {
+  return request(`/api/shipments/${id}/check`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ codes, order_line_id: orderLineId ?? null }),
+  });
+}
+
+export function packShipment(id: number, deviceIds: number[], orderLineId?: number | null): Promise<ShipmentDetail> {
+  return request(`/api/shipments/${id}/pack`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ device_ids: deviceIds, order_line_id: orderLineId ?? null }),
+  });
+}
+
+export function unpackShipment(id: number, deviceIds: number[]): Promise<ShipmentDetail> {
+  return request(`/api/shipments/${id}/unpack`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ device_ids: deviceIds }),
+  });
+}
+
+export function sendShipment(
+  id: number,
+  body: { shipped_at?: string; delivery_note?: string; tracking?: string },
+): Promise<ShipmentDetail> {
+  return request(`/api/shipments/${id}/send`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) });
+}
+
+export function cancelShipment(id: number): Promise<ShipmentDetail> {
+  return request(`/api/shipments/${id}/cancel`, { method: "POST" });
 }
 
 /** What reversing a shipment would take back (decision 0028). */

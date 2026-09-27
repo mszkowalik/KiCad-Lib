@@ -3555,6 +3555,11 @@ class Shipment(Base):
     delivery_note: Mapped[str] = mapped_column(String(200), default="")
     tracking: Mapped[str] = mapped_column(String(200), default="")
     notes: Mapped[str] = mapped_column(String(500), default="")
+    # open | sent | cancelled (decision 0053). An OPEN shipment is a box being
+    # packed: its devices carry an `allocated` event naming it and nothing has
+    # left. `sent` writes their `shipped` events. Every shipment recorded before
+    # the status existed was a delivery that had left, hence the default.
+    status: Mapped[str] = mapped_column(String(12), default="sent")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     order: Mapped[SalesOrder] = relationship(back_populates="shipments")
@@ -3567,7 +3572,10 @@ class DeviceEvent(Base):
 
     kind            references                              state after
     produced        production_run_id                       in_stock
-    allocated       order_line_id                           allocated
+    allocated       order_line_id, shipment_id when packed  allocated
+                    into an OPEN shipment (decision 0053)
+    unallocated     order_line_id, shipment_id — taken out  in_stock
+                    of the box before it was sent
     shipped         order_line_id, shipment_id,             shipped
                     replaces_device_id (a replacement),
                     auto (FIFO picked it, nobody typed it)

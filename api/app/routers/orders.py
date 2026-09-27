@@ -487,6 +487,8 @@ def reverse_shipment(shipment_id: int, body: ReverseShipmentIn, request: Request
         raise HTTPException(404, "shipment not found")
     if sh.kind != "delivery":
         raise HTTPException(422, "that shipment is a return, not a delivery")
+    if (sh.status or "sent") != "sent":
+        raise HTTPException(409, f"shipment {sh.id} is {sh.status}; only a sent shipment can be taken back")
     actor = actor_of(request)
     plan = svc.reverse_shipment(db, sh, actor=actor, note=body.note, dry_run=body.dry_run)
     if body.dry_run:
@@ -495,6 +497,170 @@ def reverse_shipment(shipment_id: int, body: ReverseShipmentIn, request: Request
           {"shipment_id": sh.id, "devices": len(plan["devices"]), "note": body.note}, actor=actor)
     db.commit()
     return plan
+
+
+# ------------------------------------------------ open shipments (0053)
+#
+# Production -> Shipments: open a box for one order, pack devices into it as
+# they are scanned, send it. `POST /orders/{id}/shipments` above stays the
+# one-step path for a delivery whose serials are all to hand.
+
+
+def _shipment(db: Session, shipment_id: int) -> M.Shipment:
+    sh = db.get(M.Shipment, shipment_id)
+    if sh is None:
+        raise HTTPException(404, "shipment not found")
+    return sh
+
+
+def _shipment_detail(db: Session, sh: M.Shipment) -> dict:
+    out = svc.shipment_json(db, sh)
+    out["order"] = svc.order_json(db, sh.order)
+    return out
+
+
+class ShipmentOpenIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    order_id: int
+    delivery_note: str = ""
+    tracking: str = ""
+    notes: str = ""
+
+
+class ShipmentPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    delivery_note: str | None = None
+    tracking: str | None = None
+    notes: str | None = None
+
+
+class ShipmentCheckIn(BaseModel):
+    codes: list[str]
+    order_line_id: int | None = None
+
+
+class ShipmentPackIn(BaseModel):
+    """Devices by id — the scan check has already resolved every code, and a
+    pack names exactly the rows the user moved."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_ids: list[int]
+    order_line_id: int | None = None
+
+
+class ShipmentUnpackIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_ids: list[int]
+
+
+class ShipmentSendIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    shipped_at: str = ""
+    delivery_note: str | None = None
+    tracking: str | None = None
+
+
+@router.get("/shipments")
+def list_shipments(status: str = "", db: Session = Depends(get_db)):
+    """Every delivery, newest first; `status` narrows to open, sent or cancelled."""
+    q = db.query(M.Shipment).filter(M.Shipment.kind == "delivery")
+    if status:
+        if status not in svc.SHIPMENT_STATUSES:
+            raise HTTPException(422, f"status must be one of {', '.join(svc.SHIPMENT_STATUSES)}")
+        q = q.filter(M.Shipment.status == status)
+    projects = {p.id: p.name for p in db.query(M.Project).all()}
+    return [svc.shipment_list_json(db, sh, projects)
+            for sh in q.order_by(M.Shipment.created_at.desc(), M.Shipment.id.desc()).all()]
+
+
+@router.post("/shipments")
+def open_shipment(body: ShipmentOpenIn, request: Request, db: Session = Depends(get_db)):
+    o = _order(db, body.order_id)
+    actor = actor_of(request)
+    sh = svc.open_shipment(db, o, delivery_note=body.delivery_note.strip(), tracking=body.tracking.strip(),
+                           notes=body.notes.strip())
+    audit(db, "shipment.open", "sales_order", o.id, {"shipment_id": sh.id}, actor=actor)
+    db.commit()
+    return _shipment_detail(db, sh)
+
+
+@router.get("/shipments/{shipment_id}")
+def get_shipment(shipment_id: int, db: Session = Depends(get_db)):
+    return _shipment_detail(db, _shipment(db, shipment_id))
+
+
+@router.patch("/shipments/{shipment_id}")
+def patch_shipment(shipment_id: int, body: ShipmentPatch, request: Request, db: Session = Depends(get_db)):
+    """Header fields of an OPEN box. A sent delivery is a permanent record
+    (decision 0032 §4) and is not edited."""
+    sh = _shipment(db, shipment_id)
+    if (sh.status or "sent") != "open":
+        raise HTTPException(409, f"shipment {sh.id} is {sh.status}; only an open shipment is edited")
+    changes = {k: v.strip() for k, v in body.model_dump(exclude_none=True).items()}
+    for k, v in changes.items():
+        setattr(sh, k, v)
+    audit(db, "shipment.edit", "sales_order", sh.order_id, {"shipment_id": sh.id, **changes},
+          actor=actor_of(request))
+    db.commit()
+    return _shipment_detail(db, sh)
+
+
+@router.post("/shipments/{shipment_id}/check")
+def check_shipment_codes(shipment_id: int, body: ShipmentCheckIn, db: Session = Depends(get_db)):
+    """Whether each scanned code may go into this box. Writes nothing."""
+    sh = _shipment(db, shipment_id)
+    return [svc.check_device(db, sh, c, body.order_line_id) for c in body.codes]
+
+
+@router.post("/shipments/{shipment_id}/pack")
+def pack_shipment(shipment_id: int, body: ShipmentPackIn, request: Request, db: Session = Depends(get_db)):
+    sh = _shipment(db, shipment_id)
+    actor = actor_of(request)
+    n = svc.pack_devices(db, sh, body.device_ids, order_line_id=body.order_line_id, actor=actor)
+    audit(db, "shipment.pack", "sales_order", sh.order_id, {"shipment_id": sh.id, "devices": n}, actor=actor)
+    db.commit()
+    return _shipment_detail(db, sh)
+
+
+@router.post("/shipments/{shipment_id}/unpack")
+def unpack_shipment(shipment_id: int, body: ShipmentUnpackIn, request: Request, db: Session = Depends(get_db)):
+    sh = _shipment(db, shipment_id)
+    actor = actor_of(request)
+    n = svc.unpack_devices(db, sh, body.device_ids, actor=actor)
+    audit(db, "shipment.unpack", "sales_order", sh.order_id, {"shipment_id": sh.id, "devices": n}, actor=actor)
+    db.commit()
+    return _shipment_detail(db, sh)
+
+
+@router.post("/shipments/{shipment_id}/send")
+def send_shipment(shipment_id: int, body: ShipmentSendIn, request: Request, db: Session = Depends(get_db)):
+    sh = _shipment(db, shipment_id)
+    actor = actor_of(request)
+    svc.send_shipment(db, sh, shipped_at=body.shipped_at.strip(),
+                      delivery_note=body.delivery_note.strip() if body.delivery_note is not None else None,
+                      tracking=body.tracking.strip() if body.tracking is not None else None, actor=actor)
+    audit(db, "order.ship", "sales_order", sh.order_id, {"shipment_id": sh.id}, actor=actor)
+    db.commit()
+    db.expire(sh.order, ["shipments", "lines"])
+    return _shipment_detail(db, sh)
+
+
+@router.post("/shipments/{shipment_id}/cancel")
+def cancel_shipment(shipment_id: int, request: Request, db: Session = Depends(get_db)):
+    """Give up on an open box. Its devices go back to stock; the header stays,
+    because their history names it. An open box nothing was ever packed into
+    can simply be deleted (`DELETE /shipments/{id}`)."""
+    sh = _shipment(db, shipment_id)
+    actor = actor_of(request)
+    n = svc.cancel_shipment(db, sh, actor=actor)
+    audit(db, "shipment.cancel", "sales_order", sh.order_id, {"shipment_id": sh.id, "devices": n}, actor=actor)
+    db.commit()
+    return _shipment_detail(db, sh)
 
 
 # ----------------------------------------------------------------- devices

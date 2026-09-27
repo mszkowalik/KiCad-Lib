@@ -8,11 +8,12 @@
  *  because they are events in a device's history.
  */
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   addOrderInvoice,
   addOrderLine,
   createShipment,
+  openShipment,
   reverseShipment,
   deleteOrderInvoice,
   deleteOrderLine,
@@ -54,6 +55,7 @@ export default function OrderDetail() {
   const [error, setError] = useState<string | null>(null);
   const [shipping, setShipping] = useState(false);
   const dialog = useDialog();
+  const navigate = useNavigate();
 
   const reload = useCallback(() => {
     const ac = new AbortController();
@@ -114,6 +116,22 @@ export default function OrderDetail() {
             onClick={() => setShipping((v) => !v)}
           >
             {shipping ? "Close" : "Ship…"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={order.cancelled}
+            title="Open a shipment for this order and scan devices into it as they are packed"
+            onClick={async () => {
+              try {
+                const sh = await openShipment({ order_id: order.id });
+                navigate(`/production/shipments/${sh.id}`);
+              } catch (err) {
+                setError(errorMessage(err));
+              }
+            }}
+          >
+            Pack…
           </button>
         </div>
         {error ? <ErrorBanner message={error} /> : null}
@@ -696,7 +714,17 @@ function ShipmentRows({
     <>
       <tr onClick={onToggle} className="clickable">
         <td className="mono">{sh.shipped_at || "—"}</td>
-        <td>{sh.kind === "return" ? <span className="pill warn">return</span> : "delivery"}</td>
+        <td>
+          {sh.kind === "return" ? (
+            <span className="pill warn">return</span>
+          ) : sh.status !== "sent" ? (
+            <Link to={`/production/shipments/${sh.id}`} onClick={(e) => e.stopPropagation()} title="Open the packing page">
+              <StatusPill status={sh.status} />
+            </Link>
+          ) : (
+            "delivery"
+          )}
+        </td>
         <td title={content}>
           {content || <span className="muted">nothing</span>}
           {sh.devices.length ? <span className="muted"> · {sh.devices.length} serial{sh.devices.length === 1 ? "" : "s"}</span> : null}
@@ -709,7 +737,7 @@ function ShipmentRows({
               and `delete_shipment` refuses those — so `deletable` decides the
               button, never `devices.length`, which would offer a delete the
               API answers 409 to. */}
-          {sh.kind === "delivery" && sh.devices.length > 0 ? (
+          {sh.kind === "delivery" && sh.status === "sent" && sh.devices.length > 0 ? (
             <button
               type="button"
               className="btn btn-sm"
@@ -721,7 +749,7 @@ function ShipmentRows({
             >
               Take back
             </button>
-          ) : sh.deletable ? (
+          ) : sh.deletable && sh.status !== "open" ? (
             <button
               type="button"
               className="btn btn-sm"
