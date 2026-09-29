@@ -1,5 +1,43 @@
 # Changelog
 
+## 2026-09-29 (a supplier register, and a supplier order that picks the price)
+
+Decision [0055](docs/decisions/0055-a-component-links-to-suppliers-in-a-register.md).
+The rules are in [docs/reference/suppliers.md](docs/reference/suppliers.md).
+
+- **Admin → Suppliers is the supplier register.** Its order is the library
+  order: JLCPCB, LCSC, TME, Mouser, DigiKey, then the suppliers with no
+  connection. Everybody can read it. Only an admin adds, edits, removes or
+  reorders a supplier.
+- **The component page has a "Suppliers & pricing" card.** It lists the
+  part's suppliers with their part numbers, in the order that picks the BOM
+  price, and marks the supplier that prices the BOM. You can add a supplier,
+  type its price breaks, and move it up or down for this part only.
+- **One supplier gives the whole price ladder.** The first supplier in the
+  order that has prices is used, and two suppliers no longer mix by quantity
+  break. The first prices typed against a supplier move it to the top of that
+  part's order.
+- **A "Manual" price that names no supplier still prices the part first.** The
+  card shows it in a warning and moves it onto a supplier unchanged.
+- **`Supplier N` and `Supplier Part Number N` are no longer properties.** On
+  the first start, 424 components are published again without them, and their
+  42 non-LCSC suppliers become links (Mouser 19, Phoenix Contact 17, TME 5,
+  CODICO 1). Every sign-off and every review record carries. Four standing
+  exceptions are re-pinned to the new data digest. KiCad symbols no longer
+  carry `Supplier` fields. The component editor and the agent refuse the keys.
+- **No past run changes price.** Each price-history snapshot now records the
+  order it was priced by, and a snapshot from before today keeps the old rule.
+  Measured on a copy of production with `scripts/price-snapshot.py`: 20 runs,
+  72 project BOMs and 456 components, with 0 changed prices and 0 changed
+  sign-off, review or machine states.
+- **Agent tools:** `list_suppliers` and `link_supplier`. `get_component` returns
+  the part's `suppliers`.
+- **After the deploy**, `scripts/supplier-register-data-2026-09-29.py --apply`
+  applies the sourcing given on 2026-09-29: Italtronic, Rutronik and LC
+  Elektronik are added, and the hand-entered prices of the Italtronic
+  enclosures, the Molex antennas, FIX-LEMB2-4.8V0-F, LE910R1-EU and
+  Takachi_SIM6-12-3W move onto their suppliers unchanged.
+
 ## 2026-09-29 (a device keeps its old broker name, and "last heard" means the device spoke)
 
 Decision [0056](docs/decisions/0056-a-unit-owns-every-topic-it-was-given.md).

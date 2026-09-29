@@ -399,8 +399,9 @@ renders INSTEAD of the router.
   the matching `require_admin` on the route, and when you add one, add its
   line to `api/tests/auth/test_role_gates.py`. Gated in the UI today: the
   Admin page's Configuration, Users, Activity and Fleet broker tabs; the Refresh and
-  Override controls on Exchange rates and the two job buttons on Datasheets,
-  whose tabs stay VISIBLE and read-only; and the field solver's stackup and
+  Override controls on Exchange rates, the two job buttons on Datasheets and
+  the order, add, edit and remove controls on Suppliers, whose tabs stay
+  VISIBLE and read-only; and the field solver's stackup and
   rule-set Edit buttons. **Prefer dropping the control to hiding the panel** —
   a table somebody may read is not the same as an action they may take, and an
   "unknown FX rate" warning on the order page has to lead somewhere.

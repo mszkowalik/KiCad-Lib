@@ -190,7 +190,7 @@ def sync(db: Session) -> dict:
         unit = None
         detail = None
         if comp_id:
-            points = db.query(M.ComponentPricePoint).filter_by(component_id=comp_id).all()
+            points = ladder.live_points(db, [comp_id])[comp_id]
             pt = ladder.price_at(points, max(item["qty"], 1))
             if pt is not None and pt.currency.upper() == "USD":
                 unit = pt.unit_price

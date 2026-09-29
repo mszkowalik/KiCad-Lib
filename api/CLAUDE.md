@@ -184,8 +184,10 @@ the other. The rules (decision
 - **Admin-only is the deployment, other people's credentials, and the SHARED
   reference data — not the work.** `/api/settings`, `/api/users`,
   `/api/mqtt`, the field solver's stackups and rule sets, the exchange-rate
-  writes, the archive-wide datasheet jobs, and `/api/activity` (every user's
-  changes at once — decision 0050). The review axis, production,
+  writes, the supplier register writes (decision 0055), the archive-wide
+  datasheet jobs, and `/api/activity` (every user's changes at once —
+  decision 0050). A component's own supplier links stay open: they are
+  library work. The review axis, production,
   orders, invoices, projects, the flasher, the agent and the library itself
   are open to any signed-in user on purpose. Do not gate a route because it
   writes something important; gate it because it reconfigures the deployment,

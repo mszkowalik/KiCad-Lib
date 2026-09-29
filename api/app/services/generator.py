@@ -16,6 +16,7 @@ from pathlib import Path
 from kiutils.items.common import Effects, Font, Position, Property
 from kiutils.symbol import SymbolLib
 
+from .suppliers import is_supplier_key
 from .templates import has_template, resolve_templates
 
 
@@ -109,7 +110,11 @@ def apply_properties(
             symbol.properties.append(new_property)
 
     removed = remove_properties or []
-    symbol.properties = [p for p in symbol.properties if p.key not in removed]
+    # `Supplier N` fields are never emitted (decision 0055): where a part is
+    # bought lives in the supplier register, and a base symbol that still
+    # declares an empty one must not hand it to every component built on it.
+    symbol.properties = [p for p in symbol.properties
+                         if p.key not in removed and not is_supplier_key(p.key)]
     return symbol
 
 

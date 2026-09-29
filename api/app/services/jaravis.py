@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 
 import anthropic
 from anthropic import beta_tool
+from sqlalchemy import func
 
 from .. import models as M
 from ..config import settings
@@ -31,6 +32,7 @@ from ..services import memory, tracking
 from ..services.fieldsolver import rules as fs_rules
 from ..services.generator import PRICE_KEY_TO_COL
 from ..services.lcsc import fetch_metadata
+from ..services.suppliers import is_supplier_key
 
 MODEL = settings.jaravis_model  # user preference: Sonnet; Opus via JARAVIS_MODEL
 MAX_TOKENS = 16000
@@ -61,6 +63,20 @@ def _user_notes(db, target_type: str, target_id: int) -> list:
         for c in db.query(M.Comment)
         .filter_by(target_type=target_type, target_id=target_id)
         .order_by(M.Comment.created_at)
+    ]
+
+
+def _supplier_links(db, component_id: int) -> list:
+    """A component's supplier links in the order that picks its price."""
+    from . import suppliers
+
+    priced = {src for (src,) in db.query(M.ComponentPricePoint.source)
+              .filter_by(component_id=component_id).distinct()}
+    return [
+        {"supplier": ln.supplier.name, "part_number": ln.part_number, "url": ln.url,
+         "note": ln.note, "own_order": ln.position is not None, "has_prices": ln.supplier.name in priced,
+         "origin": ln.origin}
+        for ln in suppliers.links_for(db, component_id)
     ]
 
 
@@ -118,13 +134,10 @@ def get_component(name: str) -> str:
         if cv is None:
             drafts = [v.version_no for v in comp.versions if v.status == "draft"]
             return json.dumps({"error": f"{name!r} has no published version", "draft_versions": drafts})
-        from .ladder import effective_points
+        from .ladder import effective_points, live_points
 
         price = db.query(M.ComponentPrice).filter_by(component_id=comp.id).first()
-        points = effective_points(
-            db.query(M.ComponentPricePoint).filter_by(component_id=comp.id)
-            .order_by(M.ComponentPricePoint.qty_from).all()
-        )
+        points = effective_points(live_points(db, [comp.id])[comp.id])
         supply = db.query(M.ComponentSupply).filter_by(component_id=comp.id).first()
         private = db.query(M.JlcStockItem).filter_by(component_id=comp.id).first()
         sheets = (db.query(M.Datasheet)
@@ -150,6 +163,9 @@ def get_component(name: str) -> str:
                  "currency": p.currency}
                 for p in points
             ],
+            # Where the part is bought, in the order that picks its price
+            # (decision 0055). The first entry with a ladder prices the BOM.
+            "suppliers": _supplier_links(db, comp.id),
             "stock": {
                 "lcsc_retail": supply.stock if supply else None,
                 "jlcpcb_assembly": supply.jlc_stock if supply else None,
@@ -1119,16 +1135,17 @@ def get_jlc_details(lcsc_codes: str) -> str:
 @beta_tool
 def refresh_supply(component: str) -> str:
     """Live re-check of a component's supplier data RIGHT NOW: refetches the
-    JLCPCB assembly price ladder + stock (the default price source) and the
-    LCSC retail ladder + stock (fallback), and records price history. Use when
-    a stock/price figure looks stale (check `checked_at` from get_component).
-    This data is auto-managed, so no user approval is needed. Manual price
-    entries are never touched.
+    JLCPCB assembly price ladder + stock and the LCSC retail ladder + stock,
+    and records price history. Which ladder prices the part is the supplier
+    order (see get_component's `suppliers`). Use when a stock/price figure
+    looks stale (check `checked_at` from get_component). This data is
+    auto-managed, so no user approval is needed. Hand-entered prices are never
+    touched.
 
     Args:
         component: Exact component name (must have an LCSC Part property).
     """
-    from .ladder import effective_points, lcsc_part_of, refresh_component
+    from .ladder import effective_points, lcsc_part_of, live_points, refresh_component
 
     db = SessionLocal()
     try:
@@ -1143,10 +1160,7 @@ def refresh_supply(component: str) -> str:
             return json.dumps({"error": f"{component!r} has no LCSC Part property — nothing to refresh"})
         wrote = refresh_component(db, comp.id, lcsc)
         supply = db.query(M.ComponentSupply).filter_by(component_id=comp.id).first()
-        points = effective_points(
-            db.query(M.ComponentPricePoint).filter_by(component_id=comp.id)
-            .order_by(M.ComponentPricePoint.qty_from).all()
-        )
+        points = effective_points(live_points(db, [comp.id])[comp.id])
         private = db.query(M.JlcStockItem).filter_by(component_id=comp.id).first()
         return json.dumps({
             "component": comp.name, "lcsc": lcsc, "ladder_updated": wrote,
@@ -1188,6 +1202,9 @@ def _parse_properties(properties_json: str) -> tuple[list[dict] | None, str | No
         if key in PRICE_KEY_TO_COL or key == "Datasheet" or key.startswith("Datasheet "):
             return None, (f"{key!r} is auto-managed — prices are refreshed automatically; "
                           "pass datasheets via datasheet_url")
+        if is_supplier_key(key):
+            return None, (f"{key!r} is no longer a property — record where the part is bought "
+                          "with link_supplier (decision 0055). LCSC Part stays a property.")
     keys = [str(p["key"]).strip() for p in props]
     dupes = {k for k in keys if keys.count(k) > 1}
     if dupes:
@@ -1241,8 +1258,9 @@ def propose_new_component(
     verify it afterwards with get_review_checklist + record_verification.
     Follow library conventions: include a Footprint property with the 7Sigma:
     prefix, ki_description, Value where applicable, Manufacturer 1 /
-    Manufacturer Part Number 1 / Supplier 1 / Supplier Part Number 1 /
-    LCSC Part when known. Do NOT include price keys or Datasheet as properties.
+    Manufacturer Part Number 1 / LCSC Part when known. Do NOT include price
+    keys, Datasheet or Supplier N keys as properties: record a non-LCSC source
+    with link_supplier after the component exists.
 
     Args:
         name: Globally unique component name (usually the MPN).
@@ -1541,6 +1559,72 @@ def set_footprint_package_name(name: str, package_name: str) -> str:
                                "hint": "list_footprints() shows the exact names; "
                                        "do not include the 7Sigma: prefix"})
         return json.dumps({"ok": True, **_set(db, settings, fp, package_name, actor="jaravis")})
+    finally:
+        db.close()
+
+
+@beta_tool
+def list_suppliers() -> str:
+    """The supplier register in LIBRARY ORDER — the order that picks a part's
+    price when the part sets no order of its own (decision 0055). A part's own
+    links and order are in get_component's `suppliers`."""
+    from . import suppliers
+
+    db = SessionLocal()
+    try:
+        linked = dict(db.query(M.ComponentSupplier.supplier_id, func.count(M.ComponentSupplier.id))
+                      .group_by(M.ComponentSupplier.supplier_id).all())
+        return json.dumps({"suppliers": [
+            {"name": s.name, "website": s.website, "refreshed_by_platform": bool(s.connector),
+             "linked_components": linked.get(s.id, 0), "notes": s.notes}
+            for s in suppliers.ordered(db)
+        ]})
+    finally:
+        db.close()
+
+
+@beta_tool
+def link_supplier(component: str, supplier: str, part_number: str = "", url: str = "",
+                  note: str = "") -> str:
+    """Record where a component is bought: a link to a supplier in the register,
+    with that supplier's own part number (e.g. Mouser "595-OPA354AIDBVR", TME
+    "MR-1293.0050"). Creates the link, or updates the fields you pass on an
+    existing one. NOT versioned — it costs no verification.
+
+    The supplier must already be in the register (list_suppliers); an admin
+    adds new suppliers. JLCPCB and LCSC links follow the component's LCSC Part
+    property automatically — set that property instead. Prices are not set
+    here; the platform refreshes JLCPCB/LCSC, and a person types a quote.
+
+    Args:
+        component: Exact component name.
+        supplier: Supplier name as list_suppliers prints it.
+        part_number: The supplier's own order code. Empty keeps the current one.
+        url: Product page at that supplier. Empty keeps the current one.
+        note: Short note, e.g. a quote reference. Empty keeps the current one.
+    """
+    from . import suppliers
+
+    db = SessionLocal()
+    try:
+        comp = db.query(M.Component).filter_by(name=component.strip()).first()
+        if comp is None:
+            return json.dumps({"error": f"component {component!r} not found"})
+        s = suppliers.by_name(db, supplier)
+        if s is None:
+            return json.dumps({"error": f"supplier {supplier!r} is not in the register",
+                               "hint": "list_suppliers() shows the register; ask an admin to add one"})
+        if s.connector:
+            return json.dumps({"error": f"the {s.name} link follows the LCSC Part property — "
+                                        "set that with propose_component_edit"})
+        row = suppliers.link(db, comp.id, s, part_number=part_number or None, url=url or None,
+                             note=note or None, actor="jaravis")
+        db.add(M.AuditLog(actor="jaravis", action="supplier.link", entity_type="component",
+                          entity_id=str(comp.id),
+                          details={"component": comp.name, "supplier": s.name,
+                                   "part_number": row.part_number}))
+        db.commit()
+        return json.dumps({"ok": True, "component": comp.name, "suppliers": _supplier_links(db, comp.id)})
     finally:
         db.close()
 
@@ -2482,6 +2566,8 @@ TOOLS = [
     propose_symbol_edit, propose_footprint_edit, propose_skill_update,
     set_footprint_package_name,
     rename_footprint, rename_base_symbol,
+    # suppliers (decision 0055) — the register is read-only here; a link is library work
+    list_suppliers, link_supplier,
     # simulation models
     list_sim_models, get_sim_model, propose_sim_model_edit, set_symbol_sim_link,
     # running a simulation
@@ -2570,6 +2656,8 @@ Internet access:
   ladder); needs configured credentials
 - refresh_supply(component) — live re-fetch of LCSC ladder/stock + JLCPCB assembly stock
   for one component (auto-managed data — allowed without approval)
+- list_suppliers() — the supplier register in library order; a part's own links and order
+  are in get_component's `suppliers`, and the first supplier with prices prices the BOM
 
 Projects (the platform also tracks the user's KiCad design projects):
 - list_projects() — tracked projects with latest snapshot, boards, variants, run count
@@ -2589,6 +2677,9 @@ Write (every one of these PUBLISHES IMMEDIATELY — the propose_* names are hist
   (or a new footprint). Call get_footprint first and edit its returned source.
 - propose_skill_update(skill_name, content, comment) — a new version of one of your own
   skill documents (call get_skill first; content replaces the whole document)
+- link_supplier(component, supplier, part_number, url, note) — record where a part is bought
+  and the supplier's own part number. Unversioned, costs no verification. `Supplier N`
+  properties no longer exist; JLCPCB/LCSC links follow the LCSC Part property.
 - set_footprint_package_name(name, package_name) — the footprint's SHORT package name
   ("0402", "SOT-23-6", "VQFN-HR-9"), which is what {{Footprint_Name}} resolves to in a
   ki_description. Unversioned: it mints no footprint version. Call it right after

@@ -50,6 +50,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as M
 from . import material
+from .suppliers import is_supplier_key
 
 log = logging.getLogger(__name__)
 
@@ -97,7 +98,11 @@ def _is_empty(entry: tuple[str | None, bool]) -> bool:
 def _is_non_material(key: str) -> bool:
     # "Datasheet 2", "Reference schematic", ... — the extra datasheet fields are
     # named after their own label, so match the native key and the numbered form.
-    return key in NON_MATERIAL_KEYS or key.startswith("Datasheet ")
+    # `Supplier N` / `Supplier Part Number N` say where a part is BOUGHT, not
+    # which part it is, and moved to the supplier register (decision 0055);
+    # the migration that removes them from every component must cost no
+    # verification. `LCSC Part` and the manufacturer keys stay material.
+    return key in NON_MATERIAL_KEYS or key.startswith("Datasheet ") or is_supplier_key(key)
 
 
 def _utcnow() -> datetime:

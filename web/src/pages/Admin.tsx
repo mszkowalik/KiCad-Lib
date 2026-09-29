@@ -18,13 +18,14 @@ import SettingsCard from "../components/SettingsCard";
 import UsersCard from "../components/UsersCard";
 import MqttCard from "../components/MqttCard";
 import ActivityCard from "../components/ActivityCard";
+import SuppliersCard from "../components/SuppliersCard";
 import DataTable, { type Column } from "../components/DataTable";
 import { useDialog } from "../components/Dialog";
 import { ErrorBanner, Spinner } from "../components/Ui";
 
 const POLL_MS = 2000;
 
-type Tab = "config" | "users" | "activity" | "datasheets" | "rates" | "fleet" | "system";
+type Tab = "config" | "users" | "activity" | "datasheets" | "rates" | "suppliers" | "fleet" | "system";
 
 /** The tabs, in the order they are drawn. `admin` marks the ones the API
  *  refuses to a non-admin anyway — hiding them keeps the page from offering a
@@ -57,6 +58,11 @@ const TABS: { id: Tab; label: string; admin?: true; blurb: string }[] = [
     id: "rates",
     label: "Exchange rates",
     blurb: "What every document is converted to USD with.",
+  },
+  {
+    id: "suppliers",
+    label: "Suppliers",
+    blurb: "Where parts are bought. The order picks every BOM price.",
   },
   {
     id: "fleet",
@@ -134,6 +140,7 @@ export default function Admin() {
         {tab === "activity" ? <ActivityCard /> : null}
         {tab === "datasheets" ? <DatasheetCard /> : null}
         {tab === "rates" ? <FxCard /> : null}
+        {tab === "suppliers" ? <SuppliersCard /> : null}
         {tab === "fleet" ? <MqttCard /> : null}
         {tab === "system" ? (
           <>

@@ -529,26 +529,23 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
   rather than re-estimated. When adding a cost path, make it land in one of those
   buckets or the gap will expose it.
 
-- **Price ladders — JLCPCB first, LCSC fallback** (user decision 2026-07-21):
+- **Price ladders** — which source prices a part is the supplier order, and
+  the whole rule is in [suppliers.md](suppliers.md) (decision 0055).
   `component_price_points` rows with a source in `ladder.AUTO_SOURCES`
   (`"JLCPCB"`, `"LCSC"`) are replaced wholesale by the refresher — the JLCPCB
   assembly ladder comes from the official OpenAPI (`priceRanges` in the same
   batched `jlc.fetch_component_details` call that feeds `jlc_stock`, so it
   refreshes for every component on every run), the LCSC retail ladder from
-  the per-component wmsc detail fetch. Other sources (`Manual`, …) are never
-  touched by robots. `ladder.effective_points` DROPS LCSC points whenever the
-  component has any JLCPCB points — LCSC appears only in place of a missing
-  JLCPCB ladder, never alongside it. This applies to resolution
-  (`price_at` — BOMs, run economics, valuations) AND to every display
-  surface (the web ladder card, Jaravis/MCP `get_component` and
-  `refresh_supply`); both ladders are still STORED, so the fallback stays
-  available. Only raw price history shows complete point sets. The legacy 3-point `ComponentPrice` summary (browse-list price
+  the per-component wmsc detail fetch. Every other source is typed by hand and
+  never touched by robots. Both robot ladders are STORED whichever one prices
+  the part. The legacy 3-point `ComponentPrice` summary (browse-list price
   column + BOM fallback for ladder-less parts; NOT emitted to KiCad) is
-  DERIVED from the preferred ladder on every refresh
-  (`ladder._update_price_summary`, same @1/@100/@Bulk rules as
+  DERIVED on every refresh from whichever robot ladder the part's supplier
+  order ranks first (`ladder._summary_ladder`, same @1/@100/@Bulk rules as
   `kicad_lib/pricing.py`; its `source` records which ladder) — unless its
   `source` is non-auto (e.g. `Manual`), which pins it. It has no UI card of
-  its own; the component page's single pricing surface is the ladder card.
+  its own; the component page's single pricing surface is the Suppliers &
+  pricing card.
 - **Three stock pools, never conflate them**: `ComponentSupply.stock` = LCSC
   retail (lcsc.com, `wmsc.lcsc.com` detail `stockNumber`);
   `ComponentSupply.jlc_stock` = JLCPCB assembly parts (jlcpcb.com/parts,

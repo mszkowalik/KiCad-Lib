@@ -13,6 +13,7 @@ in one document. Open the document before you change the module.
 |---|---|---|
 | Datasheet identity, fetch, classification, page index | `datasheet_store.py`, `datasheet_pages.py`, `datasheet_migrate.py` | [docs/reference/datasheets.md](../../../docs/reference/datasheets.md) |
 | Cost plans, invoices, stock, orders, sales | `cost_state.py`, `material.py`, `stock.py`, `orders.py` | [docs/reference/production-economics.md](../../../docs/reference/production-economics.md) |
+| Suppliers, and which source prices a part | `suppliers.py`, `ladder.py` | [docs/reference/suppliers.md](../../../docs/reference/suppliers.md) |
 | What JLCPCB says moved, and what we booked | `jlc_web.py`, `jlc_import.py`, `jlc_apply.py`, `jlc_ledger.py`, `substitutions.py` | [docs/reference/production-economics.md](../../../docs/reference/production-economics.md) |
 | Sign-off, verification, the review record | `signoff.py`, `review.py`, `material.py` | [docs/reference/review-axis.md](../../../docs/reference/review-axis.md) |
 | Renaming a footprint or a base symbol | `rename.py` | [docs/decisions/0012](../../../docs/decisions/0012-rename-a-footprint-or-base-symbol-in-place.md) |
@@ -73,10 +74,12 @@ section first.
   `status="published"`, moves `current_version_id`, pins datasheets, carries
   the sign-off and the review record, and runs the machine validation. Call it
   — never hand-roll a publish, and never move `current_version_id` yourself.
-- **Prices and datasheets are NOT properties.** They live in `component_prices`
-  and `datasheets` (component-scoped, auto-managed). Keep them out of
-  `ComponentProperty`; the price keys (`PRICE_KEY_TO_COL`) and `Datasheet*` keys
-  are stripped on import and rejected by Jaravis's `_parse_properties`.
+- **Prices, datasheets and suppliers are NOT properties.** They live in
+  `component_prices`, `datasheets` and `component_suppliers` (component-scoped,
+  unversioned). Keep them out of `ComponentProperty`; the price keys
+  (`PRICE_KEY_TO_COL`) and `Datasheet*` keys are stripped on import, and those
+  and the `Supplier N` keys are rejected by Jaravis's `_parse_properties` and
+  the component editor.
   **Prices are never emitted to KiCad** (user decision 2026-07): neither the
   generated mirror symbols nor the HTTP catalog carry `Price *` fields —
   `injected_props(datasheets)` injects datasheet links only. Pricing lives on

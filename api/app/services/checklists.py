@@ -1000,9 +1000,14 @@ def subject_facts(db: Session, kind: str, parent, version_id: int | None) -> dic
 
 
 def _property_sha(cv: M.ComponentVersion) -> str:
-    """A digest of the component's own data — the same triple
-    `signoff.data_carries` compares, so an exception pinned to it dies on
-    exactly the edits that would have stripped a verification."""
+    """A digest of the component's own data: every property's key and value.
+
+    It is WIDER than what `signoff.data_carries` compares — a non-material
+    key (`ki_keywords`, a `Supplier N` field) moves it too — so an exception
+    pinned to it also dies on an edit that keeps the verification. The
+    supplier migration re-pins such exceptions for that reason
+    (`suppliers._repin_exceptions`). Changing the formula would re-date every
+    exception already pinned to it."""
     import hashlib
 
     payload = ";".join(

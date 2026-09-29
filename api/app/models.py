@@ -1393,9 +1393,11 @@ class ComponentPricePoint(Base):
     """Full supplier price ladder, one row per quantity break. Unlike the
     legacy 3-point ComponentPrice summary (kept for KiCad symbol injection),
     these rows carry every tier with its own currency and refresh date, so
-    project BOMs can price any production volume exactly. source="LCSC" rows
-    are replaced wholesale on refresh; other sources (e.g. "Manual") are
-    never touched by the robot."""
+    project BOMs can price any production volume exactly. `source` is a
+    `Supplier.name` (decision 0055). JLCPCB and LCSC rows are replaced
+    wholesale on refresh; every other source is typed by hand and never
+    touched by the robot. "Manual" (and "Pool average (landed)") are legacy
+    rows that name no supplier; they rank before every supplier."""
 
     __tablename__ = "component_price_points"
 
@@ -1416,11 +1418,15 @@ class ComponentPriceHistory(Base):
     """Append-only historical pricing. One row = the component's COMPLETE
     effective point set (all sources — LCSC ladder + manual levels, or points
     synthesized from the legacy summary for ladder-less parts) at
-    `recorded_at`; `points` = [{source, qty_from, unit_price, currency}].
-    A new row is appended only when the set actually changed (an empty list
-    records a deletion). Production-run economics resolve prices from here by
-    run date — latest row at-or-before the date, else the earliest after
-    ("closest you can find"). Never mutate or delete rows."""
+    `recorded_at`; `points` = [{source, qty_from, unit_price, currency, rank}].
+    `rank` is the source's place in the supplier order in effect when the row
+    was written (decision 0055), so a run is priced by the order of ITS date;
+    a row without `rank` predates the register and resolves with the old
+    JLCPCB-hides-LCSC rule. A new row is appended only when the set actually
+    changed (an empty list records a deletion). Production-run economics
+    resolve prices from here by run date — latest row at-or-before the date,
+    else the earliest after ("closest you can find"). Never mutate or delete
+    rows."""
 
     __tablename__ = "component_price_history"
 
@@ -1446,6 +1452,58 @@ class ComponentSupply(Base):
     moq: Mapped[int | None] = mapped_column(Integer, nullable=True)
     order_multiple: Mapped[int | None] = mapped_column(Integer, nullable=True)
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ---------------------------------------------------------- supplier register
+class Supplier(Base):
+    """One place a part is bought — decision 0055. The register's ORDER
+    (`position`, ascending) is the library-wide supplier order, which prices a
+    part that sets no order of its own. `services/suppliers.py` owns it.
+
+    `name` is the key a price refers to (`ComponentPricePoint.source`, and
+    every `ComponentPriceHistory.points[].source`), so it never changes once
+    created: a rename would detach every price and every snapshot that names
+    it. `connector` names the robot that refreshes the supplier's prices
+    ("jlcpcb", "lcsc"), or is empty for a supplier whose prices are typed."""
+
+    __tablename__ = "suppliers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True)
+    website: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    notes: Mapped[str] = mapped_column(Text, default="", server_default="")
+    connector: Mapped[str] = mapped_column(String(20), default="", server_default="")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(100), default="user")
+
+
+class ComponentSupplier(Base):
+    """A component's link to one supplier: where it is bought and under which
+    part number. NOT versioned — where a part is bought is not which part it
+    is, so editing a link costs no verification (decision 0055).
+
+    `position` is the component's OWN supplier order; NULL follows the library
+    order. `origin` says where the link came from: "migrated" (the retired
+    `Supplier N` properties), "lcsc_part" (follows the component's `LCSC Part`
+    property, which stays authoritative for JLCPCB and LCSC) or "user"."""
+
+    __tablename__ = "component_suppliers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    component_id: Mapped[int] = mapped_column(ForeignKey("components.id"), index=True)
+    supplier_id: Mapped[int] = mapped_column(ForeignKey("suppliers.id"))
+    part_number: Mapped[str] = mapped_column(String(100), default="", server_default="")
+    url: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    note: Mapped[str] = mapped_column(Text, default="", server_default="")
+    position: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    origin: Mapped[str] = mapped_column(String(20), default="user", server_default="user")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(100), default="user")
+
+    supplier: Mapped[Supplier] = relationship()
+
+    __table_args__ = (UniqueConstraint("component_id", "supplier_id", name="uq_component_supplier"),)
 
 
 # ---------------------------------------------------------- JLC private stock

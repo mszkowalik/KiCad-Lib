@@ -25,9 +25,10 @@ Preferred: an LCSC part number (Cxxxxx). Otherwise: manufacturer part number + d
    from a similar existing component (get_component on one). Typical order: Value,
    category parameters (Power / Tolerance / Voltage / Dielectric / ...), Footprint,
    Footprint_Name, ki_description (template, e.g. "{Value} {Power} {Tolerance}
-   {Footprint_Name}"), Manufacturer 1, Manufacturer Part Number 1, Supplier 1 = LCSC,
-   Supplier Part Number 1, LCSC Part.
-7. **Never set**: any Price key (prices are auto-managed — JLCPCB ladder by default, LCSC fallback), or
+   {Footprint_Name}"), Manufacturer 1, Manufacturer Part Number 1, LCSC Part. A part
+   bought somewhere other than JLCPCB/LCSC gets a link_supplier call after it exists.
+7. **Never set**: any Price key (prices live in their own table and the supplier order
+   picks one), any Supplier N key (use link_supplier), or
    Datasheet as a property (datasheets are managed separately; pass datasheet_url —
    locally stored copies are linked into the library automatically).
 8. **Propose** — the new component is created as a DRAFT; the user reviews and approves

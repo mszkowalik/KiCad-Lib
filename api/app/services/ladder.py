@@ -1,17 +1,18 @@
 """Full supplier price ladders + supply info (stock / MOQ), per component.
 
-Extends the legacy 3-point ComponentPrice summary (which stays authoritative
-for KiCad symbol injection): every ladder tier is stored as its own
-ComponentPricePoint row with currency and refresh date, so project BOMs can
-price any production volume.
+Extends the legacy 3-point ComponentPrice summary (the browse-list price and
+the BOM fallback): every ladder tier is stored as its own ComponentPricePoint
+row with currency and refresh date, so project BOMs can price any production
+volume.
 
 Two robot-managed sources (AUTO_SOURCES): "JLCPCB" (assembly ladder from the
-official OpenAPI) and "LCSC" (retail ladder from wmsc.lcsc.com). JLCPCB is
-the DEFAULT price everywhere — when a component has any JLCPCB points, LCSC
-points are ignored by price resolution and the summary derives from the JLC
-ladder; LCSC is the fallback for parts JLC doesn't carry. Rows with any other
-source (e.g. "Manual", used for BOM-only parts with quoted prices) are never
-touched here.
+official OpenAPI) and "LCSC" (retail ladder from wmsc.lcsc.com). Every other
+source is a supplier from the register whose prices are typed by hand, or a
+legacy "Manual" row that names no supplier; the robot never touches either.
+
+WHICH source prices a part is the supplier order (decision 0055,
+`services/suppliers.py`): one source gives the whole ladder, chosen by rank.
+`effective_points` is the one place that decides it.
 """
 from __future__ import annotations
 
@@ -136,7 +137,24 @@ def _replace_points(db: Session, component_id: int, source: str, tiers: list[tup
         )
 
 
-def _update_price_summary(db: Session, component_id: int, tiers: list[tuple[int, float]], now, source: str) -> None:
+def _summary_ladder(db: Session, component_id: int, jlc_tiers: list[tuple[int, float]],
+                    lcsc_tiers: list[tuple[int, float]]) -> tuple[list[tuple[int, float]], str]:
+    """Which robot ladder the browse-list summary follows: the one the
+    component's supplier order ranks first (JLCPCB, unless the part's own order
+    says otherwise), falling back to the other when it has no ladder."""
+    from . import suppliers
+
+    order = suppliers.ranks(db, [component_id]).get(component_id, {})
+    both = [("JLCPCB", jlc_tiers), ("LCSC", lcsc_tiers)]
+    both.sort(key=lambda t: order.get(t[0], 10**6))
+    for source, tiers in both:
+        if tiers:
+            return tiers, source
+    return [], "JLCPCB"
+
+
+def _update_price_summary(db: Session, component_id: int, tiers: list[tuple[int, float]], source: str,
+                          now) -> None:
     """Derive the legacy 3-point ComponentPrice summary (browse-list price
     column + BOM fallback) from the preferred fresh ladder, mirroring the
     repo's kicad_lib/pricing.py conventions: @1 / @100 / @Bulk (1000-break,
@@ -195,12 +213,12 @@ def refresh_component(db: Session, component_id: int, lcsc_id: str, jlc_row=_JLC
             _replace_points(db, component_id, "LCSC", lcsc_tiers, now)
         if jlc_tiers:
             _replace_points(db, component_id, "JLCPCB", jlc_tiers, now)
-        # JLCPCB is the default price source; LCSC only when JLC has no ladder
-        if jlc_tiers:
-            _update_price_summary(db, component_id, jlc_tiers, now, "JLCPCB")
-        else:
-            _update_price_summary(db, component_id, lcsc_tiers, now, "LCSC")
+        _update_price_summary(db, component_id, *_summary_ladder(db, component_id, jlc_tiers, lcsc_tiers),
+                              now=now)
         record_price_history(db, component_id)
+        from . import suppliers
+
+        suppliers.ensure_lcsc_links(db, component_id, lcsc_id)
     supply = db.query(M.ComponentSupply).filter_by(component_id=component_id).first()
     if supply is None:
         supply = M.ComponentSupply(component_id=component_id)
@@ -255,7 +273,10 @@ def refresh_stale(max_age_days: int | None = None) -> dict:
                     if tiers:
                         record_price_history(db, comp_id)
                         _replace_points(db, comp_id, "JLCPCB", tiers, now)
-                        _update_price_summary(db, comp_id, tiers, now, "JLCPCB")
+                        lcsc_tiers = [(p.qty_from, p.unit_price) for p in db.query(M.ComponentPricePoint)
+                                      .filter_by(component_id=comp_id, source="LCSC")]
+                        _update_price_summary(db, comp_id, *_summary_ladder(db, comp_id, tiers, lcsc_tiers),
+                                              now=now)
                         record_price_history(db, comp_id)
                 continue
             if refresh_component(db, comp_id, lcsc, jlc_row=jlc_rows.get(lcsc)):
@@ -329,9 +350,20 @@ def _effective_state(db: Session, component_id: int) -> list[dict]:
     if not rows:
         pr = db.query(M.ComponentPrice).filter_by(component_id=component_id).first()
         rows = summary_points(pr) if pr is not None else []
+    # The supplier order in effect NOW, as a dense rank over the sources this
+    # component actually has (decision 0055) — so a run priced from this row
+    # later uses today's order, and moving a supplier this part has no price
+    # from does not write a snapshot.
+    from . import suppliers
+
+    suppliers.attach_ranks(db, {component_id: rows})
+    first: dict[str, int] = {}
+    for p in rows:
+        first.setdefault(p.source, p.rank)
+    dense = {src: i for i, src in enumerate(sorted(first, key=lambda src: (first[src], src)))}
     state = [
         {"source": p.source, "qty_from": p.qty_from,
-         "unit_price": p.unit_price, "currency": p.currency}
+         "unit_price": p.unit_price, "currency": p.currency, "rank": dense[p.source]}
         for p in rows
     ]
     state.sort(key=lambda d: (d["source"], d["qty_from"]))
@@ -391,8 +423,9 @@ def history_points_at(db: Session, component_ids: set[int], at) -> dict[int, lis
         for r in hist:
             if r.recorded_at <= at:
                 chosen = r
-        out[cid] = [
-            M.ComponentPricePoint(
+        pts = []
+        for p in chosen.points or []:
+            pt = M.ComponentPricePoint(
                 component_id=cid,
                 source=str(p.get("source") or "Manual"),
                 qty_from=int(p.get("qty_from") or 1),
@@ -400,16 +433,52 @@ def history_points_at(db: Session, component_ids: set[int], at) -> dict[int, lis
                 currency=str(p.get("currency") or "USD"),
                 updated_at=chosen.recorded_at,
             )
-            for p in (chosen.points or [])
-        ]
+            # None on a row written before the supplier register: it resolves
+            # with the rule that priced it then (see effective_points).
+            pt.rank = p.get("rank")
+            pts.append(pt)
+        out[cid] = pts
+    return out
+
+
+def live_points(db: Session, component_ids) -> dict[int, list[M.ComponentPricePoint]]:
+    """Each component's CURRENT price points, ranked by its supplier order and
+    sorted by quantity. The read every live price display goes through, so
+    `effective_points` sees the ranks it resolves by."""
+    from . import suppliers
+
+    ids = set(component_ids)
+    out: dict[int, list[M.ComponentPricePoint]] = {cid: [] for cid in ids}
+    if ids:
+        for p in (db.query(M.ComponentPricePoint)
+                  .filter(M.ComponentPricePoint.component_id.in_(ids))
+                  .order_by(M.ComponentPricePoint.qty_from, M.ComponentPricePoint.id)):
+            out[p.component_id].append(p)
+    suppliers.attach_ranks(db, out)
     return out
 
 
 def effective_points(points: list[M.ComponentPricePoint]) -> list[M.ComponentPricePoint]:
-    """The ladder that counts — for display AND resolution: when any JLCPCB
-    point exists, LCSC points are dropped entirely (LCSC only ever appears in
-    place of a missing JLCPCB ladder, never alongside it). User-owned points
-    (Manual, Mouser, ...) always pass through."""
+    """The ladder that counts — for display AND resolution. The ONE place that
+    decides which source prices a part.
+
+    Ranked points (every point carries `rank`, decision 0055): the source with
+    the lowest rank gives the whole ladder and nothing else mixes in. Ranks
+    come from `suppliers.attach_ranks` for live points and from the snapshot
+    for historical ones.
+
+    Unranked points are a price-history snapshot written before the supplier
+    register, and they resolve with the rule that priced them then: a JLCPCB
+    ladder hides the LCSC one, and every other source passes through. Keeping
+    the old rule for old rows is what keeps a past run's price fixed."""
+    if not points:
+        return points
+    ranks = [getattr(p, "rank", None) for p in points]
+    if all(r is not None for r in ranks):
+        best = min(ranks)
+        points = [p for p, r in zip(points, ranks) if r == best]
+        # Two sources can only share a rank when neither is a supplier (two
+        # legacy hand-entered labels); they then mix as they always did.
     if any(p.source == "JLCPCB" for p in points):
         return [p for p in points if p.source != "LCSC"]
     return points
@@ -417,9 +486,9 @@ def effective_points(points: list[M.ComponentPricePoint]) -> list[M.ComponentPri
 
 def price_at(points: list[M.ComponentPricePoint], qty: int) -> M.ComponentPricePoint | None:
     """Best (highest-qty) tier whose qty_from <= qty; smallest tier when the
-    qty sits below the ladder. Resolves over effective_points (JLCPCB first,
-    LCSC only as stand-in — never both). User points (Manual, Mouser, ...)
-    win over robot points on equal qty_from."""
+    qty sits below the ladder. Resolves over effective_points, so ranked
+    points come from one source. On an unranked (pre-register) snapshot a
+    hand-entered point wins over a robot point on equal qty_from, as it did."""
     if not points:
         return None
     points = effective_points(points)

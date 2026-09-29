@@ -77,6 +77,13 @@ EXPECTED = {
     # Who did what, across every user's work — decision 0050.
     ("GET", "/api/activity"),
     ("GET", "/api/activity/requests/{request_id}"),
+    # The supplier register: its ORDER prices every BOM in the library —
+    # decision 0055. Reading it stays open; a component's own links are
+    # library work and stay open too.
+    ("POST", "/api/suppliers"),
+    ("PATCH", "/api/suppliers/{supplier_id}"),
+    ("DELETE", "/api/suppliers/{supplier_id}"),
+    ("PUT", "/api/suppliers/order"),
 }
 
 

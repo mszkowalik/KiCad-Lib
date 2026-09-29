@@ -3717,15 +3717,44 @@ export function setFxRate(currency: string, rate_usd: number, source = "manual")
 
 export interface PricePoint {
   id: number;
+  /** A supplier name, or a legacy label ("Manual") that names no supplier. */
   source: string;
   qty_from: number;
   unit_price: number;
   currency: string;
   updated_at: string;
+  /** Place of `source` in this part's supplier order; lowest prices the part. */
+  rank: number;
+}
+
+/** One place a component is bought — decision 0055. */
+export interface SupplierLink {
+  id: number;
+  supplier_id: number;
+  supplier: string;
+  /** "jlcpcb" / "lcsc" when the platform refreshes it; "" when prices are typed. */
+  connector: string;
+  part_number: string;
+  url: string;
+  note: string;
+  /** Position in the part's OWN order; null follows the library order. */
+  position: number | null;
+  origin: string;
+  has_prices: boolean;
 }
 
 export interface PricePointsResponse {
   points: PricePoint[];
+  /** Sources with prices that name no supplier — attributable to a link. */
+  legacy_sources: string[];
+  /** A price that lives only in the legacy summary row (no ladder at all). */
+  legacy_summary: { source: string; qty_from: number; unit_price: number; currency: string }[];
+  /** The source that prices this part in a BOM. */
+  effective_source: string | null;
+  /** True when the part sets its own supplier order. */
+  own_order: boolean;
+  /** The part's supplier links, in the order that picks its price. */
+  suppliers: SupplierLink[];
   supply: {
     /** LCSC retail stock (lcsc.com webshop). */
     stock: number | null;
@@ -3743,19 +3772,127 @@ export function getPricePoints(componentId: number, signal?: AbortSignal): Promi
   return request(`/api/components/${componentId}/price-points`, { signal });
 }
 
-export function setPricePoints(
+export function refreshPricePoints(componentId: number): Promise<PricePointsResponse> {
+  return request(`/api/components/${componentId}/price-points/refresh`, { method: "POST" });
+}
+
+export interface PriceTier {
+  qty_from: number;
+  unit_price: number;
+  currency: string;
+}
+
+export function addSupplierLink(
   componentId: number,
-  points: { qty_from: number; unit_price: number; currency: string; source: string }[],
+  body: { supplier_id: number; part_number?: string; url?: string; note?: string },
 ): Promise<PricePointsResponse> {
-  return request(`/api/components/${componentId}/price-points`, {
-    method: "PUT",
+  return request(`/api/components/${componentId}/suppliers`, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(points),
+    body: JSON.stringify(body),
   });
 }
 
-export function refreshPricePoints(componentId: number): Promise<PricePointsResponse> {
-  return request(`/api/components/${componentId}/price-points/refresh`, { method: "POST" });
+export function updateSupplierLink(
+  componentId: number,
+  linkId: number,
+  body: { part_number?: string; url?: string; note?: string },
+): Promise<PricePointsResponse> {
+  return request(`/api/components/${componentId}/suppliers/${linkId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteSupplierLink(componentId: number, linkId: number): Promise<PricePointsResponse> {
+  return request(`/api/components/${componentId}/suppliers/${linkId}`, { method: "DELETE" });
+}
+
+/** Replace the prices typed against one link. The first prices a link gets
+ *  move it to the top of the part's supplier order. */
+export function setSupplierLinkPrices(
+  componentId: number,
+  linkId: number,
+  tiers: PriceTier[],
+): Promise<PricePointsResponse> {
+  return request(`/api/components/${componentId}/suppliers/${linkId}/prices`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(tiers),
+  });
+}
+
+/** The part's own supplier order; `null` returns it to the library order. */
+export function setComponentSupplierOrder(
+  componentId: number,
+  linkIds: number[] | null,
+): Promise<PricePointsResponse> {
+  return request(`/api/components/${componentId}/supplier-order`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ link_ids: linkIds }),
+  });
+}
+
+/** Move a price that names no supplier ("Manual") onto a supplier link. */
+export function attributeLegacyPrice(
+  componentId: number,
+  source: string,
+  linkId: number,
+): Promise<PricePointsResponse> {
+  return request(`/api/components/${componentId}/price-points/attribute`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source, link_id: linkId }),
+  });
+}
+
+// --------------------------------------------------------------- suppliers
+
+/** A supplier in the register. The register's order is the LIBRARY order. */
+export interface Supplier {
+  id: number;
+  name: string;
+  website: string;
+  notes: string;
+  connector: string;
+  position: number;
+  linked_components: number;
+}
+
+export function getSuppliers(signal?: AbortSignal): Promise<Supplier[]> {
+  return request(`/api/suppliers`, { signal });
+}
+
+export function createSupplier(body: { name: string; website?: string; notes?: string }): Promise<Supplier> {
+  return request(`/api/suppliers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateSupplier(id: number, body: { website?: string; notes?: string }): Promise<Supplier> {
+  return request(`/api/suppliers/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteSupplier(id: number): Promise<{ ok: boolean }> {
+  return request(`/api/suppliers/${id}`, { method: "DELETE" });
+}
+
+/** Reorder the register (admin). Every priced part gets a price-history
+ *  snapshot, so a run already priced keeps the order of its own date. */
+export function setSupplierOrder(ids: number[]): Promise<Supplier[]> {
+  return request(`/api/suppliers/order`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
 }
 
 // --------------------------------------------------------- production files

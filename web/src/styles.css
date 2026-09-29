@@ -3762,6 +3762,21 @@ table.kv.settings-table .btn-row {
   width: 96px;
 }
 
+/* The two supplier tables (decision 0055). ORDER is their meaning, so they are
+   plain tables rather than DataTables (the StackupTable exception), and they
+   follow the table rule by hand: fixed layout, one line per row, widths here. */
+.data.supplier-links-table th:nth-child(1), .data.supplier-links-table td:nth-child(1) { width: 30%; }
+.data.supplier-links-table th:nth-child(2), .data.supplier-links-table td:nth-child(2) { width: 24%; }
+.data.supplier-links-table th:nth-child(3), .data.supplier-links-table td:nth-child(3) { width: 30%; }
+.data.supplier-links-table th:nth-child(4), .data.supplier-links-table td:nth-child(4) { width: 16%; }
+.data.supplier-links-table td.expand-cell { white-space: normal; overflow: visible; }
+.data.supplier-register-table th:nth-child(1), .data.supplier-register-table td:nth-child(1) { width: 5%; }
+.data.supplier-register-table th:nth-child(2), .data.supplier-register-table td:nth-child(2) { width: 20%; }
+.data.supplier-register-table th:nth-child(3), .data.supplier-register-table td:nth-child(3) { width: 22%; }
+.data.supplier-register-table th:nth-child(4), .data.supplier-register-table td:nth-child(4) { width: 8%; }
+.data.supplier-register-table th:nth-child(5), .data.supplier-register-table td:nth-child(5) { width: 33%; }
+.data.supplier-register-table th:nth-child(6), .data.supplier-register-table td:nth-child(6) { width: 12%; }
+
 /* ================================================================== modals */
 /* In-app dialogs (components/Dialog.tsx) — replacements for the banned
    window.confirm / window.prompt / window.alert. */

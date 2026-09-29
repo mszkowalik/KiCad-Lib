@@ -42,6 +42,7 @@ from .routers import (
     sim_runs,
     signoffs,
     skills,
+    suppliers,
     users,
     view,
     orders,
@@ -107,6 +108,7 @@ app.include_router(import_station.router)
 app.include_router(kicad_http.router)
 app.include_router(view.router)
 app.include_router(projects.router)
+app.include_router(suppliers.router)
 app.include_router(git_credentials.router)
 app.include_router(account.router)
 app.include_router(production_runs.router)
@@ -1196,6 +1198,16 @@ def startup() -> None:
             _pdb.close()
     except Exception as e:  # noqa: BLE001 — never block startup on a migration
         log.warning(f"attrition pin did not run: {type(e).__name__}: {e}")
+    # Decision 0055: `Supplier N` properties become supplier links, and every
+    # component is republished without them (the carry keeps each verification).
+    # Idempotent and one transaction — a failure leaves every component as it
+    # was, and the next start tries again.
+    try:
+        from .services.suppliers import run_startup_migration
+
+        run_startup_migration()
+    except Exception as e:  # noqa: BLE001 — never block startup on a migration
+        log.warning(f"supplier register migration did not run: {type(e).__name__}: {e}")
     # The per-file version pool becomes blobs + file sets (decision 0029).
     # Runs after create_all built the three new tables; one transaction,
     # checked before the old tables are dropped, reported on /health/schema.

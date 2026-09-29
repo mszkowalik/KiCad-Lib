@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as M
 from ..config import settings
-from . import cost_state, fx, ladder
+from . import cost_state, fx, ladder, suppliers
 
 
 def display_currency(project: M.Project | None, override: str | None = None) -> str:
@@ -134,21 +134,26 @@ def _component_data(db: Session, component_ids: set[int], at: datetime | None = 
         points.update(ladder.history_points_at(db, remaining, at))
         live_ids = {cid for cid in remaining if cid not in points}
     if live_ids:
+        live: dict[int, list[M.ComponentPricePoint]] = {}
         for p in db.query(M.ComponentPricePoint).filter(
             M.ComponentPricePoint.component_id.in_(live_ids)
         ).all():
-            points.setdefault(p.component_id, []).append(p)
+            live.setdefault(p.component_id, []).append(p)
         # Fallback: parts with no ladder fall back to their component_prices
         # summary (which is where manually-entered prices live), so a manual
         # price on a BOM-only part like an enclosure reaches the BOM.
-        missing = [cid for cid in live_ids if cid not in points]
+        missing = [cid for cid in live_ids if cid not in live]
         if missing:
             for pr in db.query(M.ComponentPrice).filter(
                 M.ComponentPrice.component_id.in_(missing)
             ).all():
                 synth = ladder.summary_points(pr)
                 if synth:
-                    points[pr.component_id] = synth
+                    live[pr.component_id] = synth
+        # Live points resolve by TODAY's supplier order (decision 0055);
+        # historical ones above carry the order of their own date.
+        suppliers.attach_ranks(db, live)
+        points.update(live)
     supply: dict[int, M.ComponentSupply] = {}
     if component_ids:
         for s in db.query(M.ComponentSupply).filter(

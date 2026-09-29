@@ -13,7 +13,7 @@ from .. import models as M
 from ..config import settings
 from ..db import get_db
 from ..models import utcnow
-from ..services import cost_state, fx, gitrepo, ladder, project_bom, project_ingest, project_render, storage
+from ..services import cost_state, fx, gitrepo, project_bom, project_ingest, project_render, storage
 from ..services import mqtt_monitor
 from ..services.crypto import decrypt_token, encrypt_token
 from .users import require_admin
@@ -858,86 +858,6 @@ def set_rate(body: RateIn, db: Session = Depends(get_db),
     fx.record_rate_history(db, cur, body.rate_usd)
     db.commit()
     return {"currency": cur, "rate_usd": body.rate_usd, "source": body.source}
-
-
-# ------------------------------------------------------------ price ladders
-
-@router.get("/components/{comp_id}/price-points")
-def list_price_points(comp_id: int, db: Session = Depends(get_db)):
-    if db.get(M.Component, comp_id) is None:
-        raise HTTPException(404, "component not found")
-    rows = (
-        db.query(M.ComponentPricePoint).filter_by(component_id=comp_id)
-        .order_by(M.ComponentPricePoint.qty_from).all()
-    )
-    supply = db.query(M.ComponentSupply).filter_by(component_id=comp_id).first()
-    private = db.query(M.JlcStockItem).filter_by(component_id=comp_id).first()
-    return {
-        "points": [
-            {"id": p.id, "source": p.source, "qty_from": p.qty_from, "unit_price": p.unit_price,
-             "currency": p.currency, "updated_at": p.updated_at.isoformat()}
-            for p in rows
-        ],
-        # Three DISTINCT pools: stock = LCSC retail, jlc_stock = JLCPCB
-        # assembly parts, private_qty = the user's own JLC library.
-        "supply": {
-            "stock": supply.stock, "jlc_stock": supply.jlc_stock,
-            "moq": supply.moq, "order_multiple": supply.order_multiple,
-            "checked_at": supply.checked_at.isoformat() if supply.checked_at else None,
-        } if supply else None,
-        "private_qty": private.qty if private else 0,
-    }
-
-
-class PricePointIn(BaseModel):
-    qty_from: int
-    unit_price: float
-    currency: str = "USD"
-    source: str = "Manual"
-
-
-@router.put("/components/{comp_id}/price-points")
-def set_price_points(comp_id: int, points: list[PricePointIn], db: Session = Depends(get_db)):
-    """Replaces all user-owned points (manual ladder) — JLCPCB and LCSC rows
-    stay robot-managed."""
-    if db.get(M.Component, comp_id) is None:
-        raise HTTPException(404, "component not found")
-    # capture the pre-change state first (no-op when already recorded) so the
-    # history timeline keeps what was in effect before this edit
-    ladder.record_price_history(db, comp_id)
-    db.query(M.ComponentPricePoint).filter(
-        M.ComponentPricePoint.component_id == comp_id,
-        M.ComponentPricePoint.source.notin_(ladder.AUTO_SOURCES),
-    ).delete(synchronize_session=False)
-    for pt in points:
-        if pt.source.strip() in ladder.AUTO_SOURCES:
-            raise HTTPException(422, f"source {pt.source.strip()} is reserved for the auto-refresher")
-        if pt.qty_from < 1 or pt.unit_price < 0:
-            raise HTTPException(422, "qty_from must be >=1 and unit_price >=0")
-        db.add(
-            M.ComponentPricePoint(
-                component_id=comp_id, source=pt.source.strip() or "Manual",
-                qty_from=pt.qty_from, unit_price=pt.unit_price,
-                currency=pt.currency.strip().upper() or "USD", updated_at=utcnow(),
-            )
-        )
-    ladder.record_price_history(db, comp_id)
-    db.commit()
-    return list_price_points(comp_id, db)
-
-
-@router.post("/components/{comp_id}/price-points/refresh")
-def refresh_price_points(comp_id: int, db: Session = Depends(get_db)):
-    comp = db.get(M.Component, comp_id)
-    if comp is None:
-        raise HTTPException(404, "component not found")
-    cv = next((v for v in comp.versions if v.id == comp.current_version_id), None)
-    lcsc = ladder.lcsc_part_of(cv) if cv else ""
-    if not lcsc:
-        raise HTTPException(422, "component has no LCSC Part")
-    if not ladder.refresh_component(db, comp_id, lcsc):
-        raise HTTPException(502, "neither JLCPCB nor LCSC returned a price ladder")
-    return list_price_points(comp_id, db)
 
 
 # ------------------------------------------------------- devices of a project

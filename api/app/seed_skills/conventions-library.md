@@ -34,11 +34,10 @@ the values. Standard keys, in usual order:
 | `ki_description` | Human description. Supports templating — see below. |
 | `Manufacturer 1` | Manufacturer name. |
 | `Manufacturer Part Number 1` | The MPN (usually equals the component name). |
-| `Supplier 1` / `Supplier Part Number 1` | See supplier rule below. |
 | `LCSC Part` | The `Cxxxxx` number when known. |
 
-Numbered keys (`Manufacturer 2`, `Supplier 2`, …) add further manufacturers or
-suppliers when a part has them.
+Numbered keys (`Manufacturer 2`, …) add further manufacturers when a part has
+them.
 
 ### Description templating
 
@@ -47,21 +46,23 @@ generated. Compose `ki_description` from other properties instead of repeating
 literals — e.g. `ki_description = "{Value} {Footprint_Name} Capacitor"` renders
 as `100nF 0402 Capacitor`. Only reference keys that exist on the same component.
 
-### Supplier rule
+### Where the part is bought
 
-When you know the part's `LCSC Part` (a `Cxxxxx`), set `Supplier 1` to `LCSC`
-and `Supplier Part Number 1` to that `Cxxxxx`. If a part is primarily sourced
-from a different supplier (e.g. Mouser), put that one in `Supplier 1` and let
-LCSC fall to `Supplier 2`. The platform normalizes suppliers on save, but set
-them correctly so the draft reads right.
+Where a part is bought is a supplier LINK, not a property (decision 0055).
+`LCSC Part` stays a property, and the JLCPCB and LCSC links follow it. For any
+other supplier, call `link_supplier(component, supplier, part_number)` with
+that supplier's own order code (Mouser `595-OPA354AIDBVR`, TME `MR-1293.0050`).
+The supplier must be in the register (`list_suppliers`); an admin adds new ones.
 
 ## What you must NOT set as properties
 
 - **Prices** — `Price @1 USD`, `Price @100 USD`, `Price @Bulk USD`,
-  `Price Bulk Qty`, `Price Source`, `Price Updated` are auto-managed (refreshed
-  into their own table from the JLCPCB assembly ladder by default, with the
-  LCSC retail ladder as fallback for parts JLC doesn't carry). Never include
-  them; the proposal tools reject them.
+  `Price Bulk Qty`, `Price Source`, `Price Updated` live in their own table.
+  JLCPCB and LCSC ladders are refreshed by the platform, other suppliers' are
+  typed on the component page, and the supplier order picks which one prices
+  the part. Never include them; the proposal tools reject them.
+- **Suppliers** — `Supplier N` / `Supplier Part Number N`. Use `link_supplier`;
+  the proposal tools reject these keys.
 - **Datasheets** — do not add a `Datasheet` (or `Datasheet 2`, …) property.
   Pass the URL through the `datasheet_url` argument of `propose_new_component`
   instead; datasheets live in their own table and can have a stored copy.

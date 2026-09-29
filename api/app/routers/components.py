@@ -23,6 +23,7 @@ from ..services.generator import (
 from ..services import signoff
 from ..services.mirror import top_level_of, update_mirror_symbols
 from ..services.render import render_svg, render_svg_units
+from ..services.suppliers import is_supplier_key
 from .util import (
     actor_of,
     audit,
@@ -392,6 +393,13 @@ def create_version(comp_id: int, body: VersionCreate, request: Request,
             422,
             f"{', '.join(sorted(set(managed)))}: prices and datasheets are managed separately "
             "(use the Prices/Datasheets panels), not as properties",
+        )
+    sourcing = [k for k in keys if is_supplier_key(k)]
+    if sourcing:
+        raise HTTPException(
+            422,
+            f"{', '.join(sorted(set(sourcing)))}: where a part is bought is a supplier link, not a "
+            "property — use the Suppliers panel (decision 0055)",
         )
 
     # The Footprint property drives the footprint pin, exactly like import.

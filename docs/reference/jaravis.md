@@ -17,7 +17,7 @@ The capability policy that governs what Jaravis may do is in
   somebody else's board. `fieldsolver_solve` and `fieldsolver_find_solutions` run
   the FEM inline (seconds to a minute), so they take small sweeps by default; the
   browser's job queue exists for the long ones.
-- 26 client tools + 2 Anthropic **server tools** (`web_search_20260209`,
+- The client tools are `TOOLS` (`GET /api/agent/tools` gives the live count — 55 on 2026-09-29), plus 2 Anthropic **server tools** (`web_search_20260209`,
   `web_fetch_20260209` — plain dicts appended to the runner's tools list; they
   execute on Anthropic's side, no beta header, `max_uses` caps cost).
 - **pause_turn**: the Python tool runner does NOT auto-resume a

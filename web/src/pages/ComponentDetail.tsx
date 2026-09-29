@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import {
   addComponentFile,
@@ -16,7 +16,15 @@ import {
   setComponentInLibrary,
   setComponentPurchasable,
   setLifecycle,
-  setPricePoints,
+  setComponentSupplierOrder,
+  setSupplierLinkPrices,
+  updateSupplierLink,
+  addSupplierLink,
+  attributeLegacyPrice,
+  deleteSupplierLink,
+  getSuppliers,
+  type Supplier,
+  type SupplierLink,
   symbolSvgUrl,
   uploadDatasheetFile,
   type ComponentDetail as ComponentDetailT,
@@ -49,6 +57,9 @@ import CommentsPanel from "../components/CommentsPanel";
 import SignoffCard from "../components/SignoffCard";
 import ReviewSubjectRows, { type SubjectRow } from "../components/ReviewSubjectRows";
 import WhereUsedCard from "../components/WhereUsedCard";
+import Field, { FieldRow } from "../components/Field";
+import NumberInput from "../components/NumberInput";
+import { price } from "../format";
 
 const FP_DATALIST_ID = "fp-options";
 
@@ -449,102 +460,190 @@ function PoolPill({ label, value, title }: { label: string; value: number | null
   );
 }
 
-/** Full price ladder (every quantity break): JLCPCB + LCSC rows are
- *  robot-managed and read-only — JLCPCB is the default price source, LCSC the
- *  fallback for parts JLC doesn't carry; manual levels (any other source) are
- *  editable here and saved wholesale via PUT /price-points. Project BOMs
- *  price from this ladder. */
+interface DraftTier {
+  qty_from: number | null;
+  unit_price: number | null;
+  currency: string;
+}
+
+interface DraftLink {
+  part_number: string;
+  url: string;
+  note: string;
+  /** null = this link's prices are refreshed by the platform, not typed. */
+  tiers: DraftTier[] | null;
+}
+
+type Tier = { qty_from: number; unit_price: number; currency: string };
+
+const tierText = (p: Tier) => `${p.qty_from.toLocaleString()}+ ${price(p.unit_price, p.currency)}`;
+
+/** "1+ 0.12 USD · 100+ 0.09 USD" — a whole ladder on one line (tooltips). */
+function ladderText(points: Tier[]): string {
+  return points.map(tierText).join(" · ");
+}
+
+/** First and last break only: a JLCPCB ladder has eight, and the card is narrow. */
+function ladderShort(points: Tier[]): string {
+  if (points.length <= 2) return ladderText(points);
+  return `${tierText(points[0])} … ${tierText(points[points.length - 1])}`;
+}
+
+/** Where the part is bought, and what it costs there — decision 0055.
+ *
+ *  The links are listed in the order that picks the BOM price: the part's OWN
+ *  order when it has one, else the library order (Admin → Suppliers). The first
+ *  link with prices prices the part, and one source gives the whole ladder —
+ *  nothing mixes. Typing prices against a link for the first time moves it to
+ *  the top. JLCPCB and LCSC follow the `LCSC Part` property and the platform
+ *  refreshes them; every other supplier's prices are typed here.
+ *
+ *  A price that names no supplier (the old "Manual" rows) still prices the
+ *  part, ahead of every supplier, until it is moved onto a link. */
 function PriceLadderCard({ compId }: { compId: number }) {
-  interface DraftPoint {
-    qty_from: string;
-    unit_price: string;
-    currency: string;
-    source: string;
-  }
+  const dialog = useDialog();
   const [data, setData] = useState<PricePointsResponse | null>(null);
-  const [draft, setDraft] = useState<DraftPoint[] | null>(null); // null = view mode
-  const [busy, setBusy] = useState<"save" | "refresh" | null>(null);
+  const [register, setRegister] = useState<Supplier[]>([]);
+  const [editing, setEditing] = useState<number | null>(null);
+  const [draft, setDraft] = useState<DraftLink | null>(null);
+  const [newSupplier, setNewSupplier] = useState<number | "">("");
+  const [newPn, setNewPn] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
     const ctrl = new AbortController();
     setData(null);
-    setDraft(null);
+    setEditing(null);
     setError(null);
     setNote(null);
-    getPricePoints(compId, ctrl.signal)
-      .then(setData)
+    Promise.all([getPricePoints(compId, ctrl.signal), getSuppliers(ctrl.signal)])
+      .then(([points, suppliers]) => {
+        setData(points);
+        setRegister(suppliers);
+      })
       .catch((err) => {
         if (!isAbortError(err)) setError(errorMessage(err));
       });
     return () => ctrl.abort();
   }, [compId]);
 
-  const ROBOT_SOURCES = ["JLCPCB", "LCSC"];
-  const autoPoints = data?.points.filter((p) => ROBOT_SOURCES.includes(p.source)) ?? [];
-  const hasJlc = autoPoints.some((p) => p.source === "JLCPCB");
-  // JLCPCB is the default price source; LCSC rows appear only IN PLACE of a
-  // missing JLCPCB ladder, never alongside it (the API stores both).
-  const robotPoints = autoPoints.filter((p) => p.source === (hasJlc ? "JLCPCB" : "LCSC"));
-  const manualPoints = data?.points.filter((p) => !ROBOT_SOURCES.includes(p.source)) ?? [];
+  const run = (label: string, work: () => Promise<PricePointsResponse>, done: string | null = null) => {
+    setBusy(label);
+    setError(null);
+    work()
+      .then((r) => {
+        setData(r);
+        setBusy(null);
+        setNote(done);
+      })
+      .catch((err) => {
+        setError(errorMessage(err));
+        setBusy(null);
+      });
+  };
 
-  const startEdit = () =>
-    setDraft(
-      manualPoints.map((p) => ({
-        qty_from: String(p.qty_from),
-        unit_price: String(p.unit_price),
-        currency: p.currency,
-        source: p.source,
-      })),
+  const pointsOf = (source: string) =>
+    (data?.points ?? []).filter((p) => p.source === source).sort((a, b) => a.qty_from - b.qty_from);
+
+  const move = (i: number, dir: -1 | 1) => {
+    if (data === null) return;
+    const ids = data.suppliers.map((l) => l.id);
+    const j = i + dir;
+    if (j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    run("order", () => setComponentSupplierOrder(compId, ids));
+  };
+
+  const startEdit = (l: SupplierLink) => {
+    setEditing(l.id);
+    setDraft({
+      part_number: l.part_number,
+      url: l.url,
+      note: l.note,
+      tiers: l.connector
+        ? null
+        : pointsOf(l.supplier).map((p) => ({ qty_from: p.qty_from, unit_price: p.unit_price, currency: p.currency })),
+    });
+  };
+
+  const saveEdit = (l: SupplierLink) => {
+    if (draft === null) return;
+    const tiers = draft.tiers
+      ?.filter((t) => t.qty_from !== null && t.unit_price !== null)
+      .map((t) => ({
+        qty_from: Math.max(1, Math.round(t.qty_from ?? 1)),
+        unit_price: t.unit_price ?? 0,
+        currency: t.currency.trim().toUpperCase() || "USD",
+      }));
+    run("save", async () => {
+      let r = await updateSupplierLink(compId, l.id, {
+        part_number: l.connector ? undefined : draft.part_number,
+        url: draft.url,
+        note: draft.note,
+      });
+      if (tiers !== undefined) r = await setSupplierLinkPrices(compId, l.id, tiers);
+      setEditing(null);
+      return r;
+    });
+  };
+
+  const removeLink = async (l: SupplierLink) => {
+    const ok = await dialog.confirm(
+      `Remove ${l.supplier} from this part${l.has_prices ? ", with the prices typed against it" : ""}?`,
+      { title: "Remove supplier", confirmLabel: "Remove", tone: "danger" },
+    );
+    if (ok) run("remove", () => deleteSupplierLink(compId, l.id));
+  };
+
+  const attribute = async (source: string) => {
+    if (data === null) return;
+    const targets = data.suppliers.filter((l) => !l.connector && !l.has_prices);
+    if (targets.length === 0) {
+      await dialog.alert(
+        `Add the supplier these "${source}" prices came from first, then move them onto it.`,
+        { title: "No supplier to move them to" },
+      );
+      return;
+    }
+    const pick = await dialog.select(
+      `Which supplier quoted the "${source}" prices? They move unchanged, and that supplier goes to the top of this part's order.`,
+      targets.map((l) => ({ value: String(l.id), label: l.part_number ? `${l.supplier} — ${l.part_number}` : l.supplier })),
+      { title: "Move prices to a supplier", confirmLabel: "Move" },
+    );
+    if (pick) run("attribute", () => attributeLegacyPrice(compId, source, Number(pick)));
+  };
+
+  const addLink = () => {
+    if (newSupplier === "") return;
+    run("add", async () => {
+      const r = await addSupplierLink(compId, { supplier_id: newSupplier, part_number: newPn.trim() });
+      setNewSupplier("");
+      setNewPn("");
+      return r;
+    });
+  };
+
+  const patchTier = (i: number, patch: Partial<DraftTier>) =>
+    setDraft((d) =>
+      d === null || d.tiers === null ? d : { ...d, tiers: d.tiers.map((t, j) => (j === i ? { ...t, ...patch } : t)) },
     );
 
-  const save = () => {
-    if (draft === null) return;
-    const points = draft
-      .filter((d) => d.qty_from.trim() !== "" && d.unit_price.trim() !== "")
-      .map((d) => ({
-        qty_from: Math.max(1, parseInt(d.qty_from, 10) || 1),
-        unit_price: Number(d.unit_price) || 0,
-        currency: d.currency.trim().toUpperCase() || "USD",
-        source: d.source.trim() || "Manual",
-      }));
-    setBusy("save");
-    setError(null);
-    setPricePoints(compId, points)
-      .then((r) => {
-        setData(r);
-        setDraft(null);
-        setBusy(null);
-        setNote(null);
-      })
-      .catch((err) => {
-        setError(errorMessage(err));
-        setBusy(null);
-      });
-  };
-
-  const refresh = () => {
-    setBusy("refresh");
-    setError(null);
-    refreshPricePoints(compId)
-      .then((r) => {
-        setData(r);
-        setBusy(null);
-        setNote("Supplier ladders refreshed.");
-      })
-      .catch((err) => {
-        setError(errorMessage(err));
-        setBusy(null);
-      });
-  };
-
-  const patchDraft = (i: number, patch: Partial<DraftPoint>) =>
-    setDraft((d) => (d === null ? d : d.map((row, j) => (j === i ? { ...row, ...patch } : row))));
+  const linked = new Set(data?.suppliers.map((l) => l.supplier_id) ?? []);
+  const addable = register.filter((s) => !s.connector && !linked.has(s.id));
+  const legacy = data
+    ? [
+        ...data.legacy_sources.map((src) => ({ source: src, points: pointsOf(src) })),
+        ...(data.legacy_summary.length > 0
+          ? [{ source: data.legacy_summary[0].source, points: data.legacy_summary }]
+          : []),
+      ]
+    : [];
 
   return (
     <section className="card pad ladder-card">
-      <h3 className="card-title">Pricing</h3>
+      <h3 className="card-title">Suppliers &amp; pricing</h3>
       {error ? <ErrorBanner message={error} /> : null}
       {note ? <p className="muted">{note}</p> : null}
       {data === null && !error ? <Spinner label="Loading pricing" /> : null}
@@ -570,112 +669,179 @@ function PriceLadderCard({ compId }: { compId: number }) {
             {data.supply ? (
               <span className="muted">
                 MOQ {data.supply.moq ?? "?"}
-                {data.supply.checked_at
-                  ? ` · checked ${data.supply.checked_at.slice(0, 10)}`
-                  : ""}
+                {data.supply.checked_at ? ` · checked ${data.supply.checked_at.slice(0, 10)}` : ""}
               </span>
             ) : null}
           </div>
-          {data.points.length === 0 && draft === null ? (
-            <p className="muted">
-              No price levels yet — refresh the supplier ladders or add manual levels.
-            </p>
-          ) : null}
-          {data.points.length > 0 ? (
-            <table className="data ladder-table">
+
+          {legacy.map((g) => (
+            <div key={g.source} className="banner-warn">
+              "{g.source}" prices name no supplier, and they price this part ahead of every supplier:{" "}
+              <span className="mono" title={ladderText(g.points)}>{ladderShort(g.points)}</span>{" "}
+              <button type="button" className="btn btn-sm" disabled={busy !== null}
+                onClick={() => void attribute(g.source)}>
+                Move to a supplier…
+              </button>
+            </div>
+          ))}
+
+          {data.suppliers.length === 0 ? (
+            <p className="muted">No supplier is linked yet. Set the LCSC Part property, or add a supplier below.</p>
+          ) : (
+            <table className="data data-fixed ladder-table supplier-links-table">
               <thead>
                 <tr>
-                  <th>Source</th>
-                  <th className="num">From qty</th>
-                  <th className="num">Unit price</th>
-                  <th>Updated</th>
+                  <th>Supplier</th>
+                  <th>Part number</th>
+                  <th>Price breaks</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
-                {[...robotPoints, ...(draft === null ? manualPoints : [])]
-                  .sort((a, b) => a.qty_from - b.qty_from)
-                  .map((p) => (
-                    <tr key={p.id}>
-                      <td
-                        className={ROBOT_SOURCES.includes(p.source) ? "muted" : undefined}
-                        title={
-                          p.source === "LCSC"
-                            ? "LCSC retail fallback — JLCPCB has no ladder for this part"
-                            : undefined
-                        }>
-                        {p.source}
-                      </td>
-                      <td className="num mono">{p.qty_from.toLocaleString()}</td>
-                      <td className="num mono">
-                        {p.unit_price} {p.currency}
-                      </td>
-                      <td className="muted">{p.updated_at.slice(0, 10)}</td>
-                    </tr>
-                  ))}
+                {data.suppliers.map((l, i) => {
+                  const pts = pointsOf(l.supplier);
+                  const wins = data.effective_source === l.supplier;
+                  return (
+                    <Fragment key={l.id}>
+                      <tr>
+                        <td title={l.connector ? "Refreshed by the platform from the LCSC Part property" : l.note || undefined}>
+                          {i + 1}. {l.supplier}{" "}
+                          {wins ? <span className="pill ok" title="The first supplier with prices prices the BOM">BOM</span> : null}
+                        </td>
+                        <td className="mono" title={l.part_number || undefined}>
+                          {l.url ? (
+                            <a className="comp-link" href={l.url} target="_blank" rel="noreferrer">
+                              {l.part_number || "product page"}
+                            </a>
+                          ) : (
+                            l.part_number || <span className="muted">—</span>
+                          )}
+                        </td>
+                        <td className={`mono ${wins ? "" : "muted"}`} title={ladderText(pts)}>
+                          {pts.length > 0 ? ladderShort(pts) : "no prices"}
+                        </td>
+                        <td className="ctr">
+                          <button type="button" className="icon-btn" title="Earlier in this part's order"
+                            disabled={busy !== null || i === 0} onClick={() => move(i, -1)}>↑</button>
+                          <button type="button" className="icon-btn" title="Later in this part's order"
+                            disabled={busy !== null || i === data.suppliers.length - 1} onClick={() => move(i, 1)}>↓</button>
+                          <button type="button" className="icon-btn" disabled={busy !== null}
+                            title={editing === l.id ? "Close the editor" : "Edit part number, page, note and prices"}
+                            onClick={() => (editing === l.id ? setEditing(null) : startEdit(l))}>✎</button>
+                          {l.connector ? null : (
+                            <button type="button" className="row-del" title={`Remove ${l.supplier}`}
+                              disabled={busy !== null} onClick={() => void removeLink(l)}>&#x2715;</button>
+                          )}
+                        </td>
+                      </tr>
+                      {editing === l.id && draft !== null ? (
+                        <tr>
+                          <td colSpan={4} className="expand-cell">
+                            <div className="ladder-edit">
+                              <FieldRow>
+                                <Field label="Part number" hint={l.connector ? "Follows the LCSC Part property" : undefined}>
+                                  <input className="text mono" value={draft.part_number} disabled={!!l.connector}
+                                    onChange={(e) => setDraft({ ...draft, part_number: e.target.value })} />
+                                </Field>
+                                <Field label="Product page" wide>
+                                  <input className="text" value={draft.url} placeholder="https://…"
+                                    onChange={(e) => setDraft({ ...draft, url: e.target.value })} />
+                                </Field>
+                                <Field label="Note" wide>
+                                  <input className="text" value={draft.note} placeholder="e.g. quote number"
+                                    onChange={(e) => setDraft({ ...draft, note: e.target.value })} />
+                                </Field>
+                              </FieldRow>
+                              {draft.tiers !== null ? (
+                                <>
+                                  <p className="muted">
+                                    Price breaks: from this quantity up, this unit price applies.
+                                    {l.has_prices ? "" : " Saving the first prices puts this supplier at the top of the part's order."}
+                                  </p>
+                                  {draft.tiers.map((t, k) => (
+                                    <div key={k} className="ladder-edit-row">
+                                      ≥
+                                      <NumberInput className="text num-input" value={t.qty_from} min={1}
+                                        title={`Break ${k + 1} from quantity`}
+                                        onChange={(v) => patchTier(k, { qty_from: v })}
+                                        onEmpty={() => patchTier(k, { qty_from: null })} />
+                                      pcs:
+                                      <NumberInput className="text num-input" value={t.unit_price} min={0} step={0.0001}
+                                        title={`Break ${k + 1} unit price`}
+                                        onChange={(v) => patchTier(k, { unit_price: v })}
+                                        onEmpty={() => patchTier(k, { unit_price: null })} />
+                                      <input className="text step-cur" value={t.currency} maxLength={3}
+                                        aria-label={`Break ${k + 1} currency`}
+                                        onChange={(e) => patchTier(k, { currency: e.target.value.toUpperCase() })} />
+                                      <button type="button" className="row-del" title="Remove break"
+                                        onClick={() => setDraft({ ...draft, tiers: draft.tiers?.filter((_, j) => j !== k) ?? null })}>
+                                        &#x2715;
+                                      </button>
+                                    </div>
+                                  ))}
+                                  <button type="button" className="btn btn-sm"
+                                    onClick={() => setDraft({
+                                      ...draft,
+                                      tiers: [...(draft.tiers ?? []), { qty_from: 1, unit_price: null, currency: "USD" }],
+                                    })}>
+                                    ＋ Add price break
+                                  </button>
+                                </>
+                              ) : (
+                                <p className="muted">The platform refreshes these prices; they cannot be typed.</p>
+                              )}
+                              <div className="btn-row">
+                                <button type="button" className="btn btn-sm btn-accent" disabled={busy !== null}
+                                  onClick={() => saveEdit(l)}>
+                                  {busy === "save" ? "Saving…" : "Save"}
+                                </button>
+                                <button type="button" className="btn btn-sm" disabled={busy !== null}
+                                  onClick={() => setEditing(null)}>
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
-          ) : null}
-
-          {draft !== null ? (
-            <div className="ladder-edit">
-              <p className="muted">
-                Manual levels (JLCPCB/LCSC rows above stay robot-managed). Each line: from
-                this quantity up, this unit price applies.
-              </p>
-              {draft.map((d, i) => (
-                <div key={i} className="ladder-edit-row">
-                  ≥
-                  <input className="text step-qty" type="number" min="1" value={d.qty_from}
-                    aria-label={`Level ${i + 1} from quantity`}
-                    onChange={(e) => patchDraft(i, { qty_from: e.target.value })} />
-                  pcs:
-                  <input className="text step-price" type="number" step="0.0001" min="0"
-                    value={d.unit_price}
-                    aria-label={`Level ${i + 1} unit price`}
-                    onChange={(e) => patchDraft(i, { unit_price: e.target.value })} />
-                  <input className="text step-cur" value={d.currency} maxLength={3}
-                    aria-label={`Level ${i + 1} currency`}
-                    onChange={(e) => patchDraft(i, { currency: e.target.value.toUpperCase() })} />
-                  <input className="text step-src" value={d.source} placeholder="Manual"
-                    title="Source label, e.g. Manual, Mouser, TME"
-                    aria-label={`Level ${i + 1} source`}
-                    onChange={(e) => patchDraft(i, { source: e.target.value })} />
-                  <button type="button" className="row-del" title="Remove level"
-                    onClick={() => setDraft((dd) => dd?.filter((_, j) => j !== i) ?? null)}>
-                    &#x2715;
-                  </button>
-                </div>
-              ))}
-              <div className="btn-row">
-                <button type="button" className="btn btn-sm"
-                  onClick={() =>
-                    setDraft((dd) => [
-                      ...(dd ?? []),
-                      { qty_from: "1", unit_price: "", currency: "USD", source: "Manual" },
-                    ])
-                  }>
-                  ＋ Add price level
-                </button>
-                <button type="button" className="btn btn-sm btn-accent" disabled={busy !== null}
-                  onClick={save}>
-                  {busy === "save" ? "Saving…" : "Save levels"}
-                </button>
-                <button type="button" className="btn btn-sm" disabled={busy !== null}
-                  onClick={() => setDraft(null)}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="btn-row">
-              <button type="button" className="btn btn-sm" onClick={startEdit}>
-                {manualPoints.length > 0 ? "Edit manual levels" : "＋ Add manual levels"}
-              </button>
-              <button type="button" className="btn btn-sm" disabled={busy !== null} onClick={refresh}>
-                {busy === "refresh" ? "Refreshing…" : "Refresh supplier ladders"}
-              </button>
-            </div>
           )}
+
+          <FieldRow>
+            <Field label="Add a supplier">
+              <select className="text" value={newSupplier}
+                onChange={(e) => setNewSupplier(e.target.value === "" ? "" : Number(e.target.value))}>
+                <option value="">— choose —</option>
+                {addable.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Their part number">
+              <input className="text mono" value={newPn} placeholder="e.g. 595-OPA354AIDBVR"
+                onChange={(e) => setNewPn(e.target.value)} />
+            </Field>
+          </FieldRow>
+          <div className="btn-row">
+            <button type="button" className="btn btn-sm" disabled={busy !== null || newSupplier === ""} onClick={addLink}>
+              ＋ Add supplier
+            </button>
+            {data.own_order ? (
+              <button type="button" className="btn btn-sm" disabled={busy !== null}
+                title="Drop this part's own order and follow the library order"
+                onClick={() => run("order", () => setComponentSupplierOrder(compId, null), "Back on the library order.")}>
+                Use library order
+              </button>
+            ) : null}
+            <button type="button" className="btn btn-sm" disabled={busy !== null}
+              onClick={() => run("refresh", () => refreshPricePoints(compId), "Supplier ladders refreshed.")}>
+              {busy === "refresh" ? "Refreshing…" : "Refresh JLCPCB / LCSC"}
+            </button>
+          </div>
         </>
       ) : null}
     </section>
