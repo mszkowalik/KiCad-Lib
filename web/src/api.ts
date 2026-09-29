@@ -5144,8 +5144,9 @@ export interface DevicePresence {
   /** true = Online, false = Offline, null = an LWT we could not read. */
   online: boolean | null;
   lwt: string;
-  /** ANY message from the device, so it survives a device that dropped off
-   *  without publishing a clean "Offline". This is the honest "last online". */
+  /** The newest LIVE message from the device. A retained message the broker
+   *  replays on reconnect does not move it, so null means no live message is
+   *  on record (decision 0056). */
   last_seen_at: string | null;
   last_online_at: string | null;
   last_offline_at: string | null;
@@ -5170,6 +5171,20 @@ export interface DevicePresence {
   /** Where in the payload it was found, e.g. "StatusNET.Mac". */
   reported_mac_field: string;
   reported_mac_at: string | null;
+  /** True when this topic is the name the unit was PROGRAMMED with. */
+  current_name: boolean;
+  /** The unit's other topics. A bench reflash renames a device and the broker
+   *  keeps the old name, so one unit can own several (decision 0056). The
+   *  fields above describe the main one: online first, then the newest. */
+  other_topics: DevicePresenceTopic[];
+}
+
+export interface DevicePresenceTopic {
+  topic: string;
+  online: boolean | null;
+  last_seen_at: string | null;
+  last_online_at: string | null;
+  current_name: boolean;
 }
 
 /** A device of one project, with the broker's view attached. */
@@ -5293,6 +5308,11 @@ export interface MqttUnlinkedRow {
   inverter_sn: string;
   dongle_version: string;
   mac_from_topic: string;
+  hw_model: string;
+  reported_mac: string;
+  /** Every link rule that matched. A row that has candidates and is still
+   *  unlinked is a conflict: its rules name different units. */
+  candidates: { rule: string; device_id: number }[];
 }
 
 export function getMqttStatus(signal?: AbortSignal): Promise<MqttStatusPayload> {

@@ -14,6 +14,7 @@ from ..config import settings
 from ..db import get_db
 from ..models import utcnow
 from ..services import cost_state, fx, gitrepo, ladder, project_bom, project_ingest, project_render, storage
+from ..services import mqtt_monitor
 from ..services.crypto import decrypt_token, encrypt_token
 from .users import require_admin
 from .util import acting_name, audit
@@ -967,14 +968,20 @@ def project_devices(
     deployed, or the monitor may be switched off. `presence: null` says "we do
     not know", which is a different claim from `online: false` ("the broker
     says it is gone"), and the UI must keep them apart.
+
+    **The join takes ONE row per unit** — its main row. A unit can own several
+    topics (decision 0056), and joining them all listed it once per topic and
+    counted it twice in the summary.
     """
     project = db.get(M.Project, project_id)
     if project is None:
         raise HTTPException(404, "no such project")
 
+    _main_presence = ((M.DevicePresence.device_unit_id == M.DeviceUnit.id)
+                      & M.DevicePresence.id.in_(mqtt_monitor.main_presence_ids()))
     rows = (
         db.query(M.DeviceUnit, M.DevicePresence)
-        .outerjoin(M.DevicePresence, M.DevicePresence.device_unit_id == M.DeviceUnit.id)
+        .outerjoin(M.DevicePresence, _main_presence)
         .filter(M.DeviceUnit.project_id == project_id)
     )
     if state:
@@ -1050,7 +1057,7 @@ def project_devices(
     # not change meaning when a filter or the limit is applied.
     base_q = (
         db.query(M.DeviceUnit.id, M.DevicePresence.online)
-        .outerjoin(M.DevicePresence, M.DevicePresence.device_unit_id == M.DeviceUnit.id)
+        .outerjoin(M.DevicePresence, _main_presence)
         .filter(M.DeviceUnit.project_id == project_id)
     )
     # Scoped to the batch when one is asked for, so "3 of 1025" on a run page

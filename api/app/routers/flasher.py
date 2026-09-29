@@ -1548,16 +1548,19 @@ def _presence_json(db: Session, dev: M.DeviceUnit) -> dict | None:
     Matched by `device_unit_id` first and by topic second: a presence row
     discovered before the device was imported may not be linked yet, and the
     device page is exactly where somebody notices.
+
+    A unit can own several topics — a reflash renames it and the broker keeps
+    the old name (decision 0056). The fields describe the MAIN row
+    (`mqtt_monitor.presence_order`); `other_topics` lists the rest.
     """
-    row = db.scalar(
-        select(M.DevicePresence).where(M.DevicePresence.device_unit_id == dev.id)
-    )
-    if row is None and dev.tasmota_id:
-        row = db.scalar(
+    rows = mqtt_monitor.presence_rows(db, dev)
+    if not rows and dev.tasmota_id:
+        rows = list(db.scalars(
             select(M.DevicePresence).where(M.DevicePresence.topic == dev.tasmota_id)
-        )
-    if row is None:
+        ))
+    if not rows:
         return None
+    row = rows[0]
     return {
         "topic": row.topic,
         "online": row.online,
@@ -1582,6 +1585,18 @@ def _presence_json(db: Session, dev: M.DeviceUnit) -> dict | None:
         "reported_mac": row.reported_mac,
         "reported_mac_field": row.reported_mac_field,
         "reported_mac_at": _iso(row.reported_mac_at),
+        # True when this is the name the unit was PROGRAMMED with.
+        "current_name": row.topic == dev.tasmota_id,
+        "other_topics": [
+            {
+                "topic": r.topic,
+                "online": r.online,
+                "last_seen_at": _iso(r.last_seen_at),
+                "last_online_at": _iso(r.last_online_at),
+                "current_name": r.topic == dev.tasmota_id,
+            }
+            for r in rows[1:]
+        ],
     }
 
 
@@ -2280,7 +2295,9 @@ def _mosquitto_file(db: Session, project_id: int | None) -> Response:
     EVERY name a device was ever programmed with is listed, not only the
     current one (user decision 2026-09-23). 78 units (77 CE_Aqua_V2, 1
     CE_Dongle_V2) were first programmed as `dongle_<6 hex>` and later as `dongle_<12 hex>`; both names
-    stay on the broker, so the file carries 5534 lines for 5456 devices."""
+    stay on the broker. Devices named from the broker carry accounts derived
+    from their topic, with no run behind them (decision 0054); their
+    `set_by_run_id` is NULL, so they pair on (unit, None)."""
     q = (
         db.query(M.DeviceConfigValue.device_unit_id, M.DeviceConfigValue.key,
                  M.DeviceConfigValue.value, M.DeviceConfigValue.set_by_run_id)

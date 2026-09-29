@@ -1,5 +1,48 @@
 # Changelog
 
+## 2026-09-29 (a device keeps its old broker name, and "last heard" means the device spoke)
+
+Decision [0056](docs/decisions/0056-a-unit-owns-every-topic-it-was-given.md).
+Not deployed yet.
+
+- **A unit can own several broker topics.** A bench reflash renames a device
+  (`dongle_42AD24` → `dongle_F8B3B742AD24`), and the broker keeps the old
+  name. Presence now links a topic by evidence: the unit's current name, the
+  device's own MAC, the MAC a 12-hex topic spells, or a name the unit holds a
+  broker account for. On a copy of production the unlinked list fell from 30
+  to 2, and those 2 are the topics that are not ours.
+- **The device page lists "Other names"**, and marks a main topic that is not
+  the programmed name. The device list still shows each unit once, and counts
+  it once.
+- **Admin → Fleet broker shows the candidates** for an unlinked topic. A topic
+  whose rules name different units stays unlinked, for a person to decide.
+- **Correction: a retained replay no longer moves "last heard".** The broker
+  replays every retained message on a reconnect, and each replay used to
+  restamp every offline topic. Values written before the deploy stay until
+  they are reset.
+
+## 2026-09-29 (the last broker discoveries have names, and every named device has a broker account)
+
+Decision [0054](docs/decisions/0054-a-device-named-from-the-broker-gets-its-account-from-its-topic.md).
+Applied to production with `scripts/identify-broker-devices-2026-09-29.py`.
+
+- **10 Aqua prototypes are named.** The `08:d1:f9` devices on the broker fill
+  shipped placeholder rows 28296–28305 of run 10733. Order line 17 still
+  reports 20 shipped.
+- **`dongle_ACEBE6D34698` is unit 28521**, in stock in run 2164 ("Batch 1 —
+  50 pcs"). It was programmed outside the platform.
+- **The Mosquitto export grew from 5,730 to 5,771 lines.** 41 devices had no
+  account: the 29 named from the broker on 2026-09-19, the 11 above, and unit
+  81's second name `dongle_C82E189E4F38`. Their passwords are derived from the
+  topic, which matches all 5,757 accounts already stored. Every broker topic
+  that is ours now has an account.
+- **Unlinked broker topics: 41 → 30.** 27 are old names of reflashed devices,
+  one is unit 81's second name, and two are not ours (a customer's ESP32 dev
+  kit and `cedonglev3ppp`).
+- **Correction:** "last seen" on an offline broker row is the watcher's last
+  reconnect, not the device's last message. [mqtt-presence.md](docs/reference/mqtt-presence.md)
+  now says so.
+
 ## 2026-09-27 (a shipment is packed before it is sent)
 
 **New: Production → Shipments.** Open a shipment for one order, scan devices

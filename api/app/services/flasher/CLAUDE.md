@@ -462,8 +462,16 @@ Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model
   `mosquitto_passwd -U`). Each password is checked against the stored
   `mqtt_creds_line` hash, and derived from it when `mqtt_password` is missing.
   It lists EVERY name a device ever had (history rows too), not only the
-  current one: 78 units carry both a 6-hex and a 12-hex name.
+  current one: 78 units carry both a 6-hex and a 12-hex name. Never drop an
+  old name — a device still running its old config connects with it.
+  Devices named from the broker, with no programming run, carry accounts
+  DERIVED from their topic (`set_by_run_id` NULL, decision
+  [0054](../../../../docs/decisions/0054-a-device-named-from-the-broker-gets-its-account-from-its-topic.md)).
+  A device the platform links to a broker topic must have an account, or a
+  regenerated broker file locks it out.
 - **Credential derivation (`services/flasher/credentials.py`) is frozen** —
-  verified byte-for-byte against real `mosquitto_passwords.txt` pairs. Any
-  change strands the deployed fleet.
+  verified byte-for-byte against real `mosquitto_passwords.txt` pairs, and
+  on 2026-09-29 against all 5,757 stored accounts: one fleet salt, the
+  password derived from the topic, since 2024-06. Any change strands the
+  deployed fleet.
 

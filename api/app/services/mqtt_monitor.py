@@ -76,7 +76,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import models as M
@@ -161,6 +161,28 @@ _started = False
 _lock = threading.Lock()
 # topic -> partial update accumulated since the last flush.
 _pending: dict[str, dict] = {}
+
+# A RETAINED message is the broker replaying what a device said at some
+# unknown moment in the past — on every (re)subscribe, for every topic, offline
+# ones included. It still carries the current STATE (`online`, `persist`, the
+# discovery fields), but it is not the device speaking now, so it must not move
+# the clocks that mean "the device spoke". On 2026-09-28 one replay stamped
+# every offline topic in the fleet within the same minute. MQTT 3.1.1
+# §3.3.1.3: the broker sets RETAIN only on a message sent because of a NEW
+# subscription; a live message reaches an established one with RETAIN 0.
+_LIVE_ONLY = ("last_seen_at", "last_online_at", "last_offline_at")
+# When the platform FIRST learned a retained fact is still worth keeping, so
+# these are written only while the column is empty — a replay never moves them.
+_FIRST_ONLY = ("persist_at", "reported_mac_at")
+
+
+def _as_retained(update: dict) -> dict:
+    """A parsed update, minus what a replay may not claim. See `_LIVE_ONLY`."""
+    out = {k: v for k, v in update.items() if k not in _LIVE_ONLY and k not in _FIRST_ONLY}
+    first = {k: update[k] for k in _FIRST_ONLY if k in update}
+    if first:
+        out["_first"] = first
+    return out
 
 
 def _now() -> datetime:
@@ -329,6 +351,18 @@ def _parse(leaf: str, payload: bytes) -> dict:
 
 
 # ------------------------------------------------------------------- flushing
+def _buffer(topic_id: str, update: dict, *, retained: bool) -> None:
+    """Merge one parsed message into the pending buffer for its topic."""
+    if retained:
+        update = _as_retained(update)
+    first = update.pop("_first", None)
+    with _lock:
+        pending = _pending.setdefault(topic_id, {})
+        pending.update(update)
+        if first:
+            pending.setdefault("_first", {}).update(first)
+
+
 def _flush(db: Session) -> int:
     """Write the buffer out in one transaction. Returns rows touched."""
     with _lock:
@@ -364,8 +398,12 @@ def _flush(db: Session) -> int:
             row = M.DevicePresence(topic=topic, first_seen_at=now,
                                    device_unit_id=linked.get(topic))
             db.add(row)
+        first = update.pop("_first", {})
         for key, value in update.items():
             setattr(row, key, value)
+        for key, value in first.items():
+            if getattr(row, key) is None:
+                setattr(row, key, value)
         row.updated_at = now
     db.commit()
     STATE["flushed"] += len(batch)
@@ -373,35 +411,120 @@ def _flush(db: Session) -> int:
     return len(batch)
 
 
-def link_devices(db: Session) -> int:
-    """Attach presence rows to device units that appeared after the row did.
+# ------------------------------------------------------------------- linking
+# A UNIT CAN OWN SEVERAL TOPICS (decision 0056). A bench reflash renames a
+# device (`dongle_42AD24` -> `dongle_F8B3B742AD24`), and the broker keeps the
+# old topic's retained messages for good, so the old name stays on the broker
+# as a row of its own. `tasmota_id` is the PROGRAMMED name and never follows
+# the broker. The other topics are linked by evidence, one rule per kind:
+#
+#   current_name  the topic is the unit's `tasmota_id`
+#   device_mac    the device's own discovery MAC is the unit's MAC
+#   topic_mac     the full MAC a 12-hex topic spells is the unit's MAC
+#   account       the topic is a name the unit holds a broker account for
+#                 (`device_config_values.mqtt_user`, history rows included) —
+#                 the same list the mosquitto export writes
+#
+# Rules that name DIFFERENT units link nothing: the row stays unlinked, and
+# `/api/mqtt/unlinked` shows every candidate so a person can decide. A 6-hex
+# suffix alone is never evidence — `8BD26C` ends two different devices' MACs.
 
-    Cheap and idempotent; run on startup and after any device import. This is
-    the other half of keying on the topic: a device discovered on the broker
-    first and imported into the platform later keeps the history it already
-    accumulated.
+def link_candidates(db: Session, rows: list[M.DevicePresence]) -> dict[int, list[tuple[str, int]]]:
+    """presence row id -> [(rule, device_unit_id), …] for every rule that matched."""
+    if not rows:
+        return {}
+    topics = [r.topic for r in rows]
+    by_name: dict[str, set[int]] = {}
+    for name, uid in db.execute(select(M.DeviceUnit.tasmota_id, M.DeviceUnit.id)
+                                .where(M.DeviceUnit.tasmota_id.in_(topics))):
+        by_name.setdefault(name, set()).add(uid)
+    by_account: dict[str, set[int]] = {}
+    for name, uid in db.execute(
+            select(M.DeviceConfigValue.value, M.DeviceConfigValue.device_unit_id)
+            .where(M.DeviceConfigValue.key == "mqtt_user",
+                   M.DeviceConfigValue.value.in_(topics))):
+        by_account.setdefault(name, set()).add(uid)
+    macs = {r.reported_mac.lower() for r in rows if r.reported_mac}
+    macs |= {m for m in (mac_from_topic(t) for t in topics) if m}
+    by_mac: dict[str, int] = {}
+    if macs:
+        by_mac = {m.lower(): uid for m, uid in db.execute(
+            select(M.DeviceUnit.mac, M.DeviceUnit.id)
+            .where(func.lower(M.DeviceUnit.mac).in_(macs)))}
+
+    out: dict[int, list[tuple[str, int]]] = {}
+    for r in rows:
+        found = [("current_name", uid) for uid in sorted(by_name.get(r.topic, ()))]
+        if r.reported_mac and r.reported_mac.lower() in by_mac:
+            found.append(("device_mac", by_mac[r.reported_mac.lower()]))
+        topic_mac = mac_from_topic(r.topic)
+        if topic_mac in by_mac:
+            found.append(("topic_mac", by_mac[topic_mac]))
+        found += [("account", uid) for uid in sorted(by_account.get(r.topic, ()))]
+        if found:
+            out[r.id] = found
+    return out
+
+
+def link_devices(db: Session) -> int:
+    """Attach every unlinked presence row whose evidence names exactly ONE unit.
+
+    Cheap and idempotent; run on startup, every few minutes by the watcher, and
+    after any device import. It is the other half of keying on the topic: a
+    device discovered on the broker first and imported later keeps the history
+    it already accumulated, and a device renamed by a reflash keeps its old
+    name. It never unlinks, and never changes a unit's `tasmota_id`.
     """
     orphans = list(db.scalars(
         select(M.DevicePresence).where(M.DevicePresence.device_unit_id.is_(None))
     ))
-    if not orphans:
-        return 0
-    by_topic = {
-        d.tasmota_id: d.id
-        for d in db.scalars(
-            select(M.DeviceUnit).where(
-                M.DeviceUnit.tasmota_id.in_([o.topic for o in orphans])
-            )
-        )
-    }
+    candidates = link_candidates(db, orphans)
     n = 0
     for row in orphans:
-        if row.topic in by_topic:
-            row.device_unit_id = by_topic[row.topic]
+        units = {uid for _, uid in candidates.get(row.id, ())}
+        if len(units) == 1:
+            row.device_unit_id = units.pop()
             n += 1
     if n:
         db.commit()
     return n
+
+
+# ------------------------------------------------------------ one row per unit
+def presence_order() -> tuple:
+    """How a unit's MAIN presence row is chosen when it owns several topics.
+
+    A topic the broker calls online first, then the newest LIVE message, then
+    the programmed name. One definition, used by the device list (as SQL) and
+    by every single-device reader, so the two can never disagree. Needs
+    `DeviceUnit` joined.
+    """
+    return (
+        M.DevicePresence.online.desc().nullslast(),
+        M.DevicePresence.last_seen_at.desc().nullslast(),
+        (M.DevicePresence.topic == M.DeviceUnit.tasmota_id).desc(),
+        M.DevicePresence.id,
+    )
+
+
+def main_presence_ids():
+    """A subquery of one presence row id per linked unit — its main row."""
+    return (
+        select(M.DevicePresence.id)
+        .join(M.DeviceUnit, M.DeviceUnit.id == M.DevicePresence.device_unit_id)
+        .distinct(M.DevicePresence.device_unit_id)
+        .order_by(M.DevicePresence.device_unit_id, *presence_order())
+    )
+
+
+def presence_rows(db: Session, device: M.DeviceUnit) -> list[M.DevicePresence]:
+    """Every topic linked to one unit, its main row first."""
+    return list(db.scalars(
+        select(M.DevicePresence)
+        .join(M.DeviceUnit, M.DeviceUnit.id == M.DevicePresence.device_unit_id)
+        .where(M.DevicePresence.device_unit_id == device.id)
+        .order_by(*presence_order())
+    ))
 
 
 # ------------------------------------------------------------------- the MAC
@@ -488,11 +611,22 @@ def backfill_macs(db: Session, actor: str = "mqtt-monitor") -> int:
     if not rows:
         return 0
 
-    candidates: list[tuple[M.DeviceUnit, str, str]] = []
+    # One unit can own several topics (decision 0056), so the evidence is
+    # gathered per UNIT: every topic must agree on one MAC, or nothing is
+    # filled — two topics naming two MACs is a question for a person.
+    per_unit: dict[int, tuple[M.DeviceUnit, dict[str, str]]] = {}
     for presence, device in rows:
         mac, source = broker_mac(presence)
         if mac:
-            candidates.append((device, mac, source))
+            per_unit.setdefault(device.id, (device, {}))[1].setdefault(mac, source)
+    candidates: list[tuple[M.DeviceUnit, str, str]] = []
+    for device, found in per_unit.values():
+        if len(found) > 1:
+            log.warning("mqtt_monitor: not filling device %s — its topics name %d MACs",
+                        device.id, len(found))
+            continue
+        (mac, source), = found.items()
+        candidates.append((device, mac, source))
     if not candidates:
         return 0
 
@@ -577,10 +711,9 @@ def _run(cfg: mqtt_config.MqttSettings) -> None:
         except Exception:  # noqa: BLE001 — a bad payload never kills the loop
             STATE["errors"] += 1
             return
-        with _lock:
-            _pending.setdefault(topic_id, {}).update(update)
+        _buffer(topic_id, update, retained=bool(msg.retain))
         STATE["messages"] += 1
-        STATE["last_message_at"] = update["last_seen_at"].isoformat()
+        STATE["last_message_at"] = _now().isoformat()
 
     client = mqtt.Client(
         mqtt.CallbackAPIVersion.VERSION1,

@@ -31,6 +31,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ... import models as M
+from .. import mqtt_monitor
 from ..orders import utcnow
 
 #: A batch nobody has added to for this long is finished in every sense but the
@@ -116,8 +117,10 @@ def _about_a_known_unit(db: Session, dev: M.DeviceUnit,
             "and this batch keeps the attempt.",
             device_id=dev.id, built_run_id=produced.production_run_id))
 
-    pres = (db.query(M.DevicePresence)
-            .filter(M.DevicePresence.device_unit_id == dev.id).one_or_none())
+    # A unit can own several topics (decision 0056); the main row is an online
+    # one whenever any of them is, so it is the one to warn about.
+    rows = mqtt_monitor.presence_rows(db, dev)
+    pres = rows[0] if rows else None
     if pres is not None and pres.online:
         seen = pres.last_seen_at.isoformat(timespec="minutes") if pres.last_seen_at else "recently"
         out.append(_notice(

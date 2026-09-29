@@ -285,6 +285,9 @@ export default function MqttCard() {
                     <th>Inverter</th>
                     <th>Firmware</th>
                     <th>Last heard</th>
+                    <th title="Link rules that matched. A row with candidates is still unlinked because its rules name different units.">
+                      Candidates
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -299,6 +302,11 @@ export default function MqttCard() {
                       <td className="mono">{r.inverter || "—"}</td>
                       <td className="mono">{r.dongle_version || "—"}</td>
                       <td className="muted">{fmtWhen(r.last_seen_at)}</td>
+                      <td className="mono">
+                        {r.candidates.length
+                          ? r.candidates.map((c) => `#${c.device_id} (${c.rule})`).join(", ")
+                          : "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

@@ -3134,6 +3134,8 @@ class DeviceConfigValue(Base):
     mosquitto_passwords.txt). Consequence: never include them in list
     endpoints — detail views only, fetched explicitly. History is kept:
     `current` marks the newest value per key so reprogramming leaves a trail.
+    `set_by_run_id` is NULL on an account DERIVED from the topic of a device
+    named from the broker, which no run programmed (decision 0054).
     """
 
     __tablename__ = "device_config_values"
@@ -3174,9 +3176,12 @@ class DevicePresence(Base):
     that is `offline` is a device the broker has not heard from, which is not
     the same claim as a device that is broken.
 
-    `last_seen_at` is the honest "last time online": it advances on ANY message
-    from the topic, so it survives a device that drops off without a clean
-    `Offline` LWT.
+    `last_seen_at` advances on any LIVE message from the topic, so it survives
+    a device that drops off without a clean `Offline` LWT. A RETAINED message
+    the broker replays on a reconnect never moves it (decision 0056). One unit
+    can own several rows — a reflash renames a device and the broker keeps the
+    old name — so a reader picks the main row with
+    `mqtt_monitor.presence_order`, never "the" row by `device_unit_id`.
     """
 
     __tablename__ = "device_presence"

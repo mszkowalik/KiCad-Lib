@@ -76,6 +76,18 @@ the bench proved and they cannot change; presence is a live cache that is
 allowed to be stale, wrong or missing. A device that is offline is a device the
 broker has not heard from — not a claim that anything is broken.
 
+**A retained message is not the device speaking.** The broker replays every
+retained `LWT`, `PERSIST_SAVE` and discovery message whenever the watcher
+(re)subscribes, and marks each with the RETAIN flag (MQTT 3.1.1 §3.3.1.3; a
+live message reaches an established subscription with RETAIN 0). A replay
+updates the STATE columns (`online`, `persist`, the discovery fields) and never
+`last_seen_at`, `last_online_at` or `last_offline_at`. `persist_at` and
+`reported_mac_at` are written only while empty. Before decision
+[0056](../decisions/0056-a-unit-owns-every-topic-it-was-given.md) a replay
+moved `last_seen_at` too, and on 2026-09-28 at 20:24 one replay stamped every
+offline topic. Those old values stay until someone resets them, so on a row
+not heard live since the deploy, "last seen" may still be a reconnect time.
+
 ## The MAC
 
 **The broker may FILL a missing MAC. It may never CHANGE one** (user decision
@@ -133,13 +145,33 @@ which is the point of watching a fleet you do not fully own. `link_devices()`
 resolves the pointer when a matching `DeviceUnit.tasmota_id` appears later, so a
 device imported afterwards adopts the history it already accumulated.
 
-**An unlinked row does not mean the platform never made that device.** 69 were
-found on the first run; 28 of them were devices the platform already held, under
-the OTHER spelling of the topic — the broker says `dongle_449430`, programming
-recorded `dongle_F8B3B7449430`. Both spellings are in use (3,172 units carry the
-6-hex form, 2,280 the 12-hex), and `link_devices()` compares the two strings
-exactly, so every disagreement lands here. That also makes this list COMPLETE
-for devices that have reached the broker: a mismatch cannot hide anywhere else.
+**A unit can own several topics.** A bench reflash renames a device: the
+first flash wrote the 6-hex topic (`dongle_42AD24`, 2025-04), and a later one
+wrote the 12-hex topic (`dongle_F8B3B742AD24`, 2025-12-23 / 2026-01-18 /
+2026-09-17). The broker keeps the old topic's retained messages for good, and
+the old name's broker account stays valid on purpose (see the mosquitto export
+in [flasher/CLAUDE.md](../../api/app/services/flasher/CLAUDE.md)). So
+`link_devices()` links a topic by EVIDENCE, not by name alone — the four rules
+and the conflict rule are in the `mqtt_monitor.py` section "linking", and the
+reasons in [0056](../decisions/0056-a-unit-owns-every-topic-it-was-given.md).
+`tasmota_id` stays the programmed name and never follows the broker.
+
+Every reader picks ONE main row per unit with `mqtt_monitor.presence_order`:
+online first, then the newest live message, then the programmed name. The
+device list joins only that row, and the device page lists the rest as "Other
+names". Never join `device_presence` on `device_unit_id` alone — it lists a
+unit once per topic.
+
+The old run logs tie an old name to the chip. The device's IPv6 link-local
+address in the run log (`fe80::fab3:b7ff:fe42:ad24`) is its MAC in EUI-64 form
+(`f8:b3:b7:42:ad:24`). On 2026-09-29 it matched the unit's MAC on 76 of 76
+old-name runs that logged one.
+
+**An unlinked row is a device the platform cannot explain, or a conflict.**
+`/api/mqtt/unlinked` lists the rules that matched each row; a row with
+candidates is unlinked because its rules name different units. The list is
+COMPLETE for devices that have reached the broker: a mismatch cannot hide
+anywhere else.
 
 Read the list with `hw_model` beside it. It carries the firmware's build target
 straight from `tasmota/discovery` (`CE_Dongle_v2`, `CE_Aqua`, `CE_Dongle_v1`,

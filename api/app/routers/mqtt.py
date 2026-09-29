@@ -117,13 +117,16 @@ def unlinked(limit: int = Query(200, le=1000), db: Session = Depends(get_db),
     """Devices the broker knows and the platform does not — the discoveries.
 
     Field replacements, hand-provisioned units, and anything programmed before
-    the flasher recorded it.
+    the flasher recorded it. `candidates` lists every link rule that matched;
+    a row that has candidates and is still unlinked is a CONFLICT — its rules
+    name different units, and linking it is a person's decision (0056).
     """
     rows = db.scalars(
         select(M.DevicePresence)
         .where(M.DevicePresence.device_unit_id.is_(None))
         .order_by(M.DevicePresence.last_seen_at.desc().nullslast())
         .limit(limit)).all()
+    candidates = mqtt_monitor.link_candidates(db, rows)
     return {
         "items": [
             {
@@ -135,6 +138,10 @@ def unlinked(limit: int = Query(200, le=1000), db: Session = Depends(get_db),
                 "inverter_sn": r.inverter_sn,
                 "dongle_version": r.dongle_version,
                 "mac_from_topic": mqtt_monitor.mac_from_topic(r.topic),
+                "hw_model": r.hw_model,
+                "reported_mac": r.reported_mac,
+                "candidates": [{"rule": rule, "device_id": uid}
+                               for rule, uid in candidates.get(r.id, ())],
             }
             for r in rows
         ]

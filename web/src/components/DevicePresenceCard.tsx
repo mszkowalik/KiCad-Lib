@@ -10,6 +10,10 @@
  *  speaking; `presence === null` is the platform admitting it does not know.
  *  Collapsing "unknown" into "offline" would report every never-deployed shelf
  *  unit as a failure.
+ *
+ *  ONE UNIT, SEVERAL TOPICS. A bench reflash renames a device and the broker
+ *  keeps the old name, so the card shows the main topic (online first, then the
+ *  newest) and lists the others under "Other names" (decision 0056).
  */
 import type { DevicePresence } from "../api";
 import { fmtWhen } from "./flasher/common";
@@ -72,9 +76,13 @@ export default function DevicePresenceCard({ presence, mac }: Props) {
       <p className="card-subtitle">
         <span className={`pill ${pill}`}>{word}</span>{" "}
         {online === true
-          ? `talking to the broker, last heard ${ago(presence.last_seen_at)}.`
+          ? presence.last_seen_at
+            ? `talking to the broker, last heard ${ago(presence.last_seen_at)}.`
+            : "the broker says it is connected."
           : online === false
-            ? `the broker last heard from it ${ago(presence.last_seen_at)}.`
+            ? presence.last_seen_at
+              ? `the broker last heard from it ${ago(presence.last_seen_at)}.`
+              : "no live message from it is on record — the broker holds only its retained state."
             : "the broker has a status for it that could not be read."}
       </p>
       <p className="muted dim">
@@ -86,7 +94,12 @@ export default function DevicePresenceCard({ presence, mac }: Props) {
         <tbody>
           <tr>
             <td className="muted">Topic</td>
-            <td className="mono" title={presence.topic}>{presence.topic}</td>
+            <td className="mono" title={presence.topic}>
+              {presence.topic}{" "}
+              {presence.current_name ? null : (
+                <span className="pill warn">not the programmed name</span>
+              )}
+            </td>
           </tr>
           <tr>
             <td className="muted">Last heard</td>
@@ -152,6 +165,43 @@ export default function DevicePresenceCard({ presence, mac }: Props) {
           ) : null}
         </tbody>
       </table>
+
+      {presence.other_topics.length > 0 ? (
+        <>
+          <h3>Other names</h3>
+          <p className="muted dim">
+            The same unit under another topic. A bench reflash renames a device, and the broker
+            keeps the old name with its last retained state.
+          </p>
+          <table className="data data-fixed">
+            <thead>
+              <tr>
+                <th>Topic</th>
+                <th>Broker</th>
+                <th>Last heard</th>
+              </tr>
+            </thead>
+            <tbody>
+              {presence.other_topics.map((t) => (
+                <tr key={t.topic}>
+                  <td className="mono" title={t.topic}>
+                    {t.topic}{" "}
+                    {t.current_name ? <span className="pill">programmed name</span> : null}
+                  </td>
+                  <td>
+                    <span
+                      className={`pill ${t.online === true ? "ok" : t.online === false ? "err" : ""}`}
+                    >
+                      {t.online === true ? "online" : t.online === false ? "offline" : "unknown"}
+                    </span>
+                  </td>
+                  <td className="mono">{fmtWhen(t.last_seen_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      ) : null}
 
       {macMismatch ? (
         <p className="muted dim">
