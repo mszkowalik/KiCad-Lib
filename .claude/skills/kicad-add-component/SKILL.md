@@ -2,7 +2,7 @@
 name: kicad-add-component
 description: "Full procedure for adding a part to the 7Sigma library: duplicate check, LCSC metadata lookup, category/base-symbol/footprint selection, property construction, the per-category rules a version must satisfy BEFORE you publish it (nothing gates a bad one), and what still has to be done by hand afterwards. Use when adding, editing or publishing any component."
 ---
-<!-- platform-skill: add-component v18 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: add-component v19 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Add a component
 
 End-to-end procedure for adding a part to the 7Sigma library. Every write
@@ -161,8 +161,16 @@ answer first, so nothing is idle while you wait.
 
    `Value`, category parameters (`Power` / `Tolerance` / `Voltage` /
    `Dielectric` / …), `Footprint`, `ki_description`, `Manufacturer 1`,
-   `Manufacturer Part Number 1`, `Supplier 1` = `LCSC`,
-   `Supplier Part Number 1`, `LCSC Part`.
+   `Manufacturer Part Number 1`, `LCSC Part`.
+
+   **Where the part is bought is not a property** (decision 0055, since
+   2026-09-29). `Supplier N` / `Supplier Part Number N` are refused by the
+   proposal tools. The JLCPCB and LCSC links follow `LCSC Part` by
+   themselves. For any other source, publish the component first, then call
+   `link_supplier(component, supplier, part_number)` with that supplier's own
+   order code (Mouser `595-OPA354AIDBVR`, TME `MR-1293.0050`). The supplier
+   must be in the register — `list_suppliers`; an admin adds a new one. A link
+   is unversioned and costs no verification.
 
    **Do not set `Footprint_Name`.** It is the footprint's short package name
    ("0402", "SOT-23-6") and lives on the footprint itself — the generator
@@ -174,9 +182,11 @@ answer first, so nothing is idle while you wait.
    manufacturer name goes in canonical form (never the raw ALL-CAPS feed value),
    and `ki_description` is a `{Key}` template, not free text.
 
-7. **Never set**: any `Price` key (prices are auto-managed — refreshed from the
-   JLCPCB assembly ladder, with LCSC retail as fallback for parts JLC doesn't
-   carry), or `Datasheet` as a property. Pass `datasheet_url` to the proposal
+7. **Never set**: any `Price` key, any `Supplier N` key, or `Datasheet` as a
+   property. Prices live in their own table: the platform refreshes JLCPCB and
+   LCSC, a person types other suppliers' quotes on the component page, and the
+   supplier order picks which one prices the BOM (`get_component` →
+   `suppliers`). Pass `datasheet_url` to the proposal
    tool instead ([[verify-datasheets]]).
 
    **Check that the PDF actually archived — and READ THE `text_layer`.**

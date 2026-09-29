@@ -2,7 +2,7 @@
 name: kicad-conventions-library
 description: "Component DATA conventions: the index of every rule with the check that holds it, plus the manufacturer names nobody has been able to resolve. The rules themselves live in the component checklist — read them with get_review_checklist('component'). Use when setting Value, ki_description, Manufacturer 1 or a category."
 ---
-<!-- platform-skill: conventions-library v41 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-library v42 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Library conventions
 
 **The rules are checks now, not prose.** Every convention this document used to
@@ -31,6 +31,17 @@ and where to look when a rule does not fit.
 | Do the part's electrical values match the datasheet? | `cmp.electrical` |
 | Is the `VSWR` key spelled without stops? | `cmp.vswr_key` (RF) |
 | Required properties, LCSC format, footprint namespace, pin/pad agreement | `cmp.required_props`, `cmp.lcsc_format`, `cmp.footprint_ref`, `cmp.pins_to_pads`, `cmp.pads_to_pins` |
+
+## Where the part is bought — a link, not a property
+
+`Supplier N` and `Supplier Part Number N` are NOT properties (decision 0055,
+2026-09-29). The proposal tools and the component editor refuse them, and the
+generator never emits them to KiCad. `LCSC Part` stays a property: the KiCad
+BOM export reads it, and the JLCPCB and LCSC links follow it. Any other source
+is a supplier link: `link_supplier(component, supplier, part_number)`, with the
+supplier's own order code. `list_suppliers` is the register in library order;
+an admin adds a supplier. The first supplier in a part's order that has prices
+prices the BOM.
 
 ## `comp_type` — what the part IS
 
