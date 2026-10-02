@@ -1271,6 +1271,17 @@ def propose_new_component(
         comment: Short note recorded on the published version.
             Max 600 characters.
     """
+    from .publish import check_comment
+
+    # Refuse an over-long comment BEFORE any row exists. The datasheet archive
+    # below commits, so the same refusal raised inside the publish comes too
+    # late: the component, a draft v1 and its datasheet row are already
+    # persisted, the name is taken, and neither write tool can reach a
+    # component with no published version. Found 2026-10-02 on RT0402BRD0712K4L.
+    try:
+        check_comment(comment)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
     db = SessionLocal()
     try:
         if db.query(M.Component).filter_by(name=name.strip()).first():
@@ -1327,7 +1338,9 @@ def propose_new_component(
             # Best effort: a supplier that is down or serving HTML must not
             # cost the caller the whole component write. Note fetch_datasheet
             # commits, so the draft version is persisted before _publish_component
-            # runs — harmless because every row it needs is already built above.
+            # runs. That is safe ONLY while every refusal the publish can raise
+            # is checked before the first row is written — see check_comment
+            # at the top. A new publish-time refusal needs the same early check.
             archive = _archive_datasheet(db, ds)
         db.add(M.AuditLog(actor="jaravis", action="proposal.create", entity_type="component_version",
                           entity_id=str(cv.id), details={"component": comp.name, "new": True}))

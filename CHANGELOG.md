@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-02 (a refused new component no longer leaves a shell behind)
+
+- **`propose_new_component` checks the change comment before it writes
+  anything.** The tool archives the datasheet before it publishes, and the
+  archive commits. A comment longer than 600 characters was refused only at
+  publish, after that commit. The component, a draft v1 and its datasheet row
+  stayed in the database, the name was taken, and neither
+  `propose_new_component` nor `propose_component_edit` could reach the part.
+  Found on `RT0402BRD0712K4L`. Now the tool returns the error and writes
+  nothing. The regression test is `api/tests/library/test_propose_new_component.py`.
+
 ## 2026-09-29 (a supplier register, and a supplier order that picks the price)
 
 Decision [0055](docs/decisions/0055-a-component-links-to-suppliers-in-a-register.md).
