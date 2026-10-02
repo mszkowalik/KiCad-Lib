@@ -175,19 +175,28 @@ The 12 desk units against that:
 |---|---|
 | `d2:59:90` (Tasmota), `2f:74:74` (Tasmota), `2e:9c:ac` (Tasmota) | **recorded shipped** on order #6 — on the desk anyway. Returned, or never left: open |
 | 4 erased v3.3 (`d3:d1:9c`, `d3:8e:68`, `d3:36:ac`, `d2:79:08`) | no records. Which build they are from is open |
-| 3 erased v3.2 (`2e:a4:54`, `30:af:ac`, `2f:78:8c`) + `30:af:b0` (Tasmota, default topic) | no records. If they are Run #1 builds, they could FILL 4 of the 10 V3.2 placeholders by MAC (the 0054 pattern). Open |
+| 3 erased v3.2 (`2e:a4:54`, `30:af:ac`, `2f:78:8c`) + `30:af:b0` (Tasmota, default topic) | Run #1 builds (user, 2026-10-03). **FILLED placeholders #11476-79** by MAC on 2026-10-03 (`scripts/fill-v3-placeholders-2026-10-03.py`, the 0054 pattern); 6 Run #1 placeholders stay unnamed |
 | `40:4c:ca:5e:e8:4c` v3.1 (Tasmota 15.1.0.3, default topic) | no records |
 
 Note: the two units binned v3.2 by the user (`2f:74:74`, `2e:9c:ac`) sit in
 the platform's V3.3 run. Either the desk binning or the run label is off by
 one revision for them — cosmetic, not acted on.
 
-Open questions (user): did the 3 shipped desk units come back or never
-leave? Are the 4 record-less v3.2 units Run #1 builds (fill placeholders)?
-Where do the 7 erased units belong — and under decision 0058 they would be
-banked as pool WIP rather than given device records, the same as the 63 bare
-Aquas. The 3 dead v3.1 desk units could not be read and have no MACs
-recorded anywhere.
+**Open: a hard contradiction on the 3 shipped desk units.** Asked whether
+`d2:59:90`, `2f:74:74` and `2e:9c:ac` came back or never left, the user
+answered "they are still at Columbus" (2026-10-03). They cannot be: all
+three answered `Status 0` over USB on the user's machine on 2026-10-02
+(`dongles_v3_3.json` / `dongles_v3_2.json`, timestamps 21:06-21:08). Either
+the desk units are different physical boards than the readout session
+suggests, or the user answered from the shipping records. Resolution: read
+the engraved serial on each of the three desk units and compare. NO record
+was changed.
+
+The 4 erased v3.3 units (`d3:d1:9c`, `d3:8e:68`, `d3:36:ac`, `d2:79:08`)
+remain without a known build. It only matters for the cost note when they
+are banked as pool WIP under 0058 — like the 63 bare Aquas, they get no
+device records now. The 3 dead v3.1 desk units could not be read and have
+no MACs recorded anywhere.
 
 ## Packaging and enclosures
 
@@ -195,16 +204,16 @@ Stated by the user, not verified against the platform yet.
 
 | Item | Quantity | Note |
 |---|---|---|
-| Shipping carton 100x50x40 fala E (Dongle) | 434 | Batch 8 should use all of them (to verify against its size) |
-| Aqua enclosure | 4 cartons x 50 = 200 | unused; CE_Aqua_V2 is closing, so likely never used |
+| Shipping carton 100x50x40 fala E (Dongle) | 434 | NOT enough for Batch 8 (800 boards): the rest of the batch still builds, and more boxes must be bought (user, 2026-10-03) |
+| Aqua enclosure, the ENC1 + ENC2 PAIR (user, 2026-10-03) | 4 cartons x 50 = 200 pairs | unused; CE_Aqua_V2 is closing, so likely never used |
 | Molex 146153-0150 antenna (150 mm, Aqua) | 48 | enough for 48 of the 63 bare PCBs |
-| Italtronic 35.0207000.BL (Dongle V2 enclosure), last delivery | 400 loose + 200 fitted to units in production | "stock from that delivery should be 600" |
-| Loose small enclosures, marking-calibration rejects | not counted | attrition: to be disposed of, not sellable |
+| Italtronic 35.0207000.BL (Dongle V2 enclosure), last delivery | 400 loose + 200 fitted to units in production = 600 from that delivery | as the user stated it: 400 enter the pool as raw parts, 200 sit inside unprogrammed WIP devices |
+| Loose small enclosures, marking-calibration rejects | count them when disposing (user, 2026-10-03) | attrition: to be disposed of, not sellable |
 
-Questions still open: is Batch 8 a CE_Dongle_V2 batch of 434 units, leaving 166
-enclosures after it? Is 600 the quantity received, or the quantity expected on
-hand? How many loose enclosures go to disposal? Is one Aqua enclosure the pair
-ENC1 + ENC2? Do the Aqua spares stay in stock at cost, or are any written off?
+Still open: whether any Aqua spares are written off rather than kept. The
+packaging rows above enter the pool in phase 1 of decision
+[0058](../decisions/0058-a-process-is-versioned-stages-over-the-pool.md), at
+zero value where their cost sits in closed books.
 
 ## Found on the way
 
