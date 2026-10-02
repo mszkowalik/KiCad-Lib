@@ -173,24 +173,42 @@ The 12 desk units against that:
 
 | Desk units | Records |
 |---|---|
-| `d2:59:90` (Tasmota), `2f:74:74` (Tasmota), `2e:9c:ac` (Tasmota) | **recorded shipped** on order #6 — on the desk anyway. Returned, or never left: open |
+| `d2:59:90` (Tasmota), `2f:74:74` (Tasmota), `2e:9c:ac` (Tasmota) | **recorded shipped** on order #6 — never left (user, 2026-10-03) |
 | 4 erased v3.3 (`d3:d1:9c`, `d3:8e:68`, `d3:36:ac`, `d2:79:08`) | no records. Which build they are from is open |
 | 3 erased v3.2 (`2e:a4:54`, `30:af:ac`, `2f:78:8c`) + `30:af:b0` (Tasmota, default topic) | Run #1 builds (user, 2026-10-03). **FILLED placeholders #11476-79** by MAC on 2026-10-03 (`scripts/fill-v3-placeholders-2026-10-03.py`, the 0054 pattern); 6 Run #1 placeholders stay unnamed |
 | `40:4c:ca:5e:e8:4c` v3.1 (Tasmota 15.1.0.3, default topic) | no records |
 
-Note: the two units binned v3.2 by the user (`2f:74:74`, `2e:9c:ac`) sit in
-the platform's V3.3 run. Either the desk binning or the run label is off by
-one revision for them — cosmetic, not acted on.
+**User facts 2026-10-03:** the 3 desk units
+(`d2:59:90`, `2f:74:74`, `2e:9c:ac`) ARE on the desk and were never sent,
+although order #6 lists them; all three are V3.3 (the readout sorted two as
+v3.2 by mistake). **Columbus
+received V3.2 prototypes, not V3.3 — "5, I think".** Order #6 (2026-08-03,
+10 x 450 PLN, no invoice, no reference) was generated from Run #2 (V3.3)'s
+typed sale fields by the removed startup migration, so its delivery of 10
+Run #2 units is wrong as a whole. Run #1 (V3.2, 10 records) shows all 10 in
+stock, of which 4 are now named desk units — so at most 6 Run #1 records can
+be the delivered ones.
 
-**Open: a hard contradiction on the 3 shipped desk units.** Asked whether
-`d2:59:90`, `2f:74:74` and `2e:9c:ac` came back or never left, the user
-answered "they are still at Columbus" (2026-10-03). They cannot be: all
-three answered `Status 0` over USB on the user's machine on 2026-10-02
-(`dongles_v3_3.json` / `dongles_v3_2.json`, timestamps 21:06-21:08). Either
-the desk units are different physical boards than the readout session
-suggests, or the user answered from the shipping records. Resolution: read
-the engraved serial on each of the three desk units and compare. NO record
-was changed.
+**User facts 2026-10-03, the full V3 prototype story:** Columbus placed NO
+V3 order before the 50-piece one (RA 00001/09/2026). Orders #5 (5 x V3.1,
+2025-11-03) and #6 (10 x V3.3, 2026-08-03) are artifacts the removed
+startup migration made from typed run sale fields — not orders. Every V3.1,
+V3.2 and V3.3 prototype was originally STOCKED. What really left: **5 x V3.2
+sent to Columbus, and 1 x V3.3 given to Columbus.** Everything else is a
+prototype in stock, not sellable. Planned correction: reverse shipments #5
+and #6 and cancel both orders (an order with device history cannot be
+deleted); record the 6 real deliveries on one new non-invoiced order, on
+unnamed placeholders (which exact units went is unknown); set every other
+prototype record to condition `prototype`.
+
+**APPLIED 2026-10-03** by `scripts/v3-prototypes-cleanup-2026-10-03.py`:
+orders #5 and #6 cancelled with their shipments reversed; new order #1556
+(Columbus, 0 PLN — no order or invoice existed) with shipment #2308 (5 x V3.2,
+2026-09-03, date approximate, records #11480-84) and #2309 (1 x V3.3,
+2026-09-26, record #11493). CE_Dongle_V3 after: 20 in stock (19 `prototype`
++ Batch 1's `ac:eb:e6:d3:46:98`), 6 shipped. The cancelled orders still
+DISPLAY their old order values (2,250 and 4,500 PLN); demand ignores them,
+and no invoice ever backed them, so no revenue figure moved.
 
 The 4 erased v3.3 units (`d3:d1:9c`, `d3:8e:68`, `d3:36:ac`, `d2:79:08`)
 remain without a known build. It only matters for the cost note when they
