@@ -15,6 +15,17 @@
   cannot reach it. The tool now publishes the next version onto it and keeps
   the earlier unpublished versions as history. Before, an agent could not
   finish the part at all.
+- **The New Component page works again.** Since 2026-08-25 every create
+  answered a 500: the route passed the database session where the request
+  belongs. It also committed the component row before its first version, so a
+  failed create could leave a name that blocked the next attempt. No such
+  shell exists on prod. Now the create is one transaction, and a refused one
+  writes nothing.
+- **Saving a BOM-only part no longer answers a 500.** The save committed, but
+  the reply re-read a stale version list, because a BOM-only part skips the
+  mirror refresh that clears it. Creates and edits were both affected.
+- **An over-long change comment from a script is a 422, not a 500.** The page
+  already capped the field at 600 characters.
 
 ## 2026-09-29 (a supplier register, and a supplier order that picks the price)
 

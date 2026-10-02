@@ -367,6 +367,15 @@ def create_version(comp_id: int, body: VersionCreate, request: Request,
     # own history and in the change feed.
     actor = actor_of(request)
 
+    # The publish refuses an over-long comment with a ValueError, which this
+    # route never caught: a script got a 500. Refuse it here, as a 422.
+    from ..services.publish import check_comment
+
+    try:
+        check_comment(body.comment)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+
     category = db.get(M.Category, body.category_id)
     if category is None:
         raise HTTPException(422, "category not found")
@@ -489,6 +498,11 @@ def create_version(comp_id: int, body: VersionCreate, request: Request,
 
     mirror_result = refresh_mirror_for_component(db, settings, comp, res["tops"])
 
+    # The new version was db.add()ed, never appended to the loaded
+    # comp.versions, and the session does not expire on commit. The mirror
+    # refresh expires everything, but returns before that for a BOM-only part,
+    # so the reload below kept the stale list and the save answered a 500.
+    db.expire_all()
     comp = _get_component(db, comp_id)  # reload with relationships
     cv = next(v for v in comp.versions if v.version_no == new_no)
     return {
@@ -562,9 +576,14 @@ class ComponentCreate(VersionCreate):
 
 
 @router.post("")
-def create_component(body: ComponentCreate, db: Session = Depends(get_db)):
+def create_component(body: ComponentCreate, request: Request, db: Session = Depends(get_db)):
     """Manually add a new component: v1, published. Every door publishes now —
-    the agent's tools included — so there is no other flow to contrast with."""
+    the agent's tools included — so there is no other flow to contrast with.
+
+    ONE transaction: the component row is not committed until its first version
+    is published. A refusal in create_version then leaves nothing behind. When
+    this committed first, a failed create left a component with no version,
+    whose name blocked the next attempt."""
     name = body.name.strip()
     if not name:
         raise HTTPException(422, "component name must not be empty")
@@ -575,8 +594,7 @@ def create_component(body: ComponentCreate, db: Session = Depends(get_db)):
     db.flush()
     audit(db, "component.create", "component", comp.id,
           {"name": name, "in_library": body.in_library, "purchasable": body.purchasable})
-    db.commit()
-    return create_version(comp.id, body, db)
+    return create_version(comp.id, body, request, db)
 
 
 class InLibraryPatch(BaseModel):
