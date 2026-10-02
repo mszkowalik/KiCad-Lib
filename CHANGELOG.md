@@ -9,6 +9,20 @@
   1/10/2024, 23 units are `missing`, and the bare programmed PCB is held as
   `incomplete` — a new condition word. Facts and device lists:
   [docs/reference/stock-count-2026-10.md](docs/reference/stock-count-2026-10.md).
+  The 2 MAC-less Aqua prototypes are `missing` too: none was on the shelf.
+- **The CE_Dongle_V2 records match the shelf count.** Two units recorded as
+  failed in stock are online at customers: they are now Batch 3 and shipped on
+  correction delivery #2311 of ZAL 00001/10/2024, and two never-heard units
+  of that delivery are `missing` in their place. A shelf unit came off
+  ZAL 00001/07/2025 with a placeholder in its place, an unrecorded shelf unit
+  (`dongle_2043A84D8174`) has its record and its broker account, and 13
+  absent records (12 MAC-less prototypes, 1 unit whose report never saved)
+  are `missing`. The shelf reads 34 in stock: 32 held, 2 sellable.
+- **The CE_Dongle_V3 prototype orders match what really left.** The two
+  orders the old startup migration invented (5 × V3.1, 10 × V3.3) are
+  cancelled and their deliveries reversed. One uninvoiced Columbus order
+  records the 6 prototypes that did leave, and the 19 others are in stock as
+  `prototype`.
 - **The bench agent reads a C6's real MAC.** esptool prints an ESP32-C6's
   EUI-64 as `MAC:` and the 6-byte MAC as `BASE MAC:`; the agent read the
   first one, 23 characters against a 20-character column. It now prefers

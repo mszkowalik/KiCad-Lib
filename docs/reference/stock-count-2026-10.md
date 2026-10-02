@@ -133,9 +133,6 @@ failed-run spares stay uncounted, on purpose (decision 0007, user 2026-10-02).
 
 **Still open for CE_Aqua_V2:**
 
-- The 2 MAC-less prototypes in stock (run 10733) were not on the shelf
-  readout. A MAC-less record cannot be matched, and the user does not know
-  whether they exist (2026-10-02). They stay in stock, held as `prototype`.
 - The spare boards: rule 5 of the 2026-09-18 stock model
   ([dongle-stock-reconciliation.md](dongle-stock-reconciliation.md)) says a
   board never programmed is a pool quantity, not a device. The recommended
@@ -145,17 +142,64 @@ failed-run spares stay uncounted, on purpose (decision 0007, user 2026-10-02).
 
 ## CE_Dongle_V2
 
-Not worked yet.
+Worked 2026-10-03 against a fresh production snapshot
+(`reports/stock-count-2026-10-02/platform-v2/`), the bench reports in
+`reports/manifest.csv` and the broker. Correction not agreed yet.
 
-| On the shelf | Units | Platform says |
-|---|---|---|
-| Programmed (`dongles_v2.json`) | 34 | 32 = the held Batch 1 old-button units · 1 shipped (Batch 5) · 1 not on the platform |
-| Unprogrammed, going to production (`dongles_v2.json` + `dongles_v2_1.json`) | 10 | none on the platform |
+| Unit | Shelf | Platform | Evidence |
+|---|---|---|---|
+| 32 Batch 1 old-button units (#118, #394–#641) | read, programmed | in stock, `faulty` | 31 matched by topic, #451 by MAC. Broker: retained messages only, never online. Correct as it is |
+| #3008 `dongle_4D8694` (Batch 5) | read, programmed | shipped, shipment #23 (order 9, ZAL 00001/07/2025, 2025-09-29, oldest-first pick) | no presence row on the broker; it has an account. Bench report OK 2025-08-23 |
+| `20:43:a8:4d:81:74` `dongle_2043A84D8174` | read, programmed | no record, no broker account | bench: an attempt on 2025-08-23 whose report failed to save (`1755970684`), then OK on 2026-09-10 in a Batch 7 session. The account derived with the fleet salt equals the bench report's line (checked locally, not printed) |
+| #1607 `dongle_84FA58`, #1768 `dongle_84FD94` (no batch) | not read | in stock, `faulty`, newest run `fail` | ONLINE on the broker with inverters (DEYE_LP3 `2407072366`, SOFAR `SH1051006KE254230090`): at customers. The `fail` is an import artifact: the `_test` report has no `test_result` field. Config and test reports both say OK (2024-11-17/18). Every bench neighbour is Batch 3 on shipment #20 (order 7, ZAL 00001/10/2024, 2024-11-30). Only these 2 devices on the platform carry this artifact (prod query, 2026-10-03) |
+| #3221 `dongle_4D90A8` (no batch) | not read | in stock, `faulty` | its only report failed to save (`WriteFile failed`), so the result is unknown. Has an account, never on the broker |
+| 12 MAC-less prototypes: #6593–#6602, #28318–#28319 | cannot be matched | in stock, `prototype` | #6593–#6602 are the "10 unsold" the 2026-09-18 reconstruction computed (45 assembled − 35 sold), not observed. #28318–#28319 are placeholders the user added for unprogrammed prototypes |
+| 10 unprogrammed boards (`dongles_v2.json` + `dongles_v2_1.json`) | read, BOOT held | no record | correct (rule 5). MAC prefixes: 7 Batch 7, 2 Batch 5, 1 Batch 4 (prefix only, not proof). `d4:e9:f4:f5:8c:a4` failed every attempt (2026-07-07/08, 2026-09-10) |
 
-In stock on the platform but not seen: 3 faulty units with no batch, and 12
-MAC-less prototypes. `d4:e9:f4:f5:8c:a4`, among the 10 unprogrammed, is the
-unit [dongle-stock-reconciliation.md](dongle-stock-reconciliation.md) lists as
-never passed.
+This closes the gap that
+[dongle-stock-reconciliation.md](dongle-stock-reconciliation.md) left between
+devices in the platform and devices in the reports: Batch 3's +2 are #1607 and
+#1768, Batch 5's +1 is `2043A84D8174`.
+
+### Part A — APPLIED 2026-10-03
+
+User answers 2026-10-03, applied by `scripts/stock-count-dongle-v2-2026-10-03.py`
+(decision [0057](../decisions/0057-a-device-the-count-cannot-find-is-missing.md)):
+
+1. #1607 and #1768: condition `ok`, moved to Batch 3 (0029), shipped on
+   correction delivery #2311 of ZAL 00001/10/2024, dated 2024-11-30.
+   **Option B**: the order keeps its invoiced 420, so the two lowest-id Batch 3
+   members of shipment #20 with no broker presence came off it and are
+   `missing`: #1053 `dongle_1F32A0` and #1061 `dongle_1F32C0`.
+2. #3221 `dongle_4D90A8`: `missing`.
+3. The 12 MAC-less dongle prototypes (#6593–#6602, #28318, #28319): `missing`
+   (user: no prototype dongle on hand).
+4. The 2 MAC-less Aqua prototypes (#28316, #28317): `missing`. CE_Aqua_V2 is
+   now 27 in stock (26 sellable, 1 `incomplete`) and 25 missing.
+
+CE_Dongle_V2 after part A: 32 in stock (all 32 held `faulty`, Batch 1), 15
+missing, 0 sellable.
+
+### Part B — APPLIED 2026-10-03
+
+#3008 `dongle_4D8694` and `dongle_2043A84D8174` were read at 20:36:59 and
+20:39:05, in the middle of the boards held as unprogrammed (readout positions
+35 and 38 of 43). Both are fully assembled with an enclosure (user,
+2026-10-03): condition `ok`. Applied by
+`scripts/stock-count-dongle-v2-partB-2026-10-03.py`:
+
+1. #3008 came off shipment #23, back to stock.
+2. Placeholder #28532 (`unidentified`, Batch 5) takes its place on shipment
+   #23, so ZAL 00001/07/2025 keeps its invoiced 455.
+3. `dongle_2043A84D8174` is device #28533: Batch 5, produced 2026-09-10
+   16:12:56, in stock, with its broker account (derived, equal to the bench
+   report's). **The broker password file must be regenerated before this unit
+   ships** (`GET /api/flasher/mosquitto`, hashed with `mosquitto_passwd -U`),
+   or it cannot connect.
+
+CE_Dongle_V2 after both parts: 34 in stock (32 held `faulty`, 2 sellable), 15
+missing. The 10 unprogrammed boards get their records when the bench programs
+them.
 
 ## CE_Dongle_V3
 
