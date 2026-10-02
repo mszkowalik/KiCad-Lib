@@ -159,12 +159,35 @@ never passed.
 
 ## CE_Dongle_V3
 
-Not worked yet. 12 desk units read (`dongles_v3_1/2/3.json`): 5 run Tasmota, 7
-have an empty flash. 3 are recorded shipped (Run #2, prototypes V3.3), 9 are not
-on the platform. In stock on the platform but not seen: 10 MAC-less V3.2
-prototypes and `ac:eb:e6:d3:46:98` (Batch 1). Two units carry the default
-`tasmota_<MAC>` topic, so they were probably never configured by the
-production procedure. The C6 USB serial number equalled the MAC on all 12.
+Reconciled on 2026-10-03, read-only. **The desk readout is NOT a full
+inventory** — unlike the Aqua and V2 shelf counts, it covered only the desk —
+so absence from it proves nothing, and no unit was marked missing.
+
+The platform holds 26 V3 devices: 5 MAC-less V3.1 prototypes shipped
+(order #5, 2025-11-03), 10 MAC-less V3.2 prototypes in stock (Run #1, held
+`prototype`), 10 Run #2 V3.3 units shipped (order #6, 2026-08-03: 7 with MACs
++ 3 placeholders), and `ac:eb:e6:d3:46:98` in stock (Batch 1 — 50 pcs, the
+order RA 00001/09/2026 batch, not on the desk).
+
+The 12 desk units against that:
+
+| Desk units | Records |
+|---|---|
+| `d2:59:90` (Tasmota), `2f:74:74` (Tasmota), `2e:9c:ac` (Tasmota) | **recorded shipped** on order #6 — on the desk anyway. Returned, or never left: open |
+| 4 erased v3.3 (`d3:d1:9c`, `d3:8e:68`, `d3:36:ac`, `d2:79:08`) | no records. Which build they are from is open |
+| 3 erased v3.2 (`2e:a4:54`, `30:af:ac`, `2f:78:8c`) + `30:af:b0` (Tasmota, default topic) | no records. If they are Run #1 builds, they could FILL 4 of the 10 V3.2 placeholders by MAC (the 0054 pattern). Open |
+| `40:4c:ca:5e:e8:4c` v3.1 (Tasmota 15.1.0.3, default topic) | no records |
+
+Note: the two units binned v3.2 by the user (`2f:74:74`, `2e:9c:ac`) sit in
+the platform's V3.3 run. Either the desk binning or the run label is off by
+one revision for them — cosmetic, not acted on.
+
+Open questions (user): did the 3 shipped desk units come back or never
+leave? Are the 4 record-less v3.2 units Run #1 builds (fill placeholders)?
+Where do the 7 erased units belong — and under decision 0058 they would be
+banked as pool WIP rather than given device records, the same as the 63 bare
+Aquas. The 3 dead v3.1 desk units could not be read and have no MACs
+recorded anywhere.
 
 ## Packaging and enclosures
 
