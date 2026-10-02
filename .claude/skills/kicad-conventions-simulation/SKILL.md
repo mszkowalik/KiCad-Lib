@@ -3,7 +3,7 @@ name: kicad-conventions-simulation
 description: "Authoring simulation models and symbol links: the sigma_ namespace, parameter naming from datasheet symbols (V_BR at test current, never V_RWM), mandatory pin maps and the NC sentinel, per-component Sim.Params, switch drive modes (static / alter / PWL), scenario .control blocks, and the ngspice convergence traps. Use when writing a sim model, linking a symbol, or setting Sim.Params."
 ---
 
-<!-- platform-skill: conventions-simulation v7 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-simulation v10 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 
 # Simulation model conventions
 
@@ -135,6 +135,12 @@ Use the symbol the datasheet uses, at the condition the datasheet states:
 - Open-drain comparators: `RON`, `VOFF`, `THYST`. Output pulls LOW when
   in− > in+ (the LM393 convention).
 - Diodes / LEDs: `IS`, `N`, `RS`, `CJ`; LEDs add the per-colour `VF`.
+- Varistors (`sigma_varistor`): `V1MA` is the varistor voltage at 1 mA DC,
+  `VCL` the clamping voltage at the class current `ICL` (8/20 us), `CJ` the
+  datasheet capacitance. The working voltage (`Vdc`, `VRMS`) is the
+  component's `Value`, never a model number. Do not compose `sigma_tvs_leg`
+  for a varistor: its linear `RDYN` reads 20-25 % LOW between the two points,
+  so the clamp looks better than it is (measured 2026-09-29).
 
 ## Pin maps
 
@@ -236,6 +242,43 @@ output, run an operating point, and print the load current beside the supply
 current. They must agree to within `IQ`. Reading the `.subckt` is how this
 went unnoticed for as long as it did: `vcc` appears on several lines of
 `sigma_opamp`, and every one of them is a sensor.
+
+### Never name a port `gnd`
+
+**ngspice aliases the node name `gnd` to node 0, and the alias reaches INSIDE
+a subcircuit.** A port called `gnd` collapses to global 0, so every element
+wired to it bypasses the port. The part's return current never leaves through
+its own ground pin, and a sense element in the board's ground leg reads zero
+while the part is plainly sinking current. It is the same failure
+`cmp.sim_supply_current` exists for, arriving through the port list instead of
+through a controlled source.
+
+Measured on ngspice 47, 2026-09-21, while `sigma_tca6408a` was written. With
+the port named `gnd`, the ground-leg sense source read 0.000 mA while a P-port
+was sinking 9.23 mA. Renaming that one port to `vss` and changing nothing else
+made the same source read 9.538 mA, which is that 9.23 mA plus a 0.296 mA
+pull-up and the 10 uA `IQ`.
+
+**Call the ground port `vss`.** Only the EXACT word `gnd` is aliased, in either
+case. Measured the same day, on a two-node probe subcircuit: `gnd` and `GND`
+both read 0, while `gnd1`, `gnda`, `agnd` and `vss` all carried the full
+current. That is why `sigma_amc1311` and `sigma_rail_iso7721` were never
+affected. `set_symbol_sim_link`'s rail heuristic accepts `vss`, so nothing
+else changes.
+
+**Five models still carry a bare `gnd` port and have this defect**:
+`sigma_ucc27538`, `sigma_hss`, `sigma_btt6050`, `sigma_buck_fb` and
+`sigma_ldo_neg`. Renaming a port flags every link on it stale, so each is
+a deliberate edit plus a `set_symbol_sim_link` re-save, never a sweep done in
+passing.
+
+`sigma_ldo` was fixed this way on 2026-09-28 (v4): port renamed to `vss`,
+and all 10 links re-saved in the same pass with their `gnd` entry mapped to
+`vss`. Record the pin maps BEFORE you publish the model: once the port list
+changes, every link reads stale and its Sim fields are withheld until it is
+re-saved. Measured on TPS7A1650DRBR: the GND leg went from 0 A to its 5 uA
+IQ, and output and input current did not change.
+
 
 ## Say what the model does NOT do
 
@@ -390,6 +433,12 @@ part is for a harness that only ever wants one value.
   fails the operating point.
 - Sequential feedback (a toggle DFF) works. Combinational feedback (a ring
   oscillator) aborts with "Timestep too small" — do not model one.
+- A power-law B-source does not converge. A varistor written as
+  `I = 1m*(|V|/V1MA)^alpha`, alpha 10 to 17, failed the operating point in
+  ngspice-47 (2026-09-29): gmin stepping and source stepping both gave up.
+  `sigma_varistor` uses a diode breakdown instead, with the emission
+  coefficient `nbv` fitted through the two datasheet points. It converges on
+  an 8 kV ESD pulse. KiCad's bundled ngspice also knows `nbv`.
 - A switch model needs `vt={(VON+VOFF)/2} vh={(VON-VOFF)/2}` — `vt=VON`
   puts the closing threshold above the coil voltage and the relay never
   closes.

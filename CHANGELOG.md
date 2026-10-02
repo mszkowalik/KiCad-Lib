@@ -78,6 +78,27 @@ correction are in
 - **An over-long change comment from a script is a 422, not a 500.** The page
   already capped the field at 600 characters.
 
+## 2026-10-01 (a single 3-input AND gate, and 3-input AND gates simulate)
+
+`74LVC1G11DW-7` (LCSC C460525) is in the library. It is a Diodes Incorporated
+single 3-input AND gate in SOT-363. Eight of them replace the four
+`SN74HC21DR` on EVSE_20_CTRL (U45, U46 and U331 on `SAFETY`, U333 on `MCS_CE`).
+
+- **A new base symbol, `74LVC1G11`.** It is the first gate with three inputs
+  on the house 10.16 mm triangle. The inputs A, B and C are at
+  (−7.62, 2.54 / 0 / −2.54). This extends the multi-input rule (decision of
+  Mateusz Kowalik). The rule is in the `conventions-symbols` skill, v24.
+- **3-input AND gates simulate.** The new primitive `sigma_rail_and3` is
+  composed onto the symbol as `sigma_sym_74lvc1g11`. The component carries its
+  own `Sim.Params` from Diodes DS35122. Measured in ngspice from the published
+  library at 3.3 V into 1 kΩ: the output is 3.22 V only for inputs 111, and
+  the VCC leg carries the load current plus the 10 µA IQ.
+- **The part sits on the existing `SOT-363_SC-70-6` land.** It agrees with
+  the Diodes land within 0.05 mm. The land carries the KiCad stock name, but
+  its copper is not the KiCad 10 stock copper: the stock pads are 1.025 × 0.35
+  mm at ±0.8375 mm, ours are 0.65 × 0.40 mm at ±0.95 mm. This is flagged on
+  the footprint, and the rename is not done.
+
 ## 2026-09-29 (a supplier register, and a supplier order that picks the price)
 
 Decision [0055](docs/decisions/0055-a-component-links-to-suppliers-in-a-register.md).
@@ -137,6 +158,33 @@ Not deployed yet.
   restamp every offline topic. Values written before the deploy stay until
   they are reset.
 
+## 2026-09-29 (an automotive ESD varistor, and varistors simulate)
+
+`AVRH10C221KT1R5YA8` (LCSC C2157827) is in the library. It is a TDK 0402
+AEC-Q200 chip varistor for 1000BASE-T1 lines. It uses the `Varistor` symbol
+and the house `R_0402_1005Metric` land.
+
+- **`Value` is 70V, the maximum DC circuit voltage** (decision of Mateusz
+  Kowalik). The 220 V in LCSC's description and in the part number is the
+  1 mA varistor voltage. It is in `Varistor Voltage`. This is the rule that
+  `B72650M0271K072` already used (275 V RMS, not its 430 V).
+- **Varistors simulate.** The new primitive `sigma_varistor` is linked to
+  the `Varistor` symbol. The model is two diodes back to back. Their knee is
+  fitted through the two points on every varistor datasheet: V1mA at 1 mA and
+  Vcl at the class current. Both varistors carry a `Sim.Params` row. Measured
+  in ngspice-47: 220.2 V / 400.3 V and 430.3 V / 710.5 V.
+- **The model reads 3–5 % HIGH between 1 mA and the class current, and LOW
+  above it.** It has no energy limit. The model header lists all seven
+  omissions. Composing `sigma_tvs_leg` was rejected: its linear resistance
+  reads 20–25 % LOW between the two points.
+- **The 0402 land is larger than TDK's recommended land.** The pads are 0.09 mm
+  longer, 0.04 mm wider, and the span is 1.54 mm, not 1.40 mm. Pitch and pad
+  count agree. The 3D model is 0.15 mm lower than the 0.5 mm varistor body.
+  This is flagged on the component.
+- **Both varistors still fail `cmp.required_props`.** Circuit_Protection asks
+  every part for `Hold Current`, `Trip Current`, `Power` and `Voltage_Max`.
+  These are polyfuse properties.
+
 ## 2026-09-29 (the last broker discoveries have names, and every named device has a broker account)
 
 Decision [0054](docs/decisions/0054-a-device-named-from-the-broker-gets-its-account-from-its-topic.md).
@@ -159,7 +207,98 @@ Applied to production with `scripts/identify-broker-devices-2026-09-29.py`.
   reconnect, not the device's last message. [mqtt-presence.md](docs/reference/mqtt-presence.md)
   now says so.
 
-## 2026-09-27 (a shipment is packed before it is sent)
+## 2026-09-28 (a MENTOR light guide, and a lightpipe carries no courtyard)
+
+`1293.0050`, a MENTOR front-panel light guide, is in the library. TME sells it
+as `MR-1293.0050`. The component and the new land
+`Lightpipe_MENTOR_1293.0050` are `checked`. It uses the `LightPipe` symbol.
+
+- **Dimensions come from MENTOR's own catalogue** (`ll14-10.pdf` p3, table 4):
+  length 16.3 mm, head ⌀5.0 mm, shaft ⌀3.6 mm, panel hole ⌀4.0 mm.
+- **The 3D model is a house CadQuery STEP.** MENTOR publishes none. The inject
+  face is 1.0 mm above the board. The catalogue does not dimension the clamp
+  ribs or the dome height, so the model takes them from the drawing.
+- **A lightpipe carries no courtyard** (Mateusz Kowalik). The LED sits under
+  the pipe, so a courtyard would overlap it on every board. The land documents
+  the 1 mm clearance and the ⌀4.0 panel hole on `Cmts.User` instead.
+  `conventions-footprints` v53 records the rule. The checklist does not know it
+  yet: `fp.courtyard_present` still fails on every `Lightpipe_*` land.
+
+## 2026-09-28 (five parts, the first 2-input gate, and a TVS knee that sat half a volt high)
+
+Five parts are in the library. Each component, symbol and land is `checked`.
+
+| Component | LCSC | Symbol | Land |
+|---|---|---|---|
+| `SMAJ33CA`, MDD bidirectional TVS, 33 V | C115251 | `D_TVS_Bi` | `D_SMA` |
+| `SMAJ64CA`, MDD bidirectional TVS, 64 V | C2993975 | `D_TVS_Bi` | `D_SMA` |
+| `TPS7A1650DRBR`, TI 60 V 100 mA LDO, 5 V | C544778 | new `TPS7A16xxDRB` | `DFN-8-1EP_3x3mm_P0.65mm_EP1.55x2.4mm_ThermalVias`, reused |
+| `SN74LVC1G32DBVR`, TI single 2-input OR | C10096 | new `74LVC1G32` | `SOT-23-5` |
+| `BME688`, Bosch Sensortec gas sensor | C3664478 | new `BME688` | new `BoschSensortec_LGA-8_3x3mm_P0.8mm_Pad0.9x0.5mm_ClockwisePinNumbering` |
+
+- **The TPS7A16 shares the house DFN-8 3x3 mm land.** TI's DRB land has the
+  same pitch, pad count, numbering and exposed pad. Its pads sit 0.15 mm
+  further in and its exposed pad is 0.1 mm wider. The land was not changed.
+- **The BME688 land is the JLC land, snapped to the 0.1 mm grid** (decision of
+  Mateusz Kowalik). Bosch numbers this part clockwise in top view, so
+  `fp.quad_numbering` carries a standing exception on this land.
+- **`74LVC1G32` is the first multi-input gate on the house gate triangle.** It
+  keeps the one-input body, output and rail positions, puts the two inputs at
+  (−7.62, ±2.54) and draws the IEC `≥1` qualifier inside.
+- **Simulation.** A new primitive, `sigma_rail_or2`, is the 2-input OR of the
+  `sigma_rail_*` family. `74LVC1G32` and `BME688` are composed links. The
+  BME688 model is a supply load only, 12 mA from VDD by default.
+  `TPS7A16xxDRB` links `sigma_ldo` directly, like the other LDOs. Each new
+  component carries its own `Sim.Params`.
+
+**Correction: a TVS above about 20 V clamped about 0.5 V high in
+simulation.** With the default `VF_IT = 0.18`, ngspice 47 puts the
+`sigma_tvs_leg` breakdown at 1 mA 0.48 V above `VBR` from `VBR = 26.7` up, but
+only 0.02 V above it at 13.3 V (SM712). SMAJ33CA and SMAJ64CA set
+`VF_IT = 0.66` and read `VBR` at the test current. `sigma_tvs_leg` v2 adds a
+header that states this and the model's other limits. The netlist did not
+change.
+
+**Correction: SMAJ24CA and SMAJ28CA simulated as the wrong part.** Neither
+had `Sim.Params`, so both ran on the `D_TVS_Bi` default, `VBR = 26.7`.
+SMAJ28CA clamped about 6 V low. Each now carries its own row from its own
+datasheet (MDD for SMAJ24CA, Littelfuse for SMAJ28CA), fitted in ngspice to
+`VBR` at 1 mA and `VC` at `IPP`. Both are verified again. SMAJ24CA is on
+CE_Aqua_V2 (D12, D13, D19): the board picks up the new row with
+**Tools → Update Symbols from Library**. Its netlist does not change.
+
+The same gap hit the three ESD clamps on `D_TVS_Bi`, which simulated as
+26.7 V parts. PESD12VL1BA,115 (12 V), PESD5V0S1BA (5 V) and RCLAMP0521PATCT
+(5 V) now carry their own rows. Every `D_TVS_Bi` part now has one.
+
+- **Correction: RCLAMP0521PATCT `Voltage - Breakdown` was 7 V**, which is no
+  value in Semtech's table (6 min, 9.3 typ, 11 max at 1 mA). It is now 9.3 V,
+  the typical, which its simulation uses too. It is on CE_Dongle_V3 (D19,
+  D20); the change is property-only.
+- **PESD5V0S1BA clamps about 1.2 V high at 10 A in simulation.** TECH PUBLIC
+  gives 7.0 V at 10 A, equal to its breakdown voltage, which means snapback.
+  The model cannot draw that, so it is fitted at the 20 A point.
+- **`scripts/footprint-render.py` renders a land that is not synced yet.** A
+  name now renders the published version from the platform. A path to a
+  `.kicad_mod` renders a draft before publishing, with its STEP taken from the
+  same directory. Before, the script read only the installed library.
+
+**Correction: `sigma_ldo` returned its ground current through node 0, not
+through the GND pin.** Its ground port was named `gnd`, which ngspice aliases
+to node 0. v4 renames the port to `vss`, and all 10 LDO symbols were
+re-linked in the same pass. On TPS7A1650DRBR the GND leg now carries its
+5 µA IQ. Output voltage and input current did not change.
+
+- **`Bosch Sensortec` is on the canonical manufacturer list**
+  (`cmp.manufacturer_canonical`, component checklist v28). The BME688 land
+  was renamed from `Bosch_…` to `BoschSensortec_…` to match: the vendor
+  token is the canonical name with its spaces removed. Its verification
+  carried.
+- **The `sym.family_drawing` hint states the multi-input gate rule** (symbol
+  checklist v34). It replaces the text that said such a gate is drawn as an
+  IEC box with `&`.
+
+
 
 **New: Production → Shipments.** Open a shipment for one order, scan devices
 into it while you pack the carton, and mark it as sent when the box closes.
@@ -426,6 +565,84 @@ exist at all. Mateusz Kowalik, 2026-09-22.
   session strip puts its facts and its buttons on two rows. Four two-sentence
   `.card-subtitle` paragraphs, which render as uppercase mono, are now a short
   label with the explanation in plain text under it.
+
+## 2026-09-22 (an enclosure carries no courtyard)
+
+**A footprint named `Enclosure_*` is exempt from every courtyard check, and the
+two that carried an outline have lost it.** A courtyard is a keep-out, and on a
+case outline it covers the whole board area the case encloses — which makes the
+layout harder and protects nothing. Mateusz Kowalik, 2026-09-22.
+
+- `fp.courtyard_present`, `fp.courtyard_width` and `fp.courtyard_grid` each
+  carry `when {"$name": "^(?!Enclosure_)"}` on the footprint base checklist
+  (v31), so none of the three runs on an enclosure. `fp.courtyard_clearance`
+  measures from pads and never reached a part with none.
+- **The exemption is read off the NAME.** `validate_footprint` is not passed the
+  component, so it cannot know what a footprint belongs to. A mechanical case
+  named some other way is not exempt, and the fix is the name — `fp.tier` rule 2
+  already requires `Enclosure_<Vendor>_<MPN>`.
+- **Nothing else is exempt.** A lightpipe, a standoff and a logo still carry
+  `F.CrtYd` at the body outline plus the standard 0.25 mm. The old rule —
+  "THERE IS NO COURTYARD EXEMPTION", on `fp.mechanical_constraint` — said the
+  opposite and is rewritten.
+- Two drawings changed: `Enclosure_Hammond_1551RFLGY` v3 and
+  `Enclosure_TAKACHI_SIM6-12-3W` v7. The Hammond one carried a 3.15 x 4.6 mm
+  rect at the origin that enclosed nothing — it was there to pass the check.
+  `Enclosure_Hammond_1551TFLGY`, `_1551XFLGY` and `_1556CGY` never had one and
+  stop failing `fp.courtyard_present` as a result.
+- The rule is published in the `conventions-footprints` skill (v51), with the
+  reason it sits on the ITEM rather than on a category: **a footprint carries no
+  category**, so the "`<Category>` rules" lists cannot hold a footprint check —
+  `PUT /api/checklists/scope` refuses a `category_id` for any kind but
+  `component`. Two passes have now gone looking for a rules table or an
+  `exempt_base_components` control that does not exist.
+
+**Still open on the three remaining Hammond enclosures**: `_1551TFLGY` and
+`_1551XFLGY` fail `fp.fab_outline` (their body outline is on `User.1`, not
+`F.Fab`) and `_1556CGY` fails `fp.fab_width`. Those predate this change and
+need the case dimensions read off the Hammond drawings.
+
+## 2026-09-21 (TCA6408A, and a sim port named gnd that was never connected)
+
+The TI **TCA6408A** is in the library: `TCA6408ARGTR`, the 8-bit I2C/SMBus I/O
+expander with an interrupt output, an active-low reset and separate VCCI/VCCP
+rails for level translation. RGT package, VQFN-16 3x3mm, LCSC C181499.
+
+- A new base symbol, `TCA6408ARGTR`, laid out to match `PCF8574RGTR` so the
+  library's two I2C expanders read the same way.
+- The land is **reused**, not redrawn: `QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm_ThermalVias`,
+  which already carried `PCF8574RGTR` in the same package. Three new checks
+  record the first comparison of that land against a **TI** drawing —
+  RGT0016A — where every earlier answer had been made against the UMW
+  PCF8574 sheet.
+- Component, symbol and land are all `checked`.
+
+**A simulation model whose ground port is called `gnd` is not connected to its
+own ground pin.** ngspice aliases the node name `gnd` to node 0 and the alias
+reaches INSIDE a subcircuit, so the port collapses to global 0 and the part's
+return current never leaves through the pin. It is the same failure
+`cmp.sim_supply_current` exists for, arriving through the port list instead of
+through a controlled source, and it is invisible unless you measure.
+
+Found while writing the new `sigma_tca6408a` model and measured on ngspice 47:
+the ground-leg sense source read 0.000 mA while a P-port was sinking 9.23 mA.
+Renaming that one port to `vss` made the same source read 9.538 mA. Only the
+exact word `gnd` is aliased, in either case — `gnd1`, `gnda`, `agnd` and `vss`
+all carry the current, which is why `sigma_amc1311` and `sigma_rail_iso7721`
+were never affected.
+
+The rule is now in the `conventions-simulation` skill (v8). **Six models still
+carry a bare `gnd` port and still have the defect**: `sigma_ucc27538`,
+`sigma_hss`, `sigma_btt6050`, `sigma_buck_fb`, `sigma_ldo` and
+`sigma_ldo_neg`. They are not fixed here — renaming a port flags every link on
+it stale, so each one is a deliberate edit plus a link re-save.
+
+`sigma_tca6408a` itself is a hand-written `part` model: each P-port is an input
+until a global control node enables it, then a real push-pull switch between
+`vccp` and `vss`, so the load current comes out of the rail. Drive states arrive
+on `SIM_TCA_OE0..7` / `D0..7` / `INT` / `SDA`, the `sigma_dip8` device, because
+the part has no control pin. Undriven, it powers up with all eight ports as
+inputs — the datasheet power-on state.
 
 ## 2026-09-21 (the shelf, by product — and 13 devices nothing was counting)
 

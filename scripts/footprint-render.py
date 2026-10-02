@@ -13,29 +13,90 @@ to sit flat was at its required z = 1.0 mm, and a tact switch said to be 80 %
 oversize was correct. The third, an RJ45 sunk 4.1 mm into the board, was real
 and obvious on sight.
 
-    python3 scripts/footprint-render.py <footprint name> [...]
+    python3 scripts/footprint-render.py <footprint name | path/to/file.kicad_mod> [...]
 
-Reads the installed 7Sigma library by default; set FP_LIB to render a directory
-of candidate .kicad_mod files instead. Writes PNGs to ./renders/.
+WHERE THE FOOTPRINT COMES FROM, first match wins:
+  1. A path to a .kicad_mod file. Use this to render BEFORE you publish.
+  2. The platform, when KICAD_API_URL and KICAD_MCP_TOKEN are set. This is the
+     published version, so a footprint published a minute ago renders, and a
+     stale local copy cannot hide a change.
+  3. The installed 7Sigma library (FP_LIB), which lags the platform until the
+     KiCad sync button is pressed.
+
+WHERE EACH 3D MODEL COMES FROM, first match wins: next to a .kicad_mod given
+as a path (by file name, or by its path under 3DModels/), then the platform's
+/files/3DModels/, then the installed models (SEVENSIGMA_MODELS). A model found
+nowhere is reported, and the board renders without it.
+
+Writes PNGs to ./renders/.
 """
-import os, subprocess, sys, pathlib
+import gzip, json, os, re, shutil, subprocess, sys, pathlib
+import urllib.error, urllib.parse, urllib.request
 
 CLI = "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"
 LIB = os.environ.get("FP_LIB", "/Users/mateuszkowalik/Documents/KiCad/10.0/3rdparty/footprints/com_sevensigma_library/7Sigma.pretty")
 # kicad-cli resolves ${SEVENSIGMA_DIR}/3DModels/... . The PCM installs the
-# models under 3rdparty/3dmodels/com_sevensigma_models3d/, so point
-# SEVENSIGMA_DIR at a scratch directory whose 3DModels/ links to it.
+# models under 3rdparty/3dmodels/com_sevensigma_models3d/.
 MODELS = os.environ.get(
     "SEVENSIGMA_MODELS",
     "/Users/mateuszkowalik/Documents/KiCad/10.0/3rdparty/3dmodels/com_sevensigma_models3d")
+API = os.environ.get("KICAD_API_URL", "").rstrip("/")
+TOKEN = os.environ.get("KICAD_MCP_TOKEN", "")
+MODEL_RE = re.compile(r'\(model\s+"\$\{SEVENSIGMA_DIR\}/3DModels/([^"]+)"')
 
 
-def model_root(out: "pathlib.Path") -> str:
-    root = out / "_sevensigma"
-    root.mkdir(parents=True, exist_ok=True)
-    link = root / "3DModels"
-    if not link.exists():
-        link.symlink_to(MODELS)
+def _get(path: str, body: dict | None = None) -> bytes:
+    req = urllib.request.Request(API + path, data=json.dumps(body).encode() if body else None,
+                                 headers={"Authorization": f"Bearer {TOKEN}",
+                                          "Content-Type": "application/json",
+                                          # Cloudflare rejects the Python-urllib user agent.
+                                          "User-Agent": "python-httpx/0.27.0"})
+    return urllib.request.urlopen(req, timeout=60).read()
+
+
+def footprint_source(arg: str) -> tuple[str, str, str, "pathlib.Path | None"]:
+    """(name, .kicad_mod text, where it came from, directory to search for models)."""
+    path = pathlib.Path(arg)
+    if path.suffix == ".kicad_mod" and path.is_file():
+        return path.stem, path.read_text(), f"file {path}", path.parent
+    if API and TOKEN:
+        try:
+            res = json.loads(json.loads(_get("/api/agent/tools/get_footprint", {"name": arg}))["result"])
+            if res.get("source"):
+                return arg, res["source"], f"platform v{res.get('current_version_no')}", None
+        except (urllib.error.URLError, KeyError, ValueError) as e:
+            print(f"{arg}: platform lookup failed ({e}); trying the installed library", file=sys.stderr)
+    local = pathlib.Path(LIB, arg + ".kicad_mod")
+    if local.is_file():
+        return arg, local.read_text(), "installed library", None
+    sys.exit(f"{arg}: not a .kicad_mod file, not on the platform, not in {LIB}")
+
+
+def model_root(src: str, out: pathlib.Path, name: str, near: "pathlib.Path | None") -> str:
+    """A SEVENSIGMA_DIR holding exactly the models this footprint references."""
+    root = out / f"_sevensigma_{name}"
+    shutil.rmtree(root, ignore_errors=True)
+    for rel in MODEL_RE.findall(src):
+        dst = root / "3DModels" / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        local = [near / pathlib.Path(rel).name, near / rel] if near else []
+        found = next((p for p in local if p.is_file()), None)
+        if found:
+            shutil.copyfile(found, dst); print(f"  model {rel}: {found}")
+            continue
+        if API and TOKEN:
+            try:
+                raw = _get("/files/3DModels/" + urllib.parse.quote(rel))
+                dst.write_bytes(gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw)
+                print(f"  model {rel}: platform")
+                continue
+            except urllib.error.URLError:
+                pass
+        installed = pathlib.Path(MODELS, rel)
+        if installed.is_file():
+            shutil.copyfile(installed, dst); print(f"  model {rel}: installed library")
+        else:
+            print(f"  model {rel}: NOT FOUND - renders without it", file=sys.stderr)
     return str(root)
 
 BOARD = '''(kicad_pcb (version 20241229) (generator "hand") (generator_version "10.0")
@@ -51,15 +112,12 @@ BOARD = '''(kicad_pcb (version 20241229) (generator "hand") (generator_version "
 '''
 
 
-def build(name: str, out: pathlib.Path) -> pathlib.Path:
-    src = pathlib.Path(LIB, name + ".kicad_mod").read_text()
+def build(name: str, src: str, out: pathlib.Path) -> pathlib.Path:
     # A footprint file becomes a board item by gaining a placement.
-    src = src.replace('(footprint "', '(footprint "', 1)
     i = src.index("\n")
     body = src[i:].rstrip()
     assert body.endswith(")")
     placed = f'(footprint "{name}"\n\t(at 0 0){body[:-1]}\n)'
-    import re
     xs, ys = [], []
     for m in re.finditer(r"\((?:start|end|center|at)\s+(-?[\d.]+)\s+(-?[\d.]+)", src):
         xs.append(float(m.group(1))); ys.append(float(m.group(2)))
@@ -71,12 +129,12 @@ def build(name: str, out: pathlib.Path) -> pathlib.Path:
     return p
 
 
-def render(pcb: pathlib.Path, side: str, rotate: str = "") -> pathlib.Path:
+def render(pcb: pathlib.Path, root: str, side: str, rotate: str = "") -> pathlib.Path:
     png = pcb.with_name(f"{pcb.stem}__{side}{'_iso' if rotate else ''}.png")
     cmd = [CLI, "pcb", "render", "-o", str(png), "--side", side,
            "--quality", "high", "--background", "opaque",
            "-w", "1100", "-h", "850", "--zoom", "1.35",
-           "-D", f"SEVENSIGMA_DIR={model_root(pcb.parent)}", str(pcb)]
+           "-D", f"SEVENSIGMA_DIR={root}", str(pcb)]
     if rotate:
         cmd[cmd.index("--side") + 1] = "top"
         cmd += ["--rotate", rotate]
@@ -88,8 +146,11 @@ def render(pcb: pathlib.Path, side: str, rotate: str = "") -> pathlib.Path:
 
 if __name__ == "__main__":
     out = pathlib.Path("renders"); out.mkdir(exist_ok=True)
-    for name in sys.argv[1:]:
-        pcb = build(name, out)
+    for arg in sys.argv[1:]:
+        name, src, where, near = footprint_source(arg)
+        print(f"{name}: footprint from {where}")
+        root = model_root(src, out, name, near)
+        pcb = build(name, src, out)
         for side in ("front", "right"):
-            print(render(pcb, side))
-        print(render(pcb, "top", rotate="-60,0,30"))
+            print(render(pcb, root, side))
+        print(render(pcb, root, "top", rotate="-60,0,30"))

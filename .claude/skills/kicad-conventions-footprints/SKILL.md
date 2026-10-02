@@ -2,7 +2,7 @@
 name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints: where to get the copper, how to publish it, and the index of every footprint rule with the check that now holds it. The rules themselves live in the footprint checklist — read them with get_review_checklist('footprint'). Use when naming, picking or authoring any footprint."
 ---
-<!-- platform-skill: conventions-footprints v49 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v53 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 **The rules are checks now, not prose.** Every convention this document used to
@@ -98,10 +98,18 @@ see. Do not reintroduce it — **`fp.shared_land_record`**.
 Two useful scripts:
 
 ```
-export KICAD_MCP_TOKEN=<your personal token>
+export KICAD_API_URL=https://disfunction.cc/lib KICAD_MCP_TOKEN=<your personal token>
 python3 scripts/model-bbox.py <folder>/<NAME>.step      # measure a 3D model
 python3 scripts/footprint-render.py <footprint name>    # front, right, isometric
+python3 scripts/footprint-render.py <file.kicad_mod>    # the same, BEFORE you publish
 ```
+
+**`footprint-render.py` takes a name or a file.** A name renders the PUBLISHED
+version from the platform, so a land published a minute ago renders and a
+stale local copy cannot hide a change; the installed library is only the
+fallback. A `.kicad_mod` path renders a draft, with its STEP taken from the
+same directory by file name. Each model is taken from beside the file, then
+the platform, then the installed library, and the script says which.
 
 Pass the model path as it appears after `3DModels/` in the `(model ...)` line.
 
@@ -126,6 +134,7 @@ Pass the model path as it appears after `3DModels/` in the `(model ...)` line.
 | Does a quad package number counter-clockwise? | `fp.quad_numbering` |
 | Pad shape, corner ratio, silk/fab/courtyard widths, courtyard grid, drill and pad floors | `fp.smd_pad_shape`, `fp.smd_rratio`, `fp.silk_width`, `fp.fab_width`, `fp.fab_outline`, `fp.courtyard_present`, `fp.courtyard_width`, `fp.courtyard_grid`, `fp.min_drill`, `fp.min_th_pad`, `fp.via_dims` |
 | How far is the courtyard from the copper? | `fp.courtyard_clearance` |
+| Does this footprint need a courtyard at all? (an `Enclosure_*` and a `Lightpipe_*` do not) | `fp.mechanical_constraint` |
 | Is the silkscreen clear of pad copper? Does the pin-1 mark point at the datasheet's pin 1? | `fp.silk_clear`, `fp.pin1_placed` |
 | Is there a `Cmts.User` pin-1 mark? | `fp.pin1_mark` |
 | Is the polarity mark one straight line, the right way round? | `fp.cathode_bar` |
@@ -133,13 +142,64 @@ Pass the model path as it appears after `3DModels/` in the `(model ...)` line.
 | Does the `F.Fab` outline match the real package? | `fp.body_outline` |
 | Should a plated hole have been mechanical? | `fp.npth_mechanical`, `fp.zero_annulus` |
 | Thermal vias and the five companion changes that go with them | `fp.thermal_vias` |
-| A lightpipe, standoff or enclosure — and why there is no courtyard exemption | `fp.mechanical_constraint` |
+| A lightpipe or standoff — and why an ENCLOSURE and a LIGHTPIPE carry no courtyard at all | `fp.mechanical_constraint` |
 | Is there a 3D model, on the right path, in the right folder? | `fp.model3d`, `fp.model_path` |
 | Does the model actually fit, measured? | `fp.model_fit` |
 | Is a JLC rotation offset real, and named correctly? | `fp.rotation_offset`, `fp.rotation_field_name` |
 
 Full naming standard, the per-footprint migration table and the catalogue of
 canonical names for packages not yet in the library: `docs/footprint-naming/`.
+
+## An enclosure and a lightpipe carry no courtyard
+
+**An `Enclosure_*` footprint draws `F.Fab` and puts nothing on `F.CrtYd`.**
+Mateusz Kowalik, 2026-09-22: a courtyard on a case outline makes the layout
+harder, because the keep-out covers the whole board area the case encloses.
+
+`fp.courtyard_present`, `fp.courtyard_width` and `fp.courtyard_grid` each carry
+`when {"$name": "^(?!Enclosure_)"}` on the footprint base checklist (v31), so
+none of the three runs on an enclosure. `fp.courtyard_clearance` measures from
+pads and never reaches a part that has none.
+
+**THE EXEMPTION IS READ OFF THE NAME.** `validate_footprint` is not passed the
+component, so it cannot know what a footprint belongs to. A mechanical case not
+named `Enclosure_<Vendor>_<MPN>` is not exempt, and the fix is the name
+(`fp.tier` rule 2), never a standing exception.
+
+**A LIGHTPIPE CARRIES NO COURTYARD EITHER.** Mateusz Kowalik, 2026-09-28,
+when `Lightpipe_MENTOR_1293.0050` was added. The LED sits under the pipe, so a
+courtyard at the head OD overlaps the LED's courtyard and KiCad reports a
+courtyard overlap on every board. A lightpipe draws `F.Fab` at the head OD, a
+`Cmts.User` "Min 1mm clearance below" note and a dashed `Dwgs.User` circle at
+the head OD, and puts nothing on `F.CrtYd`. Its STEP puts the inject face at
+z = 1.0 mm. The three FIX-LEMB lightpipes carry the note and the circle, and
+no courtyard, but no `F.Fab` yet, so they fail `fp.fab_outline`.
+
+**THE CHECKS DO NOT KNOW THIS YET.** `fp.courtyard_present` still runs on a
+`Lightpipe_*` name, and the `fp.mechanical_constraint` hint still says a
+lightpipe carries a courtyard. The fix is a checklist edit by a person (agents
+have no checklist write tool): extend the three courtyard `when` predicates to
+`^(?!Enclosure_|Lightpipe_)` and correct the hint. Until then, answer
+`fp.courtyard_present` and `fp.mechanical_constraint` `na`, reason `waived`,
+and cite this decision.
+
+**NOTHING ELSE IS EXEMPT.** A standoff and a logo still carry `F.CrtYd` at the
+body outline plus the standard 0.25 mm.
+
+**IT IS ON THE ITEM, NOT ON A CATEGORY, AND IT HAS TO BE.** A FOOTPRINT CARRIES
+NO CATEGORY, so the "`<Category>` rules" lists in the Checklists view cannot
+hold a footprint check at all — `PUT /api/checklists/scope` refuses a
+`category_id` for any kind but `component`. There is no
+`exempt_base_components` control either; a review pass grepped for one on
+2026-09-12 and recorded a custom item saying so. The per-item `when` predicate
+IS the scoping mechanism for a footprint check, and `fp.family_prefix` and
+`fp.mechanical_constraint` already use it. Do not go looking for a rules table:
+`models.Rule` has been dormant since 2026-09-14 and its own docstring says
+"Do not add a reader; put the setting on the check."
+
+Cleared the same day: `Enclosure_Hammond_1551RFLGY` v3 and
+`Enclosure_TAKACHI_SIM6-12-3W` v7 lost the outlines they carried. The other
+three enclosures never had one.
 
 ## An exact EasyEDA land match verifies the rotation offset
 
