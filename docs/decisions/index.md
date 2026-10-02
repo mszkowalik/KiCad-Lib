@@ -88,12 +88,12 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0055](0055-a-component-links-to-suppliers-in-a-register.md) | Link a component to its suppliers in a register, and price it by a DATED supplier order — one source gives the whole ladder (a price that names no supplier, then the part's own order, then the library order), each price-history snapshot records the order it was priced by so a past run never moves, and `Supplier N` leaves the component record with every sign-off and verification kept | Backend, frontend, production economics, review axis, agent tools |
 | [0056](0056-a-unit-owns-every-topic-it-was-given.md) | A unit owns every broker topic it was given: presence links a topic by evidence (current name, the device's own MAC, the MAC a 12-hex topic spells, or a name the unit holds a broker account for), one ordering picks each unit's main row, and a retained replay never moves `last_seen_at` (extends [0054](0054-a-device-named-from-the-broker-gets-its-account-from-its-topic.md)) | Backend, frontend, fleet |
 | [0057](0057-a-device-the-count-cannot-find-is-missing.md) | A device the stock count cannot find is `missing`, a location a later delivery, find or write-off can leave — not `disposed`; and one named device can leave one delivery (extends [0028](0028-a-shipment-recorded-in-error-is-reversed-not-deleted.md)) | Backend, frontend, production, orders |
+| [0058](0058-a-process-is-versioned-stages-over-the-pool.md) | A production process is versioned stages over the component pool: internal parts per stage, recipes with alternatives, transformations that bank WIP as valued lots, a fourth invoice destination, one programmable form whose lot the batch pins and the bench draws per `produced` event (extends [0045](0045-a-position-says-where-its-money-goes.md), generalizes [0021](0021-a-device-is-judged-by-the-rule-it-was-made-under.md)) | Backend, frontend, production, economics, flasher |
 
 ## Proposed
 
 | # | Decision | Area |
 |---|---|---|
-| [0058](0058-a-process-is-versioned-stages-over-the-pool.md) | A production process is versioned stages over the component pool: internal parts per stage, recipes with alternatives, transformations that bank WIP as valued lots, a fourth invoice destination, one programmable form whose lot the batch pins and the bench draws per `produced` event (extends [0045](0045-a-position-says-where-its-money-goes.md), generalizes [0021](0021-a-device-is-judged-by-the-rule-it-was-made-under.md)) | Backend, frontend, production, economics, flasher |
 
 ## Superseded
 

@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-10-03 (the Aqua stock correction, and the bench reads a C6's real MAC)
+
+- **The CE_Aqua_V2 records match the 2026-10-02 shelf count.** 18 units found
+  on the shelf came off the deliveries that listed them, 19 units proven at
+  the customer (online on the fleet broker, one by user report) shipped on
+  correction delivery #2305, 2 unidentified placeholders stand in on FV
+  1/10/2024, 23 units are `missing`, and the bare programmed PCB is held as
+  `incomplete` — a new condition word. Facts and device lists:
+  [docs/reference/stock-count-2026-10.md](docs/reference/stock-count-2026-10.md).
+- **The bench agent reads a C6's real MAC.** esptool prints an ESP32-C6's
+  EUI-64 as `MAC:` and the 6-byte MAC as `BASE MAC:`; the agent read the
+  first one, 23 characters against a 20-character column. It now prefers
+  `BASE MAC:`. **Benches must re-download the agent** before programming a
+  Dongle V3.
+- **Decision [0058](docs/decisions/0058-a-process-is-versioned-stages-over-the-pool.md)
+  is accepted**: a production process is versioned stages over the component
+  pool. Nothing is built yet; found historical WIP will enter at zero value.
+
 ## 2026-10-02 (a unit the stock count cannot find is missing, not disposed)
 
 Decision [0057](docs/decisions/0057-a-device-the-count-cannot-find-is-missing.md).

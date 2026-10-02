@@ -1184,12 +1184,19 @@ class EspRun:
             raise MarkError(f"{self.port} is held by {held} — close it there first")
         if self.op == "connect":
             mode = self._connect_ladder(["chip_id"], "no_reset")
-            chip = mac = ""
+            # A chip with an EUI-64 (the C6) prints it as "MAC:" and the real
+            # 6-byte MAC as "BASE MAC:" (esptool cmds.read_mac). The base MAC
+            # is what the firmware reports and what device_units.mac holds —
+            # an EUI-64 is 23 characters against a 20-character column.
+            chip = mac = base = ""
             for l in [x["text"] for x in self.job.lines]:
                 if l.startswith("Chip is "):
                     chip = l[len("Chip is "):].strip()
-                elif l.startswith("MAC:"):
+                elif l.startswith("BASE MAC:"):
+                    base = l[len("BASE MAC:"):].strip()
+                elif l.startswith("MAC:") and not mac:
                     mac = l[4:].strip()
+            mac = base or mac
             if not mac:
                 raise MarkError("esptool reported no MAC")
             return {"chip": chip, "mac": mac, "connect_mode": mode}

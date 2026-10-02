@@ -1,6 +1,6 @@
 ---
-status: "proposed"
-date: 2026-10-03
+status: "accepted"
+date: 2026-10-03  # accepted 2026-10-03
 decision-makers: Mateusz Kowalik
 consulted: Claude (design discussion 2026-10-02/03, after the stock count)
 ---
@@ -165,10 +165,11 @@ count evidence.
 
 ## More Information
 
-Open before phase 1 lands: how to VALUE the found historical WIP. Batch 5's
-closed books already carry the 63 boards' component cost inside its 184
-produced units, and 0044 forbids moving closed books — so the lots enter at
-zero with a note, or a correction document moves the value. User decision.
+The found historical WIP enters the pool at ZERO value, each lot carrying a
+note naming the closed batch whose books still hold its component cost
+(user decision, 2026-10-03). Batch 5's 184 produced units keep carrying the
+63 banked boards' cost — 0044 forbids moving closed books, and nobody wants
+a correction document for a product that is closing.
 
 Supersedes nothing. The design discussion is summarized in
 [stock-count-2026-10.md](../reference/stock-count-2026-10.md) while it is a
