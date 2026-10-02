@@ -10,6 +10,11 @@
   `propose_new_component` nor `propose_component_edit` could reach the part.
   Found on `RT0402BRD0712K4L`. Now the tool returns the error and writes
   nothing. The regression test is `api/tests/library/test_propose_new_component.py`.
+- **`propose_new_component` publishes onto a component with no published
+  version.** Such a shell is not in the library, and `propose_component_edit`
+  cannot reach it. The tool now publishes the next version onto it and keeps
+  the earlier unpublished versions as history. Before, an agent could not
+  finish the part at all.
 
 ## 2026-09-29 (a supplier register, and a supplier order that picks the price)
 

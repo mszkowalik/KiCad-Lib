@@ -62,8 +62,10 @@ section first.
   version in place — you create a new one.
 - **`current_version_id`** on the parent (`Component`, `Symbol`, …) is a plain
   `Integer` (deliberately **not** a FK) pointing at the live version. `None`
-  means "no published version yet" — now only a leftover from the draft era (a
-  creation that was filed and never approved). `current_version(comp)` resolves it.
+  means "no published version yet": a draft-era creation nobody approved, or a
+  write that failed after it committed. `propose_component_edit` cannot reach
+  such a shell; `propose_new_component` publishes the next version onto it.
+  `current_version(comp)` resolves it.
 - **`status` is a `String(20)`**, default `"published"`. Live values:
   - `"published"` — the only status anything writes now.
   - `"draft"` / `"rejected"` — HISTORY. Nothing produces either; both stay

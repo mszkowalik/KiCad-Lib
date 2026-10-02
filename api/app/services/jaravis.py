@@ -1260,7 +1260,9 @@ def propose_new_component(
     prefix, ki_description, Value where applicable, Manufacturer 1 /
     Manufacturer Part Number 1 / LCSC Part when known. Do NOT include price
     keys, Datasheet or Supplier N keys as properties: record a non-LCSC source
-    with link_supplier after the component exists.
+    with link_supplier after the component exists. If the name exists with NO
+    published version (an unpublished shell), this publishes the next version
+    onto it.
 
     Args:
         name: Globally unique component name (usually the MPN).
@@ -1284,7 +1286,13 @@ def propose_new_component(
         return json.dumps({"error": str(e)})
     db = SessionLocal()
     try:
-        if db.query(M.Component).filter_by(name=name.strip()).first():
+        # A component with NO published version is a shell: a draft-era creation
+        # nobody approved, or a write that failed after it committed. It is not
+        # in the library, propose_component_edit cannot reach it (there is no
+        # live version to edit), and its name blocks a fresh create. Publish the
+        # next version onto it instead; its draft rows stay as history.
+        comp = db.query(M.Component).filter_by(name=name.strip()).first()
+        if comp is not None and comp.current_version_id is not None:
             return json.dumps({"error": f"component {name!r} already exists — use propose_component_edit"})
         cat = _resolve_category(db, category)
         if cat is None:
@@ -1306,11 +1314,14 @@ def propose_new_component(
         elif fp_value:
             return json.dumps({"error": f"footprint {fp_value!r} must use the 7Sigma: namespace"})
 
-        comp = M.Component(name=name.strip())  # current_version_id stays None until approved
-        db.add(comp)
-        db.flush()
+        shell = comp is not None
+        if comp is None:
+            comp = M.Component(name=name.strip())  # current_version_id is set by the publish
+            db.add(comp)
+            db.flush()
         cv = M.ComponentVersion(
-            component_id=comp.id, version_no=1, base_component=base.name,
+            component_id=comp.id, version_no=max((v.version_no for v in comp.versions), default=0) + 1,
+            base_component=base.name,
             symbol_version_id=base.current_version_id, footprint_version_id=fp_version_id,
             category_id=cat.id, status="draft", created_by="jaravis", comment=comment or None,
         )
@@ -1324,10 +1335,16 @@ def propose_new_component(
             ))
         archive = None
         if datasheet_url.strip():
-            ds = M.Datasheet(component_id=comp.id, position=0, label="Datasheet",
-                             source_url=datasheet_url.strip())
-            db.add(ds)
-            db.flush()
+            # A shell may already hold datasheet rows: reuse the one with this
+            # URL, otherwise take the next free position (unique per component).
+            active = db.query(M.Datasheet).filter(M.Datasheet.component_id == comp.id,
+                                                  M.Datasheet.position.isnot(None)).all()
+            ds = next((d for d in active if d.source_url == datasheet_url.strip()), None)
+            if ds is None:
+                ds = M.Datasheet(component_id=comp.id, label="Datasheet", source_url=datasheet_url.strip(),
+                                 position=max((d.position for d in active), default=-1) + 1)
+                db.add(ds)
+                db.flush()
             # Archive BEFORE publishing, not after and not lazily on the first
             # read_datasheet. Two things depend on the PDF already being there:
             # pin_datasheets() records WHICH pdf version this component version
@@ -1343,10 +1360,14 @@ def propose_new_component(
             # at the top. A new publish-time refusal needs the same early check.
             archive = _archive_datasheet(db, ds)
         db.add(M.AuditLog(actor="jaravis", action="proposal.create", entity_type="component_version",
-                          entity_id=str(cv.id), details={"component": comp.name, "new": True}))
+                          entity_id=str(cv.id),
+                          details={"component": comp.name, "new": True, "shell": shell}))
         result = _publish_component(db, comp, cv)
         _record_proposal({"proposal_id": cv.id, "component": comp.name, "kind": "new"})
-        out = {"ok": True, "proposal_id": cv.id, "component": comp.name, **result}
+        out = {"ok": True, "proposal_id": cv.id, "component": comp.name, "version_no": cv.version_no, **result}
+        if shell:
+            out["note"] = (f"{comp.name!r} existed with no published version; published as "
+                           f"v{cv.version_no}, the earlier unpublished versions stay as history")
         if archive is not None:
             out["datasheet_archive"] = archive
         return json.dumps(out)
@@ -1405,7 +1426,8 @@ def propose_component_edit(
             return json.dumps({"error": f"component {name!r} not found"})
         cur = current_version(comp)
         if cur is None:
-            return json.dumps({"error": f"{name!r} has no published version to edit"})
+            return json.dumps({"error": f"{name!r} has no published version to edit — "
+                                        "propose_new_component publishes onto it"})
         props, err = _parse_properties(properties_json)
         if err:
             return json.dumps({"error": err})
