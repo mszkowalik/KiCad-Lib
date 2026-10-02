@@ -58,6 +58,7 @@ const CONDITION_WORD: Record<string, string> = {
   faulty: "faulty",
   prototype: "prototype",
   unidentified: "unidentified",
+  incomplete: "incomplete",
 };
 
 function ago(iso: string | null): string {

@@ -37,6 +37,7 @@ const CONDITION_WORD: Record<string, string> = {
   faulty: "faulty",
   prototype: "prototype",
   unidentified: "unidentified",
+  incomplete: "incomplete",
 };
 
 const CONDITION_WHY: Record<string, string> = {
@@ -44,6 +45,7 @@ const CONDITION_WHY: Record<string, string> = {
   faulty: "Present and ours, and it cannot be sold until it is repaired.",
   prototype: "Built to try something. It is counted and it never leaves (decision 0032).",
   unidentified: "On the shelf with nothing saying what it is — worth looking at.",
+  incomplete: "Programmed and working, and missing parts to finish — an enclosure, an antenna. It cannot ship until it is completed.",
 };
 
 /** `/projects/:id?tab=Devices&state=in_stock&condition=…` — the exact devices

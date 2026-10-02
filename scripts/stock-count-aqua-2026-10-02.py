@@ -22,6 +22,9 @@ What it writes, all through services/orders.py:
      `_ship_device` onto the existing shipment — the shape decision 0039 gave
      the prototype placeholders.
   5. MARK MISSING the 20 absent units nobody can place, and the 3 from step 2.
+  6. Set device 2273 (f8:b3:b7:42:ba:1c) to condition `incomplete`: it is a
+     bare programmed PCB with no enclosure and no antenna, and the user said
+     it must not be sellable (2026-10-02).
 
 Every order keeps its invoiced quantity. Every precondition is checked against
 the 2026-10-02 snapshot first, and the script stops if anything has moved.
@@ -140,6 +143,7 @@ def main():
               f"dated {CORRECTION_DATE}")
         print(f"4. add 2 unidentified placeholders (run {prun.label}) to shipment #{SHIP_19}")
         print(f"5. mark {len(UNKNOWN) + len(swap)} missing")
+        print("6. device 2273 (bare PCB) -> condition incomplete")
         if not WRITE:
             print("\ndry run — nothing written. REHEARSE=1 to exercise, APPLY=1 to commit.")
             return
@@ -196,6 +200,13 @@ def main():
             osvc.mark_missing(db, d, counted_at=DATE, actor=ACTOR,
                               note=f"[{DATE}] taken off shipment #{SHIP_24} for a proven unit; not on "
                                    f"the shelf and never online. May be at the customer. See {REF}")
+
+        # 6 ----------------------------------------------------------------------
+        bare = dev[2273]
+        bare.condition = "incomplete"
+        bare.notes = ((bare.notes + "\n") if bare.notes else "") + (
+            f"[{DATE}] Bare programmed PCB, no enclosure, no antenna: condition incomplete, "
+            f"not sellable until it is finished (user decision). See {REF}")
         db.flush()
         osvc.refresh_order_status(o24)
         osvc.refresh_order_status(o19)
@@ -207,7 +218,8 @@ def main():
                      "unshipped_unheard_from_24": [d.id for d in swap],
                      "correction_shipment_id": corr.id, "shipped_proven": PROVEN,
                      "placeholders_on_19": [p.id for p in placeholders],
-                     "missing": UNKNOWN + [d.id for d in swap]}))
+                     "missing": UNKNOWN + [d.id for d in swap],
+                     "incomplete": [2273]}))
         db.flush()
 
         # verify through the platform's own read paths ---------------------------
@@ -224,6 +236,7 @@ def main():
         assert after["aqua missing"] == before["aqua missing"] + len(UNKNOWN) + len(swap)
         for i in UNSHIP:
             assert dev[i].state == "in_stock"
+        assert (dev[2273].state, dev[2273].condition) == ("in_stock", "incomplete")
         for i in PROVEN:
             assert dev[i].state == "shipped"
         print(f"correction shipment id {corr.id}; placeholders {[p.id for p in placeholders]}")

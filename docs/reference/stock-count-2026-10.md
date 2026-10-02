@@ -43,6 +43,9 @@ These outrank every computed figure.
 | All 34 programmed Dongle V2 on the shelf are in stock; some are noted not for sale for faulty buttons | — |
 | The 10 unprogrammed Dongle V2 go to production | The bench records them by MAC |
 | Dongle V3 on the desk: 5 v3.3 (some may be faulty), 6 v3.2, 4 v3.1 (almost all dead) | 3 dead v3.1 could not be read |
+| The readout is complete: 29 finished Aquas and 69 spares, nothing else on the shelf (2026-10-02) | the absent units are really absent |
+| No device is powered or online at the user's place | a unit online on the broker is at the customer |
+| `f8:b3:b7:42:ba:1c` must not be sellable | it becomes condition `incomplete` in the correction |
 
 ## CE_Aqua_V2
 
@@ -82,10 +85,15 @@ and 20:44, after the last recorded Aqua delivery date (shipment #24,
 2025-12-30). So order ZAL 00001/09/2025's Aquas left later than recorded, which
 the user confirms is possible.
 
-### Agreed correction
+### Agreed correction — APPLIED 2026-10-03
 
-Agreed with the user on 2026-10-02. Applied by a reviewed one-off script using
-decision [0057](../decisions/0057-a-device-the-count-cannot-find-is-missing.md).
+Agreed with the user on 2026-10-02 and applied to production on 2026-10-03 by
+`scripts/stock-count-aqua-2026-10-02.py` (decision
+[0057](../decisions/0057-a-device-the-count-cannot-find-is-missing.md)). The
+correction delivery is shipment #2305, the placeholders are devices #28528 and
+#28529, and the audit row is `stock.count` on the project. Figures after:
+29 in stock (26 sellable, 1 `incomplete`, 2 `prototype`), 887 shipped,
+23 missing.
 
 1. **Unship the 18 shelf units** from their deliveries, back to stock:
    #745 `dongle_1F456C` and #822 `dongle_1F4A60` from shipment #19; from
@@ -101,8 +109,9 @@ decision [0057](../decisions/0057-a-device-the-count-cannot-find-is-missing.md).
    #4473, #4484, #4485, #4496 (Batch 5), and #28523 `84:1f:e8:35:0d:a4`
    (reported by the user, 2026-10-01).
 3. **The 3 replaced #24 members** are the three lowest device ids among
-   #24's CE_Aqua_V2 members with no broker presence at all. The dry run names
-   them.
+   #24's CE_Aqua_V2 members with no broker presence at all: #2263
+   `f8:b3:b7:42:b1:60`, #2278 `f8:b3:b7:42:bf:00` and #2290 `dongle_42D2BC`
+   (the prod dry run of 2026-10-02).
 4. **2 `unidentified` placeholders** take the 2 places on shipment #19 (FV
    1/10/2024) that no known unit can fill. They carry Batch 1, the batch of the
    units they stand in for.
@@ -111,18 +120,22 @@ decision [0057](../decisions/0057-a-device-the-count-cannot-find-is-missing.md).
    #2388, #2389 (Batch 4) and #4452, #4454, #4456, #4458, #4460, #4462, #4464,
    #4466, #4472, #4474, #4483 (Batch 5). A later broker sighting ships one from
    the UI.
+6. **Device #2273 `f8:b3:b7:42:ba:1c` becomes condition `incomplete`** after
+   its unship: a programmed bare PCB with no enclosure and no antenna. The
+   condition axis already refuses any non-`ok` unit on a shipment, so no code
+   carries this — only the UI word maps name the new value.
 
 Result: every order keeps its invoiced quantity (887), every shelf unit is in
-stock, and every proven unit is shipped. The platform shelf becomes 26 finished
-plus 1 bare PCB, against 29 on the shelf: the difference is the 3 failed-run
-units, on purpose.
+stock, and every proven unit is shipped. The platform shelf becomes 29 in
+stock: 26 finished sellable, 1 bare PCB held `incomplete`, 2 prototypes held —
+against 29 finished on the shelf. The 3 failed-run finished units and the 6
+failed-run spares stay uncounted, on purpose (decision 0007, user 2026-10-02).
 
 **Still open for CE_Aqua_V2:**
 
-- `f8:b3:b7:42:ba:1c` is programmed and passed but has no enclosure: sellable
-  stock (`ok`), or held? Not answered yet.
 - The 2 MAC-less prototypes in stock (run 10733) were not on the shelf
-  readout. A MAC-less record cannot be matched; ask whether they exist.
+  readout. A MAC-less record cannot be matched, and the user does not know
+  whether they exist (2026-10-02). They stay in stock, held as `prototype`.
 - The spare boards: rule 5 of the 2026-09-18 stock model
   ([dongle-stock-reconciliation.md](dongle-stock-reconciliation.md)) says a
   board never programmed is a pool quantity, not a device. The recommended

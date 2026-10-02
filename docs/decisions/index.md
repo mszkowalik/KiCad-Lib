@@ -93,6 +93,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 
 | # | Decision | Area |
 |---|---|---|
+| [0058](0058-a-process-is-versioned-stages-over-the-pool.md) | A production process is versioned stages over the component pool: internal parts per stage, recipes with alternatives, transformations that bank WIP as valued lots, a fourth invoice destination, one programmable form whose lot the batch pins and the bench draws per `produced` event (extends [0045](0045-a-position-says-where-its-money-goes.md), generalizes [0021](0021-a-device-is-judged-by-the-rule-it-was-made-under.md)) | Backend, frontend, production, economics, flasher |
 
 ## Superseded
 
