@@ -1,9 +1,11 @@
 /** Where a device has been: produced in a batch, shipped on an order, back
  *  for repair, replaced, disposed of. The log is append-only and the newest
- *  event is the state (decision 0003 §5). The three actions here are the
- *  three things that happen to a device after it leaves: it comes back, it
- *  gets repaired (to stock or to the bin), or it is disposed of. Shipping it
- *  again is done from the order.
+ *  event is the state (decision 0003 §5). The actions here are what happens to
+ *  a device after it leaves — it comes back, it gets repaired (to stock or to
+ *  the bin), it is disposed of — and what a stock count finds (decision 0057):
+ *  a unit on the shelf that is not there is MISSING, a missing unit can be
+ *  FOUND, and a unit on the shelf that a delivery lists NEVER LEFT on it.
+ *  Shipping it, missing or not, is done from the order.
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -13,8 +15,11 @@ import {
   getDeviceHistory,
   isAbortError,
   listOrders,
+  markDeviceFound,
+  markDeviceMissing,
   repairDevice,
   returnDevice,
+  unshipDevice,
   type DeviceEventRow,
   type DeviceHistory,
   type OrderRow,
@@ -31,6 +36,7 @@ const STATE_LABEL: Record<string, string> = {
   shipped: "at the customer",
   returned: "back for repair",
   disposed: "disposed of",
+  missing: "missing — not found at a count",
 };
 
 function describe(ev: DeviceEventRow): string {
@@ -54,7 +60,11 @@ function describe(ev: DeviceEventRow): string {
         (ev.auto ? " (picked oldest-first)" : "")
       );
     case "unshipped":
-      return "taken off a shipment — a return corrected the oldest-first guess";
+      return `taken off shipment #${ev.shipment_id ?? "?"} — it never left on it`;
+    case "missing":
+      return "not found at a stock count";
+    case "found":
+      return "found again — back on the shelf";
     case "returned":
       return `came back from ${ev.customer ?? "the customer"}${ev.reason ? ` · ${ev.reason}` : ""}`;
     case "repaired":
@@ -154,6 +164,39 @@ export default function DeviceHistoryCard({ deviceId, serial }: { deviceId: numb
     await run(() => disposeDevice(deviceId, { reason: reason.trim() }));
   };
 
+  const onMissing = async () => {
+    const note = await dialog.prompt(
+      "It is recorded on the shelf and the count did not find it. Note:",
+      { title: "Not found at a stock count", initial: "not found at the stock count" },
+    );
+    if (note == null) return;
+    await run(() => markDeviceMissing(deviceId, { note: note.trim() }));
+  };
+
+  const onFound = async () => {
+    const note = await dialog.prompt("Where was it?", { title: "Found it", initial: "found on the shelf" });
+    if (note == null) return;
+    await run(() => markDeviceFound(deviceId, { note: note.trim() }));
+  };
+
+  const onNeverLeft = async () => {
+    // Ask the server which delivery it would come off before anything moves.
+    let shipmentId: number | null;
+    try {
+      shipmentId = (await unshipDevice(deviceId, { dry_run: true })).shipment_id;
+    } catch (err) {
+      await dialog.alert(errorMessage(err), { title: "That did not work" });
+      return;
+    }
+    const ok = await dialog.confirm(
+      `Take ${serial} off shipment #${shipmentId}? It goes back on the shelf. `
+        + "Every other device on that shipment stays shipped.",
+      { title: "It never left", confirmLabel: "Take it off" },
+    );
+    if (!ok) return;
+    await run(() => unshipDevice(deviceId, { shipment_id: shipmentId, dry_run: false }));
+  };
+
   const state = hist?.state ?? "";
   return (
     <div className="card pad">
@@ -212,13 +255,22 @@ export default function DeviceHistoryCard({ deviceId, serial }: { deviceId: numb
       )}
       {hist ? (
         <div className="btn-row">
-          {state !== "returned" && state !== "disposed" ? (
+          {state !== "returned" && state !== "disposed" && state !== "missing" ? (
             <button type="button" className="btn btn-sm" onClick={onReturn}>It came back…</button>
+          ) : null}
+          {state === "shipped" ? (
+            <button type="button" className="btn btn-sm" onClick={onNeverLeft}>It never left…</button>
+          ) : null}
+          {state === "in_stock" ? (
+            <button type="button" className="btn btn-sm" onClick={onMissing}>Not found at a count…</button>
+          ) : null}
+          {state === "missing" ? (
+            <button type="button" className="btn btn-primary btn-sm" onClick={onFound}>Found it…</button>
           ) : null}
           {state === "returned" ? (
             <button type="button" className="btn btn-primary btn-sm" onClick={onRepair}>Repair outcome…</button>
           ) : null}
-          {state === "returned" || state === "in_stock" ? (
+          {state === "returned" || state === "in_stock" || state === "missing" ? (
             <button type="button" className="btn btn-danger btn-sm" onClick={onDispose}>Dispose of it…</button>
           ) : null}
         </div>

@@ -78,13 +78,14 @@ export default function FinishedProductsCard() {
     available: rows.reduce((n, r) => n + r.available, 0),
     value: rows.reduce((n, r) => n + (r.value_usd ?? 0), 0),
     no_batch: rows.reduce((n, r) => n + r.no_batch, 0),
+    missing: rows.reduce((n, r) => n + r.missing, 0),
   }), [rows]);
 
   const cols: Column<ProductStockRow>[] = [
     {
       key: "project",
       label: "Product",
-      width: 26,
+      width: 20,
       get: (r) => r.project,
       render: (r) => (
         <Link className="comp-link" to={`/projects/${r.project_id}?tab=Devices`}
@@ -123,8 +124,28 @@ export default function FinishedProductsCard() {
         return held ? <span className="pill warn">{held.toLocaleString()}</span> : <span className="muted">—</span>;
       },
     },
-    { key: "shipped", label: "Shipped", width: 12, numeric: true, get: (r) => r.shipped },
-    { key: "batches", label: "Batches", width: 10, numeric: true, get: (r) => r.batches },
+    { key: "shipped", label: "Shipped", width: 10, numeric: true, get: (r) => r.shipped },
+    {
+      // Off the shelf with no known location (decision 0057). Counted in no
+      // stock figure above, so it is shown here or nowhere.
+      key: "missing",
+      label: "Missing",
+      width: 10,
+      numeric: true,
+      interactive: false,
+      get: (r) => r.missing,
+      title: () => "not found at a stock count — in no stock figure; ship one from its order once it is located",
+      render: (r) =>
+        r.missing ? (
+          <Link className="val-link" to={`/projects/${r.project_id}?tab=Devices&state=missing`}
+                onClick={(e) => e.stopPropagation()}>
+            {r.missing.toLocaleString()}
+          </Link>
+        ) : (
+          <span className="muted">—</span>
+        ),
+    },
+    { key: "batches", label: "Batches", width: 8, numeric: true, get: (r) => r.batches },
     {
       key: "value",
       label: "Value at cost",
@@ -147,6 +168,7 @@ export default function FinishedProductsCard() {
           <span className="toolbar-total">
             {totals.in_stock.toLocaleString()} on the shelf ·{" "}
             {totals.available.toLocaleString()} sellable · {usd(totals.value, 0)} at cost
+            {totals.missing ? ` · ${totals.missing.toLocaleString()} missing` : ""}
           </span>
         ) : null}
       </div>

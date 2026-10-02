@@ -36,6 +36,11 @@ STATE_AFTER = {
     "returned": "returned",
     "repaired": "in_stock",
     "disposed": "disposed",
+    # A stock count that cannot find a unit says so and nothing more: it is not
+    # destroyed, and a later delivery, find or write-off can still move it
+    # (decision 0057).
+    "missing": "missing",
+    "found": "in_stock",
 }
 INVOICE_KINDS = ("proforma", "advance", "final", "correction")
 MONEY_KINDS = ("advance", "final", "correction")  # a proforma is not money
@@ -230,6 +235,7 @@ def run_stock(db: Session, project_id: int | None = None) -> list[dict]:
     in_stock: dict[int, int] = defaultdict(int)
     available: dict[int, int] = defaultdict(int)
     shipped: dict[int, int] = defaultdict(int)
+    missing: dict[int, int] = defaultdict(int)
     held: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for rid, state, cond, n in _device_counts(db, rids):
         produced[rid] += n
@@ -242,6 +248,8 @@ def run_stock(db: Session, project_id: int | None = None) -> list[dict]:
                 held[rid][cond] += n
         elif state == "shipped":
             shipped[rid] += n
+        elif state == "missing":
+            missing[rid] += n
     projects = {p.id: p.name for p in db.query(M.Project).all()}
     out = []
     for r in runs:
@@ -275,6 +283,8 @@ def run_stock(db: Session, project_id: int | None = None) -> list[dict]:
             "devices_available": available[r.id],
             "devices_held": dict(held[r.id]),
             "devices_shipped": shipped[r.id],
+            # Not found at a stock count (decision 0057): in no stock figure.
+            "devices_missing": missing[r.id],
             # `stock` and `available` are the DEVICE counts and nothing else.
             # They used to add a legacy pool for a batch with no device records.
             "stock": in_stock[r.id],
@@ -316,7 +326,7 @@ def product_stock(db: Session) -> list[dict]:
         p = out.setdefault(pid, {
             "project_id": pid, "project": projects.get(pid, "?"),
             "in_stock": 0, "available": 0, "held": {}, "shipped": 0,
-            "allocated": 0, "value_usd": 0.0, "no_batch": 0, "batches": set(),
+            "allocated": 0, "missing": 0, "value_usd": 0.0, "no_batch": 0, "batches": set(),
         })
         cond = cond or "ok"
         if run_id is not None:
@@ -335,6 +345,9 @@ def product_stock(db: Session) -> list[dict]:
             p["shipped"] += n
         elif state == "allocated":
             p["allocated"] += n
+        elif state == "missing":
+            # Not on the shelf, so in no stock figure — but never invisible.
+            p["missing"] += n
 
     result = []
     for p in out.values():
@@ -491,7 +504,9 @@ def create_shipment(db: Session, order: M.SalesOrder, *, kind: str = "delivery",
                 raise HTTPException(404, f"no device {did}")
             if d.project_id != li.project_id:
                 raise HTTPException(422, f"device {d.serial or did} belongs to another project")
-            if d.state not in ("in_stock", "allocated"):
+            # A MISSING unit may be shipped: recording the delivery is the
+            # evidence that it left (decision 0057). It still has to be `ok`.
+            if d.state not in ("in_stock", "allocated", "missing"):
                 raise HTTPException(409, f"device {d.serial or did} is {d.state or 'unrecorded'}, not in stock")
             # A device packed in another OPEN shipment is in that box. Shipping
             # it here would leave the other box listing a device that left.
@@ -642,6 +657,9 @@ def _assess(d: M.DeviceUnit, sh: M.Shipment, order_line_id: int | None) -> tuple
         return li, "already in this shipment"
     if box is not None:
         return li, f"packed in open shipment {box}"
+    if d.state == "missing":
+        # Scanning it into a box proves it is HERE, so the count was wrong.
+        return li, "recorded missing at a stock count, but it is here — record it found first"
     if d.state != "in_stock":
         return li, f"{d.state or 'unrecorded'}, not in stock"
     return li, ""
@@ -841,11 +859,76 @@ def repair_device(db: Session, device: M.DeviceUnit, *, outcome: str = "to_stock
 
 def dispose_device(db: Session, device: M.DeviceUnit, *, reason: str = "", disposed_at: str = "",
                    actor: str = "", note: str = "") -> M.DeviceEvent:
-    if device.state not in ("returned", "in_stock"):
-        raise HTTPException(409, f"device is {device.state or 'unrecorded'}; only a returned or "
-                                 "in-stock device can be disposed of")
+    if device.state not in ("returned", "in_stock", "missing"):
+        raise HTTPException(409, f"device is {device.state or 'unrecorded'}; only a returned, "
+                                 "in-stock or missing device can be disposed of")
     return record_event(db, device, "disposed", at=_date_at(disposed_at), actor=actor,
                         reason=reason or "", note=note or "")
+
+
+# ------------------------------------------------------ the stock count (0057)
+
+def mark_missing(db: Session, device: M.DeviceUnit, *, counted_at: str = "", actor: str = "",
+                 note: str = "") -> M.DeviceEvent:
+    """A stock count did not find this unit. Not destroyed — not HERE.
+
+    Only `in_stock`: a packed unit is in a box, so a count that cannot find it
+    is a question about the box, and a shipped unit was never on the shelf.
+    """
+    if device.state != "in_stock":
+        raise HTTPException(409, f"device {device.serial or device.id} is "
+                                 f"{device.state or 'unrecorded'}; only an in-stock device "
+                                 "can be marked missing")
+    return record_event(db, device, "missing", at=_date_at(counted_at), actor=actor,
+                        note=note or "not found at a stock count")
+
+
+def mark_found(db: Session, device: M.DeviceUnit, *, found_at: str = "", actor: str = "",
+               note: str = "") -> M.DeviceEvent:
+    """A missing unit turned up on our side. A unit found at the CUSTOMER is
+    shipped instead — that is a delivery, and `create_shipment` accepts it."""
+    if device.state != "missing":
+        raise HTTPException(409, f"device {device.serial or device.id} is "
+                                 f"{device.state or 'unrecorded'}, not missing")
+    return record_event(db, device, "found", at=_date_at(found_at), actor=actor,
+                        note=note or "found after a stock count")
+
+
+def unship_device(db: Session, device: M.DeviceUnit, *, shipment_id: int | None = None,
+                  actor: str = "", note: str = "", dry_run: bool = True) -> dict:
+    """Take ONE device off ONE delivery it never left on — decision 0028's
+    reversal, for a single named device instead of a whole shipment (0057).
+
+    The device must still be `shipped`: one that came back is a return, and
+    reversing the delivery under it would rewrite what the customer did.
+    """
+    if device.state != "shipped":
+        raise HTTPException(409, f"device {device.serial or device.id} is "
+                                 f"{device.state or 'unrecorded'}, not shipped")
+    live = live_shipped_of(device)
+    if shipment_id is not None:
+        live = [e for e in live if e.shipment_id == shipment_id]
+    if not live:
+        where = f" on shipment {shipment_id}" if shipment_id is not None else ""
+        raise HTTPException(409, f"device {device.serial or device.id} is on no live delivery{where}")
+    if len(live) > 1:
+        raise HTTPException(422, {
+            "error": f"device {device.serial or device.id} is on {len(live)} live deliveries",
+            "hint": "name the shipment it never left on",
+            "shipment_ids": [e.shipment_id for e in live]})
+    ev = live[0]
+    plan = {"dry_run": dry_run, "device_id": device.id, "shipment_id": ev.shipment_id,
+            "order_line_id": ev.order_line_id}
+    if dry_run:
+        return plan
+    record_event(db, device, "unshipped", actor=actor, shipment_id=ev.shipment_id, auto=False,
+                 note=note or "found on the shelf: this delivery never carried it")
+    db.flush()
+    sh = db.get(M.Shipment, ev.shipment_id) if ev.shipment_id is not None else None
+    if sh is not None:
+        db.expire(sh.order, ["shipments"])
+        refresh_order_status(sh.order)
+    return plan
 
 
 # ------------------------------------------------- correcting a FIFO guess

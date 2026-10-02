@@ -49,12 +49,16 @@ def world(db: Session):
     db.add_all([built, empty])
     db.flush()
     devs = []
+    # RELATIVE to now: "a running batch" means one built into recently, and a
+    # fixed date turned this batch settled 30 days later (it went red on
+    # 2026-10-01). The settled-batch test ages these events itself.
+    recent = datetime.now(UTC) - timedelta(days=3)
     for i in range(10):
         d = M.DeviceUnit(project_id=proj.id, serial=f"BC{i}", mac=f"00:00:00:00:bc:0{i}",
-                         first_seen=datetime(2026, 9, 1, 10, i, tzinfo=UTC))
+                         first_seen=recent + timedelta(minutes=i))
         db.add(d)
         db.flush()
-        svc.record_event(db, d, "produced", at=datetime(2026, 9, 1, 10, i, tzinfo=UTC),
+        svc.record_event(db, d, "produced", at=recent + timedelta(minutes=i),
                          production_run_id=built.id)
         devs.append(d)
     db.flush()

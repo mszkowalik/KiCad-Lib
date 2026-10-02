@@ -51,6 +51,7 @@ const STATE_WORD: Record<string, string> = {
   allocated: "allocated to an order",
   shipped: "shipped",
   disposed: "disposed of",
+  missing: "missing — not found at a stock count",
 };
 const CONDITION_WORD: Record<string, string> = {
   ok: "sellable",

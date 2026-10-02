@@ -8041,6 +8041,8 @@ export interface FinishedStockRow {
   /** on the shelf but not sellable, by condition — {faulty: 32} */
   devices_held: Record<string, number>;
   devices_shipped: number;
+  /** not found at a stock count (decision 0057): in no stock figure */
+  devices_missing: number;
   stock: number;
   /** `stock` minus the units held back */
   available: number;
@@ -8053,6 +8055,7 @@ export interface FinishedStock {
   totals: {
     stock: number;
     devices_in_stock: number;
+    devices_missing: number;
     /** devices on the shelf that name NO batch, so no row above holds them */
     no_batch: number;
     stock_value_usd: number | null;
@@ -8061,7 +8064,7 @@ export interface FinishedStock {
 
 export interface DeviceEventRow {
   id: number;
-  kind: "produced" | "allocated" | "unallocated" | "shipped" | "unshipped" | "returned" | "repaired" | "disposed";
+  kind: "produced" | "allocated" | "unallocated" | "shipped" | "unshipped" | "returned" | "repaired" | "disposed" | "missing" | "found";
   at: string | null;
   actor: string;
   note: string;
@@ -8328,6 +8331,8 @@ export interface ProductStockRow {
   held: Record<string, number>;
   shipped: number;
   allocated: number;
+  /** not found at a stock count (decision 0057): off the shelf, location unknown */
+  missing: number;
   /** at each batch's own per-device actual; an unbatched device adds nothing */
   value_usd: number | null;
   /** on the shelf and naming no batch, so no per-batch figure can see them */
@@ -8379,6 +8384,58 @@ export function disposeDevice(
   body: { reason?: string; disposed_at?: string; note?: string },
 ): Promise<DeviceHistory> {
   return request(`/api/devices/${deviceId}/dispose`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+/** A stock count did not find this in-stock unit (decision 0057). */
+export function markDeviceMissing(
+  deviceId: number,
+  body: { counted_at?: string; note?: string },
+): Promise<DeviceHistory> {
+  return request(`/api/devices/${deviceId}/missing`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+/** A missing unit turned up on our side: back to stock. */
+export function markDeviceFound(
+  deviceId: number,
+  body: { found_at?: string; note?: string },
+): Promise<DeviceHistory> {
+  return request(`/api/devices/${deviceId}/found`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
+
+export interface UnshipPlan {
+  dry_run: boolean;
+  device_id: number;
+  shipment_id: number | null;
+  order_line_id: number | null;
+}
+
+/** Take this device off ONE delivery it never left on. `dry_run: true` answers
+ *  with the plan; `false` writes it and answers with the new history. */
+export function unshipDevice(
+  deviceId: number,
+  body: { shipment_id?: number | null; note?: string; dry_run: true },
+): Promise<UnshipPlan>;
+export function unshipDevice(
+  deviceId: number,
+  body: { shipment_id?: number | null; note?: string; dry_run: false },
+): Promise<DeviceHistory>;
+export function unshipDevice(
+  deviceId: number,
+  body: { shipment_id?: number | null; note?: string; dry_run: boolean },
+): Promise<UnshipPlan | DeviceHistory> {
+  return request(`/api/devices/${deviceId}/unship`, {
     method: "POST",
     headers: JSON_HEADERS,
     body: JSON.stringify(body),

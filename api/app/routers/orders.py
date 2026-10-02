@@ -696,6 +696,22 @@ class DisposeIn(BaseModel):
     note: str = ""
 
 
+class MissingIn(BaseModel):
+    counted_at: str = ""
+    note: str = ""
+
+
+class FoundIn(BaseModel):
+    found_at: str = ""
+    note: str = ""
+
+
+class UnshipIn(BaseModel):
+    shipment_id: int | None = None
+    note: str = ""
+    dry_run: bool = True
+
+
 class AllocateIn(BaseModel):
     order_line_id: int
     device_ids: list[int]
@@ -748,6 +764,48 @@ def dispose_device(device_id: int, body: DisposeIn, request: Request, db: Sessio
     audit(db, "device.dispose", "device_unit", d.id, {"reason": body.reason}, actor=actor)
     db.commit()
     db.expire(d)  # `events` was loaded before the write; the log must show it
+    return svc.device_history_json(db, d)
+
+
+@router.post("/devices/{device_id}/missing")
+def mark_missing(device_id: int, body: MissingIn, request: Request, db: Session = Depends(get_db)):
+    """A stock count did not find this in-stock unit (decision 0057)."""
+    d = _device(db, device_id)
+    actor = actor_of(request)
+    svc.mark_missing(db, d, counted_at=body.counted_at, actor=actor, note=body.note)
+    audit(db, "device.missing", "device_unit", d.id, {"counted_at": body.counted_at, "note": body.note},
+          actor=actor)
+    db.commit()
+    db.expire(d)
+    return svc.device_history_json(db, d)
+
+
+@router.post("/devices/{device_id}/found")
+def mark_found(device_id: int, body: FoundIn, request: Request, db: Session = Depends(get_db)):
+    """A missing unit turned up on our side; it goes back to stock."""
+    d = _device(db, device_id)
+    actor = actor_of(request)
+    svc.mark_found(db, d, found_at=body.found_at, actor=actor, note=body.note)
+    audit(db, "device.found", "device_unit", d.id, {"found_at": body.found_at, "note": body.note},
+          actor=actor)
+    db.commit()
+    db.expire(d)
+    return svc.device_history_json(db, d)
+
+
+@router.post("/devices/{device_id}/unship")
+def unship_device(device_id: int, body: UnshipIn, request: Request, db: Session = Depends(get_db)):
+    """Take one device off one delivery it never left on. `dry_run` is the
+    default; the rest of the shipment stays as it was (decision 0057)."""
+    d = _device(db, device_id)
+    actor = actor_of(request)
+    plan = svc.unship_device(db, d, shipment_id=body.shipment_id, actor=actor, note=body.note,
+                             dry_run=body.dry_run)
+    if body.dry_run:
+        return plan
+    audit(db, "device.unship", "device_unit", d.id, {**plan, "note": body.note}, actor=actor)
+    db.commit()
+    db.expire(d)
     return svc.device_history_json(db, d)
 
 
@@ -846,5 +904,6 @@ def finished_stock(project_id: int | None = None, db: Session = Depends(get_db))
     return {"runs": rows,
             "totals": {"stock": sum(r["stock"] for r in rows),
                        "devices_in_stock": sum(r["devices_in_stock"] for r in rows),
+                       "devices_missing": sum(r["devices_missing"] for r in rows),
                        "no_batch": no_batch,
                        "stock_value_usd": svc._round(sum(r["stock_value_usd"] or 0 for r in rows))}}

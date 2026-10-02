@@ -42,7 +42,7 @@ SETTLED_AFTER = timedelta(days=30)
 
 #: States that mean the unit is not on our shelf. `returned` is absent on
 #: purpose: a unit booked back in is exactly what a repair bench reprograms.
-AWAY_STATES = ("shipped", "allocated", "disposed")
+AWAY_STATES = ("shipped", "allocated", "disposed", "missing")
 
 
 def _notice(level: str, code: str, text: str, hint: str = "", **data) -> dict:
@@ -90,12 +90,17 @@ def _about_a_known_unit(db: Session, dev: M.DeviceUnit,
             order = db.get(M.SalesOrder, line.order_id) if line else None
             if order is not None:
                 where = f" on order {order.order_ref or order.id}"
+        # A MISSING unit on the bench is the stock count being wrong, not a
+        # customer return (decision 0057).
+        hint = ("It is here, so the count was wrong: record it found on its device page. "
+                "Programming it does not book it back in."
+                if dev.state == "missing" else
+                "If it came back, record the return so stock and the order agree. "
+                "Programming it does not book it back in.")
         out.append(_notice(
             "warn", "not_in_stock",
             f"{dev.serial or dev.mac} is recorded as {dev.state}{where}, not on our shelf.",
-            "If it came back, record the return so stock and the order agree. "
-            "Programming it does not book it back in.",
-            device_id=dev.id, state=dev.state))
+            hint, device_id=dev.id, state=dev.state))
 
     if (dev.condition or "ok") != "ok":
         out.append(_notice(

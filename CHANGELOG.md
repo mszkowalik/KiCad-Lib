@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-10-02 (a unit the stock count cannot find is missing, not disposed)
+
+Decision [0057](docs/decisions/0057-a-device-the-count-cannot-find-is-missing.md).
+The stock count of 2026-10-02 found CE_Aqua_V2 units on the shelf that the
+records had as shipped, and units recorded in stock that were not on the shelf.
+The platform could not record either one truthfully. The facts and the agreed
+correction are in
+[docs/reference/stock-count-2026-10.md](docs/reference/stock-count-2026-10.md).
+
+- **A device can be missing.** On the device page, "Not found at a count…"
+  moves an in-stock unit to `missing`. A missing unit counts in no stock
+  figure, and the finished-devices card on the Stock page shows it in a
+  Missing column. "Found it…" puts it back on the shelf. A delivery can still
+  ship it when the broker or the customer shows where it is. "Dispose of it…"
+  writes it off.
+- **One device can come off one delivery.** "It never left…" on a shipped
+  device takes it off its delivery and puts it back on the shelf. Every other
+  device on that shipment stays shipped. Before, only a whole shipment could
+  be taken back.
+- **The bench warns when a missing unit is plugged in**, and tells the
+  operator to record it found.
+- New endpoints: `POST /api/devices/{id}/missing`, `/found` and `/unship`
+  (`dry_run` is the default). `GET /api/finished-stock` reports
+  `devices_missing` per batch, and `GET /api/finished-products` reports
+  `missing` per product.
+- **A client reads the identity of a unit on USB.**
+  `clients/device-id-reader/read_ids.py` watches for Dongle V2 and Aqua V2
+  (CH340) and Dongle V3 (ESP32-C6) units, and records the MAC, the Tasmota
+  topic and what firmware the unit runs. It was used for the stock count.
+- **A bench-check test no longer fails by date.** Its fixture batch had fixed
+  dates, so it read as settled 30 days later, and the test went red on
+  2026-10-01.
+
 ## 2026-10-02 (a refused new component no longer leaves a shell behind)
 
 - **`propose_new_component` checks the change comment before it writes

@@ -155,6 +155,22 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
     (`reverse_shipment`, `POST /api/shipments/{id}/reverse`): every delivery on
     it gets an `unshipped` event; the header and the events stay. A shipment the customer RECEIVED comes back
     through `return_device` instead.
+  - **ONE device can leave ONE delivery** (`unship_device`,
+    `POST /api/devices/{id}/unship`, `dry_run` by default; decision
+    [0057](../decisions/0057-a-device-the-count-cannot-find-is-missing.md)):
+    the same `unshipped` event for that device only, so a unit found on the
+    shelf leaves a 1250-unit shipment without reversing the other 1249. It
+    refuses a device that is not `shipped`: one that came back is a return.
+  - **A unit the stock count cannot find is `missing`, a LOCATION** (0057).
+    `missing` comes only from `in_stock`, and leaves by `found` (back to
+    stock), by a delivery (`create_shipment` accepts it — the delivery is the
+    evidence it left; it must still be `ok`) or by `disposed`. It counts in no
+    shelf figure; `run_stock` reports `devices_missing` and `product_stock`
+    reports `missing`, so it is never invisible. A new stock query has to
+    exclude it on purpose. Never file a unit you cannot find as `disposed`:
+    that claims it was destroyed, and nothing can ship a disposed unit. The
+    2026-10-02 count that needed this is
+    [stock-count-2026-10.md](stock-count-2026-10.md).
   - **The flasher writes `produced` on the first PASS in a batch**
     (`engine.py` → `mark_produced`, idempotent; never on a draft run). Legacy
     devices are linked with `POST /api/runs/{id}/produced`.

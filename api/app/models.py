@@ -2964,7 +2964,7 @@ class DeviceUnit(Base):
     # Where the device is NOW — a cache of its newest DeviceEvent, rebuilt by
     # `orders.refresh_device_state`. "" means no event has ever been written
     # (a legacy unit whose batch was never recorded). See decision 0003.
-    #   in_stock | allocated | shipped | returned | disposed
+    #   in_stock | allocated | shipped | returned | disposed | missing
     state: Mapped[str] = mapped_column(String(20), default="")
     #: WHAT the device is, independent of WHERE it is. `state` answers location
     #: — in_stock, shipped, returned, disposed — and cannot also say "here, but
@@ -3642,11 +3642,16 @@ class DeviceEvent(Base):
     shipped         order_line_id, shipment_id,             shipped
                     replaces_device_id (a replacement),
                     auto (FIFO picked it, nobody typed it)
-    unshipped       shipment_id — a FIFO guess corrected    in_stock
-                    by a real return (decision 0003 §6)
+    unshipped       shipment_id — a delivery that never     in_stock
+                    carried it: a whole shipment taken back
+                    (0028) or one device off one (0057)
     returned        order_line_id, shipment_id, reason      returned
     repaired        cost lines                              in_stock
     disposed        reason                                  disposed
+    missing         note — a stock count did not find it    missing
+                    (decision 0057); a delivery may still
+                    ship it
+    found           note — it turned up on our side         in_stock
 
     Fulfilment counts `shipped` events with NO `replaces_device_id`; a device
     re-shipped to the same order after repair names ITSELF as the replaced

@@ -864,7 +864,7 @@ def set_rate(body: RateIn, db: Session = Depends(get_db),
 @router.get("/projects/{project_id}/devices")
 def project_devices(
     project_id: int,
-    state: str = Query("", description="in_stock | allocated | shipped | returned | disposed"),
+    state: str = Query("", description="in_stock | allocated | shipped | returned | disposed | missing"),
     condition: str = Query("", description="ok | faulty | prototype | unidentified"),
     run_id: int | None = Query(None, description="only devices built in this batch"),
     presence: str = Query("", description="online | offline | unknown"),
