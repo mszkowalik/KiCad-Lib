@@ -11,7 +11,8 @@ and exposes each entry as an MCP tool; every call is proxied to
 ``POST /api/agent/tools/{name}``. Because the catalog and the tool logic live in
 the API, this server automatically tracks whatever tools the platform offers.
 
-**One tool runs HERE rather than being proxied: ``upload_model3d``.** A 3D model
+**Two tools run HERE rather than being proxied: ``upload_model3d`` and
+``attach_invoice_file``.** A 3D model
 is a multi-megabyte STEP file sitting on the user's own disk, and the agent
 surface takes JSON — proxying it would mean base64 in a tool call, which the
 platform-side agent (which has no access to this machine's filesystem) could not
@@ -164,8 +165,47 @@ async def _upload_model3d(args: dict) -> str:
     return json.dumps(out, indent=1)
 
 
+ATTACH_SUFFIXES = (".pdf", ".xml", ".png", ".jpg", ".jpeg")
+
+ATTACH_INVOICE_FILE = types.Tool(
+    name="attach_invoice_file",
+    description=(
+        "File the original of a supplier invoice (PDF, KSeF XML or a scan) from THIS "
+        "machine with its supplier document on the platform, so the money and its "
+        "evidence sit together. Use it after create_supplier_invoice or "
+        "import_ksef_invoice. Reads the file locally: pass a path, never file content."
+    ),
+    inputSchema={
+        "type": "object",
+        "properties": {
+            "document_id": {"type": "integer", "description": "The supplier document's id."},
+            "file_path": {"type": "string",
+                          "description": "Path to the .pdf/.xml/.png/.jpg on this machine (~ is expanded)."},
+        },
+        "required": ["document_id", "file_path"],
+        "additionalProperties": False,
+    },
+)
+
+
+async def _attach_invoice_file(args: dict) -> str:
+    src = Path(str(args.get("file_path") or "").strip()).expanduser()
+    if not src.is_file():
+        return f"No file at {src} — pass a path on the machine running this MCP server."
+    if src.suffix.lower() not in ATTACH_SUFFIXES:
+        return f"{src.name}: an invoice original is one of {', '.join(ATTACH_SUFFIXES)}."
+    doc = int(args.get("document_id") or 0)
+    async with httpx.AsyncClient(timeout=300.0) as client:
+        r = await client.post(f"{API_URL}/api/run-documents/{doc}/attachment", headers=_headers(),
+                              files={"file": (src.name, src.read_bytes(), "application/octet-stream")})
+    if r.status_code != 200:
+        return f"Upload failed: HTTP {r.status_code} — {r.text[:500]}"
+    return json.dumps({**r.json(), "source_file": str(src)}, indent=1)
+
+
 # name -> (schema, handler). Everything not in here is proxied to the API.
-LOCAL_TOOLS = {UPLOAD_MODEL3D.name: (UPLOAD_MODEL3D, lambda a: _upload_model3d(a))}
+LOCAL_TOOLS = {UPLOAD_MODEL3D.name: (UPLOAD_MODEL3D, lambda a: _upload_model3d(a)),
+               ATTACH_INVOICE_FILE.name: (ATTACH_INVOICE_FILE, lambda a: _attach_invoice_file(a))}
 
 
 @server.list_tools()

@@ -46,7 +46,7 @@ import DataTable, { type Column } from "../components/DataTable";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { useStickyState } from "../useStickyState";
 import { useAuth } from "../auth";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { fileHref } from "../viewkind";
 
 import { amount as money, plain } from "../format";
@@ -127,6 +127,13 @@ export default function Invoices() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useStickyState<number | null>("invoices:expanded", null);
+  // `?doc=<id>` opens that document: the KSeF inbox links here after an import.
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    const d = Number(searchParams.get("doc"));
+    if (d) setExpanded(d);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [doc, setDoc] = useState<RunCostDocumentRow | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
   const [splitting, setSplitting] = useState<RunCostLineRow | null>(null);

@@ -2557,6 +2557,308 @@ def _rename_tool(kind: str, name: str, new_name: str, comment: str) -> str:
         db.close()
 
 
+# ------------------------------------------------------- invoices (0066, 0067)
+# The money tools call the same route functions the website does, so every
+# guard (closed batches, stranded draws, the company gate's companies) applies
+# to an agent exactly as to a person. A refusal comes back as {"error": ...}.
+
+def _route(fn, *args, **kwargs):
+    """Run a route function in its own session and turn a refusal into JSON."""
+    from fastapi import HTTPException
+
+    db = SessionLocal()
+    try:
+        return json.dumps(fn(*args, db=db, **kwargs), default=str)
+    except HTTPException as e:
+        db.rollback()
+        return json.dumps({"error": e.detail})
+    finally:
+        db.close()
+
+
+def _caller_companies(db) -> list[int]:
+    """The companies the agent's token user may see."""
+    from . import companies as company_svc
+
+    ctx = tracking.current()
+    user = db.get(M.User, ctx.user_id) if ctx is not None and ctx.user_id else None
+    return company_svc.visible_ids(db, user)
+
+
+def _company_id(db, company: str) -> int | None:
+    from . import companies as company_svc
+
+    if not company:
+        return None
+    c = next((c for c in company_svc.all_companies(db)
+              if company.strip().lower() in (c.key, c.name.lower(), c.nip)), None)
+    if c is None or c.id not in _caller_companies(db):
+        raise ValueError(f"no company {company!r} among yours")
+    return c.id
+
+
+@beta_tool
+def list_supplier_invoices(company: str = "", supplier: str = "", since: str = "",
+                           unassigned_only: bool = False, limit: int = 50) -> str:
+    """Supplier documents (purchase invoices) newest first: id, supplier, number,
+    date, buyer company, printed total, currency, and how much is unassigned.
+
+    Args:
+        company: "7sigma" or "9sigma" (or a NIP); empty = every company of yours.
+        supplier: Part of the supplier name.
+        since: ISO date; documents dated on or after it.
+        unassigned_only: Only documents with money no position destination covers.
+        limit: Max rows (cap 200).
+    """
+    from . import run_actuals
+
+    db = SessionLocal()
+    try:
+        mine = _caller_companies(db)
+        try:
+            cid = _company_id(db, company)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        q = db.query(M.RunCostDocument).order_by(M.RunCostDocument.doc_date.desc(), M.RunCostDocument.id.desc())
+        if supplier.strip():
+            q = q.filter(M.RunCostDocument.supplier.ilike(f"%{supplier.strip()}%"))
+        if since.strip():
+            q = q.filter(M.RunCostDocument.doc_date >= since.strip())
+        out = []
+        for d in q.all():
+            if d.company_id is not None and d.company_id not in mine:
+                continue
+            if cid is not None and d.company_id != cid:
+                continue
+            j = run_actuals.document_json(d, with_lines=False, db=db)
+            unassigned = (j["assignment"].get("unassigned") or 0) + (j["assignment"].get("residual") or 0)
+            if unassigned_only and not unassigned:
+                continue
+            out.append({"id": d.id, "supplier": d.supplier, "doc_number": d.doc_number, "doc_date": d.doc_date,
+                        "doc_type": d.doc_type, "company_id": d.company_id, "total_amount": d.total_amount,
+                        "currency": d.currency, "unassigned": unassigned, "external_id": d.external_id})
+            if len(out) >= max(1, min(limit, 200)):
+                break
+        return json.dumps(out)
+    finally:
+        db.close()
+
+
+@beta_tool
+def get_supplier_invoice(document_id: int) -> str:
+    """One supplier document with every position: its step (plan_key), the
+    batch, project or pool it goes to, its amount and destination.
+
+    Args:
+        document_id: The document's id (from list_supplier_invoices).
+    """
+    from . import run_actuals
+
+    db = SessionLocal()
+    try:
+        d = db.get(M.RunCostDocument, document_id)
+        if d is None or (d.company_id is not None and d.company_id not in _caller_companies(db)):
+            return json.dumps({"error": f"no document {document_id}"})
+        return json.dumps(run_actuals.document_json(d, db=db), default=str)
+    finally:
+        db.close()
+
+
+@beta_tool
+def create_supplier_invoice(supplier: str, doc_number: str, doc_date: str, currency: str,
+                            total_amount: float, lines: list, company: str, external_id: str = "",
+                            notes: str = "") -> str:
+    """Enter a supplier invoice that KSeF does not hold (a foreign supplier, a
+    receipt). Amounts are NET, as printed. Positions start with no destination;
+    give each one with assign_invoice_line.
+
+    Args:
+        supplier: Supplier name as the register spells it.
+        doc_number: The invoice number printed on it.
+        doc_date: ISO issue date.
+        currency: USD, EUR, PLN, ... (an NBP rate at the date is pinned).
+        total_amount: The printed NET total.
+        lines: [{"label": str, "qty": number, "unit_price": number, "plan_key": optional step key}]
+        company: The BILLED company: "7sigma" or "9sigma".
+        external_id: The supplier's order id, if any.
+        notes: What the document covers.
+    """
+    from ..routers import run_costs
+
+    db = SessionLocal()
+    try:
+        try:
+            cid = _company_id(db, company)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        if cid is None:
+            return json.dumps({"error": "name the billed company"})
+    finally:
+        db.close()
+    try:
+        body = run_costs.DocumentIn(supplier=supplier, doc_number=doc_number, doc_date=doc_date, currency=currency,
+                                    total_amount=total_amount, external_id=external_id, notes=notes,
+                                    company_id=cid, lines=[run_costs.LineIn(**ln) for ln in lines or []])
+    except Exception as e:  # noqa: BLE001 — a malformed line is the caller's mistake, said plainly
+        return json.dumps({"error": f"bad line: {e}"})
+    return _route(run_costs.create_shared_document, body)
+
+
+@beta_tool
+def assign_invoice_line(line_id: int, plan_key: str | None = None, run_id: int | None = None,
+                        project_id: int | None = None, allocate: str | None = None,
+                        exclude_reason: str | None = None) -> str:
+    """Say what a supplier position is and where its money goes, with the same
+    checks as the website: a run, a project, the pool (allocate="pooled" on a
+    stock step) or nobody (allocate="excluded" with exclude_reason).
+
+    Args:
+        line_id: The position's id (from get_supplier_invoice).
+        plan_key: The production step key (e.g. "parts:pool", "fab:pcb").
+        run_id: The batch that pays for it.
+        project_id: The project that pays for it, when no batch does.
+        allocate: none | pooled | by_value | by_qty | excluded.
+        exclude_reason: Why it is charged to nobody (with allocate="excluded").
+    """
+    from ..routers import run_costs
+
+    db = SessionLocal()
+    try:
+        li = db.get(M.RunCostLine, line_id)
+        doc = db.get(M.RunCostDocument, li.document_id) if li is not None else None
+        if doc is None or (doc.company_id is not None and doc.company_id not in _caller_companies(db)):
+            return json.dumps({"error": f"no position {line_id}"})
+    finally:
+        db.close()
+    fields = {k: v for k, v in {"plan_key": plan_key, "run_id": run_id, "project_id": project_id,
+                                "allocate": allocate, "exclude_reason": exclude_reason}.items() if v is not None}
+    return _route(run_costs.update_line, line_id, run_costs.LinePatch(**fields))
+
+
+@beta_tool
+def list_ksef_inbox(side: str = "purchase", status: str = "new", company: str = "") -> str:
+    """Invoices KSeF holds for our companies, as the last sync read them.
+    A purchase with status "new" waits for import_ksef_invoice.
+
+    Args:
+        side: purchase | sales | "" for both.
+        status: new | linked | imported | skipped | "" for all.
+        company: "7sigma" or "9sigma"; empty = every company of yours.
+    """
+    from .ksef import sync as ksef_sync
+
+    db = SessionLocal()
+    try:
+        mine = _caller_companies(db)
+        try:
+            cid = _company_id(db, company)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        q = db.query(M.KsefInvoice).filter(M.KsefInvoice.company_id.in_([cid] if cid else mine))
+        if side:
+            q = q.filter(M.KsefInvoice.side == side)
+        if status:
+            q = q.filter(M.KsefInvoice.status == status)
+        return json.dumps([ksef_sync.inbox_json(r) for r in q.order_by(M.KsefInvoice.issue_date.desc()).all()])
+    finally:
+        db.close()
+
+
+@beta_tool
+def import_ksef_invoice(ksef_number: str) -> str:
+    """Write a purchase from the KSeF inbox as a supplier document, billed to
+    the company KSeF holds it for. Its positions then need destinations
+    (assign_invoice_line).
+
+    Args:
+        ksef_number: The KSeF number (from list_ksef_inbox).
+    """
+    from ..routers import ksef as ksef_router
+
+    db = SessionLocal()
+    try:
+        row = db.query(M.KsefInvoice).filter_by(ksef_number=ksef_number.strip()).first()
+        if row is None or row.company_id not in _caller_companies(db):
+            return json.dumps({"error": f"{ksef_number} is not in your KSeF inbox"})
+        rid = row.id
+    finally:
+        db.close()
+    return _route(ksef_router.import_purchase, rid)
+
+
+@beta_tool
+def list_sales_invoices(year: str = "", status: str = "", kind: str = "") -> str:
+    """Sales invoices of your companies, newest first: number, kind, status,
+    buyer, totals, due date, paid, KSeF number.
+
+    Args:
+        year: e.g. "2026".
+        status: draft | issued | error | cancelled.
+        kind: vat | proforma | correction | advance.
+    """
+    from .invoicing import service as inv_svc
+
+    db = SessionLocal()
+    try:
+        q = db.query(M.SalesInvoice).filter(M.SalesInvoice.company_id.in_(_caller_companies(db)))
+        if year:
+            q = q.filter(M.SalesInvoice.issue_date.like(f"{year}%"))
+        if status:
+            q = q.filter(M.SalesInvoice.status == status)
+        if kind:
+            q = q.filter(M.SalesInvoice.kind == kind)
+        return json.dumps([inv_svc.invoice_json(db, i) for i in
+                           q.order_by(M.SalesInvoice.issue_date.desc(), M.SalesInvoice.id.desc()).all()])
+    finally:
+        db.close()
+
+
+@beta_tool
+def create_sales_invoice_draft(customer: str, lines: list, issue_date: str = "", kind: str = "vat",
+                               sale_date: str = "", extra_info: list | None = None) -> str:
+    """Write a sales invoice of the company that issues them here (7Sigma): a
+    VAT draft (its XML then goes to KSeF by hand) or an issued proforma. The
+    number is the next of its series. Never for 9SIGMA.
+
+    Args:
+        customer: The buyer: its key ("zpue"), name or NIP.
+        lines: [{"name": str, "qty": number, "unit_net": number, "vat_rate": "23", "unit": "szt."}]
+        issue_date: ISO date; the VAT XML must reach KSeF on this day.
+        kind: vat | proforma.
+        sale_date: ISO date of the sale, if not the issue date.
+        extra_info: Extra lines printed on the invoice.
+    """
+    import re as _re
+
+    from fastapi import HTTPException
+
+    from .invoicing import service as inv_svc
+
+    db = SessionLocal()
+    try:
+        seller = next((c for c in db.query(M.Company).filter_by(issues_invoices=True).all()
+                       if c.id in _caller_companies(db)), None)
+        if seller is None:
+            return json.dumps({"error": "none of your companies issues its invoices here"})
+        want = (customer or "").strip().lower()
+        digits = _re.sub(r"\D", "", customer or "")
+        cust = next((c for c in db.query(M.Customer).all()
+                     if want and (want == (c.key or "").lower() or want == c.name.lower()
+                                  or (digits and digits == _re.sub(r"\D", "", c.tax_id or "")))), None)
+        if cust is None:
+            return json.dumps({"error": f"no customer {customer!r}; use its key, name or NIP"})
+        inv = inv_svc.create(db, company_id=seller.id, kind=kind, customer_id=cust.id, issue_date=issue_date,
+                             sale_date=sale_date, lines=lines, extra_info=extra_info or [],
+                             actor=(tracking.current().name if tracking.current() else "agent"))
+        db.commit()
+        return json.dumps(inv_svc.invoice_json(db, inv, full=True), default=str)
+    except HTTPException as e:
+        db.rollback()
+        return json.dumps({"error": e.detail})
+    finally:
+        db.close()
+
+
 TOOLS = [
     # library reads
     search_components, get_component, list_categories, list_base_symbols,
@@ -2586,4 +2888,7 @@ TOOLS = [
     fieldsolver_stackups, fieldsolver_rules, fieldsolver_geometry, fieldsolver_solve,
     fieldsolver_find_solutions, fieldsolver_board, fieldsolver_assign_stackup,
     fieldsolver_save_profile,
+    # invoices: supplier documents, KSeF, sales (decisions 0063-0067)
+    list_supplier_invoices, get_supplier_invoice, create_supplier_invoice, assign_invoice_line,
+    list_ksef_inbox, import_ksef_invoice, list_sales_invoices, create_sales_invoice_draft,
 ]

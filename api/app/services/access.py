@@ -171,6 +171,7 @@ _add(["/api/flasher/param-sets/"], "param_set_id", _via(M.ParamSet, "project_id"
 _add(["/api/sales-invoices/"], "invoice_id", _via(M.SalesInvoice, "company_id", lambda db, c: {int(c)}))
 _add(["/api/sales-invoice-templates/"], "template_id",
      _via(M.SalesInvoiceTemplate, "company_id", lambda db, c: {int(c)}))
+_add(["/api/ksef/inbox/"], "ksef_id", _via(M.KsefInvoice, "company_id", lambda db, c: {int(c)}))
 _add(["/api/consumption/"], "cons_id", _stock_row(M.ComponentConsumption))
 _add(["/api/stock-adjustments/"], "adj_id", _stock_row(M.ComponentStockAdjustment))
 

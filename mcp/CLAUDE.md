@@ -73,7 +73,9 @@ converted to MCP image content; every other tool returns a JSON string as text.
   that died at import with `'Server' object has no attribute 'list_tools'`.
   `uv` resolves fresh on a cold start, so it would have broken with no local
   change (caught 2026-08-24). Lift the pin only with a port to the 2.x API.
-- **One tool is LOCAL, not proxied: `upload_model3d`** (`LOCAL_TOOLS`, merged
+- **Two tools are LOCAL, not proxied: `upload_model3d`, and
+  `attach_invoice_file`, which files an invoice original from this disk with its
+  supplier document (`/api/run-documents/{id}/attachment`).** `upload_model3d` (`LOCAL_TOOLS`, merged
   into the catalog in `list_tools` and dispatched before the proxy). A 3D model
   is a multi-megabyte file on the user's own disk; proxying it would mean
   base64 through a tool call, and the platform cannot read that filesystem. It reads the file locally and posts multipart to

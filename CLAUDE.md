@@ -152,8 +152,8 @@ personal API token. Full rules in `api/CLAUDE.md` (backend) and `web/CLAUDE.md`
   every BOM — decision 0055), the archive-wide datasheet jobs, the
   activity log (`/api/activity`, who changed what — decision 0050), and a
   company's seller data, its memberships, moving a project to another
-  company, the company backfills and writing the history's in-house
-  transfers (decisions 0063, 0064).
+  company, the company backfills, writing the history's in-house
+  transfers, and the KSeF tokens and sync (decisions 0063, 0064, 0067).
   Everything else — the library, reviews, production, orders, invoices,
   projects, the flasher, the agent — is open to any signed-in user on purpose.
   Reading is gated far less than writing: the rates table and the datasheet

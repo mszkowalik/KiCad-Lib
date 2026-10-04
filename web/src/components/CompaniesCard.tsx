@@ -8,6 +8,10 @@
 import { useEffect, useState } from "react";
 import {
   applyHistory,
+  getKsefStatus,
+  runKsefSync,
+  setKsefToken,
+  type KsefStatus,
   errorMessage,
   isAbortError,
   listCompanies,
@@ -105,6 +109,74 @@ function CompanyForm({ company, onSaved }: { company: CompanyDetail; onSaved: (c
           Discard
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Decision 0067: each company's KSeF token, for READING its invoices. The
+ *  token is write-only: the API says whether one is set, never what it is. */
+function KsefCard() {
+  const dialog = useDialog();
+  const [rows, setRows] = useState<KsefStatus[] | null>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState<number | null>(null);
+  const [result, setResult] = useState("");
+  const load = () => getKsefStatus().then(setRows).catch((e) => setErr(errorMessage(e)));
+  useEffect(() => { void load(); }, []);
+
+  const cols: Column<KsefStatus>[] = [
+    { key: "company", label: "Company", width: 14, get: (r) => r.company },
+    { key: "token", label: "Token", width: 9, get: (r) => (r.configured ? "set" : "none") },
+    { key: "last", label: "Last sync", width: 17, className: "mono", get: (r) => r.last_sync_at?.slice(0, 16) ?? "never" },
+    { key: "read", label: "Read up to", width: 18, className: "mono",
+      get: (r) => [r.sales_read_to && `sales ${r.sales_read_to}`, r.purchases_read_to && `purch. ${r.purchases_read_to}`]
+        .filter(Boolean).join(" · ") },
+    { key: "error", label: "Last problem", width: 20, className: "muted", get: (r) => r.last_error },
+    { key: "act", label: "", width: 22, interactive: false, get: () => "",
+      render: (r) => (
+        <span className="btn-row">
+          <button type="button" className="btn btn-sm" disabled={busy !== null} onClick={async () => {
+            const token = await dialog.prompt(`KSeF token for ${r.company} (read-only token from the KSeF application):`,
+              { title: r.configured ? "Replace the KSeF token" : "Set the KSeF token", secret: true });
+            if (!token) return;
+            setBusy(r.company_id);
+            try { await setKsefToken(r.company_id, token); await load(); } catch (e) { setErr(errorMessage(e)); }
+            finally { setBusy(null); }
+          }}>
+            {r.configured ? "Replace token…" : "Set token…"}
+          </button>
+          {r.configured ? (
+            <button type="button" className="btn btn-primary btn-sm" disabled={busy !== null} onClick={async () => {
+              setBusy(r.company_id);
+              setErr("");
+              try {
+                const res = await runKsefSync(r.company_id);
+                setResult(`${r.company}: ` + Object.entries(res.fetched).map(([k, v]) => `${k} ${v.listed} (${v.new} new)`).join(", ")
+                  + `; ${res.downloaded} XML downloaded, ${res.linked} linked, ${res.recorded} recorded`
+                  + (res.limit ? ` — ${res.limit}` : "")
+                  + (res.refused?.length ? ` — refused: ${res.refused.map((x) => `${x.number}: ${x.why}`).join("; ")}` : ""));
+                await load();
+              } catch (e) { setErr(errorMessage(e)); }
+              finally { setBusy(null); }
+            }}>
+              {busy === r.company_id ? "Syncing…" : "Sync now"}
+            </button>
+          ) : null}
+        </span>
+      ) },
+  ];
+  return (
+    <div className="card pad">
+      <h2>KSeF</h2>
+      <p className="muted dim">
+        Each company's read-only KSeF token. A sync reads its sales and purchase invoices into Production → KSeF,
+        links the sales ones to their records and spends one or two of KSeF's 20 hourly queries.
+      </p>
+      <ErrorBanner message={err} />
+      {result ? <div className="banner-ok">{result}</div> : null}
+      {rows === null ? <Spinner label="Loading…" /> : (
+        <DataTable rows={rows} rowKey={(r) => r.company_id} columns={cols} empty="No companies." />
+      )}
     </div>
   );
 }
@@ -282,6 +354,7 @@ export default function CompaniesCard() {
           )}
         />
       </div>
+      <KsefCard />
       <StockSplitCard />
     </>
   );

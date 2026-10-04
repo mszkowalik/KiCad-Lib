@@ -9331,3 +9331,72 @@ export function generateFromTemplate(id: number, month: string): Promise<SalesIn
 export function listSalesProducts(signal?: AbortSignal): Promise<SalesProductRow[]> {
   return request("/api/sales-products", { signal });
 }
+
+// ------------------------------------------------------------- KSeF (0067)
+
+export interface KsefStatus {
+  company_id: number;
+  company: string;
+  configured: boolean;
+  last_sync_at: string | null;
+  last_error: string;
+  rate_limited_until: string | null;
+  sales_read_to: string;
+  purchases_read_to: string;
+  counts: Record<string, number>;
+}
+
+export interface KsefInboxRow {
+  id: number;
+  company_id: number;
+  side: "sales" | "purchase";
+  ksef_number: string;
+  invoice_number: string;
+  invoice_type: string;
+  issue_date: string;
+  seller_nip: string;
+  seller_name: string;
+  buyer_nip: string;
+  buyer_name: string;
+  net: string | null;
+  vat: string | null;
+  gross: string | null;
+  currency: string;
+  has_xml: boolean;
+  status: "new" | "linked" | "imported" | "skipped";
+  sales_invoice_id: number | null;
+  document_id: number | null;
+  note: string;
+  received_at: string;
+}
+
+export function getKsefStatus(signal?: AbortSignal): Promise<KsefStatus[]> {
+  return request("/api/ksef/status", { signal });
+}
+
+export function setKsefToken(companyId: number, token: string): Promise<KsefStatus> {
+  return request(`/api/ksef/credentials/${companyId}`, jsonBody("PUT", { token }));
+}
+
+export function runKsefSync(companyId: number): Promise<{
+  fetched: Record<string, { listed: number; new: number }>; downloaded: number; linked: number;
+  recorded: number; limit: string; refused?: { number: string; why: string }[];
+}> {
+  return request("/api/ksef/sync", jsonBody("POST", { company_id: companyId }));
+}
+
+export function getKsefInbox(signal?: AbortSignal): Promise<KsefInboxRow[]> {
+  return request("/api/ksef/inbox", { signal });
+}
+
+export function importKsefPurchase(id: number): Promise<KsefInboxRow & { document_id: number }> {
+  return request(`/api/ksef/inbox/${id}/import`, { method: "POST" });
+}
+
+export function skipKsefInvoice(id: number, reason: string): Promise<KsefInboxRow> {
+  return request(`/api/ksef/inbox/${id}/skip`, jsonBody("POST", { reason }));
+}
+
+export function ksefXmlPath(id: number): string {
+  return `/api/ksef/inbox/${id}/xml`;
+}

@@ -39,17 +39,37 @@ def series_of(kind: str) -> str:
     return SERIES[kind]
 
 
-def used_numbers(db: Session, company_id: int, kind: str, day: date,
-                 exclude_id: int | None = None) -> list[int]:
+#: KSeF's invoice types per series (decision 0067).
+_KSEF_TYPES = {"vat": ("Vat", "Roz", "Upr"), "correction": ("Kor", "KorZal", "KorRoz"),
+               "advance": ("Zal",), "proforma": ()}
+
+
+def _all_numbers(db: Session, company_id: int, kind: str, exclude_id: int | None) -> list[str]:
+    """Every number of the series: the platform's documents that are not
+    cancelled drafts, and the sales invoices KSeF holds for the company — read
+    from the inbox, so a number taken directly in KSeF counts before its XML
+    has even arrived."""
     series = series_of(kind)
-    rx = re.compile(_PATTERN[series].format(m=day.month, y=day.year))
     kinds = [k for k, s in SERIES.items() if s == series]
     q = (db.query(M.SalesInvoice.number)
          .filter(M.SalesInvoice.company_id == company_id, M.SalesInvoice.kind.in_(kinds),
                  M.SalesInvoice.status != "cancelled"))
     if exclude_id is not None:
         q = q.filter(M.SalesInvoice.id != exclude_id)
-    return [int(m.group(1)) for (num,) in q.all() if (m := rx.match((num or "").strip()))]
+    numbers = [n for (n,) in q.all()]
+    if _KSEF_TYPES[series]:
+        numbers += [n for (n,) in db.query(M.KsefInvoice.invoice_number)
+                    .filter(M.KsefInvoice.company_id == company_id, M.KsefInvoice.side == "sales",
+                            M.KsefInvoice.invoice_type.in_(_KSEF_TYPES[series]),
+                            M.KsefInvoice.status != "skipped").all()]
+    return numbers
+
+
+def used_numbers(db: Session, company_id: int, kind: str, day: date,
+                 exclude_id: int | None = None) -> list[int]:
+    rx = re.compile(_PATTERN[series_of(kind)].format(m=day.month, y=day.year))
+    return [int(m.group(1)) for num in _all_numbers(db, company_id, kind, exclude_id)
+            if (m := rx.match((num or "").strip()))]
 
 
 def next_number(db: Session, company_id: int, kind: str, day: date,
@@ -61,16 +81,8 @@ def next_number(db: Session, company_id: int, kind: str, day: date,
 def taken(db: Session, company_id: int, kind: str, number: str,
           exclude_id: int | None = None) -> bool:
     """Whether a number is already used in the series (leading zeros ignored)."""
-    series = series_of(kind)
-    kinds = [k for k, s in SERIES.items() if s == series]
-
     def norm(n: str) -> str:
         return re.sub(r"(^|[ /])0+(\d)", r"\1\2", (n or "").strip())
 
-    q = (db.query(M.SalesInvoice.number)
-         .filter(M.SalesInvoice.company_id == company_id, M.SalesInvoice.kind.in_(kinds),
-                 M.SalesInvoice.status != "cancelled"))
-    if exclude_id is not None:
-        q = q.filter(M.SalesInvoice.id != exclude_id)
     want = norm(number)
-    return any(norm(n) == want for (n,) in q.all())
+    return any(norm(n) == want for n in _all_numbers(db, company_id, kind, exclude_id))

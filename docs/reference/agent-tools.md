@@ -159,3 +159,8 @@ tools over MCP.
     `publish.publish_skill_version` avoids the same trap by querying the version
     numbers instead of reading `skill.versions`.
 
+## Invoice tools
+
+The invoice group (supplier documents, the KSeF inbox, 7Sigma's sales invoices)
+calls the website's route functions, so every guard applies, and limits itself
+to the token user's companies. The rules are in [ksef.md](ksef.md).

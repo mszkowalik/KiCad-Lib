@@ -36,6 +36,9 @@ export interface PromptOptions {
    *  loses the finding inside it, and the backend refuses an over-long one, so
    *  stopping the typing here beats rejecting the save. */
   maxLength?: number;
+  /** A credential: typed into a masked box that the browser never offers to
+   *  save (the KSeF token, decision 0067). */
+  secret?: boolean;
 }
 
 export interface SelectOptions {
@@ -164,7 +167,8 @@ function DialogBox({ req, onDone }: { req: Request; onDone: () => void }) {
           <form onSubmit={onSubmit}>
             <input
               ref={inputRef}
-              type="text"
+              type={req.opts.secret ? "password" : "text"}
+              autoComplete={req.opts.secret ? "new-password" : undefined}
               className="text modal-input"
               value={value}
               maxLength={req.opts.maxLength}

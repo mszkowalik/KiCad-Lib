@@ -27,6 +27,7 @@ from .routers import (
     jlc_import,
     jlc_stock,
     jlc_web,
+    ksef as ksef_router,
     kicad_http,
     kicad_sync,
     ledger,
@@ -123,6 +124,7 @@ app.include_router(process_router.router)
 app.include_router(companies_router.router)
 app.include_router(transfers_router.router)
 app.include_router(sales_invoices_router.router)
+app.include_router(ksef_router.router)
 app.include_router(jlc_stock.router)
 app.include_router(jlc_web.router)
 app.include_router(jlc_import.router)
@@ -716,6 +718,9 @@ _PHASE1_DDL = (
      "ALTER TABLE component_consumptions ADD COLUMN IF NOT EXISTS transfer_line_id integer"),
     ("component_stock_adjustments.company_id",
      "ALTER TABLE component_stock_adjustments ADD COLUMN IF NOT EXISTS company_id integer"),
+    # Decision 0067: the seller's tax id on a supplier document (KSeF imports).
+    ("run_cost_documents.seller_tax_id",
+     "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS seller_tax_id varchar(40) NOT NULL DEFAULT ''"),
     # Decision 0066: sales invoices. The tables arrive through `create_all`.
     ("customers.key", "ALTER TABLE customers ADD COLUMN IF NOT EXISTS key varchar(40) NOT NULL DEFAULT ''"),
     ("customers.legal_name",

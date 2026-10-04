@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-10-04 (KSeF read-out and invoice tools for agents)
+
+Not deployed yet. Decision
+[0067](docs/decisions/0067-the-platform-reads-both-companies-from-ksef.md). The
+rules are in [docs/reference/ksef.md](docs/reference/ksef.md).
+
+- **Admin → Companies → KSeF holds each company's read-only token** and runs
+  "Sync now". The token is stored encrypted and never shown again.
+- **Production → KSeF lists what KSeF holds.** A sales invoice links to its
+  record by itself: a 7Sigma draft becomes issued with its KSeF number and QR
+  code. A purchase waits for "Import" (it becomes a supplier document whose
+  positions still need destinations) or "Skip".
+- **Agents can file invoices over MCP**: list and read supplier invoices, enter
+  one KSeF does not hold, assign a position, import from the KSeF inbox, list
+  and draft 7Sigma's sales invoices, and attach an invoice's original from the
+  user's disk.
+
 ## 2026-10-04 (sales invoices)
 
 Not deployed yet. Decision

@@ -2405,6 +2405,9 @@ class RunCostDocument(Base):
     # Decision 0064: on an in-house transfer (`doc_type='transfer'`) the
     # company that SENT the stock. `company_id` is the one that received it.
     counterparty_company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Decision 0067: the seller's tax id as the invoice states it (a KSeF import
+    # fills it). Two sellers may print the same invoice number.
+    seller_tax_id: Mapped[str] = mapped_column(String(40), default="")
     doc_type: Mapped[str] = mapped_column(String(20), default="invoice")
     supplier: Mapped[str] = mapped_column(String(200), default="")
     doc_number: Mapped[str] = mapped_column(String(100), default="")
@@ -4107,3 +4110,68 @@ class SalesProduct(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (UniqueConstraint("company_id", "name", name="uq_sales_product_name"),)
+
+
+# ------------------------------------------------------------- KSeF (0067)
+class KsefCredential(Base):
+    """A company's KSeF token, for READING its invoices (decision 0067). One row
+    per company.
+
+    Like the broker credential (`MqttConfig`): encrypted at rest (`token_enc`,
+    services/crypto.py), every route is admin-only, and the token is never
+    returned — only whether one is set. Never an environment variable.
+    """
+
+    __tablename__ = "ksef_credentials"
+
+    company_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token_enc: Mapped[str] = mapped_column(Text, default="")
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str] = mapped_column(String(500), default="")
+    #: KSeF limits queries per hour; a sync before this time is refused.
+    rate_limited_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: The newest issue date read so far, per side; the next sync starts a week before.
+    sales_read_to: Mapped[str] = mapped_column(String(10), default="")
+    purchases_read_to: Mapped[str] = mapped_column(String(10), default="")
+    updated_by: Mapped[str] = mapped_column(String(100), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class KsefInvoice(Base):
+    """One invoice KSeF holds for a company, as fetched (decision 0067).
+
+    The INBOX: fetching writes here and nowhere else, so reading KSeF never
+    moves money. A sales invoice is LINKED to the platform's own record of it;
+    a purchase is IMPORTED as a supplier document when a person or an agent
+    decides, or SKIPPED with a reason.
+    """
+
+    __tablename__ = "ksef_invoices"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(Integer)
+    side: Mapped[str] = mapped_column(String(10))                       # sales | purchase
+    ksef_number: Mapped[str] = mapped_column(String(64), unique=True)
+    invoice_number: Mapped[str] = mapped_column(String(256), default="")
+    invoice_type: Mapped[str] = mapped_column(String(20), default="")   # Vat, Kor, Zal, ...
+    issue_date: Mapped[str] = mapped_column(String(10), default="")
+    seller_nip: Mapped[str] = mapped_column(String(40), default="")
+    seller_name: Mapped[str] = mapped_column(String(512), default="")
+    buyer_nip: Mapped[str] = mapped_column(String(40), default="")
+    buyer_name: Mapped[str] = mapped_column(String(512), default="")
+    net: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    vat: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    gross: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), default="PLN")
+    #: base64url SHA-256 of the XML, from the metadata: the QR code's last part
+    xml_hash: Mapped[str] = mapped_column(String(64), default="")
+    received_at: Mapped[str] = mapped_column(String(40), default="")
+    meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    xml_key: Mapped[str] = mapped_column(String(300), default="")       # MinIO, once downloaded
+    status: Mapped[str] = mapped_column(String(20), default="new")      # new | linked | imported | skipped
+    sales_invoice_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    document_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    note: Mapped[str] = mapped_column(String(500), default="")
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (Index("ix_ksef_invoices_company_side", "company_id", "side", "status"),)
