@@ -20,14 +20,13 @@ form and two people must see two different strings. `GET /api/kicad/config`
 already personalises itself from the caller's session, so the move needed no new
 endpoint. Admin keeps a pointer, on its System tab.
 
-**Admin is SIX TABS, and `TABS` in `pages/Admin.tsx` is the whole list**
-(2026-09-19): Configuration, Users, Datasheets, Exchange rates, Fleet broker,
-System. A row carries its own one-line blurb, printed in the toolbar, and
-`admin: true` on the two the API refuses to a non-admin — those are filtered
+**Admin is one tab per subject, and `TABS` in `pages/Admin.tsx` is the whole
+list.** A row carries its own one-line blurb, printed in the toolbar, and
+`admin: true` on the ones the API refuses to a non-admin — those are filtered
 out rather than rendered as controls that can only fail, and a URL naming one
 falls back to Configuration. A new admin panel is a row there, not another
-card appended to a scroll: the six used to be stacked, and the schema readout
-was four screens below the Configuration table.
+card appended to a scroll: the panels used to be stacked, and the schema
+readout was four screens below the Configuration table.
 
 **Changing your own password is `POST /api/auth/password`, which has existed
 since sign-in was built** — it ends every OTHER session and RE-ISSUES this one,

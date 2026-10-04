@@ -7,7 +7,7 @@ the money path, so "something changed" is not good enough.
 """
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
@@ -17,6 +17,7 @@ from ..db import get_db
 from ..models import utcnow
 from ..services import (cost_steps, journal, nbp, run_actuals, storage,
                         substitutions, supplier_parts)
+from ..services import companies as company_svc
 from .util import acting_name, audit, part_display_name
 
 router = APIRouter(prefix="/api", tags=["run-costs"])
@@ -121,6 +122,9 @@ class DocumentIn(BaseModel):
     notes: str = ""
     attachment_id: int | None = None
     corrects_document_id: int | None = None
+    # Decision 0064: the company that was BILLED. Default: the caller's only
+    # company; with two, it stays unnamed until a person says.
+    company_id: int | None = None
     lines: list[LineIn] = []
 
 
@@ -142,6 +146,9 @@ class DocumentPatch(BaseModel):
     # project must be clearable — not only settable at creation.
     project_id: int | None = None
     attachment_id: int | None = None
+    # Decision 0064: the company that was BILLED. Set by a person, it records
+    # `company_source="manual"`.
+    company_id: int | None = None
 
 
 class CorrectionIn(BaseModel):
@@ -223,6 +230,9 @@ class ConsumptionIn(BaseModel):
 
 
 class AdjustmentIn(BaseModel):
+    # Decision 0064: whose stock moves. Default: the charged batch's company,
+    # else the project's owner on the adjustment date.
+    company_id: int | None = None
     component_id: int | None = None
     mpn: str = ""
     lcsc: str = ""
@@ -265,6 +275,29 @@ def _guard_purchase_loss(db: Session, losses: list[dict], what: str) -> None:
         })
 
 
+def _guard_buyer_change(db: Session, doc: M.RunCostDocument, company_id: int | None) -> bool:
+    """Check a new BUYER for a document (decision 0064). Returns whether it
+    changes.
+
+    A new buyer moves every pooled position into the other company's stock, so
+    the old buyer loses all of it and must not be left with draws it cannot
+    cover — the rule of 0040. Nothing moves while the companies share one pool,
+    or when the document had no buyer yet."""
+    if company_id == doc.company_id:
+        return False
+    if company_id is None:
+        raise HTTPException(422, "a document keeps a buyer once it has one; name the other company")
+    company_svc.get(db, company_id)
+    if run_actuals.stock_scope(db, doc.company_id) is not None:
+        hdrs = run_actuals.header_ids(db, doc.id)
+        live = [li for li in doc.lines if li.voided_at is None]
+        _guard_purchase_loss(db, [
+            run_actuals.purchase_loss_of(db, li)
+            for li in run_actuals.pooled_part_lines(db, live) if li.id not in hdrs
+        ], "giving this document another buyer")
+    return True
+
+
 def _guard_closed(db: Session, doc: M.RunCostDocument, what: str) -> None:
     """Refuse an in-place edit to a document that charges a CLOSED batch.
 
@@ -276,6 +309,12 @@ def _guard_closed(db: Session, doc: M.RunCostDocument, what: str) -> None:
     The refusal names the batches and the way forward, because `detail.error` is
     the whole message the browser shows (web/CLAUDE.md).
     """
+    if (doc.doc_type or "") == "transfer":
+        # Decision 0064: a transfer changes only as a whole, through
+        # Transfers → Reverse, so its two sides can never disagree.
+        raise HTTPException(409, {"error": f"{what} is refused: {doc.doc_number} is an in-house "
+                                           "transfer. Reverse it and write another.",
+                                  "document_id": doc.id})
     locked = run_actuals.closed_lock(db, doc)
     if not locked:
         return
@@ -782,6 +821,17 @@ def _create_document(project_id: int | None, body: DocumentIn, db: Session):
         _check_transformation(db, li.plan_key, li.transformation_id, li.run_id,
                               li.project_id, li.allocate)
     data = body.model_dump(exclude={"lines", "project_id"})
+    if data.get("company_id"):
+        company_svc.get(db, data["company_id"])
+        data["company_source"] = "manual"
+    else:
+        from ..services import tracking
+
+        ctx = tracking.current()
+        user = db.get(M.User, ctx.user_id) if ctx and ctx.user_id else None
+        mine = company_svc.memberships(db, user) if user is not None and user.role != "admin" else []
+        if len(mine) == 1:
+            data["company_id"], data["company_source"] = mine[0], "the user's only company"
     doc = M.RunCostDocument(project_id=project_id, **data)
     # FX comes from NBP table A at the INVOICE DATE (user decision 2026-07-27).
     # Pinned onto the document so the figure can never drift, and appended to
@@ -899,8 +949,11 @@ def resolve_parts_all(db: Session = Depends(get_db)):
 def update_document(doc_id: int, body: DocumentPatch, db: Session = Depends(get_db)):
     doc = _doc(db, doc_id)
     _guard_closed(db, doc, "changing this document")
+    fields = body.model_dump(exclude_unset=True)
+    if "company_id" in fields and _guard_buyer_change(db, doc, fields["company_id"]):
+        fields["company_source"] = "manual"
     before, after = {}, {}
-    for field, value in body.model_dump(exclude_unset=True).items():
+    for field, value in fields.items():
         old = getattr(doc, field)
         if old != value:
             before[field], after[field] = old, value
@@ -1030,6 +1083,10 @@ def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
                      f"a stock adjustment for the difference.",
             "shortages": short,
         })
+    # A new buyer, checked before anything is written (decision 0064).
+    doc_fields = body.document.model_dump(exclude_unset=True) if body.document is not None else {}
+    if "company_id" in doc_fields and not _guard_buyer_change(db, doc, doc_fields["company_id"]):
+        doc_fields.pop("company_id")
 
     changed: list[dict] = []
     for e in body.updates:
@@ -1057,8 +1114,10 @@ def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
     # date corrected in one call and the lines in another leaves a window where
     # the document says one thing and its money another.
     doc_before, doc_after = {}, {}
+    if "company_id" in doc_fields:
+        doc_fields["company_source"] = "manual"
     if body.document is not None:
-        for field, value in body.document.model_dump(exclude_unset=True).items():
+        for field, value in doc_fields.items():
             if getattr(doc, field) != value:
                 doc_before[field], doc_after[field] = getattr(doc, field), value
                 setattr(doc, field, value)
@@ -1393,15 +1452,23 @@ def list_doc_attachments(doc_id: int, db: Session = Depends(get_db)):
 
 # --------------------------------------------------------- invoice register
 
+def _stock_view(db: Session, request: Request | None) -> int | None:
+    """The one company a stock view shows (decision 0064): the header
+    switcher's company when it selects exactly one and each company keeps its
+    own stock; else None, all stock."""
+    scope = company_svc.scope_ids(db, request)
+    return run_actuals.stock_scope(db, scope[0]) if len(scope) == 1 else None
+
+
 @router.get("/parts-stock")
-def parts_stock(db: Session = Depends(get_db)):
+def parts_stock(request: Request = None, db: Session = Depends(get_db)):
     """Every part measured both ways: what JLC physically holds at market price,
     and what the cost pool says was paid for the unconsumed remainder.
 
     A part JLC holds that the pool has never seen (`state: "jlc_only"`) means the
     purchase invoice is missing.
     """
-    return run_actuals.parts_stock(db)
+    return run_actuals.parts_stock(db, company_id=_stock_view(db, request))
 
 
 @router.get("/invoices")
@@ -1468,12 +1535,13 @@ def get_cost_steps():
 
 @router.get("/parts-ledger")
 def parts_ledger(component_id: int | None = None, mpn: str = "", lcsc: str = "",
-                 db: Session = Depends(get_db)):
+                 request: Request = None, db: Session = Depends(get_db)):
     """One part's full event timeline with running balance — how the stock moved,
     verifiable at any point in time (user requirement 2026-07-28)."""
     if component_id is None and not mpn and not lcsc:
         raise HTTPException(422, "give at least one of component_id, mpn, lcsc")
-    return run_actuals.component_ledger(db, component_id, mpn, lcsc)
+    return run_actuals.component_ledger(db, component_id, mpn, lcsc,
+                                        company_id=_stock_view(db, request))
 
 
 def _refuse_crafted(run: M.ProductionRun) -> None:
@@ -1495,7 +1563,7 @@ def add_consumption(run_id: int, body: ConsumptionIn, db: Session = Depends(get_
     shortages = run_actuals.check_shortages(db, [{
         "component_id": body.component_id, "mpn": body.mpn, "lcsc": body.lcsc,
         "qty": body.qty, "date": body.consumed_at or run.run_date or "",
-    }])
+    }], company_id=run_actuals.run_scope(db, run))
     if shortages:
         raise HTTPException(409, {"error": "insufficient stock for this draw",
                                   "shortages": shortages})
@@ -1505,7 +1573,8 @@ def add_consumption(run_id: int, body: ConsumptionIn, db: Session = Depends(get_
     # meets purchases filed under a component id — see `resolve_pool_identity`.
     as_of = body.consumed_at or run.run_date or None
     pool = run_actuals.resolve_pool_identity(
-        db, body.component_id, body.mpn, body.lcsc, as_of=as_of)
+        db, body.component_id, body.mpn, body.lcsc, as_of=as_of,
+        company_id=run_actuals.run_scope(db, run))
     unit = body.unit_cost_usd
     if unit is None:
         unit = pool["avg_usd"] if pool else 0.0
@@ -1577,7 +1646,7 @@ def set_used_qty(run_id: int, body: ConsumptionIn, db: Session = Depends(get_db)
         short = run_actuals.check_shortages(db, [{
             "component_id": body.component_id, "mpn": body.mpn, "lcsc": body.lcsc,
             "qty": qty - was, "date": body.consumed_at or run.run_date or "",
-        }])
+        }], company_id=run_actuals.run_scope(db, run))
         if short:
             raise HTTPException(409, {"error": "insufficient stock for this draw",
                                       "shortages": short})
@@ -1596,7 +1665,8 @@ def set_used_qty(run_id: int, body: ConsumptionIn, db: Session = Depends(get_db)
         # would file the draw under a different key from the purchases and split
         # one part into two pool entries with two averages.
         pool = run_actuals.resolve_pool_identity(
-            db, body.component_id, body.mpn, body.lcsc, as_of=as_of)
+            db, body.component_id, body.mpn, body.lcsc, as_of=as_of,
+            company_id=run_actuals.run_scope(db, run))
         if pool is None:
             raise HTTPException(409, {
                 "error": "no pool entry for that part, so there is nothing to draw from",
@@ -1713,7 +1783,8 @@ def list_adjustments(project_id: int, db: Session = Depends(get_db)):
     return [
         {"id": a.id, "component_id": a.component_id, "mpn": a.mpn, "lcsc": a.lcsc,
          "qty_delta": a.qty_delta, "unit_cost_usd": a.unit_cost_usd, "reason": a.reason,
-         "charge_run_id": a.charge_run_id, "adjusted_at": a.adjusted_at, "note": a.note}
+         "charge_run_id": a.charge_run_id, "adjusted_at": a.adjusted_at, "note": a.note,
+         "company_id": a.company_id}
         for a in rows
     ]
 
@@ -1728,6 +1799,12 @@ def add_adjustment(project_id: int, body: AdjustmentIn, db: Session = Depends(ge
         _run(db, body.charge_run_id)
     a = M.ComponentStockAdjustment(project_id=project_id, **body.model_dump())
     a.actor = acting_name()
+    # Whose stock moves (decision 0064): stated, else derived — and fixed now,
+    # because the pinned price below is read from that company's stock.
+    if a.company_id is not None:
+        company_svc.get(db, a.company_id)
+    else:
+        a.company_id = company_svc.stock_company_for(db, a)
     # PIN the unit cost when the loss is charged to a batch (decision 0044).
     # NULL means "price it from the pool", and `run_actuals` resolved that
     # against the average as it stands ON EVERY READ — so a write-off kept being
@@ -1737,7 +1814,8 @@ def add_adjustment(project_id: int, body: AdjustmentIn, db: Session = Depends(ge
     if a.unit_cost_usd is None and a.charge_run_id is not None:
         entry = run_actuals.resolve_pool_identity(
             db, a.component_id, a.mpn or "", a.lcsc or "",
-            as_of=a.adjusted_at or None)
+            as_of=a.adjusted_at or None,
+            company_id=run_actuals.stock_scope(db, a.company_id))
         a.unit_cost_usd = float((entry or {}).get("avg_usd") or 0.0)
     db.add(a)
     db.flush()
@@ -1794,7 +1872,10 @@ def get_pool(project_id: int, as_of: str | None = None, db: Session = Depends(ge
     """
     if db.get(M.Project, project_id) is None:
         raise HTTPException(404, "project not found")
-    pool = run_actuals.pool_state(db, project_id, as_of=as_of)
+    # The stock of the company that owned the project on that day (0064).
+    owner = company_svc.owner_on(db, project_id, as_of)
+    pool = run_actuals.pool_state(db, project_id, as_of=as_of,
+                                  company_id=run_actuals.stock_scope(db, owner.id if owner else None))
     rows = []
     for key, p in sorted(pool.items(), key=lambda kv: -abs(kv[1]["value_usd"])):
         rows.append({

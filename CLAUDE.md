@@ -151,8 +151,9 @@ personal API token. Full rules in `api/CLAUDE.md` (backend) and `web/CLAUDE.md`
   rule sets, editing an exchange rate, the supplier register (its order prices
   every BOM — decision 0055), the archive-wide datasheet jobs, the
   activity log (`/api/activity`, who changed what — decision 0050), and a
-  company's seller data, its memberships and moving a project to another
-  company (decision 0063).
+  company's seller data, its memberships, moving a project to another
+  company, the company backfills and writing the history's in-house
+  transfers (decisions 0063, 0064).
   Everything else — the library, reviews, production, orders, invoices,
   projects, the flasher, the agent — is open to any signed-in user on purpose.
   Reading is gated far less than writing: the rates table and the datasheet
@@ -164,7 +165,8 @@ personal API token. Full rules in `api/CLAUDE.md` (backend) and `web/CLAUDE.md`
 - **A user sees the companies they belong to; an admin sees all of them.**
   7Sigma and 9SIGMA share one platform, a project belongs to one company in
   dated periods, and the header switcher narrows the lists to one company.
-  That switcher is a filter, not a gate. Rules in
+  That switcher is a filter, not a gate. Each company keeps its own stock once
+  the admin switch `stock_per_company` is on. Rules in
   [docs/reference/companies.md](docs/reference/companies.md).
 - **Each user gets one URL for KiCad**:
   `…/api/kicad/pcm/repository.json?t=<their token>`. Pasting it into the Plugin

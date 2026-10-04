@@ -293,8 +293,10 @@ def receive(db: Session, run: M.ProductionRun, *, qty: int, made_at: str = "", n
 def _plan_draws(db: Session, run: M.ProductionRun, step: dict, n: int, made_at: str,
                 lots: dict | None) -> tuple[list[dict], list[dict], list[str]]:
     """The draws one click makes: N x each input. A prepared part takes ONE lot,
-    so the twins that get it stay one physical pile (0059 §2)."""
-    pool = run_actuals.pool_state(db, run.project_id, as_of=made_at)
+    so the twins that get it stay one physical pile (0059 §2). Everything comes
+    from the batch company's stock (decision 0064)."""
+    scope = run_actuals.run_scope(db, run)
+    pool = run_actuals.pool_state(db, run.project_id, as_of=made_at, company_id=scope)
     names = P._part_names(db, {c for c, _m in map(P.input_ref, step.get("inputs") or []) if c})
     draws: list[dict] = []
     problems: list[dict] = []
@@ -306,7 +308,7 @@ def _plan_draws(db: Session, run: M.ProductionRun, step: dict, n: int, made_at: 
         name = P.input_label(inp, names)
         if comp is not None and comp.internal:
             # A lot made after the click's date cannot have fed it.
-            open_lots = [lt for lt in P.prepared_lots(db, {cid}, open_only=True)
+            open_lots = [lt for lt in P.prepared_lots(db, {cid}, open_only=True, company_id=scope)
                          if not made_at or not lt.get("date") or str(lt["date"])[:10] <= made_at]
             want = (lots or {}).get(str(cid)) or (lots or {}).get(cid)
             lot = None
@@ -333,7 +335,8 @@ def _plan_draws(db: Session, run: M.ProductionRun, step: dict, n: int, made_at: 
             # identity OVERLAP as `check_shortages` finds it: a part named by MPN
             # whose purchases now carry a component id would otherwise be priced
             # at zero under a new key (`run_actuals.resolve_pool_identity`).
-            hit = run_actuals.resolve_pool_identity(db, cid, "" if cid else mpn, "", as_of=made_at)
+            hit = run_actuals.resolve_pool_identity(db, cid, "" if cid else mpn, "", as_of=made_at,
+                                                    company_id=scope)
             if hit is not None:
                 cid = hit.get("component_id") or cid
                 mpn = "" if cid else (hit.get("mpn") or mpn)
@@ -405,7 +408,8 @@ def apply_step(db: Session, run: M.ProductionRun, *, step_key: str, stack: str =
     draws, problems, tokens = _plan_draws(db, run, step, n, made_at, lots)
     shortages = run_actuals.check_shortages(db, [
         {"component_id": d["component_id"], "mpn": d.get("mpn", ""), "lcsc": "", "qty": d["qty"],
-         "date": made_at, "label": d["name"]} for d in draws if not d["internal"]])
+         "date": made_at, "label": d["name"]} for d in draws if not d["internal"]],
+        company_id=run_actuals.run_scope(db, run))
     dev_name = {}
     if not stack:
         dev_name = {tw.id: (db.get(M.DeviceUnit, tw.device_unit_id).serial
@@ -893,7 +897,8 @@ def _draw_or_note(db: Session, run: M.ProductionRun, sr: M.StepRun, step: dict, 
     draws, problems, _tok = _plan_draws(db, run, step, sr.qty * max(factor, 1), sr.made_at, None)
     short = run_actuals.check_shortages(db, [
         {"component_id": d["component_id"], "mpn": d.get("mpn", ""), "lcsc": "", "qty": d["qty"],
-         "date": sr.made_at, "label": d["name"]} for d in draws if not d["internal"]])
+         "date": sr.made_at, "label": d["name"]} for d in draws if not d["internal"]],
+        company_id=run_actuals.run_scope(db, run))
     if problems or short:
         what = ", ".join(sorted({x.get("label") or x.get("name") or "?" for x in (short or problems)}))
         sr.note = f"{sr.note} — not drawn, the pool held none: {what}"[:500]

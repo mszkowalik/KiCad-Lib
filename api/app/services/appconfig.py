@@ -116,6 +116,12 @@ KNOBS: tuple[Knob, ...] = (
     Knob("default_currency", "Pricing", "Display currency", "str",
          "Used for cost totals when a project sets no override. The list is the "
          "currencies with an exchange rate, plus USD, which is the base."),
+    # -------------------------------------------------------------- companies
+    Knob("stock_per_company", "Companies", "Stock per company", "bool",
+         "Each company draws parts only from its own stock, and moves stock to "
+         "the other company with an in-house transfer (decision 0064). It can be "
+         "turned on only when every purchase, draw and adjustment names its "
+         "company. Off: one pool for both companies."),
     # ----------------------------------------------------------------- render
     Knob("render_mode", "Render", "Render mode", "str",
          "http = the render container; local = invoke kicad-cli directly, which "
@@ -176,6 +182,15 @@ def validate(knob: Knob, value: object, db=None) -> None:
                              "concatenated with paths like /api/datasheets/1/file")
     if knob.key == "render_url" and str(value) and not str(value).startswith("http"):
         raise ValueError("Render service URL: must start with http")
+    if knob.key == "stock_per_company" and value and db is not None:
+        from . import companies
+
+        missing = companies.stock_without_company(db)
+        if any(missing.values()):
+            raise ValueError(
+                "Stock per company: these stock records name no company yet — "
+                + ", ".join(f"{n} {k}" for k, n in missing.items() if n)
+                + ". Run the company backfill first (Admin → Companies).")
 
 
 def _rows(db: Session) -> dict[str, M.AppSetting]:

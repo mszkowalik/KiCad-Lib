@@ -157,7 +157,7 @@ def ledger_for_part(lcsc: str, db: Session = Depends(get_db)):
 
 @router.post("/stock/ledger/book")
 def book_ledger_rows(change_key_ids: str = "", dry_run: bool = True,
-                     db: Session = Depends(get_db)):
+                     company_id: int | None = None, db: Session = Depends(get_db)):
     """Write chosen ledger rows as uncharged draws.
 
     `change_key_ids` is a comma-separated list from `/stock/ledger`; empty means
@@ -169,10 +169,10 @@ def book_ledger_rows(change_key_ids: str = "", dry_run: bool = True,
     if dry_run:
         # `book` writes nothing on a dry run — it prices and checks, then
         # reports. There is no rollback to do.
-        return jlc_ledger.book(db, ids, actor=actor, dry_run=True)
+        return jlc_ledger.book(db, ids, actor=actor, dry_run=True, company_id=company_id)
     with journal.batch(db, kind="jlc.ledger.book", source_ref=change_key_ids or "all",
                        actor=actor) as h:
-        res = jlc_ledger.book(db, ids, actor=actor, dry_run=False)
+        res = jlc_ledger.book(db, ids, actor=actor, dry_run=False, company_id=company_id)
     audit(db, "jlc.stock.ledger.book", "component_consumption", None,
           {**res["totals"], "batch_id": h["batch_id"]}, actor=actor)
     db.commit()

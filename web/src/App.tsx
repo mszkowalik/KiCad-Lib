@@ -24,6 +24,7 @@ import Parameters from "./pages/Parameters";
 import FlashRunDetail from "./pages/FlashRunDetail";
 import Invoices from "./pages/Invoices";
 import Stock from "./pages/Stock";
+import Transfers from "./pages/Transfers";
 import NewComponent from "./pages/NewComponent";
 import Orders from "./pages/Orders";
 import Runs from "./pages/Runs";
@@ -101,6 +102,7 @@ const PRODUCTION_LINKS = [
   { to: "/production/runs", label: "Batches" },
   { to: "/production/invoices", label: "Invoices" },
   { to: "/production/stock", label: "Stock" },
+  { to: "/production/transfers", label: "Transfers" },
   { to: "/production/jlc", label: "JLC" },
   { to: "/production/deployments", label: "Deployments" },
   { to: "/production/parameters", label: "Parameters" },
@@ -236,6 +238,7 @@ function Shell() {
             <Route path="/production/runs" element={<Runs />} />
             <Route path="/production/invoices" element={<Invoices />} />
             <Route path="/production/stock" element={<Stock />} />
+            <Route path="/production/transfers" element={<Transfers />} />
             <Route path="/production/jlc" element={<ProductionJlc />} />
             <Route path="/production/deployments" element={<Deployments />} />
             <Route path="/production/files" element={<FlasherAdmin />} />

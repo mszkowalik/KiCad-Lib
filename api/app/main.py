@@ -44,6 +44,7 @@ from .routers import (
     signoffs,
     skills,
     suppliers,
+    transfers as transfers_router,
     users,
     view,
     orders,
@@ -114,6 +115,7 @@ app.include_router(account.router)
 app.include_router(production_runs.router)
 app.include_router(process_router.router)
 app.include_router(companies_router.router)
+app.include_router(transfers_router.router)
 app.include_router(jlc_stock.router)
 app.include_router(jlc_web.router)
 app.include_router(jlc_import.router)
@@ -698,6 +700,15 @@ _PHASE1_DDL = (
      "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS company_id integer"),
     ("run_cost_documents.company_source",
      "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS company_source varchar(40) NOT NULL DEFAULT ''"),
+    # Decision 0064: stock per company, and the in-house transfers between them.
+    ("run_cost_documents.counterparty_company_id",
+     "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS counterparty_company_id integer"),
+    ("component_consumptions.company_id",
+     "ALTER TABLE component_consumptions ADD COLUMN IF NOT EXISTS company_id integer"),
+    ("component_consumptions.transfer_line_id",
+     "ALTER TABLE component_consumptions ADD COLUMN IF NOT EXISTS transfer_line_id integer"),
+    ("component_stock_adjustments.company_id",
+     "ALTER TABLE component_stock_adjustments ADD COLUMN IF NOT EXISTS company_id integer"),
     ("companies seed 7sigma",
      "INSERT INTO companies (key, name, legal_name, nip, address_l1, address_l2, country, email, "
      "place_of_issue, issuer_name, bank_name, bank_account, swift, payment_terms_days, started_on, created_at) "

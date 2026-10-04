@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-10-04 (stock per company)
+
+Not deployed yet. Decision
+[0064](docs/decisions/0064-each-company-draws-from-its-own-stock.md). The rules
+are in [docs/reference/companies.md](docs/reference/companies.md).
+
+- **Every invoice shows its buyer.** Production → Invoices has a Buyer column,
+  and the document's edit form sets it. A JLC import reads the buyer from the
+  invoice's billing VAT number.
+- **Production → Transfers moves stock between the companies.** A transfer is
+  an in-house record, priced at the sending company's average on the date. It
+  is never edited: a wrong one is reversed and written again.
+- **Admin → Companies prepares the split.** "Check" finds the buyer of every
+  past invoice from its evidence and lists the ones a person must decide.
+  "Plan the transfers" shows the transfers the past needs.
+- **Admin → Configuration → Stock per company** turns on separate stocks. It
+  stays off until every purchase, draw and adjustment names its company.
+  Until then, nothing changes.
+
 ## 2026-10-04 (two companies)
 
 Not deployed yet. Decision

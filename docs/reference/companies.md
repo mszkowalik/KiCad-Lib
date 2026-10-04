@@ -1,8 +1,11 @@
 # Companies
 
 The platform keeps the books of two companies: 7Sigma and 9SIGMA. The
-reasoning is in [decision 0063](../decisions/0063-two-companies-own-projects-over-time.md).
-The code is `api/app/services/companies.py` and `api/app/routers/companies.py`.
+reasoning is in [decision 0063](../decisions/0063-two-companies-own-projects-over-time.md)
+(companies and ownership) and [decision 0064](../decisions/0064-each-company-draws-from-its-own-stock.md)
+(stock and transfers). The code is `services/companies.py`,
+`services/company_backfill.py`, `services/transfers.py` and the routers
+`companies.py` and `transfers.py`.
 
 ## What belongs to a company
 
@@ -11,7 +14,8 @@ The code is `api/app/services/companies.py` and `api/app/routers/companies.py`.
 | Project | `project_ownership`: dated periods. The owner on a day is the period with the latest `from_date` on or before it (`owner_on`). Before the first period, the first owner answers. |
 | Batch (`production_runs.company_id`) | Set when the batch is created: the request's `company_id`, else the project's owner on the batch date (`default_run_company`). Frozen while the books are closed. |
 | Sales order (`sales_orders.company_id`) | The request's `company_id`, else the user's only company, else the owner of the first product's project on the order date (`routers/orders._seller`). |
-| Supplier document (`run_cost_documents.company_id`, `company_source`) | Not filled yet. The buyer of each invoice will be read from the invoice. |
+| Supplier document (`run_cost_documents.company_id`, `company_source`) | The BILLED company. A JLC import reads it from `taxVatBilling`. A typed document takes the request's company, else the user's only one. The backfill below fills the past. A person changes it on the invoice. |
+| Draw, adjustment (`company_id`) | Stamped on insert from the batch, the step, the transformation or the project's owner on the day (`companies.stamp_stock`). An uncharged JLC draw takes its assembly invoice's buyer. |
 
 Never derive a batch's or an order's company from its project's CURRENT owner.
 A project can move, and a record keeps the company it had.
@@ -59,3 +63,63 @@ A company's legal name, address, bank account and payment terms are edited on
 Admin → Companies. `GET /api/companies` returns them to an admin only. The
 audit row of an edit names a changed bank account but does not hold the number.
 Do not put a bank account in a seed, a fixture or a test.
+
+## Stock per company
+
+`stock_per_company` (Admin → Configuration) is the one switch. While it is off
+there is one pool, as before. `appconfig.validate` refuses to turn it on while
+`companies.stock_without_company` counts any live document with parts, draw or
+adjustment that names no company.
+
+* **Every caller that prices or guards a draw goes through
+  `run_actuals.stock_scope`** (or `run_scope` for a batch, `project_scope` for
+  a project's owner on a day). It returns the company while the switch is on
+  and None while it is off, and the replay functions take it as
+  `company_id`: `pool_state`, `component_ledger`, `check_shortages` (also per
+  candidate), `resolve_pool_identity`, `parts_stock`, `process.prepared_lots`.
+  A new caller that passes nothing reads both companies as one pool, which is
+  wrong once the switch is on.
+* **A purchase loss is the buyer's.** `purchase_loss_of` and
+  `batch_purchase_losses` key the loss by the document's company. A new buyer
+  on a document is a total loss to the old buyer
+  (`routers/run_costs._guard_buyer_change`, on both the header PATCH and the
+  batch edit).
+* **The register reports each company's pool** under `pool.by_company`, and
+  `negative_stock` names the company that went short.
+* **The stock pages follow the header scope**: `parts-stock` and
+  `parts-ledger` read one company's stock when the switch is on and one
+  company is selected. JLC's side is always the whole shelf.
+
+## Transfers
+
+A transfer is an in-house document (`doc_type="transfer"`, `MM nnnn/yyyy`)
+billed to the receiver, naming the sender in `counterparty_company_id`, plus
+one sender draw per position (`transfer_line_id`, basis `transfer`, no batch).
+
+* **Price**: the lot's landed cost when the units' lot is named, else the
+  sender's moving average on the date.
+* **Never edited.** `_guard_closed` refuses every write path on a transfer
+  document. `transfers.reverse` voids it whole, and is refused while the
+  receiver used what it got.
+* **Out of the money totals.** `invoice_register` skips transfer documents in
+  every total and reports `transfers_usd` and `transferred_out_usd`. The
+  sender's draw is neither uncharged nor a batch cost.
+* **Transfers ignore the switch.** They replay each company on its own,
+  because they are what makes the switch possible.
+
+`GET /api/transfers/history` plans the past's transfers.
+`POST /api/transfers/history` (admin) writes them and checks each again. A
+draw bound to the other company's lot moves that lot and its binding. Any
+other shortfall comes from the other company's stock on the draw's date, at
+its average.
+
+## Order of work on a deployment
+
+1. `POST /api/companies/backfill` (decision 0063): ownership, batches, orders,
+   memberships.
+2. `POST /api/companies/stock-backfill` with `fetch_jlc`: buyers, draws,
+   adjustments. Set the remaining buyers by hand on the invoices.
+3. `POST /api/transfers/history`: the past's transfers.
+4. Turn on `stock_per_company`.
+
+Admin → Companies runs steps 2 and 3 with a dry run first.

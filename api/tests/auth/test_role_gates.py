@@ -39,6 +39,9 @@ EXPECTED = {
     # The companies' own data and ownership — decision 0063.
     ("PATCH", "/api/companies/{company_id}"),
     ("POST", "/api/companies/backfill"),
+    ("POST", "/api/companies/stock-backfill"),
+    # Writing the history's in-house transfers in one go — decision 0064.
+    ("POST", "/api/transfers/history"),
     ("POST", "/api/projects/{project_id}/ownership"),
     # The deployment's own configuration — decision 0045.
     ("GET", "/api/settings"),

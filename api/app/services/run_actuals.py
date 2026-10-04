@@ -35,6 +35,8 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from .. import models as M
+from ..config import settings
+from . import companies as _companies  # also registers `stamp_stock` (decision 0064)
 from . import cost_steps, fx
 from .project_bom import display_currency, run_pricing_date
 
@@ -94,6 +96,37 @@ def live_consumption(db: Session, **filters):
     """
     q = db.query(M.ComponentConsumption).filter(M.ComponentConsumption.voided_at.is_(None))
     return q.filter_by(**filters) if filters else q
+
+
+def stock_scope(db: Session, company_id: int | None) -> int | None:
+    """The company a replay or a stock guard is scoped to (decision 0064).
+
+    `company_id` while each company keeps its own stock, else None: one pool for
+    both, as before. Every caller that prices a draw or guards one goes through
+    here, so turning `stock_per_company` on is the one switch."""
+    return company_id if (company_id and settings.stock_per_company) else None
+
+
+def run_scope(db: Session, run: M.ProductionRun | None) -> int | None:
+    """`stock_scope` for the company that made a batch."""
+    return stock_scope(db, run.company_id if run is not None else None)
+
+
+def project_scope(db: Session, project_id: int | None, on: str | None = None) -> int | None:
+    """`stock_scope` for the company that owned a project on a day."""
+    if not settings.stock_per_company or not project_id:
+        return None
+    owner = _companies.owner_on(db, project_id, on)
+    return owner.id if owner else None
+
+
+def event_company(kind: str, row, doc_by_id: dict) -> int | None:
+    """Whose stock a pool event moves: the buyer of a purchase, the company
+    stamped on a draw or an adjustment."""
+    if kind == "buy":
+        doc = doc_by_id.get(row.document_id)
+        return doc.company_id if doc is not None else None
+    return getattr(row, "company_id", None)
 
 
 def _round(v: float | None) -> float | None:
@@ -396,6 +429,11 @@ def document_json(doc: M.RunCostDocument, with_lines: bool = True,
         "tax_amount": doc.tax_amount,
         "notes": doc.notes,
         "attachment_id": doc.attachment_id,
+        # Decisions 0063/0064: the company that was billed, how that was found,
+        # and on an in-house transfer the company that sent the stock.
+        "company_id": doc.company_id,
+        "company_source": doc.company_source or "",
+        "counterparty_company_id": doc.counterparty_company_id,
         # Decision 0044. `locked` non-empty means every write path refuses this
         # document, because it charges a batch whose books are closed; the fix is
         # a correction document, which the UI offers in place of the edit switch.
@@ -596,12 +634,17 @@ def _to_usd(amount: float, currency: str, rates: dict[str, float]) -> tuple[floa
     return fx.convert(amount, currency or "USD", "USD", rates)
 
 
-def _pool_events(db: Session) -> tuple[list[tuple[str, str, object]], dict, dict]:
+def _pool_events(db: Session, company_id: int | None = None
+                 ) -> tuple[list[tuple[str, str, object]], dict, dict]:
     """Everything that moves part stock, sorted by event date: leaf part
     purchases (non-proforma, unallocated, not excluded), run draws, and stock
     adjustments — plus the document map and the landed-cost surcharge per
     purchase line. ONE source of events for `pool_state`, `component_ledger`
     and `check_shortages`, so the three can never disagree about what happened.
+
+    `company_id` keeps one company's events only (decision 0064): purchases it
+    was billed for, and the draws and adjustments stamped with it. Pass it
+    through `stock_scope`, so it is None while both companies share one pool.
     """
     doc_by_id = {d.id: d for d in db.query(M.RunCostDocument).all()}
     headers = header_ids(db)
@@ -609,7 +652,9 @@ def _pool_events(db: Session) -> tuple[list[tuple[str, str, object]], dict, dict
     if not doc_by_id:
         purchases: list[M.RunCostLine] = []
     else:
-        pool_doc_ids = [d.id for d in doc_by_id.values() if (d.doc_type or "invoice") != "proforma"]
+        pool_doc_ids = [d.id for d in doc_by_id.values()
+                        if (d.doc_type or "invoice") != "proforma"
+                        and (company_id is None or d.company_id == company_id)]
         purchases = (
             db.query(M.RunCostLine)
             .filter(
@@ -674,9 +719,14 @@ def _pool_events(db: Session) -> tuple[list[tuple[str, str, object]], dict, dict
     for li in purchases:
         doc = doc_by_id[li.document_id]
         events.append((doc.doc_date or "", "buy", li))
-    for c in live_consumption(db).all():
+    draws = live_consumption(db)
+    adjs = db.query(M.ComponentStockAdjustment)
+    if company_id is not None:
+        draws = draws.filter(M.ComponentConsumption.company_id == company_id)
+        adjs = adjs.filter(M.ComponentStockAdjustment.company_id == company_id)
+    for c in draws.all():
         events.append((c.consumed_at or "", "use", c))
-    for a in db.query(M.ComponentStockAdjustment).all():
+    for a in adjs.all():
         events.append((a.adjusted_at or "", "adj", a))
     # Same-date ties resolve adj < buy < use, so an invoice dated the day of a
     # run counts as available to it.
@@ -747,10 +797,12 @@ def conversion_extras_usd(db: Session) -> dict[int, float]:
     return out
 
 
-def pool_state(db: Session, project_id: int | None = None, as_of: str | None = None) -> dict:
+def pool_state(db: Session, project_id: int | None = None, as_of: str | None = None,
+               company_id: int | None = None) -> dict:
     """Replay purchases, consumptions and adjustments in EVENT DATE order and
     return the per-part COMPANY-WIDE pool: quantity on hand, moving average
-    unit cost, value.
+    unit cost, value. `company_id` replays one company's stock (decision 0064);
+    pass it through `stock_scope`.
 
     Quantities here exist to apportion money — they are not an inventory record
     and are not expected to match JLCPCB's stock (see the module docstring).
@@ -759,7 +811,7 @@ def pool_state(db: Session, project_id: int | None = None, as_of: str | None = N
     # balance: stock bought once serves every product, so purchases, draws and
     # write-offs are all company-wide. Scoping purchases while counting all
     # consumption would silently under-report what is on hand.
-    events, doc_by_id, surcharge = _pool_events(db)
+    events, doc_by_id, surcharge = _pool_events(db, company_id)
     # Conversion costs ride on their transformation's output lot (decision 0058).
     extras = conversion_extras_usd(db)
     if as_of:
@@ -882,8 +934,18 @@ def pool_state(db: Session, project_id: int | None = None, as_of: str | None = N
     return dict(pool)
 
 
+def pool_states(db: Session, as_of: str | None = None) -> dict[int | None, dict]:
+    """The pool of each company, by company id (decision 0064), or `{None: the
+    one pool}` while the companies share one. A part is never merged across
+    companies: each keeps its own quantity and average."""
+    if not settings.stock_per_company:
+        return {None: pool_state(db, as_of=as_of)}
+    return {c.id: pool_state(db, as_of=as_of, company_id=c.id)
+            for c in db.query(M.Company).order_by(M.Company.id).all()}
+
+
 def component_ledger(db: Session, component_id: int | None = None,
-                     mpn: str = "", lcsc: str = "") -> dict:
+                     mpn: str = "", lcsc: str = "", company_id: int | None = None) -> dict:
     """One part's complete event history with the running balance after every
     event — the audit trail behind a Parts-stock row, and the answer to "what
     was our stock of this on any given date".
@@ -893,7 +955,7 @@ def component_ledger(db: Session, component_id: int | None = None,
     instead of two half-stories.
     """
     want = set(_identity_keys(component_id, mpn or "", lcsc or ""))
-    events, doc_by_id, surcharge = _pool_events(db)
+    events, doc_by_id, surcharge = _pool_events(db, company_id)
     extras = conversion_extras_usd(db)  # conversion costs on prepared-part lots (0058)
     runs = {r.id: r for r in db.query(M.ProductionRun).all()}
 
@@ -939,6 +1001,9 @@ def component_ledger(db: Session, component_id: int | None = None,
             # else's project, or a movement JLC made that no batch asked for.
             ref = (f"into a prepared part (transformation #{row.transformation_id})"
                    if row.run_id is None and row.transformation_id is not None else
+                   "sent to the other company (in-house transfer)"
+                   if row.run_id is None and row.transformation_id is None
+                   and getattr(row, "transfer_line_id", None) else
                    "charged to no batch" if row.run_id is None else
                    f"run {row.run_id}" + (f" — {run.label}" if run else ""))
             detail = row.note or ""
@@ -967,31 +1032,45 @@ def component_ledger(db: Session, component_id: int | None = None,
             "balance_after": _round(bal), "avg_usd_after": _round(avg),
             "run_id": getattr(row, "run_id", None) if kind == "use" else None,
             "document_id": getattr(row, "document_id", None) if kind == "buy" else None,
+            "company_id": event_company(kind, row, doc_by_id),
             "short": bal < -0.0001,
         })
     return {
-        "component_id": component_id, "mpn": mpn, "lcsc": lcsc,
+        "component_id": component_id, "mpn": mpn, "lcsc": lcsc, "company_id": company_id,
         "events": rows, "balance": _round(bal), "value_usd": _round(val),
         "avg_usd": _round(avg),
         "first_short": next((r["date"] for r in rows if r["short"]), None),
     }
 
 
-def check_shortages(db: Session, candidates: list[dict]) -> list[dict]:
+def check_shortages(db: Session, candidates: list[dict],
+                    company_id: int | None = None) -> list[dict]:
     """Would these draws take stock below zero at ANY point from their date on?
 
     A full-timeline check, not a point check: inserting a draw at a historical
     date must not push a LATER event's balance negative either. Quantities only
     — no FX — so it is cheap enough to run on every write. Each candidate is
-    `{component_id?, mpn?, lcsc?, qty, date, label?}`; the return value is one
-    entry per short part, empty when everything is covered.
+    `{component_id?, mpn?, lcsc?, qty, date, label?, company_id?}`; the return
+    value is one entry per short part, empty when everything is covered.
+
+    A candidate is checked against its company's stock (decision 0064): its own
+    `company_id`, else the argument. Both come through `stock_scope`, so they are
+    None — one pool — while the companies share one.
     """
-    events, _docs, _sur = _pool_events(db)
+    by_company: dict[int | None, list] = {}
+
+    def events_of(cid: int | None) -> list:
+        if cid not in by_company:
+            by_company[cid] = _pool_events(db, cid)[0]
+        return by_company[cid]
+
     out: list[dict] = []
     # candidates already accepted in THIS batch count against the same stock —
     # two BOM lines drawing one part must not each see the full balance
-    accepted: list[tuple[set, str, float]] = []
+    accepted: list[tuple[set, str, float, int | None]] = []
     for cand in candidates:
+        ccid = cand.get("company_id", company_id)
+        events = events_of(ccid)
         want = set(_identity_keys(cand.get("component_id"),
                                   cand.get("mpn") or "", cand.get("lcsc") or ""))
         cdate = cand.get("date") or "9999"
@@ -1011,8 +1090,8 @@ def check_shortages(db: Session, candidates: list[dict]) -> list[dict]:
             q = (row.qty or 0.0) if kind == "buy" else \
                 (-(row.qty or 0.0) if kind == "use" else (row.qty_delta or 0.0))
             entries.append((((date_iso or "9999"), kind), q, False))
-        for pw, pd, pq in accepted:
-            if pw & want:
+        for pw, pd, pq, pc in accepted:
+            if pw & want and pc == ccid:
                 entries.append((((pd or "9999"), "use"), -pq, False))
         entries.append(((cdate, "use"), -need, True))
         entries.sort(key=lambda e: e[0])
@@ -1032,9 +1111,10 @@ def check_shortages(db: Session, candidates: list[dict]) -> list[dict]:
                 "lcsc": cand.get("lcsc") or "", "label": cand.get("label") or "",
                 "date": cand.get("date") or "", "needed": _round(need),
                 "on_hand": _round(on_hand), "short": _round(-min_after),
+                "company_id": ccid,
             })
         else:
-            accepted.append((want, cdate, need))
+            accepted.append((want, cdate, need, ccid))
     return out
 
 
@@ -1080,22 +1160,25 @@ def batch_purchase_losses(db: Session, changes: list[dict]) -> list[dict]:
     The date used for a loss is the EARLIEST document date among the lines that
     caused it, because that is when the balance starts being short.
     """
-    delta: dict[str, float] = defaultdict(float)
-    info: dict[str, dict] = {}
+    delta: dict[tuple, float] = defaultdict(float)
+    info: dict[tuple, dict] = {}
     for ch in changes:
         li: M.RunCostLine = ch["line"]
         was_pooled = bool(pooled_part_lines(db, [li]))
         doc = db.get(M.RunCostDocument, li.document_id)
         date_iso = (doc.doc_date if doc else "") or ""
+        # The buyer's stock (decision 0064). None while the companies share one.
+        cid = stock_scope(db, doc.company_id if doc else None)
 
-        def note(key: str, component_id, mpn, lcsc, label):
+        def note(key: tuple, component_id, mpn, lcsc, label):
             cur = info.setdefault(key, {"component_id": component_id, "mpn": mpn or "",
-                                        "lcsc": lcsc or "", "date": date_iso, "label": label})
+                                        "lcsc": lcsc or "", "date": date_iso, "label": label,
+                                        "company_id": key[0]})
             if date_iso and (not cur["date"] or date_iso < cur["date"]):
                 cur["date"] = date_iso
 
         if was_pooled:
-            old_key = _key(li)
+            old_key = (cid, _key(li))
             delta[old_key] -= li.qty or 0.0
             note(old_key, li.component_id, li.mpn, li.lcsc, li.label or li.mpn or f"line {li.id}")
 
@@ -1104,10 +1187,11 @@ def batch_purchase_losses(db: Session, changes: list[dict]) -> list[dict]:
             new_mpn = ch["mpn"] if "mpn" in ch else li.mpn
             new_lcsc = ch["lcsc"] if "lcsc" in ch else li.lcsc
             new_qty = ch["qty"] if ch.get("qty") is not None else (li.qty or 0.0)
-            new_key = (f"c{new_cid}" if new_cid else
-                       f"m{_strip(new_mpn)}" if new_mpn else
-                       f"l{_strip(new_lcsc)}" if new_lcsc else "")
-            if new_key:
+            new_part = (f"c{new_cid}" if new_cid else
+                        f"m{_strip(new_mpn)}" if new_mpn else
+                        f"l{_strip(new_lcsc)}" if new_lcsc else "")
+            new_key = (cid, new_part)
+            if new_part:
                 delta[new_key] += new_qty
                 note(new_key, new_cid, new_mpn, new_lcsc,
                      ch.get("label") or li.label or new_mpn or f"line {li.id}")
@@ -1227,11 +1311,13 @@ def purchase_loss_of(db: Session, li: M.RunCostLine, *, qty: float | None = None
     lost = (li.qty or 0.0) if (qty is None or rekeyed) else max(0.0, (li.qty or 0.0) - qty)
     return {"component_id": li.component_id, "mpn": li.mpn or "", "lcsc": li.lcsc or "",
             "qty": lost, "date": (doc.doc_date if doc else "") or "",
-            "label": li.label or li.mpn or f"line {li.id}"}
+            "label": li.label or li.mpn or f"line {li.id}",
+            # The buyer's stock loses it (decision 0064).
+            "company_id": stock_scope(db, doc.company_id if doc else None)}
 
 
 def resolve_pool_identity(db: Session, component_id: int | None, mpn: str, lcsc: str,
-                          as_of: str | None = None) -> dict | None:
+                          as_of: str | None = None, company_id: int | None = None) -> dict | None:
     """Find the pool entry a part belongs to, by identity-key OVERLAP.
 
     A draw must land on the SAME key the purchases did, or the part silently
@@ -1252,15 +1338,16 @@ def resolve_pool_identity(db: Session, component_id: int | None, mpn: str, lcsc:
     keys = set(_identity_keys(component_id, mpn or "", lcsc or ""))
     if not keys:
         return None
-    for p in pool_state(db, as_of=as_of).values():
+    for p in pool_state(db, as_of=as_of, company_id=company_id).values():
         if keys & set(_identity_keys(p.get("component_id"), p.get("mpn") or "",
                                      p.get("lcsc") or "")):
             return p
     return None
 
 
-def average_cost(db: Session, project_id: int | None, key: str) -> float:
-    return pool_state(db, project_id).get(key, {}).get("avg_usd", 0.0)
+def average_cost(db: Session, project_id: int | None, key: str,
+                 company_id: int | None = None) -> float:
+    return pool_state(db, project_id, company_id=company_id).get(key, {}).get("avg_usd", 0.0)
 
 
 def _as_dt(date_iso: str):
@@ -1368,7 +1455,7 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
 
     # 3. attrition explicitly charged to this run
     adjs = db.query(M.ComponentStockAdjustment).filter_by(charge_run_id=run.id).all()
-    pool = pool_state(db, run.project_id)
+    pool = pool_state(db, run.project_id, company_id=run_scope(db, run))
     attrition_usd = 0.0
     for a in adjs:
         unit = a.unit_cost_usd
@@ -1628,7 +1715,7 @@ def _jlc_date(ts) -> str | None:
     return ts.astimezone(JLC_TZ).date().isoformat() if ts is not None else None
 
 
-def parts_stock(db: Session) -> dict:
+def parts_stock(db: Session, company_id: int | None = None) -> dict:
     """Every part the company has money in, or that JLCPCB physically holds — with
     both measurements side by side.
 
@@ -1654,8 +1741,11 @@ def parts_stock(db: Session) -> dict:
     `state` classifies each row, and `jlc_only` is a **missing-invoice detector**:
     JLC is holding stock the platform has no purchase for. `pool_only` is normal
     for parts bought elsewhere (enclosures, antennas) or fully consumed.
+
+    `company_id` shows one company's money (decision 0064). JLC holds one
+    shelf for one account, so its side is always the whole shelf.
     """
-    pool = pool_state(db)
+    pool = pool_state(db, company_id=company_id)
     items = db.query(M.JlcStockItem).all()
 
     # THE TWO SIDES MUST BE READ AT THE SAME MOMENT. `JlcStockItem` is a snapshot
@@ -1665,10 +1755,11 @@ def parts_stock(db: Session) -> dict:
     # phantom gap, essentially all of it Batch 8's draw four weeks after the
     # snapshot, and it hid a real 3,866-piece one.
     sync_date = _jlc_date(max((i.updated_at for i in items), default=None))
-    pool_at_sync = pool_state(db, as_of=sync_date) if sync_date else {}
+    pool_at_sync = pool_state(db, as_of=sync_date, company_id=company_id) if sync_date else {}
     # How much has moved since, so the page can say the count is out of date
     # instead of quietly reporting a stale comparison as a discrepancy.
-    events_since = sum(1 for d, _k, _r in _pool_events(db)[0] if sync_date and d > sync_date)
+    events_since = sum(1 for d, _k, _r in _pool_events(db, company_id)[0]
+                       if sync_date and d > sync_date)
 
     # index JLC stock under every identity it carries, so an unresolved pool line
     # keyed m<MPN> still meets the JLC row keyed c<component_id>. A key maps to a
@@ -1944,6 +2035,12 @@ def invoice_register(db: Session) -> dict:
         rows.append(j)
         if (doc.doc_type or "invoice") == "proforma":
             continue  # not money: a quote that the real invoice supersedes
+        if (doc.doc_type or "invoice") == "transfer":
+            # Stock moved between our own companies (decision 0064). No money
+            # left either company, so it is in no total: the receiver's pool
+            # counts it as bought and the sender's as drawn, and they cancel.
+            tot["transfer"] += to_usd(j["lines_total"] or 0.0, doc)
+            continue
         # ACCUMULATE THE EXACT VALUES, not the per-document rounded ones. The row
         # carries figures rounded to 4dp for display, and adding 86 of those up
         # left the invariant at -0.0005 — an error introduced by the reporting,
@@ -1985,7 +2082,8 @@ def invoice_register(db: Session) -> dict:
     # run's figure — otherwise a batch whose only cost is components looks unpaid.
     priced_runs = {r.id for r in db.query(M.ProductionRun)
                    .filter(M.ProductionRun.sale_unit_price.isnot(None)).all()}
-    pool = pool_state(db)
+    pools = pool_states(db)
+    pool = {(cid, k): v for cid, pl in pools.items() for k, v in pl.items()}
     drawn_by_run: dict[int, float] = defaultdict(float)
     # An UNCHARGED draw has no run to add to. The stock has left the pool — which
     # `pool_state` already counted — but nobody has been charged, so it belongs
@@ -1996,10 +2094,15 @@ def invoice_register(db: Session) -> dict:
     # they are not waiting for one: their value moved into the output lot,
     # which a batch pays for when it draws it. Counted on their own line.
     into_prepared_usd = 0.0
+    # The sender's side of an in-house transfer (decision 0064): drawn, charged
+    # to no batch, and not waiting for one — the receiver's pool holds it.
+    transferred_out_usd = 0.0
     for c in live_consumption(db).all():
         value = (c.qty or 0) * (c.unit_cost_usd or 0)
         if c.run_id is None and c.transformation_id is not None:
             into_prepared_usd += value
+        elif c.run_id is None and c.transfer_line_id is not None:
+            transferred_out_usd += value
         elif c.run_id is None:
             uncharged_usd += value
         else:
@@ -2024,8 +2127,10 @@ def invoice_register(db: Session) -> dict:
           "component_name": neg_names.get(p["component_id"] or -1, ""),
           "mpn": p["mpn"], "lcsc": p["lcsc"],
           "first_short": p["first_short"], "min_qty": _round(p["min_qty"]),
-          "remaining_qty": _round(p["qty"])}
-         for k, p in pool.items() if p["min_qty"] < -0.0001),
+          "remaining_qty": _round(p["qty"]),
+          # whose stock went short (decision 0064); None = the one shared pool
+          "company_id": cid}
+         for (cid, k), p in pool.items() if p["min_qty"] < -0.0001),
         key=lambda r: r["min_qty"])
 
     # Transport on a parts document must land in the part prices (user rule
@@ -2139,6 +2244,21 @@ def invoice_register(db: Session) -> dict:
             # Drawn INTO an internal part by a process transformation: the value
             # is still in the pool, as the output lot (decision 0058).
             "into_prepared_usd": _round(into_prepared_usd),
+            # Sent to the other company by an in-house transfer (decision 0064).
+            "transferred_out_usd": _round(transferred_out_usd),
+            # The transfer documents' value. In no money total: it never left us.
+            "transfers_usd": _round(tot["transfer"]),
+            # Each company's own pool, when each keeps one (decision 0064).
+            "by_company": {
+                str(cid): {
+                    "purchased_usd": _round(sum(p["value_bought"] for p in pl.values())),
+                    "adjustments_usd": _round(sum(p["value_adj"] for p in pl.values())),
+                    "drawn_usd": _round(sum(p["value_used"] for p in pl.values())),
+                    "on_hand_usd": _round(sum(p["value_usd"] for p in pl.values())),
+                    "part_count": len(pl),
+                }
+                for cid, pl in pools.items() if cid is not None
+            },
         },
         "issues": {
             # Documents whose lines do not add up to what the supplier printed,
@@ -2186,7 +2306,8 @@ def consume_from_bom(db: Session, run: M.ProductionRun, basis: str = "bom",
         return {"created": 0, "unpriced": [], "error": "snapshot not found"}
     volume = good_units(db, run)
     # Price the draw from the pool AS IT STOOD at the run's date.
-    pool = pool_state(db, run.project_id, as_of=(consumed_at or run.run_date or None))
+    pool = pool_state(db, run.project_id, as_of=(consumed_at or run.run_date or None),
+                      company_id=run_scope(db, run))
     bom = (
         db.query(M.SnapshotBomLine)
         .filter_by(snapshot_id=snap.id, board=run.board, variant=run.variant)
@@ -2269,7 +2390,7 @@ def consume_from_bom(db: Session, run: M.ProductionRun, basis: str = "bom",
     # leaves half a run consumed. The fix is the missing invoice — real or
     # placeholder — or a signed stock adjustment, or an override marking the part
     # as genuinely not used ("shipped without cartons" is history, not an error).
-    shortages = check_shortages(db, planned)
+    shortages = check_shortages(db, planned, company_id=run_scope(db, run))
     if shortages:
         return {"created": 0, "unpriced": [], "volume": volume, "skipped": skipped,
                 "shortages": shortages,

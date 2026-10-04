@@ -2397,6 +2397,9 @@ class RunCostDocument(Base):
     # ship-to and over the folder the file sits in.
     company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     company_source: Mapped[str] = mapped_column(String(40), default="")
+    # Decision 0064: on an in-house transfer (`doc_type='transfer'`) the
+    # company that SENT the stock. `company_id` is the one that received it.
+    counterparty_company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     doc_type: Mapped[str] = mapped_column(String(20), default="invoice")
     supplier: Mapped[str] = mapped_column(String(200), default="")
     doc_number: Mapped[str] = mapped_column(String(100), default="")
@@ -2629,6 +2632,13 @@ class ComponentConsumption(Base):
     # twins draws N x each input in one row, and each twin owns 1/N of it — that
     # is how a twin's own parts are exact. Soft pointer.
     step_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Decision 0064. The company whose stock this draw took. Stamped on insert
+    # from the batch, the step or the transformation (`companies.stamp_stock`).
+    company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Decision 0064. The SENDER's side of an in-house transfer: the transfer
+    # document's position that put this stock into the other company. Charged
+    # to no batch and not waiting for one. Soft pointer.
+    transfer_line_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (
@@ -2672,6 +2682,8 @@ class ComponentStockAdjustment(Base):
     # cost. A positive adjustment is already a lot (`lots.py`, key `A<id>`), so
     # every replayer sees the new stock with no new event kind. Soft pointer.
     transformation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Decision 0064. The company whose stock this adjustment moves.
+    company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (

@@ -7,14 +7,20 @@
  */
 import { useEffect, useState } from "react";
 import {
+  applyHistory,
   errorMessage,
   isAbortError,
   listCompanies,
+  stockBackfill,
   updateCompany,
   type CompanyDetail,
+  type HistoryPlan,
+  type StockBackfillResult,
 } from "../api";
+import { plain } from "../format";
 import DataTable, { type Column } from "./DataTable";
-import Field, { FieldGrid } from "./Field";
+import { useDialog } from "./Dialog";
+import Field, { CheckField, FieldGrid } from "./Field";
 import NumberInput from "./NumberInput";
 import { ErrorBanner, Spinner } from "./Ui";
 
@@ -97,6 +103,143 @@ function CompanyForm({ company, onSaved }: { company: CompanyDetail; onSaved: (c
   );
 }
 
+type Unresolved = StockBackfillResult["unresolved_documents"][number];
+const UNRESOLVED_COLUMNS: Column<Unresolved>[] = [
+  { key: "date", label: "Date", width: 14, className: "mono", get: (d) => d.doc_date || "—" },
+  { key: "supplier", label: "Supplier", width: 26, get: (d) => d.supplier },
+  { key: "number", label: "Number", width: 30, className: "mono", get: (d) => d.doc_number || `#${d.document_id}` },
+  { key: "why", label: "Why not decided", width: 30, className: "muted",
+    get: (d) => (d.source === "conflict" ? `sources disagree: ${JSON.stringify(d.evidence)}`
+      : d.has_text ? "no NIP or company name in the text" : "no PDF text and no JLC billing data") },
+];
+
+type Proposed = HistoryPlan["transfers"][number];
+const PROPOSED_COLUMNS: Column<Proposed>[] = [
+  { key: "date", label: "Date", width: 12, className: "mono", get: (t) => t.date },
+  { key: "dir", label: "Direction", width: 20, get: (t) => `${t.sender} → ${t.receiver}` },
+  { key: "batch", label: "Receiving batch", width: 30, get: (t) => t.batch || "—" },
+  { key: "ev", label: "Evidence", width: 12, get: (t) => (t.evidence === "lot" ? "JLC lot" : "balance") },
+  { key: "lines", label: "Parts", width: 10, numeric: true, get: (t) => t.lines.length },
+  { key: "value", label: "USD", width: 16, numeric: true, get: (t) => t.value_usd,
+    render: (t) => <>{plain(t.value_usd)}</> },
+];
+
+/** Decision 0064: getting every stock record a company, then moving the
+ *  history between the companies, then — on the Configuration tab — turning
+ *  stock per company on. Each step is a dry run first. */
+function StockSplitCard() {
+  const dialog = useDialog();
+  const [fill, setFill] = useState<StockBackfillResult | null>(null);
+  const [fetchJlc, setFetchJlc] = useState(false);
+  const [history, setHistory] = useState<HistoryPlan | null>(null);
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+
+  const runFill = async (dryRun: boolean) => {
+    if (!dryRun && !(await dialog.confirm(
+      "Write the buyer of every document the evidence decides, and the company of every draw and adjustment?",
+      { title: "Fill the companies", confirmLabel: "Write" }))) return;
+    setBusy("fill");
+    setErr("");
+    try {
+      setFill(await stockBackfill(dryRun, fetchJlc));
+    } catch (e) {
+      setErr(errorMessage(e));
+    } finally {
+      setBusy("");
+    }
+  };
+  const runHistory = async (dryRun: boolean) => {
+    if (!dryRun && !(await dialog.confirm(
+      `Write ${history?.totals.transfers ?? 0} in-house transfers? Each one can be reversed on Production → Transfers.`,
+      { title: "Write the history", confirmLabel: "Write" }))) return;
+    setBusy("history");
+    setErr("");
+    try {
+      setHistory(await applyHistory(dryRun));
+    } catch (e) {
+      setErr(errorMessage(e));
+    } finally {
+      setBusy("");
+    }
+  };
+  const left = fill ? Object.entries(fill.still_without_company).filter(([, n]) => n > 0) : [];
+
+  return (
+    <div className="card pad">
+      <h2>Stock per company</h2>
+      <p className="muted dim">
+        Each company draws parts only from its own stock once <b>Stock per company</b> is on
+        (Configuration tab). First every purchase, draw and adjustment needs its company. Then the
+        history needs the in-house transfers that moved stock between the companies.
+      </p>
+      <ErrorBanner message={err} />
+      <h3>1. Name the companies</h3>
+      <div className="btn-row">
+        <button type="button" className="btn btn-sm" disabled={!!busy} onClick={() => void runFill(true)}>
+          {busy === "fill" ? "Checking…" : "Check"}
+        </button>
+        <button type="button" className="btn btn-primary btn-sm" disabled={!!busy || !fill}
+          onClick={() => void runFill(false)}>
+          Write what the evidence decides
+        </button>
+        <CheckField checked={fetchJlc} onChange={setFetchJlc}
+          title="Reads the invoice of each JLC parts order with no stored billing data, through the stored JLC session">
+          Ask JLC about parts orders
+        </CheckField>
+      </div>
+      {fill ? (
+        <>
+          <p className="muted">
+            {fill.dry_run ? "Would name" : "Named"} {fill.totals.documents} document(s) (
+            {Object.entries(fill.totals.by_source).map(([k, n]) => `${n} by ${k}`).join(", ") || "none"}),{" "}
+            {fill.totals.draws} draw(s) and {fill.totals.adjustments} adjustment(s).{" "}
+            {left.length ? `Still without a company: ${left.map(([k, n]) => `${n} ${k}`).join(", ")}.`
+              : "Every stock record names its company."}
+          </p>
+          {fill.unresolved_documents.length ? (
+            <>
+              <p className="muted dim">
+                Set the buyer of these on Production → Invoices (open the document, Edit, Buyer).
+              </p>
+              <DataTable rows={fill.unresolved_documents} rowKey={(d) => d.document_id}
+                columns={UNRESOLVED_COLUMNS} empty="None." />
+            </>
+          ) : null}
+        </>
+      ) : null}
+      <h3>2. Move the history</h3>
+      <div className="btn-row">
+        <button type="button" className="btn btn-sm" disabled={!!busy} onClick={() => void runHistory(true)}>
+          {busy === "history" ? "Planning…" : "Plan the transfers"}
+        </button>
+        <button type="button" className="btn btn-primary btn-sm" disabled={!!busy || !history || !history.transfers.length}
+          onClick={() => void runHistory(false)}>
+          Write them
+        </button>
+      </div>
+      {history ? (
+        <>
+          <p className="muted">
+            {history.written ? `Wrote ${history.written.length}, refused ${history.refused?.length ?? 0}. `
+              : history.totals.transfers === 0 ? "Nothing to move. "
+              : `${history.totals.transfers} transfer(s), ${history.totals.lines} part(s) (${history.totals.from_lots} from JLC lots), `
+                + `${plain(history.totals.value_usd)} USD: `
+                + Object.entries(history.totals.by_direction).map(([k, v]) => `${k} ${plain(v)}`).join(", ") + ". "}
+            {history.totals.unexplained
+              ? `${history.totals.unexplained} shortfall(s) neither company covers — usually a document with no buyer yet.`
+              : ""}
+          </p>
+          {!history.written ? (
+            <DataTable rows={history.transfers} rowKey={(t) => `${t.date}-${t.batch}-${t.evidence}-${t.sender}`}
+              columns={PROPOSED_COLUMNS} empty="Nothing to move." />
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export default function CompaniesCard() {
   const [rows, setRows] = useState<CompanyDetail[] | null>(null);
   const [error, setError] = useState("");
@@ -115,22 +258,25 @@ export default function CompaniesCard() {
 
   if (rows === null) return <Spinner label="Loading companies…" />;
   return (
-    <div className="card pad">
-      <h2>Companies</h2>
-      <p className="muted dim">
-        Each project, batch and order belongs to one of these. Open a row to change what the company
-        prints as a seller. The NIP is the company itself and does not change.
-      </p>
-      <ErrorBanner message={error} />
-      <DataTable
-        rows={rows}
-        rowKey={(c) => c.id}
-        columns={COLUMNS}
-        empty="No companies."
-        expand={(c) => (
-          <CompanyForm company={c} onSaved={(n) => setRows((rs) => (rs ?? []).map((r) => (r.id === n.id ? n : r)))} />
-        )}
-      />
-    </div>
+    <>
+      <div className="card pad">
+        <h2>Companies</h2>
+        <p className="muted dim">
+          Each project, batch and order belongs to one of these. Open a row to change what the company
+          prints as a seller. The NIP is the company itself and does not change.
+        </p>
+        <ErrorBanner message={error} />
+        <DataTable
+          rows={rows}
+          rowKey={(c) => c.id}
+          columns={COLUMNS}
+          empty="No companies."
+          expand={(c) => (
+            <CompanyForm company={c} onSaved={(n) => setRows((rs) => (rs ?? []).map((r) => (r.id === n.id ? n : r)))} />
+          )}
+        />
+      </div>
+      <StockSplitCard />
+    </>
   );
 }

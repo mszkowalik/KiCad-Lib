@@ -45,6 +45,8 @@ import SplitLineDialog from "../components/invoices/SplitLineDialog";
 import DataTable, { type Column } from "../components/DataTable";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { useStickyState } from "../useStickyState";
+import { useAuth } from "../auth";
+import { Link } from "react-router-dom";
 import { fileHref } from "../viewkind";
 
 import { amount as money, plain } from "../format";
@@ -64,6 +66,7 @@ function headerOf(d: RunCostDocumentRow): InvoiceHeader {
     doc_type: d.doc_type || "invoice",
     notes: d.notes || "",
     dest: "",
+    company_id: d.company_id ?? "",
   };
 }
 
@@ -119,6 +122,7 @@ function treeOrder(lines: RunCostLineRow[]): RunCostLineRow[] {
 
 export default function Invoices() {
   const dialog = useDialog();
+  const { companyName } = useAuth();
   const [reg, setReg] = useState<InvoiceRegister | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -345,6 +349,7 @@ export default function Invoices() {
           total_amount: total === "" ? null : Number(total),
           doc_type: header.doc_type,
           notes: header.notes,
+          ...(header.company_id !== "" ? { company_id: header.company_id } : {}),
         },
         updates: savedRows
           .filter((r) => r.id != null && !deletedLines.has(r.id))
@@ -453,11 +458,18 @@ export default function Invoices() {
 
   const docCols: Column<RunCostDocumentRow>[] = [
     { key: "date", label: "Date", width: 9, className: "mono", get: (d) => d.doc_date || "—" },
-    { key: "supplier", label: "Supplier", width: 21, get: (d) => d.supplier || "—" },
+    { key: "supplier", label: "Supplier", width: 15, get: (d) => d.supplier || "—" },
+    {
+      key: "buyer",
+      label: "Buyer",
+      width: 8,
+      get: (d) => companyName(d.company_id) || "—",
+      title: (d) => (d.company_source ? `billed company, found by: ${d.company_source}` : "not decided yet"),
+    },
     {
       key: "number",
       label: "Number",
-      width: 20,
+      width: 18,
       className: "mono",
       get: (d) => `${d.doc_number} ${d.external_id}`.trim(),
       title: (d) => `${d.doc_number} ${d.external_id}`.trim(),
@@ -507,6 +519,9 @@ export default function Invoices() {
             ) : null}
             {d.doc_type === "correction" ? (
               <span title="A correction of an earlier document">↩{" "}</span>
+            ) : null}
+            {d.doc_type === "transfer" ? (
+              <span title="An in-house transfer between our two companies (decision 0064)">⇄{" "}</span>
             ) : null}
             {state === "proforma" ? (
               <span className="pill neutral">proforma</span>
@@ -572,7 +587,18 @@ export default function Invoices() {
                   >
                     Resolve parts
                   </button>
-                  {(doc.locked || []).length ? (
+                  {doc.doc_type === "transfer" ? (
+                    <>
+                      <CheckField checked={false} disabled onChange={() => {}}>
+                        Edit this invoice
+                      </CheckField>
+                      <span className="muted">
+                        An in-house transfer from {companyName(doc.counterparty_company_id)} to{" "}
+                        {companyName(doc.company_id)}. It changes only as a whole: reverse it on{" "}
+                        <Link className="comp-link" to="/production/transfers">Production → Transfers</Link>.
+                      </span>
+                    </>
+                  ) : (doc.locked || []).length ? (
                     <>
                       {/* A disabled checkbox with nothing beside it reads as a
                           bug. The reason and the way forward sit next to it,
@@ -890,9 +916,12 @@ function NewInvoiceCard({
   stepCatalog: CostStepCatalog | null;
   onDone: (createdId: number | null) => void;
 }) {
+  const { companies, scope } = useAuth();
   const [head, setHead] = useState<InvoiceHeader>({
     supplier: "", doc_number: "", external_id: "", doc_date: "",
     currency: "USD", total: "", doc_type: "invoice", notes: "", dest: "",
+    // The switcher's company, else the user's only one (decision 0064).
+    company_id: scope !== "all" ? Number(scope) : companies.length === 1 ? companies[0].id : "",
   });
   const [lines, setLines] = useState<LineDraft[]>([blankDraft()]);
   const [busy, setBusy] = useState(false);
@@ -925,6 +954,7 @@ function NewInvoiceCard({
         currency: head.currency.trim() || "USD",
         total_amount: totalNum,
         notes: head.notes.trim(),
+        company_id: head.company_id === "" ? null : head.company_id,
         // A position with no destination of its own falls back to the
         // document-wide one, which is what the "charge every position to"
         // select is for. The per-line control wins when it was used.

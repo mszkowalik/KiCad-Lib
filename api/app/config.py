@@ -169,6 +169,11 @@ class Settings(BaseSettings):
     # Display currency for cost totals when a project has no override.
     default_currency: str = "USD"
 
+    # Decision 0064: each company draws only from its own stock. Off until every
+    # purchase, draw and adjustment names its company; `appconfig.validate`
+    # refuses to turn it on before that.
+    stock_per_company: bool = False
+
     # Exchange-rate auto-refresh (frankfurter.app — ECB daily rates, no key).
     fx_autofetch: bool = True
 

@@ -186,6 +186,9 @@ def parse(raw: dict) -> dict:
         "invoice_no": _s(raw.get("invoiceNo")),
         "invoice_date": parse_invoice_date(raw.get("invoiceDate")),
         "batch_num": _s(raw.get("batchNum")),
+        # The BILLED company's VAT number (decision 0064) — never `taxVat`,
+        # which is the ship-to.
+        "billing_vat": _s(raw.get("taxVatBilling")) or _s(raw.get("brazilCpnjBilling")),
         "currency": currency,
         "settle_rate": settle_rate,
         "totals": {

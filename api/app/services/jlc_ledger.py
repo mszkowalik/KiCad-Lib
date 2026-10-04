@@ -334,7 +334,7 @@ def bookable(db: Session) -> list[dict]:
 
 
 def book(db: Session, change_key_ids: list[int] | None = None,
-         actor: str = "user", dry_run: bool = True) -> dict:
+         actor: str = "user", dry_run: bool = True, company_id: int | None = None) -> dict:
     """Write the chosen ledger rows as UNCHARGED DRAWS.
 
     An uncharged draw, not an adjustment, for the reason decision
@@ -353,15 +353,28 @@ def book(db: Session, change_key_ids: list[int] | None = None,
     second draw.
 
     NOTHING here decides on its own what should move. The caller names the rows.
+
+    `company_id` names whose stock the picks came from. JLC keeps one shelf for
+    both companies, so the row does not say; while each company keeps its own
+    stock (decision 0064) the caller must.
     """
-    from .run_actuals import check_shortages, resolve_pool_identity
+    from fastapi import HTTPException
+
+    from ..config import settings
+    from .run_actuals import check_shortages, resolve_pool_identity, stock_scope
+
+    scope = stock_scope(db, company_id)
+    if company_id is None and settings.stock_per_company:
+        raise HTTPException(422, "say whose stock these warehouse picks came from (company_id): "
+                                 "each company keeps its own stock (decision 0064)")
 
     want = set(change_key_ids or [])
     rows = [r for r in bookable(db) if not want or r["change_key_id"] in want]
     missing = sorted(want - {r["change_key_id"] for r in rows})
     written, refused = [], []
     for r in rows:
-        pool = resolve_pool_identity(db, None, r["mpn"], r["lcsc"], as_of=r["date"])
+        pool = resolve_pool_identity(db, None, r["mpn"], r["lcsc"], as_of=r["date"],
+                                     company_id=scope)
         if pool is None:
             refused.append({**r, "why": "no pool entry for that part — the purchase "
                                         "it came from is not in the platform"})
@@ -369,7 +382,7 @@ def book(db: Session, change_key_ids: list[int] | None = None,
         short = check_shortages(db, [{"component_id": pool.get("component_id"),
                                       "mpn": pool.get("mpn") or r["mpn"],
                                       "lcsc": pool.get("lcsc") or r["lcsc"],
-                                      "qty": r["qty"], "date": r["date"]}])
+                                      "qty": r["qty"], "date": r["date"]}], company_id=scope)
         if short:
             refused.append({**r, "why": "the pool does not hold that much on that date",
                             "shortages": short})
@@ -381,7 +394,7 @@ def book(db: Session, change_key_ids: list[int] | None = None,
                 run_id=None, component_id=pool.get("component_id"),
                 mpn=pool.get("mpn") or r["mpn"], lcsc=pool.get("lcsc") or r["lcsc"],
                 qty=r["qty"], unit_cost_usd=unit, basis="measured",
-                import_ref=f"jlcledger:{r['change_key_id']}",
+                import_ref=f"jlcledger:{r['change_key_id']}", company_id=company_id,
                 consumed_at=r["date"],
                 note=(f"JLC inventory ledger {r['date']}"
                       + (f" ({r['business_code']})" if r["business_code"] else "")

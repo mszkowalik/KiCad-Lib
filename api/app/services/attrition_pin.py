@@ -51,9 +51,14 @@ def migrate(db: Session) -> int:
     # ONE replay for the whole batch: `pool_state` walks every purchase, draw and
     # adjustment in the database, so calling it per row turns a 30-row migration
     # into 30 full replays.
-    pool = run_actuals.pool_state(db)
+    # One replay per company stock (decision 0064); one in all while shared.
+    pools: dict = {}
     pinned = 0
     for a in rows:
+        scope = run_actuals.stock_scope(db, a.company_id)
+        if scope not in pools:
+            pools[scope] = run_actuals.pool_state(db, company_id=scope)
+        pool = pools[scope]
         unit = (pool.get(run_actuals._key(a), {}) or {}).get("avg_usd", 0.0)
         a.unit_cost_usd = float(unit or 0.0)
         pinned += 1

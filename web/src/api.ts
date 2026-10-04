@@ -1151,6 +1151,103 @@ export function moveProject(projectId: number, body: { company_id: number; from_
   return request(`/api/projects/${projectId}/ownership`, jsonBody("POST", body));
 }
 
+// ------------------------------------------------- stock per company (0064)
+
+/** One in-house transfer: stock one company bought, moved to the other. */
+export interface TransferRow {
+  id: number;
+  doc_number: string;
+  date: string;
+  sender_id: number;
+  sender: string;
+  receiver_id: number;
+  receiver: string;
+  run_id: number | null;
+  reversed: boolean;
+  value_usd: number;
+  lines: { id: number; component_id: number | null; mpn: string; lcsc: string; label: string;
+           qty: number; unit_cost_usd: number; price: string }[];
+  notes: string;
+}
+
+export interface TransferLineIn {
+  component_id?: number | null;
+  mpn?: string;
+  lcsc?: string;
+  qty: number;
+  unit_cost_usd?: number | null;
+  label?: string;
+}
+
+export interface TransferPlan {
+  sender: string;
+  receiver: string;
+  date: string;
+  lines: (TransferLineIn & { unit_cost_usd: number; value_usd: number; price_source: string })[];
+  value_usd: number;
+  shortages: { label: string; mpn: string; needed: number; on_hand: number; short: number }[];
+  problems: { line: number; problem: string }[];
+  document_id?: number;
+  doc_number?: string;
+}
+
+export function listTransfers(signal?: AbortSignal): Promise<TransferRow[]> {
+  return request("/api/transfers", { signal });
+}
+
+export function createTransfer(body: {
+  sender_id: number; receiver_id: number; date: string; lines: TransferLineIn[];
+  run_id?: number | null; note?: string; dry_run: boolean;
+}): Promise<TransferPlan> {
+  return request("/api/transfers", jsonBody("POST", body));
+}
+
+export function reverseTransfer(id: number, reason: string, dryRun: boolean): Promise<{
+  shortages: unknown[]; used_by_draws: number[];
+}> {
+  return request(`/api/transfers/${id}/reverse`, jsonBody("POST", { reason, dry_run: dryRun }));
+}
+
+export interface HistoryTransfer {
+  sender: string; receiver: string; date: string; batch: string | null;
+  evidence: "lot" | "balance"; value_usd: number; lines: { qty: number; label: string }[];
+}
+
+export interface HistoryPlan {
+  transfers: HistoryTransfer[];
+  unexplained: { company: string; batch: string | null; date: string; part: string | number;
+                 short: number; other_company_held: number }[];
+  totals: { transfers: number; lines: number; from_lots: number; value_usd: number;
+            by_direction: Record<string, number>; unexplained: number };
+  written?: { document_id: number; doc_number: string; batch: string | null; value_usd: number }[];
+  refused?: { batch: string | null; date: string; why: unknown }[];
+}
+
+export function getHistoryPlan(signal?: AbortSignal): Promise<HistoryPlan> {
+  return request("/api/transfers/history", { signal });
+}
+
+export function applyHistory(dryRun: boolean): Promise<HistoryPlan> {
+  return request("/api/transfers/history", jsonBody("POST", { dry_run: dryRun }));
+}
+
+export interface StockBackfillResult {
+  dry_run: boolean;
+  totals: { documents: number; unresolved_documents: number; draws: number;
+            unresolved_draws: number; adjustments: number; unresolved_adjustments: number;
+            by_source: Record<string, number> };
+  unresolved_documents: { document_id: number; supplier: string; doc_number: string;
+                          doc_date: string; has_text: boolean; source: string;
+                          evidence: Record<string, string> }[];
+  unresolved_draws: { id: number; mpn: string; lcsc: string; qty: number; date: string; note: string }[];
+  still_without_company: Record<string, number>;
+}
+
+export function stockBackfill(dryRun: boolean, fetchJlc: boolean): Promise<StockBackfillResult> {
+  return request("/api/companies/stock-backfill",
+                 jsonBody("POST", { dry_run: dryRun, fetch_jlc: fetchJlc }));
+}
+
 export function getAuthState(signal?: AbortSignal): Promise<AuthState> {
   return request("/api/auth/me", { signal });
 }
@@ -2784,6 +2881,12 @@ export interface RunCostDocumentRow {
   tax_amount: number | null;
   notes: string;
   attachment_id: number | null;
+  /** The company that was BILLED (decision 0064), and how that was found:
+   *  jlc_billing, jlc_web, pdf_nip, pdf_billto, pdf_name, date, manual, transfer. */
+  company_id?: number | null;
+  company_source?: string;
+  /** On an in-house transfer: the company that SENT the stock. */
+  counterparty_company_id?: number | null;
   /** how many originals are filed with this document */
   attachment_count?: number;
   /** Batches whose books are CLOSED that this document charges (decision 0044).
@@ -3033,7 +3136,7 @@ export function editDocumentLines(
     /** the header fields, changed in the same transaction as the positions */
     document?: Partial<Pick<RunCostDocumentRow,
       "supplier" | "doc_number" | "external_id" | "doc_date" | "currency" |
-      "total_amount" | "doc_type" | "notes" | "paid_at" | "fx_rate_usd">>;
+      "total_amount" | "doc_type" | "notes" | "paid_at" | "fx_rate_usd" | "company_id">>;
     updates?: (Partial<RunCostLineRow> & { id: number })[];
     creates?: Record<string, unknown>[];
     deletes?: number[];
@@ -3318,6 +3421,8 @@ export interface DocumentCreate {
   fx_rate_usd?: number | null;
   total_amount?: number | null;
   notes?: string;
+  /** the company that was billed (decision 0064) */
+  company_id?: number | null;
   lines?: Partial<RunCostLineRow>[];
 }
 

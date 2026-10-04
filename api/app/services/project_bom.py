@@ -103,7 +103,8 @@ def virtual_component_ids(db: Session, component_ids: set[int]) -> set[int]:
     }
 
 
-def _component_data(db: Session, component_ids: set[int], at: datetime | None = None):
+def _component_data(db: Session, component_ids: set[int], at: datetime | None = None,
+                    project_id: int | None = None):
     """Points / supply / names / non-purchasable ids per component. With `at`
     set, points come from ComponentPriceHistory resolved at that instant
     (latest snapshot at-or-before, else earliest after); components with no
@@ -121,7 +122,10 @@ def _component_data(db: Session, component_ids: set[int], at: datetime | None = 
     if component_ids and at is not None:
         from . import run_actuals  # local import — run_actuals imports this module
 
-        pool = run_actuals.pool_state(db, None, as_of=at.strftime("%Y-%m-%d"))
+        day = at.strftime("%Y-%m-%d")
+        # The stock of the company that owned the project then (decision 0064).
+        pool = run_actuals.pool_state(db, None, as_of=day,
+                                      company_id=run_actuals.project_scope(db, project_id, day))
         for cid in component_ids:
             entry = pool.get(f"c{cid}")
             if entry and entry.get("avg_usd", 0.0) > 0:
@@ -202,7 +206,7 @@ def priced_bom(
     if proc is not None:
         extras = proc
     comp_ids |= {x.component_id for x in extras if x.component_id}
-    points, supply, names, virtual = _component_data(db, comp_ids, at=at)
+    points, supply, names, virtual = _component_data(db, comp_ids, at=at, project_id=project.id)
 
     out_lines = []
     bom_per_device = 0.0
@@ -529,7 +533,7 @@ def priced_bom_costs_only(db: Session, project: M.Project, volume: int,
     if proc is not None:
         extras = proc
     comp_ids |= {x.component_id for x in extras if x.component_id}
-    points, supply, names, _virtual = _component_data(db, comp_ids, at=at)
+    points, supply, names, _virtual = _component_data(db, comp_ids, at=at, project_id=project.id)
     out_extra = []
     extra_per_device = 0.0
     for x in extras:

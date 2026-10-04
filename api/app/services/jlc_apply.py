@@ -179,11 +179,13 @@ def apply_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
             ),
         }
 
+    buyer = _buyer(db, plan)
     doc = M.RunCostDocument(
         project_id=None,
         run_id=None,
         doc_type="invoice",
         supplier=SUPPLIER,
+        company_id=buyer, company_source="jlc_billing" if buyer else "",
         doc_number=plan.get("doc_number") or "",
         external_id=plan["external_id"],
         doc_date=plan["doc_date"].isoformat() if plan.get("doc_date") else "",
@@ -514,8 +516,10 @@ def apply_manufacturing_document(db: Session, plan: dict, actor: str = "jlc-impo
                          f"doc_number={near.doc_number!r}) looks like the same batch; "
                          "nothing written")}
 
+    buyer = _buyer(db, plan)
     doc = M.RunCostDocument(
         project_id=None, run_id=None, doc_type="invoice", supplier=SUPPLIER,
+        company_id=buyer, company_source="jlc_billing" if buyer else "",
         doc_number=plan.get("doc_number") or "",
         external_id=plan["external_id"],
         doc_date=plan["doc_date"].isoformat() if plan.get("doc_date") else "",
@@ -1101,6 +1105,24 @@ def backfill_fee_split(db: Session, row: M.JlcImport, actor: str = "jlc-import",
             "identities": after}
 
 
+def _buyer(db: Session, plan: dict) -> int | None:
+    """The company JLC billed (decision 0064), from the invoice's billing VAT
+    number. None when JLC did not say; the company backfill then asks."""
+    import re
+
+    nip = re.sub(r"\D", "", plan.get("billing_vat") or "")
+    if not nip:
+        return None
+    c = db.query(M.Company).filter_by(nip=nip).first()
+    return c.id if c else None
+
+
+def _order_buyer(db: Session, order_plan: dict) -> int | None:
+    """The company an assembly order's invoice billed: its document's buyer."""
+    doc = find_document(db, order_plan.get("batch_num") or "", "")
+    return doc.company_id if doc is not None else None
+
+
 def lot_line_index(db: Session) -> dict[str, int]:
     """`lot_ref` -> purchase-line id, for every live lot the platform holds.
 
@@ -1241,6 +1263,9 @@ def apply_draws(db: Session, order_plan: dict, run_id: int | None,
                 run_id=run_id, component_id=cid, mpn=(mpn or "")[:200], lcsc=lcsc,
                 qty=qty, unit_cost_usd=unit, basis="measured", consumed_at=when,
                 import_ref=import_ref,
+                # Whose stock (decision 0064): the batch's company, stamped on
+                # flush; with no batch yet, the company the order billed.
+                company_id=None if run_id else _order_buyer(db, order_plan),
                 note=(f"JLC assembly order {code} (batch {order_plan['batch_num']}) drew "
                       f"{qty:g} across {len(children)} lot(s); prices are the lots' landed "
                       "cost, not JLC's quoted component price"),
@@ -1346,6 +1371,18 @@ def charge_draws(db: Session, order_plan: dict, run_id: int,
         raise ApplyRefused(
             f"{code}: {len(elsewhere)} draw(s) are already charged to run(s) "
             f"{sorted({c.run_id for c in elsewhere})} — reverse that batch first")
+    # A batch pays only for its own company's stock (decision 0064). A draw
+    # from the other company's shelf needs an in-house transfer first.
+    run = db.get(M.ProductionRun, run_id)
+    if run is not None and run_actuals.run_scope(db, run) is not None:
+        foreign = [c for c in mine if c.company_id is not None and c.company_id != run.company_id]
+        if foreign:
+            raise ApplyRefused(
+                f"{code}: {len(foreign)} draw(s) took another company's stock than "
+                f"{run.label}'s — record the in-house transfer first (decision 0064)")
+        for c in mine:
+            if c.company_id is None:
+                c.company_id = run.company_id
     out = {"smt_order_code": code, "run_id": run_id,
            "uncharged_draws": len(mine),
            "value_usd": round(sum((c.qty or 0) * (c.unit_cost_usd or 0) for c in mine), 2),

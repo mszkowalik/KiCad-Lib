@@ -7,6 +7,8 @@ shipments, [0005](../decisions/0005-off-board-parts.md) covers off-board parts, 
 [0007](../decisions/0007-built-means-finished-and-passed.md) covers the built rule.
 
 The wider design is in [docs/production-costs/design.md](../production-costs/design.md).
+Stock is kept per company once `stock_per_company` is on; how every replay and
+guard reads one company's stock is in [companies.md](companies.md).
 
 - **Project manual cost data is commit-versioned** (`services/cost_state.py`).
   `ProjectCostItem` + `ProjectExtraBomItem` rows belong to an immutable

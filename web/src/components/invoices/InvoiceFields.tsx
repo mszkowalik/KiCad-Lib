@@ -9,6 +9,7 @@
  */
 import { useState } from "react";
 import { errorMessage, getNbpRate } from "../../api";
+import { useAuth } from "../../auth";
 import AutoTextarea from "../AutoTextarea";
 import Field from "../Field";
 import { ChargeToSelect, type RunOption } from "../costs";
@@ -23,6 +24,8 @@ export interface InvoiceHeader {
   doc_type: string;
   notes: string;
   dest: string;         // create only — a destination for every position at once
+  /** the company that was billed (decision 0064); "" = not decided yet */
+  company_id: number | "";
 }
 
 export const DOC_TYPES = [
@@ -48,6 +51,7 @@ export default function InvoiceFields({
   disabled?: boolean;
 }) {
   const [nbp, setNbp] = useState("");
+  const { companies } = useAuth();
   const set = (next: Partial<InvoiceHeader>) => onChange({ ...value, ...next });
 
   /** Invoice-date FX convention: the NBP table-A rate at the document date.
@@ -75,6 +79,19 @@ export default function InvoiceFields({
           <input className="text" value={value.supplier} disabled={disabled}
                  onChange={(e) => set({ supplier: e.target.value })} />
         </label>
+        <Field label="Buyer">
+          <select
+            className="text"
+            value={value.company_id}
+            disabled={disabled}
+            onChange={(e) => set({ company_id: e.target.value === "" ? "" : Number(e.target.value) })}
+          >
+            <option value="">— not decided —</option>
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </Field>
         <label>
           Document number
           <input className="text" value={value.doc_number} disabled={disabled}

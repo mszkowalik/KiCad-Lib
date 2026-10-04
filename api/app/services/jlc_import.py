@@ -328,6 +328,8 @@ def plan_parts_document(pob: str, lots: list[dict], invoice_raw: dict | None) ->
     return {
         "kind": "parts",
         "external_id": pob,
+        # The billed company's VAT number (decision 0064); never `taxVat`.
+        "billing_vat": str(inv.get("taxVatBilling") or inv.get("brazilCpnjBilling") or ""),
         "doc_number": str(inv.get("invoiceNo") or ""),
         "doc_date": jlc_invoice.parse_invoice_date(inv.get("invoiceDate")),
         "currency": "USD",
@@ -710,6 +712,7 @@ def plan_manufacturing_document(inv: dict, decisions: dict[str, dict] | None = N
     return {
         "kind": "assembly",
         "external_id": inv["batch_num"],
+        "billing_vat": inv.get("billing_vat") or "",
         "doc_number": inv["invoice_no"],
         "doc_date": inv["invoice_date"],
         "currency": inv["currency"],

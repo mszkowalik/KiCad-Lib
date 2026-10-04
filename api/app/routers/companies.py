@@ -76,6 +76,32 @@ def backfill(body: BackfillIn, db: Session = Depends(get_db), admin: M.User = De
     return res
 
 
+class StockBackfillIn(BaseModel):
+    dry_run: bool = True
+    # Ask JLC for the billing data of parts orders with no stored payload, through
+    # the stored session (a read; user approval 2026-10-04).
+    fetch_jlc: bool = False
+
+
+@router.post("/companies/stock-backfill")
+def stock_backfill(body: StockBackfillIn, db: Session = Depends(get_db),
+                   admin: M.User = Depends(require_admin)):
+    """Name the company of every purchase, draw and adjustment that has none
+    (decision 0064). Dry run by default; the report lists what no evidence
+    decides, for a person."""
+    from ..services import company_backfill
+
+    res = company_backfill.backfill(db, dry_run=body.dry_run, fetch_jlc=body.fetch_jlc,
+                                    actor=acting_name())
+    if body.dry_run:
+        db.rollback()
+    else:
+        audit(db, "company.stock_backfill", "company", None, res["totals"])
+        db.commit()
+    res["still_without_company"] = svc.stock_without_company(db)
+    return res
+
+
 @router.get("/projects/{project_id}/ownership")
 def project_ownership(project_id: int, db: Session = Depends(get_db)):
     if db.get(M.Project, project_id) is None:
