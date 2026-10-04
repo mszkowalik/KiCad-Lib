@@ -8,8 +8,8 @@ The invoice register and its line tree. The backend rules are in
 The destination cell in the Invoices line tree must cover every branch the backend's
 `run_actuals.line_destination` can take: header → "shares below", pooled part →
 "pool", **spread carrier (`allocate` by_value/by_qty with no run/project) → "pool
-(spread)"**, excluded → the select's "nobody, on purpose", else the run/project
-select. A missing branch falls through to the select and reads "— nobody —" for
+(spread)"**, excluded → the select's "nobody, on purpose", a conversion cost
+(`transformation_id`, decision 0058) → `t:<id>`, else the run/project select. A missing branch falls through to the select and reads "— nobody —" for
 money that IS charged (a landed-cost transport line spread into part prices looked
 unassigned, user report 2026-07-28). When a new `allocate` value or destination
 appears in the backend, add its branch here in the same change.

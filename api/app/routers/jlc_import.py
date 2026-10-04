@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..db import get_db
 from ..models import utcnow
-from ..services import jlc_apply, jlc_import, jlc_web, journal, run_actuals
+from ..services import jlc_apply, jlc_import, jlc_web, journal, run_actuals, twins
 from .util import acting_name, audit
 
 router = APIRouter(prefix="/api/jlc/import", tags=["jlc-import"])
@@ -141,6 +141,20 @@ def set_decision(smt_order_code: str, body: DecisionIn, db: Session = Depends(ge
                     M.JlcOrderDecision.smt_order_code != smt_order_code)
             .all()
         )
+        # ...except for a CRAFTED batch (decision 0059 §6): it holds exactly one
+        # assembly order, so its substitutions and its origin cost belong to that
+        # order alone. A re-order to complete a lot is a new batch.
+        already = (db.query(M.JlcOrderDecision)
+                   .filter_by(smt_order_code=smt_order_code, outcome="link_run", run_id=body.run_id).first())
+        # A batch rebuilt into twins (decision 0060 §7) may hold the two orders
+        # it was built from; re-deciding one of them for the same batch is not
+        # a second order.
+        if siblings and already is None and db.get(M.ProductionRun, body.run_id).process_version_id:
+            raise HTTPException(409, {
+                "error": f"batch {body.run_id} is crafted and already holds assembly order "
+                         f"{siblings[0].smt_order_code} — a crafted batch holds one order; "
+                         "make a new batch for this one (decision 0059)",
+                "sibling_orders": [s.smt_order_code for s in siblings]})
 
     row = (db.query(M.JlcOrderDecision)
              .filter_by(smt_order_code=smt_order_code).first())
@@ -779,6 +793,11 @@ def apply_decision(smt_order_code: str, dry_run: bool = True, db: Session = Depe
                 db, smt_order_code, dec.outcome, dec.run_id, actor=actor)
             if dec.outcome == "link_run":
                 out["draws"] = _charge_or_draw(db, plan, dec.run_id, actor, dry_run=False)
+                # Decision 0060: on a crafted batch whose boards are already
+                # received, the order's money joins the assembly step now.
+                run = db.get(M.ProductionRun, dec.run_id)
+                if run is not None and run.process_version_id:
+                    out["assembly"] = twins.record_assembly(db, run, actor=actor)
             elif _stock_already_booked(db, plan):
                 # The stock left when the invoice was imported, charged to
                 # nobody — which is exactly what "external" means for stock.

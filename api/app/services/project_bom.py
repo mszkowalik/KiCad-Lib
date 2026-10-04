@@ -195,6 +195,12 @@ def priced_bom(
     comp_ids = {li.component_id for li in lines if li.component_id}
     # Manual cost data as of this snapshot's commit (forward-only revisions).
     extras, costs, cost_rev = cost_state.items_for(db, project.id, snapshot)
+    # Decision 0060: a project with a process takes its materials from the
+    # process steps, not from hand-typed extra items.
+    from . import process as _process
+    proc = _process.process_materials(db, project.id, as_of=at.date().isoformat() if at else None)
+    if proc is not None:
+        extras = proc
     comp_ids |= {x.component_id for x in extras if x.component_id}
     points, supply, names, virtual = _component_data(db, comp_ids, at=at)
 
@@ -250,8 +256,9 @@ def priced_bom(
     for x in extras:
         qty_total = int(math.ceil(x.qty * volume))
         row = {
-            "key": f"x{x.id}",
+            "key": getattr(x, "key", None) or f"x{x.id}",
             "id": x.id,
+            "source": "process" if x.id is None else "extra",
             "label": x.label,
             "qty_per": x.qty,
             "qty_total": qty_total,
@@ -274,7 +281,8 @@ def priced_bom(
                 unit_price=_round(unit_disp),
                 unit_price_src=x.unit_price,
                 price_currency=x.currency if x.unit_price is not None else None,
-                price_qty_from=None, price_source="Manual" if x.unit_price is not None else None,
+                price_qty_from=None,
+                price_source=(getattr(x, "price_source", None) or "Manual") if x.unit_price is not None else None,
                 price_updated=None, rate_known=known,
                 line_total=_round(unit_disp * qty_total) if unit_disp is not None else None,
                 moq=None, stock=None, order_qty=qty_total, order_excess=0,
@@ -516,13 +524,18 @@ def priced_bom_costs_only(db: Session, project: M.Project, volume: int,
     comp_ids = set()
     # No commit context → the current (latest-anchored) cost revision.
     extras, costs, cost_rev = cost_state.items_for(db, project.id, None)
+    from . import process as _process  # decision 0060: the process names the materials
+    proc = _process.process_materials(db, project.id, as_of=at.date().isoformat() if at else None)
+    if proc is not None:
+        extras = proc
     comp_ids |= {x.component_id for x in extras if x.component_id}
     points, supply, names, _virtual = _component_data(db, comp_ids, at=at)
     out_extra = []
     extra_per_device = 0.0
     for x in extras:
         qty_total = int(math.ceil(x.qty * volume))
-        row = {"key": f"x{x.id}", "id": x.id, "label": x.label, "qty_per": x.qty,
+        row = {"key": getattr(x, "key", None) or f"x{x.id}", "id": x.id,
+               "source": "process" if x.id is None else "extra", "label": x.label, "qty_per": x.qty,
                "qty_total": qty_total, "component_id": x.component_id,
                "component_name": names.get(x.component_id or -1),
                "manufacturer": x.manufacturer, "mpn": x.mpn, "notes": x.notes}
@@ -531,7 +544,8 @@ def priced_bom_costs_only(db: Session, project: M.Project, volume: int,
         elif x.unit_price is not None:
             unit_disp, known = fx.convert(x.unit_price, x.currency, cur, rates)
             row.update(unit_price=_round(unit_disp), price_currency=x.currency,
-                       price_source="Manual", line_total=_round(unit_disp * qty_total),
+                       price_source=getattr(x, "price_source", None) or "Manual",
+                       line_total=_round(unit_disp * qty_total),
                        rate_known=known, order_qty=qty_total, order_total=_round(unit_disp * qty_total))
         else:
             row.update(unit_price=None, line_total=None, order_qty=qty_total, order_total=None)
@@ -581,7 +595,24 @@ def run_effective(db: Session, run: M.ProductionRun) -> dict:
         bom = priced_bom_costs_only(db, project, run.qty, at=at)
         bom_lines = []
     base = {"lines": bom_lines, "extra": bom["extra"], "costs": bom["costs"]}
-    overrides = run.overrides or {}
+    overrides = dict(run.overrides or {})
+    # Decision 0060: with a process, the extra rows come from its steps (keys
+    # `p<step>…`), but a batch's override was written against the old extra
+    # item (`x<id>`). Carry each such override to the process row of the same
+    # part, or a batch that shipped without cartons would be charged them.
+    legacy = {}
+    for x in cost_state.items_for(db, project.id, snap)[0]:
+        ident = ("c", x.component_id) if x.component_id else ("m", "".join(ch for ch in (x.mpn or "").upper()
+                                                                           if ch.isalnum()))
+        if f"x{x.id}" in overrides:
+            legacy[ident] = overrides[f"x{x.id}"]
+    for row in base["extra"]:
+        if row.get("source") != "process" or row["key"] in overrides:
+            continue
+        ident = (("c", row["component_id"]) if row.get("component_id")
+                 else ("m", "".join(ch for ch in (row.get("mpn") or "").upper() if ch.isalnum())))
+        if ident in legacy:
+            overrides[row["key"]] = legacy[ident]
     qty = max(run.qty or 1, 1)
     lines = []
     totals_parts = 0.0

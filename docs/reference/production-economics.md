@@ -41,8 +41,9 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
   destination of their own (an invoice on run A with a line allocated to run B
   used to be charged to both); voiding a line voids its subtree. Percentages are
   a frontend calculator only — the API stores absolute amounts.
-- **`allocate` has four values, and `"excluded"` is load-bearing.** `none` |
-  `by_value` | `by_qty` | `excluded`. The carrier values spread a
+- **`allocate` has five values, and `"excluded"` is load-bearing.** `none` |
+  `pooled` | `by_value` | `by_qty` | `excluded`. `pooled` says "this position
+  IS stock" (decision 0045). The carrier values spread a
   freight/duty/tax line over the SAME document's part lines (landed cost: value
   added, quantity not), and `line_destination` only claims the pool bucket for
   them when poolable part lines actually exist — `pool_state` cannot spread a
@@ -53,6 +54,9 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
   FIRST in `line_destination`, filtered out of `pool_state`'s purchases (that is
   what prevents the prepaid double count) and skipped in `run_actuals`. Do not
   conflate it with `unassigned`, which means "nobody noticed yet" and is a defect.
+- **A position can be a CONVERSION COST** (`transformation_id`, decision 0058
+  §4): money in one process transformation's output lot, with its own register
+  bucket, ranked right after `excluded`. Rules in [processes.md](processes.md).
 - **Attachments can belong to a document, not just a run.**
   `run_attachments.run_id` is nullable and `document_id` is a soft pointer, so a
   supplier's scan is filed with the money it evidences — including on a shared
@@ -80,7 +84,12 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
     warranty replacement names the device it replaces, and a device re-shipped
     to the same line after repair names ITSELF, so it is never counted twice.
     Order cost counts every shipped device, replacements included, at its
-    batch's per-device actual (`per_device_cost_usd`, from the register).
+    batch's per-device actual (`per_device_cost_usd`, from the register). A
+    device with a twin counts at its twin's price instead (`twins.device_costs`,
+    decisions 0059 and 0060, [processes.md](processes.md)): its parts, the
+    invoices of its steps and its origin share. Old Dongle and Aqua batches get
+    twins when they are rebuilt (`twin_rebuild`), so their devices move to this
+    rule too.
   - **Built means finished and passed** (user rule, 2026-09-10). `run_stock`
     counts a batch from its DEVICE RECORDS and from nothing else: the typed run
     quantity is `qty_recorded` for a tooltip and never reaches the shelf. A
@@ -395,8 +404,11 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
   `check_shortages` already matched on overlap, so the stock guard passed and
   only the money was wrong. Both write paths (`add_consumption`,
   `PUT /runs/{id}/consumption/for-part`) go through the resolver.
-- **Material usage for parts JLC never sees is TYPED, not derived.** The batch's
-  Materials tab has an editable Used quantity per row
+- **Material usage for parts JLC never sees is TYPED, not derived — on a batch
+  WITHOUT a process.** A crafted batch takes every part through its process
+  steps, and refuses the typed quantity and the hand-typed draw (decision 0060,
+  [processes.md](processes.md)). On any other batch, the Materials tab has an
+  editable Used quantity per row
   (`PUT /api/runs/{run_id}/consumption/for-part`): absolute, idempotent, one
   draw per part. Correcting a figure later is the same call, so a mistake never
   needs a compensating adjustment — which is what attrition adjustments were
@@ -452,7 +464,9 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
     is skipped when draws exist, so stock cannot leave twice.
   - `invoice_register` reports the uncharged value as `pool.uncharged_drawn_usd`
     instead of filing it under a `None` run. A balance that stops being
-    transient means orders are not being decided.
+    transient means orders are not being decided. A process transformation's
+    inputs also carry no run, but they are not waiting for one: they are
+    `pool.into_prepared_usd` ([processes.md](processes.md)).
 - **Compare against JLC's stock count at the MOMENT IT WAS TAKEN, in JLC's
   calendar.** `JlcStockItem` is a snapshot; the pool runs to today. `parts_stock`
   therefore computes `remaining_at_sync_qty` with `pool_state(as_of=...)` and
@@ -648,6 +662,11 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
   a BOM invites `consume_from_bom` to draw parts the invoice already paid for.
   That is now a judgement the operator makes, not something the screen enforces
   by hiding the control.
+- **A project with a process has no extra-BOM items that count** (decision
+  0060). Its materials are the inputs of its process steps
+  (`process.process_materials`), the BOM pricing reads them in place of the
+  extra items, and a new extra item is refused. The rule below holds for a
+  project without a process.
 - **An extra-BOM item and a schematic symbol for the same part double-count.** Once
   an enclosure gets a symbol, its `ProjectExtraBomItem` twin must go or both the plan
   and the draws count it twice (the Aqua plan listed components 324/325 once with

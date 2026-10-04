@@ -14,6 +14,7 @@ in one document. Open the document before you change the module.
 | Datasheet identity, fetch, classification, page index | `datasheet_store.py`, `datasheet_pages.py`, `datasheet_migrate.py` | [docs/reference/datasheets.md](../../../docs/reference/datasheets.md) |
 | Cost plans, invoices, stock, orders, sales | `cost_state.py`, `material.py`, `stock.py`, `orders.py` | [docs/reference/production-economics.md](../../../docs/reference/production-economics.md) |
 | Suppliers, and which source prices a part | `suppliers.py`, `ladder.py` | [docs/reference/suppliers.md](../../../docs/reference/suppliers.md) |
+| Production processes, twins, crafting a batch, the assembly step, costs linked to steps, rebuilding old batches into twins, the bench naming and marking, twin prices, the project's materials from the process, prepared parts, conversion costs | `process.py`, `twins.py`, `twin_rebuild.py` | [docs/reference/processes.md](../../../docs/reference/processes.md) |
 | What JLCPCB says moved, and what we booked | `jlc_web.py`, `jlc_import.py`, `jlc_apply.py`, `jlc_ledger.py`, `substitutions.py` | [docs/reference/production-economics.md](../../../docs/reference/production-economics.md) |
 | Sign-off, verification, the review record | `signoff.py`, `review.py`, `material.py` | [docs/reference/review-axis.md](../../../docs/reference/review-axis.md) |
 | Renaming a footprint or a base symbol | `rename.py` | [docs/decisions/0012](../../../docs/decisions/0012-rename-a-footprint-or-base-symbol-in-place.md) |
@@ -46,6 +47,9 @@ publish doors go through `services/publish.py` —
 the review-record carry and the machine check. A new publish path that
 bypasses them silently loses all four. Mirror refreshes are the
 `refresh_mirror_for_*` twins, AFTER the commit.
+
+This covers LIBRARY entities and skills. A deployment version and a process
+version (decision 0058) are not library entities and keep their draft gate.
 
 **Nothing files drafts any more, and there is nowhere to approve one.**
 `routers/proposals.py` is DELETED, with the Proposals view, the nav badge and
@@ -353,6 +357,8 @@ the two is the device: `orders.per_device_cost_usd` gives what one unit of a
 batch cost, a shipped device carries it, and `order_economics` sums it over the
 devices an order shipped. Reasoning in
 [0043](../../../docs/decisions/0043-a-batch-costs-an-order-earns-and-a-unit-joins-them.md).
+A device with a twin carries its twin's price instead (decisions 0059 and
+0060, `twins.device_costs`).
 
 - **The denominator is devices PRODUCED**, from `produced_counts`. It used to be
   the run's typed `qty` — the boards ordered from JLC — while the docstring

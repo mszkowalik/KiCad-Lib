@@ -48,6 +48,8 @@ class LineIn(BaseModel):
     exclude_reason: str = ""
     run_id: int | None = None
     project_id: int | None = None
+    # Decision 0058 §4: a conversion cost, aimed at one process transformation.
+    transformation_id: int | None = None
     position: int = 0
     ocr_confidence: float | None = None
 
@@ -75,6 +77,7 @@ class ChildIn(BaseModel):
     amount: float | None = None
     run_id: int | None = None
     project_id: int | None = None
+    transformation_id: int | None = None
     component_id: int | None = None
     mpn: str = ""
     lcsc: str = ""
@@ -182,6 +185,7 @@ class LinePatch(BaseModel):
     exclude_reason: str | None = None
     run_id: int | None = None
     project_id: int | None = None
+    transformation_id: int | None = None
 
 
 class LineEdit(LinePatch):
@@ -578,6 +582,53 @@ def _check_destination(db: Session, run_id: int | None, project_id: int | None) 
         raise HTTPException(422, f"run {run_id} belongs to project {run.project_id}, not {project_id}")
 
 
+def _check_transformation(db: Session, step: str | None, transformation_id: int | None,
+                          run_id: int | None, project_id: int | None,
+                          allocate: str | None) -> None:
+    """A conversion cost (decision 0058 §4) goes to exactly one live
+    transformation and nowhere else.
+
+    It may not be a STOCK position: stickers bought by the roll are an ordinary
+    pooled purchase that the sticker transformation draws, and a stock line
+    aimed at a transformation would count once as a purchase and again as the
+    lot's conversion value."""
+    if transformation_id is None:
+        return
+    t = db.get(M.ProcessTransformation, transformation_id)
+    if t is None:
+        raise HTTPException(404, f"no transformation {transformation_id}")
+    if t.voided_at is not None:
+        raise HTTPException(409, f"transformation {transformation_id} is voided")
+    if step and cost_steps.is_stock_step(step):
+        raise HTTPException(422, {
+            "error": f"a position on stock step {step!r} is a purchase, not a conversion cost — "
+                     "buy it into the pool and let the transformation's recipe draw it",
+            "step": step,
+        })
+    if step in NEVER_CHARGED:
+        raise HTTPException(422, f"a {step!r} position is charged to nobody")
+    if run_id is not None or project_id is not None:
+        raise HTTPException(422, "a conversion cost goes to its transformation only — clear the "
+                                 "batch and the project")
+    if allocate not in (None, "none"):
+        raise HTTPException(422, "a conversion cost is not spread, pooled or excluded")
+
+
+def _one_destination(f: dict) -> dict:
+    """A patch that sends a position to a batch, a project, the pool or nobody
+    takes it OFF its transformation, and one aimed at a transformation clears
+    the rest — every editor writes the whole destination (decision 0045)."""
+    if f.get("transformation_id") is not None:
+        f["run_id"], f["project_id"] = None, None
+        f["allocate"] = "none"
+        f["basis"] = "per_run"
+    elif "transformation_id" not in f and (
+            f.get("run_id") is not None or f.get("project_id") is not None
+            or f.get("allocate") not in (None, "none")):
+        f["transformation_id"] = None
+    return f
+
+
 def _line(db: Session, line_id: int) -> M.RunCostLine:
     li = db.get(M.RunCostLine, line_id)
     if li is None:
@@ -728,6 +779,8 @@ def _create_document(project_id: int | None, body: DocumentIn, db: Session):
         _check_allocate(li.plan_key, li.allocate)
         _check_excluded(li.allocate, li.exclude_reason)
         _check_cancelled(li.plan_key, li.allocate, li.run_id, li.project_id)
+        _check_transformation(db, li.plan_key, li.transformation_id, li.run_id,
+                              li.project_id, li.allocate)
     data = body.model_dump(exclude={"lines", "project_id"})
     doc = M.RunCostDocument(project_id=project_id, **data)
     # FX comes from NBP table A at the INVOICE DATE (user decision 2026-07-27).
@@ -891,6 +944,8 @@ def add_line(doc_id: int, body: LineIn, db: Session = Depends(get_db)):
     _check_allocate(body.plan_key, body.allocate)
     _check_excluded(body.allocate, body.exclude_reason)
     _check_cancelled(body.plan_key, body.allocate, body.run_id, body.project_id)
+    _check_transformation(db, body.plan_key, body.transformation_id, body.run_id,
+                          body.project_id, body.allocate)
     pos = body.position or (max([li.position for li in doc.lines], default=-1) + 1)
     d = body.model_dump()
     d["position"] = pos
@@ -932,11 +987,18 @@ def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
                         f.get("exclude_reason", _cur.exclude_reason))
         _check_cancelled(f.get("plan_key", _cur.plan_key), f.get("allocate", _cur.allocate),
                          f.get("run_id", _cur.run_id), f.get("project_id", _cur.project_id))
+        _one_destination(f)
+        _check_transformation(db, f.get("plan_key", _cur.plan_key),
+                              f.get("transformation_id", _cur.transformation_id),
+                              f.get("run_id", _cur.run_id), f.get("project_id", _cur.project_id),
+                              f.get("allocate", _cur.allocate))
     for c in body.creates:
         _check_line(c)
         _check_allocate(c.plan_key, c.allocate)
         _check_excluded(c.allocate, c.exclude_reason)
         _check_cancelled(c.plan_key, c.allocate, c.run_id, c.project_id)
+        _check_transformation(db, c.plan_key, c.transformation_id, c.run_id, c.project_id,
+                              c.allocate)
 
     # One netted guard for the batch. A deleted line, or one that leaves the
     # pool, contributes its whole quantity as a loss; a re-key moves stock from
@@ -972,7 +1034,7 @@ def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
     changed: list[dict] = []
     for e in body.updates:
         li = by_id[e.id]
-        f = e.model_dump(exclude_unset=True)
+        f = _one_destination(e.model_dump(exclude_unset=True))
         f.pop("id", None)
         if "run_id" in f or "project_id" in f:
             _check_destination(db, f.get("run_id", li.run_id), f.get("project_id", li.project_id))
@@ -1101,6 +1163,10 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
         _check_allocate(child.plan_key or parent.plan_key, child.allocate)
         _check_excluded(child.allocate, child.exclude_reason)
         _check_destination(db, child.run_id, child.project_id)
+        _check_cancelled(child.plan_key or parent.plan_key, child.allocate, child.run_id,
+                         child.project_id)
+        _check_transformation(db, child.plan_key or parent.plan_key, child.transformation_id,
+                              child.run_id, child.project_id, child.allocate)
         qty, unit = child.qty, child.unit_price
         if child.amount is not None:
             qty, unit = 1.0, child.amount
@@ -1113,6 +1179,13 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
             row.qty, row.unit_price = qty, unit
             row.allocate = child.allocate or "none"
             row.run_id, row.project_id = child.run_id, child.project_id
+            # The dialog states the whole destination; a client that does not
+            # know the field keeps the share's aim unless it sends it elsewhere.
+            if "transformation_id" in child.model_fields_set:
+                row.transformation_id = child.transformation_id
+            elif child.run_id is not None or child.project_id is not None \
+                    or (child.allocate or "none") != "none":
+                row.transformation_id = None
             if child.component_id is not None:
                 row.component_id = child.component_id
             row.mpn, row.lcsc = child.mpn or row.mpn, child.lcsc or row.lcsc
@@ -1131,6 +1204,7 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
             currency=parent.currency,  # one currency per family, so residual is exact
             allocate=child.allocate or "none",
             run_id=child.run_id, project_id=child.project_id,
+            transformation_id=child.transformation_id,
             component_id=child.component_id if child.component_id is not None else parent.component_id,
             mpn=child.mpn or parent.mpn, lcsc=child.lcsc or parent.lcsc,
             description=child.description, plan_key=child.plan_key,
@@ -1165,6 +1239,15 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
     for c in made:
         db.add(c)
     db.flush()
+    # Decisions 0060/0061: a child keeps the step clicks its parent paid for,
+    # unless it is charged to another batch than the parent.
+    parent_links = [srid for (srid,) in db.query(M.CostLineStep.step_run_id).filter_by(line_id=parent.id).all()]
+    parent_dest = run_actuals.line_destination(parent, doc)
+    for ch in made:
+        if parent_links and run_actuals.line_destination(ch, doc) == parent_dest:
+            for srid in parent_links:
+                db.add(M.CostLineStep(line_id=ch.id, step_run_id=srid))
+    db.flush()
     audit(db, "run.cost_line.split", "run_cost_line", parent.id, {
         "document_id": doc.id, "label": parent.label, "parent_amount": round(parent_amount, 4),
         "children": [{"id": c.id, "label": c.label, "run_id": c.run_id,
@@ -1197,6 +1280,11 @@ def update_line(line_id: int, body: LinePatch, db: Session = Depends(get_db)):
                     fields.get("exclude_reason", li.exclude_reason))
     _check_cancelled(fields.get("plan_key", li.plan_key), fields.get("allocate", li.allocate),
                      fields.get("run_id", li.run_id), fields.get("project_id", li.project_id))
+    _one_destination(fields)
+    _check_transformation(db, fields.get("plan_key", li.plan_key),
+                          fields.get("transformation_id", li.transformation_id),
+                          fields.get("run_id", li.run_id), fields.get("project_id", li.project_id),
+                          fields.get("allocate", li.allocate))
     # A smaller quantity, or a different pool identity, takes stock away from
     # the key this line was feeding. Charging it to a run does too: a part line
     # with a `run_id` leaves the pool entirely.
@@ -1363,6 +1451,8 @@ def list_consumption(run_id: int, db: Session = Depends(get_db)):
          "qty": c.qty, "unit_cost_usd": c.unit_cost_usd, "basis": c.basis,
          "consumed_at": c.consumed_at, "note": c.note,
          "total_usd": round((c.qty or 0) * (c.unit_cost_usd or 0), 4),
+         # A step's draw goes with its step, and cannot be removed on its own.
+         "step_run_id": c.step_run_id, "transformation_id": c.transformation_id,
          "lots": lots_by_cons.get(c.id, [])}
         for c in rows
     ]
@@ -1386,9 +1476,20 @@ def parts_ledger(component_id: int | None = None, mpn: str = "", lcsc: str = "",
     return run_actuals.component_ledger(db, component_id, mpn, lcsc)
 
 
+def _refuse_crafted(run: M.ProductionRun) -> None:
+    """Decision 0060: a crafted batch takes parts only through its process
+    steps, so every draw says which step used it. A part draw typed on the
+    batch would be a material use no step knows about."""
+    if run.process_version_id:
+        raise HTTPException(409, f"{run.label} is crafted: its parts are drawn by its process steps "
+                                 "(Batch → Process). Add the part as an input of a step in the "
+                                 "project's process (decision 0060).")
+
+
 @router.post("/runs/{run_id}/consumption")
 def add_consumption(run_id: int, body: ConsumptionIn, db: Session = Depends(get_db)):
     run = _run(db, run_id)
+    _refuse_crafted(run)
     # A draw cannot take stock the pool never had (user decision 2026-07-28,
     # hard block): the fix is the missing invoice, an adjustment, or an override.
     shortages = run_actuals.check_shortages(db, [{
@@ -1446,6 +1547,7 @@ def set_used_qty(run_id: int, body: ConsumptionIn, db: Session = Depends(get_db)
     bought elsewhere — enclosures, antennas, cartons — are exactly the ones no
     supplier reports, and are what this is for.
     """
+    _refuse_crafted(_run(db, run_id))
     run = _run(db, run_id)
     qty = max(body.qty or 0.0, 0.0)
     keys = set(run_actuals._identity_keys(body.component_id, body.mpn, body.lcsc))
@@ -1553,6 +1655,10 @@ def delete_consumption(cons_id: int, db: Session = Depends(get_db)):
     c = db.get(M.ComponentConsumption, cons_id)
     if c is None:
         raise HTTPException(404, "consumption not found")
+    if c.step_run_id or c.transformation_id:
+        # A step that happened is history (decision 0059): its draw goes with it.
+        raise HTTPException(409, "this draw belongs to a process step or a prepared part — "
+                                 "correct the step, not the draw")
     audit(db, "run.consumption.delete", "component_consumption", cons_id,
           {"run_id": c.run_id, "qty": c.qty, "unit_cost_usd": c.unit_cost_usd})
     db.delete(c)

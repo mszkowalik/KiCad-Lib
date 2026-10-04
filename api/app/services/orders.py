@@ -193,6 +193,11 @@ def rebatch_devices(db: Session, run: M.ProductionRun, device_ids: list[int], *,
         if ev.production_run_id == run.id:
             skipped.append({"device_id": did, "serial": d.serial, "reason": "already in this batch"})
             continue
+        from . import twins as _twins
+        why = _twins.refuse_rebatch(db, d, run)
+        if why:
+            skipped.append({"device_id": did, "serial": d.serial, "reason": why})
+            continue
         was = ev.production_run_id
         # The bench wrote the SAME choice onto every attempt it made for this
         # device, so a correction that moves the produced event and leaves those
@@ -210,6 +215,11 @@ def rebatch_devices(db: Session, run: M.ProductionRun, device_ids: list[int], *,
             d.production_run_id = run.id
             for r in runs:
                 r.production_run_id = run.id
+            # The device's twin is in the batch that built it (0059); its
+            # origin batch, and so its origin share, never moves.
+            from . import twins as _twins
+
+            _twins.follow_rebatch(db, d, run.id)
     if not dry_run:
         db.flush()
     return {"dry_run": dry_run, "run_id": run.id, "moved": moved, "skipped": skipped}
@@ -538,7 +548,15 @@ def create_shipment(db: Session, order: M.SalesOrder, *, kind: str = "delivery",
 
 def _refuse_unsellable(d: M.DeviceUnit) -> None:
     """A unit that is HERE but not sellable is still in stock — that is the
-    point of `condition`. Only `ok` may leave on a shipment."""
+    point of `condition`. Only `ok` may leave on a shipment, and a unit with a
+    twin only once it is finished (decision 0059 §9)."""
+    from sqlalchemy.orm import object_session
+
+    from . import twins as _twins
+
+    sess = object_session(d)
+    if sess is not None:
+        _twins.refuse_unfinished(sess, d)
     if (d.condition or "ok") != "ok":
         raise HTTPException(409, {
             "error": f"device {d.serial or d.id} is {d.condition}, which cannot be shipped",
@@ -993,7 +1011,11 @@ def _to_usd(db: Session, amount: float, currency: str, date_iso: str, cache: dic
     return v
 
 
-def order_economics(db: Session, order: M.SalesOrder, unit_cost: dict[int, float]) -> dict:
+def order_economics(db: Session, order: M.SalesOrder, unit_cost: dict[int, float],
+                    twin_cost: dict[int, float] | None = None) -> dict:
+    """What an order earned against what its shipped devices cost. A device with
+    a twin costs its twin's price (decision 0059 §13); any other device costs
+    its batch's average (`unit_cost`, decision 0043)."""
     cache: dict = {}
     unknown: set[str] = set()
     cur = (order.currency or "PLN").upper()
@@ -1022,7 +1044,9 @@ def order_economics(db: Session, order: M.SalesOrder, unit_cost: dict[int, float
         shipped_devices += 1
         if ev.replaces_device_id is not None:
             replacements += 1
-        if d.production_run_id in unit_cost:
+        if twin_cost and d.id in twin_cost:
+            devices_cost += twin_cost[d.id]
+        elif d.production_run_id in unit_cost:
             devices_cost += unit_cost[d.production_run_id]
         else:
             uncosted += 1
@@ -1139,7 +1163,9 @@ def order_json(db: Session, order: M.SalesOrder, *, with_detail: bool = False,
         out["invoices"] = [invoice_json(i, order) for i in order.invoices]
         out["shipments"] = [shipment_json(db, sh) for sh in order.shipments]
         uc = unit_cost if unit_cost is not None else per_device_cost_usd(db)
-        out["economics"] = order_economics(db, order, uc)
+        from . import twins as _twins
+
+        out["economics"] = order_economics(db, order, uc, _twins.device_costs(db))
     return out
 
 

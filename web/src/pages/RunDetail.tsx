@@ -53,9 +53,10 @@ import DevicesTab from "../components/project/DevicesTab";
 import ProductionPanel from "../components/project/ProductionPanel";
 import RunCosts from "../components/run/RunCosts";
 import RunMaterials from "../components/run/RunMaterials";
+import RunProcess from "../components/run/RunProcess";
 import { amount as money, plain } from "../format";
 
-const TABS = ["overview", "materials", "costs", "files", "devices"] as const;
+const TABS = ["overview", "materials", "process", "costs", "files", "devices"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function RunDetail() {
@@ -306,6 +307,8 @@ export default function RunDetail() {
                 ? "Overview"
                 : t === "materials"
                   ? "Materials"
+                  : t === "process"
+                    ? "Process"
                   : t === "costs"
                     ? "Costs"
                     : t === "files"
@@ -643,6 +646,8 @@ export default function RunDetail() {
             )}
           </div>
         )}
+
+        {tab === "process" && <RunProcess run={run} />}
 
         {tab === "devices" && (
           <>

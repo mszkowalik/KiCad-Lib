@@ -2368,11 +2368,24 @@ function snapQuery(snapshotId?: number | null): string {
   return snapshotId != null ? `?snapshot_id=${snapshotId}` : "";
 }
 
+/** A material one device uses, read off the project's process (decision 0060). */
+export interface ProcessMaterial {
+  key: string;
+  step: string;
+  label: string;
+  qty: number;
+  component_id: number | null;
+  mpn: string;
+  unit_price_usd: number | null;
+  notes: string;
+}
+
 export function getExtraItems(
   projectId: number,
   snapshotId?: number | null,
   signal?: AbortSignal,
-): Promise<{ items: ExtraItem[]; revision: CostRevisionInfo | null }> {
+): Promise<{ items: ExtraItem[]; revision: CostRevisionInfo | null; from_process: boolean;
+             process_materials: ProcessMaterial[] }> {
   return request(`/api/projects/${projectId}/extra-items${snapQuery(snapshotId)}`, { signal });
 }
 
@@ -2585,6 +2598,11 @@ export interface RunInfo {
   deployment_channel?: string;
   /** must its units pass the project's test? */
   requires_test?: boolean;
+  /** Decision 0058: the process version this batch resolved at creation, and
+   *  the lot of the programmable form it programs from (null = fresh boards). */
+  process_version_id?: number | null;
+  /** the stack the programming bench names twins from (decision 0059) */
+  bench_stack?: string | null;
   /** the sale side: price PER DEVICE, units billed, and the customer order */
   qty_sold?: number | null;
   sale_unit_price?: number | null;
@@ -2802,6 +2820,8 @@ export interface RunCostLineRow {
   run_id: number | null;
   /** a share destined for a project but not yet for a specific run */
   project_id?: number | null;
+  /** decision 0058 §4: a conversion cost, aimed at one process transformation */
+  transformation_id?: number | null;
   /** set on a share of a split position; children live on the parent's document */
   parent_line_id?: number | null;
   /** true when the line has live children — it is a header worth zero, they carry the money */
@@ -2851,6 +2871,8 @@ export interface DocumentAssignment {
   run: number | null;
   project: number | null;
   pool: number | null;
+  /** conversion costs, carried in the lots of production stages (decision 0058) */
+  transformation?: number | null;
   /** recorded so the document reconciles, charged to nobody on purpose */
   excluded: number | null;
   unassigned: number | null;
@@ -2928,6 +2950,8 @@ export interface InvoiceRegister {
     to_runs_usd: number | null;
     to_projects_usd: number | null;
     to_pool_usd: number | null;
+    /** conversion costs in the lots of production stages (decision 0058) */
+    to_transformations_usd?: number | null;
     excluded_usd: number | null;
     unassigned_usd: number | null;
     residual_usd: number | null;
@@ -3021,6 +3045,7 @@ export interface SplitChild {
   unit_price?: number;
   run_id?: number | null;
   project_id?: number | null;
+  transformation_id?: number | null;
   /** "excluded" records the share without charging it to anyone */
   allocate?: string;
   /** ...and WHY. The API refuses `allocate: "excluded"` without one. */
@@ -3383,6 +3408,10 @@ export interface ConsumptionRow {
   consumed_at: string;
   note: string;
   total_usd: number;
+  /** a process step's draw (decision 0059): it goes with its step */
+  step_run_id?: number | null;
+  /** an input of a prepared part (decision 0058) */
+  transformation_id?: number | null;
   lots: ConsumptionLot[];
 }
 
@@ -8517,4 +8546,622 @@ export function getActivityRequest(
   signal?: AbortSignal,
 ): Promise<{ rows: ActivityRow[]; write_batches: ActivityWriteBatch[] }> {
   return request(`/api/activity/requests/${encodeURIComponent(requestId)}`, { signal });
+}
+
+
+// ----------------------------------------- production processes (0058, 0059)
+// Mirrors api/app/routers/process.py, services/process.py and services/twins.py.
+
+/** A library part (`component_id`), or a part the library does not hold —
+ *  a shipping carton — named by the MPN its purchases carry (`mpn`). */
+export interface ProcessInput {
+  component_id?: number | null;
+  mpn?: string;
+  qty: number;
+}
+
+export function inputKey(i: ProcessInput): string {
+  return i.component_id ? `c${i.component_id}` : `m${i.mpn ?? ""}`;
+}
+
+/** assembly / receive / step / program / mark_laser / label / finish — each
+ *  kind is done at one station (`services/process.py::KINDS`). The assembly is
+ *  the board's assembly at the supplier, recorded from the batch's assembly
+ *  order (decision 0060). */
+export type StepKind = "assembly" | "receive" | "step" | "program" | "test" | "mark_laser" | "label" | "finish";
+
+export const STEP_STATION: Record<StepKind, string> = {
+  assembly: "supplier", receive: "batch page", step: "batch page", program: "programming bench",
+  test: "programming bench", mark_laser: "marking bench", label: "marking bench", finish: "batch page",
+};
+
+/** Kinds every process has exactly one of; their place is fixed. */
+export const FIXED_KINDS: StepKind[] = ["assembly", "receive", "program", "finish"];
+
+export interface ProcessStep {
+  key: string;
+  label?: string;
+  kind: StepKind;
+  station?: string;
+  required?: boolean;
+  /** steps sharing a group are a CHOICE: one of them is done */
+  group?: string;
+  /** step keys or group names a unit must have done */
+  needs?: string[];
+  /** step keys or group names a unit must NOT have done */
+  needs_not?: string[];
+  inputs?: ProcessInput[];
+  /** a bench step: the deployment that says how it is done (decision 0060) */
+  deployment_id?: number | null;
+}
+
+/** A deployment a bench step may name: `flash` for programming, `mark` for
+ *  laser marking and labels. */
+export interface ProcessDeployment {
+  id: number;
+  name: string;
+  kind: "flash" | "test" | "mark";
+  current_version_id: number | null;
+  current_version_no: number | null;
+}
+
+/** The deployment kind each bench step kind may name. */
+export const DEPLOYMENT_KIND_FOR: Partial<Record<StepKind, string>> = {
+  program: "flash", test: "test", mark_laser: "mark", label: "mark",
+};
+
+/** A recipe for a PREPARED PART: an internal part made before it meets a
+ *  device (an enclosure drilled and printed), held as a stock lot. */
+export interface PreparedRecipe {
+  key: string;
+  label?: string;
+  output_component_id: number;
+  inputs: ProcessInput[];
+  expected_scrap_pct?: number;
+  preferred?: boolean;
+}
+
+export interface ProcessGraph {
+  steps: ProcessStep[];
+  route: string[];
+  prepared: PreparedRecipe[];
+}
+
+export interface ProcessCheck {
+  errors: string[];
+  warnings: string[];
+  ok: boolean;
+}
+
+export interface ProcessPartName {
+  id: number;
+  name: string;
+  internal: boolean;
+}
+
+export interface ProcessVersionDetail {
+  id: number;
+  project_id: number;
+  version_no: number;
+  status: "draft" | "published" | "rejected";
+  comment: string;
+  created_by: string;
+  approved_by: string | null;
+  created_at: string | null;
+  published_at: string | null;
+  graph: ProcessGraph;
+  /** component id (as a string) -> its name */
+  parts: Record<string, ProcessPartName>;
+  batches: { id: number; label: string }[];
+  transformation_count: number;
+  check?: ProcessCheck;
+}
+
+export interface ProcessVersionRow {
+  id: number;
+  version_no: number;
+  status: string;
+  comment: string;
+  created_by: string;
+  approved_by: string | null;
+  published_at: string | null;
+}
+
+export interface StageLot {
+  adjustment_id: number;
+  key: string;
+  component_id: number;
+  date: string;
+  reason: string;
+  note: string;
+  transformation_id: number | null;
+  qty: number;
+  remaining: number;
+  unit_cost_usd: number;
+  value_remaining_usd: number;
+  open: boolean;
+}
+
+export interface PoolFigure {
+  qty: number;
+  value_usd: number;
+  avg_usd: number;
+}
+
+export interface PreparedStock {
+  component_id: number;
+  name: string | null;
+  recipes: string[];
+  on_hand: number;
+  value_usd: number;
+  lots: StageLot[];
+}
+
+export interface TransformationRow {
+  id: number;
+  process_version_id: number;
+  recipe_key: string;
+  recipe_label: string;
+  output_component_id: number;
+  output_name: string | null;
+  qty: number;
+  scrap: number;
+  made_at: string;
+  run_id: number | null;
+  run_label: string | null;
+  input_value_usd: number;
+  conversion_usd: number;
+  unit_cost_usd: number | null;
+  output_adjustment_id: number | null;
+  note: string;
+  actor: string;
+  voided: boolean;
+  void_reason: string;
+  created_at: string | null;
+}
+
+export interface ProjectProcess {
+  versions: ProcessVersionRow[];
+  current_version_id: number | null;
+  shown: ProcessVersionDetail | null;
+  stock: {
+    prepared: PreparedStock[];
+    /** bought inputs, component id (as a string) -> name + pool figure */
+    inputs: Record<string, ProcessPartName & { pool: PoolFigure }>;
+  } | null;
+  transformations: TransformationRow[];
+  internal_parts: { id: number; name: string }[];
+  deployments: ProcessDeployment[];
+}
+
+export function getProjectProcess(
+  projectId: number, versionId: number | null, signal?: AbortSignal,
+): Promise<ProjectProcess> {
+  const q = versionId ? `?version_id=${versionId}` : "";
+  return request(`/api/projects/${projectId}/process${q}`, { signal });
+}
+
+function jsonBody(method: string, body: unknown): RequestInit {
+  return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+}
+
+export function composeProcessVersion(
+  projectId: number, fromVersionId: number | null = null,
+): Promise<ProcessVersionDetail> {
+  return request(`/api/projects/${projectId}/process/versions`,
+    jsonBody("POST", { from_version_id: fromVersionId }));
+}
+
+export function updateProcessDraft(
+  versionId: number, body: { graph?: ProcessGraph; comment?: string },
+): Promise<ProcessVersionDetail> {
+  return request(`/api/process-versions/${versionId}`, jsonBody("PATCH", body));
+}
+
+export function publishProcessVersion(versionId: number, comment: string): Promise<ProcessVersionDetail> {
+  return request(`/api/process-versions/${versionId}/publish`, jsonBody("POST", { comment }));
+}
+
+export function deleteProcessDraft(versionId: number): Promise<{ deleted: number }> {
+  return request(`/api/process-versions/${versionId}`, { method: "DELETE" });
+}
+
+export function createInternalPart(name: string): Promise<{ id: number; name: string }> {
+  return request(`/api/internal-parts`, jsonBody("POST", { name }));
+}
+
+export interface TransformDraw {
+  component_id: number;
+  name: string;
+  qty: number;
+  unit_cost_usd: number;
+  value_usd: number;
+  lot_adjustment_id: number | null;
+  internal: boolean;
+}
+
+export interface TransformShortage {
+  component_id: number | null;
+  label: string;
+  needed: number;
+  on_hand: number;
+  short: number;
+}
+
+export interface TransformPlan {
+  dry_run: boolean;
+  process_version_id: number;
+  version_no: number;
+  recipe_key: string;
+  recipe_label: string;
+  output: {
+    component_id: number;
+    name: string | null;
+    qty: number;
+    scrap: number;
+    value_usd: number;
+    unit_cost_usd: number;
+    lot_adjustment_id?: number;
+  };
+  made_at: string;
+  run_id: number | null;
+  draws: TransformDraw[];
+  input_value_usd: number;
+  shortages: TransformShortage[];
+  problems: { component_id: number; name: string; needed?: number; short?: number; problem: string }[];
+  unpriced: { component_id: number; name: string; problem: string; detail?: string }[];
+  transformation_id?: number;
+}
+
+export interface TransformBody {
+  recipe_key: string;
+  qty: number;
+  scrap?: number;
+  made_at?: string;
+  run_id?: number | null;
+  version_id?: number | null;
+  /** component id (as a string) -> the lots that input takes */
+  lots?: Record<string, { adjustment_id: number; qty: number }[]> | null;
+  note?: string;
+  dry_run: boolean;
+}
+
+export function transformProcess(projectId: number, body: TransformBody): Promise<TransformPlan> {
+  return request(`/api/projects/${projectId}/process/transform`, jsonBody("POST", body));
+}
+
+export function voidTransformation(id: number, reason: string): Promise<{ id: number; voided: boolean }> {
+  return request(`/api/process-transformations/${id}/void`, jsonBody("POST", { reason }));
+}
+
+export interface BankPlan {
+  dry_run: boolean;
+  component_id: number;
+  name: string;
+  qty: number;
+  unit_cost_usd: number;
+  value_usd: number;
+  at: string;
+  lot_adjustment_id?: number;
+}
+
+export function bankStage(projectId: number, body: {
+  component_id: number; qty: number; unit_cost_usd?: number; at?: string; note: string; dry_run: boolean;
+}): Promise<BankPlan> {
+  return request(`/api/projects/${projectId}/process/bank`, jsonBody("POST", body));
+}
+
+export interface StocktakePlan {
+  dry_run: boolean;
+  component_id: number;
+  name: string;
+  on_books: number;
+  counted: number;
+  delta: number;
+  steps: unknown[];
+}
+
+export function stocktakeStage(projectId: number, body: {
+  component_id: number; counted: number; at?: string; note: string; dry_run: boolean;
+}): Promise<StocktakePlan> {
+  return request(`/api/projects/${projectId}/process/stocktake`, jsonBody("POST", body));
+}
+
+export interface WriteOffPlan {
+  dry_run: boolean;
+  lot_adjustment_id: number;
+  qty: number;
+  unit_cost_usd: number;
+  value_usd: number;
+  charge_run_id: number | null;
+  at: string;
+}
+
+export function writeOffStage(projectId: number, body: {
+  lot_adjustment_id: number; qty: number; at?: string; charge_run_id?: number | null;
+  note: string; dry_run: boolean;
+}): Promise<WriteOffPlan> {
+  return request(`/api/projects/${projectId}/process/write-off`, jsonBody("POST", body));
+}
+
+export interface CraftStack {
+  /** "<batch id>:<stack key>" — the only way an unnamed twin is addressed */
+  stack: string;
+  run_id: number;
+  run_label: string | null;
+  key: string;
+  done: string[];
+  lots: string[];
+  count: number;
+  /** route steps these units can take next */
+  next?: string[];
+  /** every batch-page step these units can take */
+  can?: string[];
+}
+
+export interface CraftDevice {
+  device_id: number;
+  serial: string | null;
+  mac: string | null;
+  status: "active" | "finished" | "scrapped";
+  origin_run_id: number;
+  done: string[];
+  /** why it cannot be finished yet */
+  missing: string[];
+  price_usd: number | null;
+}
+
+export interface CraftClick {
+  id: number;
+  step: string;
+  label: string;
+  kind: string;
+  qty: number;
+  chosen: string;
+  made_at: string;
+  actor: string;
+  note: string;
+  /** invoice positions that paid for this click (decision 0060), USD */
+  costs_usd: number;
+  /** its draws, USD */
+  parts_usd: number;
+}
+
+/** Money charged to the batch that no step claims: it stays in the origin
+ *  batch cost (decision 0060). */
+export interface CraftUnlinked {
+  lines: { line_id: number; label: string; plan_key: string; usd: number }[];
+  draws: { consumption_id: number; component_id: number | null; mpn: string; basis: string; qty: number;
+           usd: number }[];
+  usd: number;
+}
+
+export interface CraftAssembly {
+  recorded: boolean;
+  orders: string[];
+  step_run_id?: number;
+  made_at?: string;
+  units?: number;
+  chosen?: string;
+  draws?: number;
+  lines?: number;
+}
+
+export interface CraftView {
+  run_id: number;
+  process_version_id: number;
+  version_no: number;
+  graph: ProcessGraph;
+  parts: Record<string, ProcessPartName>;
+  stacks: CraftStack[];
+  devices: CraftDevice[];
+  gaps: { device_id: number; serial: string | null; mac: string | null }[];
+  bench_stack: string | null;
+  bench_left: number | null;
+  bench_stacks: CraftStack[];
+  origin: {
+    origin_cost_usd?: number;
+    scrap_carried_usd?: number;
+    twins?: number;
+    scrapped?: number;
+    share_usd?: number | null;
+    frozen?: boolean;
+    received: number;
+    finished: number;
+    step_costs_usd?: number;
+  };
+  clicks: CraftClick[];
+  assembly: CraftAssembly;
+  unlinked: CraftUnlinked;
+}
+
+export function getCraft(runId: number, signal?: AbortSignal): Promise<CraftView> {
+  return request(`/api/runs/${runId}/craft`, { signal });
+}
+
+/** Which units: a stack and a quantity before programming, devices after. */
+export interface CraftSelection {
+  stack?: string;
+  qty?: number;
+  device_ids?: number[];
+  codes?: string[];
+  chosen?: "stack" | "scanned" | "list";
+}
+
+export interface StepPlan {
+  dry_run: boolean;
+  step: string;
+  label: string;
+  units: number;
+  chosen: string;
+  made_at: string;
+  refused: { unit: string; why: string[] }[];
+  draws: TransformDraw[];
+  value_usd: number;
+  per_unit_usd: number;
+  shortages: TransformShortage[];
+  problems: { component_id: number; name: string; needed?: number; problem: string }[];
+  step_run_id?: number;
+}
+
+export function craftReceive(runId: number, body: {
+  qty: number; made_at?: string; note?: string; dry_run: boolean;
+}): Promise<{ qty: number; received_before: number; ordered: number; over_order: boolean;
+              assembly_orders: string[] }> {
+  return request(`/api/runs/${runId}/craft/receive`, jsonBody("POST", body));
+}
+
+/** The batch's cost, step by step (decision 0060). The board and its assembly
+ *  are the assembly step's figures. */
+export interface CostByStep {
+  run_id: number;
+  total_usd: number;
+  steps: {
+    step: string; label: string; kind: string; units: number;
+    parts_usd: number; invoices_usd: number; total_usd: number; per_unit_usd: number | null;
+    invoices: { plan_key: string; name: string; usd: number }[];
+  }[];
+  origin: { usd: number; share_usd: number | null; twins: number | null;
+            lines: CraftUnlinked["lines"]; draws: CraftUnlinked["draws"] };
+  board_and_assembly_usd: number | null;
+  board_and_assembly_per_unit_usd: number | null;
+}
+
+export function getCostByStep(runId: number, signal?: AbortSignal): Promise<CostByStep> {
+  return request(`/api/runs/${runId}/craft/cost-by-step`, { signal });
+}
+
+/** Record or extend the batch's assembly step from its assembly order. */
+export function craftAssembly(runId: number, dryRun: boolean): Promise<{
+  status: string; step_run_id?: number; orders?: string[]; twins_added?: number; units?: number;
+  lines_linked?: number; draws_linked?: number;
+}> {
+  return request(`/api/runs/${runId}/craft/assembly`, jsonBody("POST", { dry_run: dryRun }));
+}
+
+/** Say which step click an invoice position paid for, or take the link away. */
+export function craftCosts(runId: number, body: {
+  step_run_ids: number[]; step_keys?: string[]; line_ids: number[]; unlink?: boolean; dry_run: boolean;
+}): Promise<{ lines: { line_id: number; label: string }[];
+              refused: { line_id: number; label: string; why: string }[] }> {
+  return request(`/api/runs/${runId}/craft/costs`, jsonBody("POST", body));
+}
+
+export function craftStep(runId: number, body: CraftSelection & {
+  step_key: string; made_at?: string; lots?: Record<string, number> | null; note?: string;
+  dry_run: boolean;
+}): Promise<StepPlan> {
+  return request(`/api/runs/${runId}/craft/step`, jsonBody("POST", body));
+}
+
+export function craftScrap(runId: number, body: CraftSelection & {
+  reason: string; dry_run: boolean;
+}): Promise<{ units: number; chosen: string }> {
+  return request(`/api/runs/${runId}/craft/scrap`, jsonBody("POST", body));
+}
+
+export function craftFinish(runId: number, body: {
+  device_ids?: number[]; codes?: string[]; chosen: "scanned" | "list"; note?: string; dry_run: boolean;
+}): Promise<{ units: number; refused: { unit: string; why: string[] }[] }> {
+  return request(`/api/runs/${runId}/craft/finish`, jsonBody("POST", body));
+}
+
+export function craftMerge(runId: number, body: {
+  stack: string; device_ids?: number[]; codes?: string[]; chosen: "scanned" | "list"; dry_run: boolean;
+}): Promise<{ units: number; stack: string }> {
+  return request(`/api/runs/${runId}/craft/merge`, jsonBody("POST", body));
+}
+
+export function craftFound(runId: number, body: {
+  qty?: number; done: string[]; origin_run_id: number; device_ids?: number[]; note: string;
+  dry_run: boolean;
+}): Promise<{ units: number; done: string[]; origin_run_id: number; named: boolean; stack?: string | null }> {
+  return request(`/api/runs/${runId}/craft/found`, jsonBody("POST", body));
+}
+
+export interface BenchStacks {
+  run_id: number;
+  crafted: boolean;
+  selected: string | null;
+  left: number | null;
+  stacks: CraftStack[];
+  /** the deployment the process's program step names (decision 0060) */
+  program_deployment: { deployment_id: number; name: string; current_version_id: number | null } | null;
+}
+
+export function getBenchStacks(runId: number, signal?: AbortSignal): Promise<BenchStacks> {
+  return request(`/api/runs/${runId}/bench-stacks`, { signal });
+}
+
+export function setBenchStack(runId: number, stack: string | null): Promise<{
+  run_id: number; stack: string | null; left?: number | null;
+}> {
+  return request(`/api/runs/${runId}/bench-stack`, jsonBody("PUT", { stack }));
+}
+
+export interface TwinStepRow {
+  step: string;
+  label: string;
+  kind: string;
+  process_version_id: number;
+  batch: string | null;
+  chosen: string;
+  made_at: string;
+  actor: string;
+  note: string;
+  parts: { component_id: number; name: string; qty: number; unit_cost_usd: number; lot: string | null }[];
+  parts_usd: number;
+  /** invoice positions that paid for the step, per unit (decision 0060) */
+  costs: { line_id: number; label: string; plan_key: string; step_name: string; supplier: string;
+           doc_number: string; usd: number;
+           /** the steps one invoice paid for together, when more than one */
+           shared_by: string[] }[];
+  costs_usd: number;
+}
+
+/** One position of the supplier's own BOM for the board's assembly order. */
+export interface TwinFitted {
+  order: string;
+  designator: string;
+  per_board: number;
+  lcsc: string;
+  mpn: string;
+  source: "our stock" | "supplier" | "both" | "unknown";
+}
+
+export interface TwinInfo {
+  origin_run_id: number;
+  origin_run: string | null;
+  run_id: number;
+  run: string | null;
+  status: string;
+  found: boolean;
+  note: string;
+  named_at: string | null;
+  finished_at: string | null;
+  price: { own_parts_usd: number; step_costs_usd: number; origin_share_usd: number; total_usd: number };
+  steps: TwinStepRow[];
+  fitted: TwinFitted[];
+}
+
+export function getDeviceTwin(deviceId: number, signal?: AbortSignal): Promise<{
+  device_id: number; twin: TwinInfo | null;
+}> {
+  return request(`/api/devices/${deviceId}/twin`, { signal });
+}
+
+
+/** A live transformation an invoice position can be aimed at (decision 0058 §4). */
+export interface TransformationOption {
+  id: number;
+  project_id: number;
+  project: string;
+  recipe_label: string;
+  made_at: string;
+  qty: number;
+  output_name: string | null;
+}
+
+export function listTransformations(signal?: AbortSignal): Promise<TransformationOption[]> {
+  return request(`/api/process-transformations`, { signal });
 }

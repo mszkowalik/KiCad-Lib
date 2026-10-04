@@ -235,8 +235,8 @@ def test_a_cancelled_position_may_not_be_charged_to_anyone(db: Session, world):
 # --------------------------------------------- the register's own arithmetic
 
 def test_the_register_identity_closes_exactly(db: Session, world):
-    """`lines == runs + projects + pool + excluded + unassigned + residual
-    - overallocated`, to the cent and beyond.
+    """`lines == runs + projects + pool + transformations + excluded + unassigned
+    + residual - overallocated`, to the cent and beyond.
 
     It used to be measured against the PRINTED total, which made it permanently
     0.0271 on the real database — five documents whose lines miss what the
@@ -247,6 +247,7 @@ def test_the_register_identity_closes_exactly(db: Session, world):
     """
     s = ra.invoice_register(db)["summary"]
     buckets = (s["to_runs_usd"] + s["to_projects_usd"] + s["to_pool_usd"]
+               + s["to_transformations_usd"]
                + s["excluded_usd"] + s["unassigned_usd"] + s["residual_usd"]
                - (s["overallocated_usd"] or 0.0))
     assert s["lines_total_usd"] == pytest.approx(buckets, abs=0.0005)

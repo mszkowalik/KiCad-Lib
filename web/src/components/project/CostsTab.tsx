@@ -25,10 +25,12 @@ import {
   type CostRevisionInfo,
   type ExtraItem,
   type ExtraItemIn,
+  type ProcessMaterial,
   type SnapshotInfo,
   getCostSteps,
   type CostStepCatalog,
 } from "../../api";
+import { usd } from "../../format";
 import DataTable from "../DataTable";
 import { ErrorBanner, Spinner } from "../Ui";
 import { StepSelect } from "../costs";
@@ -81,6 +83,8 @@ export default function CostsTab({
   const stepLabel = (key: string) =>
     stepCatalog?.steps.find((st) => st.key === key)?.label ?? key;
   const [extras, setExtras] = useState<ExtraItem[] | null>(null);
+  /** Decision 0060: with a process, the materials are its step inputs. */
+  const [fromProcess, setFromProcess] = useState<ProcessMaterial[] | null>(null);
   const [revision, setRevision] = useState<CostRevisionInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,7 +109,7 @@ export default function CostsTab({
         if (!isAbortError(err)) setError(errorMessage(err));
       });
     getExtraItems(projectId, snapshotId, signal)
-      .then((r) => setExtras(r.items))
+      .then((r) => { setExtras(r.items); setFromProcess(r.from_process ? r.process_materials : null); })
       .catch((err) => {
         if (!isAbortError(err)) setError(errorMessage(err));
       });
@@ -457,6 +461,28 @@ export default function CostsTab({
         )}
       </div>
 
+      {fromProcess ? (
+        <div className="card pad">
+          <div className="card-title">Materials from the process</div>
+          <p className="muted">
+            This project has a process, so a device's materials are the inputs of its process steps
+            (decision 0060). Change them on the Process tab. The extra items below no longer price the
+            device; delete them once you have checked them.
+          </p>
+          <DataTable
+            rows={fromProcess}
+            rowKey={(m) => m.key}
+            empty="The process adds no parts."
+            columns={[
+              { key: "label", label: "Step: part", width: 50, get: (m) => m.label, title: (m) => m.notes },
+              { key: "qty", label: "Per device", width: 12, numeric: true, get: (m) => m.qty },
+              { key: "price", label: "Pool average", width: 14, numeric: true, get: (m) => m.unit_price_usd ?? 0,
+                render: (m) => (m.unit_price_usd != null ? usd(m.unit_price_usd) : "—") },
+            ]}
+          />
+        </div>
+      ) : null}
+
       <div className="card pad">
         <div className="card-title">Extra BOM items</div>
         <p className="muted">
@@ -563,6 +589,8 @@ export default function CostsTab({
         <div className="btn-row">
           <button
             className="btn btn-sm btn-primary"
+            disabled={!!fromProcess && !showExtraForm}
+            title={fromProcess ? "this project has a process: add the part to a process step" : undefined}
             onClick={() => {
               if (showExtraForm) {
                 setEditExtraId(null);

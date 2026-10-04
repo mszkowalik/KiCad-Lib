@@ -11,6 +11,7 @@ import {
 } from "../api";
 import { BackLink, ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import DeviceHistoryCard from "../components/DeviceHistoryCard";
+import TwinCard from "../components/TwinCard";
 import DevicePresenceCard from "../components/DevicePresenceCard";
 import CheckGrid from "../components/flasher/CheckGrid";
 import { fmtDuration, fmtWhen } from "../components/flasher/common";
@@ -223,6 +224,7 @@ export default function DeviceDetail() {
               the programming history gets the rest of the column. */}
           <div className="detail-right detail-right-fit">
             <DeviceHistoryCard deviceId={deviceId} serial={device.serial || device.mac} />
+            <TwinCard deviceId={deviceId} />
             {/* The broker's live view. Deliberately NOT merged into the check
                 grid or the identity table: those are what the bench proved and
                 they never change, this is a cache that can be stale or absent. */}

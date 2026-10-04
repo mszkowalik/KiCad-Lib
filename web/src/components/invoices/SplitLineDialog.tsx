@@ -36,8 +36,7 @@ import {
   ChargeToSelect,
   ExcludeReasonInput,
   StepSelect,
-  type RunOption,
-} from "../costs";
+  type RunOption, type TransformOption } from "../costs";
 import { useModal } from "../modal";
 
 /** Templates come from the production-step catalog (`/api/cost-steps`): the
@@ -65,7 +64,8 @@ interface Row {
   percent: string;
   /** production-step key ("pcba:setup"); becomes the child's plan_key */
   step: string;
-  /** "" | "run:<id>" | "project:<id>" | "excluded" */
+  /** "" | "run:<id>" | "project:<id>" | "t:<id>" (a conversion cost,
+   *  decision 0058) | "excluded" */
   dest: string;
   /** WHY, when `dest` is "excluded". The API refuses an exclusion without it. */
   reason: string;
@@ -101,13 +101,15 @@ function floor4(v: number): number {
 const EPS = 1e-6;
 
 export default function SplitLineDialog({
-  line, parentAmount, currency, runs, projects, existing, onClose,
+  line, parentAmount, currency, runs, projects, existing, onClose, transformations = [],
 }: {
   line: RunCostLineRow;
   parentAmount: number;
   currency: string;
   runs: RunOption[];
   projects: { id: number; name: string }[];
+  /** live transformations, for a conversion cost (decision 0058 §4) */
+  transformations?: TransformOption[];
   existing: RunCostLineRow[];
   onClose: (doc: RunCostDocumentRow | null) => void;
 }) {
@@ -128,7 +130,8 @@ export default function SplitLineDialog({
           step: c.plan_key && c.plan_key.includes(":") ? c.plan_key : "",
           dest: c.allocate === "excluded"
             ? "excluded"
-            : c.run_id ? `run:${c.run_id}` : c.project_id ? `project:${c.project_id}` : "",
+            : c.transformation_id ? `t:${c.transformation_id}`
+              : c.run_id ? `run:${c.run_id}` : c.project_id ? `project:${c.project_id}` : "",
           reason: c.exclude_reason || "",
           notes: c.notes,
         }))
@@ -258,6 +261,7 @@ export default function SplitLineDialog({
         exclude_reason: r.dest === "excluded" ? r.reason.trim() : undefined,
         run_id: kind === "run" ? Number(id) : null,
         project_id: kind === "project" ? Number(id) : null,
+        transformation_id: kind === "t" ? Number(id) : null,
         notes: r.notes.trim(),
       };
     });
@@ -417,6 +421,7 @@ export default function SplitLineDialog({
                     <ChargeToSelect
                       runs={runs}
                       projects={projects}
+                      transformations={transformations}
                       value={r.dest}
                       emptyLabel="— nobody yet —"
                       onChange={(dest) => patch(i, { dest })}

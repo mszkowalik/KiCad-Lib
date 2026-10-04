@@ -81,6 +81,11 @@ def _run_json(r: M.ProductionRun, db: Session | None = None, with_detail: bool =
         # this when it starts, so changing it here only affects work still to
         # be done.
         "requires_test": bool(r.requires_test),
+        # Decision 0059: a batch with a process version is CRAFTED step by step;
+        # `bench_stack` is the stack the programming bench names twins from,
+        # set on the bench (PUT /runs/{id}/bench-stack).
+        "process_version_id": r.process_version_id,
+        "bench_stack": r.bench_stack or None,
         # THE BOOKS ON THIS BATCH (decision 0044). `closed_at` set means every
         # document charging it, written before that moment, is read-only: its
         # per-device cost has been carried onto orders and must not move without
@@ -274,7 +279,13 @@ def create_run(project_id: int, body: RunIn, db: Session = Depends(get_db)):
                   {"project_id": project_id, "label": body.label, **problems})
     data = body.model_dump()
     data.pop("ack_review", None)  # gate flag, not a run column
-    r = M.ProductionRun(project_id=project_id, requires_test=requires_test, **data)
+    # Decision 0058: a batch resolves its project's process version when it
+    # starts, and is judged against that one even after the process changes.
+    from ..services import process as process_svc
+
+    pv = process_svc.current_version(db, project_id)
+    r = M.ProductionRun(project_id=project_id, requires_test=requires_test,
+                        process_version_id=pv.id if pv else None, **data)
     db.add(r)
     db.flush()
     # economics are not stored — they resolve from price history at the
@@ -441,6 +452,10 @@ def close_run(run_id: int, body: ClosePatch | None = None, db: Session = Depends
                      f"({r.closed_at.isoformat()[:10]}, by {r.closed_by or 'unknown'}).",
         })
     cost_usd, units = run_actuals.close_snapshot(db, r)
+    # Decision 0059 §13: closing freezes the origin share of every twin.
+    from ..services import twins as twins_svc
+
+    r.closed_twin_share_usd = twins_svc.freeze_share(db, r) if r.process_version_id else None
     r.closed_at = M.utcnow()
     r.closed_by = acting_name()
     r.closed_cost_usd = cost_usd
@@ -473,6 +488,7 @@ def reopen_run(run_id: int, body: ClosePatch | None = None, db: Session = Depend
     r.closed_by = ""
     r.closed_cost_usd = None
     r.closed_units = None
+    r.closed_twin_share_usd = None
     db.commit()
     return _run_json(r, db, with_detail=True)
 

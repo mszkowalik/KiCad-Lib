@@ -76,6 +76,21 @@ IDENTITY_VARS = {
 }
 
 
+def devices_by_topic(db, project_id: int, topic: str) -> list:
+    """The project's devices a Tasmota topic names: the exact `tasmota_id`
+    first, then the serial after the last underscore (`dongle_<serial>`).
+    Used for a run that never reads a MAC (decision 0061); the caller takes a
+    unit only when exactly one matches."""
+    t = (topic or "").strip()
+    if not t:
+        return []
+    q = db.query(M.DeviceUnit).filter(M.DeviceUnit.project_id == project_id)
+    hits = q.filter(M.DeviceUnit.tasmota_id == t).all()
+    if not hits and "_" in t:
+        hits = q.filter(M.DeviceUnit.serial == t.rsplit("_", 1)[1].upper()).all()
+    return hits
+
+
 # What a serial may be, for anything that goes ON a part. Eight to twelve
 # characters, no spaces (user decision 2026-09-17). A V2 dongle's MAC is twelve
 # hex characters; shorter product serials exist, and something outside this
@@ -650,18 +665,73 @@ class RunEngine:
                 dev = db.get(M.DeviceUnit, run.device_unit_id)
                 dev.last_seen = utcnow()
                 dev.last_status = status
+                dv = (db.get(M.DeploymentVersion, run.deployment_version_id)
+                      if run.deployment_version_id else None)
+                dep = db.get(M.Deployment, dv.deployment_id) if dv is not None else None
+                kind = (dep.kind if dep is not None else None) or "flash"
                 # Decision 0003 §5: the first PASS in a batch is the device's
                 # `produced` event — it enters finished-goods stock at that
                 # run's per-device cost, and nobody has to record it by hand.
-                if status == "pass" and run.production_run_id and not run.draft_run:
+                # Only a PROGRAMMING pass: a test or a marking run that found its
+                # unit by the topic (decision 0061) never produces or names it.
+                if status == "pass" and run.production_run_id and not run.draft_run and kind == "flash":
                     from ..orders import mark_produced
+                    ev = None
                     try:
-                        mark_produced(db, dev, run.production_run_id, actor=run.operator or "flasher",
-                                      note=f"passed programming run #{run.id}")
+                        ev = mark_produced(db, dev, run.production_run_id,
+                                           actor=run.operator or "flasher",
+                                           note=f"passed programming run #{run.id}")
                     except Exception as e:  # noqa: BLE001 — a history conflict must not fail the run
                         import logging
                         logging.getLogger(__name__).warning(
                             f"device {dev.id}: produced event not written: {e}")
+                    # Decision 0059 §7: a NEW produced event names one twin of the
+                    # batch's selected stack, in this same transaction. A reflash
+                    # returns no event and names nothing. The naming sits in its
+                    # own savepoint after the event is flushed: if it fails, the
+                    # device stays produced (a true fact) and shows as a gap.
+                    if ev is not None:
+                        from .. import twins as _twins
+
+                        batch = db.get(M.ProductionRun, run.production_run_id)
+                        db.flush()
+                        try:
+                            with db.begin_nested():
+                                _twins.name_at_bench(db, dev, ev, batch)
+                        except Exception as e:  # noqa: BLE001 — never fail the run on bookkeeping
+                            import logging
+                            logging.getLogger(__name__).warning(
+                                f"device {dev.id}: twin not named: {e}")
+                # The marking bench engraved or labelled this device: its twin
+                # records the matching process steps (0059 §5). Recorded from
+                # what the run DID, whatever its final status.
+                if self.results.get("marked") or self.results.get("printed"):
+                    from .. import twins as _twins
+
+                    try:
+                        with db.begin_nested():
+                            _twins.record_marking(db, dev, laser=bool(self.results.get("marked")),
+                                                  label=bool(self.results.get("printed")),
+                                                  deployment_id=dv.deployment_id if dv else None,
+                                                  actor=run.operator or "",
+                                                  copies=int(self.results.get("label_copies") or 1))
+                    except Exception as e:  # noqa: BLE001
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            f"device {dev.id}: marking steps not recorded: {e}")
+                # A test procedure passed: its twin records the process's test
+                # step (decision 0061).
+                if status == "pass" and kind == "test" and not run.draft_run:
+                    from .. import twins as _twins
+
+                    try:
+                        with db.begin_nested():
+                            _twins.record_test(db, dev, deployment_id=dep.id if dep is not None else None,
+                                               actor=run.operator or "")
+                    except Exception as e:  # noqa: BLE001
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            f"device {dev.id}: test step not recorded: {e}")
             # The green/red grid the device view shows. Derived here so it exists
             # for a run that died mid-way too: the steps that did pass still
             # prove their functionality, and the rest go grey.
@@ -709,7 +779,8 @@ class RunEngine:
             # `dev.events` and the batch, and the answer must come from the
             # state this run just wrote, not from a later one.
             found = bench_checks.for_device(db, run, dev, created=created,
-                                            project_id=self.spec["project_id"])
+                                            project_id=self.spec["project_id"],
+                                            ops={st.get("op") for st in self.spec["steps"]})
             return dev.id, found
 
         self.device_unit_id, found = await self._db(upsert)
@@ -722,7 +793,48 @@ class RunEngine:
         self.results["chip"] = chip
         self.results["mac"] = mac_norm
 
+    async def _register_by_topic(self, topic: str) -> None:
+        """Find the unit by its Tasmota topic when the run never read a MAC.
+
+        A marking or a test procedure talks to the firmware and reads only the
+        topic (`dongle_<serial>`), so it never reaches `_register_device`, and
+        until 2026-10-04 none of the 259 live marking runs was linked to a
+        device — the marking steps were never recorded on a twin (decision
+        0061). Only an EXISTING device of this project is taken: the exact
+        topic first, then the serial after the last underscore. Nothing is
+        created, and no match leaves the run unlinked, as before."""
+        t = (topic or "").strip()
+        if not t:
+            return
+
+        def find(db):
+            hits = devices_by_topic(db, self.spec["project_id"], t)
+            if len(hits) != 1:
+                return None, [], len(hits)
+            dev = hits[0]
+            run = db.get(M.ProgrammingRun, self.run_id)
+            run.device_unit_id = dev.id
+            run.attempt_no = (db.query(M.ProgrammingRun)
+                              .filter(M.ProgrammingRun.device_unit_id == dev.id,
+                                      M.ProgrammingRun.id != self.run_id).count() + 1)
+            found = bench_checks.for_device(db, run, dev, created=False,
+                                            project_id=self.spec["project_id"],
+                                            ops={st.get("op") for st in self.spec["steps"]})
+            return dev.id, found, 1
+
+        dev_id, found, n = await self._db(find)
+        if dev_id is None:
+            self.log("app", f"no single device of this project carries the topic {t!r} "
+                            f"({n} found): the run is not linked to a unit")
+            return
+        self.device_unit_id = dev_id
+        self.log("app", f"unit identified by its topic {t!r}")
+        for n_ in found:
+            await self.notice(n_)
+
     async def _store_identity(self, names: dict[str, Any]) -> None:
+        if not self.device_unit_id and names.get("topic"):
+            await self._register_by_topic(str(names["topic"]))
         cols = {IDENTITY_VARS[k]: str(v) for k, v in names.items()
                 if k in IDENTITY_VARS and v not in (None, "")}
         if not cols or not self.device_unit_id:
@@ -989,6 +1101,9 @@ class RunEngine:
         info = await self.action("print_label", args,
                                  timeout=max(timeout, args["job_timeout"] + 30))
         self.results["printed"] = value
+        # How many labels left the roll: the label step draws one per copy
+        # (decision 0061).
+        self.results["label_copies"] = args["copies"]
         if info.get("roll"):
             self.results["label_roll"] = info["roll"]
         if info.get("printer"):

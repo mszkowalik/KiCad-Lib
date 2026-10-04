@@ -1,5 +1,112 @@
 # Changelog
 
+## 2026-10-03 (every unit has a twin, and the process is the one source of its history and cost)
+
+Not deployed yet. Decisions
+[0058](docs/decisions/0058-a-process-is-versioned-stages-over-the-pool.md),
+[0059](docs/decisions/0059-every-unit-has-a-twin-and-programming-names-it.md),
+[0060](docs/decisions/0060-the-process-is-the-one-source-of-history-materials-and-cost.md) and
+[0061](docs/decisions/0061-an-invoice-can-pay-for-several-steps-and-the-benches-record-theirs.md)
+(accepted). The rules are in
+[docs/reference/processes.md](docs/reference/processes.md).
+
+- **A project has a production process.** Project → Process shows a library of
+  steps and the main route through them. Each step states where it is done
+  (batch, programming bench, marking bench), what a unit needs before it, the
+  parts it adds per unit, and whether it is required. Two steps can be the
+  options of one choice, for example a sticker OR a UV print. Steps happen in
+  any order that their needs allow. A process is versioned: an edit makes a
+  draft, and publishing needs a comment and a clean check. A batch records
+  the version in effect when it is created.
+- **Every unit has a twin from its first step.** Batch → Process is where a
+  batch is crafted. "Receive boards…" makes one twin per board. Before
+  programming, units are taken as "N from this stack", because nothing on an
+  unprogrammed board says which one it is. After programming, devices are
+  chosen by a scanned label or MAC, or picked from a list, and the twin
+  records which. Every click is done by a person, even for a batch built in
+  one sitting.
+- **The programming bench names the twin.** The bench page and Batch → Process
+  select the stack the bench programs from, which can belong to another batch
+  of the project. Each board programmed takes one unit of it. When the stack
+  is used up, or none is selected, the bench warns and never blocks. The
+  device then shows as a gap on its batch, and "Merge…" gives it a unit from
+  a stack later. The marking bench records the engraving and the label on the
+  twin.
+- **"Finished" is a step a person does.** "Mark finished…" takes the devices
+  selected by name, MAC or barcode, and refuses one that misses a required
+  step. A shipment refuses a device that has a twin and is not finished.
+  Devices made before twins ship as before.
+- **Each device has its own price.** A twin's price is the parts its steps
+  drew for it, plus an equal share of its origin batch cost: what the batch
+  its board came from was charged, minus the step draws. Scrapped units are
+  carried by the good units of their origin batch. A unit programmed in
+  another batch keeps its origin share. Closing a batch freezes the share. An
+  order's margin uses the twin's price, and the batch average stays for
+  devices made before twins. The device page shows "How it was built": each
+  step, its parts and their cost, and how the unit was chosen.
+- **The board's assembly is the first step of every process.** Receiving the
+  boards records it from the batch's JLC order: the parts JLC drew from our
+  stock, each from its lot, and every board and assembly charge of the batch
+  (setup, stencil, SMT placement, the parts JLC bought, and so on). The device
+  page shows these fees on the step, and lists what JLC fitted on the board,
+  position by position, from JLC's own BOM.
+- **An invoice position can name the steps it paid for.** Batch → Process lists
+  what is charged to the batch and linked to no step, and "Link to steps…"
+  points a position at one or several step clicks. The final assembler's
+  invoice pays for programming, the enclosure, the laser mark and the label
+  at once, and the units of all those clicks share it.
+  What no step claims (freight, customs, discounts) stays the origin batch
+  cost, split over every unit. A twin's price is now its parts, plus the
+  invoices of its steps, plus its origin share.
+- **Batch → Process shows the cost by step.** The board and its assembly are
+  read from the assembly step, and the rows add up to the batch's total.
+- **Old batches can be rebuilt into twins from their records**
+  (`POST /api/runs/{id}/rebuild`, dry run by default, with an undo). Each
+  device the batch produced gets a twin with the steps its records prove:
+  the assembly from the batch's invoices, each step with parts from the
+  batch's draws, programming from the device's own record, and finished per
+  the device record, and the steps you state (laser mark, label, the Aqua
+  test, and the leaflet on devices programmed since 2025-04-15). It moves no
+  money except the draws of a stated step whose parts came from our stock
+  (the labels on in-house Batch 8), and it is refused unless the twins'
+  prices add up to the batch's total. Not run on production yet.
+- **The processes have an optional instruction leaflet step**, after the
+  carton.
+- **The marking bench records its steps.** A marking or test run now finds
+  its unit by the Tasmota topic it reads; before, no marking run was linked
+  to a device, so nothing was recorded. The label step takes a label from
+  stock, and says so on the step when there is none. A passing test run
+  records the new "test" step, which the Aqua process has.
+- **Bench steps name their deployment.** In the process, a programming step
+  names a flash deployment, and a laser marking or label step names a mark
+  deployment. The map links to it. The programming bench starts on the
+  version the process names. The marking bench records the step of its
+  deployment and warns when a unit has not done what that step needs, for
+  example laser marking before the enclosure.
+- **Materials come from the process.** For a project with a process, a
+  device's materials are the inputs of its process steps: the BOM and the
+  Costs tab read them from there, and a new extra BOM item is refused. A
+  crafted batch takes parts only through its steps: "Draw from pool", "Draw
+  BOM from pool" and a typed Used quantity are gone from its Materials tab,
+  and the API refuses them.
+- **A step can draw a part the library does not hold**, by the MPN its
+  purchases carry. The shipping cartons are drawn this way.
+- **Prepared parts are stock.** A part made before it meets a device, for
+  example an enclosure with its antenna fitted, is an internal part with a
+  recipe. "Make…" draws the inputs and makes a lot that is worth what they
+  cost. "Bank found…" enters units that exist but that nothing recorded, at
+  zero value by default. "Take stock…" corrects the lots to a shelf count. A
+  step that uses a prepared part takes one lot per click.
+- **"Enter found units…" enters units that exist but that no batch crafted**,
+  as twins at zero value, with the steps they already have.
+- **An invoice position can be a conversion cost.** On Invoices, "Goes to" can
+  name a prepared-part transformation, for example a UV-print service. Its
+  money becomes part of that lot. The register has a new column,
+  "Conversion", and the gap check includes it.
+- **Correction: a draw priced at exactly zero was valued at the average.** The
+  stock replay read a 0.0 price as unknown. No draw on production had a 0.0
+  price, so no figure changed.
+
 ## 2026-10-03 (the Aqua stock correction, and the bench reads a C6's real MAC)
 
 - **The CE_Aqua_V2 records match the 2026-10-02 shelf count.** 18 units found

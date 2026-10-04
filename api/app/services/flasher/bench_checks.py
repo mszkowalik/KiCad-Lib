@@ -50,7 +50,7 @@ def _notice(level: str, code: str, text: str, hint: str = "", **data) -> dict:
 
 
 def for_device(db: Session, run: M.ProgrammingRun, dev: M.DeviceUnit, *,
-               created: bool, project_id: int) -> list[dict]:
+               created: bool, project_id: int, ops: set[str] | None = None) -> list[dict]:
     """Everything worth saying about this unit, most serious first.
 
     `created` distinguishes a board the platform has never seen from one it
@@ -73,8 +73,53 @@ def for_device(db: Session, run: M.ProgrammingRun, dev: M.DeviceUnit, *,
 
     if not created:
         out.extend(_about_a_known_unit(db, dev, batch))
+        out.extend(_about_the_process(db, run, dev, ops or set()))
     if batch is not None:
-        out.extend(_about_the_batch(db, batch, dev, created=created))
+        out.extend(_about_the_batch(db, batch, dev, created=created, run=run))
+    return out
+
+
+#: Bench op → the process step kind it performs (decision 0060).
+_OP_KIND = {"mark_laser": "mark_laser", "print_label": "label"}
+
+
+def _about_the_process(db: Session, run: M.ProgrammingRun, dev: M.DeviceUnit,
+                       ops: set[str]) -> list[dict]:
+    """A marking run performs a process step on the unit's twin. Say so when the
+    twin has not done what that step needs — laser marking before the
+    enclosure, say. A warning, never a block (decision 0037): the mark is made
+    either way, but the step is only recorded once its needs are met."""
+    from .. import process as _process
+    from .. import twins as _twins
+
+    kinds = [_OP_KIND[o] for o in sorted(ops) if o in _OP_KIND]
+    if not kinds:
+        return []
+    tw = db.query(M.Twin).filter_by(device_unit_id=dev.id).first()
+    if tw is None or tw.status != "active":
+        return []
+    batch = db.get(M.ProductionRun, tw.run_id)
+    v = (db.get(M.ProcessVersion, batch.process_version_id)
+         if batch is not None and batch.process_version_id else None)
+    if v is None:
+        return []
+    graph = _process._graph(v)
+    dv = db.get(M.DeploymentVersion, run.deployment_version_id) if run.deployment_version_id else None
+    done = _twins.done_steps(db, [tw.id])[tw.id]
+    out: list[dict] = []
+    for kind in kinds:
+        step = _process.step_for_deployment(graph, kind, dv.deployment_id if dv else None)
+        if step is None or step["key"] in done:
+            continue
+        why = _twins.needs_met(graph, step, done)
+        if why:
+            name = step.get("label") or step["key"]
+            out.append(_notice(
+                "warn", "process_needs",
+                f"{dev.serial or dev.mac} is not ready for {name!r}: {'; '.join(why)}.",
+                f"Do the missing step first. If you go on, the unit is marked, but {name!r} is "
+                f"not recorded on it in {batch.label}.",
+                twin_run_id=batch.id, step=step["key"], missing=why))
     return out
 
 
@@ -138,11 +183,37 @@ def _about_a_known_unit(db: Session, dev: M.DeviceUnit,
     return out
 
 
+def _run_kind(db: Session, run: M.ProgrammingRun | None) -> str:
+    """The kind of the run's deployment (flash, test, mark). Only a flash pass
+    produces a device and names a twin (decision 0061)."""
+    dv = db.get(M.DeploymentVersion, run.deployment_version_id) if run and run.deployment_version_id else None
+    dep = db.get(M.Deployment, dv.deployment_id) if dv is not None else None
+    return (dep.kind if dep is not None else None) or "flash"
+
+
 def _about_the_batch(db: Session, batch: M.ProductionRun, dev: M.DeviceUnit, *,
-                     created: bool) -> list[dict]:
+                     created: bool, run: M.ProgrammingRun | None = None) -> list[dict]:
     out: list[dict] = []
     n = (db.query(func.count(M.DeviceUnit.id))
          .filter(M.DeviceUnit.production_run_id == batch.id).scalar() or 0)
+
+    # Decision 0059 §7: in a crafted batch, a unit produced here takes a twin
+    # from the batch's selected stack. No stack, or a used-up one, is said out
+    # loud and never blocks — the device is real either way, and it shows as a
+    # gap on the batch until a merge.
+    will_produce = created or not any(e.kind == "produced" for e in dev.events)
+    if will_produce and batch.process_version_id and _run_kind(db, run) == "flash":
+        from .. import twins as _twins
+
+        left = _twins.bench_stack_left(db, batch)
+        if left is None or left < 1:
+            out.append(_notice(
+                "warn", "stack_empty" if left is not None else "no_stack",
+                (f"The stack {batch.label} programs from is used up."
+                 if left is not None else f"{batch.label} has no stack selected."),
+                "Choose the next stack on the bench page before you go on. If you go on "
+                "anyway, the device is recorded without a twin and the batch shows a gap.",
+                run_id=batch.id, stack=batch.bench_stack or None))
 
     # The check that would have stopped 2026-09-17, when the bench had Batch 8
     # selected — a batch whose boards had not been delivered — and 31 units were

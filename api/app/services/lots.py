@@ -53,6 +53,9 @@ def lot_state(db: Session, as_of: str | None = None) -> dict:
     permanently unallocatable).
     """
     events, doc_by_id, surcharge = run_actuals._pool_events(db)
+    # A transformation's output lot also carries its conversion cost (decision
+    # 0058 §4), added on read exactly like a purchase's freight share.
+    extras = run_actuals.conversion_extras_usd(db)
 
     # One rate table per distinct event date — the same shape `pool_state` uses,
     # so a lot's landed cost is derived by exactly the code that values the pool.
@@ -94,15 +97,15 @@ def lot_state(db: Session, as_of: str | None = None) -> dict:
         elif kind == "adj" and (row.qty_delta or 0) > 0:
             key = _lot_key("A", row.id)
             qty = row.qty_delta or 0.0
-            unit = row.unit_cost_usd or 0.0
+            value = qty * (row.unit_cost_usd or 0.0) + extras.get(row.id, 0.0)
             lots[key] = {
                 "key": key, "kind": "adjustment", "id": row.id,
                 "date": when, "lcsc": row.lcsc or "", "mpn": row.mpn or "",
                 "component_id": row.component_id,
                 "lot_ref": "", "document_id": None,
                 "qty_bought": qty,
-                "unit_cost_usd": unit,
-                "value_bought": round(qty * unit, 6),
+                "unit_cost_usd": round(value / qty, 8) if qty else 0.0,
+                "value_bought": round(value, 6),
                 "qty_assigned": 0.0, "value_assigned": 0.0,
                 "unknown_rate": False,
                 "reason": row.reason or "",

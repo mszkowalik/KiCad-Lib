@@ -5,6 +5,7 @@
  *  Right: the composed view of the selected version.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   createDeployment,
   deleteDeployment,
@@ -60,6 +61,16 @@ export default function Deployments() {
   const [error, setError] = useState<string | null>(null);
   const [projectId, setProjectId] = useStickyState<number | null>("depl.project", null);
   const [selectedId, setSelectedId] = useStickyState<number | null>("depl.selected", null);
+  // A link from a process step (decision 0060) names the project and the
+  // deployment; it wins over the remembered selection, once.
+  const [params] = useSearchParams();
+  useEffect(() => {
+    const p = Number(params.get("project"));
+    const d = Number(params.get("deployment"));
+    if (p) setProjectId(p);
+    if (d) setSelectedId(d);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
   const [versionId, setVersionId] = useState<number | null>(null);
   /** True while the POST that mints a draft is in flight. There is no modal
    *  any more: `New version` creates the draft, selects it, and the right-hand

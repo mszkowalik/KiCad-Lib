@@ -256,7 +256,7 @@ and no invoice ever backed them, so no revenue figure moved.
 
 The 4 erased v3.3 units (`d3:d1:9c`, `d3:8e:68`, `d3:36:ac`, `d2:79:08`)
 remain without a known build. It only matters for the cost note when they
-are banked as pool WIP under 0058 — like the 63 bare Aquas, they get no
+are entered as found units under 0059 — like the 63 bare Aquas, they get no
 device records now. The 3 dead v3.1 desk units could not be read and have
 no MACs recorded anywhere.
 
@@ -272,10 +272,17 @@ Stated by the user, not verified against the platform yet.
 | Italtronic 35.0207000.BL (Dongle V2 enclosure), last delivery | 400 loose + 200 fitted to units in production = 600 from that delivery | as the user stated it: 400 enter the pool as raw parts, 200 sit inside unprogrammed WIP devices |
 | Loose small enclosures, marking-calibration rejects | count them when disposing (user, 2026-10-03) | attrition: to be disposed of, not sellable |
 
-Still open: whether any Aqua spares are written off rather than kept. The
-packaging rows above enter the pool in phase 1 of decision
-[0058](../decisions/0058-a-process-is-versioned-stages-over-the-pool.md), at
-zero value where their cost sits in closed books.
+Still open: whether any Aqua spares are written off rather than kept. Under
+decision
+[0059](../decisions/0059-every-unit-has-a-twin-and-programming-names-it.md)
+(built 2026-10-03, not deployed), the spare units enter as twins at zero
+value on a crafted batch (Batch → Process → "Enter found units…"), with the
+steps they already have and their closed origin batch named. The packaging
+rows are a stocktake of each part, because steps draw packaging from the
+pool ([processes.md](processes.md)).
+The pool books 410 Molex 146153-0150 antennas and 387 + 365 Aqua enclosure
+halves, against 48 antennas and 200 pairs on the shelf (local copy of
+production, 2026-10-03) — the packaging stocktake has to settle that.
 
 ## Found on the way
 

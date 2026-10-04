@@ -19,6 +19,31 @@ Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model
   text set by hand, and every batch here that has devices was still `planned`
   when its first unit was programmed.
 
+- **A NEW `produced` event names one twin of the batch's selected stack**
+  (`twins.name_at_bench`, decision 0059), in a savepoint after the event is
+  flushed, so a failure there never loses the produced fact. No stack, or a
+  used-up one, warns at the MAC read (`no_stack`, `stack_empty`) and leaves a
+  gap that a merge closes. It never blocks and never invents a twin. Rules in
+  [docs/reference/processes.md](../../../../docs/reference/processes.md).
+
+- **A run that reads no MAC is linked to its unit by the topic it captures**
+  (`_register_by_topic`, decision 0061). The marking and test procedures read
+  only the Tasmota topic; before 2026-10-04 none of the 259 live marking runs
+  had a device, so nothing was recorded on a twin. It takes only one existing
+  device of the run's project. **Only a pass of a `flash` deployment writes the
+  `produced` event** — keep that guard, or a test pass in a batch names a twin.
+  For the same reason `bench_checks` gives `no_stack`/`stack_empty` only to a
+  flash run. `_print_label` records `label_copies`, and the label step draws
+  one label per copy.
+
+- **A marking run performs the process step that names its deployment**
+  (decision 0060). `_finalize` passes the run's deployment to
+  `twins.record_marking`, and a passing `test` run calls `twins.record_test`, and `bench_checks._about_the_process` warns
+  (`process_needs`) at the MAC read when the twin has not done what that step
+  needs. It checks only the steps whose op the run will execute
+  (`mark_laser`, `print_label`, after the bench's `skip_ops`), so "Print
+  label" alone never warns about the enclosure.
+
 - **"Which devices did this batch BUILD?" and "which did it PROGRAM?" are two
   questions with two answers.** Built is `DeviceUnit.production_run_id`, set
   once from the `produced` event and never moved by a later pass — it carries

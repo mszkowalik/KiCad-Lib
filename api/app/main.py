@@ -33,6 +33,7 @@ from .routers import (
     libraries,
     models3d,
     mqtt,
+    process as process_router,
     production_runs,
     projects,
     reviews,
@@ -112,6 +113,7 @@ app.include_router(suppliers.router)
 app.include_router(git_credentials.router)
 app.include_router(account.router)
 app.include_router(production_runs.router)
+app.include_router(process_router.router)
 app.include_router(jlc_stock.router)
 app.include_router(jlc_web.router)
 app.include_router(jlc_import.router)
@@ -665,6 +667,27 @@ _PHASE1_DDL = (
     # sent. Every existing row was a delivery that had left, hence 'sent'.
     ("shipments.status",
      "ALTER TABLE shipments ADD COLUMN IF NOT EXISTS status varchar(12) NOT NULL DEFAULT 'sent'"),
+    # Decision 0058: production processes. The new tables arrive through
+    # `create_all`; these are the links on tables that already existed.
+    ("components.internal",
+     "ALTER TABLE components ADD COLUMN IF NOT EXISTS internal boolean NOT NULL DEFAULT false"),
+    ("component_consumptions.transformation_id",
+     "ALTER TABLE component_consumptions ADD COLUMN IF NOT EXISTS transformation_id integer"),
+    ("component_consumptions.step_run_id",
+     "ALTER TABLE component_consumptions ADD COLUMN IF NOT EXISTS step_run_id integer"),
+    ("ix_consumption_step_run",
+     "CREATE INDEX IF NOT EXISTS ix_consumption_step_run "
+     "ON component_consumptions (step_run_id) WHERE step_run_id IS NOT NULL"),
+    ("component_stock_adjustments.transformation_id",
+     "ALTER TABLE component_stock_adjustments ADD COLUMN IF NOT EXISTS transformation_id integer"),
+    ("production_runs.process_version_id",
+     "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS process_version_id integer"),
+    ("run_cost_lines.transformation_id",
+     "ALTER TABLE run_cost_lines ADD COLUMN IF NOT EXISTS transformation_id integer"),
+    ("production_runs.bench_stack",
+     "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS bench_stack varchar(400) NOT NULL DEFAULT ''"),
+    ("production_runs.closed_twin_share_usd",
+     "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS closed_twin_share_usd double precision"),
     # LAST. Everything above reads `kind`; nothing below may.
     #
     # The index on it goes first and by name: `create_all` cannot drop an index

@@ -1046,7 +1046,7 @@ def backfill_fee_split(db: Session, row: M.JlcImport, actor: str = "jlc-import",
             # Written on a dry run too — the conservation check below then tests
             # the REAL rows, and the rollback discards them (same contract as
             # `apply_parts_document`: the preview runs the real code path).
-            db.add(M.RunCostLine(
+            child = M.RunCostLine(
                 document_id=doc.id,
                 parent_line_id=target.id,
                 run_id=target.run_id,
@@ -1062,7 +1062,14 @@ def backfill_fee_split(db: Session, row: M.JlcImport, actor: str = "jlc-import",
                 notes=("Backfilled from JLC's order fee breakdown "
                        f"(key '{c['slug']}'); destination inherited from the "
                        "line it splits."),
-            ))
+            )
+            db.add(child)
+            # Decisions 0060/0061: the fee keeps the step clicks its line paid for.
+            links = db.query(M.CostLineStep.step_run_id).filter_by(line_id=target.id).all()
+            if links:
+                db.flush()
+                for (srid,) in links:
+                    db.add(M.CostLineStep(line_id=child.id, step_run_id=srid))
         made += len(planned)
         value = round(value + sum(c["amount"] for c in base_kids), 2)
         results.append({"key": key, "line_id": target.id, "status": "split",

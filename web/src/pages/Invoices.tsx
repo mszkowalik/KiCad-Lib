@@ -32,6 +32,8 @@ import {
   type InvoiceRegister,
   type RunCostDocumentRow,
   type RunCostLineRow,
+  listTransformations,
+  type TransformationOption,
 } from "../api";
 import { CheckField } from "../components/Field";
 import { useDialog } from "../components/Dialog";
@@ -197,6 +199,15 @@ export default function Invoices() {
       }))
       .sort((a, b) => a.project_name.localeCompare(b.project_name) || a.label.localeCompare(b.label));
   }, [reg]);
+
+  // Live transformations, for a conversion cost (decision 0058 §4). Not
+  // critical: without them a position simply cannot be aimed at one.
+  const [transformOpts, setTransformOpts] = useState<TransformationOption[]>([]);
+  useEffect(() => {
+    const ac = new AbortController();
+    listTransformations(ac.signal).then(setTransformOpts).catch(() => undefined);
+    return () => ac.abort();
+  }, []);
 
   const projectOptions = useMemo(
     () =>
@@ -405,6 +416,8 @@ export default function Invoices() {
       dest.push(`${reg.projects[pid] || `project ${pid}`}: ${plain(amount)}`);
     }
     if (a.pool) dest.push(`pool: ${plain(a.pool)}`);
+    // Conversion costs (decision 0058 §4): money in a production stage's lot.
+    if (a.transformation) dest.push(`stages: ${plain(a.transformation)}`);
     if (a.excluded) dest.push(`excluded: ${plain(a.excluded)}`);
     return dest.join(" · ") || "—";
   };
@@ -422,6 +435,7 @@ export default function Invoices() {
     }
     for (const [pid] of Object.entries(a.by_project)) dest.push(`project ${pid}`);
     if (a.pool) dest.push("pool");
+    if (a.transformation) dest.push("stages");
     return dest.length === 0;
   };
 
@@ -605,6 +619,7 @@ export default function Invoices() {
                   setDeleted={setDeletedLines}
                   runs={runOptions}
                   projects={projectOptions}
+                  transformations={transformOpts}
                   stepCatalog={stepCatalog}
                   currency={docCurrency}
                   busy={busy}
@@ -720,6 +735,7 @@ export default function Invoices() {
           currency={splitting.currency || docCurrency}
           runs={runOptions}
           projects={projectOptions}
+          transformations={transformOpts}
           existing={liveLines.filter((li) => li.parent_line_id === splitting.id)}
           onClose={(updated) => {
             setSplitting(null);

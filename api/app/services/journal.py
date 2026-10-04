@@ -56,6 +56,8 @@ JOURNALLED = {
     "jlc_imports",
     "run_attachments",
     "run_substitutions",
+    "process_transformations",
+    "cost_line_steps",
 }
 
 

@@ -90,12 +90,39 @@ export function StepSelect({
  */
 export type GoesTo = "" | "inherit" | "pool" | "nobody" | string;
 
+/** A transformation as a destination option: `t:<id>`, decision 0058 §4. */
+export interface TransformOption {
+  id: number;
+  project: string;
+  recipe_label: string;
+  made_at: string;
+  qty: number;
+}
+
+/** The `t:<id>` options, plus one for a value the list does not hold (an
+ *  aimed line whose transformation is older than the list) — a select whose
+ *  value has no option silently shows its first one, which would read as
+ *  "not decided" for money that IS assigned. */
+function transformOptions(list: TransformOption[], value: string) {
+  const opts = list.map((t) => (
+    <option key={`t:${t.id}`} value={`t:${t.id}`}>
+      {t.project} · {t.recipe_label} · {t.made_at} ({t.qty} made)
+    </option>
+  ));
+  if (value.startsWith("t:") && !list.some((t) => `t:${t.id}` === value)) {
+    opts.push(<option key={value} value={value}>production step #{value.slice(2)}</option>);
+  }
+  return opts.length ? <optgroup label="Conversion cost of a production step">{opts}</optgroup> : null;
+}
+
 export function GoesToSelect({
-  runs, projects, value, onChange, docDefault = "",
+  runs, projects, value, onChange, docDefault = "", transformations = [],
   className = "row-input", disabled,
 }: {
   runs: RunOption[];
   projects: ProjectOption[];
+  /** live transformations, for a conversion cost (decision 0058 §4) */
+  transformations?: TransformOption[];
   value: GoesTo;
   onChange: (value: GoesTo) => void;
   /** what the DOCUMENT charges to, worded, when it names anything */
@@ -133,6 +160,7 @@ export function GoesToSelect({
           {p.name} (no batch)
         </option>
       ))}
+      {transformOptions(transformations, value)}
       <option value="nobody">Nobody, on purpose</option>
     </select>
   );
@@ -249,6 +277,8 @@ export function HowSelect({
   }
   // Nothing has been decided yet, so there is no second question to ask.
   if (goesTo === "") return <span className="muted">—</span>;
+  // A conversion cost goes into the transformation's lot; nothing to choose.
+  if (goesTo.startsWith("t:")) return <span className="muted">into the prepared part's lot</span>;
   const opts = goesTo === "pool"
     // A non-part cannot BE stock; it can only ride onto the stock as landed
     // cost. Offering "it is stock" for a freight line would produce a pool
@@ -281,11 +311,14 @@ export function ChargeToSelect({
   onChange,
   emptyLabel = "— nobody —",
   withExcluded = true,
+  transformations = [],
   className = "row-input",
   disabled,
 }: {
   runs: RunOption[];
   projects: ProjectOption[];
+  /** live transformations, for a conversion cost (decision 0058 §4) */
+  transformations?: TransformOption[];
   value: string;
   onChange: (value: string) => void;
   emptyLabel?: string;
@@ -311,6 +344,7 @@ export function ChargeToSelect({
           {p.name} (no batch)
         </option>
       ))}
+      {transformOptions(transformations, value)}
       {withExcluded && <option value="excluded">nobody, on purpose (excluded)</option>}
     </select>
   );

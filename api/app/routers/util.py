@@ -187,6 +187,10 @@ def part_display_name(db: Session, component_id: int | None = None,
         if hit:
             comp = db.get(M.Component, hit[0])
     if comp is not None:
+        # An INTERNAL part (a production stage, decision 0058) has no version and
+        # no part number by design: its name is the only thing anyone typed.
+        if comp.internal:
+            return comp.name, False
         cv = current_version(comp)
         if cv is not None:
             name = (props_dict(cv).get("Manufacturer Part Number 1") or "").strip()

@@ -535,14 +535,29 @@ def list_extra_items(project_id: int, snapshot_id: int | None = None,
     _project(db, project_id)
     snap = _cost_snapshot(db, project_id, snapshot_id)
     extras, _, rev = cost_state.items_for(db, project_id, snap)
+    from ..services import process as process_svc
+
+    proc = process_svc.process_materials(db, project_id)
     return {"items": [_extra_json(x) for x in extras],
-            "revision": cost_state.revision_json(rev)}
+            "revision": cost_state.revision_json(rev),
+            # Decision 0060: with a process, the materials ARE its step inputs;
+            # the hand-typed items above no longer price the device.
+            "from_process": proc is not None,
+            "process_materials": [
+                {"key": m.key, "step": m.step, "label": m.label, "qty": m.qty,
+                 "component_id": m.component_id, "mpn": m.mpn, "unit_price_usd": m.unit_price,
+                 "notes": m.notes} for m in (proc or [])]}
 
 
 @router.post("/projects/{project_id}/extra-items")
 def add_extra_item(project_id: int, body: ExtraItemIn, snapshot_id: int | None = None,
                    db: Session = Depends(get_db)):
     _project(db, project_id)
+    from ..services import process as process_svc
+
+    if process_svc.current_version(db, project_id) is not None:
+        raise HTTPException(409, "this project has a process: a material is an input of a process "
+                                 "step, so add it there (Process tab, decision 0060)")
     if body.component_id is not None and db.get(M.Component, body.component_id) is None:
         raise HTTPException(404, "linked component not found")
     snap = _cost_snapshot(db, project_id, snapshot_id)

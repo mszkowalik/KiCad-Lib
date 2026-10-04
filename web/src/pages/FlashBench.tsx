@@ -20,6 +20,9 @@ import {
   type DeploymentRow,
   type ProjectInfo,
   type RunInfo,
+  getBenchStacks,
+  setBenchStack,
+  type BenchStacks,
 } from "../api";
 import BenchStation from "../components/flasher/BenchStation";
 import { canProgram, MarkAgent } from "../flasher/benchAgent";
@@ -205,6 +208,42 @@ export default function FlashBench() {
    *  recorded as a trial rather than counted as batch production. */
   const trial = validRun === null;
 
+  // Decision 0059 §7: in a CRAFTED batch, every board programmed here takes a
+  // unit (a twin) from the selected stack — which may belong to another batch
+  // of the project. The picker exists only for a crafted batch; any other batch
+  // sees nothing new.
+  const [stacks, setStacks] = useState<BenchStacks | null>(null);
+  const [lotError, setLotError] = useState<string | null>(null);
+  useEffect(() => {
+    setStacks(null);
+    if (validRun === null) return;
+    const ac = new AbortController();
+    const load = () => getBenchStacks(validRun, ac.signal).then(setStacks).catch(() => undefined);
+    void load();
+    // The bench names a twin per board, so the counts fall while it works:
+    // refresh them, or a used-up stack keeps showing units it no longer has.
+    const timer = window.setInterval(load, 15000);
+    return () => { ac.abort(); window.clearInterval(timer); };
+  }, [validRun]);
+  // Decision 0060: a crafted batch's process names the programming
+  // procedure. The bench starts on its current version, once per batch, so a
+  // version picked by hand afterwards sticks.
+  const procDefaultedFor = useRef<number | null>(null);
+  useEffect(() => {
+    const vid = stacks?.program_deployment?.current_version_id;
+    if (!stacks || !vid || procDefaultedFor.current === stacks.run_id) return;
+    procDefaultedFor.current = stacks.run_id;
+    setVersionId(vid);
+  }, [stacks, setVersionId]);
+  const pickStack = (value: string) => {
+    if (validRun === null) return;
+    setLotError(null);
+    setBenchStack(validRun, value || null)
+      .then(() => getBenchStacks(validRun))
+      .then(setStacks)
+      .catch((err) => setLotError(errorMessage(err)));
+  };
+
   /** The version the BATCH says to use: its pinned one, else the version its
    *  channel points at. Null for every batch today — none pins or follows
    *  anything — which is why the operator's pick is not an override. */
@@ -266,6 +305,7 @@ export default function FlashBench() {
           </div>
         ) : null}
         {error ? <ErrorBanner message={error} /> : null}
+        {lotError ? <ErrorBanner message={lotError} /> : null}
 
         <div className="card pad">
           <div className="btn-row">
@@ -299,13 +339,33 @@ export default function FlashBench() {
                 <option key={r.id} value={r.id}>{r.label}</option>
               ))}
             </select>
+            {stacks?.crafted ? (
+              <select
+                className="row-input"
+                value={stacks.selected ?? ""}
+                title="The stack these boards come from. Each board programmed takes one unit of it; when it is used up the bench asks for the next."
+                onChange={(e) => pickStack(e.target.value)}
+              >
+                <option value="">no stack — boards become gaps</option>
+                {stacks.selected && !stacks.stacks.some((s) => s.stack === stacks.selected) ? (
+                  <option value={stacks.selected}>selected stack (used up)</option>
+                ) : null}
+                {stacks.stacks.map((s) => (
+                  <option key={s.stack} value={s.stack}>
+                    {s.run_label}: {s.done.join(" + ")} — {s.count} left
+                  </option>
+                ))}
+              </select>
+            ) : null}
             <select
               className="row-input"
               value={versionId ?? ""}
               title={
                 trial
                   ? "the version to try out — drafts are allowed on a bench trial"
-                  : "leave empty to use the batch's assigned deployment version"
+                  : stacks?.program_deployment
+                    ? `the process of this batch names ${stacks.program_deployment.name} for programming`
+                    : "leave empty to use the batch's assigned deployment version"
               }
               onChange={(e) => setVersionId(e.target.value === "" ? null : Number(e.target.value))}
             >

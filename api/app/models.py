@@ -412,6 +412,13 @@ class Component(Base):
     # project BOM lines matching it are excluded from totals, order
     # quantities and stock checks. (Added by startup migration.)
     purchasable: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # True = an INTERNAL PART: a production stage ("assembled unprogrammed
+    # Aqua", "enclosure with holes") that a process recipe makes from other
+    # parts, never bought (decision 0058). It has no supplier, no symbol and no
+    # published version — it exists so the component pool can hold, count and
+    # value unfinished work under its own key. Always `in_library=False`.
+    # (Added by startup migration.)
+    internal: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     # Usage-fitness lifecycle, separate from any review state (user design
     # 2026-08-23): what the part may be USED for, not whether it was checked.
     #   in_design  — default; the part exists but nobody vouched for it yet
@@ -2177,6 +2184,18 @@ class ProductionRun(Base):
     # deployment; every programming run then COPIES the answer, so changing
     # this later cannot re-judge units already made.
     requires_test: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Decisions 0058/0059. The process version this batch resolved when it was
+    # created (soft pointer). A batch that has one is CRAFTED: its units are
+    # twins, it holds one assembly order, and its BOM draw is refused.
+    process_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Decision 0059 §7. The STACK the programming bench names twins from:
+    # "<origin run id>:<stack key>". A stack may belong to another batch of the
+    # project — a twin moves to the batch that programs it. Empty = no stack
+    # selected; a device programmed then is a gap.
+    bench_stack: Mapped[str] = mapped_column(String(400), default="", server_default="")
+    # Decision 0059 §13. The origin-batch share per twin, frozen when the books
+    # close (decision 0044); NULL while the batch is open, so it is computed.
+    closed_twin_share_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     # --- baseline pinning: without these, a later cost edit or a qty change
     # silently rewrites what a historical run "expected". All soft pointers.
     plan_revision_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -2423,6 +2442,11 @@ class RunCostLine(Base):
     # portion of a shared freight line, tooling that predates its batch). Without
     # it such a remainder could only be described in `notes` — i.e. lost.
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    # Decision 0058 §4: a CONVERSION COST — this position's money is part of
+    # what one process transformation's output is worth (a UV-print service,
+    # the drilling of 200 enclosures). The fourth destination beside a run, the
+    # pool and nobody; it excludes the other three. Soft pointer.
+    transformation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Soft pointer, deliberately not a FK: `RunCostDocument.lines` cascades
     # delete-orphan, and a self-FK inside a cascaded collection makes delete
     # ordering fragile. Same choice as `superseded_by_id` below.
@@ -2559,6 +2583,14 @@ class ComponentConsumption(Base):
     # `docs/production-costs/design.md`.
     voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     void_reason: Mapped[str] = mapped_column(String(40), default="")
+    # Decision 0058. A draw an INPUT of a process transformation took: its value
+    # moved into the transformation's output lot, so it is charged to no batch
+    # and is NOT an uncharged draw waiting for one. Soft pointer.
+    transformation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Decision 0059. The STEP CLICK that drew this: a process step applied to N
+    # twins draws N x each input in one row, and each twin owns 1/N of it — that
+    # is how a twin's own parts are exact. Soft pointer.
+    step_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (
@@ -2597,11 +2629,214 @@ class ComponentStockAdjustment(Base):
     import_ref: Mapped[str] = mapped_column(String(120), default="")
     note: Mapped[str] = mapped_column(String(500), default="")
     actor: Mapped[str] = mapped_column(String(100), default="")
+    # Decision 0058. The OUTPUT LOT of a process transformation: a positive
+    # adjustment of an internal part, priced at what its inputs and conversion
+    # cost. A positive adjustment is already a lot (`lots.py`, key `A<id>`), so
+    # every replayer sees the new stock with no new event kind. Soft pointer.
+    transformation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (
         Index("ix_stock_adj_component", "component_id"),
         Index("ix_stock_adj_run", "charge_run_id"),
+    )
+
+
+# ------------------------------------------------------- processes (0058)
+class ProcessVersion(Base):
+    """One version of a project's PRODUCTION PROCESS (decision 0058).
+
+    The document is the stage graph: which internal parts a project's units
+    pass through, the RECIPES that make each one (inputs per unit of output,
+    expected scrap, a `preferred` flag where alternatives exist), and exactly
+    ONE programmable form — the stage that goes on the bench.
+
+    The lifecycle is the deployment-version one: an edit mints a DRAFT, a
+    published version is immutable, and publishing needs a comment and a clean
+    machine check (`services/process.py::check`). A batch records the version it
+    resolved at creation, and every transformation records the version and the
+    recipe it ran under (decision 0021, generalised). Stock does NOT follow
+    versions: lots belong to parts, so publishing a new process moves nothing.
+
+    `graph` shape::
+
+        {"stages":  [{"key": "s1", "component_id": 7, "programmable": false}],
+         "recipes": [{"key": "r1", "label": "Glue antenna", "output": "s1",
+                      "inputs": [{"component_id": 3, "qty": 1}],
+                      "expected_scrap_pct": 0, "preferred": true}]}
+    """
+
+    __tablename__ = "process_versions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    version_no: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft|published|rejected
+    graph: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    comment: Mapped[str] = mapped_column(String(500), default="")
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+    approved_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("project_id", "version_no", name="uq_process_version"),
+    )
+
+
+class ProcessTransformation(Base):
+    """One time a recipe was carried out: inputs drawn, an output lot deposited
+    (decision 0058 §3).
+
+    The INPUTS are `ComponentConsumption` rows carrying this id and no run —
+    their value moved into the output, so no batch pays for them twice. The
+    OUTPUT is one positive `ComponentStockAdjustment` carrying this id, valued
+    at the inputs drawn (frozen at their draw prices) plus `conversion_usd`.
+    `scrap` is output units' worth of inputs that were consumed and broke: they
+    are drawn, they add value to the good units, and they add no quantity.
+
+    `production_run_id` is CONTEXT — the batch the work was done for — never a
+    charge: the batch pays when it draws the output lot. Voiding voids the
+    draws and the output together, and is refused once anything drew from the
+    output lot (decision 0040, transitively).
+    """
+
+    __tablename__ = "process_transformations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    process_version_id: Mapped[int] = mapped_column(Integer)  # soft ptr, pinned
+    recipe_key: Mapped[str] = mapped_column(String(40))
+    recipe_label: Mapped[str] = mapped_column(String(200), default="")  # as it read then
+    output_component_id: Mapped[int] = mapped_column(Integer)  # soft ptr
+    qty: Mapped[float] = mapped_column(Float, default=0.0)
+    scrap: Mapped[float] = mapped_column(Float, default=0.0)
+    production_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    made_at: Mapped[str] = mapped_column(String(20), default="")  # ISO date; drives the replay
+    input_value_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    # The conversion cost is NOT stored: it is the invoice positions aimed at
+    # this transformation (`RunCostLine.transformation_id`), read on every
+    # replay like a freight surcharge, so a late invoice needs nothing re-written.
+    output_adjustment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    note: Mapped[str] = mapped_column(String(500), default="")
+    actor: Mapped[str] = mapped_column(String(100), default="")
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    void_reason: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        Index("ix_transformation_project", "project_id"),
+        Index("ix_transformation_run", "production_run_id"),
+    )
+
+
+class Twin(Base):
+    """One unit's record from the first step that touches it (decision 0059).
+
+    Before programming a twin is UNNAMED and lives in a STACK: the unnamed
+    active twins of one batch with the same `stack_key` (the steps done and the
+    prepared-part lots used). Twins of a stack are identical by construction,
+    so programming may name any one of them. **`id` is internal: it is never
+    printed, never shown as a unit's identity, and no endpoint addresses an
+    unnamed twin by it** — a step takes "N from this stack" and the platform
+    picks which.
+
+    `origin_run_id` is the batch the board was received in and never changes:
+    the twin's origin batch cost is a share of THAT batch. `run_id` is the batch
+    it is in now — the one that programmed it, for a twin moved at programming.
+    `found` marks a unit entered at a stock count at zero value: its cost sits in
+    the closed books of its origin batch.
+    """
+
+    __tablename__ = "twins"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    origin_run_id: Mapped[int] = mapped_column(Integer)  # soft ptr, fixed
+    run_id: Mapped[int] = mapped_column(Integer)  # soft ptr, the batch it is in now
+    process_version_id: Mapped[int] = mapped_column(Integer)  # soft ptr
+    device_unit_id: Mapped[int | None] = mapped_column(Integer, nullable=True, unique=True)
+    status: Mapped[str] = mapped_column(String(20), default="active")  # active|finished|scrapped
+    stack_key: Mapped[str] = mapped_column(String(400), default="")
+    found: Mapped[bool] = mapped_column(Boolean, default=False)
+    note: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    named_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scrapped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_twin_stack", "run_id", "stack_key"),
+        Index("ix_twin_origin", "origin_run_id"),
+    )
+
+
+class StepRun(Base):
+    """One click of a process step on N twins (decision 0059).
+
+    It records the step AS IT READ THEN (`step_label`, `kind`) beside the
+    version it ran under, how the units were chosen (`chosen`: stack, scanned,
+    list, bench, merge, found, supplier, rebuilt), who and when. Its draws
+    carry `step_run_id`, and each of its twins owns 1/qty of them. The invoice
+    positions that paid for it are `CostLineStep` rows (decisions 0060, 0061).
+    A step that happened is history and is not voided.
+    """
+
+    __tablename__ = "step_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    run_id: Mapped[int] = mapped_column(Integer)  # the batch it was done in
+    process_version_id: Mapped[int] = mapped_column(Integer)
+    step_key: Mapped[str] = mapped_column(String(40))
+    step_label: Mapped[str] = mapped_column(String(200), default="")
+    kind: Mapped[str] = mapped_column(String(20), default="step")
+    qty: Mapped[int] = mapped_column(Integer, default=0)
+    chosen: Mapped[str] = mapped_column(String(20), default="stack")
+    made_at: Mapped[str] = mapped_column(String(20), default="")  # ISO date; drives the replay
+    actor: Mapped[str] = mapped_column(String(100), default="")
+    note: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        Index("ix_step_run_run", "run_id"),
+    )
+
+
+class CostLineStep(Base):
+    """An invoice position PAID FOR this step click (decisions 0060, 0061).
+
+    A position can pay for several clicks — the final assembler's invoice
+    covers programming, the enclosure, the laser mark and the label at once —
+    and the twins of all of them share it equally. The money stays charged to
+    the position's batch: this is a label, not a destination."""
+
+    __tablename__ = "cost_line_steps"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    line_id: Mapped[int] = mapped_column(ForeignKey("run_cost_lines.id", ondelete="CASCADE"))
+    step_run_id: Mapped[int] = mapped_column(ForeignKey("step_runs.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("line_id", "step_run_id", name="uq_cost_line_step"),
+        Index("ix_cost_line_step_click", "step_run_id"),
+    )
+
+
+class TwinStep(Base):
+    """A twin took part in a step click. A twin's history is these rows."""
+
+    __tablename__ = "twin_steps"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    twin_id: Mapped[int] = mapped_column(ForeignKey("twins.id", ondelete="CASCADE"))
+    step_run_id: Mapped[int] = mapped_column(ForeignKey("step_runs.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        Index("ix_twin_step_twin", "twin_id"),
+        Index("ix_twin_step_run", "step_run_id"),
     )
 
 

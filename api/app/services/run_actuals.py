@@ -237,6 +237,8 @@ def line_json(li: M.RunCostLine, doc: M.RunCostDocument | None = None,
         "document_id": li.document_id,
         "run_id": li.run_id,
         "project_id": li.project_id,
+        # Decision 0058 §4: aimed at a process transformation as its conversion cost.
+        "transformation_id": li.transformation_id,
         "parent_line_id": li.parent_line_id,
         # A header's own amount is NOT counted anywhere; its children are.
         "is_header": child_total is not None,
@@ -303,6 +305,11 @@ def line_destination(li: M.RunCostLine, doc: M.RunCostDocument | None) -> tuple[
     """
     if li.allocate == EXCLUDED:
         return "excluded", None
+    # A conversion cost (decision 0058 §4) is part of what one transformation's
+    # output lot is worth. It comes before the document's own batch, or a
+    # document filed against a batch would claim it as a direct cost too.
+    if getattr(li, "transformation_id", None):
+        return "transformation", li.transformation_id
     if li.run_id:
         return "run", li.run_id
     if li.project_id:
@@ -425,6 +432,8 @@ def document_json(doc: M.RunCostDocument, with_lines: bool = True,
             "run": _round(by_dest.get("run", 0.0)),
             "project": _round(by_dest.get("project", 0.0)),
             "pool": _round(by_dest.get("pool", 0.0)),
+            # Conversion costs: money in a prepared part's lot, decision 0058 §4.
+            "transformation": _round(by_dest.get("transformation", 0.0)),
             "excluded": _round(by_dest.get("excluded", 0.0)),
             "unassigned": _round(by_dest.get("unassigned", 0.0)),
             "residual": _round(residual),
@@ -614,6 +623,8 @@ def _pool_events(db: Session) -> tuple[list[tuple[str, str, object]], dict, dict
                 # Prepaid components on a populated-board invoice are the SAME
                 # money as the component invoice that already fed the pool.
                 M.RunCostLine.allocate != EXCLUDED,
+                # A conversion cost is value on a prepared part's lot, never stock bought.
+                M.RunCostLine.transformation_id.is_(None),
             )
             .all()
         )
@@ -628,6 +639,7 @@ def _pool_events(db: Session) -> tuple[list[tuple[str, str, object]], dict, dict
                     M.RunCostLine.run_id.is_(None),
                     M.RunCostLine.voided_at.is_(None),
                     M.RunCostLine.document_id.in_(pool_doc_ids or [0]),
+                    M.RunCostLine.transformation_id.is_(None),
                 )
                 .all()
             )
@@ -685,6 +697,56 @@ def _buy_usd(row: M.RunCostLine, doc: M.RunCostDocument, extra: float,
     return unit_usd, extra_usd, known
 
 
+def conversion_by_transformation(db: Session) -> dict[int, float]:
+    """USD of the invoice positions aimed at each transformation (decision 0058
+    §4) — the conversion cost, read on every call and never stored.
+
+    The same filter as a purchase: a live leaf on a document that is not a
+    proforma, not excluded. Priced the way a purchase is: the document's pinned
+    rate, else the historical rate at its date."""
+    lines = (db.query(M.RunCostLine)
+             .filter(M.RunCostLine.transformation_id.isnot(None),
+                     M.RunCostLine.voided_at.is_(None),
+                     M.RunCostLine.allocate != EXCLUDED).all())
+    if not lines:
+        return {}
+    headers = header_ids(db)
+    out: dict[int, float] = defaultdict(float)
+    rate_cache: dict[str, dict[str, float]] = {}
+    for li in lines:
+        if li.id in headers:
+            continue
+        doc = db.get(M.RunCostDocument, li.document_id)
+        if doc is None or (doc.doc_type or "invoice") == "proforma":
+            continue
+        day = doc.doc_date or ""
+        if day not in rate_cache:
+            rate_cache[day] = fx.rates_at(db, _as_dt(day))
+        amount = effective_qty(li, doc, db) * (li.unit_price or 0)
+        cur = li.currency or doc.currency or "USD"
+        if doc.fx_rate_usd and cur.upper() != "USD":
+            usd = amount * doc.fx_rate_usd
+        else:
+            usd, _known = _to_usd(amount, cur, rate_cache[day])
+        out[li.transformation_id] += usd
+    return dict(out)
+
+
+def conversion_extras_usd(db: Session) -> dict[int, float]:
+    """The conversion cost per OUTPUT ADJUSTMENT — what the replayers add to a
+    transformation's lot, the way `surcharge` adds freight to a purchase."""
+    by_t = conversion_by_transformation(db)
+    if not by_t:
+        return {}
+    out: dict[int, float] = {}
+    for t in (db.query(M.ProcessTransformation)
+              .filter(M.ProcessTransformation.id.in_(list(by_t)),
+                      M.ProcessTransformation.voided_at.is_(None)).all()):
+        if t.output_adjustment_id:
+            out[t.output_adjustment_id] = by_t[t.id]
+    return out
+
+
 def pool_state(db: Session, project_id: int | None = None, as_of: str | None = None) -> dict:
     """Replay purchases, consumptions and adjustments in EVENT DATE order and
     return the per-part COMPANY-WIDE pool: quantity on hand, moving average
@@ -698,6 +760,8 @@ def pool_state(db: Session, project_id: int | None = None, as_of: str | None = N
     # write-offs are all company-wide. Scoping purchases while counting all
     # consumption would silently under-report what is on hand.
     events, doc_by_id, surcharge = _pool_events(db)
+    # Conversion costs ride on their transformation's output lot (decision 0058).
+    extras = conversion_extras_usd(db)
     if as_of:
         # Historical accuracy: a run dated 2024 must be priced from the pool as
         # it stood THEN. Without this cutoff a purchase made in 2026 would
@@ -760,7 +824,12 @@ def pool_state(db: Session, project_id: int | None = None, as_of: str | None = N
             p["_avg_value"] += value
         elif kind == "use":
             q = row.qty or 0.0
-            unit = row.unit_cost_usd or p["avg_usd"]
+            # The snapshot is the price, INCLUDING zero. A draw from a lot that
+            # entered at zero value (found historical WIP, decision 0058) is
+            # worth exactly 0, and the register charges its batch 0; reading 0
+            # as "unknown, use the average" made the two disagree. No draw on
+            # production carried a 0.0 snapshot when this changed (2026-10-03).
+            unit = row.unit_cost_usd if row.unit_cost_usd is not None else p["avg_usd"]
             p["qty"] -= q
             p["value_usd"] -= q * unit
             p["value_used"] += q * unit
@@ -779,6 +848,8 @@ def pool_state(db: Session, project_id: int | None = None, as_of: str | None = N
             q = row.qty_delta or 0.0
             p["qty"] += q
             delta = q * (row.unit_cost_usd if row.unit_cost_usd is not None else p["avg_usd"])
+            if q > 0:
+                delta += extras.get(row.id, 0.0)
             p["value_usd"] += delta
             p["value_adj"] += delta
             if q >= 0:
@@ -823,6 +894,7 @@ def component_ledger(db: Session, component_id: int | None = None,
     """
     want = set(_identity_keys(component_id, mpn or "", lcsc or ""))
     events, doc_by_id, surcharge = _pool_events(db)
+    extras = conversion_extras_usd(db)  # conversion costs on prepared-part lots (0058)
     runs = {r.id: r for r in db.query(M.ProductionRun).all()}
 
     rate_cache: dict[str, dict[str, float]] = {}
@@ -865,13 +937,15 @@ def component_ledger(db: Session, component_id: int | None = None,
             # A draw with no run is UNCHARGED, not a draw against run "None"
             # (0034). It is an ordinary state now — an order that builds someone
             # else's project, or a movement JLC made that no batch asked for.
-            ref = ("charged to no batch" if row.run_id is None else
+            ref = (f"into a prepared part (transformation #{row.transformation_id})"
+                   if row.run_id is None and row.transformation_id is not None else
+                   "charged to no batch" if row.run_id is None else
                    f"run {row.run_id}" + (f" — {run.label}" if run else ""))
             detail = row.note or ""
         else:  # adjustment
             qty_d = row.qty_delta or 0.0
             unit = row.unit_cost_usd if row.unit_cost_usd is not None else avg
-            value_d = qty_d * unit
+            value_d = qty_d * unit + (extras.get(row.id, 0.0) if qty_d > 0 else 0.0)
             if qty_d >= 0:
                 aq += qty_d
                 av += value_d
@@ -1241,6 +1315,8 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
             continue  # split position: its children carry the money
         if li.allocate == EXCLUDED:
             continue  # recorded for reconciliation, charged to nobody on purpose
+        if li.transformation_id:
+            continue  # a conversion cost: in a prepared part's lot, paid when a step draws it
         if li.run_id == run.id:
             lines.append(li)
             continue
@@ -1757,6 +1833,49 @@ def _run_money(db: Session, rid: int, direct_usd: float, components_usd: float,
     }
 
 
+def doc_usd(db: Session, amount: float, doc: M.RunCostDocument, rate_cache: dict,
+            unknown: set[str] | None = None) -> float:
+    """An amount in `doc`'s currency, in USD: at the document's pinned rate when
+    it has one, else the rate history at its date. The register and the twin
+    prices (decision 0060) both convert through here, so a step's share of an
+    invoice position is the same figure the register charges its batch."""
+    cur = (doc.currency or "USD").upper()
+    if cur == "USD" or not amount:
+        return amount
+    if doc.fx_rate_usd:
+        return amount * doc.fx_rate_usd
+    key = doc.doc_date or ""
+    if key not in rate_cache:
+        rate_cache[key] = fx.rates_at(db, _as_dt(key))
+    value, known = fx.convert(amount, cur, "USD", rate_cache[key])
+    if not known and unknown is not None:
+        unknown.add(cur)
+    return value
+
+
+def leaf_line_usd(db: Session, lines: list[M.RunCostLine], rate_cache: dict | None = None
+                  ) -> dict[int, tuple[float, str, int | None]]:
+    """`line id -> (USD, destination, destination ref)` for LEAF positions, valued
+    as the register values them: zero for a header (its children carry it), a
+    voided line, or a line on a pro-forma (a quote, not money)."""
+    cache = rate_cache if rate_cache is not None else {}
+    hdrs = header_ids(db)
+    docs: dict[int, M.RunCostDocument | None] = {}
+    out: dict[int, tuple[float, str, int | None]] = {}
+    for li in lines:
+        if li.document_id not in docs:
+            docs[li.document_id] = db.get(M.RunCostDocument, li.document_id)
+        doc = docs[li.document_id]
+        dest, ref = line_destination(li, doc)
+        if (li.voided_at is not None or li.id in hdrs or doc is None
+                or (doc.doc_type or "invoice") == "proforma"):
+            out[li.id] = (0.0, dest, ref)
+            continue
+        out[li.id] = (doc_usd(db, effective_qty(li, doc, db) * (li.unit_price or 0), doc, cache),
+                      dest, ref)
+    return out
+
+
 def invoice_register(db: Session) -> dict:
     """Every supplier document, where its money went, and whether any of it is
     unaccounted for.
@@ -1781,18 +1900,7 @@ def invoice_register(db: Session) -> dict:
     unknown: set[str] = set()
 
     def to_usd(amount: float, doc: M.RunCostDocument) -> float:
-        cur = (doc.currency or "USD").upper()
-        if cur == "USD" or not amount:
-            return amount
-        if doc.fx_rate_usd:
-            return amount * doc.fx_rate_usd
-        key = doc.doc_date or ""
-        if key not in rate_cache:
-            rate_cache[key] = fx.rates_at(db, _as_dt(key))
-        value, known = fx.convert(amount, cur, "USD", rate_cache[key])
-        if not known:
-            unknown.add(cur)
-        return value
+        return doc_usd(db, amount, doc, rate_cache, unknown)
 
     projects = {p.id: p.name for p in db.query(M.Project).all()}
     _all_runs = db.query(M.ProductionRun).all()
@@ -1829,7 +1937,7 @@ def invoice_register(db: Session) -> dict:
         j["total_usd"] = _round(to_usd(printed, doc))
         j["lines_total_usd"] = _round(to_usd(j["lines_total"] or 0.0, doc))
         j["assignment_usd"] = {k: _round(to_usd(a[k] or 0.0, doc))
-                               for k in ("run", "project", "pool", "excluded",
+                               for k in ("run", "project", "pool", "transformation", "excluded",
                                          "unassigned", "residual", "overallocated")}
         j["project_name"] = projects.get(doc.project_id or 0, "")
         j["run_label"] = (runs.get(doc.run_id or 0) or {}).get("label", "")
@@ -1846,8 +1954,8 @@ def invoice_register(db: Session) -> dict:
         # arithmetic and must hold exactly; `printed - lines` is a transcription
         # difference and is a fact about the data.
         tot["lines"] += to_usd(j["lines_total"] or 0.0, doc)
-        for k in ("run", "project", "pool", "excluded", "unassigned", "residual",
-                  "overallocated"):
+        for k in ("run", "project", "pool", "transformation", "excluded", "unassigned",
+                  "residual", "overallocated"):
             tot[k] += to_usd(a[k] or 0.0, doc)
         _slip = to_usd(printed, doc) - to_usd(j["lines_total"] or 0.0, doc)
         if abs(_slip) > 0.0005:
@@ -1884,9 +1992,15 @@ def invoice_register(db: Session) -> dict:
     # in no run's figure. Reported as `uncharged_drawn_usd` below instead of
     # being silently filed under a `None` key.
     uncharged_usd = 0.0
+    # Inputs of a process transformation (decision 0058) also carry no run, but
+    # they are not waiting for one: their value moved into the output lot,
+    # which a batch pays for when it draws it. Counted on their own line.
+    into_prepared_usd = 0.0
     for c in live_consumption(db).all():
         value = (c.qty or 0) * (c.unit_cost_usd or 0)
-        if c.run_id is None:
+        if c.run_id is None and c.transformation_id is not None:
+            into_prepared_usd += value
+        elif c.run_id is None:
             uncharged_usd += value
         else:
             drawn_by_run[c.run_id] += value
@@ -1955,6 +2069,9 @@ def invoice_register(db: Session) -> dict:
             "to_runs_usd": _round(tot["run"]),
             "to_projects_usd": _round(tot["project"]),
             "to_pool_usd": _round(tot["pool"]),
+            # Conversion costs, carried in the lots of production stages
+            # (decision 0058 §4) — pool money that no purchase line holds.
+            "to_transformations_usd": _round(tot["transformation"]),
             # Recorded so documents reconcile, charged to nobody on purpose:
             # reclaimable import VAT, and prepaid components already in the pool.
             "excluded_usd": _round(tot["excluded"]),
@@ -1989,8 +2106,8 @@ def invoice_register(db: Session) -> dict:
             # so the number nobody could fix was also the number nobody could see
             # (decision 0048).
             "gap_usd": _round(tot["lines"] - tot["run"] - tot["project"] - tot["pool"]
-                              - tot["excluded"] - tot["unassigned"] - tot["residual"]
-                              + tot["overallocated"]),
+                              - tot["transformation"] - tot["excluded"] - tot["unassigned"]
+                              - tot["residual"] + tot["overallocated"]),
             # `printed - lines`, summed: money that left the company and is not on
             # any line. Real, small and NOT fixable by editing a line — JLC prints
             # a rounded total while our unit prices carry more decimals. Reported
@@ -2019,6 +2136,9 @@ def invoice_register(db: Session) -> dict:
             # will). The pool identity above still balances — the value left the
             # pool either way — this only says how much of it landed nowhere.
             "uncharged_drawn_usd": _round(uncharged_usd),
+            # Drawn INTO an internal part by a process transformation: the value
+            # is still in the pool, as the output lot (decision 0058).
+            "into_prepared_usd": _round(into_prepared_usd),
         },
         "issues": {
             # Documents whose lines do not add up to what the supplier printed,
@@ -2054,6 +2174,11 @@ def consume_from_bom(db: Session, run: M.ProductionRun, basis: str = "bom",
     Parts with nothing in the pool are reported as `unpriced` rather than
     silently costed at zero.
     """
+    # A CRAFTED batch (decision 0059 §10) draws its parts step by step; drawing
+    # BOM x produced as well would take the same parts twice.
+    if run.process_version_id:
+        return {"created": 0, "unpriced": [],
+                "error": "this batch is crafted: its process steps draw its parts (decision 0059)"}
     if not run.snapshot_id:
         return {"created": 0, "unpriced": [], "error": "run has no snapshot — no BOM to draw from"}
     snap = db.get(M.ProjectSnapshot, run.snapshot_id)

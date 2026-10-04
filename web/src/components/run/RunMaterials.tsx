@@ -129,6 +129,8 @@ export default function RunMaterials({
   onChanged: () => void;
 }) {
   const dialog = useDialog();
+  /** Decision 0060: a crafted batch takes parts only through its process steps. */
+  const crafted = !!run.process_version_id;
   const [consumption, setConsumption] = useState<ConsumptionRow[] | null>(null);
   const [adjs, setAdjs] = useState<StockAdjustment[]>([]);
   const [subs, setSubs] = useState<RunSubstitution[]>([]);
@@ -504,7 +506,7 @@ export default function RunMaterials({
                   supply={supply}
                   open={open === r.key}
                   busy={busy}
-                  onSetUsed={(qty) =>
+                  onSetUsed={crafted ? null : (qty) =>
                     act(async () => {
                       const c = r.cons[0];
                       await setUsedQty(run.id, {
@@ -622,8 +624,15 @@ export default function RunMaterials({
       </div>
 
       <div className="card pad">
+        {crafted ? (
+          <p className="muted">
+            This batch is crafted: its parts are drawn by its process steps (Batch → Process), so
+            every draw says which step used it (decision 0060). A part lost in production is still
+            booked here.
+          </p>
+        ) : null}
         <div className="btn-row">
-          {run.snapshot_id !== null && (
+          {run.snapshot_id !== null && !crafted && (
             <button
               className="btn btn-sm btn-primary"
               disabled={busy}
@@ -646,6 +655,7 @@ export default function RunMaterials({
           )}
         </div>
         <div className="field-grid">
+          {!crafted ? (<>
           <label>
             Draw part (MPN)
             <input className="text" value={consMpn} onChange={(e) => setConsMpn(e.target.value)} />
@@ -654,6 +664,7 @@ export default function RunMaterials({
             Quantity
             <input className="text" value={consQty} onChange={(e) => setConsQty(e.target.value)} />
           </label>
+          </>) : null}
           <label>
             Lost part (MPN)
             <input className="text" value={lossMpn} onChange={(e) => setLossMpn(e.target.value)} />
@@ -664,6 +675,7 @@ export default function RunMaterials({
           </label>
         </div>
         <div className="btn-row">
+          {!crafted ? (
           <button
             className="btn btn-sm"
             disabled={busy || !consMpn.trim() || !consQty.trim()}
@@ -681,6 +693,7 @@ export default function RunMaterials({
           >
             Draw from pool
           </button>
+          ) : null}
           <button
             className="btn btn-sm btn-danger"
             disabled={busy || !lossMpn.trim() || !lossQty.trim()}
@@ -727,7 +740,7 @@ function MatTr({
   /** so a substitution pill can name the part the batch really bought */
   supply: BatchSupplyRow[];
   onToggle: () => void;
-  onSetUsed: (qty: number) => void;
+  onSetUsed: ((qty: number) => void) | null;
 }) {
   // A position whose part was replaced is NOT short. Its used side is zero
   // because everything went to the row beneath it, and printing -800 there
@@ -856,9 +869,17 @@ function MatTr({
  * The field is absolute and idempotent, so correcting it later is the same
  * action as entering it, and no compensating adjustment is ever needed.
  */
-function UsedCell({ r, busy, onSet }: { r: MatRow; busy: boolean; onSet: (q: number) => void }) {
+function UsedCell({ r, busy, onSet }: { r: MatRow; busy: boolean; onSet: ((q: number) => void) | null }) {
   const measured = r.cons.some((c) => c.basis === "measured");
   const [draft, setDraft] = useState<string | null>(null);
+  // Decision 0060: a crafted batch takes parts only through its process steps.
+  if (onSet === null) {
+    return (
+      <span title="Drawn by the batch's process steps (Batch → Process), not typed here">
+        {r.usedQty == null ? "—" : r.usedQty.toLocaleString()}
+      </span>
+    );
+  }
   if (measured) {
     return (
       <span title="Reported by JLCPCB's own invoice — a measurement, not ours to retype">
@@ -1348,16 +1369,20 @@ function MatDetail({
                       </span>
                     </td>
                     <td className="ctr">
-                      <button
-                        className="btn btn-sm btn-danger"
-                        disabled={busy}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onRemoveDraw(c.id);
-                        }}
-                      >
-                        Remove
-                      </button>
+                      {c.step_run_id || c.transformation_id ? (
+                        <span className="muted" title="A process step's draw goes with its step">step</span>
+                      ) : (
+                        <button
+                          className="btn btn-sm btn-danger"
+                          disabled={busy}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onRemoveDraw(c.id);
+                          }}
+                        >
+                          Remove
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

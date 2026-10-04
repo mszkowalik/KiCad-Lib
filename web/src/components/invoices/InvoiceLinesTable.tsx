@@ -29,7 +29,7 @@ import {
   type RunCostLineRow,
 } from "../../api";
 import { plain } from "../../format";
-import { GoesToSelect, HowSelect, StepSelect, type RunOption } from "../costs";
+import { GoesToSelect, HowSelect, StepSelect, type RunOption, type TransformOption } from "../costs";
 import ComponentPickDialog from "../ComponentPickDialog";
 import { ErrorBanner } from "../Ui";
 
@@ -83,7 +83,8 @@ export interface LineDraft {
   plan_kind: string;
   plan_ref: string;
   /** WHERE the money goes: "" (not decided) | "inherit" | "pool" |
-   *  "run:5" | "project:2" | "nobody" — see `GoesToSelect` (decision 0045). */
+   *  "run:5" | "project:2" | "t:7" (a transformation's conversion cost,
+   *  decision 0058) | "nobody" — see `GoesToSelect` (decision 0045). */
   dest: string;
   /** HOW it gets there. Carries `allocate` when `dest` is "pool"
    *  ("pooled" | "by_value" | "by_qty") and `basis` when it is a batch or a
@@ -117,6 +118,8 @@ export function blankDraft(): LineDraft {
  */
 export function goesToOf(li: RunCostLineRow): string {
   if (li.allocate === "excluded") return "nobody";
+  // A conversion cost beats a named batch, exactly as on the server.
+  if (li.transformation_id) return `t:${li.transformation_id}`;
   if (li.run_id) return `run:${li.run_id}`;
   if (li.project_id) return `project:${li.project_id}`;
   if (li.allocate === "pooled" || li.allocate === "by_value" || li.allocate === "by_qty") {
@@ -186,6 +189,9 @@ function destPatch(d: LineDraft) {
     // is what the line already did. It is a visible way to say so, not a change.
     run_id: kind === "run" ? Number(id) : null,
     project_id: kind === "project" ? Number(id) : null,
+    // The fourth destination (decision 0058 §4), written every time like the
+    // other three so moving a position off a transformation clears it.
+    transformation_id: kind === "t" ? Number(id) : null,
     allocate:
       d.dest === "nobody" ? "excluded"
       : d.dest === "pool" ? (spread ? d.how : "pooled")
@@ -216,13 +222,15 @@ export function draftToLineIn(d: LineDraft) {
 export default function InvoiceLinesTable({
   mode, rows, setRows, runs, projects, stepCatalog, currency,
   editing, deleted, setDeleted, savedById, onSplit, onSaved, busy, locked,
-  docDefault = "",
+  docDefault = "", transformations = [],
 }: {
   mode: "draft" | "saved";
   rows: LineDraft[];
   setRows: (next: LineDraft[]) => void;
   runs: RunOption[];
   projects: { id: number; name: string }[];
+  /** live transformations, for a conversion cost (decision 0058 §4) */
+  transformations?: TransformOption[];
   stepCatalog: CostStepCatalog | null;
   currency: string;
   /** saved mode: the whole document is open for editing */
@@ -532,6 +540,7 @@ export default function InvoiceLinesTable({
                       <GoesToSelect
                         runs={runs}
                         projects={projects}
+                        transformations={transformations}
                         value={d.dest}
                         docDefault={docDefault}
                         disabled={busy || !edit}
