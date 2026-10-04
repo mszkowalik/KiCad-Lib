@@ -22,7 +22,7 @@ in one document. Open the document before you change the module.
 | Simulation models and composition | `simmodel.py`, `sim_store.py`, `simcompose.py` | [docs/reference/simulation-models.md](../../../docs/reference/simulation-models.md) |
 | SPICE runs, netlists, harnesses, the live sketch | `sim_spice.py`, `project_ops.py`, `sch_lib.py`, `sim_scenario.py` | [docs/reference/spice-runs.md](../../../docs/reference/spice-runs.md) |
 | What a publish CORRECTS for you, before it parses | `geometry_proposals.py` | [docs/reference/publish-sanitization.md](../../../docs/reference/publish-sanitization.md) |
-| The agent tool surface | `jaravis.py` | [docs/reference/jaravis.md](../../../docs/reference/jaravis.md) |
+| The agent tool surface (MCP only; no in-platform agent) | `agent_tools.py` | [docs/reference/agent-tools.md](../../../docs/reference/agent-tools.md) |
 | Device presence from the fleet MQTT broker | `mqtt_monitor.py`, `mqtt_config.py` | [docs/reference/mqtt-presence.md](../../../docs/reference/mqtt-presence.md) |
 | PCM package retention and the personal repository | `pcm.py` | [docs/reference/pcm-packaging.md](../../../docs/reference/pcm-packaging.md) |
 | The HTTP catalog and KiCad field visibility | `generator.py`, `mirror.py` | [docs/reference/kicad-integration.md](../../../docs/reference/kicad-integration.md) |
@@ -84,7 +84,7 @@ section first.
   `component_prices`, `datasheets` and `component_suppliers` (component-scoped,
   unversioned). Keep them out of `ComponentProperty`; the price keys
   (`PRICE_KEY_TO_COL`) and `Datasheet*` keys are stripped on import, and those
-  and the `Supplier N` keys are rejected by Jaravis's `_parse_properties` and
+  and the `Supplier N` keys are rejected by the agent tools' `_parse_properties` and
   the component editor.
   **Prices are never emitted to KiCad** (user decision 2026-07): neither the
   generated mirror symbols nor the HTTP catalog carry `Price *` fields —
@@ -93,7 +93,7 @@ section first.
 
 ## Creating a version (the one true pattern)
 
-Mirror `services/jaravis.py`. New component: `Component(name=…)` with
+Mirror `services/agent_tools.py`. New component: `Component(name=…)` with
 `current_version_id` left `None`; `ComponentVersion(version_no=1,
 created_by=<actor>, comment=…)`; `ComponentProperty` rows with `position`; then
 **`publish.publish_component_version(db, comp, cv, actor=…)`** and, after the
@@ -136,7 +136,7 @@ validation. Audit actions in use: `publish`, `review.check`, `review.revoke`,
 2. **Sync (`run_sync`, `POST /api/import/sync`)** — NON-DESTRUCTIVE: diffs each
    YAML component against the DB and creates **draft proposals** for new and
    changed components (reusing the proposal pattern in
-   [docs/reference/jaravis.md](../../../docs/reference/jaravis.md)). It never wipes,
+   [docs/reference/agent-tools.md](../../../docs/reference/agent-tools.md)). It never wipes,
    never deletes, and touches nothing but the drafts it creates + audit rows.
    Scope and guarantees:
    - Diffs on versioned component data only: `base_component`, footprint

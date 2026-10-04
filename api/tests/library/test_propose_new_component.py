@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from app import models as M
 from app.db import engine
-from app.services import jaravis, publish
+from app.services import agent_tools, publish
 from app.services.publish import CHANGE_COMMENT_LIMIT
 
 URL = "https://example.invalid/datasheet.pdf"
@@ -51,8 +51,8 @@ def session(monkeypatch):
         db.commit()
         return {"archived": False, "reason": "test stand-in"}
 
-    monkeypatch.setattr(jaravis, "SessionLocal", factory)
-    monkeypatch.setattr(jaravis, "_archive_datasheet", archive_commits)
+    monkeypatch.setattr(agent_tools, "SessionLocal", factory)
+    monkeypatch.setattr(agent_tools, "_archive_datasheet", archive_commits)
     monkeypatch.setattr(publish, "refresh_mirror_for_component", lambda *a, **k: {"warnings": []})
     try:
         db = factory()
@@ -68,7 +68,7 @@ def session(monkeypatch):
 
 
 def create(name, comment="test", datasheet_url=URL):
-    return json.loads(jaravis.propose_new_component.func(
+    return json.loads(agent_tools.propose_new_component.func(
         name=name, category="Resistor", base_component="R", properties_json=PROPS,
         datasheet_url=datasheet_url, comment=comment,
     ))

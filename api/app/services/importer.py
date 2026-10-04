@@ -174,10 +174,10 @@ def run_import() -> dict:
 
         _stage("seeding skills")
         skill_count = 0
-        # Jaravis's skills are AUTHORED FOR THE AGENT, not the old terminal
+        # The skills are AUTHORED FOR THE AGENT, not the old terminal
         # workflow. They live in app/seed_skills/ (not the library repo): the
         # repo's .claude/commands/*.md and CLAUDE.md files describe a shell +
-        # scripts pipeline Jaravis cannot run, so seeding from them would give
+        # scripts pipeline an agent cannot run, so seeding from them would give
         # it non-actionable, misleading instructions. Operating knowledge (its
         # tools, the draft gate, what it can and cannot do) lives in the agent's
         # system prompt; these seeded skills carry only editable conventions.
@@ -424,7 +424,7 @@ def run_import() -> dict:
 
 # ============================================================ sync (proposals)
 # Non-destructive alternative to run_import: diff each YAML component against the
-# DB and create DRAFT proposals (the Jaravis pattern) for new / changed parts.
+# DB and create DRAFT proposals (the agent-tools pattern) for new / changed parts.
 # Never wipes, never deletes, never publishes. Base symbols, footprints and
 # categories are resolved from what is ALREADY in the DB; a component that
 # references a missing one is reported and skipped (run a full import to add it).
@@ -533,7 +533,7 @@ def _version_state(cv: M.ComponentVersion) -> tuple:
 
 
 def _add_proposal(db, comp: M.Component, d: _Desired, version_no: int, comment: str) -> M.ComponentVersion:
-    """Create a DRAFT ComponentVersion + property rows + audit (Jaravis pattern).
+    """Create a DRAFT ComponentVersion + property rows + audit (agent-tools pattern).
     Leaves comp.current_version_id untouched — approval flips it live."""
     cv = M.ComponentVersion(
         component_id=comp.id,

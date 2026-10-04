@@ -66,7 +66,7 @@ concepts, and never let a UI print one where it means the other.
   (`geometry_proposals`, `importer`) and backfilled in a background thread from
   `main.py` startup. It is safe for it to be missing: an un-fingerprinted
   version blocks a carry rather than granting one.
-- Jaravis gets READ access only (`list_signoffs`, plus `production_signoff` on
+- An agent gets READ access only (`list_signoffs`, plus `production_signoff` on
   `get_component`). A production check is a human act and there is no draft to
   gate a robot's version of it.
 - **First human sign-off promotes `in_design` -> `released`**

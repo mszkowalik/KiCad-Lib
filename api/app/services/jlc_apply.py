@@ -1463,7 +1463,7 @@ def _write_audit(db: Session, action: str, entity_id: int | None,
     """Reuse the canonical writer (`routers/util.audit`) rather than building
     AuditLog rows by hand — it stringifies `entity_id`, which is `String(100)`
     and not an integer. Services importing that helper is an existing pattern
-    (`importer.py`, `jaravis.py`)."""
+    (`importer.py`, `agent_tools.py`)."""
     audit(db, action, "run_cost_document", entity_id,
           details=_jsonable(details), actor=actor)
 

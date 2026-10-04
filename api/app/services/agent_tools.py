@@ -1,31 +1,28 @@
-"""Jaravis — the library agent.
+"""The agent tools: the one tool surface every agent uses, over MCP.
 
-Runs on the Anthropic SDK's beta tool runner (custom DB tools, we host the
-loop). Write tools PUBLISH IMMEDIATELY (auto-publish, user design 2026-08-23;
-skills followed on 2026-08-24) — accountability lives on the review axis, not
-on a gate. Read tools answer questions about the library directly.
+The platform runs no agent of its own (decision 0062). Claude Code and other
+agents reach these tools through the MCP server (`mcp/`), which calls
+`routers/agent.py`, which dispatches `TOOLS` by name. Each tool is a plain
+function wrapped by the Anthropic SDK's `beta_tool`, which derives its JSON
+schema from the signature and the docstring.
 
-Auth: the anthropic client resolves credentials from the environment
-(ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / an `ant auth login` profile).
+Write tools PUBLISH IMMEDIATELY (auto-publish, user design 2026-08-23; skills
+followed on 2026-08-24) — accountability lives on the review axis, not on a
+gate. Read tools answer questions about the platform directly.
 """
 from __future__ import annotations
 
-import contextvars
 import dataclasses
 import json
 import math
-import os
 import re
-import threading
 
 from datetime import datetime, timezone
 
-import anthropic
 from anthropic import beta_tool
 from sqlalchemy import func
 
 from .. import models as M
-from ..config import settings
 from ..db import SessionLocal
 from ..routers.util import category_path, current_version, props_dict, resolved_value
 from ..services import memory, tracking
@@ -33,26 +30,6 @@ from ..services.fieldsolver import rules as fs_rules
 from ..services.generator import PRICE_KEY_TO_COL
 from ..services.lcsc import fetch_metadata
 from ..services.suppliers import is_supplier_key
-
-MODEL = settings.jaravis_model  # user preference: Sonnet; Opus via JARAVIS_MODEL
-MAX_TOKENS = 16000
-
-# Proposals created during the CURRENT chat turn. A ContextVar (not a module
-# global) so overlapping turns — runs now execute in background threads, and two
-# sessions can run at once — never cross-attribute each other's drafts. Set to a
-# fresh list at the start of each run_chat_events turn.
-_turn_proposals: contextvars.ContextVar[list] = contextvars.ContextVar("jaravis_turn_proposals")
-
-
-def _record_proposal(entry: dict) -> None:
-    try:
-        _turn_proposals.get().append(entry)
-    except LookupError:
-        pass  # proposal created outside a chat turn (e.g. a direct tool call) — ignore
-
-
-def available() -> bool:
-    return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
 
 
 # ------------------------------------------------------------------ read tools
@@ -821,8 +798,6 @@ def propose_skill_update(skill_name: str, content: str, comment: str) -> str:
         except ValueError as e:
             return json.dumps({"error": str(e)})
         db.commit()
-        _record_proposal({"proposal_id": sv.id, "component": s.name, "kind": "skill",
-                          "version_no": sv.version_no})
         return json.dumps({"ok": True, "skill": s.name, "version_no": sv.version_no,
                            "status": "published — live for every agent run from now on"})
     finally:
@@ -1363,7 +1338,6 @@ def propose_new_component(
                           entity_id=str(cv.id),
                           details={"component": comp.name, "new": True, "shell": shell}))
         result = _publish_component(db, comp, cv)
-        _record_proposal({"proposal_id": cv.id, "component": comp.name, "kind": "new"})
         out = {"ok": True, "proposal_id": cv.id, "component": comp.name, "version_no": cv.version_no, **result}
         if shell:
             out["note"] = (f"{comp.name!r} existed with no published version; published as "
@@ -1468,8 +1442,6 @@ def propose_component_edit(
         db.add(M.AuditLog(actor="jaravis", action="proposal.create", entity_type="component_version",
                           entity_id=str(cv.id), details={"component": comp.name, "new": False}))
         result = _publish_component(db, comp, cv)
-        _record_proposal({"proposal_id": cv.id, "component": comp.name, "kind": "edit",
-                          "version_no": new_no})
         return json.dumps({"ok": True, "proposal_id": cv.id, "component": comp.name,
                            "version_no": new_no, **result})
     finally:
@@ -1512,9 +1484,6 @@ def propose_symbol_edit(name: str, source_text: str, comment: str,
         res = propose_symbol_version(db, name, source_text, comment, actor="jaravis",
                                      minor_change=True if minor_change else None,
                                      force=force)
-        if "error" not in res and not res.get("unchanged"):
-            _record_proposal({"proposal_id": res["proposal_id"], "component": res["symbol"],
-                              "kind": "symbol", "version_no": res["version_no"]})
         return json.dumps(res)
     finally:
         db.close()
@@ -1557,9 +1526,6 @@ def propose_footprint_edit(name: str, source_text: str, comment: str,
         res = propose_footprint_version(db, name, source_text, comment, actor="jaravis",
                                         minor_change=True if minor_change else None,
                                         force=force)
-        if "error" not in res and not res.get("unchanged"):
-            _record_proposal({"proposal_id": res["proposal_id"], "component": res["footprint"],
-                              "kind": "footprint", "version_no": res["version_no"]})
         return json.dumps(res)
     finally:
         db.close()
@@ -2612,398 +2578,3 @@ TOOLS = [
     fieldsolver_find_solutions, fieldsolver_board, fieldsolver_assign_stackup,
     fieldsolver_save_profile,
 ]
-
-# Anthropic-hosted server tools — executed on the API side, no local dispatch.
-# max_uses caps cost per turn; web_fetch reads PDFs (datasheets) natively.
-SERVER_TOOLS = [
-    {"type": "web_search_20260209", "name": "web_search", "max_uses": 8},
-    {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 8,
-     "max_content_tokens": 40000},
-]
-
-
-def _build_system(db) -> str:
-    skills = []
-    for skill in db.query(M.Skill).order_by(M.Skill.name):
-        cur = next((v for v in skill.versions if v.id == skill.current_version_id), None)
-        if cur is not None:
-            head = f"### Skill: {skill.name}"
-            if skill.description:
-                head += f" — {skill.description}"
-            skills.append(f"{head}\n{cur.content}")
-    skills_text = "\n\n".join(skills) if skills else "(no skill documents are currently defined)"
-    return f"""You are Jaravis, the librarian agent of the 7Sigma KiCad component library platform.
-
-## Your role
-You help the user browse the component library, answer questions about it, add new
-components and edit existing ones (including symbol and footprint geometry), verify parts
-against their datasheets, and research parts on the internet. You act through the tools
-below.
-
-## How you access the library
-You run *inside* the platform's API service. Your tools query the platform's Postgres
-database directly, in-process. The database is the library's source of truth, and you
-have FULL READ ACCESS to everything it holds — components, geometry, archived datasheet
-PDFs, prices + history, stock, projects, BOMs, production runs, notes, and the audit log.
-
-Read / browse (use these to answer questions directly):
-- search_components(query, category) — find components by text and/or category
-- get_component(name) — full detail of one component: ordered properties, base symbol,
-  footprint, category, prices, price ladder, stock, datasheets, version history and the
-  user's notes. Stock has THREE separate pools that routinely disagree: `lcsc_retail`
-  (the lcsc.com webshop — what the platform's "LCSC stock" label shows), `jlcpcb_assembly`
-  (JLCPCB's parts library for SMT assembly at jlcpcb.com/parts — often stocked when LCSC
-  retail is sold out), and `private_jlc_library` (parts the user personally holds on
-  consignment at JLC). Never treat one pool's zero as "unavailable" without checking the
-  other two, and always say which pool a number came from.
-- list_categories() — the category tree with per-category counts
-- list_base_symbols(query) / list_footprints(query) — name lists with pin/pad counts
-- get_symbol(name) — one base symbol in full: pin table (number, name, electrical type),
-  units, which components use it, version history, raw s-expression source
-- get_footprint(name) — one footprint in full: pad table (number, type, shape, size,
-  drill, layers), courtyard/fab flags, 3D model refs, users, raw source
-- read_datasheet(component, pages, datasheet_label) — the locally archived datasheet PDF
-  as extracted text AND rendered page images (you can SEE pinout drawings and package
-  dimensions). Call without pages first to learn the page count, then request specific
-  pages.
-- get_price_history(component) — the append-only price timeline runs are priced from
-- get_audit_log(limit, entity_type, actor, include_tracking) — who changed what, when
-- list_models3d(query) — stored 3D model files
-- get_skill(name) — read the current text of one of your skill documents
-- list_signoffs(state) — production sign-off state of every component. A sign-off means
-  a HUMAN checked the symbol, the land pattern and the part number before boards were
-  built. It is NOT the same as a version being published: approval only means the edit
-  was let into the library. `stale` means an older version was checked and something
-  material changed since — `needs_recheck_because` names what. You may READ this and
-  report on it; you may never sign anything off, and you must never describe an unsigned
-  or stale part as verified.
-
-Internet access:
-- web_search / web_fetch — general web research: manufacturer pages, app notes,
-  alternatives, package standards. web_fetch reads PDFs, so it can open datasheets that
-  are not archived locally (prefer read_datasheet for archived ones — it is faster and
-  returns page images).
-- lcsc_lookup(lcsc_id) — LCSC part metadata (manufacturer, MPN, description, datasheet
-  URL, category, package)
-- search_jlc_parts(keyword) — public JLCPCB assembly-parts catalog search (find
-  alternatives that JLC can actually assemble; `+` = AND, MPNs unhyphenated)
-- get_jlc_details(lcsc_codes) — official JLC API batch detail (assembly stock, JLC price
-  ladder); needs configured credentials
-- refresh_supply(component) — live re-fetch of LCSC ladder/stock + JLCPCB assembly stock
-  for one component (auto-managed data — allowed without approval)
-- list_suppliers() — the supplier register in library order; a part's own links and order
-  are in get_component's `suppliers`, and the first supplier with prices prices the BOM
-
-Projects (the platform also tracks the user's KiCad design projects):
-- list_projects() — tracked projects with latest snapshot, boards, variants, run count
-- get_project(name) — one project in full: snapshots, notes, production runs
-- get_project_bom(project, board, variant, volume) — priced BOM at a production volume
-- get_production_run(project, run) — run economics from historical pricing at the run
-  date, with the user's overrides applied
-- component_where_used(component_name) — which projects use a library component. Check
-  this before recommending edits to a part that is in use.
-
-Write (every one of these PUBLISHES IMMEDIATELY — the propose_* names are historical):
-- propose_new_component(...) — a brand-new component
-- propose_component_edit(...) — a new version of an existing component
-- propose_symbol_edit(name, source_text, comment) — a new version of a base symbol
-  (or a new base symbol). Call get_symbol first and edit its returned source.
-- propose_footprint_edit(name, source_text, comment) — a new version of a footprint
-  (or a new footprint). Call get_footprint first and edit its returned source.
-- propose_skill_update(skill_name, content, comment) — a new version of one of your own
-  skill documents (call get_skill first; content replaces the whole document)
-- link_supplier(component, supplier, part_number, url, note) — record where a part is bought
-  and the supplier's own part number. Unversioned, costs no verification. `Supplier N`
-  properties no longer exist; JLCPCB/LCSC links follow the LCSC Part property.
-- set_footprint_package_name(name, package_name) — the footprint's SHORT package name
-  ("0402", "SOT-23-6", "VQFN-HR-9"), which is what {{Footprint_Name}} resolves to in a
-  ki_description. Unversioned: it mints no footprint version. Call it right after
-  publishing a BRAND-NEW footprint — a new one has no package name, so the first
-  component referencing it publishes with an unresolved {{Footprint_Name}} mirror warning.
-
-## What you cannot do
-- You have no shell, no Python interpreter, and no filesystem. The previous file-based
-  workflow — a command-line generation-and-validation pipeline and CLI import tools — is
-  not available to you. Never tell the user to run it, and never claim to have run
-  anything yourself.
-- You cannot create or edit 3D models — only reference ones that exist (list_models3d).
-- You cannot sign a part off for production. That is a human act.
-
-## There is no approval gate — accountability is the review axis
-Nothing you write waits for approval: a write lands in the live library, the mirror and
-the KiCad catalog. What replaced the gate is the REVIEW AXIS. Every publish records a
-machine validation; you then verify the version against its documentation with
-get_review_checklist / record_verification, and a human signs it off for production.
-So:
-- Say what you CHANGED, not what you proposed, and name the new version number.
-- Be honest in a verification: LEAVE AN ITEM UNANSWERED when the documentation does not
-  let you check it, `na` (reason code required) only when it genuinely does not apply,
-  `flagged` (note required) when you checked it and found it WRONG but did not fix it,
-  never `checked` on a guess.
-- Versions are immutable, so the undo is a new version restoring the old content — say so
-  plainly instead of implying a change can be withdrawn.
-- Check component_where_used before editing a part that is in use, and prefer reusing an
-  existing symbol/footprint over adding a near-duplicate.
-Prices are auto-managed (refreshed from LCSC) — never set price properties. Datasheets are
-managed separately — pass a URL via datasheet_url, never as a "Datasheet" property.
-
-## Adding a component (typical flow)
-1. Given an LCSC number, call lcsc_lookup first for real metadata — never guess values.
-2. Pick the category (list_categories) and an existing base symbol (list_base_symbols) and
-   footprint (list_footprints) that match the part's package and pin count.
-3. Open a similar existing component in the same category with get_component and mirror its
-   property set and order.
-4. If a needed footprint or base symbol does not exist, you may create one with
-   propose_footprint_edit / propose_symbol_edit (new name = creation) — but prefer reusing
-   an existing one, and say clearly that the new geometry is live and unverified.
-5. Call propose_new_component (or propose_component_edit), then tell the user which
-   version you published and what still needs verifying.
-
-## Verifying a part against its datasheet (typical flow)
-1. read_datasheet for the pinout and package-drawing pages (look at the IMAGES — pin-1
-   markers, pad dimensions and pitch are graphical).
-2. get_symbol — compare pin numbers, names and electrical types against the pinout.
-3. get_footprint — compare pad numbering, pitch, pad sizes and courtyard against the
-   package drawing (all dimensions in mm).
-4. Report what is confirmed vs. mismatched, citing datasheet page numbers. Record the
-   result with record_verification — `flagged` for something you found wrong and left
-   alone. Only make the fix itself when the user asks for it: it publishes at once.
-
-## Editing geometry (symbols / footprints)
-Symbol and footprint sources are KiCad s-expressions; edit them exactly (grid-aligned
-coordinates in mm, matching the conventions in your skill documents). Keep edits minimal —
-change what the task needs, preserve everything else. Note: components pin the symbol
-drawing version they were generated with; the KiCad-facing base library and HTTP catalog
-always use the newest published drawing, so a symbol edit takes effect there immediately,
-and the components pinned to the old drawing are repointed automatically.
-
-## Your skill documents
-Below are your editable convention guides — naming, properties, and how to choose
-footprints and base symbols. They are the current version from the Skills page; the user
-can edit them, and you can update them with propose_skill_update when you learn a lasting
-rule. That write is live for every later agent run, so make it a rule worth keeping.
-Follow their conventions.
-
-{skills_text}"""
-
-
-# Bound on model calls per user turn — a stuck loop must not grind forever.
-# When hit, the runner just stops iterating; run_chat_events synthesizes an
-# honest "stopped, say continue" reply instead of returning silence.
-MAX_ITERATIONS = 80
-
-
-def run_chat_events(messages: list[dict]):
-    """Generator: run one Jaravis turn, yielding progress events as the agent
-    loop advances — {"type": "note", text} for interim narration text,
-    {"type": "tool", tool, input} the moment a tool call is issued, and one
-    final {"type": "done", reply, trace, proposals}. The chat router streams
-    these as NDJSON so the UI shows live activity; closing the generator
-    (client disconnect / Stop button) ends the run at the next event.
-
-    The server tools (web_search / web_fetch) execute on Anthropic's side; a
-    long research turn can stop with stop_reason="pause_turn", which the
-    Python tool runner does NOT auto-resume — it would silently truncate the
-    answer. So the conversation is mirrored while iterating and the runner is
-    restarted with the paused turn appended (bounded)."""
-    _turn_proposals.set([])
-    db = SessionLocal()
-    try:
-        system = _build_system(db)
-    finally:
-        db.close()
-
-    client = anthropic.Anthropic()
-    convo: list[dict] = [dict(m) for m in messages]
-    trace: list[dict] = []
-    final = None
-    for _ in range(4):  # initial run + up to 3 pause_turn resumes
-        runner = client.beta.messages.tool_runner(
-            model=MODEL,
-            max_tokens=MAX_TOKENS,
-            thinking={"type": "adaptive"},
-            system=system,
-            tools=[*TOOLS, *SERVER_TOOLS],
-            messages=convo,
-            max_iterations=MAX_ITERATIONS,
-        )
-        for message in runner:
-            final = message
-            convo.append({"role": "assistant", "content": message.content})
-            for block in message.content:
-                if block.type == "text" and block.text.strip():
-                    yield {"type": "note", "text": block.text}
-                elif block.type in ("tool_use", "server_tool_use"):
-                    item = {"tool": block.name, "input": block.input}
-                    trace.append(item)
-                    yield {"type": "tool", **item}
-            # cached by the runner — tools still execute exactly once
-            tool_response = runner.generate_tool_call_response()
-            if tool_response is not None:
-                convo.append(tool_response)
-        if final is None or final.stop_reason != "pause_turn":
-            break
-    reply = ""
-    if final is not None:
-        reply = "\n".join(b.text for b in final.content if b.type == "text")
-    if not reply and final is not None and final.stop_reason == "tool_use":
-        reply = (f"(Stopped after {len(trace)} tool calls — the per-message cap of "
-                 f"{MAX_ITERATIONS} model iterations was reached. The work done so far is "
-                 "saved; say \"continue\" to keep going.)")
-    yield {"type": "done", "reply": reply, "trace": trace,
-           "proposals": list(_turn_proposals.get([]))}
-
-
-def run_chat(messages: list[dict]) -> dict:
-    """Blocking variant of run_chat_events — drains the events and returns
-    only the final result (kept for the non-streaming /chat endpoint)."""
-    result = {"reply": "", "trace": [], "proposals": []}
-    for ev in run_chat_events(messages):
-        if ev["type"] == "done":
-            result = {"reply": ev["reply"], "trace": ev["trace"], "proposals": ev["proposals"]}
-    return result
-
-
-# --------------------------------------------------------- persisted sessions
-def _title_from(content: str) -> str:
-    """Derive a short session title from the first user message."""
-    line = next((ln.strip() for ln in content.splitlines() if ln.strip()), "")
-    line = line or "New chat"
-    return line if len(line) <= 60 else line[:57].rstrip() + "…"
-
-
-# ------------------------------------------------------- background chat runs
-# A Jaravis turn runs in a BACKGROUND THREAD, decoupled from the HTTP client, so
-# a page refresh / closed tab does NOT cancel it — the run finishes and the
-# assistant reply is persisted regardless. Clients (including one that
-# reconnects after a refresh) subscribe to the run's event buffer and replay it
-# from the start. The registry is in-process (single uvicorn worker, single-user
-# app) and does NOT survive a process restart: a run in flight when the server
-# restarts — including a `--reload` triggered by a code edit — is lost, the same
-# class of event as any crash. There is at most one active run per session.
-
-
-class _Run:
-    def __init__(self, session_id: int):
-        self.session_id = session_id
-        self.events: list[dict] = []      # every event emitted so far (replayable)
-        self.done = False
-        self.cancelled = False
-        self.cond = threading.Condition()  # notifies subscribers of new events / done
-
-
-_RUNS: dict[int, _Run] = {}
-_RUNS_LOCK = threading.Lock()
-
-
-def has_active_run(session_id: int) -> bool:
-    with _RUNS_LOCK:
-        run = _RUNS.get(session_id)
-        return run is not None and not run.done
-
-
-def _emit(run: _Run, ev: dict) -> None:
-    with run.cond:
-        run.events.append(ev)
-        run.cond.notify_all()
-
-
-def _run_worker(session_id: int, content: str) -> None:
-    run = _RUNS[session_id]
-    db = SessionLocal()
-    try:
-        sess = db.get(M.JaravisSession, session_id)
-        if sess is None:
-            _emit(run, {"type": "error", "error": f"session {session_id} not found"})
-            return
-        prior = (db.query(M.JaravisMessage).filter_by(session_id=session_id)
-                 .order_by(M.JaravisMessage.id).all())
-        convo = [{"role": m.role, "content": m.content} for m in prior]
-        convo.append({"role": "user", "content": content})
-
-        # Persist the user message BEFORE the (possibly long) turn.
-        db.add(M.JaravisMessage(session_id=session_id, role="user", content=content))
-        if not prior and (sess.title or "").strip() in ("", "New chat"):
-            sess.title = _title_from(content)
-        sess.updated_at = M.utcnow()
-        db.commit()
-        _emit(run, {"type": "session", "session_id": session_id, "title": sess.title})
-
-        for ev in run_chat_events(convo):
-            if run.cancelled:
-                break  # closes run_chat_events (GeneratorExit) at this boundary
-            if ev.get("type") == "done":
-                db.add(M.JaravisMessage(
-                    session_id=session_id, role="assistant",
-                    content=ev.get("reply") or "",
-                    trace=ev.get("trace") or None,
-                    proposals=ev.get("proposals") or None,
-                ))
-                sess.updated_at = M.utcnow()
-                db.commit()
-            _emit(run, ev)
-    except Exception as e:  # a worker must never die silently
-        _emit(run, {"type": "error", "error": f"Jaravis run failed: {e}"})
-    finally:
-        db.close()
-        with run.cond:
-            run.done = True
-            run.cond.notify_all()
-        with _RUNS_LOCK:
-            # Drop from the registry so has_active_run() flips False at once;
-            # subscribers already streaming keep their local ref and drain.
-            if _RUNS.get(session_id) is run:
-                del _RUNS[session_id]
-
-
-def start_session_run(session_id: int, content: str) -> bool:
-    """Begin a background turn. Returns False if one is already running for the
-    session (the caller should attach to it instead of starting a second)."""
-    with _RUNS_LOCK:
-        existing = _RUNS.get(session_id)
-        if existing is not None and not existing.done:
-            return False
-        _RUNS[session_id] = _Run(session_id)
-    # The turn runs in the context of the request that started it, so every
-    # write the agent makes is attributed to the person who sent the message
-    # (decision 0050). A bare Thread starts with an EMPTY context.
-    ctx = contextvars.copy_context()
-    threading.Thread(target=ctx.run, args=(_run_worker, session_id, content),
-                     name=f"jaravis-run-{session_id}", daemon=True).start()
-    return True
-
-
-def cancel_session_run(session_id: int) -> bool:
-    """Signal the session's active run to stop at the next event boundary (the
-    server-side equivalent of the old Stop button). No assistant message is
-    persisted for a cancelled turn."""
-    with _RUNS_LOCK:
-        run = _RUNS.get(session_id)
-    if run is None or run.done:
-        return False
-    with run.cond:
-        run.cancelled = True
-        run.cond.notify_all()
-    return True
-
-
-def stream_run_events(session_id: int):
-    """Replay a run's events from the start, blocking for new ones, until the
-    run is done AND fully drained. Ends immediately if there is no run. Safe for
-    multiple concurrent subscribers; never yields while holding the lock."""
-    with _RUNS_LOCK:
-        run = _RUNS.get(session_id)
-    if run is None:
-        return
-    idx = 0
-    while True:
-        with run.cond:
-            while idx >= len(run.events) and not run.done:
-                run.cond.wait(timeout=30.0)
-            batch = run.events[idx:]
-            idx += len(batch)
-            finished = run.done and idx >= len(run.events)
-        for ev in batch:
-            yield ev
-        if finished:
-            return

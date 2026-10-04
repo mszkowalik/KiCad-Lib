@@ -9,7 +9,7 @@ shared helpers, and you reuse them rather than write a second one.
 
 ## Never hand-write a per-tool agent route
 
-`agent.py` dispatches `services/jaravis.py::TOOLS` by name. Add a tool there and
+`agent.py` dispatches `services/agent_tools.py::TOOLS` by name. Add a tool there and
 the HTTP surface and the MCP server both get it. See
 [mcp/CLAUDE.md](../../../mcp/CLAUDE.md).
 

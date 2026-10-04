@@ -2,8 +2,9 @@
 
 Web-hosted component library for KiCad: Postgres-backed catalog with versioned
 components/symbols/footprints, publish-then-review workflow, KiCad HTTP library +
-PCM packages, project BOMs and production-run economics, and the Jaravis agent
-(also exposed to Claude Code over MCP).
+PCM packages, project BOMs and production-run economics, and the agent tools
+that Claude Code and other agents reach over MCP (the platform runs no agent of
+its own, decision 0062).
 
 **Postgres is the source of truth.** The old YAML pipeline that seeded it
 (`Sources/*.yaml`, `kicad_lib/`, `main.py`, generated `Symbols/` +
@@ -22,7 +23,7 @@ files — write it once and link to it.
 
 | Path | Role | Read before you change it |
 |---|---|---|
-| `api/` | FastAPI backend (DB, importer, generator, Jaravis, JLC/LCSC clients) | `api/CLAUDE.md` |
+| `api/` | FastAPI backend (DB, importer, generator, agent tools, JLC/LCSC clients) | `api/CLAUDE.md` |
 | `api/app/services/` | Business logic | `api/app/services/CLAUDE.md` — it routes every backend topic to its document |
 | `api/app/routers/` | HTTP endpoints | `api/app/routers/CLAUDE.md` |
 | `api/app/services/fieldsolver\|flasher\|pcm_plugin/` | Field solver, production programming, the KiCad sync plugin | the `CLAUDE.md` in that directory |

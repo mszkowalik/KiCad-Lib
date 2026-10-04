@@ -11,7 +11,7 @@ would be silent.
 1. It sees the `websocket` scope, so the flasher run socket
    (`/api/flasher/ws/{run}`) is gated here instead of needing its own check.
    `BaseHTTPMiddleware` never runs for a WebSocket.
-2. Jaravis streams turns as long-lived NDJSON responses and the flasher engine
+2. Long-lived streamed responses (NDJSON) and the flasher engine
    holds a socket open for minutes. `BaseHTTPMiddleware` wraps every response
    in an anyio task pair, which is exactly the shape that has historically
    broken streaming and cancellation.

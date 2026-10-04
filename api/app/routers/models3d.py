@@ -5,7 +5,7 @@ Unlike components/symbols/footprints, `models3d` carries no version/draft
 gate -- it is static asset content, the same treatment the old YAML importer
 gave it (see services/importer.py). A successful upload here is therefore
 live immediately: no approval step, matching how list_models3d has always
-been read-only-but-ungated for Jaravis. See services/mirror.py for how a row
+been read-only-but-ungated for agents. See services/mirror.py for how a row
 reaches the file mirror.
 """
 from __future__ import annotations

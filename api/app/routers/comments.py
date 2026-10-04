@@ -1,5 +1,5 @@
 """Comments — free-form notes on any entity (component, symbol, footprint).
-Facebook-style: not versioned; deletable; Jaravis reads them as context.
+Facebook-style: not versioned; deletable; the agent tools read them as context.
 
 One generic `comments` table (`target_type` + `target_id`); each entity family
 gets its own list/add URL so callers stay explicit about what they annotate."""

@@ -11,7 +11,7 @@ Three kinds of row land in it:
 2. **The call sites' own rows** (`run.document.update`, `comment.add` …) —
    stamped here with `user_id` and `request_id`. An `actor` of `"user"` (the
    placeholder 73 call sites pass) becomes the person's name; a robot label
-   (`"jaravis"`, `"review"`) is kept, and `user_id` says who set it going.
+   (`"agent"`, `"review"`) is kept, and `user_id` says who set it going.
 3. **`action="row.insert|row.update|row.delete"`** — every ORM row changed
    during a request, captured by flush hooks on EVERY session. No endpoint
    opts in. `entity_type` is the TABLE name, `details` the values.
@@ -99,7 +99,7 @@ def actor_for(user, request_id: str, auth_via: str) -> RequestActor:
 # placeholder "user" — the default ~20 models declare and the value many call
 # sites hardcode — it is replaced with the signed-in person's name.
 #
-# ONLY the placeholder is replaced. A robot label ("import", "jaravis",
+# ONLY the placeholder is replaced. A robot label ("import", "agent",
 # "auto", "seed") is a true statement about who acted and stays; NULL in a
 # nullable column means "not yet" (`approved_by`, `revoked_by`) and stays.
 WHO_COLUMNS = frozenset({

@@ -771,7 +771,7 @@ class ComponentComment(Base):
 
 class Comment(Base):
     """Free-form notes on any entity — future-reference remarks, gotchas,
-    sourcing notes. Not versioned; Jaravis reads them as context. One table
+    sourcing notes. Not versioned; the agent tools read them as context. One table
     for all targets; ``target_type`` selects the parent family.
 
     target_type ∈ {"component", "symbol", "footprint"}; ``target_id`` is that
@@ -1213,12 +1213,12 @@ class Rule(Base):
 
 # -------------------------------------------------------------------- skills
 class Skill(Base):
-    """Jaravis skills — versioned documents, editable in the UI.
+    """Skills — versioned convention documents, editable in the UI.
 
     ``description`` is when-to-use metadata, NOT part of the document: it is the
     one-liner that tells an agent whether this skill is relevant before reading
     it. Deliberately unversioned (a label on the skill, not on its text) — it
-    feeds Jaravis's system prompt and the Claude Code skill mirror's frontmatter.
+    feeds the `list_skills` agent tool and the Claude Code skill mirror's frontmatter.
     """
 
     __tablename__ = "skills"
@@ -1249,43 +1249,10 @@ class SkillVersion(Base):
 
 
 # ------------------------------------------------------------ jaravis chats
-class JaravisSession(Base):
-    """A persisted Jaravis conversation. Survives page reloads and the user can
-    keep several in parallel, returning to any of them. Messages are stored in
-    order; the newest `updated_at` sorts a session to the top of the list."""
+# The in-platform chat (`jaravis_sessions`, `jaravis_messages`) was removed by
+# decision 0062. Its tables stay in the database with their history; no code
+# reads or writes them, and nothing new may.
 
-    __tablename__ = "jaravis_sessions"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    title: Mapped[str] = mapped_column(String(300), default="New chat")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-    messages: Mapped[list["JaravisMessage"]] = relationship(
-        back_populates="session", order_by="JaravisMessage.id", cascade="all, delete-orphan"
-    )
-
-
-class JaravisMessage(Base):
-    """One turn in a JaravisSession. Only role + text are replayed to the agent;
-    `trace` (the turn's tool calls) and `proposals` (drafts it created) are kept
-    on assistant messages so a reloaded thread renders exactly like the live run
-    (tool list + proposal notes)."""
-
-    __tablename__ = "jaravis_messages"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    session_id: Mapped[int] = mapped_column(ForeignKey("jaravis_sessions.id"))
-    role: Mapped[str] = mapped_column(String(20))  # "user" | "assistant"
-    content: Mapped[str] = mapped_column(Text, default="")
-    trace: Mapped[list | None] = mapped_column(JSONB, nullable=True)
-    proposals: Mapped[list | None] = mapped_column(JSONB, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-    session: Mapped[JaravisSession] = relationship(back_populates="messages")
-
-
-# --------------------------------------------------------------------- audit
 class AuditLog(Base):
     __tablename__ = "audit_log"
 
@@ -1298,7 +1265,7 @@ class AuditLog(Base):
     details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # The signed-in person whose request wrote this row, and that request.
     # Filled by `services/tracking.py` from the request context, never by a
-    # call site — so an `actor` that names a robot ("jaravis", "review") still
+    # call site — so an `actor` that names a robot ("agent", "review") still
     # says which person set it going. NULL for background jobs. The same module
     # writes two more kinds of row here: `request` (one per write call) and
     # `row.insert|update|delete` (one per ORM row changed). Decision 0050.

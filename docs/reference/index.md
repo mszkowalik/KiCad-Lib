@@ -24,7 +24,7 @@ edited.
 | [projects-module.md](projects-module.md) | Git-tracked designs, mirrors, snapshots, exports, credentials | `services/gitrepo.py`, `project_ops.py` |
 | [spice-runs.md](spice-runs.md) | Netlists, ngspice, verdict harnesses, the live sketch | `services/sim_spice.py`, `project_ops.py`, `sch_lib.py` |
 | [simulation-models.md](simulation-models.md) | Model storage, generated package wrappers, composition | `services/simmodel.py`, `sim_store.py`, `simcompose.py` |
-| [jaravis.md](jaravis.md) | The agent tool implementation | `services/jaravis.py` |
+| [agent-tools.md](agent-tools.md) | The agent tool implementation (reached over MCP only) | `services/agent_tools.py` |
 | [pcm-packaging.md](pcm-packaging.md) | Package retention, per-package versioning, the personal repository URL | `services/pcm.py` |
 | [kicad-integration.md](kicad-integration.md) | How the library reaches KiCad, the HTTP catalog, field visibility | `services/generator.py`, `mirror.py`, the plugin |
 | [deployment.md](deployment.md) | Images, GHCR, the build cache, the server | a Dockerfile, a compose file, the workflow |

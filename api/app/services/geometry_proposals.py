@@ -2,8 +2,8 @@
 
 Two callers share this module and must never diverge:
 
-* ``services/jaravis.py`` — the ``propose_symbol_edit`` / ``propose_footprint_edit``
-  agent tools (Jaravis chat and the MCP server).
+* ``services/agent_tools.py`` — the ``propose_symbol_edit`` / ``propose_footprint_edit``
+  agent tools (reached over the MCP server).
 * ``routers/libraries.py`` — ``POST /api/{symbols,footprints}/{id}/propose``,
   the web UI's paste box.
 
@@ -383,7 +383,7 @@ def _unchanged(kind: str, parent, source_text: str) -> dict | None:
 
 
 def propose_footprint_version(
-    db: Session, name: str, source_text: str, comment: str, actor: str = "jaravis",
+    db: Session, name: str, source_text: str, comment: str, actor: str = "agent",
     publish: bool = True, minor_change: bool | None = None, force: bool = False,
 ) -> dict:
     """Create — and by default PUBLISH — a `FootprintVersion`.
@@ -503,7 +503,7 @@ def propose_footprint_version(
 
 
 def propose_symbol_version(
-    db: Session, name: str, source_text: str, comment: str, actor: str = "jaravis",
+    db: Session, name: str, source_text: str, comment: str, actor: str = "agent",
     publish: bool = True, minor_change: bool | None = None, force: bool = False,
 ) -> dict:
     """Create — and by default PUBLISH — a `SymbolVersion`. Same contract as

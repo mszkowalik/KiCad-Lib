@@ -61,11 +61,6 @@ KNOBS: tuple[Knob, ...] = (
          "leaves those endpoints open — acceptable only on a trusted network.",
          secret=True),
     # ----------------------------------------------------------- integrations
-    Knob("anthropic_api_key", "Integrations", "Anthropic API key", "str",
-         "Enables the in-app Jaravis chat. Claude Code over MCP does not need "
-         "it — that path runs on your subscription.", secret=True),
-    Knob("jaravis_model", "Integrations", "Jaravis model", "str",
-         "Model id used by the in-app chat."),
     Knob("jlc_app_id", "Integrations", "JLCPCB app id", "str",
          "JLCPCB OpenAPI credentials enable the private parts library "
          "(consigned stock) and the assembly price ladders."),

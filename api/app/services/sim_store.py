@@ -164,7 +164,7 @@ def delete_sim_model(db: Session, name: str, actor: str = "user",
 
 
 def propose_sim_model_version(
-    db: Session, name: str, source_text: str, comment: str, actor: str = "jaravis",
+    db: Session, name: str, source_text: str, comment: str, actor: str = "agent",
     kind: str | None = None, refresh: bool = True,
 ) -> dict:
     """Create and PUBLISH a `SimModelVersion` (new name = new model).
@@ -256,7 +256,7 @@ def propose_sim_model_version(
 
 
 def set_symbol_sim_link(
-    db: Session, symbol_name: str, model_name: str, pin_map: dict, actor: str = "jaravis",
+    db: Session, symbol_name: str, model_name: str, pin_map: dict, actor: str = "agent",
     refresh: bool = True,
 ) -> dict:
     """Create or replace THE link of a base symbol (one per symbol).

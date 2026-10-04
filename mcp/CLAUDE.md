@@ -1,20 +1,21 @@
 # Agent tool surface and MCP server (`mcp`)
 
 `mcp/server.py` is a stateless stdio client. It exposes the platform's agent
-tools to Claude Code. The tools themselves are
-`api/app/services/jaravis.py::TOOLS`, dispatched by `api/app/routers/agent.py` —
-see [docs/reference/jaravis.md](../docs/reference/jaravis.md) for the
-implementation.
+tools to Claude Code and other agents. The tools themselves are
+`api/app/services/agent_tools.py::TOOLS`, dispatched by `api/app/routers/agent.py` —
+see [docs/reference/agent-tools.md](../docs/reference/agent-tools.md) for the
+implementation. **The platform runs no agent of its own**: the in-app chat was
+removed (decision 0062), and MCP is the only way an agent reaches the platform.
 
-## Jaravis capability policy (user directive, 2026-07)
+## Agent capability policy (user directive, 2026-07)
 
-- **Full read access to ALL platform data.** Jaravis must never be blind to
+- **Full read access to ALL platform data.** An agent must never be blind to
   data the platform holds — components, symbols, footprints, geometry, 3D
   models, datasheets (including archived PDF content), prices + history,
   stock, projects, snapshots, BOMs, production runs, notes, audit log. When a
-  new table/service lands, add a matching Jaravis read tool; withholding data
+  new table/service lands, add a matching read tool; withholding data
   from it is a bug, not a safety feature.
-- **Jaravis may view AND edit symbols, footprints and components — and its
+- **An agent may view AND edit symbols, footprints and components — and its
   writes AUTO-PUBLISH** (user design 2026-08-23, superseding the draft gate).
   The `propose_*` tools keep their names but publish immediately through
   `services/publish.py`; accountability moved from the gate to the review
@@ -36,25 +37,19 @@ implementation.
 
 ## The HTTP surface and the MCP server
 
-The library agent is reachable two ways over the **same** tool set
-(`services/jaravis.py::TOOLS` — one list; `GET /api/agent/tools` is the live count):
-
-1. **In-app Jaravis** — the Anthropic tool-runner chat (`services/jaravis.py`,
-   `routers/jaravis.py`). Burns Anthropic API tokens; has the web chat UI.
-2. **MCP / Claude Code** — `routers/agent.py` exposes the identical tools over
-   HTTP so an external MCP server drives them under a Claude Code subscription
-   (no per-token API metering). This is the primary entry point going forward;
-   Jaravis's chat loop is kept but superseded (do not delete it yet).
+One tool set (`services/agent_tools.py::TOOLS`; `GET /api/agent/tools` is the
+live count), reached one way: `routers/agent.py` exposes it over HTTP and the
+MCP server drives it under the agent's own subscription. Do not bring back an
+in-platform agent loop — decision 0062 records why.
 
 **`routers/agent.py` — dispatch, never reimplement.** `GET /api/agent/tools`
-returns `[t.to_dict() for t in jaravis.TOOLS]` (name + description + JSON
+returns `[t.to_dict() for t in agent_tools.TOOLS]` (name + description + JSON
 schema); `POST /api/agent/tools/{name}` looks the tool up in
 `{t.name: t for t in TOOLS}` and runs `t.func(**json_body)` in a threadpool. The
 `@beta_tool` objects are callable and carry `.name/.description/.input_schema/
 .to_dict()/.func`, so **adding a tool to `TOOLS` exposes it over HTTP and to
-Claude Code automatically** — never write per-tool routes. Anthropic server
-tools (`web_search`/`web_fetch`, in `SERVER_TOOLS`) are intentionally NOT
-exposed — Claude Code brings its own web tools.
+Claude Code automatically** — never write per-tool routes. An agent brings its
+own web tools.
 
 **Auth:** a **personal API token** (`Authorization: Bearer <token>`), minted per
 user in the Setup page's Users card. The shared `settings.mcp_token` still works
@@ -79,8 +74,7 @@ converted to MCP image content; every other tool returns a JSON string as text.
 - **One tool is LOCAL, not proxied: `upload_model3d`** (`LOCAL_TOOLS`, merged
   into the catalog in `list_tools` and dispatched before the proxy). A 3D model
   is a multi-megabyte file on the user's own disk; proxying it would mean
-  base64 through a tool call, and the platform-side agent cannot read that
-  filesystem at all. It reads the file locally and posts multipart to
+  base64 through a tool call, and the platform cannot read that filesystem. It reads the file locally and posts multipart to
   `/api/models3d/upload`, then returns the ready `(model …)` node. Its default
   `rel_path` rule duplicates `services/pcm_plugin/model_paths.suggest_rel_path`
   (this script imports no app code) — change both together. Keep local tools to

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-04 (no in-platform agent)
+
+Not deployed yet. Decision
+[0062](docs/decisions/0062-the-platform-runs-no-agent-of-its-own.md).
+
+- **The in-app agent chat is gone.** Agents reach the platform only over the MCP
+  server, with the same tools as before. The Anthropic API key and the chat
+  model settings are removed from Setup. Old chat transcripts stay in the
+  database, unread.
+
 ## 2026-10-03 (every unit has a twin, and the process is the one source of its history and cost)
 
 Not deployed yet. Decisions

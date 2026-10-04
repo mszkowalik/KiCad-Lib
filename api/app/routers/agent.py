@@ -1,18 +1,16 @@
 """Agent tool surface — the HTTP entry point the external MCP server (Claude
 Code) drives.
 
-Every library capability the agent has is a callable already defined for the
-in-process Jaravis agent (``services/jaravis.py::TOOLS``). This router does NOT
+Every capability an agent has is a callable in ``services/agent_tools.py::TOOLS``.
+The platform runs no agent of its own (decision 0062). This router does NOT
 reimplement any of them — it dispatches by name:
 
     GET  /api/agent/tools          -> the tool catalog (name, description, JSON schema)
     POST /api/agent/tools/{name}   -> run one tool with a JSON object of arguments
 
 The MCP server fetches the catalog once and proxies each call here, so the tool
-logic, the LLM-shaped JSON responses, and the draft-only write gate are all
-reused exactly (reuse first — never reinvent). Anthropic server tools
-(``web_search`` / ``web_fetch``) are intentionally NOT exposed — Claude Code
-brings its own web tools.
+logic and the JSON responses are reused exactly (reuse first — never
+reinvent). An agent brings its own web tools.
 
 Auth: when ``settings.mcp_token`` is set, an ``Authorization: Bearer <token>``
 header is required. Empty token = open (fine on localhost); set it before the
@@ -24,13 +22,13 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 from ..config import settings
-from ..services import jaravis
+from ..services import agent_tools
 
 router = APIRouter(prefix="/api/agent")
 
 # name -> BetaFunctionTool. The object is callable and also carries
 # .name / .description / .input_schema / .to_dict() / .func (the raw function).
-_TOOLS = {t.name: t for t in jaravis.TOOLS}
+_TOOLS = {t.name: t for t in agent_tools.TOOLS}
 
 
 def _require_auth(request: Request, authorization: str | None) -> None:
@@ -56,7 +54,7 @@ def list_tools(request: Request, authorization: str | None = Header(default=None
     """Catalog of every library tool: {name, description, input_schema}. The MCP
     server calls this once to generate its own tool list."""
     _require_auth(request, authorization)
-    return [t.to_dict() for t in jaravis.TOOLS]
+    return [t.to_dict() for t in agent_tools.TOOLS]
 
 
 @router.post("/tools/{name}")

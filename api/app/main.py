@@ -23,7 +23,6 @@ from .routers import (
     flasher,
     git_credentials,
     import_station,
-    jaravis,
     jlc_import,
     jlc_stock,
     jlc_web,
@@ -96,7 +95,6 @@ app.include_router(sim_runs.router)
 app.include_router(field_solver.router)
 app.include_router(models3d.router)
 app.include_router(datasheets.router)
-app.include_router(jaravis.router)
 app.include_router(agent.router)
 app.include_router(comments.router)
 app.include_router(signoffs.router)

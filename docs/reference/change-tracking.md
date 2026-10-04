@@ -43,13 +43,12 @@ copied into the log a second time.
    a person, call `routers/util.py::acting_name()`: the signed-in person, or
    `"user"` when nobody is signed in.
 3. **Leave `audit(..., actor=...)` at its default** for work a person does. A
-   robot label (`"jaravis"`, `"review"`) is correct for work a robot does, and
+   robot label (`"import"`, `"review"`) is correct for work a robot does, and
    `user_id` still names the person who started it.
 4. **A thread you start from a route loses the context.** A bare
    `threading.Thread` starts with an empty context, so its writes have no
    person and no `row.*` rows. Start it as
-   `threading.Thread(target=contextvars.copy_context().run, args=(fn, ...))`,
-   as `services/jaravis.py::start_session_run` does.
+   `threading.Thread(target=contextvars.copy_context().run, args=(fn, ...))`.
 5. **A Core statement is not captured.** `db.execute(update(...))`,
    `text("UPDATE ...")` and `query(...).update()` skip the ORM, so only the
    `request` row records them. Use ORM objects when the write matters to

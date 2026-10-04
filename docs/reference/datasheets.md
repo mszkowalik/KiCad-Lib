@@ -37,7 +37,7 @@ before you change a fetch, a hash, a classification or an endpoint.
   `public_base_url` must be the API address as KiCad clients see it, not
   `localhost`, on any non-local deployment.
 - **A new component archives its datasheet AT PUBLISH TIME, before the version
-  lands.** `jaravis.propose_new_component` adds the `Datasheet` row, flushes,
+  lands.** `agent_tools.propose_new_component` adds the `Datasheet` row, flushes,
   then calls `_archive_datasheet` (a best-effort wrapper on `fetch_datasheet`)
   BEFORE `_publish_component`. Order matters both ways: `pin_datasheets` then
   records which PDF version this component version used, and the
@@ -253,7 +253,7 @@ before you change a fetch, a hash, a classification or an endpoint.
   - Read surfaces: `GET /api/datasheets/search`, `/{id}/outline`,
     `/{id}/pages/{n}`, and the agent tools `search_datasheets` /
     `datasheet_outline` (34 client tools now — the count in
-    [jaravis.md](jaravis.md) has been stale since before this).
+    [agent-tools.md](agent-tools.md) has been stale since before this).
 - **`GET`/`DELETE /api/datasheets/broken`** list and remove documents that were
   archived before the gate existed. `purge_broken` does three things in order,
   and all three are load-bearing: NULL the `ComponentVersionDatasheet` pins (a

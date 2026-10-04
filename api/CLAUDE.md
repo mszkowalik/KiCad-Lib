@@ -61,8 +61,8 @@ new parallel implementations are the main thing to avoid.
 | What to CALL a part on screen | `routers/util.py` → `part_display_name(db, component_id, lcsc, mpn)` → `(name, in_library)` |
 | DB session in a route | `Depends(get_db)` from `db.py` |
 | Price key → column map | `services/generator.py` → `PRICE_KEY_TO_COL` |
-| Create a draft proposal | the pattern in `services/jaravis.py` (`propose_new_component` / `propose_component_edit`) |
-| Expose an agent capability over HTTP | `routers/agent.py` dispatches `services/jaravis.py::TOOLS` by name — add a tool there and it's exposed to the MCP server automatically; never hand-write a per-tool agent route |
+| Create a draft proposal | the pattern in `services/agent_tools.py` (`propose_new_component` / `propose_component_edit`) |
+| Expose an agent capability over HTTP | `routers/agent.py` dispatches `services/agent_tools.py::TOOLS` by name — add a tool there and it's exposed to the MCP server automatically; never hand-write a per-tool agent route |
 | S-expr parsing / symbol+footprint parse cache | `util/sexpr.py`, `services/parse_cache.py` |
 | Free-form notes on ANY entity | the generic `comments` table (`M.Comment`, `target_type`+`target_id`) via `routers/comments.py` — never add a per-entity comment table |
 
@@ -78,11 +78,11 @@ If a helper is *almost* right, extend it in place rather than forking a near-cop
 | `app/models.py` | SQLAlchemy models — the versioned schema | — |
 | `app/routers/*.py` | HTTP endpoints — one `APIRouter(prefix="/api/…")` per file | `app/routers/CLAUDE.md` |
 | `app/routers/util.py` | Shared router helpers (see the table above) | — |
-| `app/services/*.py` | Business logic (importer, generator, mirror, render, lcsc, jaravis, …) | `app/services/CLAUDE.md` |
+| `app/services/*.py` | Business logic (importer, generator, mirror, render, lcsc, agent_tools, …) | `app/services/CLAUDE.md` |
 | `app/services/fieldsolver/` | 2D quasi-TEM field solver | `app/services/fieldsolver/CLAUDE.md` |
 | `app/services/flasher/` | Production programming | `app/services/flasher/CLAUDE.md` |
 | `app/services/pcm_plugin/` | Source of the KiCad sync plugin | `app/services/pcm_plugin/CLAUDE.md` |
-| `app/seed_skills/*.md` | Jaravis's seed convention docs | — |
+| `app/seed_skills/*.md` | The seed convention docs (skills) | — |
 | `kiutils/` | **Vendored** KiCad-10-patched kiutils — never `pip install` a different one | — |
 
 Routers stay thin (parse request → call a service/helper → shape the response).
@@ -148,7 +148,7 @@ check. `app/services/CLAUDE.md` states it in full.
   skill, not part of the document, so it lives on `Skill` (not `SkillVersion`)
   and is written through `PATCH /api/skills/{id}`, which never mints a version.
   Keep it a single line: it is what an agent reads to decide whether to open the
-  document (Jaravis's system prompt header, and the `description` frontmatter of
+  document (the `list_skills` tool, and the `description` frontmatter of
   the mirrored Claude Code skill — see the root `CLAUDE.md`).
 - **Lint**: Ruff, line length 120, target py311 (`[tool.ruff]` in `pyproject.toml`).
 - **kiutils**: always the vendored `api/kiutils/` (KiCad-10 patch). Never depend
@@ -160,7 +160,7 @@ check. `app/services/CLAUDE.md` states it in full.
   `DELETE /api/comments/{id}`). The legacy `component_comments` table is drained
   into `comments` by a one-time idempotent startup migration in `main.py` and is
   never written again. When a new commentable entity appears, add a
-  `target_type` + URL pair — don't fork a table. Jaravis surfaces these as
+  `target_type` + URL pair — don't fork a table. The agent tools surface these as
   `user_notes` (via `_user_notes(db, target_type, id)`) on every read tool
   (full-read policy), so new comment targets get a matching read.
 - When a non-obvious backend convention or workaround emerges, record it here.
@@ -235,7 +235,7 @@ the published port restricts direct LAN access, but `cloudflared` reaches
 - **It is pure ASGI, not `BaseHTTPMiddleware`, and that is load-bearing.**
   `BaseHTTPMiddleware` never runs for a WebSocket, so the flasher run socket
   would have been left open; and it wraps responses in an anyio task pair,
-  which is the shape that breaks Jaravis's long NDJSON streams. Pure ASGI also
+  which is the shape that breaks long NDJSON streams. Pure ASGI also
   covers `app.mount("/files", StaticFiles(...))`, which a router dependency
   cannot reach at all — that mount is exactly what was publicly readable.
 - **Middleware order is the reverse of reading order.** `add_middleware`

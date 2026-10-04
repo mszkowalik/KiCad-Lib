@@ -1,7 +1,7 @@
-"""Skills — the editable convention documents Jaravis's system prompt is built
+"""Skills — the editable convention documents agents read (`list_skills`, `get_skill`
 from (conventions-library / -footprints / -symbols, seeded from
 app/seed_skills/). Editing creates a new immutable version and advances the
-current pointer; Jaravis rebuilds its prompt from current versions on every
+current pointer; an agent reads the current version on every
 chat call, so edits apply immediately. Since 2026-08-24 the agent's
 `propose_skill_update` publishes the same way — skills were the last thing
 behind the draft gate, and it is gone."""
@@ -131,7 +131,7 @@ def delete_skill(skill_id: int, db: Session = Depends(get_db)):
     Unlike component/geometry versions, a skill version is a document with no
     published artefact hanging off it — nothing references it once it stops
     being current — so retiring an obsolete skill is a hard delete rather than a
-    tombstone. Jaravis rebuilds its prompt without it on the next chat, and the
+    tombstone. Agents stop seeing it at once, and the
     Claude Code mirror drops the directory on its next sync."""
     s = db.query(M.Skill).options(selectinload(M.Skill.versions)).filter_by(id=skill_id).first()
     if s is None:
