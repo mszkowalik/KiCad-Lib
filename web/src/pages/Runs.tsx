@@ -21,6 +21,7 @@ import {
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import { useAuth } from "../auth";
 
 export default function Runs() {
   const [runs, setRuns] = useState<RunInfo[] | null>(null);
@@ -49,6 +50,7 @@ export default function Runs() {
     };
   }, [runs]);
 
+  const { companyName } = useAuth();
   const cols: Column<RunInfo>[] = [
     {
       key: "label",
@@ -62,6 +64,7 @@ export default function Runs() {
       ),
     },
     { key: "project", label: "Project", width: 13, className: "muted", get: (r) => r.project || "—" },
+    { key: "company", label: "Company", width: 8, get: (r) => companyName(r.company_id) },
     { key: "date", label: "Date", width: 10, className: "mono", get: (r) => r.run_date || "—" },
     {
       key: "status",

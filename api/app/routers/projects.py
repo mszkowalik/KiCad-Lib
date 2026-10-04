@@ -3,7 +3,9 @@ ingest, priced BOMs, renders (board layers / 3D / schematic), checks,
 fab bundles, cost & extra-BOM items, notes, diffs, stock checks, FX."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import func
@@ -13,6 +15,7 @@ from .. import models as M
 from ..config import settings
 from ..db import get_db
 from ..models import utcnow
+from ..services import companies as company_svc
 from ..services import cost_state, fx, gitrepo, project_bom, project_ingest, project_render, storage
 from ..services import mqtt_monitor
 from ..services.crypto import decrypt_token, encrypt_token
@@ -103,9 +106,14 @@ def _project_json(db: Session, p: M.Project) -> dict:
         .first()
     )
     run_count = db.query(M.ProductionRun).filter_by(project_id=p.id).count()
+    owner = company_svc.owner_on(db, p.id)
     return {
         "id": p.id,
         "name": p.name,
+        # Decision 0063: the company that owns the project today, and since when.
+        "company_id": owner.id if owner else None,
+        "company": owner.name if owner else None,
+        "ownership": company_svc.ownership_json(db, p.id),
         "git_url": p.git_url,
         "has_token": bool(p.git_credential_id) or bool(p.git_token_enc),
         # WHICH of the two is in force, so a project can never be ambiguous
@@ -131,6 +139,8 @@ def _project_json(db: Session, p: M.Project) -> dict:
 class ProjectIn(BaseModel):
     name: str
     git_url: str
+    # Decision 0063: the company that owns it. Default: the caller's only company.
+    company_id: int | None = None
     # Either a named account (preferred) or a token typed on this project.
     git_credential_id: int | None = None
     git_token: str | None = None
@@ -152,17 +162,34 @@ class ProjectPatch(BaseModel):
 
 
 @router.get("/projects")
-def list_projects(db: Session = Depends(get_db)):
-    return [_project_json(db, p) for p in db.query(M.Project).order_by(M.Project.name).all()]
+def list_projects(request: Request = None, db: Session = Depends(get_db)):
+    """The projects of the companies the header switcher shows (decision 0063):
+    by their owner today."""
+    scope = set(company_svc.scope_ids(db, request))
+    out = []
+    for p in db.query(M.Project).order_by(M.Project.name).all():
+        owner = company_svc.owner_on(db, p.id)
+        if owner is None or owner.id in scope:
+            out.append(_project_json(db, p))
+    return out
 
 
 @router.post("/projects")
-def create_project(body: ProjectIn, db: Session = Depends(get_db)):
+def create_project(body: ProjectIn, request: Request, db: Session = Depends(get_db)):
     name = body.name.strip()
     if not name or not body.git_url.strip():
         raise HTTPException(422, "name and git_url are required")
     if db.query(M.Project).filter_by(name=name).first():
         raise HTTPException(409, f"project '{name}' already exists")
+    mine = company_svc.visible_ids(db, getattr(request.state, "user", None))
+    if body.company_id:
+        if body.company_id not in mine:
+            raise HTTPException(404, "no such company")
+        owner = company_svc.get(db, body.company_id)
+    elif len(mine) == 1:
+        owner = company_svc.get(db, mine[0])
+    else:
+        raise HTTPException(422, "say which company owns the project (company_id)")
     p = M.Project(
         name=name,
         git_url=body.git_url.strip(),
@@ -174,7 +201,9 @@ def create_project(body: ProjectIn, db: Session = Depends(get_db)):
     )
     db.add(p)
     db.flush()
-    audit(db, "project.create", "project", p.id, {"name": name})
+    db.add(M.ProjectOwnership(project_id=p.id, company_id=owner.id, from_date=date.today().isoformat(),
+                              note="owner when the project was created", created_by=acting_name()[:100]))
+    audit(db, "project.create", "project", p.id, {"name": name, "company": owner.name})
     db.commit()
     return _project_json(db, p)
 

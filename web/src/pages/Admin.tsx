@@ -19,13 +19,14 @@ import UsersCard from "../components/UsersCard";
 import MqttCard from "../components/MqttCard";
 import ActivityCard from "../components/ActivityCard";
 import SuppliersCard from "../components/SuppliersCard";
+import CompaniesCard from "../components/CompaniesCard";
 import DataTable, { type Column } from "../components/DataTable";
 import { useDialog } from "../components/Dialog";
 import { ErrorBanner, Spinner } from "../components/Ui";
 
 const POLL_MS = 2000;
 
-type Tab = "config" | "users" | "activity" | "datasheets" | "rates" | "suppliers" | "fleet" | "system";
+type Tab = "config" | "users" | "companies" | "activity" | "datasheets" | "rates" | "suppliers" | "fleet" | "system";
 
 /** The tabs, in the order they are drawn. `admin` marks the ones the API
  *  refuses to a non-admin anyway — hiding them keeps the page from offering a
@@ -42,6 +43,12 @@ const TABS: { id: Tab; label: string; admin?: true; blurb: string }[] = [
     label: "Users",
     admin: true,
     blurb: "Accounts, roles and password resets. There is no sign-up.",
+  },
+  {
+    id: "companies",
+    label: "Companies",
+    admin: true,
+    blurb: "The companies the books are kept for, and what each prints as a seller.",
   },
   {
     id: "activity",
@@ -88,9 +95,10 @@ const TABS: { id: Tab; label: string; admin?: true; blurb: string }[] = [
  * the URL (`?tab=users`), the same rule every other tabbed page here follows,
  * so a link can point at one panel.
  *
- * Four tabs are ADMIN ONLY and the API says so first — `routers/settings.py`,
- * `routers/users.py`, `routers/activity.py` and `routers/mqtt.py` all sit
- * behind `require_admin` (decisions 0045, 0050). `admin: true` here only stops the page offering a panel
+ * Five tabs are ADMIN ONLY and the API says so first — `routers/settings.py`,
+ * `routers/users.py`, `routers/activity.py`, `routers/mqtt.py` and the company
+ * edit in `routers/companies.py` all sit behind `require_admin` (decisions
+ * 0045, 0050, 0063). `admin: true` here only stops the page offering a panel
  * that would answer 403. Never gate a panel here alone: the gate is the API's,
  * and a hidden tab is a courtesy, not a control.
  */
@@ -137,6 +145,7 @@ export default function Admin() {
 
         {tab === "config" ? <SettingsCard /> : null}
         {tab === "users" ? <UsersCard /> : null}
+        {tab === "companies" ? <CompaniesCard /> : null}
         {tab === "activity" ? <ActivityCard /> : null}
         {tab === "datasheets" ? <DatasheetCard /> : null}
         {tab === "rates" ? <FxCard /> : null}

@@ -29,6 +29,7 @@ import OrdersTab from "../components/project/OrdersTab";
 import DevicesTab from "../components/project/DevicesTab";
 import ReviewTab from "../components/project/ReviewTab";
 import SchematicTab from "../components/project/SchematicTab";
+import OwnershipCard from "../components/project/OwnershipCard";
 
 const TABS = ["BOM", "Board", "Schematic", "Stackup", "History", "Review", "Costs", "Process", "Runs", "Orders", "Devices", "Notes", "Settings"] as const;
 type Tab = (typeof TABS)[number];
@@ -328,6 +329,12 @@ export default function ProjectDetail() {
         {tab === "Devices" ? <DevicesTab project={project} /> : null}
         {tab === "Notes" ? <NotesTab projectId={project.id} snapshotId={snapshotId} /> : null}
 
+        {tab === "Settings" ? (
+          <OwnershipCard
+            project={project}
+            onMoved={() => getProject(project.id).then(setProject).catch((err) => setSettingsMsg(errorMessage(err)))}
+          />
+        ) : null}
         {tab === "Settings" ? (
           <div className="card pad edit-card">
             <div className="card-title">Project settings</div>

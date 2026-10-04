@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import func
@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as M
 from ..db import get_db
+from ..services import companies as company_svc
 from ..services import orders, production, project_bom, run_actuals, storage
 from .util import acting_name, audit
 
@@ -55,6 +56,8 @@ def _run_json(r: M.ProductionRun, db: Session | None = None, with_detail: bool =
     out = {
         "id": r.id,
         "project_id": r.project_id,
+        # Decision 0063: the company that made the batch.
+        "company_id": r.company_id,
         "label": r.label,
         "snapshot_id": r.snapshot_id,
         "board": r.board,
@@ -156,6 +159,9 @@ class RunIn(BaseModel):
     # explicit confirmation of the design-review warning (never stored) —
     # see the gate in create_run
     ack_review: bool = False
+    # Decision 0063: the company that made it; default = the project's owner
+    # on the batch date.
+    company_id: int | None = None
 
 
 class RunPatch(BaseModel):
@@ -182,6 +188,8 @@ class RunPatch(BaseModel):
     # Must a unit of this batch pass the project's test? Changing it affects
     # only runs made AFTER the change: each programming run keeps its own copy.
     requires_test: bool | None = None
+    # Decision 0063: the company that made the batch (history corrections).
+    company_id: int | None = None
 
 
 def _runs_payload(db: Session, runs: list[M.ProductionRun]) -> list[dict]:
@@ -204,7 +212,7 @@ def _runs_payload(db: Session, runs: list[M.ProductionRun]) -> list[dict]:
 
 
 @router.get("/runs")
-def list_all_runs(project_id: int | None = None, db: Session = Depends(get_db)):
+def list_all_runs(request: Request = None, project_id: int | None = None, db: Session = Depends(get_db)):
     """Every production batch, across every project.
 
     The project tab answers "what has this product built"; this answers "what is
@@ -217,6 +225,9 @@ def list_all_runs(project_id: int | None = None, db: Session = Depends(get_db)):
     q = db.query(M.ProductionRun)
     if project_id is not None:
         q = q.filter(M.ProductionRun.project_id == project_id)
+    # The company the header switcher selected (decision 0063).
+    scope = company_svc.scope_ids(db, request)
+    q = q.filter(M.ProductionRun.company_id.in_(scope) | M.ProductionRun.company_id.is_(None))
     runs = q.order_by(M.ProductionRun.run_date.desc().nullslast(),
                       M.ProductionRun.created_at.desc()).all()
     return _runs_payload(db, runs)
@@ -284,8 +295,13 @@ def create_run(project_id: int, body: RunIn, db: Session = Depends(get_db)):
     from ..services import process as process_svc
 
     pv = process_svc.current_version(db, project_id)
+    company_id = data.pop("company_id", None)
     r = M.ProductionRun(project_id=project_id, requires_test=requires_test,
                         process_version_id=pv.id if pv else None, **data)
+    # Decision 0063: the batch belongs to its project's owner on its date,
+    # unless the caller names the company that really made it.
+    owner = company_svc.get(db, company_id) if company_id else company_svc.default_run_company(db, r)
+    r.company_id = owner.id if owner else None
     db.add(r)
     db.flush()
     # economics are not stored — they resolve from price history at the
@@ -356,6 +372,11 @@ def update_run(run_id: int, body: RunPatch, db: Session = Depends(get_db)):
         track("status", body.status.strip())
     if body.requires_test is not None:
         track("requires_test", body.requires_test)
+    if body.company_id is not None and body.company_id != r.company_id:
+        if r.closed_at is not None:
+            raise HTTPException(409, f"batch {r.label} is closed — reopen it before moving it to "
+                                     "another company")
+        track("company_id", company_svc.get(db, body.company_id).id)
     if body.run_date is not None:
         track("run_date", body.run_date.strip())
     if body.notes is not None:

@@ -17,6 +17,7 @@ from .routers import (
     categories,
     changes,
     comments,
+    companies as companies_router,
     components,
     datasheets,
     field_solver,
@@ -112,6 +113,7 @@ app.include_router(git_credentials.router)
 app.include_router(account.router)
 app.include_router(production_runs.router)
 app.include_router(process_router.router)
+app.include_router(companies_router.router)
 app.include_router(jlc_stock.router)
 app.include_router(jlc_web.router)
 app.include_router(jlc_import.router)
@@ -686,6 +688,28 @@ _PHASE1_DDL = (
      "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS bench_stack varchar(400) NOT NULL DEFAULT ''"),
     ("production_runs.closed_twin_share_usd",
      "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS closed_twin_share_usd double precision"),
+    # Decision 0063: two companies. The tables arrive through `create_all`; these
+    # are the links on tables that already existed, and the two company rows.
+    ("production_runs.company_id",
+     "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS company_id integer"),
+    ("sales_orders.company_id",
+     "ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS company_id integer"),
+    ("run_cost_documents.company_id",
+     "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS company_id integer"),
+    ("run_cost_documents.company_source",
+     "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS company_source varchar(40) NOT NULL DEFAULT ''"),
+    ("companies seed 7sigma",
+     "INSERT INTO companies (key, name, legal_name, nip, address_l1, address_l2, country, email, "
+     "place_of_issue, issuer_name, bank_name, bank_account, swift, payment_terms_days, started_on, created_at) "
+     "VALUES ('7sigma', '7Sigma', '7Sigma Mateusz Kowalik', '8513262910', 'ul. Szczecińska 2G', "
+     "'72-010 Przęsocin', 'PL', '', '', 'Mateusz Kowalik', '', '', '', 14, '', now()) "
+     "ON CONFLICT (nip) DO NOTHING"),
+    ("companies seed 9sigma",
+     "INSERT INTO companies (key, name, legal_name, nip, address_l1, address_l2, country, email, "
+     "place_of_issue, issuer_name, bank_name, bank_account, swift, payment_terms_days, started_on, created_at) "
+     "VALUES ('9sigma', '9Sigma', '9SIGMA SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ', '8513315635', "
+     "'ul. Szczecińska 2G', '72-010 Przęsocin', 'PL', '', '', 'Mateusz Kowalik', '', '', '', 14, "
+     "'2024-07-22', now()) ON CONFLICT (nip) DO NOTHING"),
     # LAST. Everything above reads `kind`; nothing below may.
     #
     # The index on it goes first and by name: `create_all` cannot drop an index

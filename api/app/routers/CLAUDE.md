@@ -24,6 +24,14 @@ which is what a before/after pane needs and what "history lives under
 pair, so a footprint template page can show the 3D board view that previously
 hung only off a component version.
 
+## A list of company data follows the header scope
+
+A list route over projects, batches or orders takes `request: Request = None`
+and filters by `companies.scope_ids(db, request)`, keeping rows whose
+`company_id` is NULL. The default `None` is there because tests call these
+functions directly. The scope is a filter, not access control. Rules in
+[docs/reference/companies.md](../../../docs/reference/companies.md).
+
 ## List surfaces — the two traps that cost a second each
 
 Both were measured on 2026-08-24 against production data (421 components, 2296

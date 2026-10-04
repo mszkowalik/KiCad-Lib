@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as M
 from ..db import get_db
+from ..services import companies as company_svc
 from ..services import orders as svc
 from .util import actor_of, audit
 
@@ -122,6 +123,9 @@ class LineIn(BaseModel):
 
 
 class OrderIn(BaseModel):
+    # Decision 0063: the company that sells. Default: the caller's only company,
+    # else the owner of the first line's project on the order date.
+    company_id: int | None = None
     customer_id: int | None = None
     customer: str = ""  # create-or-find by name when no id
     order_ref: str = ""
@@ -141,12 +145,15 @@ class OrderPatch(BaseModel):
     vat_pct: float | None = None
     notes: str | None = None
     cancelled: bool | None = None
+    company_id: int | None = None
 
 
 @router.get("/orders")
-def list_orders(customer_id: int | None = None, project_id: int | None = None,
+def list_orders(request: Request = None, customer_id: int | None = None, project_id: int | None = None,
                 db: Session = Depends(get_db)):
     q = db.query(M.SalesOrder)
+    scope = company_svc.scope_ids(db, request)   # the header switcher (decision 0063)
+    q = q.filter(M.SalesOrder.company_id.in_(scope) | M.SalesOrder.company_id.is_(None))
     if customer_id:
         q = q.filter(M.SalesOrder.customer_id == customer_id)
     if project_id:
@@ -171,12 +178,27 @@ def create_order(body: OrderIn, request: Request, db: Session = Depends(get_db))
     for i, li in enumerate(body.lines):
         _add_line(db, o, li, i)
     db.flush()
+    o.company_id = _seller(db, request, body, o).id
     db.expire(o, ["lines"])
     svc.refresh_order_status(o)
     audit(db, "order.create", "sales_order", o.id, {"customer": cust.name, "order_ref": o.order_ref},
           actor=actor_of(request))
     db.commit()
     return svc.order_json(db, o, with_detail=True)
+
+
+def _seller(db: Session, request: Request, body: OrderIn, o: M.SalesOrder) -> M.Company:
+    """The company that sells an order (decision 0063)."""
+    if body.company_id:
+        return company_svc.get(db, body.company_id)
+    mine = company_svc.visible_ids(db, getattr(request.state, "user", None))
+    if len(mine) == 1:
+        return company_svc.get(db, mine[0])
+    if body.lines:
+        owner = company_svc.owner_on(db, body.lines[0].project_id, o.order_date or None)
+        if owner is not None:
+            return owner
+    raise HTTPException(422, "say which company sells this order (company_id)")
 
 
 def _add_line(db: Session, o: M.SalesOrder, li: LineIn, position: int) -> M.SalesOrderLine:
@@ -208,6 +230,8 @@ def update_order(order_id: int, body: OrderPatch, request: Request, db: Session 
         if k == "customer_id":
             if v is None or db.get(M.Customer, v) is None:
                 raise HTTPException(404, "customer not found")
+        if k == "company_id":
+            v = company_svc.get(db, v).id
         if k == "currency":
             v = (v or "").strip().upper()
             if not v:

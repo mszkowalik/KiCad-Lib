@@ -81,6 +81,8 @@ def user_json(db: Session, user: M.User, *, reveal: bool = False) -> dict:
         "username": user.username,
         "display_name": user.display_name,
         "role": user.role,
+        # Decision 0063: the companies the user belongs to (an admin sees all).
+        "company_ids": sorted(cid for (cid,) in db.query(M.UserCompany.company_id).filter_by(user_id=user.id)),
         "active": user.active,
         "created_at": user.created_at.isoformat() if user.created_at else None,
         "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
@@ -152,6 +154,8 @@ class UserPatch(BaseModel):
     role: str | None = None
     active: bool | None = None
     password: str | None = None
+    # Decision 0063: the companies the user belongs to (replaces the set).
+    company_ids: list[int] | None = None
 
 
 @router.patch("/{user_id}")
@@ -211,6 +215,10 @@ def update_user(user_id: int, body: UserPatch, db: Session = Depends(get_db),
         auth.end_all_sessions(db, user.id)
         auth.clear_failures(db, user.username)
         changed["password"] = "(reset)"
+    if body.company_ids is not None:
+        from ..services import companies as company_svc
+
+        changed["company_ids"] = company_svc.set_memberships(db, user, body.company_ids)
 
     audit(db, "user.update", "user", user.id, details=changed, actor=_actor(admin))
     db.commit()

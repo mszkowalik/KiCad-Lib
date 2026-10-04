@@ -19,11 +19,14 @@ import {
 } from "react";
 
 import {
+  companyScope,
   getAuthState,
   login as apiLogin,
   logout as apiLogout,
+  setCompanyScope,
   setUnauthorizedHandler,
   type AuthUser,
+  type CompanyRef,
 } from "./api";
 import Login from "./pages/Login";
 import { Spinner } from "./components/Ui";
@@ -43,6 +46,13 @@ interface AuthContextValue {
   /** Throws if the account could not be written; the tab already shows the new
    *  theme by then, so the caller must show the error. */
   setTheme: (pref: ThemePref) => Promise<void>;
+  /** The companies this user may see (decision 0063). */
+  companies: CompanyRef[];
+  /** What the header switcher shows: a company id as a string, or "all". */
+  scope: string;
+  setScope: (scope: string) => void;
+  /** A company's short name, for a table cell. */
+  companyName: (id: number | null | undefined) => string;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -53,6 +63,10 @@ const AuthContext = createContext<AuthContextValue>({
   refresh: async () => {},
   theme: "system",
   setTheme: async () => {},
+  companies: [],
+  scope: "all",
+  setScope: () => {},
+  companyName: () => "",
 });
 
 export function useAuth(): AuthContextValue {
@@ -61,6 +75,7 @@ export function useAuth(): AuthContextValue {
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [companies, setCompanies] = useState<CompanyRef[]>([]);
   const [authEnabled, setAuthEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   // Seeded from the browser cache, which is what painted the first frame; the
@@ -72,6 +87,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       const state = await getAuthState();
       setAuthEnabled(state.auth_enabled);
       setUser(state.user);
+      setCompanies(state.companies ?? []);
     } catch {
       // `/api/auth/me` is one of the few endpoints the gate lets through, so a
       // failure here means the API is unreachable, not that we are signed out.
@@ -124,6 +140,20 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // The switcher reloads the page: every list on it was fetched for the old
+  // company, and a reload is the one refresh no screen can miss.
+  const setScope = useCallback((next: string) => {
+    setCompanyScope(next);
+    window.location.reload();
+  }, []);
+  const companyName = useCallback(
+    (id: number | null | undefined) => companies.find((c) => c.id === id)?.name ?? "",
+    [companies],
+  );
+  // A remembered company the user no longer belongs to falls back to "all".
+  const stored = companyScope();
+  const scope = stored === "all" || companies.some((c) => String(c.id) === stored) ? stored : "all";
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -135,8 +165,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
       refresh,
       theme,
       setTheme,
+      companies,
+      scope,
+      setScope,
+      companyName,
     }),
-    [user, authEnabled, signOut, refresh, theme, setTheme],
+    [user, authEnabled, signOut, refresh, theme, setTheme, companies, scope, setScope, companyName],
   );
 
   if (loading) return <Spinner label="Loading…" />;

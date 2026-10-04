@@ -105,16 +105,21 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)):
 
 
 @router.get("/me")
-def me(request: Request):
-    """Who the middleware resolved this request to.
+def me(request: Request, db: Session = Depends(get_db)):
+    """Who the middleware resolved this request to, and the companies they may
+    see — the header switcher lists these (decision 0063).
 
     `auth_enabled=False` (dev) yields `{"user": null, "auth_enabled": false}`
     and the SPA then skips the login gate entirely.
     """
+    from ..services import companies as company_svc
+
     user = getattr(request.state, "user", None)
+    allowed = set(company_svc.visible_ids(db, user))
     return {
         "auth_enabled": settings.auth_enabled,
         "user": user_json(user) if user is not None else None,
+        "companies": [company_svc.company_json(c) for c in company_svc.all_companies(db) if c.id in allowed],
     }
 
 

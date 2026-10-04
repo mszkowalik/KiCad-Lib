@@ -403,13 +403,42 @@ export function setUnauthorizedHandler(fn: (() => void) | null): void {
   onUnauthorized = fn;
 }
 
+// ------------------------------------------------------------ company scope
+
+/** The company the header switcher shows: a company id, or "all" (decision
+ *  0063). Kept in the browser; every request carries it as `X-Company`, and
+ *  the server never widens it past the companies the user may see. */
+const SCOPE_KEY = "company.scope";
+
+export function companyScope(): string {
+  try {
+    return localStorage.getItem(SCOPE_KEY) || "all";
+  } catch {
+    return "all";
+  }
+}
+
+export function setCompanyScope(scope: string): void {
+  try {
+    localStorage.setItem(SCOPE_KEY, scope);
+  } catch {
+    // a private window: the switcher still applies until the page reloads
+  }
+}
+
+function withScope(init?: RequestInit): RequestInit {
+  const headers = new Headers(init?.headers ?? undefined);
+  if (!headers.has("X-Company")) headers.set("X-Company", companyScope());
+  return { ...init, headers };
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     // `include`, not the `same-origin` default: a dev server aimed at a remote
     // API is cross-origin, and the session lives in a cookie. The API sets
     // allow_credentials with an explicit origin list to match.
-    res = await fetch(`${API_URL}${path}`, { credentials: "include", ...init });
+    res = await fetch(`${API_URL}${path}`, { credentials: "include", ...withScope(init) });
   } catch (err) {
     if (isAbortError(err)) throw err;
     throw new ApiError(0, `Cannot reach API at ${apiOrigin()} (${errorMessage(err)})`);
@@ -1067,10 +1096,59 @@ export interface AuthUser {
   theme: string;
 }
 
+/** A company as lists label it (decision 0063). */
+export interface CompanyRef {
+  id: number;
+  key: string;
+  name: string;
+  nip: string;
+}
+
+/** A company with its seller data, for an admin. */
+export interface CompanyDetail extends CompanyRef {
+  legal_name: string;
+  address_l1: string;
+  address_l2: string;
+  country: string;
+  email: string;
+  place_of_issue: string;
+  issuer_name: string;
+  bank_name: string;
+  bank_account: string;
+  swift: string;
+  payment_terms_days: number;
+  started_on: string;
+}
+
 export interface AuthState {
   /** False on a dev box with AUTH_ENABLED=0 — the SPA then skips the gate. */
   auth_enabled: boolean;
   user: AuthUser | null;
+  /** The companies this user may see; the header switcher lists them. */
+  companies: CompanyRef[];
+}
+
+export function listCompanies(signal?: AbortSignal): Promise<CompanyDetail[]> {
+  return request("/api/companies", { signal });
+}
+
+export function updateCompany(id: number, patch: Partial<CompanyDetail>): Promise<CompanyDetail> {
+  return request(`/api/companies/${id}`, jsonBody("PATCH", patch));
+}
+
+export interface OwnershipPeriod {
+  id: number;
+  company_id: number;
+  company: string | null;
+  from_date: string;
+  to_date: string | null;
+  note: string;
+  created_by: string;
+}
+
+export function moveProject(projectId: number, body: { company_id: number; from_date: string; note: string }):
+  Promise<OwnershipPeriod[]> {
+  return request(`/api/projects/${projectId}/ownership`, jsonBody("POST", body));
 }
 
 export function getAuthState(signal?: AbortSignal): Promise<AuthState> {
@@ -1135,6 +1213,8 @@ export interface PlatformUser {
   repository_url: string;
   /** Personal `.kicad_httplib` download URL. */
   httplib_url: string;
+  /** The companies this user may see (decision 0063). An admin sees all. */
+  company_ids: number[];
 }
 
 // ------------------------------------------------------- own account
@@ -1186,6 +1266,7 @@ export function updateUser(
     role?: string;
     active?: boolean;
     password?: string;
+    company_ids?: number[];
   },
 ): Promise<PlatformUser> {
   return request(`/api/users/${id}`, {
@@ -1768,11 +1849,16 @@ export interface ProjectInfo {
   has_mirror: boolean;
   latest_snapshot: SnapshotInfo | null;
   run_count: number;
+  /** The owner today, and every ownership period (decision 0063). */
+  company_id: number | null;
+  company: string | null;
+  ownership: OwnershipPeriod[];
 }
 
 export interface ProjectCreate {
   name: string;
   git_url: string;
+  company_id?: number | null;
   git_credential_id?: number | null;
   git_token?: string | null;
   default_branch?: string;
@@ -2370,6 +2456,8 @@ export interface RunDeviceRow {
 export interface RunInfo {
   id: number;
   project_id: number;
+  /** The company that made the batch (decision 0063). */
+  company_id: number | null;
   label: string;
   snapshot_id: number | null;
   board: string;
@@ -2495,6 +2583,8 @@ export interface RunPatchBody {
    *  programmed? Only runs made AFTER the change see it — every programming
    *  run keeps its own copy of the answer. */
   requires_test?: boolean;
+  /** The company that made the batch (decision 0063). Refused on a closed batch. */
+  company_id?: number;
 }
 
 export function getRuns(projectId: number, signal?: AbortSignal): Promise<RunInfo[]> {
@@ -7748,6 +7838,8 @@ export interface OrderEconomics {
 
 export interface OrderRow {
   id: number;
+  /** The company that sold it (decision 0063). */
+  company_id: number | null;
   customer_id: number;
   customer: string;
   order_ref: string;
@@ -7792,6 +7884,8 @@ export interface OrderCreate {
 }
 
 export interface OrderPatchBody {
+  /** The company that sells it (decision 0063). */
+  company_id?: number;
   customer_id?: number;
   customer?: string; // create-or-find by name when no id
   order_ref?: string;

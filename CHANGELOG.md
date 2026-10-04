@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-10-04 (two companies)
+
+Not deployed yet. Decision
+[0063](docs/decisions/0063-two-companies-own-projects-over-time.md). The rules
+are in [docs/reference/companies.md](docs/reference/companies.md).
+
+- **The platform keeps the books of 7Sigma and 9SIGMA.** Every project belongs
+  to one company. The Dongle and Aqua projects belong to 9Sigma (the Dongle V2
+  and the Aqua belonged to 7Sigma until 2024-07-22). Every other project
+  belongs to 7Sigma.
+- **A project can move to the other company on a date.** Project → Settings
+  shows who owned the project and when. An admin can move it from a date, and
+  the earlier batches and orders keep their company.
+- **Each batch and each order names its company.** A new batch takes its
+  project's owner on its date, and a new order takes the seller. The batch
+  card ("Made by") and the order card ("Seller") can change it.
+- **A company switcher sits at the top right.** It shows one company or all of
+  them. The project, batch and order lists follow it, and each list has a
+  Company column with a filter.
+- **Admin → Companies holds each company's seller data, and Admin → Users sets
+  which companies a user sees.** An admin sees every company.
+
 ## 2026-10-04 (no in-platform agent)
 
 Not deployed yet. Decision

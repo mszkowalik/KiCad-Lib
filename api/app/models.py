@@ -1908,6 +1908,67 @@ class GitCredential(Base):
     projects: Mapped[list["Project"]] = relationship(back_populates="git_credential")
 
 
+class Company(Base):
+    """One of the user's companies: 7Sigma (sole proprietorship) and 9SIGMA
+    (sp. z o.o., from 2024-07-22). Decision 0063.
+
+    A project belongs to a company over time (`ProjectOwnership`); a batch, a
+    sales order and a supplier invoice each name their own company, because
+    history does not follow one rule (a batch made before 9Sigma existed, an
+    order sold by the other company). The seller data here prints on the
+    invoices the platform issues; a bank account lives in the database only,
+    never in code or fixtures."""
+
+    __tablename__ = "companies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(20), unique=True)          # '7sigma' | '9sigma'
+    name: Mapped[str] = mapped_column(String(100))                     # short, for screens
+    legal_name: Mapped[str] = mapped_column(String(300), default="")
+    nip: Mapped[str] = mapped_column(String(20), unique=True)          # digits only
+    address_l1: Mapped[str] = mapped_column(String(300), default="")
+    address_l2: Mapped[str] = mapped_column(String(300), default="")
+    country: Mapped[str] = mapped_column(String(2), default="PL")
+    email: Mapped[str] = mapped_column(String(200), default="")
+    place_of_issue: Mapped[str] = mapped_column(String(100), default="")
+    issuer_name: Mapped[str] = mapped_column(String(200), default="")
+    bank_name: Mapped[str] = mapped_column(String(200), default="")
+    bank_account: Mapped[str] = mapped_column(String(64), default="")
+    swift: Mapped[str] = mapped_column(String(20), default="")
+    payment_terms_days: Mapped[int] = mapped_column(Integer, default=14)
+    started_on: Mapped[str] = mapped_column(String(10), default="")    # ISO date; '' = always
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class UserCompany(Base):
+    """A user belongs to a company and sees its projects (decision 0063). An
+    admin sees every company whether or not it holds a membership."""
+
+    __tablename__ = "user_companies"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), primary_key=True)
+
+
+class ProjectOwnership(Base):
+    """Which company owns a project FROM a date (decision 0063). The owner on a
+    day is the row with the latest `from_date` on or before it; a move adds a
+    row and never edits one, so the books can always say who owned the project
+    when an invoice was issued."""
+
+    __tablename__ = "project_ownership"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+    from_date: Mapped[str] = mapped_column(String(10))                 # ISO date
+    note: Mapped[str] = mapped_column(String(500), default="")
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (UniqueConstraint("project_id", "from_date", name="uq_project_ownership_day"),)
+
+
 class Project(Base):
     """A KiCad design project tracked from a git repository."""
 
@@ -2155,6 +2216,10 @@ class ProductionRun(Base):
     # created (soft pointer). A batch that has one is CRAFTED: its units are
     # twins, it holds one assembly order, and its BOM draw is refused.
     process_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Decision 0063: the company that made the batch. Copied from the project's
+    # owner on the batch date when the batch is created, and kept: a batch
+    # made before a project moved stays with the company that made it.
+    company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Decision 0059 §7. The STACK the programming bench names twins from:
     # "<origin run id>:<stack key>". A stack may belong to another batch of the
     # project — a twin moves to the batch that programs it. Empty = no stack
@@ -2326,6 +2391,12 @@ class RunCostDocument(Base):
     # components land in a company-wide pool that every project draws from.
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
     run_id: Mapped[int | None] = mapped_column(ForeignKey("production_runs.id"), nullable=True)
+    # Decision 0063: the company that was BILLED (the buyer on the invoice), and
+    # how that was found — the invoice's own tax id, a supplier's billing data,
+    # the date (before 9Sigma existed), or a person. The bill-to wins over the
+    # ship-to and over the folder the file sits in.
+    company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    company_source: Mapped[str] = mapped_column(String(40), default="")
     doc_type: Mapped[str] = mapped_column(String(20), default="invoice")
     supplier: Mapped[str] = mapped_column(String(200), default="")
     doc_number: Mapped[str] = mapped_column(String(100), default="")
@@ -3733,6 +3804,8 @@ class SalesOrder(Base):
     vat_pct: Mapped[float] = mapped_column(Float, default=23.0)  # printed only
     status: Mapped[str] = mapped_column(String(20), default="open")  # open|partial|fulfilled|cancelled
     cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Decision 0063: the company that sold it (the seller on its invoices).
+    company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

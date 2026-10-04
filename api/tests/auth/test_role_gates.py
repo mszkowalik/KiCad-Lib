@@ -36,6 +36,10 @@ from app.routers.users import require_admin
 
 # (method, path) for every route that must refuse a non-admin.
 EXPECTED = {
+    # The companies' own data and ownership — decision 0063.
+    ("PATCH", "/api/companies/{company_id}"),
+    ("POST", "/api/companies/backfill"),
+    ("POST", "/api/projects/{project_id}/ownership"),
     # The deployment's own configuration — decision 0045.
     ("GET", "/api/settings"),
     ("PUT", "/api/settings/{key}"),

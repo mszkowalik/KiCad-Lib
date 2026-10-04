@@ -13,6 +13,7 @@ in one document. Open the document before you change the module.
 |---|---|---|
 | Datasheet identity, fetch, classification, page index | `datasheet_store.py`, `datasheet_pages.py`, `datasheet_migrate.py` | [docs/reference/datasheets.md](../../../docs/reference/datasheets.md) |
 | Cost plans, invoices, stock, orders, sales | `cost_state.py`, `material.py`, `stock.py`, `orders.py` | [docs/reference/production-economics.md](../../../docs/reference/production-economics.md) |
+| The two companies, project ownership over time, the company scope of a list | `companies.py` | [docs/reference/companies.md](../../../docs/reference/companies.md) |
 | Suppliers, and which source prices a part | `suppliers.py`, `ladder.py` | [docs/reference/suppliers.md](../../../docs/reference/suppliers.md) |
 | Production processes, twins, crafting a batch, the assembly step, costs linked to steps, rebuilding old batches into twins, the bench naming and marking, twin prices, the project's materials from the process, prepared parts, conversion costs | `process.py`, `twins.py`, `twin_rebuild.py` | [docs/reference/processes.md](../../../docs/reference/processes.md) |
 | What JLCPCB says moved, and what we booked | `jlc_web.py`, `jlc_import.py`, `jlc_apply.py`, `jlc_ledger.py`, `substitutions.py` | [docs/reference/production-economics.md](../../../docs/reference/production-economics.md) |

@@ -32,6 +32,7 @@ import {
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import { useAuth } from "../auth";
 import { amount, plain, usd } from "../format";
 
 export default function Orders() {
@@ -71,6 +72,7 @@ export default function Orders() {
 
   useEffect(() => reload(), [reload]);
 
+  const { companyName } = useAuth();
   const columns = useMemo<Column<OrderRow>[]>(
     () => [
       // A DATE has a hard maximum, so it takes a length rather than a promise
@@ -78,6 +80,7 @@ export default function Orders() {
       // exactly the case `Column.width`'s string form exists for.
       { key: "order_date", label: "Date", width: "104px", get: (o) => o.order_date, className: "mono" },
       { key: "customer", label: "Customer", width: 15, get: (o) => o.customer },
+      { key: "company", label: "Company", width: 8, get: (o) => companyName(o.company_id) },
       { key: "order_ref", label: "Reference", width: 15, get: (o) => o.order_ref || "—", className: "mono" },
       {
         key: "products",
@@ -135,7 +138,7 @@ export default function Orders() {
         render: (o) => <StatusPill status={o.status} />,
       },
     ],
-    [],
+    [companyName],
   );
 
   return (

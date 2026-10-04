@@ -1145,7 +1145,8 @@ def order_json(db: Session, order: M.SalesOrder, *, with_detail: bool = False,
     invoiced_net = sum(i.net_amount or 0 for i in money)
     total_net = order_total_net(order)
     out = {
-        "id": order.id, "customer_id": order.customer_id, "customer": order.customer.name,
+        "id": order.id, "company_id": order.company_id,
+        "customer_id": order.customer_id, "customer": order.customer.name,
         "order_ref": order.order_ref, "order_date": order.order_date, "currency": order.currency,
         "vat_pct": order.vat_pct, "status": order.status, "cancelled": order.cancelled,
         "notes": order.notes, "created_at": order.created_at.isoformat() if order.created_at else None,

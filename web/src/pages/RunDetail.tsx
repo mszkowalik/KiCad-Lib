@@ -55,6 +55,7 @@ import RunCosts from "../components/run/RunCosts";
 import RunMaterials from "../components/run/RunMaterials";
 import RunProcess from "../components/run/RunProcess";
 import { amount as money, plain } from "../format";
+import { useAuth } from "../auth";
 
 const TABS = ["overview", "materials", "process", "costs", "files", "devices"] as const;
 type Tab = (typeof TABS)[number];
@@ -86,7 +87,9 @@ export default function RunDetail() {
     qty?: number | null;
     qtyGood?: number | null;
     runDate?: string;
+    companyId?: number | null;
   }>({});
+  const { companies, companyName } = useAuth();
   /** The card reads as facts until this is on — see the comment on the card. */
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -143,6 +146,10 @@ export default function RunDetail() {
       const good = draft.qtyGood ?? null;
       if (draft.qtyGood !== undefined && good !== (run.qty_good ?? null)) {
         body.qty_good = good;
+      }
+      // The company that made it (decision 0063) is frozen with the books too.
+      if (draft.companyId != null && draft.companyId !== run.company_id) {
+        body.company_id = draft.companyId;
       }
     }
     return body;
@@ -354,6 +361,8 @@ export default function RunDetail() {
                     </dd>
                     <dt>Run date</dt>
                     <dd>{run.run_date || <span className="muted">none</span>}</dd>
+                    <dt>Made by</dt>
+                    <dd>{companyName(run.company_id) || <span className="muted">no company</span>}</dd>
                   </dl>
                   <div className="btn-row">
                     <button
@@ -365,6 +374,7 @@ export default function RunDetail() {
                           qty: run.qty,
                           qtyGood: run.qty_good ?? null,
                           runDate: run.run_date,
+                          companyId: run.company_id,
                         });
                         setEditing(true);
                       }}
@@ -373,8 +383,8 @@ export default function RunDetail() {
                     </button>
                     {run.closed_at && (
                       <span className="muted dim">
-                        The books are closed, so quantity and devices produced cannot
-                        change. Reopen the batch if one of them really is wrong.
+                        The books are closed, so quantity, devices produced and the
+                        company cannot change. Reopen the batch if one of them really is wrong.
                       </span>
                     )}
                   </div>
@@ -431,6 +441,19 @@ export default function RunDetail() {
                         value={draft.runDate ?? ""}
                         onChange={(e) => setDraft((d) => ({ ...d, runDate: e.target.value }))}
                       />
+                    </Field>
+                    <Field label="Made by" hint="The company whose stock and costs this batch uses.">
+                      <select
+                        className="text"
+                        value={draft.companyId ?? ""}
+                        disabled={!!run.closed_at}
+                        onChange={(e) => setDraft((d) => ({ ...d, companyId: Number(e.target.value) }))}
+                      >
+                        {draft.companyId == null ? <option value="">—</option> : null}
+                        {companies.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
                     </Field>
                   </FieldGrid>
                   <div className="btn-row">

@@ -125,12 +125,29 @@ function RedirectTemplate() {
   return <Navigate to={`/library/templates/${kind}/${id}`} replace />;
 }
 
+/** Which company the screens show: one of the user's companies, or all of
+ *  them (decision 0063). Hidden when the user belongs to one company only. */
+function CompanySwitcher() {
+  const { companies, scope, setScope } = useAuth();
+  if (companies.length < 2) {
+    return companies.length === 1 ? <span className="topbar-company muted">{companies[0].name}</span> : null;
+  }
+  return (
+    <select className="topbar-company" value={scope} aria-label="Company"
+      title="The company the screens show" onChange={(e) => setScope(e.target.value)}>
+      <option value="all">All companies</option>
+      {companies.map((c) => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+    </select>
+  );
+}
+
 /** The signed-in identity and the way out, at the right of the nav. */
 function UserMenu() {
   const { user, authEnabled, signOut } = useAuth();
-  if (!authEnabled || user === null) return null;
+  if (!authEnabled || user === null) return <CompanySwitcher />;
   return (
     <span className="topbar-user">
+      <CompanySwitcher />
       {/* The name is the door to the account's own settings — git
           credentials live there, not on the Admin page. */}
       <Link

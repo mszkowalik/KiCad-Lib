@@ -43,6 +43,7 @@ import { BackLink, ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import AutoTextarea from "../components/AutoTextarea";
 import Field from "../components/Field";
 import { parseScanSheet } from "./Orders";
+import { useAuth } from "../auth";
 import { amount, plain, usd } from "../format";
 
 const INVOICE_KINDS: OrderInvoiceRow["kind"][] = ["advance", "final", "proforma", "correction"];
@@ -214,6 +215,8 @@ function HeaderCard({ order, apply }: { order: OrderRow; apply: (w: () => Promis
   const [currency, setCurrency] = useState(order.currency);
   const [vat, setVat] = useState(String(order.vat_pct));
   const [notes, setNotes] = useState(order.notes);
+  const { companies } = useAuth();
+  const [companyId, setCompanyId] = useState(order.company_id);
   const dialog = useDialog();
   useEffect(() => {
     const ac = new AbortController();
@@ -227,6 +230,7 @@ function HeaderCard({ order, apply }: { order: OrderRow; apply: (w: () => Promis
     setCurrency(order.currency);
     setVat(String(order.vat_pct));
     setNotes(order.notes);
+    setCompanyId(order.company_id);
   }, [order]);
   const vatNum = Number(vat);
   const vatOk = vat.trim() !== "" && Number.isFinite(vatNum) && vatNum >= 0;
@@ -236,7 +240,8 @@ function HeaderCard({ order, apply }: { order: OrderRow; apply: (w: () => Promis
     date !== order.order_date ||
     currency.trim().toUpperCase() !== order.currency ||
     (vatOk && vatNum !== order.vat_pct) ||
-    notes !== order.notes;
+    notes !== order.notes ||
+    companyId !== order.company_id;
   const canSave = dirty && customer.trim() !== "" && currency.trim() !== "" && vatOk;
   const save = () => {
     const name = customer.trim();
@@ -246,6 +251,7 @@ function HeaderCard({ order, apply }: { order: OrderRow; apply: (w: () => Promis
       if (existing) body.customer_id = existing.id;
       else body.customer = name;
     }
+    if (companyId !== null && companyId !== order.company_id) body.company_id = companyId;
     return apply(() => updateOrder(order.id, body));
   };
   return (
@@ -261,6 +267,14 @@ function HeaderCard({ order, apply }: { order: OrderRow; apply: (w: () => Promis
             ))}
           </datalist>
         </label>
+        <Field label="Seller">
+          <select className="text" value={companyId ?? ""} onChange={(e) => setCompanyId(Number(e.target.value))}>
+            {companyId === null ? <option value="">—</option> : null}
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </Field>
         <label>
           Reference
           <input className="text" value={ref} onChange={(e) => setRef(e.target.value)} />
@@ -309,7 +323,8 @@ function HeaderCard({ order, apply }: { order: OrderRow; apply: (w: () => Promis
         </button>
       </div>
       <p className="muted">
-        A new customer name creates the customer. VAT is printed only; every figure here is net.
+        A new customer name creates the customer. The seller is the company that issues the invoices.
+        VAT is printed only; every figure here is net.
       </p>
     </div>
   );

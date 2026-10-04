@@ -27,6 +27,8 @@ import {
 import { useDialog } from "./Dialog";
 import { ErrorBanner, Spinner } from "./Ui";
 import DataTable, { type Column } from "./DataTable";
+import { CheckField, FieldSet } from "./Field";
+import { useAuth } from "../auth";
 
 function CopyRow({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
@@ -60,6 +62,7 @@ function UserDetail({
   onChanged: (u: PlatformUser) => void;
 }) {
   const dialog = useDialog();
+  const { companies } = useAuth();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -87,6 +90,32 @@ function UserDetail({
       </p>
       <CopyRow label="PCM repository" value={user.repository_url} />
       <CopyRow label="KiCad HTTP library" value={user.httplib_url} />
+
+      {/* Decision 0063: the companies whose data this user sees. An admin
+          sees every company whatever is ticked here. */}
+      <FieldSet legend="Companies">
+        {companies.map((c) => (
+          <CheckField
+            key={c.id}
+            checked={user.company_ids.includes(c.id)}
+            disabled={busy}
+            onChange={(on) =>
+              void run(() =>
+                updateUser(user.id, {
+                  company_ids: on
+                    ? [...user.company_ids, c.id]
+                    : user.company_ids.filter((id) => id !== c.id),
+                }),
+              )
+            }
+          >
+            {c.name}
+          </CheckField>
+        ))}
+        {user.role === "admin" ? (
+          <span className="muted dim">An admin sees every company.</span>
+        ) : null}
+      </FieldSet>
 
       {user.tokens.map((t) => (
         <div className="user-url-row" key={t.id}>
