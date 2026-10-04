@@ -4,17 +4,20 @@
  *  linked to the platform's own record of it by the sync. A purchase waits
  *  here until somebody imports it as a supplier document (Production →
  *  Invoices, where its positions get their destinations) or skips it with a
- *  reason.
+ *  reason. A supplier document typed by hand that may be the same invoice
+ *  stops the import: the person links the purchase to it or imports it anyway.
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  ApiError,
   errorMessage,
   getKsefInbox,
   importKsefPurchase,
   isAbortError,
   ksefXmlPath,
   skipKsefInvoice,
+  type KsefDuplicateCandidate,
   type KsefInboxRow,
 } from "../api";
 import { useAuth } from "../auth";
@@ -54,10 +57,39 @@ export default function KsefInbox() {
       load();
     } catch (e) {
       setError(errorMessage(e));
+      // A refusal can still change a row ("already a document; linked to it"):
+      // reread the rows and keep the message.
+      getKsefInbox().then(setRows).catch(() => undefined);
     } finally {
       setBusy(null);
     }
   };
+
+  /** Import, and when the API answers that a document typed by hand may be
+   *  this invoice, let the person pick: link to one of them, or a new one. */
+  const importRow = (r: KsefInboxRow) => act(r.id, async () => {
+    try {
+      await importKsefPurchase(r.id);
+    } catch (e) {
+      const candidates = e instanceof ApiError && e.status === 409
+        ? ((e.detail as { candidates?: KsefDuplicateCandidate[] } | undefined)?.candidates ?? [])
+        : [];
+      if (!candidates.length) throw e;
+      const pick = await dialog.select(
+        `${r.invoice_number} of ${r.seller_name || r.seller_nip} may already be entered by hand.`,
+        [
+          ...candidates.map((c) => ({
+            value: String(c.id),
+            label: `Link to document ${c.id}: ${c.supplier} ${c.doc_number}, ${c.doc_date}`,
+          })),
+          { value: "new", label: "Import it as a new document" },
+        ],
+        { title: "Possible duplicate", confirmLabel: "Continue" },
+      );
+      if (pick === "new") await importKsefPurchase(r.id, { force: true });
+      else if (pick) await importKsefPurchase(r.id, { linkTo: Number(pick) });
+    }
+  });
 
   const cols: Column<KsefInboxRow>[] = [
     { key: "date", label: "Date", width: 9, className: "mono", get: (r) => r.issue_date },
@@ -84,7 +116,7 @@ export default function KsefInbox() {
             <>
               <button type="button" className="btn btn-primary btn-sm" disabled={busy !== null || !r.has_xml}
                 title={r.has_xml ? "Write it as a supplier document" : "Its XML is not downloaded yet"}
-                onClick={() => void act(r.id, () => importKsefPurchase(r.id))}>
+                onClick={() => void importRow(r)}>
                 {busy === r.id ? "…" : "Import"}
               </button>
               <button type="button" className="btn btn-sm" disabled={busy !== null} onClick={async () => {

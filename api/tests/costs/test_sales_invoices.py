@@ -186,3 +186,180 @@ def test_the_old_register_is_imported_as_printed():
     assert (inv.kind, inv.status, inv.buyer_nip) == ("correction", "issued", "5213545223")
     assert inv.amount_due == Decimal("12.31")      # as printed, not recomputed
     assert inv.body["correction"]["reason"] == "zmiana"
+
+
+# --- review fixes of 2026-10-04 -------------------------------------------------
+
+def test_a_unit_price_prints_the_decimals_the_net_was_computed_from(db, seller, buyer):
+    """3 x 0.105 is 0.32 (0.315 half-up). A price printed as 0.11 would say 0.33."""
+    inv = S.create(db, company_id=seller.id, kind="vat", customer_id=buyer.id, issue_date="2049-09-01",
+                   lines=[{"name": "Złącze", "qty": 3, "unit_net": "0.105", "vat_rate": "23"}])
+    p = inv.body["lines"][0]
+    assert (p["unit_net"], p["net"]) == ("0.105", "0.32")
+    xml = fa3.build(inv)
+    assert fa3.validate(xml) == [] and b"<P_9A>0.105</P_9A>" in xml
+    page, _ = P.build_html(inv, preview=True)
+    assert "0,105" in page
+
+
+def test_the_annotations_follow_the_rates(db, seller, buyer):
+    def make(rate, **kw):
+        return S.create(db, company_id=seller.id, kind="vat", customer_id=buyer.id, issue_date="2049-09-02",
+                        lines=[{"name": "Usługa", "qty": 1, "unit_net": "100", "vat_rate": rate}], **kw)
+
+    zw = make("zw", exemption_basis="art. 43 ust. 1 pkt 29 lit. c ustawy o VAT")
+    xml = fa3.build(zw)
+    assert fa3.validate(xml) == []
+    assert b"<P_19>1</P_19>" in xml and b"<P_19A>art. 43 ust. 1" in xml and b"P_19N" not in xml
+    with pytest.raises(fa3.Refused):
+        fa3.build(make("zw"))                     # an exemption names its legal basis
+    oo = fa3.build(make("oo"))
+    assert fa3.validate(oo) == [] and b"<P_18>1</P_18>" in oo
+    std = fa3.build(make("23"))
+    assert b"<P_18>2</P_18>" in std and b"<P_19N>1</P_19N>" in std
+
+
+def test_an_eu_buyer_keeps_its_vat_number(db, seller):
+    cust = M.Customer(name="TEST-EU-BUYER", legal_name="EU BUYER GMBH", tax_id="DE 123456789", country="DE",
+                      address_l1="Teststr. 1", address_l2="10115 Berlin")
+    db.add(cust)
+    db.flush()
+    assert (S.buyer_of(cust)["vat_eu"], S.buyer_of(cust)["nip"]) == ("123456789", "")
+    inv = S.create(db, company_id=seller.id, kind="vat", customer_id=cust.id, issue_date="2049-09-03",
+                   lines=[{"name": "Usługa", "qty": 1, "unit_net": "100", "vat_rate": "np II"}])
+    xml = fa3.build(inv)
+    assert fa3.validate(xml) == []
+    assert b"<KodUE>DE</KodUE>" in xml and b"<NrVatUE>123456789</NrVatUE>" in xml and b"<P_18>1</P_18>" in xml
+
+
+def test_two_writers_never_get_the_same_number(db, seller, buyer, monkeypatch):
+    a = S.create(db, company_id=seller.id, kind="vat", customer_id=buyer.id, issue_date="2049-10-01", lines=LINES)
+    assert a.number == "01/10/2049"
+    real, calls = numbering.next_number, []
+
+    def stale(db_, cid, kind, day, exclude_id=None):
+        calls.append(1)     # the second writer read the series before the first one wrote
+        return "01/10/2049" if len(calls) == 1 else real(db_, cid, kind, day, exclude_id)
+
+    monkeypatch.setattr(numbering, "next_number", stale)
+    monkeypatch.setattr(numbering, "taken", lambda *a, **k: False)
+    b = S.create(db, company_id=seller.id, kind="vat", customer_id=buyer.id, issue_date="2049-10-01", lines=LINES)
+    assert b.number == "02/10/2049"
+    with pytest.raises(HTTPException) as e:
+        S.create(db, company_id=seller.id, kind="vat", customer_id=buyer.id, issue_date="2049-10-01",
+                 lines=LINES, number="01/10/2049")
+    assert e.value.status_code == 409
+
+
+def test_issue_checks_the_ksef_number_and_the_file(db, seller, buyer, monkeypatch):
+    monkeypatch.setattr("app.services.storage.put_bytes", lambda k, d, ct="": None)
+    inv = S.create(db, company_id=seller.id, kind="vat", customer_id=buyer.id, issue_date="2049-10-05", lines=LINES)
+    other = S.create(db, company_id=seller.id, kind="vat", customer_id=buyer.id, issue_date="2049-10-05", lines=LINES)
+    with pytest.raises(HTTPException) as e:      # a KSeF number of another seller
+        S.issue(db, inv, ksef_number="5213545223-20491005-0123456789AB-CD")
+    assert e.value.status_code == 422
+    with pytest.raises(HTTPException) as e:      # the file of another invoice
+        S.issue(db, inv, ksef_number="8513262910-20491005-0123456789AB-CD", xml=fa3.build(other))
+    assert e.value.status_code == 422
+    S.issue(db, inv, ksef_number="8513262910-20491005-0123456789AB-CD", xml=fa3.build(inv))
+    with pytest.raises(HTTPException) as e:      # never a second KSeF number over the first
+        S.issue(db, inv, ksef_number="8513262910-20491005-0123456789AB-EF")
+    assert e.value.status_code == 409 and inv.ksef_number.endswith("-CD")
+
+
+def test_a_later_edit_keeps_a_recorded_payment(db, seller, buyer):
+    p = S.create(db, company_id=seller.id, kind="proforma", customer_id=buyer.id, issue_date="2049-10-06",
+                 lines=LINES)
+    S.mark_paid(db, p, "2049-10-07")
+    S.update(db, p, {"title": "FAKTURA PROFORMA (2)"})
+    assert p.paid and p.paid_date == "2049-10-07" and p.amount_due == Decimal("0.00")
+    S.update(db, p, {"payment": {"paid": False}})
+    assert not p.paid and p.amount_due == p.gross_total
+
+
+def test_re_dating_a_draft_renumbers_it_and_keeps_the_sale_dates(db, seller, buyer):
+    a = S.create(db, company_id=seller.id, kind="vat", customer_id=buyer.id, issue_date="2049-11-28", lines=LINES)
+    assert a.number == "01/11/2049"
+    S.update(db, a, {"issue_date": "2049-12-01"})
+    assert (a.number, a.sale_date) == ("01/12/2049", "2049-12-01")
+    assert numbering.next_number(db, seller.id, "vat", date(2049, 11, 1)) == "01/11/2049"
+    a.status = "issued"
+    kor = S.correct(db, a, issue_date="2049-12-05")
+    S.update(db, kor, {"issue_date": "2049-12-06"})
+    assert kor.sale_date == "2049-12-01"        # the corrected invoice's sale date stays
+
+
+def test_a_recurring_invoice_is_written_once_a_month_even_when_re_dated(db, seller, buyer):
+    tpl = M.SalesInvoiceTemplate(company_id=seller.id, key="test-monthly-2", customer_id=buyer.id, day="last",
+                                 lines=[LINES[0]], active=True)
+    db.add(tpl)
+    db.flush()
+    inv = S.generate(db, tpl, "2049-04")
+    S.update(db, inv, {"issue_date": "2049-04-29"})
+    with pytest.raises(HTTPException):
+        S.generate(db, tpl, "2049-04")
+    S.update(db, inv, {"issue_date": "2049-05-02"})
+    with pytest.raises(HTTPException):
+        S.generate(db, tpl, "2049-04")           # it was written FOR April
+    may = S.generate(db, tpl, "2049-05")         # ...so May is still free
+    assert may.issue_date == "2049-05-31" and may.body["template_month"] == "2049-05"
+    # The imported history has no written-for month: its issue date counts.
+    db.add(M.SalesInvoice(company_id=seller.id, kind="vat", status="issued", number="1/06/2049",
+                          issue_date="2049-06-10", template_key="test-monthly-2", source="script: test",
+                          body={"totals": {}}))
+    db.flush()
+    with pytest.raises(HTTPException):
+        S.generate(db, tpl, "2049-06")
+
+
+def test_a_correction_of_an_advance_is_kor_zal(db, seller, buyer):
+    adv = S.create(db, company_id=seller.id, kind="advance", customer_id=buyer.id, issue_date="2049-07-10",
+                   order_lines=[{"name": "CE-DONGLE V3", "qty": 250, "unit_net": "450", "vat_rate": "23"}],
+                   advance_gross="83025.00")
+    adv.status = "issued"
+    kor = S.correct(db, adv, issue_date="2049-07-20", reason="zwrot części zaliczki")
+    S.update(db, kor, {"advance_gross": "41512.50"})
+    xml = fa3.build(kor)
+    assert fa3.validate(xml) == []
+    assert b"<RodzajFaktury>KOR_ZAL</RodzajFaktury>" in xml and b"<StanPrzedZ>1</StanPrzedZ>" in xml
+    assert b"<P_13_1>-33750.00</P_13_1>" in xml
+    assert kor.amount_due == Decimal("-41512.50")
+    page, _ = P.build_html(kor, preview=True)
+    assert "Zamówienie przed korektą" in page and "Zaliczka po korekcie" in page
+    assert P.render(kor).startswith(b"%PDF")
+
+
+def test_a_company_the_caller_cannot_see_does_not_exist(db, seller, buyer):
+    from types import SimpleNamespace
+
+    from app.routers import sales_invoices as R
+
+    nine = C.by_key(db, "9sigma")
+    u = M.User(username="test-sales-9sigma", role="user", password_hash="x")
+    db.add(u)
+    db.flush()
+    C.set_memberships(db, u, [nine.id])
+    req = SimpleNamespace(state=SimpleNamespace(user=u), headers={})
+    calls = [
+        lambda: R.next_number(company_id=seller.id, kind="vat", issue_date="2049-01-01", request=req, db=db),
+        lambda: R.create_invoice(R.InvoiceIn(company_id=seller.id, customer_id=buyer.id, issue_date="2049-01-02",
+                                             lines=[R.LineIn(name="X", unit_net=1)]), request=req, db=db),
+        lambda: R.create_template(R.TemplateIn(company_id=seller.id, key="test-gate"), request=req, db=db),
+    ]
+    for call in calls:
+        with pytest.raises(HTTPException) as e:
+            call()
+        assert e.value.status_code == 404
+
+
+def test_a_country_code_is_two_letters(db, buyer):
+    from types import SimpleNamespace
+
+    from app.routers import orders as R
+
+    req = SimpleNamespace(state=SimpleNamespace(user=None), headers={})
+    with pytest.raises(HTTPException) as e:
+        R.update_customer(buyer.id, R.CustomerPatch(country="POL"), request=req, db=db)
+    assert e.value.status_code == 422
+    R.update_customer(buyer.id, R.CustomerPatch(country="de"), request=req, db=db)
+    assert buyer.country == "DE"

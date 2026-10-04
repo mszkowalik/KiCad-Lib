@@ -636,8 +636,19 @@ def _charge_or_draw(db: Session, plan: dict, run_id: int, actor: str,
     res = jlc_apply.charge_draws(db, plan, run_id, actor=actor, dry_run=dry_run)
     if res["uncharged_draws"] or res["already_charged"]:
         return res
-    return jlc_apply.apply_draws(db, plan, run_id, jlc_apply.lot_line_index(db),
-                                 actor=actor, dry_run=dry_run)
+    run = db.get(M.ProductionRun, run_id)
+    if run_actuals.run_scope(db, run) is None:
+        return jlc_apply.apply_draws(db, plan, run_id, jlc_apply.lot_line_index(db),
+                                     actor=actor, dry_run=dry_run)
+    # Each company keeps its own stock (decision 0064): write the stock
+    # movement first, then charge it, so units of the other company's lots
+    # reach the batch's company by transfer (`charge_draws` -> `cover_draws`).
+    drawn = jlc_apply.apply_draws(db, plan, None, jlc_apply.lot_line_index(db),
+                                  actor=actor, dry_run=dry_run)
+    if dry_run:
+        return {**drawn, "then": "charged to the batch; units of the other company's lots "
+                                 "move by in-house transfer first"}
+    return {**jlc_apply.charge_draws(db, plan, run_id, actor=actor, dry_run=False), "drawn": drawn}
 
 
 def _book_external(db: Session, plan: dict, actor: str, dry_run: bool) -> dict:

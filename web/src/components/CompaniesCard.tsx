@@ -15,12 +15,14 @@ import {
   errorMessage,
   isAbortError,
   listCompanies,
+  setDrawCompany,
   stockBackfill,
   updateCompany,
   type CompanyDetail,
   type HistoryPlan,
   type StockBackfillResult,
 } from "../api";
+import { useAuth } from "../auth";
 import { plain } from "../format";
 import DataTable, { type Column } from "./DataTable";
 import { useDialog } from "./Dialog";
@@ -208,6 +210,39 @@ const UNRESOLVED_COLUMNS: Column<Unresolved>[] = [
       : d.has_text ? "no NIP or company name in the text" : "no PDF text and no JLC billing data") },
 ];
 
+type UnresolvedDraw = StockBackfillResult["unresolved_draws"][number];
+
+/** Names the company of one uncharged draw nothing else decides — a JLC
+ *  warehouse pick or an external order's stock (decision 0064). */
+function DrawCompanyPick({ draw, onDone }: { draw: UnresolvedDraw; onDone: () => void }) {
+  const { companies } = useAuth();
+  const dialog = useDialog();
+  const [busy, setBusy] = useState(false);
+  const pick = async (id: string) => {
+    if (!id) return;
+    const name = companies.find((c) => String(c.id) === id)?.name ?? id;
+    if (!(await dialog.confirm(
+      `Draw ${draw.id} (${draw.qty} × ${draw.lcsc || draw.mpn}) took ${name}'s stock? With stock per company, `
+        + "units of the other company's lots move by in-house transfer.",
+      { title: "Name whose stock", confirmLabel: "Write" }))) return;
+    setBusy(true);
+    try {
+      await setDrawCompany(draw.id, Number(id), false);
+      onDone();
+    } catch (e) {
+      await dialog.alert(errorMessage(e), { title: "Naming the company failed" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <select className="row-input" value="" disabled={busy} onChange={(e) => void pick(e.target.value)}>
+      <option value="">{busy ? "Writing…" : "— whose stock —"}</option>
+      {companies.map((c) => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+    </select>
+  );
+}
+
 type Proposed = HistoryPlan["transfers"][number];
 const PROPOSED_COLUMNS: Column<Proposed>[] = [
   { key: "date", label: "Date", width: 12, className: "mono", get: (t) => t.date },
@@ -299,6 +334,24 @@ function StockSplitCard() {
               </p>
               <DataTable rows={fill.unresolved_documents} rowKey={(d) => d.document_id}
                 columns={UNRESOLVED_COLUMNS} empty="None." />
+            </>
+          ) : null}
+          {fill.unresolved_draws.length ? (
+            <>
+              <p className="muted dim">
+                These draws are charged to no batch and bound to no lot of one company, so nothing says whose
+                stock they took. Name it for each.
+              </p>
+              <DataTable rows={fill.unresolved_draws} rowKey={(d) => d.id}
+                columns={[
+                  { key: "date", label: "Date", width: 14, className: "mono", get: (d) => d.date || "—" },
+                  { key: "part", label: "Part", width: 22, className: "mono", get: (d) => d.lcsc || d.mpn },
+                  { key: "qty", label: "Qty", width: 10, numeric: true, get: (d) => d.qty },
+                  { key: "note", label: "Note", width: 34, className: "muted", get: (d) => d.note },
+                  { key: "pick", label: "Company", width: 20, interactive: false, get: () => "",
+                    render: (d) => <DrawCompanyPick draw={d} onDone={() => void runFill(true)} /> },
+                ]}
+                empty="None." />
             </>
           ) : null}
         </>

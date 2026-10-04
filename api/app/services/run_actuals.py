@@ -198,7 +198,8 @@ def effective_qty(li: M.RunCostLine, doc: M.RunCostDocument | None = None,
     function never guesses which batches a line covers.
     """
     qty = li.qty or 0.0
-    if li.basis != "per_device":
+    # A company overhead has no units to multiply by (decision 0068).
+    if li.basis != "per_device" or li.allocate == OVERHEAD:
         return qty
     run_id = li.run_id or (doc.run_id if doc else None)
     if run_id is None or db is None:
@@ -649,7 +650,7 @@ def _to_usd(amount: float, currency: str, rates: dict[str, float]) -> tuple[floa
     return fx.convert(amount, currency or "USD", "USD", rates)
 
 
-def _pool_events(db: Session, company_id: int | None = None
+def _pool_events(db: Session, company_id: int | None = None, *, with_transfers: bool = False
                  ) -> tuple[list[tuple[str, str, object]], dict, dict]:
     """Everything that moves part stock, sorted by event date: leaf part
     purchases (non-proforma, unallocated, not excluded), run draws, and stock
@@ -660,6 +661,12 @@ def _pool_events(db: Session, company_id: int | None = None
     `company_id` keeps one company's events only (decision 0064): purchases it
     was billed for, and the draws and adjustments stamped with it. Pass it
     through `stock_scope`, so it is None while both companies share one pool.
+
+    With no company, in-house transfers are left out on BOTH sides — the
+    receiver's purchase and the sender's draw. In one pool they move nothing,
+    and replaying them would re-price the part: the draw leaves at the pool's
+    average and the purchase enters at the sender's. The lot ledger asks
+    `with_transfers=True`: a transfer's position is a lot its draws bind to.
     """
     doc_by_id = {d.id: d for d in db.query(M.RunCostDocument).all()}
     headers = header_ids(db)
@@ -669,7 +676,8 @@ def _pool_events(db: Session, company_id: int | None = None
     else:
         pool_doc_ids = [d.id for d in doc_by_id.values()
                         if (d.doc_type or "invoice") != "proforma"
-                        and (company_id is None or d.company_id == company_id)]
+                        and (d.company_id == company_id if company_id is not None
+                             else with_transfers or (d.doc_type or "invoice") != "transfer")]
         purchases = (
             db.query(M.RunCostLine)
             .filter(
@@ -739,6 +747,8 @@ def _pool_events(db: Session, company_id: int | None = None
     if company_id is not None:
         draws = draws.filter(M.ComponentConsumption.company_id == company_id)
         adjs = adjs.filter(M.ComponentStockAdjustment.company_id == company_id)
+    elif not with_transfers:
+        draws = draws.filter(M.ComponentConsumption.transfer_line_id.is_(None))
     for c in draws.all():
         events.append((c.consumed_at or "", "use", c))
     for a in adjs.all():
@@ -1059,7 +1069,8 @@ def component_ledger(db: Session, component_id: int | None = None,
 
 
 def check_shortages(db: Session, candidates: list[dict],
-                    company_id: int | None = None) -> list[dict]:
+                    company_id: int | None = None, exclude_draw_ids=(),
+                    exclude_adjustment_ids=()) -> list[dict]:
     """Would these draws take stock below zero at ANY point from their date on?
 
     A full-timeline check, not a point check: inserting a draw at a historical
@@ -1071,12 +1082,20 @@ def check_shortages(db: Session, candidates: list[dict],
     A candidate is checked against its company's stock (decision 0064): its own
     `company_id`, else the argument. Both come through `stock_scope`, so they are
     None — one pool — while the companies share one.
+
+    `exclude_draw_ids` and `exclude_adjustment_ids` leave existing rows out of
+    the replay: a draw or a loss that is about to move to another company's
+    stock, checked as a candidate there.
     """
     by_company: dict[int | None, list] = {}
+    skip = set(exclude_draw_ids or ())
+    skip_adj = set(exclude_adjustment_ids or ())
 
     def events_of(cid: int | None) -> list:
         if cid not in by_company:
-            by_company[cid] = _pool_events(db, cid)[0]
+            by_company[cid] = [e for e in _pool_events(db, cid)[0]
+                               if not (e[1] == "use" and e[2].id in skip)
+                               and not (e[1] == "adj" and e[2].id in skip_adj)]
         return by_company[cid]
 
     out: list[dict] = []
@@ -1417,6 +1436,8 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
             continue  # split position: its children carry the money
         if li.allocate == EXCLUDED:
             continue  # recorded for reconciliation, charged to nobody on purpose
+        if li.allocate == OVERHEAD:
+            continue  # a company cost (decision 0068): the overhead bucket holds it, never a batch
         if li.transformation_id:
             continue  # a conversion cost: in a prepared part's lot, paid when a step draws it
         if li.run_id == run.id:
@@ -2182,7 +2203,8 @@ def invoice_register(db: Session, company_ids: list[int] | None = None) -> dict:
             M.RunCostLine.plan_key.in_(("logistics:inbound", "logistics:duty")),
             M.RunCostLine.voided_at.is_(None),
             M.RunCostLine.run_id.is_(None), M.RunCostLine.project_id.is_(None),
-            M.RunCostLine.allocate.notin_((*SPREAD, EXCLUDED)),
+            # An overhead logistics line is the company's, not a parts surcharge.
+            M.RunCostLine.allocate.notin_((*SPREAD, EXCLUDED, OVERHEAD)),
             M.RunCostLine.document_id.in_(sorted(pool_doc_ids) or [0])).all()
         if li.id not in hdrs
     ]

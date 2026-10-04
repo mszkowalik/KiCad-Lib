@@ -14,6 +14,12 @@ read from every document of the company that is not a cancelled draft — the
 imported history and the invoices KSeF holds included, so a number written
 directly in KSeF is never given out twice. A leading zero is optional in the
 old numbers ("1/09/2026" and "01/09/2026" are the same number).
+
+Two writers can still compute the same next number at once. The partial unique
+index `uq_sales_invoices_number` (company, kind, number) stops the second: the
+service takes an automatic number again, and refuses a typed one. The imported
+history is outside the index, because it keeps the numbers it printed, two
+duplicates included.
 """
 from __future__ import annotations
 
@@ -78,11 +84,14 @@ def next_number(db: Session, company_id: int, kind: str, day: date,
     return f"{PREFIX[series_of(kind)]}{n:02d}/{day.month:02d}/{day.year}"
 
 
+def norm(n: str) -> str:
+    """A number with the leading zeros of its parts dropped: "01/09/2026" and
+    "1/09/2026" are the same number."""
+    return re.sub(r"(^|[ /])0+(\d)", r"\1\2", (n or "").strip())
+
+
 def taken(db: Session, company_id: int, kind: str, number: str,
           exclude_id: int | None = None) -> bool:
     """Whether a number is already used in the series (leading zeros ignored)."""
-    def norm(n: str) -> str:
-        return re.sub(r"(^|[ /])0+(\d)", r"\1\2", (n or "").strip())
-
     want = norm(number)
     return any(norm(n) == want for n in _all_numbers(db, company_id, kind, exclude_id))

@@ -15,17 +15,24 @@ A proforma never goes to KSeF and is issued when it is written.
 
 Only a company with `issues_invoices` gets invoices written here. 9SIGMA has
 its own invoicing system (user, 2026-10-04).
+
+What a correction and an advance AMOUNT to is read in one place each, because
+three sources write them differently: `correction_difference` and
+`advance_amounts`. The books and the amount due use nothing else.
 """
 from __future__ import annotations
 
 import base64
 import calendar
+import copy
 import hashlib
 import re
 from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException
+from sqlalchemy import and_, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ... import models as M
@@ -64,10 +71,86 @@ def bank_of(c: M.Company) -> dict:
     return {"name": c.bank_name, "address": "", "account": c.bank_account, "swift": c.swift}
 
 
+def _alnum(s: str | None) -> str:
+    return re.sub(r"[^0-9A-Za-z+*]", "", s or "").upper()
+
+
+def party_ids(country: str | None, nip: str | None = "", vat_eu: str | None = "") -> dict:
+    """A buyer's tax identity the way FA(3) wants it.
+
+    * A Polish buyer: the NIP, digits only ("PL 521-354-52-23" is 5213545223).
+    * A buyer in another EU country: the VAT number WITHOUT its country prefix,
+      letters kept (`NrVatUE`; the prefix is `KodUE`): "DE123456789" is
+      `vat_eu` "123456789", "ATU12345678" is "U12345678".
+    * Anybody else: the tax number as written, letters kept (`NrID`).
+    """
+    country = (country or "PL").strip().upper() or "PL"
+    if country == "PL":
+        return {"country": "PL", "nip": re.sub(r"\D", "", nip or vat_eu or ""), "vat_eu": ""}
+    prefix = fa3.eu_prefix(country)
+    if prefix in fa3.EU:
+        num = _alnum(vat_eu) or _alnum(nip)
+        return {"country": country, "nip": "", "vat_eu": num.removeprefix(prefix)}
+    return {"country": country, "nip": _alnum(nip) or _alnum(vat_eu), "vat_eu": ""}
+
+
 def buyer_of(cust: M.Customer) -> dict:
     return {"name": cust.legal_name or cust.name, "address_l1": cust.address_l1,
-            "address_l2": cust.address_l2, "nip": re.sub(r"\D", "", cust.tax_id or ""),
-            "country": cust.country or "PL"}
+            "address_l2": cust.address_l2, **party_ids(cust.country, cust.tax_id)}
+
+
+def correction_difference(inv: M.SalesInvoice) -> dict:
+    """What a correction changes, after minus before, as totals per rate.
+
+    * A platform correction keeps the state before (`correction.before_totals`)
+      and after (`totals`), and so does a script correction that printed both.
+    * A correction read from KSeF states the difference itself: FA(3) P_13_x
+      and P_15 of a KOR are the difference (`correction.states_difference`).
+    * A script correction that printed no amounts before changed text only
+      (1/KOR/08/2021): it changes no amount.
+    """
+    b = inv.body or {}
+    cor = b.get("correction") or {}
+    totals = b.get("totals") or {}
+    if cor.get("before_totals"):
+        return A.combine(totals, cor["before_totals"], -1)
+    if cor.get("states_difference") or (inv.source or "") == "ksef":
+        return A.combine(totals, None)
+    return A.combine(None, None)
+
+
+def corrects_advance(db: Session, inv: M.SalesInvoice) -> bool:
+    """Whether a correction corrects an advance invoice (KOR_ZAL)."""
+    cor = (inv.body or {}).get("correction") or {}
+    if cor.get("of_kind"):
+        return cor["of_kind"] == "advance"
+    orig = db.get(M.SalesInvoice, inv.corrects_id) if inv.corrects_id else None
+    return orig is not None and orig.kind == "advance"
+
+
+def advance_amounts(inv: M.SalesInvoice) -> dict:
+    """The advance itself, net, VAT and gross per rate, whatever wrote it.
+
+    A platform advance keeps the order (`body.order`) apart from the advance
+    (`totals`), and FA(3) states the advance in P_13_x and P_15, so an advance
+    read from KSeF has it in `totals` too. An advance imported from 7Sigma's
+    script printed the ORDER as its positions and totals, and the advance as the
+    amount to pay. The import keeps that figure as `body.advance_gross`, apart
+    from `amount_due`, which a recorded payment may change; the net and VAT are
+    taken from that gross over the order's rates (art. 106f ust. 1 pkt 3), as a
+    new advance is computed."""
+    b = inv.body or {}
+    totals = b.get("totals") or {}
+    if b.get("order") or not (inv.source or "").startswith("script"):
+        return totals
+    printed = b.get("advance_gross")
+    gross = Decimal(str(printed if printed not in (None, "") else (inv.amount_due or 0)))
+    if gross <= 0 or not totals.get("rates") or gross == Decimal(str(totals.get("gross") or 0)):
+        return totals
+    try:
+        return fa3.advance_totals(totals, gross)
+    except (ValueError, ArithmeticError):
+        return totals
 
 
 def _columns(inv: M.SalesInvoice) -> None:
@@ -78,14 +161,15 @@ def _columns(inv: M.SalesInvoice) -> None:
     inv.vat_total = A.d2(t.get("vat") or 0)
     inv.gross_total = A.d2(t.get("gross") or 0)
     buyer = b.get("buyer") or {}
-    inv.buyer_nip = re.sub(r"\D", "", buyer.get("nip") or "")
+    inv.buyer_nip = re.sub(r"\D", "", buyer.get("nip") or buyer.get("vat_eu") or "")
     inv.buyer_name = (buyer.get("name") or "")[:512]
     pay = b.get("payment") or {}
     inv.due_date = pay.get("due_date") or ""
     if inv.kind == "correction":
-        before = (b.get("correction") or {}).get("before_totals") or {"gross": "0"}
-        inv.amount_due = A.d2(Decimal(t.get("gross") or 0) - Decimal(before.get("gross") or 0))
-    elif pay.get("paid"):
+        inv.amount_due = A.d2(correction_difference(inv)["gross"])
+    elif pay.get("paid") or inv.paid:
+        # A payment recorded on the platform (`mark_paid`) leaves the document
+        # alone, so `inv.paid` counts as much as the document's own payment.
         inv.amount_due = A.d2(0)
     else:
         inv.amount_due = inv.gross_total
@@ -105,13 +189,34 @@ def _buyer(db: Session, customer_id: int | None, buyer: dict | None) -> tuple[in
     if buyer and (buyer.get("name") or "").strip():
         return customer_id, {"name": buyer["name"].strip(), "address_l1": buyer.get("address_l1") or "",
                              "address_l2": buyer.get("address_l2") or "",
-                             "nip": re.sub(r"\D", "", buyer.get("nip") or ""),
-                             "country": (buyer.get("country") or "PL").upper(),
-                             "vat_eu": buyer.get("vat_eu") or ""}
+                             **party_ids(buyer.get("country"), buyer.get("nip"), buyer.get("vat_eu"))}
     cust = db.get(M.Customer, customer_id) if customer_id else None
     if cust is None:
         raise HTTPException(422, "name the buyer: a customer, or the buyer's name and address")
     return cust.id, buyer_of(cust)
+
+
+def _exemption(basis: str | None) -> dict | None:
+    """The legal basis of a VAT exemption, printed in FA(3) P_19A."""
+    basis = (basis or "").strip()
+    return {"basis": basis[:240], "law": "A"} if basis else None
+
+
+def _insert(db: Session, inv: M.SalesInvoice, renumber=None) -> None:
+    """Write a new numbered document. Two writers can compute the same next
+    number at once; the unique index refuses the second (decision 0066). An
+    automatic number (`renumber` given) is then taken again, a typed one is
+    refused."""
+    for attempt in range(3):
+        try:
+            with db.begin_nested():
+                db.add(inv)
+                db.flush()
+            return
+        except IntegrityError:
+            if renumber is None or attempt == 2:
+                raise HTTPException(409, f"number {inv.number} is already used in this series") from None
+            inv.number = renumber()
 
 
 def create(db: Session, *, company_id: int, kind: str, customer_id: int | None = None,
@@ -119,7 +224,8 @@ def create(db: Session, *, company_id: int, kind: str, customer_id: int | None =
            lines: list[dict] | None = None, payment: dict | None = None,
            extra_info: list[str] | None = None, place: str = "", title: str = "",
            number: str = "", split_payment: bool = False, order_lines: list[dict] | None = None,
-           advance_gross=None, template_key: str = "", actor: str = "") -> M.SalesInvoice:
+           advance_gross=None, template_key: str = "", template_month: str = "",
+           exemption_basis: str = "", actor: str = "") -> M.SalesInvoice:
     """A new invoice: a draft (VAT, correction, advance) or an issued proforma."""
     if kind not in ("vat", "proforma", "advance"):
         raise HTTPException(422, "a new invoice is a vat, proforma or advance invoice; a correction "
@@ -152,7 +258,8 @@ def create(db: Session, *, company_id: int, kind: str, customer_id: int | None =
             totals = A.totals(positions)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
-    num = (number or "").strip() or numbering.next_number(db, c.id, kind, day)
+    typed = (number or "").strip()
+    num = typed or numbering.next_number(db, c.id, kind, day)
     if numbering.taken(db, c.id, kind, num):
         raise HTTPException(409, f"number {num} is already used in this series")
     pay = _payment(payment, issue, terms)
@@ -167,6 +274,12 @@ def create(db: Session, *, company_id: int, kind: str, customer_id: int | None =
             "split_payment": bool(split_payment), "issued_by": c.issuer_name, "notes": []}
     if order:
         body["order"] = order
+    if _exemption(exemption_basis):
+        body["exemption"] = _exemption(exemption_basis)
+    if template_month:
+        # The month a recurring invoice was written for, whatever its date
+        # becomes later (`generate` refuses a second draft for it).
+        body["template_month"] = template_month
     inv = M.SalesInvoice(company_id=c.id, kind=kind, status="issued" if kind == "proforma" else "draft",
                          number=num, issue_date=issue, sale_date=(sale_date or issue)[:10],
                          customer_id=customer_id, currency="PLN", body=body, source="platform",
@@ -174,47 +287,83 @@ def create(db: Session, *, company_id: int, kind: str, customer_id: int | None =
     _columns(inv)
     if pay.get("paid"):
         inv.paid, inv.paid_date = True, pay.get("paid_date") or ""
-    db.add(inv)
-    db.flush()
+    _insert(db, inv, None if typed else (lambda: numbering.next_number(db, c.id, kind, day)))
     return inv
+
+
+def _terms(db: Session, inv: M.SalesInvoice) -> int:
+    cust = db.get(M.Customer, inv.customer_id) if inv.customer_id else None
+    if cust is not None and cust.payment_terms_days:
+        return cust.payment_terms_days
+    comp = db.get(M.Company, inv.company_id)
+    return (comp.payment_terms_days if comp is not None else 0) or 14
 
 
 def update(db: Session, inv: M.SalesInvoice, fields: dict) -> M.SalesInvoice:
     """Change a draft (or a proforma, which is informational). An issued
-    invoice changes only by a correction."""
+    invoice changes only by a correction.
+
+    * **A new issue date in another month renumbers a draft**: its number
+      names the month, and the next one of the new month replaces it. A typed
+      `number` wins over that.
+    * **The sale date of a VAT draft follows its issue date** when it was the
+      same day and no sale date is given. A correction keeps the sale date of
+      the invoice it corrects, and an advance the day the money came.
+    * **A payment recorded with `mark_paid` stays** unless `payment` is sent.
+    """
     if not (inv.status == "draft" or inv.kind == "proforma"):
         raise HTTPException(409, f"{inv.number} is {inv.status}: an issued invoice is changed by a "
                                  "correction, never in place")
-    b = dict(inv.body or {})
+    b = copy.deepcopy(inv.body or {})
+    cor = b.get("correction") or {}
+    advance_like = inv.kind == "advance" or (inv.kind == "correction" and cor.get("of_kind") == "advance")
+    old_issue = inv.issue_date
+    renumber = False
     try:
         if fields.get("issue_date"):
-            date.fromisoformat(fields["issue_date"][:10])
-            inv.issue_date = fields["issue_date"][:10]
+            new_issue = date.fromisoformat(fields["issue_date"][:10]).isoformat()
+            if new_issue != old_issue:
+                inv.issue_date = new_issue
+                if not fields.get("sale_date") and inv.kind in ("vat", "proforma") and inv.sale_date == old_issue:
+                    inv.sale_date = new_issue
+                renumber = inv.status == "draft" and new_issue[:7] != (old_issue or "")[:7]
         if fields.get("sale_date"):
-            inv.sale_date = fields["sale_date"][:10]
-        if "number" in fields and fields["number"] and fields["number"] != inv.number:
-            if numbering.taken(db, inv.company_id, inv.kind, fields["number"], exclude_id=inv.id):
-                raise HTTPException(409, f"number {fields['number']} is already used in this series")
-            inv.number = fields["number"].strip()
+            inv.sale_date = date.fromisoformat(fields["sale_date"][:10]).isoformat()
+        typed = (fields.get("number") or "").strip()
+        if typed and typed != inv.number:
+            if numbering.taken(db, inv.company_id, inv.kind, typed, exclude_id=inv.id):
+                raise HTTPException(409, f"number {typed} is already used in this series")
+            inv.number = typed
+        elif renumber:
+            inv.number = numbering.next_number(db, inv.company_id, inv.kind,
+                                               date.fromisoformat(inv.issue_date), exclude_id=inv.id)
         if fields.get("customer_id") or fields.get("buyer"):
             inv.customer_id, b["buyer"] = _buyer(db, fields.get("customer_id"), fields.get("buyer"))
-        if "lines" in fields and inv.kind != "advance":
+        if "lines" in fields and not advance_like:
             b["lines"] = A.lines(fields["lines"])
             if not b["lines"]:
                 raise ValueError("an invoice has at least one position")
             b["totals"] = A.totals(b["lines"])
-        if inv.kind == "advance" and ("order_lines" in fields or "advance_gross" in fields):
+        if advance_like and ("order_lines" in fields or "advance_gross" in fields):
             olines = A.lines(fields.get("order_lines") or (b.get("order") or {}).get("lines") or [])
+            if not olines:
+                raise ValueError("an advance names the order it is paid against (order_lines)")
             otot = A.totals(olines)
-            gross = fields.get("advance_gross", (b.get("totals") or {}).get("gross"))
+            gross = fields.get("advance_gross")
+            if gross is None:
+                gross = (b.get("totals") or {}).get("gross")
             b["order"] = {"lines": olines, "totals": otot}
             b["totals"] = fa3.advance_totals(otot, gross)
         if "payment" in fields:
-            terms = 14
-            b["payment"] = _payment(fields["payment"], inv.issue_date, terms)
+            b["payment"] = _payment(fields["payment"], inv.issue_date, _terms(db, inv))
         for k in ("extra_info", "place", "title", "split_payment"):
             if k in fields:
                 b[k] = fields[k]
+        if "exemption_basis" in fields:
+            if _exemption(fields["exemption_basis"]):
+                b["exemption"] = _exemption(fields["exemption_basis"])
+            else:
+                b.pop("exemption", None)
         if inv.kind == "correction" and "correction" in fields:
             cor = dict(b.get("correction") or {})
             for k in ("reason", "text_before", "text_after"):
@@ -224,10 +373,15 @@ def update(db: Session, inv: M.SalesInvoice, fields: dict) -> M.SalesInvoice:
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     inv.body = b
+    if "payment" in fields:
+        inv.paid = bool(b["payment"].get("paid"))
+        inv.paid_date = b["payment"].get("paid_date") or ""
     _columns(inv)
-    inv.paid = bool((b.get("payment") or {}).get("paid"))
-    inv.paid_date = (b.get("payment") or {}).get("paid_date") or ""
-    db.flush()
+    try:
+        with db.begin_nested():
+            db.flush()
+    except IntegrityError:
+        raise HTTPException(409, f"number {inv.number} was just taken by another invoice; try again") from None
     return inv
 
 
@@ -238,21 +392,51 @@ def cancel(db: Session, inv: M.SalesInvoice) -> None:
     db.flush()
 
 
+KSEF_NUMBER = re.compile(r"(\d{10})-\d{8}-[0-9A-F]{12}-[0-9A-F]{2}")
+
+
 def issue(db: Session, inv: M.SalesInvoice, *, ksef_number: str, xml: bytes | None = None,
           received_at: str = "") -> M.SalesInvoice:
     """KSeF accepted the draft: record its KSeF number, and with the official
-    XML its hash, which prints the verification QR code."""
+    XML its hash, which prints the verification QR code.
+
+    Refused: a KSeF number of another seller (its first part is the seller's
+    NIP), a file that is another invoice (its P_2 or seller NIP differ), a
+    file whose hash is not the one KSeF stated, and a second KSeF number over
+    one already recorded."""
     from .. import storage
+    from ..ksef.parse import parse
 
     if inv.kind == "proforma":
         raise HTTPException(422, "a proforma never goes to KSeF")
     if inv.status not in ("draft", "issued"):
         raise HTTPException(409, f"{inv.number} is {inv.status}")
     num = (ksef_number or "").strip()
-    if not re.fullmatch(r"\d{10}-\d{8}-[0-9A-F]{12}-[0-9A-F]{2}", num):
+    m = KSEF_NUMBER.fullmatch(num)
+    if m is None:
         raise HTTPException(422, "a KSeF number looks like 8513262910-20261004-0123456789AB-CD")
+    seller_nip = re.sub(r"\D", "", ((inv.body or {}).get("seller") or {}).get("nip") or "") \
+        or re.sub(r"\D", "", C.get(db, inv.company_id).nip or "")
+    if m.group(1) != seller_nip:
+        raise HTTPException(422, f"KSeF number {num} was given to seller NIP {m.group(1)}; "
+                                 f"this invoice's seller is NIP {seller_nip}")
+    if inv.ksef_number and inv.ksef_number != num:
+        raise HTTPException(409, f"{inv.number} is already in KSeF as {inv.ksef_number}; another KSeF "
+                                 "number is never recorded over it")
+    if xml:
+        try:
+            p = parse(xml)
+        except Exception as e:  # any unreadable file is the caller's mistake
+            raise HTTPException(422, f"the file is not an FA(3) invoice: {e}") from e
+        if numbering.norm(p["number"]) != numbering.norm(inv.number):
+            raise HTTPException(422, f"the XML is invoice {p['number']!r}, not {inv.number!r}")
+        xml_nip = re.sub(r"\D", "", (p["body"].get("seller") or {}).get("nip") or "")
+        if xml_nip != seller_nip:
+            raise HTTPException(422, f"the XML's seller is NIP {xml_nip}, not {seller_nip}")
+        if inv.ksef_hash and inv.ksef_number == num and ksef_hash(xml) != inv.ksef_hash:
+            raise HTTPException(422, f"this is not the file KSeF holds for {num}: its hash differs")
     inv.ksef_number = num
-    inv.ksef_received_at = received_at or ""
+    inv.ksef_received_at = received_at or inv.ksef_received_at or ""
     if xml:
         inv.ksef_hash = ksef_hash(xml)
         key = f"sales-invoices/{inv.company_id}/{inv.id}/ksef-{num}.xml"
@@ -265,46 +449,109 @@ def issue(db: Session, inv: M.SalesInvoice, *, ksef_number: str, xml: bytes | No
 
 def mark_paid(db: Session, inv: M.SalesInvoice, paid_date: str) -> M.SalesInvoice:
     """The money arrived. Bookkeeping on the platform's record; the issued
-    document does not change."""
-    date.fromisoformat(paid_date[:10])
-    inv.paid, inv.paid_date = True, paid_date[:10]
-    inv.amount_due = A.d2(0)
+    document does not change. An invoice already paid is refused, and a
+    document imported from the script keeps the amount due it printed."""
+    try:
+        day = date.fromisoformat((paid_date or "")[:10]).isoformat()
+    except ValueError as e:
+        raise HTTPException(422, "paid_date must be an ISO date") from e
+    if inv.paid:
+        raise HTTPException(409, f"{inv.number} is already paid ({inv.paid_date or 'date not recorded'})")
+    inv.paid, inv.paid_date = True, day
+    if not (inv.source or "").startswith("script"):
+        inv.amount_due = A.d2(0)
     db.flush()
     return inv
 
 
+def corrections_of(db: Session, inv: M.SalesInvoice) -> list[M.SalesInvoice]:
+    """The corrections of an invoice that are not cancelled, oldest first."""
+    return (db.query(M.SalesInvoice)
+            .filter(M.SalesInvoice.corrects_id == inv.id, M.SalesInvoice.kind == "correction",
+                    M.SalesInvoice.status != "cancelled")
+            .order_by(M.SalesInvoice.issue_date, M.SalesInvoice.id).all())
+
+
+def _full_state(kor: M.SalesInvoice) -> bool:
+    """Whether a correction holds the state after it whole (its positions and
+    totals), not only a difference or a text."""
+    cor = (kor.body or {}).get("correction") or {}
+    return bool(cor.get("before_totals")) and not cor.get("states_difference")
+
+
 def correct(db: Session, inv: M.SalesInvoice, *, issue_date: str = "", reason: str = "",
             actor: str = "") -> M.SalesInvoice:
-    """A correction draft of an issued invoice: its positions before, and a copy
-    of them to change."""
+    """A correction draft of an issued invoice: its state before, and a copy of
+    it to change. A correction of an ADVANCE copies the order and the advance
+    instead (KOR_ZAL): it is changed with `order_lines` and `advance_gross`,
+    like the advance itself.
+
+    The state before is the invoice AS CORRECTED so far: its totals plus the
+    difference of every issued correction of it, and the positions (or the
+    order) of the latest one. Refused while a draft correction of the invoice
+    is open, and when the latest correction states only a difference or a text
+    (read from KSeF, or imported), because its positions after are unknown."""
     if inv.status not in ("issued", "error") or inv.kind not in ("vat", "advance"):
         raise HTTPException(409, "only an issued VAT or advance invoice is corrected")
     c = issuing_company(db, inv.company_id)
     issue = (issue_date or _today())[:10]
-    day = date.fromisoformat(issue)
-    b = inv.body or {}
-    before = b.get("lines") or []
+    try:
+        day = date.fromisoformat(issue)
+    except ValueError as e:
+        raise HTTPException(422, "issue_date must be an ISO date") from e
+    prior = corrections_of(db, inv)
+    open_draft = next((k for k in prior if k.status == "draft"), None)
+    if open_draft is not None:
+        raise HTTPException(409, f"{inv.number} already has the draft correction {open_draft.number}; "
+                                 "issue or cancel it first")
+    issued = [k for k in prior if k.status in ("issued", "error")]
+    latest = issued[-1] if issued else None
+    if latest is not None and not _full_state(latest):
+        raise HTTPException(409, f"the latest correction of {inv.number}, {latest.number}, states only a "
+                                 "difference or a text, so the positions after it are unknown here; write "
+                                 "the next correction in the KSeF application")
+    b = copy.deepcopy(inv.body or {})
+    lb = copy.deepcopy(latest.body or {}) if latest is not None else {}
+    cor = {"of_id": inv.id, "of_number": inv.number, "of_date": inv.issue_date, "of_ksef": inv.ksef_number,
+           "of_kind": inv.kind, "reason": reason}
+    extra: dict = {}
+    if inv.kind == "advance":
+        before = advance_amounts(inv)
+        order = lb.get("order") or b.get("order") or {"lines": b.get("lines") or [], "totals": b.get("totals") or {}}
+    else:
+        before = b.get("totals") or A.totals(b.get("lines") or [])
+        before_lines = (lb.get("lines") if latest is not None else b.get("lines")) or []
+    for k in issued:
+        before = A.combine(before, correction_difference(k))
+    if inv.kind == "advance":
+        cor.update(before_lines=[], before_totals=before, before_order=copy.deepcopy(order))
+        lines, totals, extra["order"] = [], before, copy.deepcopy(order)
+    else:
+        cor.update(before_lines=before_lines, before_totals=before)
+        lines, totals = [dict(p) for p in before_lines], before
     body = {"title": "FAKTURA KORYGUJĄCA", "place": b.get("place") or c.place_of_issue,
-            "seller": seller_of(c), "buyer": b.get("buyer") or {},
-            "lines": [dict(p) for p in before], "totals": b.get("totals") or A.totals(before),
+            "seller": seller_of(c), "buyer": b.get("buyer") or {}, "lines": lines, "totals": totals,
             "payment": {"due_date": (day + timedelta(days=c.payment_terms_days or 14)).isoformat(),
                         "method": "przelew", "paid": False, "paid_date": None, "note": ""},
             "bank": bank_of(c), "extra_info": [], "issued_by": c.issuer_name, "notes": [],
-            "correction": {"of_id": inv.id, "of_number": inv.number, "of_date": inv.issue_date,
-                           "of_ksef": inv.ksef_number, "reason": reason, "before_lines": before,
-                           "before_totals": b.get("totals") or A.totals(before)}}
+            "correction": cor, **extra}
+    if b.get("exemption"):
+        body["exemption"] = b["exemption"]
     kor = M.SalesInvoice(company_id=c.id, kind="correction", status="draft",
                          number=numbering.next_number(db, c.id, "correction", day), issue_date=issue,
                          sale_date=inv.sale_date, customer_id=inv.customer_id, currency=inv.currency,
                          corrects_id=inv.id, body=body, source="platform", created_by=actor[:100])
     _columns(kor)
-    db.add(kor)
-    db.flush()
+    _insert(db, kor, lambda: numbering.next_number(db, c.id, "correction", day))
     return kor
 
 
 def generate(db: Session, tpl: M.SalesInvoiceTemplate, month: str, actor: str = "") -> M.SalesInvoice:
-    """The month's draft of a recurring invoice, dated the template's day."""
+    """The month's draft of a recurring invoice, dated the template's day, once
+    per month. The month a document was written FOR (`body.template_month`)
+    decides: a draft written for April and re-dated into May is April's, and
+    May is still free. A document without it (the imported history) counts for
+    the month of its issue date."""
     try:
         y, m = (int(x) for x in month.split("-"))
         day = date(y, m, calendar.monthrange(y, m)[1] if tpl.day == "last" else int(tpl.day))
@@ -312,15 +559,22 @@ def generate(db: Session, tpl: M.SalesInvoiceTemplate, month: str, actor: str = 
         raise HTTPException(422, "month is YYYY-MM") from e
     if not tpl.active:
         raise HTTPException(409, f"the recurring invoice {tpl.key!r} is not active")
+    ym = f"{y:04d}-{m:02d}"
+    # One writer per template: a second click waits here and then sees the first draft.
+    db.query(M.SalesInvoiceTemplate).filter(M.SalesInvoiceTemplate.id == tpl.id).with_for_update().one()
+    written_for = M.SalesInvoice.body["template_month"].astext
     dup = (db.query(M.SalesInvoice)
            .filter(M.SalesInvoice.company_id == tpl.company_id, M.SalesInvoice.template_key == tpl.key,
-                   M.SalesInvoice.issue_date == day.isoformat(), M.SalesInvoice.status != "cancelled").first())
+                   M.SalesInvoice.status != "cancelled",
+                   or_(written_for == ym,
+                       and_(or_(written_for.is_(None), written_for == ""),
+                            M.SalesInvoice.issue_date.like(f"{ym}-%")))).first())
     if dup is not None:
         raise HTTPException(409, f"{tpl.key} for {month} is already {dup.number} ({dup.status})")
     return create(db, company_id=tpl.company_id, kind="vat", customer_id=tpl.customer_id,
                   issue_date=day.isoformat(), sale_date=day.isoformat(), lines=tpl.lines or [],
                   payment={"terms_days": tpl.payment_terms_days}, extra_info=tpl.extra_info or [],
-                  template_key=tpl.key, actor=actor)
+                  template_key=tpl.key, template_month=ym, actor=actor)
 
 
 def invoice_json(db: Session, inv: M.SalesInvoice, full: bool = False) -> dict:
@@ -424,6 +678,9 @@ def from_register(d: dict, company_id: int) -> M.SalesInvoice:
     # Amounts stay as printed, the amount due included.
     if d.get("do_zaplaty") is not None:
         inv.amount_due = A.d2(d["do_zaplaty"])
+        if inv.kind == "advance":
+            # The advance itself: the script printed the ORDER as the totals.
+            inv.body = {**body, "advance_gross": str(inv.amount_due)}
     inv.paid = bool(pay.get("zaplacono"))
     inv.paid_date = pay.get("data_zaplaty") or ""
     return inv

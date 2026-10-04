@@ -4077,6 +4077,11 @@ class SalesInvoice(Base):
     __table_args__ = (
         Index("ix_sales_invoices_company_date", "company_id", "issue_date"),
         Index("ix_sales_invoices_number", "company_id", "kind", "number"),
+        # Two writers taking the same next number: the second is refused (the
+        # service takes an automatic number again). Imported history keeps the
+        # numbers it printed, duplicates included, so it is outside the index.
+        Index("uq_sales_invoices_number", "company_id", "kind", "number", unique=True,
+              postgresql_where=text("number <> '' AND status <> 'cancelled' AND source NOT LIKE 'script%'")),
     )
 
 
@@ -4159,7 +4164,9 @@ class KsefInvoice(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(Integer)
     side: Mapped[str] = mapped_column(String(10))                       # sales | purchase
-    ksef_number: Mapped[str] = mapped_column(String(64), unique=True)
+    # Unique PER COMPANY (`uq_ksef_invoices_company_number`): an invoice between
+    # our two companies is the seller's sales row and the buyer's purchase row.
+    ksef_number: Mapped[str] = mapped_column(String(64))
     invoice_number: Mapped[str] = mapped_column(String(256), default="")
     invoice_type: Mapped[str] = mapped_column(String(20), default="")   # Vat, Kor, Zal, ...
     issue_date: Mapped[str] = mapped_column(String(10), default="")
@@ -4182,7 +4189,8 @@ class KsefInvoice(Base):
     note: Mapped[str] = mapped_column(String(500), default="")
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
-    __table_args__ = (Index("ix_ksef_invoices_company_side", "company_id", "side", "status"),)
+    __table_args__ = (Index("ix_ksef_invoices_company_side", "company_id", "side", "status"),
+                      Index("uq_ksef_invoices_company_number", "company_id", "ksef_number", unique=True))
 
 
 # ---------------------------------------------------- company books (0068)

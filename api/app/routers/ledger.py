@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as M
 from ..db import get_db
-from ..services import jlc_apply, journal
+from ..services import access, jlc_apply, journal
 from .util import acting_name, audit
 
 router = APIRouter(prefix="/api/ledger", tags=["ledger"])
@@ -25,9 +25,14 @@ def list_batches(kind: str = "", limit: int = 50, include_reversed: bool = True,
         q = q.filter(M.WriteBatch.kind == kind)
     if not include_reversed:
         q = q.filter(M.WriteBatch.reversed_at.is_(None))
-    rows = q.order_by(M.WriteBatch.id.desc()).limit(min(limit, 200)).all()
-    return {"batches": [journal.batch_json(b) for b in rows],
-            "total": q.count()}
+    mine = access.allowed_companies(db)
+    if mine is None:
+        rows = q.order_by(M.WriteBatch.id.desc()).limit(min(limit, 200)).all()
+        return {"batches": [journal.batch_json(b) for b in rows], "total": q.count()}
+    # A batch belongs to the companies of the rows it touched (decision 0065).
+    rows = [b for b in q.order_by(M.WriteBatch.id.desc()).all()
+            if access.write_batch_companies(db, b.id) & mine]
+    return {"batches": [journal.batch_json(b) for b in rows[:min(limit, 200)]], "total": len(rows)}
 
 
 @router.get("/batches/{batch_id}")
@@ -43,7 +48,17 @@ def get_batch(batch_id: int, db: Session = Depends(get_db)):
 @router.post("/batches/{batch_id}/reverse")
 def reverse_batch(batch_id: int, dry_run: bool = True, db: Session = Depends(get_db)):
     """Undo one batch. `dry_run=true` (the default) reports what it would do and
-    every reason it might refuse, without touching anything."""
+    every reason it might refuse, without touching anything. A batch that
+    touched another company's rows is reversed only by a caller who sees that
+    company too."""
+    access.require_every(db, access.write_batch_companies(db, batch_id))
+    wb = db.get(M.WriteBatch, batch_id)
+    if wb is not None and wb.kind == "run.company":
+        # The batch's own company is not a journalled row (decision 0069), so a
+        # reversal would put its stock back and leave the batch in the new
+        # company. Moving it back runs the same checks the other way.
+        raise HTTPException(409, "a batch moved to another company is moved back on its page "
+                                 "(Batch → Made by), not reversed here")
     actor = acting_name()
     try:
         res = journal.reverse(db, batch_id, actor=actor, dry_run=dry_run)

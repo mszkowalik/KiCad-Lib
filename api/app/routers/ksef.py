@@ -54,7 +54,15 @@ def run_sync(body: SyncIn, db: Session = Depends(get_db), admin: M.User = Depend
     bad = [s for s in body.sides if s not in ("sales", "purchase")]
     if bad:
         raise HTTPException(422, f"sides are sales and purchase, not {bad}")
-    res = svc.sync(db, body.company_id, sides=tuple(body.sides), since=body.since)
+    try:
+        res = svc.sync(db, body.company_id, sides=tuple(body.sides), since=body.since)
+    except HTTPException as e:
+        if e.status_code == 502:
+            # KSeF failed part-way: keep what was fetched before it, and the
+            # error (`last_error`), instead of rolling both back.
+            audit(db, "ksef.sync", "company", body.company_id, {"error": str(e.detail)[:300]})
+            db.commit()
+        raise
     audit(db, "ksef.sync", "company", body.company_id,
           {k: res[k] for k in ("fetched", "downloaded", "linked", "recorded", "limit")})
     db.commit()
@@ -91,12 +99,26 @@ def inbox_xml(ksef_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/inbox/{ksef_id}/import")
-def import_purchase(ksef_id: int, db: Session = Depends(get_db)):
-    """A purchase as a supplier document; its positions wait for destinations."""
+def import_purchase(ksef_id: int, force: bool = False, document_id: int | None = None,
+                    db: Session = Depends(get_db)):
+    """A purchase as a supplier document; its positions wait for destinations.
+
+    A document that already holds it is linked (409, and the link is kept). A
+    document typed by hand that may be it answers 409 with the candidates:
+    `document_id` links the purchase to one, `force` imports it anyway."""
     r = _row(db, ksef_id)
-    doc = svc.import_purchase(db, r, actor=acting_name())
-    audit(db, "ksef.import", "run_cost_document", doc.id,
-          {"ksef_number": r.ksef_number, "supplier": doc.supplier, "doc_number": doc.doc_number})
+    try:
+        doc = svc.import_purchase(db, r, actor=acting_name(), force=force, link_to=document_id)
+    except svc.Linked:
+        audit(db, "ksef.link", "ksef_invoice", r.id, {"ksef_number": r.ksef_number, "document_id": r.document_id})
+        db.commit()
+        raise
+    if document_id is not None:
+        audit(db, "ksef.link", "ksef_invoice", r.id, {"ksef_number": r.ksef_number, "document_id": doc.id})
+    else:
+        audit(db, "ksef.import", "run_cost_document", doc.id,
+              {"ksef_number": r.ksef_number, "supplier": doc.supplier, "doc_number": doc.doc_number,
+               "forced": force})
     db.commit()
     return {"document_id": doc.id, **svc.inbox_json(r)}
 
@@ -107,7 +129,14 @@ class SkipIn(BaseModel):
 
 @router.post("/inbox/{ksef_id}/skip")
 def skip(ksef_id: int, body: SkipIn, db: Session = Depends(get_db)):
+    """A purchase nobody imports, with the reason. A sales invoice is never
+    skipped: the numbering counts the numbers KSeF holds, and a skipped row
+    would give its number out again."""
     r = _row(db, ksef_id)
+    if r.side != "purchase":
+        raise HTTPException(422, "only a purchase is skipped; a sales invoice in KSeF stays in the series")
+    if r.status == "imported" and (r.document_id is None or db.get(M.RunCostDocument, r.document_id) is None):
+        r.status, r.document_id = "new", None     # its document was deleted
     if r.status in ("imported", "linked"):
         raise HTTPException(409, f"{r.ksef_number} is already {r.status}")
     r.status, r.note = "skipped", body.reason

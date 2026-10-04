@@ -306,6 +306,14 @@ async def sim_live(ws: WebSocket):
             src = sim_run.upload_source(str(start.get("upload_id", "")))
         else:
             snap = db.get(M.ProjectSnapshot, int(start.get("snapshot_id", 0)))
+            if snap is not None:
+                # The snapshot arrives in a message, where the company gate
+                # cannot read it (decision 0070): a snapshot of another
+                # company's project does not exist for the caller.
+                from ..services import access
+
+                if access.hides_project(db, snap.project_id):
+                    snap = None
             board = next(
                 (b for b in (snap.boards or []) if b.get("name") == start.get("board")),
                 None,

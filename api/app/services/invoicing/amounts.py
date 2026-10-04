@@ -36,6 +36,48 @@ def qty(x) -> Decimal:
     return Decimal(str(x if x is not None else 0))
 
 
+#: FA(3) prints a unit price with up to 8 decimals (P_9A, `TKwotowy2`).
+PRICE = Decimal("1e-8")
+
+
+def price(x) -> Decimal:
+    """A unit price as entered, rounded half-up to the 8 decimals FA(3) holds.
+    The net of a position is computed from THIS figure, and the PDF and the XML
+    print it whole, so the printed price times the quantity is the printed net."""
+    return Decimal(str(x if x not in (None, "") else 0)).quantize(PRICE, ROUND_HALF_UP)
+
+
+def price_str(x) -> str:
+    """A unit price as stored and printed: at least 2 decimals, at most 8."""
+    d = price(x).normalize()
+    if d.as_tuple().exponent > -2:
+        d = d.quantize(CENT)
+    return f"{d:f}"
+
+
+def price_pl(x) -> str:
+    """1 234,105 — a unit price in Polish notation, with all its decimals."""
+    s = price_str(x)
+    whole, _, frac = s.partition(".")
+    sign = "-" if whole.startswith("-") else ""
+    return f"{sign}{int(whole.lstrip('-')):,}".replace(",", " ") + "," + frac
+
+
+def combine(a: dict | None, b: dict | None, sign: int = 1) -> dict:
+    """Per-rate totals `a + sign x b`: the totals after a correction from the
+    totals before and the difference, or the difference from after and before."""
+    a, b = a or {}, b or {}
+    ra, rb = a.get("rates") or {}, b.get("rates") or {}
+    rates = {}
+    for r in list(ra) + [r for r in rb if r not in ra]:
+        x, y = ra.get(r) or {}, rb.get(r) or {}
+        rates[r] = {"net": str(d2(Decimal(str(x.get("net") or 0)) + sign * Decimal(str(y.get("net") or 0)))),
+                    "vat": str(d2(Decimal(str(x.get("vat") or 0)) + sign * Decimal(str(y.get("vat") or 0))))}
+    out = {k: str(d2(Decimal(str(a.get(k) or 0)) + sign * Decimal(str(b.get(k) or 0))))
+           for k in ("net", "vat", "gross")}
+    return {**out, "rates": rates}
+
+
 def rate(value) -> str:
     """The canonical rate string, or ValueError."""
     if value is None or value == "":
@@ -51,10 +93,11 @@ def rate(value) -> str:
 def line(position: int, name: str, unit: str, quantity, unit_net, vat_rate) -> dict:
     """One position, computed: net, VAT and gross."""
     r = rate(vat_rate)
-    net = d2(qty(quantity) * Decimal(str(unit_net)))
+    unit_price = price(unit_net)
+    net = d2(qty(quantity) * unit_price)
     vat = d2(net * Decimal(r) / 100) if r in PERCENT_RATES else Decimal("0.00")
     return {"position": position, "name": (name or "").strip(), "unit": (unit or "szt.").strip(),
-            "qty": str(qty(quantity).normalize()), "unit_net": str(d2(unit_net)),
+            "qty": f"{qty(quantity).normalize():f}", "unit_net": price_str(unit_price),
             "net": str(net), "vat_rate": r, "vat": str(vat), "gross": str(net + vat)}
 
 

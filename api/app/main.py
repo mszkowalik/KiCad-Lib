@@ -170,6 +170,21 @@ _DEDUP_INDEXES = (
             "GROUP BY import_ref HAVING COUNT(*) > 1"
         ),
     ),
+    # Decision 0066: a sales invoice number is given out once per series, even
+    # to two writers at once. The imported history keeps its own duplicates.
+    (
+        "uq_sales_invoices_number",
+        (
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_invoices_number "
+            "ON sales_invoices (company_id, kind, number) "
+            "WHERE number <> '' AND status <> 'cancelled' AND source NOT LIKE 'script%'"
+        ),
+        (
+            "SELECT company_id, kind, number, COUNT(*) n, STRING_AGG(id::text, ',') ids "
+            "FROM sales_invoices WHERE number <> '' AND status <> 'cancelled' "
+            "AND source NOT LIKE 'script%' GROUP BY company_id, kind, number HAVING COUNT(*) > 1"
+        ),
+    ),
 )
 
 
@@ -753,6 +768,13 @@ _PHASE1_DDL = (
      "VALUES ('9sigma', '9Sigma', '9SIGMA SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ', '8513315635', "
      "'ul. Szczecińska 2G', '72-010 Przęsocin', 'PL', '', '', 'Mateusz Kowalik', '', '', '', 14, "
      "'2024-07-22', now()) ON CONFLICT (nip) DO NOTHING"),
+    # Decision 0067: a KSeF invoice is unique PER COMPANY, so an invoice between
+    # our two companies is a row for each. The new index goes in before the old
+    # constraint goes, so the column is never without one.
+    ("ksef_invoices uq company number",
+     "CREATE UNIQUE INDEX IF NOT EXISTS uq_ksef_invoices_company_number ON ksef_invoices (company_id, ksef_number)"),
+    ("ksef_invoices.ksef_number unique drop",
+     "ALTER TABLE ksef_invoices DROP CONSTRAINT IF EXISTS ksef_invoices_ksef_number_key"),
     # LAST. Everything above reads `kind`; nothing below may.
     #
     # The index on it goes first and by name: `create_all` cannot drop an index

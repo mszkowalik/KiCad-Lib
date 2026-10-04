@@ -52,7 +52,8 @@ def lot_state(db: Session, as_of: str | None = None) -> dict:
     that, and excluding them would make every draw against opening stock
     permanently unallocatable).
     """
-    events, doc_by_id, surcharge = run_actuals._pool_events(db)
+    # Transfers included: a transfer's position is a lot (decision 0064).
+    events, doc_by_id, surcharge = run_actuals._pool_events(db, with_transfers=True)
     # A transformation's output lot also carries its conversion cost (decision
     # 0058 §4), added on read exactly like a purchase's freight share.
     extras = run_actuals.conversion_extras_usd(db)

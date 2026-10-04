@@ -206,9 +206,25 @@ def backfill(db: Session, *, dry_run: bool = True, fetch_jlc: bool = False,
             return seven.id
         return None
 
-    # 2. Draws: from what they are linked to, else the JLC order's buyer.
+    def company_of_lots(c: M.ComponentConsumption) -> int | None:
+        """The one company whose lots a draw is bound to: JLC named the
+        purchases a warehouse pick or an order consumed."""
+        owners = set()
+        for b in db.query(M.ComponentConsumptionLot).filter_by(consumption_id=c.id).all():
+            if b.lot_line_id:
+                li = db.get(M.RunCostLine, b.lot_line_id)
+                owners.add(company_of_doc(li.document_id) if li is not None else None)
+            elif b.lot_adjustment_id:
+                a = db.get(M.ComponentStockAdjustment, b.lot_adjustment_id)
+                owners.add(a.company_id if a is not None else None)
+        return owners.pop() if len(owners) == 1 else None
+
+    # 2. Draws: from what they are linked to, else the lots they are bound to
+    # (a JLC warehouse pick, `jlcledger:`), else the JLC order's buyer.
     for c in RA.live_consumption(db).filter(M.ComponentConsumption.company_id.is_(None)).all():
         cid = C.stock_company_for(db, c)
+        if cid is None and c.run_id is None:
+            cid = company_of_lots(c)
         if cid is None and (c.import_ref or "").startswith("jlc:"):
             # an uncharged JLC draw: the company the assembly order billed
             batch = c.import_ref.split(":")[1]

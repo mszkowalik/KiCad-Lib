@@ -81,6 +81,16 @@ class CustomerPatch(BaseModel):
     country: str | None = None
 
 
+def _country(value: str | None) -> str:
+    """A buyer's country: two letters, ISO 3166 ("PL", "DE"). The column holds
+    two characters, so a longer code is refused here instead of failing on the
+    write (a 500), and never cut to a different country."""
+    v = (value or "").strip().upper()
+    if not (len(v) == 2 and v.isalpha() and v.isascii()):
+        raise HTTPException(422, f"country is a two-letter code such as PL or DE, not {value!r}")
+    return v
+
+
 def _same_nip(db: Session, tax_id: str, exclude: int | None = None) -> M.Customer | None:
     """Customers are matched by NIP (decision 0066): one buyer, one row."""
     import re
@@ -110,7 +120,7 @@ def create_customer(body: CustomerIn, request: Request, db: Session = Depends(ge
                    payment_terms_days=body.payment_terms_days, notes=body.notes,
                    key=body.key.strip(), legal_name=body.legal_name.strip(),
                    address_l1=body.address_l1.strip(), address_l2=body.address_l2.strip(),
-                   country=(body.country or "PL").strip().upper()[:2])
+                   country=_country(body.country or "PL"))
     db.add(c)
     db.flush()
     audit(db, "customer.create", "customer", c.id, {"name": name}, actor=actor_of(request))
@@ -129,6 +139,8 @@ def update_customer(customer_id: int, body: CustomerPatch, request: Request, db:
             v = v.strip() if k != "address" else v
         if k == "name" and not v:
             raise HTTPException(422, "a customer needs a name")
+        if k == "country":
+            v = _country(v)
         if k == "tax_id" and (twin := _same_nip(db, v, exclude=c.id)) is not None:
             raise HTTPException(409, f"NIP {v} is already the customer {twin.name!r}")
         if getattr(c, k) != v:

@@ -104,7 +104,7 @@ def virtual_component_ids(db: Session, component_ids: set[int]) -> set[int]:
 
 
 def _component_data(db: Session, component_ids: set[int], at: datetime | None = None,
-                    project_id: int | None = None):
+                    project_id: int | None = None, run: M.ProductionRun | None = None):
     """Points / supply / names / non-purchasable ids per component. With `at`
     set, points come from ComponentPriceHistory resolved at that instant
     (latest snapshot at-or-before, else earliest after); components with no
@@ -123,9 +123,11 @@ def _component_data(db: Session, component_ids: set[int], at: datetime | None = 
         from . import run_actuals  # local import — run_actuals imports this module
 
         day = at.strftime("%Y-%m-%d")
-        # The stock of the company that owned the project then (decision 0064).
-        pool = run_actuals.pool_state(db, None, as_of=day,
-                                      company_id=run_actuals.project_scope(db, project_id, day))
+        # The stock the batch draws from — its own company's — else that of
+        # the company that owned the project then (decision 0064).
+        scope = (run_actuals.run_scope(db, run) if run is not None
+                 else run_actuals.project_scope(db, project_id, day))
+        pool = run_actuals.pool_state(db, None, as_of=day, company_id=scope)
         for cid in component_ids:
             entry = pool.get(f"c{cid}")
             if entry and entry.get("avg_usd", 0.0) > 0:
@@ -183,9 +185,11 @@ def priced_bom(
     volume: int,
     currency: str | None = None,
     at: datetime | None = None,
+    run: M.ProductionRun | None = None,
 ) -> dict:
     """Priced BOM at a production volume. `at` prices it AS OF that instant
-    (historical points + FX); None = current prices."""
+    (historical points + FX); None = current prices. `run` prices from that
+    batch's company stock."""
     cur = display_currency(project, currency)
     volume = max(int(volume), 1)
     rates = fx.rates_at(db, at) if at is not None else fx.get_rates(db)
@@ -206,7 +210,7 @@ def priced_bom(
     if proc is not None:
         extras = proc
     comp_ids |= {x.component_id for x in extras if x.component_id}
-    points, supply, names, virtual = _component_data(db, comp_ids, at=at, project_id=project.id)
+    points, supply, names, virtual = _component_data(db, comp_ids, at=at, project_id=project.id, run=run)
 
     out_lines = []
     bom_per_device = 0.0
@@ -519,7 +523,7 @@ def run_pricing_date(run: M.ProductionRun) -> datetime:
 
 
 def priced_bom_costs_only(db: Session, project: M.Project, volume: int,
-                          at: datetime | None = None) -> dict:
+                          at: datetime | None = None, run: M.ProductionRun | None = None) -> dict:
     """Extra items + cost items without a snapshot (runs not tied to a ref).
     `at` prices as of that instant, like priced_bom."""
     rates = fx.rates_at(db, at) if at is not None else fx.get_rates(db)
@@ -533,7 +537,7 @@ def priced_bom_costs_only(db: Session, project: M.Project, volume: int,
     if proc is not None:
         extras = proc
     comp_ids |= {x.component_id for x in extras if x.component_id}
-    points, supply, names, _virtual = _component_data(db, comp_ids, at=at, project_id=project.id)
+    points, supply, names, _virtual = _component_data(db, comp_ids, at=at, project_id=project.id, run=run)
     out_extra = []
     extra_per_device = 0.0
     for x in extras:
@@ -593,10 +597,10 @@ def run_effective(db: Session, run: M.ProductionRun) -> dict:
     at = run_pricing_date(run)
     snap = db.get(M.ProjectSnapshot, run.snapshot_id) if run.snapshot_id else None
     if snap is not None:
-        bom = priced_bom(db, project, snap, run.board, run.variant, run.qty, at=at)
+        bom = priced_bom(db, project, snap, run.board, run.variant, run.qty, at=at, run=run)
         bom_lines = bom["lines"]
     else:
-        bom = priced_bom_costs_only(db, project, run.qty, at=at)
+        bom = priced_bom_costs_only(db, project, run.qty, at=at, run=run)
         bom_lines = []
     base = {"lines": bom_lines, "extra": bom["extra"], "costs": bom["costs"]}
     overrides = dict(run.overrides or {})

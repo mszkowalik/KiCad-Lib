@@ -65,7 +65,8 @@ interface Row {
   /** production-step key ("pcba:setup"); becomes the child's plan_key */
   step: string;
   /** "" | "run:<id>" | "project:<id>" | "t:<id>" (a conversion cost,
-   *  decision 0058) | "excluded" */
+   *  decision 0058) | "overhead:<category>" (a company cost, decision 0068)
+   *  | "excluded" */
   dest: string;
   /** WHY, when `dest` is "excluded". The API refuses an exclusion without it. */
   reason: string;
@@ -130,6 +131,7 @@ export default function SplitLineDialog({
           step: c.plan_key && c.plan_key.includes(":") ? c.plan_key : "",
           dest: c.allocate === "excluded"
             ? "excluded"
+            : c.allocate === "overhead" ? `overhead:${c.overhead_category || "other"}`
             : c.transformation_id ? `t:${c.transformation_id}`
               : c.run_id ? `run:${c.run_id}` : c.project_id ? `project:${c.project_id}` : "",
           reason: c.exclude_reason || "",
@@ -257,8 +259,10 @@ export default function SplitLineDialog({
         // "excluded" records the share for reconciliation without charging it —
         // and says what for, because an exclusion nobody explained passes every
         // other check the register has (decision 0048).
-        allocate: r.dest === "excluded" ? "excluded" : undefined,
+        allocate: r.dest === "excluded" ? "excluded" : kind === "overhead" ? "overhead" : undefined,
         exclude_reason: r.dest === "excluded" ? r.reason.trim() : undefined,
+        // A company overhead share keeps its category (decision 0068).
+        overhead_category: kind === "overhead" ? id : undefined,
         run_id: kind === "run" ? Number(id) : null,
         project_id: kind === "project" ? Number(id) : null,
         transformation_id: kind === "t" ? Number(id) : null,
@@ -424,6 +428,7 @@ export default function SplitLineDialog({
                       transformations={transformations}
                       value={r.dest}
                       emptyLabel="— nobody yet —"
+                      withOverhead={!isPart}
                       onChange={(dest) => patch(i, { dest })}
                     />
                     {/* Under the destination, not in its own column: it only

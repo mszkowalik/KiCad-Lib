@@ -35,6 +35,15 @@ def _inv(db: Session, invoice_id: int) -> M.SalesInvoice:
     return inv
 
 
+def _visible(db: Session, request: Request | None, company_id: int) -> None:
+    """A company named in a body or a query is the caller's, or it does not
+    exist for them (decision 0065): 404, as for a record opened by its id.
+    An admin sees every company."""
+    user = getattr(request.state, "user", None) if request is not None else None
+    if company_id not in company_svc.visible_ids(db, user):
+        raise HTTPException(404, "no such company")
+
+
 class LineIn(BaseModel):
     name: str
     qty: float | str = 1
@@ -78,6 +87,8 @@ class InvoiceIn(BaseModel):
     # an advance invoice: the order it is paid against, and the gross received
     order_lines: list[LineIn] = []
     advance_gross: float | str | None = None
+    # the legal basis of a VAT exemption, required when a position is `zw`
+    exemption_basis: str = Field(default="", max_length=240)
 
 
 class InvoicePatch(BaseModel):
@@ -94,6 +105,7 @@ class InvoicePatch(BaseModel):
     split_payment: bool | None = None
     order_lines: list[LineIn] | None = None
     advance_gross: float | str | None = None
+    exemption_basis: str | None = Field(default=None, max_length=240)
     correction: dict | None = None
 
 
@@ -114,9 +126,14 @@ def list_invoices(kind: str = "", status: str = "", year: str = "", request: Req
 
 
 @router.get("/sales-invoices/next-number")
-def next_number(company_id: int, kind: str = "vat", issue_date: str = "", db: Session = Depends(get_db)):
-    day = date.fromisoformat(issue_date[:10]) if issue_date else date.today()
-    return {"number": numbering.next_number(db, company_id, kind, day)}
+def next_number(company_id: int, kind: str = "vat", issue_date: str = "", request: Request = None,
+                db: Session = Depends(get_db)):
+    _visible(db, request, company_id)
+    try:
+        day = date.fromisoformat(issue_date[:10]) if issue_date else date.today()
+        return {"number": numbering.next_number(db, company_id, kind, day)}
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
 
 
 @router.get("/sales-invoices/{invoice_id}")
@@ -125,14 +142,16 @@ def get_invoice(invoice_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/sales-invoices")
-def create_invoice(body: InvoiceIn, db: Session = Depends(get_db)):
+def create_invoice(body: InvoiceIn, request: Request = None, db: Session = Depends(get_db)):
+    _visible(db, request, body.company_id)
     data = body.model_dump()
     inv = svc.create(db, company_id=data["company_id"], kind=data["kind"], customer_id=data["customer_id"],
                      buyer=data["buyer"], issue_date=data["issue_date"], sale_date=data["sale_date"],
                      lines=data["lines"], payment=data["payment"], extra_info=data["extra_info"],
                      place=data["place"], title=data["title"], number=data["number"],
                      split_payment=data["split_payment"], order_lines=data["order_lines"],
-                     advance_gross=data["advance_gross"], actor=acting_name())
+                     advance_gross=data["advance_gross"], exemption_basis=data["exemption_basis"],
+                     actor=acting_name())
     audit(db, "sales_invoice.create", "sales_invoice", inv.id,
           {"number": inv.number, "kind": inv.kind, "status": inv.status, "gross": str(inv.gross_total)})
     db.commit()
@@ -268,7 +287,8 @@ def list_templates(request: Request = None, db: Session = Depends(get_db)):
 
 
 @router.post("/sales-invoice-templates")
-def create_template(body: TemplateIn, db: Session = Depends(get_db)):
+def create_template(body: TemplateIn, request: Request = None, db: Session = Depends(get_db)):
+    _visible(db, request, body.company_id)
     svc.issuing_company(db, body.company_id)
     try:
         A.lines([ln.model_dump() for ln in body.lines])

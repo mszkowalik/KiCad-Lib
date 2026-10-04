@@ -3,10 +3,14 @@ figures (decision 0068).
 
 What the page computes, in PLN, by month:
 
-* **Revenue** — the net of the company's issued sales invoices (VAT,
-  corrections, settlements) by issue date. An ADVANCE invoice counts for VAT,
-  not for income: a received advance is not revenue for income tax until the
-  delivery (art. 14 ust. 3 pkt 1 of the PIT act).
+* **Revenue** — the net of the company's issued sales invoices by issue date
+  (`_sales_effect` holds the rule for each kind). An ADVANCE invoice counts
+  for VAT, not for income: a received advance is not revenue for income tax
+  until the delivery (art. 14 ust. 3 pkt 1 of the PIT act). A correction of
+  an advance is an advance too. A SETTLEMENT invoice (ROZ) is the delivery: it
+  counts the whole order, its positions at full value, so the advances reach
+  revenue on its date. A correction counts its difference once, whoever wrote
+  it (`invoicing.service.correction_difference`).
 * **Costs** — the net of the supplier documents billed to the company, by
   document date, split by where the money went: stock bought, batch costs,
   project costs, prepared parts, company overhead (by category) and money not
@@ -38,6 +42,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from . import companies as C
 from . import fx
+from .invoicing import service as invoicing
 from .invoicing.amounts import d2
 from .run_actuals import OVERHEAD_CATEGORIES, document_json, header_ids, line_destination
 
@@ -96,6 +101,39 @@ def _income_tax(form: str, lump_rate: Decimal, ytd_income: Decimal, ytd_revenue:
     return None
 
 
+def _sales_effect(db: Session, inv: M.SalesInvoice) -> dict[str, Decimal]:
+    """What one issued sales document adds to the books, in its currency:
+    `revenue` (net income), `advance` (net advances received) and `vat`.
+
+    * VAT invoice: its net is revenue, its VAT is VAT.
+    * Advance: the ADVANCE (`invoicing.service.advance_amounts`, never the
+      order it is paid against) is an advance, its VAT is VAT.
+    * Correction: its difference (`correction_difference`) — of an advance it
+      is an advance, otherwise revenue; a correction that changed text only
+      adds nothing.
+    * Settlement (ROZ): the delivery. Revenue is the whole order: FA(3) lists
+      the positions at full value and states in P_13_x only what is left after
+      the advances. The VAT is the VAT it states, the part the advances did
+      not carry.
+    """
+    zero = Decimal(0)
+    if inv.kind == "advance":
+        a = invoicing.advance_amounts(inv)
+        return {"revenue": zero, "advance": Decimal(str(a.get("net") or 0)), "vat": Decimal(str(a.get("vat") or 0))}
+    if inv.kind == "correction":
+        d = invoicing.correction_difference(inv)
+        net, vat = Decimal(d["net"]), Decimal(d["vat"])
+        if invoicing.corrects_advance(db, inv):
+            return {"revenue": zero, "advance": net, "vat": vat}
+        return {"revenue": net, "advance": zero, "vat": vat}
+    if inv.kind == "settlement":
+        rows = [p for p in (inv.body or {}).get("lines") or [] if not p.get("before")]
+        if rows:
+            full = sum((Decimal(str(p.get("net") or 0)) for p in rows), zero)
+            return {"revenue": full, "advance": zero, "vat": Decimal(str(inv.vat_total or 0))}
+    return {"revenue": Decimal(str(inv.net_total or 0)), "advance": zero, "vat": Decimal(str(inv.vat_total or 0))}
+
+
 def year(db: Session, company_id: int, year: int) -> dict:
     company = C.get(db, company_id)
     pln = _Pln(db)
@@ -112,17 +150,10 @@ def year(db: Session, company_id: int, year: int) -> dict:
         mo = months.get(inv.issue_date[:7])
         if mo is None:
             continue
-        net = pln(inv.net_total, inv.currency, inv.issue_date)
-        vat = pln(inv.vat_total, inv.currency, inv.issue_date)
-        mo["sales_vat"] += vat
-        if inv.kind == "advance":
-            mo["advances_net"] += net
-        elif inv.kind == "correction" and (inv.body or {}).get("correction", {}).get("before_totals"):
-            before = inv.body["correction"]["before_totals"]
-            mo["revenue_net"] += net - pln(before.get("net") or 0, inv.currency, inv.issue_date)
-            mo["sales_vat"] -= pln(before.get("vat") or 0, inv.currency, inv.issue_date)
-        else:
-            mo["revenue_net"] += net
+        eff = _sales_effect(db, inv)
+        mo["revenue_net"] += pln(eff["revenue"], inv.currency, inv.issue_date)
+        mo["advances_net"] += pln(eff["advance"], inv.currency, inv.issue_date)
+        mo["sales_vat"] += pln(eff["vat"], inv.currency, inv.issue_date)
 
     hdrs = header_ids(db)
     for doc in (db.query(M.RunCostDocument)

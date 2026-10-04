@@ -55,7 +55,12 @@ class Client:
         if token:
             headers["Authorization"] = f"Bearer {token}"
         for attempt in range(5):
-            r = self._http.request(method, path, json=body, headers=headers, params=params)
+            try:
+                r = self._http.request(method, path, json=body, headers=headers, params=params)
+            except httpx.HTTPError as e:
+                # Unreachable, timed out, reset: a KSeF error, so the sync keeps
+                # what it already read and records why it stopped.
+                raise KsefError(f"KSeF unreachable on {method} {path}: {e}") from e
             if r.status_code == 429:
                 wait = int(r.headers.get("Retry-After") or 2)
                 short = 10 if "/query/" in path else 120

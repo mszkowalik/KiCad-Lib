@@ -36,7 +36,7 @@ from ..config import settings
 from ..models import utcnow
 from ..db import get_db
 from .. import models as M
-from ..services import storage
+from ..services import access, storage
 from ..services import crypto
 from ..services import mqtt_monitor
 from ..services.flasher import (bundle, checks as checks_svc, credentials,
@@ -2317,6 +2317,13 @@ def _mosquitto_file(db: Session, project_id: int | None) -> Response:
     )
     if project_id is not None:
         q = q.filter(M.DeviceUnit.project_id == project_id)
+    mine = access.allowed_companies(db)
+    if mine is not None:
+        # The gate's device rule (decisions 0065 and 0070): a device is its
+        # batch's company's, else its project's. A user of no company exports
+        # nothing, and a device no company is named for is nobody's here.
+        keep = access.visible_device_ids(db, mine)
+        q = q.filter(M.DeviceUnit.id.in_(keep or [-1]))
     creds_lines, stored_pw = [], {}
     for unit_id, key, value, run_id in q.all():
         if key == "mqtt_creds_line":

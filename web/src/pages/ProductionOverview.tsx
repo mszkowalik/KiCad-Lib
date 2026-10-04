@@ -314,6 +314,7 @@ export default function ProductionOverview() {
                   <th className="num">To projects</th>
                   <th className="num">To the pool</th>
                   <th className="num" title="Conversion costs: money in the lots of prepared parts (decision 0058 §4)">Conversion</th>
+                  <th className="num" title="Company costs of no product, by category (decision 0068)">Overhead</th>
                   <th className="num">Excluded</th>
                   <th className="num">Unassigned</th>
                   <th className="num">Residual</th>
@@ -327,6 +328,7 @@ export default function ProductionOverview() {
                   <td className="num">{plain(s.to_projects_usd)}</td>
                   <td className="num">{plain(s.to_pool_usd)}</td>
                   <td className="num">{plain(s.to_transformations_usd ?? 0)}</td>
+                  <td className="num">{plain(s.to_overhead_usd ?? 0)}</td>
                   <td
                     className="num muted"
                     title={"Charged to nobody on purpose: reclaimable VAT, and prepaid "

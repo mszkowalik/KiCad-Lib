@@ -223,7 +223,10 @@ function InvoicePanel({ id, onChanged }: { id: number; onChanged: () => void }) 
       {inv.status === "draft" ? (
         <button type="button" className="btn btn-sm" disabled={busy} onClick={async () => {
           const day = await dialog.prompt("New issue date (YYYY-MM-DD):", { title: "Re-date the draft" });
-          if (day) await act(() => updateSalesInvoice(inv.id, { issue_date: day, sale_date: day }));
+          // The issue date only. The server moves a VAT draft's sale date with
+          // it when they were the same day, keeps a correction's and an
+          // advance's, and gives the draft the new month's number.
+          if (day) await act(() => updateSalesInvoice(inv.id, { issue_date: day }));
         }}>
           Re-date…
         </button>
@@ -250,6 +253,7 @@ function NewInvoiceCard({ customers, products, onDone, version }: {
   const [advance, setAdvance] = useState("");
   const [paid, setPaid] = useState(false);
   const [extra, setExtra] = useState("");
+  const [exemption, setExemption] = useState("");
   const [number, setNumber] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -268,7 +272,10 @@ function NewInvoiceCard({ customers, products, onDone, version }: {
       return p ? { ...next, unit_net: p.unit_net, vat_rate: p.vat_rate, unit: p.unit } : next;
     }));
   const typed = lines.filter((l) => l.name.trim() && l.unit_net !== "");
-  const ready = companyId !== "" && customerId !== "" && typed.length > 0 && (kind !== "advance" || advance !== "");
+  // An exempt position (zw) names the legal basis; FA(3) refuses it without.
+  const exempt = typed.some((l) => l.vat_rate === "zw");
+  const ready = companyId !== "" && customerId !== "" && typed.length > 0 && (kind !== "advance" || advance !== "")
+    && (!exempt || exemption.trim() !== "");
 
   const save = async () => {
     setBusy(true);
@@ -280,6 +287,7 @@ function NewInvoiceCard({ customers, products, onDone, version }: {
         ...(kind === "advance" ? { order_lines: body, advance_gross: advance } : { lines: body }),
         payment: { paid, paid_date: paid ? sale : null },
         extra_info: extra.split("\n").map((x) => x.trim()).filter(Boolean),
+        ...(exempt ? { exemption_basis: exemption.trim() } : {}),
       });
       setLines([blank()]);
       setAdvance("");
@@ -366,6 +374,11 @@ function NewInvoiceCard({ customers, products, onDone, version }: {
         </FieldRow>
       ))}
       <FieldGrid>
+        {exempt ? (
+          <Field label="Legal basis of the exemption" hint="Printed for a zw position, e.g. art. 113 ust. 1 ustawy o VAT." wide>
+            <input className="text" value={exemption} maxLength={240} onChange={(e) => setExemption(e.target.value)} />
+          </Field>
+        ) : null}
         <Field label="Extra lines on the invoice" hint="One per line, e.g. the contract it is issued under." wide>
           <AutoTextarea className="text" rows={2} value={extra} onChange={(e) => setExtra(e.target.value)} />
         </Field>

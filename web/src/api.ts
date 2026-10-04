@@ -1249,6 +1249,16 @@ export interface StockBackfillResult {
   still_without_company: Record<string, number>;
 }
 
+/** Name whose stock an uncharged draw took (decision 0064). With stock per
+ *  company, units of the other company's lots move by in-house transfer. */
+export function setDrawCompany(consId: number, companyId: number, dryRun = true): Promise<{
+  dry_run: boolean; receiver: string; shortages: unknown[];
+  transfers: unknown[]; written?: { document_id: number; doc_number: string; value_usd: number }[];
+}> {
+  return request(`/api/consumption/${consId}/company`,
+                 jsonBody("PATCH", { company_id: companyId, dry_run: dryRun }));
+}
+
 export function stockBackfill(dryRun: boolean, fetchJlc: boolean): Promise<StockBackfillResult> {
   return request("/api/companies/stock-backfill",
                  jsonBody("POST", { dry_run: dryRun, fetch_jlc: fetchJlc }));
@@ -2858,6 +2868,8 @@ export interface DocumentAssignment {
   transformation?: number | null;
   /** recorded so the document reconciles, charged to nobody on purpose */
   excluded: number | null;
+  /** company costs of no product, by category (decision 0068) */
+  overhead?: number | null;
   unassigned: number | null;
   residual: number | null;
   by_run: Record<string, number | null>;
@@ -2942,6 +2954,8 @@ export interface InvoiceRegister {
     /** conversion costs in the lots of production stages (decision 0058) */
     to_transformations_usd?: number | null;
     excluded_usd: number | null;
+    /** company costs of no product (decision 0068) — a bucket of the identity */
+    to_overhead_usd?: number | null;
     unassigned_usd: number | null;
     residual_usd: number | null;
     /** children claiming MORE than the header they split; sub-cent by
@@ -3039,6 +3053,8 @@ export interface SplitChild {
   allocate?: string;
   /** ...and WHY. The API refuses `allocate: "excluded"` without one. */
   exclude_reason?: string;
+  /** with `allocate: "overhead"`, the kind of company cost (decision 0068) */
+  overhead_category?: string;
   mpn?: string;
   lcsc?: string;
   /** the library part this share bought, when it bought one */
@@ -4187,6 +4203,7 @@ export function getJlcPartLedger(lcsc: string, signal?: AbortSignal): Promise<Jl
 export function bookJlcLedgerRows(
   ids: number[],
   dryRun = true,
+  companyId: number | null = null,
 ): Promise<{
   dry_run: boolean;
   written: (JlcLedgerBookable & { unit_cost_usd: number; usd: number })[];
@@ -4196,6 +4213,8 @@ export function bookJlcLedgerRows(
 }> {
   const p = new URLSearchParams({ dry_run: String(dryRun) });
   if (ids.length) p.set("change_key_ids", ids.join(","));
+  // Whose stock the picks came from (decision 0064): JLC keeps one shelf.
+  if (companyId != null) p.set("company_id", String(companyId));
   return request(`/api/jlc/stock/ledger/book?${p.toString()}`, { method: "POST" });
 }
 
@@ -9252,6 +9271,8 @@ export interface SalesInvoiceCreate {
   extra_info?: string[];
   order_lines?: SalesLine[];
   advance_gross?: string | number | null;
+  /** the legal basis of a VAT exemption; FA(3) needs it for a `zw` position */
+  exemption_basis?: string;
 }
 
 export interface SalesTemplate {
@@ -9394,8 +9415,27 @@ export function getKsefInbox(signal?: AbortSignal): Promise<KsefInboxRow[]> {
   return request("/api/ksef/inbox", { signal });
 }
 
-export function importKsefPurchase(id: number): Promise<KsefInboxRow & { document_id: number }> {
-  return request(`/api/ksef/inbox/${id}/import`, { method: "POST" });
+/** A supplier document typed by hand that may be the same purchase: the 409
+ *  of an import lists these, and nothing is written until the person picks. */
+export interface KsefDuplicateCandidate {
+  id: number;
+  supplier: string;
+  doc_number: string;
+  doc_date: string;
+  total_amount: number | null;
+  currency: string;
+}
+
+/** `linkTo` links the purchase to an existing document instead of importing
+ *  it; `force` imports it although a hand-entered document may be the same. */
+export function importKsefPurchase(
+  id: number, opts: { force?: boolean; linkTo?: number } = {},
+): Promise<KsefInboxRow & { document_id: number }> {
+  const q = new URLSearchParams();
+  if (opts.force) q.set("force", "true");
+  if (opts.linkTo != null) q.set("document_id", String(opts.linkTo));
+  const qs = q.toString();
+  return request(`/api/ksef/inbox/${id}/import${qs ? `?${qs}` : ""}`, { method: "POST" });
 }
 
 export function skipKsefInvoice(id: number, reason: string): Promise<KsefInboxRow> {

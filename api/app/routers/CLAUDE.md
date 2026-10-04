@@ -30,8 +30,9 @@ A list route over projects, batches or orders takes `request: Request = None`
 and filters by `companies.scope_ids(db, request)`, keeping rows whose
 `company_id` is NULL. The default `None` is there because tests call these
 functions directly. Access to ONE record is not this: the app-wide gate in
-`services/access.py` does it, and a new path parameter must be classified there
-(`tests/auth/test_company_access.py`). Rules in
+`services/access.py` does it, from the path, the query and the JSON body, and
+a new path parameter, or a new `*_id` query parameter or body key, must be
+classified there (`tests/auth/test_company_access.py`). Rules in
 [docs/reference/companies.md](../../../docs/reference/companies.md).
 
 ## List surfaces — the two traps that cost a second each

@@ -430,6 +430,8 @@ export default function Invoices() {
     if (a.pool) dest.push(`pool: ${plain(a.pool)}`);
     // Conversion costs (decision 0058 §4): money in a production stage's lot.
     if (a.transformation) dest.push(`stages: ${plain(a.transformation)}`);
+    // Company overhead (decision 0068): the buyer's cost, of no product.
+    if (a.overhead) dest.push(`overhead: ${plain(a.overhead)}`);
     if (a.excluded) dest.push(`excluded: ${plain(a.excluded)}`);
     return dest.join(" · ") || "—";
   };
@@ -448,6 +450,7 @@ export default function Invoices() {
     for (const [pid] of Object.entries(a.by_project)) dest.push(`project ${pid}`);
     if (a.pool) dest.push("pool");
     if (a.transformation) dest.push("stages");
+    if (a.overhead) dest.push("overhead");
     return dest.length === 0;
   };
 

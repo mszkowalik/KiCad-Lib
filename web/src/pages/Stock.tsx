@@ -45,7 +45,9 @@ import {
   getDetectedSubstitutions,
   type SubstitutionDrift,
 } from "../api";
+import { useAuth } from "../auth";
 import { useDialog } from "../components/Dialog";
+import Field from "../components/Field";
 import FinishedProductsCard from "../components/FinishedProductsCard";
 import DataTable, { type Column } from "../components/DataTable";
 import PartLedgerPanel from "../components/PartLedgerPanel";
@@ -120,6 +122,11 @@ export default function Stock() {
   // what JLC's own movement ledger and our events cannot say about each other
   const [recon, setRecon] = useState<JlcLedgerReport | null>(null);
   const [booking, setBooking] = useState(false);
+  const { companies, scope } = useAuth();
+  // Whose stock JLC's warehouse picks came from: JLC keeps one shelf for both
+  // companies, so a person says (decision 0064). The header's company first.
+  const [ledgerCompany, setLedgerCompany] = useState(
+    scope !== "all" ? scope : companies.length === 1 ? String(companies[0].id) : "");
   // substitutions whose design has not caught up — the reason a superseded part
   // gets bought again
   const [drift, setDrift] = useState<SubstitutionDrift[]>([]);
@@ -202,7 +209,7 @@ export default function Stock() {
     if (!ok) return;
     setBooking(true);
     try {
-      const res = await bookJlcLedgerRows([], false);
+      const res = await bookJlcLedgerRows([], false, ledgerCompany ? Number(ledgerCompany) : null);
       setSyncMsg(
         `Recorded ${res.totals.rows} movement(s), ${res.totals.qty} piece(s), ` +
           `${plain(res.totals.usd)}. Reversible as batch ${res.batch_id}.`,
@@ -427,10 +434,21 @@ export default function Stock() {
               ))}
             </ul>
             {recon.bookable.length > 0 ? (
-              <button className="btn" disabled={booking} onClick={bookLedgerRows}
-                      title="Write each as a draw charged to no batch, using JLC's quantity, date and wording.">
-                {booking ? "Recording…" : `Record ${recon.bookable.length} movement(s) JLC reports`}
-              </button>
+              <div className="btn-row">
+                {companies.length > 1 ? (
+                  <Field label="Whose stock">
+                    <select className="row-input" value={ledgerCompany}
+                            onChange={(e) => setLedgerCompany(e.target.value)}>
+                      <option value="">— say whose —</option>
+                      {companies.map((c) => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+                    </select>
+                  </Field>
+                ) : null}
+                <button className="btn" disabled={booking} onClick={bookLedgerRows}
+                        title="Write each as a draw charged to no batch, using JLC's quantity, date and wording.">
+                  {booking ? "Recording…" : `Record ${recon.bookable.length} movement(s) JLC reports`}
+                </button>
+              </div>
             ) : null}
           </div>
         ) : null}

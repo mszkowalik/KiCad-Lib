@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from .. import models as M
@@ -1371,22 +1372,30 @@ def charge_draws(db: Session, order_plan: dict, run_id: int,
         raise ApplyRefused(
             f"{code}: {len(elsewhere)} draw(s) are already charged to run(s) "
             f"{sorted({c.run_id for c in elsewhere})} — reverse that batch first")
-    # A batch pays only for its own company's stock (decision 0064). A draw
-    # from the other company's shelf needs an in-house transfer first.
-    run = db.get(M.ProductionRun, run_id)
-    if run is not None and run_actuals.run_scope(db, run) is not None:
-        foreign = [c for c in mine if c.company_id is not None and c.company_id != run.company_id]
-        if foreign:
-            raise ApplyRefused(
-                f"{code}: {len(foreign)} draw(s) took another company's stock than "
-                f"{run.label}'s — record the in-house transfer first (decision 0064)")
-        for c in mine:
-            if c.company_id is None:
-                c.company_id = run.company_id
     out = {"smt_order_code": code, "run_id": run_id,
            "uncharged_draws": len(mine),
            "value_usd": round(sum((c.qty or 0) * (c.unit_cost_usd or 0) for c in mine), 2),
            "already_charged": len(rows) - len(mine) - len(elsewhere)}
+    # A batch draws its own company's stock (decision 0064). With each company
+    # keeping its own, units bound to the other company's lot move to the
+    # batch's company by in-house transfer first (`transfers.cover_draws`); with
+    # one pool the draws only take the batch's company.
+    run = db.get(M.ProductionRun, run_id)
+    if run is not None and run.company_id and mine:
+        if run_actuals.run_scope(db, run) is not None:
+            from . import transfers
+
+            try:
+                out["cover"] = transfers.cover_draws(db, mine, run.company_id, actor=actor,
+                                                     note=f"JLC order {code} charged to {run.label}",
+                                                     dry_run=dry_run)
+            except HTTPException as e:
+                # `cover_draws` names each short part and whose stock it is.
+                detail = e.detail if isinstance(e.detail, dict) else {"error": e.detail}
+                raise ApplyRefused(f"{code}: {detail.get('error')}") from e
+        elif not dry_run:
+            for c in mine:
+                c.company_id = run.company_id
     if dry_run:
         return {**out, "status": "dry_run"}
     parts = {c.lcsc or c.mpn for c in mine if (c.lcsc or c.mpn)}

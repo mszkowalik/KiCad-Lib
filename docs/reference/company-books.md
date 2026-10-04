@@ -11,9 +11,16 @@ Production → Company books.
 * **`allocate="overhead"` with `overhead_category`** is a company cost of no
   product. `run_actuals.OVERHEAD_CATEGORIES` and the web's
   `components/costs.tsx` `OVERHEAD_CATEGORIES` are the same list; change both.
-* **It names nothing else.** `routers/run_costs._one_destination` clears the
-  batch, project and transformation and sets `basis="per_run"`;
-  `_check_allocate` refuses it on a stock step.
+* **It names nothing else, on every write path.** `routers/run_costs`
+  clears the batch, project and transformation and sets `basis="per_run"`
+  when a position is created (`_overhead_whole`), patched or split
+  (`_one_destination`). A patch that names a batch, a project or a
+  transformation without `allocate` takes the position off the overhead.
+  `_check_allocate` refuses an overhead on a stock step.
+* **A batch never pays for it.** `run_actuals.run_actuals` skips an overhead
+  position, even one that still names a batch, and `effective_qty` never
+  multiplies it by units. An overhead logistics position is no
+  `unspread_transport`.
 * **It is a register bucket**: `document_json` reports `overhead`, the register
   sums `to_overhead_usd`, and `gap_usd` subtracts it. A new bucket must be
   added to all three, or the gap stops being zero.
@@ -22,10 +29,17 @@ Production → Company books.
 
 * **Every figure is an estimate.** The accountant's figures
   (`company_tax_entries`) are entered beside them and are the ones that count.
-* **Revenue** is the net of issued sales invoices by issue date. An advance
-  counts for VAT and not for income. A platform correction counts its
-  difference from `body.correction.before_totals`; a correction read from KSeF
-  already states the difference.
+* **Revenue** is the net of issued sales invoices by issue date
+  (`company_books._sales_effect`). An advance counts for VAT and not for
+  income, at the advance (`invoicing.service.advance_amounts`), never at the
+  order total. A correction counts its difference once
+  (`invoicing.service.correction_difference`): a platform correction from its
+  state before, a KSeF correction as it states it, and a script correction
+  that changed text only as nothing. A correction of an advance is an advance.
+* **A settlement invoice (ROZ) is the delivery.** It counts the whole order as
+  revenue on its date: the net of its positions, which FA(3) states at full
+  order value. Its VAT is the VAT it states, the part the advances did not
+  carry. So the advances reach revenue at the settlement.
 * **Costs** are the supplier documents billed to the company, by document
   date, by destination. Excluded positions and transfers are no cost.
 * **VAT on purchases** is read from `tax_amount` of PLN documents only.

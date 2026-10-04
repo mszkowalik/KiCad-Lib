@@ -828,11 +828,24 @@ def lcsc_lookup(lcsc_id: str) -> str:
 
 
 # ---------------------------------------------------------------- project tools
+def _visible(db, param: str, ident) -> bool:
+    """The company gate's answer for a record a tool names by NAME, which the
+    HTTP gate cannot read (decision 0070): a project or batch of a company the
+    caller does not belong to does not exist for them."""
+    from . import access
+
+    mine = access.allowed_companies(db)
+    if mine is None:
+        return True
+    owners = access.RESOLVERS[("*", param)](db, ident)
+    return not owners or bool(owners & mine)
+
+
 def _find_project(db, name: str) -> M.Project | None:
     needle = name.strip().lower()
     for p in db.query(M.Project).all():
         if p.name.lower() == needle:
-            return p
+            return p if _visible(db, "project_id", p.id) else None
     return None
 
 
@@ -853,6 +866,8 @@ def list_projects() -> str:
     try:
         out = []
         for p in db.query(M.Project).order_by(M.Project.name):
+            if not _visible(db, "project_id", p.id):
+                continue
             latest = _latest_ready(db, p.id)
             out.append({
                 "name": p.name,
@@ -938,6 +953,8 @@ def component_where_used(component_name: str) -> str:
             return json.dumps({"error": f"component {component_name!r} not found"})
         out = []
         for p in db.query(M.Project).order_by(M.Project.name):
+            if not _visible(db, "project_id", p.id):
+                continue
             latest = _latest_ready(db, p.id)
             if latest is None:
                 continue
@@ -976,8 +993,9 @@ def get_project(name: str) -> str:
                  .order_by(M.ProjectSnapshot.created_at.desc()).limit(3).all())
         notes = (db.query(M.ProjectNote).filter_by(project_id=p.id)
                  .order_by(M.ProjectNote.created_at).all())
-        runs = (db.query(M.ProductionRun).filter_by(project_id=p.id)
-                .order_by(M.ProductionRun.created_at.desc()).all())
+        runs = [r for r in (db.query(M.ProductionRun).filter_by(project_id=p.id)
+                            .order_by(M.ProductionRun.created_at.desc()).all())
+                if _visible(db, "run_id", r.id)]
         return json.dumps({
             "name": p.name,
             "description": p.description,
@@ -1019,7 +1037,8 @@ def get_production_run(project: str, run: str) -> str:
         p = _find_project(db, project)
         if p is None:
             return json.dumps({"error": f"project {project!r} not found"})
-        runs = db.query(M.ProductionRun).filter_by(project_id=p.id).all()
+        runs = [x for x in db.query(M.ProductionRun).filter_by(project_id=p.id).all()
+                if _visible(db, "run_id", x.id)]
         needle = run.strip().lower()
         r = next((x for x in runs if x.label.lower() == needle
                   or (needle.isdigit() and x.id == int(needle))), None)
@@ -2577,12 +2596,21 @@ def _route(fn, *args, **kwargs):
 
 
 def _caller_companies(db) -> list[int]:
-    """The companies the agent's token user may see."""
+    """The companies the agent's token user may see. A legacy shared token is
+    nobody's and sees none (decision 0065)."""
+    from . import access
     from . import companies as company_svc
 
-    ctx = tracking.current()
-    user = db.get(M.User, ctx.user_id) if ctx is not None and ctx.user_id else None
-    return company_svc.visible_ids(db, user)
+    mine = access.allowed_companies(db)
+    return [c.id for c in company_svc.all_companies(db)] if mine is None else sorted(mine)
+
+
+def _sees_document(db, doc, mine: list[int]) -> bool:
+    """The gate's rule for a supplier document: the buyer, the sender of a
+    transfer, or — before any buyer is named — every company."""
+    from . import access
+
+    return bool(access.document_companies(db, doc.id) & set(mine))
 
 
 def _company_id(db, company: str) -> int | None:
@@ -2626,7 +2654,7 @@ def list_supplier_invoices(company: str = "", supplier: str = "", since: str = "
             q = q.filter(M.RunCostDocument.doc_date >= since.strip())
         out = []
         for d in q.all():
-            if d.company_id is not None and d.company_id not in mine:
+            if not _sees_document(db, d, mine):
                 continue
             if cid is not None and d.company_id != cid:
                 continue
@@ -2657,7 +2685,7 @@ def get_supplier_invoice(document_id: int) -> str:
     db = SessionLocal()
     try:
         d = db.get(M.RunCostDocument, document_id)
-        if d is None or (d.company_id is not None and d.company_id not in _caller_companies(db)):
+        if d is None or not _sees_document(db, d, _caller_companies(db)):
             return json.dumps({"error": f"no document {document_id}"})
         return json.dumps(run_actuals.document_json(d, db=db), default=str)
     finally:
@@ -2726,7 +2754,7 @@ def assign_invoice_line(line_id: int, plan_key: str | None = None, run_id: int |
     try:
         li = db.get(M.RunCostLine, line_id)
         doc = db.get(M.RunCostDocument, li.document_id) if li is not None else None
-        if doc is None or (doc.company_id is not None and doc.company_id not in _caller_companies(db)):
+        if doc is None or not _sees_document(db, doc, _caller_companies(db)):
             return json.dumps({"error": f"no position {line_id}"})
     finally:
         db.close()
@@ -2765,25 +2793,32 @@ def list_ksef_inbox(side: str = "purchase", status: str = "new", company: str = 
 
 
 @beta_tool
-def import_ksef_invoice(ksef_number: str) -> str:
+def import_ksef_invoice(ksef_number: str, force: bool = False, document_id: int = 0) -> str:
     """Write a purchase from the KSeF inbox as a supplier document, billed to
     the company KSeF holds it for. Its positions then need destinations
-    (assign_invoice_line).
+    (assign_invoice_line). A supplier document typed by hand that may be the
+    same invoice is answered with an error listing `candidates`: link to one
+    with document_id, or import anyway with force=true.
 
     Args:
         ksef_number: The KSeF number (from list_ksef_inbox).
+        force: Import it although a hand-entered document may be the same invoice.
+        document_id: Link it to this existing supplier document instead of importing.
     """
     from ..routers import ksef as ksef_router
 
     db = SessionLocal()
     try:
-        row = db.query(M.KsefInvoice).filter_by(ksef_number=ksef_number.strip()).first()
-        if row is None or row.company_id not in _caller_companies(db):
-            return json.dumps({"error": f"{ksef_number} is not in your KSeF inbox"})
+        # One row per company that sees the invoice; the purchase side is the buyer's.
+        row = (db.query(M.KsefInvoice)
+               .filter(M.KsefInvoice.ksef_number == ksef_number.strip(), M.KsefInvoice.side == "purchase",
+                       M.KsefInvoice.company_id.in_(_caller_companies(db))).first())
+        if row is None:
+            return json.dumps({"error": f"{ksef_number} is not a purchase in your KSeF inbox"})
         rid = row.id
     finally:
         db.close()
-    return _route(ksef_router.import_purchase, rid)
+    return _route(ksef_router.import_purchase, rid, force=bool(force), document_id=document_id or None)
 
 
 @beta_tool

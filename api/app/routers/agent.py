@@ -75,6 +75,11 @@ async def call_tool(
         raise HTTPException(status_code=404, detail=f"unknown tool {name!r}")
 
     raw = await request.body()
+    ctype = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if raw and ctype and not (ctype == "application/json" or ctype.endswith("+json")):
+        # The company gate reads a form as a form (decision 0070): a JSON body
+        # sent under another type would reach the tool unread by the gate.
+        raise HTTPException(status_code=415, detail="send the arguments as application/json")
     args: object = {}
     if raw:
         try:

@@ -96,6 +96,9 @@ class ChildIn(BaseModel):
     # component share JLC's populated-board invoices produce arrived unlabelled
     # and had to be corrected by hand afterwards (decision 0048).
     exclude_reason: str = ""
+    # Decision 0068: with allocate="overhead", the kind of company cost. The
+    # split dialog dropped it, so an overhead share came back as "other".
+    overhead_category: str = ""
 
 
 class SplitIn(BaseModel):
@@ -254,6 +257,19 @@ BASES = {"per_device", "per_run"}
 # naming no run and no project is a DEFECT the register reports as `unassigned`.
 # "overhead" = a company cost of no product, under a category (decision 0068).
 ALLOCATES = {"none", "pooled", "by_value", "by_qty", "excluded", "overhead"}
+# The types a person or an import may write. "transfer" is written only by
+# `services/transfers.py` (decision 0064): typed onto an ordinary document it
+# would leave the money totals and re-route its stock.
+DOC_TYPES = {"invoice", "proforma", "receipt", "credit_note", "correction"}
+
+
+def _check_doc_type(doc_type: str | None) -> None:
+    if doc_type is not None and doc_type not in DOC_TYPES:
+        raise HTTPException(422, f"doc_type is one of {', '.join(sorted(DOC_TYPES))}"
+                                 + (" — an in-house transfer is written on the Transfers page"
+                                    if doc_type == "transfer" else ""))
+
+
 def _guard_purchase_loss(db: Session, losses: list[dict], what: str) -> None:
     """Refuse a change that would leave draws with no purchase behind them.
 
@@ -662,10 +678,21 @@ def _check_transformation(db: Session, step: str | None, transformation_id: int 
         raise HTTPException(422, "a conversion cost is not spread, pooled or excluded")
 
 
-def _one_destination(f: dict) -> dict:
+def _one_destination(f: dict, cur: M.RunCostLine | None = None) -> dict:
     """A patch that sends a position to a batch, a project, the pool or nobody
     takes it OFF its transformation, and one aimed at a transformation clears
-    the rest — every editor writes the whole destination (decision 0045)."""
+    the rest — every editor writes the whole destination (decision 0045).
+
+    A company overhead names nothing else on any write path (decision 0068). A
+    patch of an overhead position (`cur`) that names a batch, a project or a
+    transformation without saying `allocate` takes it OFF the overhead, or the
+    batch would be charged money the overhead bucket also holds."""
+    if cur is not None and "allocate" not in f and cur.allocate == run_actuals.OVERHEAD:
+        if f.get("run_id") is not None or f.get("project_id") is not None \
+                or f.get("transformation_id") is not None:
+            f["allocate"], f["overhead_category"] = "none", ""
+        elif "basis" in f:
+            f["basis"] = "per_run"
     if f.get("allocate") == run_actuals.OVERHEAD:
         # A company overhead names no batch, project or transformation, and
         # needs its category (decision 0068).
@@ -687,6 +714,15 @@ def _one_destination(f: dict) -> dict:
             or f.get("allocate") not in (None, "none")):
         f["transformation_id"] = None
     return f
+
+
+def _overhead_whole(li: LineIn) -> LineIn:
+    """A NEW overhead position, its destination written whole: no batch, no
+    project, no transformation, `per_run`, a category. Every create path runs
+    it, as every patch runs `_one_destination`."""
+    if li.allocate != run_actuals.OVERHEAD:
+        return li
+    return LineIn(**_one_destination(li.model_dump()))
 
 
 def _line(db: Session, line_id: int) -> M.RunCostLine:
@@ -830,10 +866,12 @@ def _create_document(project_id: int | None, body: DocumentIn, db: Session):
         if dup is not None:
             raise HTTPException(409, f"shared document already exists (id={dup.id}, "
                                      f"number={dup.doc_number!r}, external_id={dup.external_id!r})")
+    _check_doc_type(body.doc_type)
     if body.run_id is not None:
         r = _run(db, body.run_id)
         if project_id is not None and r.project_id != project_id:
             raise HTTPException(422, "run belongs to a different project")
+    body.lines = [_overhead_whole(li) for li in body.lines]
     for li in body.lines:
         _check_line(li)
         _check_allocate(li.plan_key, li.allocate)
@@ -842,7 +880,16 @@ def _create_document(project_id: int | None, body: DocumentIn, db: Session):
         _check_transformation(db, li.plan_key, li.transformation_id, li.run_id,
                               li.project_id, li.allocate)
     data = body.model_dump(exclude={"lines", "project_id"})
-    if data.get("company_id"):
+    original = db.get(M.RunCostDocument, body.corrects_document_id) if body.corrects_document_id else None
+    if body.corrects_document_id and original is None:
+        raise HTTPException(404, f"no document {body.corrects_document_id} to correct")
+    if original is not None and original.company_id:
+        # A correction is the same purchase, so it has the same buyer: billed
+        # to the other company it would move stock the original never bought.
+        if data.get("company_id") not in (None, original.company_id):
+            raise HTTPException(422, "a correction is billed to the company its original was billed to")
+        data["company_id"], data["company_source"] = original.company_id, "the corrected document"
+    elif data.get("company_id"):
         company_svc.get(db, data["company_id"])
         data["company_source"] = "manual"
     else:
@@ -910,6 +957,10 @@ def create_correction(doc_id: int, body: CorrectionIn | None = None,
     * **The pinned FX rate** (unless `own_fx`). See `CorrectionIn.own_fx`.
     """
     src = _doc(db, doc_id)
+    if (src.doc_type or "") == "transfer":
+        # Decision 0069: a transfer changes only as a whole, so its two sides
+        # can never disagree.
+        raise HTTPException(409, "a transfer changes only as a whole: reverse it on Production → Transfers")
     body = body or CorrectionIn()
     # A correction of a correction is legal and sometimes necessary, but it
     # points at the document it corrects, never at the root — the chain is the
@@ -971,6 +1022,11 @@ def update_document(doc_id: int, body: DocumentPatch, db: Session = Depends(get_
     doc = _doc(db, doc_id)
     _guard_closed(db, doc, "changing this document")
     fields = body.model_dump(exclude_unset=True)
+    _check_doc_type(fields.get("doc_type"))
+    original = db.get(M.RunCostDocument, doc.corrects_document_id) if doc.corrects_document_id else None
+    if ("company_id" in fields and original is not None and original.company_id
+            and fields["company_id"] != original.company_id):
+        raise HTTPException(422, "a correction is billed to the company its original was billed to")
     if "company_id" in fields and _guard_buyer_change(db, doc, fields["company_id"]):
         fields["company_source"] = "manual"
     before, after = {}, {}
@@ -1003,6 +1059,10 @@ def delete_document(doc_id: int, force: bool = False, db: Session = Depends(get_
     ], "deleting this document")
     audit(db, "run.document.delete", "run_cost_document", doc.id,
           {"supplier": doc.supplier, "doc_number": doc.doc_number, "lines": len(doc.lines)})
+    # A KSeF purchase imported as this document waits in the inbox again
+    # (decision 0067), instead of pointing at a document that is gone.
+    db.query(M.KsefInvoice).filter(M.KsefInvoice.document_id == doc.id).update(
+        {"status": "new", "document_id": None}, synchronize_session=False)
     db.delete(doc)
     db.commit()
     return {"deleted": doc_id}
@@ -1014,6 +1074,7 @@ def delete_document(doc_id: int, force: bool = False, db: Session = Depends(get_
 def add_line(doc_id: int, body: LineIn, db: Session = Depends(get_db)):
     doc = _doc(db, doc_id)
     _guard_closed(db, doc, "adding a position to this document")
+    body = _overhead_whole(body)
     _check_line(body)
     _check_allocate(body.plan_key, body.allocate)
     _check_excluded(body.allocate, body.exclude_reason)
@@ -1045,6 +1106,7 @@ def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
     doc = _doc(db, doc_id)
     _guard_closed(db, doc, "editing this document")
     by_id = {li.id: li for li in doc.lines if li.voided_at is None}
+    body.creates = [_overhead_whole(c) for c in body.creates]
 
     touched = {e.id for e in body.updates} | set(body.deletes)
     missing = sorted(touched - by_id.keys())
@@ -1061,7 +1123,7 @@ def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
                         f.get("exclude_reason", _cur.exclude_reason))
         _check_cancelled(f.get("plan_key", _cur.plan_key), f.get("allocate", _cur.allocate),
                          f.get("run_id", _cur.run_id), f.get("project_id", _cur.project_id))
-        _one_destination(f)
+        _one_destination(f, _cur)
         _check_transformation(db, f.get("plan_key", _cur.plan_key),
                               f.get("transformation_id", _cur.transformation_id),
                               f.get("run_id", _cur.run_id), f.get("project_id", _cur.project_id),
@@ -1112,7 +1174,7 @@ def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
     changed: list[dict] = []
     for e in body.updates:
         li = by_id[e.id]
-        f = _one_destination(e.model_dump(exclude_unset=True))
+        f = _one_destination(e.model_dump(exclude_unset=True), li)
         f.pop("id", None)
         if "run_id" in f or "project_id" in f:
             _check_destination(db, f.get("run_id", li.run_id), f.get("project_id", li.project_id))
@@ -1240,6 +1302,10 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
     pos = max([li.position for li in doc.lines], default=-1)
     for child in body.children:
         _check_line(child)
+        if child.allocate == run_actuals.OVERHEAD:
+            # A company overhead share names nothing else (decision 0068).
+            child = child.model_copy(update=_one_destination(
+                {"allocate": child.allocate, "overhead_category": child.overhead_category}))
         _check_allocate(child.plan_key or parent.plan_key, child.allocate)
         _check_excluded(child.allocate, child.exclude_reason)
         _check_destination(db, child.run_id, child.project_id)
@@ -1275,6 +1341,7 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
             row.plan_ref = child.plan_ref or row.plan_ref
             row.notes = child.notes
             row.exclude_reason = child.exclude_reason
+            row.overhead_category = child.overhead_category if row.allocate == run_actuals.OVERHEAD else ""
             continue
         pos += 1
         made.append(M.RunCostLine(
@@ -1290,6 +1357,7 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
             description=child.description, plan_key=child.plan_key,
             plan_kind=child.plan_kind, plan_ref=child.plan_ref, notes=child.notes,
             exclude_reason=child.exclude_reason,
+            overhead_category=child.overhead_category if child.allocate == run_actuals.OVERHEAD else "",
         ))
 
     # Splitting a PART line moves stock: the parent becomes a header and stops
@@ -1360,7 +1428,7 @@ def update_line(line_id: int, body: LinePatch, db: Session = Depends(get_db)):
                     fields.get("exclude_reason", li.exclude_reason))
     _check_cancelled(fields.get("plan_key", li.plan_key), fields.get("allocate", li.allocate),
                      fields.get("run_id", li.run_id), fields.get("project_id", li.project_id))
-    _one_destination(fields)
+    _one_destination(fields, li)
     _check_transformation(db, fields.get("plan_key", li.plan_key),
                           fields.get("transformation_id", li.transformation_id),
                           fields.get("run_id", li.run_id), fields.get("project_id", li.project_id),
@@ -1752,11 +1820,62 @@ def delete_consumption(cons_id: int, db: Session = Depends(get_db)):
         # A step that happened is history (decision 0059): its draw goes with it.
         raise HTTPException(409, "this draw belongs to a process step or a prepared part — "
                                  "correct the step, not the draw")
+    if c.transfer_line_id:
+        # The sender's side of an in-house transfer (decision 0064): alone it
+        # would hand the receiver stock the sender never gave.
+        raise HTTPException(409, "this draw is the sender's side of an in-house transfer — "
+                                 "reverse the transfer on the Transfers page")
     audit(db, "run.consumption.delete", "component_consumption", cons_id,
           {"run_id": c.run_id, "qty": c.qty, "unit_cost_usd": c.unit_cost_usd})
     db.delete(c)
     db.commit()
     return {"deleted": cons_id}
+
+
+class DrawCompanyIn(BaseModel):
+    company_id: int
+    dry_run: bool = True
+
+
+@router.patch("/consumption/{cons_id}/company")
+def set_draw_company(cons_id: int, body: DrawCompanyIn, db: Session = Depends(get_db)):
+    """Name whose stock an UNCHARGED draw took (decision 0064) — a JLC
+    warehouse pick or an external order's stock, which no batch links to a
+    company. A charged draw takes its batch's company, and a transfer's draw
+    its sender, so neither is set here.
+
+    While each company keeps its own stock this is `transfers.cover_draws`:
+    units bound to the other company's lot move by in-house transfer first, and
+    the rest must be in the named company's stock on the draw's date."""
+    from ..services import transfers
+
+    c = db.get(M.ComponentConsumption, cons_id)
+    if c is None or c.voided_at is not None:
+        raise HTTPException(404, "consumption not found")
+    if c.run_id or c.step_run_id or c.transformation_id or c.transfer_line_id:
+        raise HTTPException(409, "only an uncharged draw is given a company by hand — a batch's "
+                                 "draw takes the batch's company")
+    company_svc.get(db, body.company_id)
+    if c.company_id == body.company_id:
+        return {"status": "unchanged", "company_id": c.company_id}
+    per_company = run_actuals.stock_scope(db, body.company_id) is not None
+    if body.dry_run:
+        if per_company:
+            return transfers.cover_draws(db, [c], body.company_id, dry_run=True)
+        return {"dry_run": True, "receiver_id": body.company_id, "transfers": [], "shortages": []}
+    actor = acting_name()
+    with journal.batch(db, kind="draw.company", source_ref=f"cons:{c.id}", actor=actor) as h:
+        if per_company:
+            res = transfers.cover_draws(db, [c], body.company_id, actor=actor,
+                                        note=f"draw {c.id} named by hand", dry_run=False)
+        else:
+            c.company_id = body.company_id
+            db.flush()
+            res = {"dry_run": False, "receiver_id": body.company_id, "transfers": [], "shortages": []}
+    audit(db, "run.consumption.company", "component_consumption", c.id,
+          {"company_id": body.company_id, "transfers": res.get("written", []), "batch_id": h["batch_id"]})
+    db.commit()
+    return {**res, "batch_id": h["batch_id"]}
 
 
 def _adjustment_json(a: M.ComponentStockAdjustment) -> dict:
@@ -1818,14 +1937,17 @@ def add_adjustment(project_id: int, body: AdjustmentIn, db: Session = Depends(ge
         raise HTTPException(404, "project not found")
     if body.reason not in REASONS:
         raise HTTPException(422, f"reason must be one of {sorted(REASONS)}")
-    if body.charge_run_id is not None:
-        _run(db, body.charge_run_id)
+    charged = _run(db, body.charge_run_id) if body.charge_run_id is not None else None
     a = M.ComponentStockAdjustment(project_id=project_id, **body.model_dump())
     a.actor = acting_name()
     # Whose stock moves (decision 0064): stated, else derived — and fixed now,
     # because the pinned price below is read from that company's stock.
     if a.company_id is not None:
         company_svc.get(db, a.company_id)
+        if charged is not None and charged.company_id and charged.company_id != a.company_id:
+            # A batch's loss is a loss of the stock the batch draws from.
+            raise HTTPException(422, f"{charged.label} draws from its own company's stock; "
+                                     "a loss charged to it is that company's")
     else:
         a.company_id = company_svc.stock_company_for(db, a)
     # PIN the unit cost when the loss is charged to a batch (decision 0044).

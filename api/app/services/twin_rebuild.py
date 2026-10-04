@@ -240,7 +240,8 @@ def _rebuild(db, run, v, graph, smap, assume, draw, since, costs, spares, actor)
                                      f"parts: {problems[0]['problem']} — nothing was kept")
         short = run_actuals.check_shortages(db, [
             {"component_id": d["component_id"], "mpn": d.get("mpn", ""), "lcsc": "", "qty": d["qty"],
-             "date": sr.made_at, "label": d["name"]} for d in planned])
+             "date": sr.made_at, "label": d["name"]} for d in planned],
+            company_id=run_actuals.run_scope(db, run))
         if short:
             raise HTTPException(409, {"error": f"{run.label}: the pool did not hold the parts of "
                                                f"{step.get('label') or step['key']!r} on {sr.made_at} — "

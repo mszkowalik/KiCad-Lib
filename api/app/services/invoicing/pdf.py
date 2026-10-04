@@ -17,7 +17,7 @@ import html
 import io
 from decimal import Decimal
 
-from .amounts import d2, date_pl, in_words, money_pl
+from .amounts import d2, date_pl, in_words, money_pl, price_pl
 
 QR_URL = "https://qr.ksef.mf.gov.pl/invoice"
 SUBTITLE = {"proforma": "dokument informacyjny", "correction": "faktura korygująca",
@@ -59,13 +59,28 @@ def _qty(x) -> str:
     return f"{Decimal(str(x)).normalize():f}".replace(".", ",")
 
 
+def _price(x) -> str:
+    """The unit price with every decimal the net was computed from; an imported
+    position that printed none stays blank."""
+    if x in (None, ""):
+        return ""
+    try:
+        return price_pl(x)
+    except ArithmeticError:
+        return _e(x)
+
+
 def _party(p: dict) -> str:
     lines = [f'<span class="nazwa">{_e(p.get("name"))}</span>']
     lines += [_e(x) for x in (p.get("address_l1"), p.get("address_l2")) if x]
-    if p.get("nip"):
+    if p.get("nip") and (p.get("country") or "PL").upper() == "PL":
         lines.append(f"NIP {_e(p['nip'])}")
     elif p.get("vat_eu"):
-        lines.append(f"VAT UE {_e(p['vat_eu'])}")
+        from .fa3 import eu_prefix
+
+        lines.append(f"VAT UE {_e(eu_prefix(p.get('country') or ''))}{_e(p['vat_eu'])}")
+    elif p.get("nip"):
+        lines.append(f"Tax ID {_e(p['nip'])}")
     return "<br/>".join(lines)
 
 
@@ -77,7 +92,7 @@ def _positions(rows: list[dict], totals: dict | None) -> str:
     body = "".join(
         f"<tr><td class='c'>{p.get('position', i)}</td><td>{_e(p.get('name'))}</td>"
         f"<td class='c'>{_qty(p.get('qty', 0))}</td><td class='c'>{_e(p.get('unit'))}</td>"
-        f"<td class='r'>{money_pl(p.get('unit_net'), '')}</td><td class='r'>{money_pl(p.get('net'), '')}</td>"
+        f"<td class='r'>{_price(p.get('unit_net'))}</td><td class='r'>{money_pl(p.get('net'), '')}</td>"
         f"<td class='c'>{_e(_rate_text(str(p.get('vat_rate') or '')))}</td>"
         f"<td class='r'>{money_pl(p.get('vat'), '')}</td><td class='r'>{money_pl(p.get('gross'), '')}</td></tr>"
         for i, p in enumerate(rows, 1))
@@ -90,6 +105,13 @@ def _positions(rows: list[dict], totals: dict | None) -> str:
                  f"<td class='r'>{money_pl(totals.get('vat'), '')}</td>"
                  f"<td class='r'>{money_pl(totals.get('gross'), '')}</td></tr>")
     return f"<table class='poz'>{head}{body}{total}</table>"
+
+
+def _advance_row(totals: dict, name: str, position: int = 1) -> dict:
+    """An advance as one printed position: its net, VAT and gross."""
+    return {"position": position, "name": name, "qty": 1, "unit": "", "unit_net": totals.get("net"),
+            "net": totals.get("net"), "vat_rate": next(iter(totals.get("rates") or {"23": 0})),
+            "vat": totals.get("vat"), "gross": totals.get("gross")}
 
 
 def qr_png(url: str) -> bytes:
@@ -134,17 +156,25 @@ def build_html(inv, preview: bool) -> tuple[str, dict[str, bytes]]:
                "</tr></table><p></p>")
     table = ""
     cor = b.get("correction") or {}
-    if inv.kind == "correction" and cor.get("before_lines"):
+    if inv.kind == "correction" and cor.get("of_kind") == "advance":
+        # KOR_ZAL: the order before and after, and the advance before and after.
+        before_order = cor.get("before_order") or {}
+        if before_order.get("lines"):
+            table += ("<p class='nazwa'>Zamówienie przed korektą</p>"
+                      + _positions(before_order["lines"], before_order.get("totals")))
+        if (b.get("order") or {}).get("lines"):
+            table += "<p class='nazwa'>Zamówienie po korekcie</p>" + _positions(b["order"]["lines"], b["order"].get("totals"))
+        table += "<p class='nazwa'>Zaliczka</p>" + _positions(
+            [_advance_row(cor.get("before_totals") or {}, "Zaliczka przed korektą"),
+             _advance_row(totals, "Zaliczka po korekcie", 2)], None)
+    elif inv.kind == "correction" and cor.get("before_lines"):
         table += "<p class='nazwa'>Przed korektą</p>" + _positions(cor["before_lines"], cor.get("before_totals"))
         table += "<p class='nazwa'>Po korekcie</p>"
     if inv.kind == "advance" and (b.get("order") or {}).get("lines"):
         table += "<p class='nazwa'>Zamówienie</p>" + _positions(b["order"]["lines"], b["order"].get("totals"))
         table += "<p class='nazwa'>Zaliczka</p>"
-        table += _positions([{"position": 1, "name": "Zaliczka na poczet zamówienia", "qty": 1, "unit": "",
-                              "unit_net": totals.get("net"), "net": totals.get("net"),
-                              "vat_rate": next(iter(totals.get("rates") or {"23": 0})),
-                              "vat": totals.get("vat"), "gross": totals.get("gross")}], None)
-    elif b.get("lines"):
+        table += _positions([_advance_row(totals, "Zaliczka na poczet zamówienia")], None)
+    elif b.get("lines") and not (inv.kind == "correction" and cor.get("of_kind") == "advance"):
         table += _positions(b["lines"], totals)
     extras = ""
     if cor:

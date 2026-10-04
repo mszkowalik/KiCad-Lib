@@ -327,6 +327,7 @@ export function ChargeToSelect({
   onChange,
   emptyLabel = "— nobody —",
   withExcluded = true,
+  withOverhead = false,
   transformations = [],
   className = "row-input",
   disabled,
@@ -339,6 +340,8 @@ export function ChargeToSelect({
   onChange: (value: string) => void;
   emptyLabel?: string;
   withExcluded?: boolean;
+  /** offer the company overhead categories as `overhead:<key>` (decision 0068) */
+  withOverhead?: boolean;
   className?: string;
   disabled?: boolean;
 }) {
@@ -361,6 +364,13 @@ export function ChargeToSelect({
         </option>
       ))}
       {transformOptions(transformations, value)}
+      {withOverhead ? (
+        <optgroup label="Company overhead (no product)">
+          {OVERHEAD_CATEGORIES.map(([k, t]) => (
+            <option key={`overhead:${k}`} value={`overhead:${k}`}>Overhead · {t}</option>
+          ))}
+        </optgroup>
+      ) : null}
       {withExcluded && <option value="excluded">nobody, on purpose (excluded)</option>}
     </select>
   );

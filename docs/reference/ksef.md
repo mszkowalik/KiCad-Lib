@@ -17,6 +17,36 @@ are Admin → Companies (tokens, "Sync now") and Production → KSeF (the inbox)
   `sync.import_purchase` runs, which a person or an agent starts.
 * **The invoice in KSeF is the binding one.** A linked sales record takes
   KSeF's figures (`sync._apply_ksef`), and notes a difference from the draft.
+  KSeF states a correction's DIFFERENCE. A linked correction that keeps its
+  state before takes "before + difference" as its totals after, so the
+  difference is counted once.
+* **An invoice is in the inbox once per company that sees it.** `ksef_number`
+  is unique per company (`uq_ksef_invoices_company_number`). An invoice from
+  7Sigma to 9SIGMA is 7Sigma's sales row and 9SIGMA's purchase row.
+* **A sync reads back `sync.LOOKBACK_DAYS` (60) days** before the newest issue
+  date it holds. The query is by issue date, and an offline or emergency-mode
+  invoice reaches KSeF after its date. The upsert is idempotent. A deeper
+  re-read takes `since`.
+* **A KSeF error keeps the sync's progress.** The client turns a network
+  failure into a `KsefError`, and the route commits what was fetched and
+  `last_error` before it answers 502.
+* **The import never doubles a purchase.** `sync.import_purchase` links the row to a
+  document that holds its KSeF number, or the same seller NIP and number, and
+  keeps the link although it answers 409. A document typed by hand has no
+  seller NIP, so `sync.possible_duplicates` also looks for a document with no
+  seller tax id, of the same company or of none, whose number is the same
+  (case, spaces and leading zeros ignored), and which has the same date or a
+  word of the seller's name. Then the import answers 409 with the candidates
+  and writes nothing. `document_id` links the purchase to one, and `force`
+  imports it anyway.
+* **The skip takes only a purchase.** The numbering counts the numbers KSeF holds,
+  so a skipped sales row would give its number out again.
+* **A deleted document frees its purchase.** Deleting a supplier document
+  sets its inbox row back to `new`, and an import heals a row that still
+  points at a missing document.
+* **The parser keeps what the invoice states.** A unit price keeps up to 8
+  decimals. A position priced gross (P_9B, P_11A) has the net of its gross
+  less its VAT.
 * **The QR hash comes from the metadata** (`invoiceHash`, base64, turned into
   base64url by `sync.b64_to_b64url`), so a linked draft prints its QR code even
   before its XML is downloaded.

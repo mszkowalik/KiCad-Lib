@@ -12,10 +12,17 @@ to the platform's record, import a purchase on request (decision 0067).
   recorded for reading.
 * **A purchase waits** until a person or an agent imports it as a supplier
   document, or skips it with a reason.
+* **An invoice is in the inbox once per company that sees it.** An invoice
+  7Sigma issues to 9SIGMA is 7Sigma's sales row and 9SIGMA's purchase row:
+  `ksef_number` is unique per company, not across them.
 
-A company's sync resumes a week before the newest issue date it read, and the
-first one starts when KSeF 2.0 did. A rate limit stops the sync and records
-until when; the next sync carries on.
+A company's sync resumes `LOOKBACK_DAYS` before the newest issue date it read,
+because the query is by ISSUE date and an invoice can reach KSeF days after
+it: an offline or emergency-mode invoice is sent later, dated as issued. The
+upsert is idempotent, so the overlap costs nothing but a longer list. The
+first sync starts when KSeF 2.0 did. A rate limit stops the sync and records
+until when; the next sync carries on. A KSeF error keeps what the sync fetched
+before it and the error itself: the route commits both before it answers.
 """
 from __future__ import annotations
 
@@ -25,6 +32,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ... import models as M
@@ -38,6 +46,10 @@ KIND_OF_TYPE = {"Vat": "vat", "Kor": "correction", "Zal": "advance", "Roz": "set
                 "KorZal": "correction", "KorRoz": "correction"}
 #: XML downloads per sync; the rest waits for the next one (KSeF limits downloads).
 DOWNLOADS_PER_SYNC = 60
+#: Days a sync reads back before the newest issue date it already holds. The
+#: query is by issue date, and an invoice sent offline or in KSeF's emergency
+#: mode arrives later than its date; 60 days still fit in one 90-day query.
+LOOKBACK_DAYS = 60
 
 
 def _now() -> datetime:
@@ -106,7 +118,8 @@ def _upsert(db: Session, company_id: int, side: str, m: dict) -> M.KsefInvoice |
     num = m.get("ksefNumber") or ""
     if not num:
         return None
-    row = db.query(M.KsefInvoice).filter_by(ksef_number=num).first()
+    # Per company: an invoice between our two companies is one row for each.
+    row = db.query(M.KsefInvoice).filter_by(company_id=company_id, ksef_number=num).first()
     seller, buyer = m.get("seller") or {}, m.get("buyer") or {}
     fields = {
         "invoice_number": (m.get("invoiceNumber") or "")[:256], "invoice_type": (m.get("invoiceType") or "")[:20],
@@ -165,7 +178,7 @@ def sync(db: Session, company_id: int, *, sides: tuple[str, ...] = ("sales", "pu
         for side in sides:
             read_to = row.sales_read_to if side == "sales" else row.purchases_read_to
             start = (date.fromisoformat(since[:10]) if since else
-                     (date.fromisoformat(read_to) - timedelta(days=7)) if read_to else K.KSEF2_START)
+                     (date.fromisoformat(read_to) - timedelta(days=LOOKBACK_DAYS)) if read_to else K.KSEF2_START)
             try:
                 metas = cl.metadata(side, start, date.today())
             except K.RateLimited as e:
@@ -174,7 +187,8 @@ def sync(db: Session, company_id: int, *, sides: tuple[str, ...] = ("sales", "pu
                 break
             new = 0
             for m in metas:
-                existed = db.query(M.KsefInvoice.id).filter_by(ksef_number=m.get("ksefNumber") or "").first()
+                existed = (db.query(M.KsefInvoice.id)
+                           .filter_by(company_id=company.id, ksef_number=m.get("ksefNumber") or "").first())
                 if _upsert(db, company.id, side, m) is not None and existed is None:
                     new += 1
             out["fetched"][side] = {"listed": len(metas), "new": new}
@@ -215,8 +229,17 @@ def _xml_of(row: M.KsefInvoice) -> bytes | None:
 
 def _apply_ksef(inv: M.SalesInvoice, row: M.KsefInvoice, parsed: dict | None) -> None:
     """The platform's record takes KSeF's number, hash and, with the XML,
-    KSeF's figures — the invoice in KSeF is the binding one."""
-    from ..invoicing.service import _columns
+    KSeF's figures — the invoice in KSeF is the binding one.
+
+    A correction's figures in KSeF are the DIFFERENCE (FA(3) P_13_x, P_15). A
+    record that keeps the state before (`correction.before_totals`) takes
+    "before + KSeF's difference" as its totals after, so after minus before is
+    KSeF's difference and nothing is subtracted twice. A record with no state
+    before takes the difference and says so (`states_difference`)."""
+    import copy
+
+    from ..invoicing import amounts as IA
+    from ..invoicing.service import _columns, correction_difference
 
     inv.ksef_number = row.ksef_number
     inv.ksef_hash = row.xml_hash or inv.ksef_hash
@@ -226,17 +249,51 @@ def _apply_ksef(inv: M.SalesInvoice, row: M.KsefInvoice, parsed: dict | None) ->
     if inv.status == "draft":
         inv.status = "issued"
     if parsed:
-        b = dict(inv.body or {})
-        before = (b.get("totals") or {}).get("gross")
+        b = copy.deepcopy(inv.body or {})
+        pb = parsed["body"]
+        is_correction = inv.kind == "correction"
+        was = correction_difference(inv)["gross"] if is_correction else (b.get("totals") or {}).get("gross")
         for k in ("seller", "buyer", "lines", "totals", "payment", "bank", "extra_info"):
-            if parsed["body"].get(k) is not None:
-                b[k] = parsed["body"][k]
-        notes = list(b.get("notes") or []) + parsed["body"].get("notes", [])
-        if before and abs(Decimal(before) - Decimal(parsed["body"]["totals"]["gross"])) > Decimal("0.01"):
-            notes.append(f"the draft's gross {before} differs from KSeF's {parsed['body']['totals']['gross']}")
+            if pb.get(k) is not None:
+                b[k] = pb[k]
+        if is_correction:
+            cor = dict(b.get("correction") or {})
+            pcor = pb.get("correction") or {}
+            if cor.get("before_totals"):
+                b["totals"] = IA.combine(cor["before_totals"], pb["totals"])
+                cor.pop("states_difference", None)
+            else:
+                cor["states_difference"] = True
+            if pcor.get("before_lines"):
+                cor["before_lines"] = pcor["before_lines"]
+            if pcor.get("of_kind"):
+                cor["of_kind"] = pcor["of_kind"]
+            b["correction"] = cor
+        notes = list(b.get("notes") or []) + pb.get("notes", [])
+        now = pb["totals"]["gross"]
+        if was and abs(Decimal(str(was)) - Decimal(now)) > Decimal("0.01"):
+            what = "difference" if is_correction else "gross"
+            notes.append(f"the draft's {what} {was} differs from KSeF's {now}")
         b["notes"] = notes
         inv.body = b
         _columns(inv)
+
+
+def _corrected(db: Session, company_id: int, cor: dict) -> int | None:
+    """The platform's record of the invoice a correction read from KSeF
+    corrects: by its KSeF number, else by its number. A next correction of
+    that invoice then starts from the state after this one."""
+    q = (db.query(M.SalesInvoice)
+         .filter(M.SalesInvoice.company_id == company_id, M.SalesInvoice.status != "cancelled",
+                 M.SalesInvoice.kind.in_(("vat", "advance", "settlement"))))
+    if cor.get("of_ksef"):
+        hit = q.filter(M.SalesInvoice.ksef_number == cor["of_ksef"]).first()
+        if hit is not None:
+            return hit.id
+    want = _norm_number(cor.get("of_number") or "")
+    if not want:
+        return None
+    return next((i.id for i in q.all() if _norm_number(i.number) == want), None)
 
 
 def link_sales(db: Session, company: M.Company) -> dict:
@@ -280,8 +337,17 @@ def link_sales(db: Session, company: M.Company) -> dict:
         nip = inv.buyer_nip
         inv.customer_id = next((c.id for c in db.query(M.Customer).all()
                                 if nip and _digits(c.tax_id) == nip), None)
-        db.add(inv)
-        db.flush()
+        if inv.kind == "correction":
+            inv.corrects_id = _corrected(db, company.id, parsed["body"].get("correction") or {})
+        try:
+            with db.begin_nested():
+                db.add(inv)
+                db.flush()
+        except IntegrityError:
+            # The platform already holds this number for another KSeF invoice.
+            out["refused"].append({"number": row.invoice_number, "why": "the platform already has a "
+                                   f"{inv.kind} invoice numbered {inv.number} with another KSeF number"})
+            continue
         row.status, row.sales_invoice_id = "linked", inv.id
         out["recorded"] += 1
     db.flush()
@@ -300,23 +366,114 @@ def _supplier_name(db: Session, nip: str, name: str) -> str:
     return (name or "").strip()[:200]
 
 
-def import_purchase(db: Session, row: M.KsefInvoice, actor: str = "", client_factory=K.Client) -> M.RunCostDocument:
+class Linked(HTTPException):
+    """The purchase already IS a supplier document, and the inbox row now
+    points at it. A 409 to the caller and a state to keep: the route commits
+    before it answers, where an ordinary refusal rolls back."""
+
+    def __init__(self, detail: str):
+        super().__init__(409, detail)
+
+
+#: Words of a company name that say its legal form, not who it is.
+_LEGAL_WORDS = {"spółka", "ograniczoną", "odpowiedzialnością", "komandytowa", "jawna", "akcyjna", "cywilna",
+                "ltd", "limited", "gmbh", "inc", "corp", "llc", "sro"}
+
+
+def _name_words(name: str) -> set[str]:
+    """The words of a supplier's name that are not a legal form, case folded,
+    three letters or more ("sp. z o.o." drops out by its length)."""
+    return {w for w in re.findall(r"\w+", (name or "").casefold()) if len(w) >= 3 and w not in _LEGAL_WORDS}
+
+
+def _number_key(n: str) -> str:
+    """An invoice number with case, spaces and leading zeros dropped."""
+    return re.sub(r"(?<!\d)0+(?=\d)", "", re.sub(r"\s+", "", (n or "").upper()))
+
+
+def possible_duplicates(db: Session, row: M.KsefInvoice) -> list[M.RunCostDocument]:
+    """Hand-entered supplier documents that may be this purchase.
+
+    A document typed by hand has no seller NIP, so the exact guard (seller NIP
+    and number) cannot see it. The rule: a document of the same company (or of
+    no company yet) with NO seller tax id, whose number equals the invoice's
+    once case, spaces and leading zeros are dropped, AND that has either the
+    invoice's issue date or a word of the seller's name (legal forms such as
+    "sp. z o.o." left out)."""
+    want = _number_key(row.invoice_number)
+    if not want:
+        return []
+    words = _name_words(row.seller_name)
+    out = []
+    for d in (db.query(M.RunCostDocument)
+              .filter(M.RunCostDocument.seller_tax_id == "", M.RunCostDocument.doc_number != "",
+                      M.RunCostDocument.doc_type != "transfer",
+                      (M.RunCostDocument.company_id == row.company_id) | M.RunCostDocument.company_id.is_(None))
+              .order_by(M.RunCostDocument.id).all()):
+        if _number_key(d.doc_number) != want:
+            continue
+        if (d.doc_date or "")[:10] == row.issue_date or (words & _name_words(d.supplier)):
+            out.append(d)
+    return out
+
+
+def _link(db: Session, row: M.KsefInvoice, doc: M.RunCostDocument) -> None:
+    """The inbox row points at the document that already holds the purchase;
+    a hand-entered document learns the seller's NIP, so the exact guard finds
+    it next time."""
+    row.status, row.document_id = "imported", doc.id
+    if not doc.seller_tax_id and row.seller_nip:
+        doc.seller_tax_id = row.seller_nip
+    db.flush()
+
+
+def import_purchase(db: Session, row: M.KsefInvoice, actor: str = "", client_factory=K.Client, *,
+                    force: bool = False, link_to: int | None = None) -> M.RunCostDocument:
     """A purchase from the inbox as a supplier document, billed to the company
     that fetched it. Its positions name no destination yet: the register shows
-    them unassigned until a person or an agent says where each one goes."""
+    them unassigned until a person or an agent says where each one goes.
+
+    * Already a document (its KSeF number, or the same seller NIP and number):
+      the row is linked to it and `Linked` (409) is raised.
+    * Perhaps a document typed by hand (`possible_duplicates`): 409 with the
+      candidates, and nothing changes. `link_to` links the row to one of them;
+      `force` imports it anyway.
+    * A row whose document was deleted is not imported any more and imports
+      again."""
     if row.side != "purchase":
         raise HTTPException(422, "only a purchase is imported as a supplier document")
+    if row.status == "imported" and (row.document_id is None
+                                     or db.get(M.RunCostDocument, row.document_id) is None):
+        row.status, row.document_id = "new", None
     if row.status in ("imported", "skipped"):
         raise HTTPException(409, f"{row.ksef_number} is already {row.status}")
+    if link_to is not None:
+        target = db.get(M.RunCostDocument, link_to)
+        if target is None or target.company_id not in (None, row.company_id):
+            raise HTTPException(404, f"no supplier document {link_to} of this company")
+        _link(db, row, target)
+        return target
     dup = (db.query(M.RunCostDocument)
            .filter((M.RunCostDocument.external_id == row.ksef_number)
                    | ((M.RunCostDocument.seller_tax_id == row.seller_nip)
                       & (M.RunCostDocument.doc_number == row.invoice_number)
-                      & (M.RunCostDocument.seller_tax_id != ""))).first())
+                      & (M.RunCostDocument.seller_tax_id != "")
+                      & ((M.RunCostDocument.company_id == row.company_id)
+                         | M.RunCostDocument.company_id.is_(None)))).first())
     if dup is not None:
-        row.status, row.document_id = "imported", dup.id
-        db.flush()
-        raise HTTPException(409, f"{row.invoice_number} is already supplier document {dup.id}; linked to it")
+        _link(db, row, dup)
+        raise Linked(f"{row.invoice_number} is already supplier document {dup.id}; linked to it")
+    if not force:
+        cands = possible_duplicates(db, row)
+        if cands:
+            raise HTTPException(409, {
+                "error": f"{row.invoice_number} of {row.seller_name or row.seller_nip} may already be "
+                         f"entered by hand ({', '.join(f'document {d.id}' for d in cands)}). Link it to that "
+                         "document, or import it as a new one.",
+                "candidates": [{"id": d.id, "supplier": d.supplier, "doc_number": d.doc_number,
+                                "doc_date": d.doc_date, "total_amount": d.total_amount, "currency": d.currency}
+                               for d in cands],
+                "hint": "document_id=<id> links it; force=true imports it anyway"})
     xml = _xml_of(row)
     if xml is None:
         raise HTTPException(409, "its XML is not downloaded yet; run the KSeF sync again")

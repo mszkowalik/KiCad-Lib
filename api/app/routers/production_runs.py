@@ -372,11 +372,21 @@ def update_run(run_id: int, body: RunPatch, db: Session = Depends(get_db)):
         track("status", body.status.strip())
     if body.requires_test is not None:
         track("requires_test", body.requires_test)
+    moved_stock = None
     if body.company_id is not None and body.company_id != r.company_id:
         if r.closed_at is not None:
             raise HTTPException(409, f"batch {r.label} is closed — reopen it before moving it to "
                                      "another company")
-        track("company_id", company_svc.get(db, body.company_id).id)
+        new_company = company_svc.get(db, body.company_id)
+        # Its draws and the losses charged to it go with it (decision 0064): a
+        # batch draws its own company's stock. Journalled, since a move may
+        # write in-house transfers.
+        from ..services import journal, transfers
+
+        with journal.batch(db, kind="run.company", source_ref=f"run:{r.id}", actor=acting_name()) as h:
+            moved_stock = transfers.move_batch_stock(db, r, new_company.id, actor=acting_name())
+        moved_stock["batch_id"] = h["batch_id"]
+        track("company_id", new_company.id)
     if body.run_date is not None:
         track("run_date", body.run_date.strip())
     if body.notes is not None:
@@ -426,7 +436,8 @@ def update_run(run_id: int, body: RunPatch, db: Session = Depends(get_db)):
         if isinstance(value, str):
             value = value.strip()
         track(field, value)
-    audit(db, "run.update", "production_run", r.id, before or None)
+    audit(db, "run.update", "production_run", r.id,
+          ({**before, "moved_stock": moved_stock} if moved_stock else before) or None)
     db.commit()
     # Attaching a design commit to a batch that had none is the same act as
     # creating the batch with one, so it gets the same default production files

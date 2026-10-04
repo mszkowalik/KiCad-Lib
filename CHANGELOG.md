@@ -1,5 +1,76 @@
 # Changelog
 
+## 2026-10-04 (review fixes: company gate, stock per company, invoices, KSeF)
+
+Not deployed yet. Decisions
+[0069](docs/decisions/0069-stock-reaches-a-batch-by-a-transfer-written-for-it.md),
+[0070](docs/decisions/0070-the-company-gate-reads-the-whole-request.md) and
+[0071](docs/decisions/0071-invoice-corrections-and-ksef-rows-per-company.md)
+correct what a code review found in 0063 to 0068.
+
+- **A record of another company stays hidden however it is named.** An id
+  written as `15371.0`, an id in the query string or in the JSON body, and an
+  agent tool that names a project by its name all answer "not found" for a
+  company the user does not belong to. The bench's run socket and the live
+  simulator work again. The MQTT password export lists only the user's
+  companies' devices. The write journal shows and reverses only the user's
+  companies' batches. The old shared MCP token sees no company's records.
+- **A batch takes its stock with it.** Charging a JLC order to a batch, moving
+  a batch to the other company and naming whose stock an uncharged draw took
+  write the in-house transfer for the units of the other company's lots, at
+  the lot's cost, when each company keeps its own stock. A refusal names the
+  parts the company does not hold.
+- **A lot transfer moves the draws bound to that lot**, and the history plan
+  no longer moves the same lot twice or hides a shortfall. A transfer no longer
+  changes a part's average while both companies share one pool.
+- **Stock records:** JLC's warehouse picks are booked to the company chosen on
+  the Stock page. Admin → Companies lists the draws no company is named on, with
+  a choice of company per row. A correction is billed to its original's buyer.
+  A loss charged to a batch is that batch's company's. A document cannot be
+  typed as a transfer, and a transfer's sender draw cannot be deleted alone.
+- **Sales invoices:**
+  - A draft re-dated into another month takes that month's next number. A
+    correction and an advance keep their sale date.
+  - A recurring invoice is drafted once a month, even after a re-date.
+  - Two people never get the same number. A typed number already in use is
+    refused.
+  - Recording a KSeF number checks the seller's NIP and the XML's number,
+    NIP and hash, and never replaces a recorded number.
+  - A payment marked as received stays after a later edit.
+  - A correction of an advance is KOR_ZAL, with the order and the advance
+    before and after.
+  - An exempt (zw) position needs its legal basis (a new form field). Reverse
+    charge says so. An EU buyer keeps its VAT number. A unit price keeps up to
+    8 decimals.
+  - A customer country code must have two letters.
+- **Company books** count a correction once, an imported advance at the
+  advance, a correction of an advance as no revenue, and a settlement (ROZ)
+  as the whole order. An overhead position never reaches a batch's cost. The
+  split dialog offers the overhead categories, and the register shows an
+  Overhead column.
+- **KSeF:** an invoice between 7Sigma and 9SIGMA is in both inboxes. A
+  gross-priced row reads correctly. A position with quantity 0 reads as 0. A
+  purchase that may already be typed in asks whether to link it or import it.
+  "Linked to it" is kept. An error keeps what was fetched. A sales row cannot
+  be skipped. Deleting a supplier document puts its KSeF purchase back in the
+  inbox. The sync reads back 60 days.
+- **A second check of these fixes found more, now fixed too:**
+  - The company gate also reads a form, a body sent under any type, a JSON
+    `true`, and lists of devices or scanned codes. The agent route takes only
+    JSON. A JLC order's decision is its batch's company's. The live simulator
+    checks the snapshot it is asked for. The MQTT password export follows the
+    device's batch, not only its project.
+  - A JLC charge uses an in-house transfer already typed in instead of writing
+    a second one, and its refusal names the short parts and whose stock they
+    are. Writing the history uses a typed transfer the same way. A batch
+    moved to the other company is moved back on its page; the Ledger refuses
+    to reverse the move. A transfer cannot be corrected, and a correction
+    cannot be given another buyer later.
+  - A second correction of a sales invoice starts from the invoice as already
+    corrected. A recurring invoice re-dated into the next month no longer
+    blocks that month's own invoice. "Mark paid" refuses an invoice that is
+    paid already, and an imported advance keeps its printed amount.
+
 ## 2026-10-04 (company overhead and books)
 
 Not deployed yet. Decision

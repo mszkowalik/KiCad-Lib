@@ -8,7 +8,9 @@ this way. What it writes, and only that:
 * `correction` — RodzajFaktury KOR: the totals are the DIFFERENCE after minus
   before (the schema's own definition of P_13_x and P_15 for a correction),
   the positions before the correction carry `StanPrzed`, and the corrected
-  invoice is named with its KSeF number when it has one;
+  invoice is named with its KSeF number when it has one. A correction of an
+  ADVANCE is KOR_ZAL: no positions, the order before (`StanPrzedZ`) and after
+  in `Zamowienie`;
 * `advance` — RodzajFaktury ZAL: the totals are the advance received, its VAT
   computed from the gross as art. 106f ust. 1 pkt 3 requires, and the order it
   is paid against goes in `Zamowienie`.
@@ -16,6 +18,12 @@ this way. What it writes, and only that:
 A settlement invoice after advances (ROZ), a currency other than PLN and the
 taxi rates 4 and 3 are refused here: their figures need checking before the
 platform writes them. Every rate code is mapped as the schema documents it.
+
+The annotations follow the rates the invoice uses (`_annotations`): an exempt
+position (`zw`) writes `P_19` with the legal basis from `body.exemption`, and
+the platform refuses the invoice without one; a domestic reverse charge (`oo`)
+and a service taxed where the buyer is (`np II`, art. 100 ust. 1 pkt 4) write
+`P_18` = 1, "odwrotne obciążenie".
 
 The schema files in `schema/` are the Ministry's FA(3) 1-0E, with the imports
 pointing at the local copies.
@@ -28,7 +36,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from functools import lru_cache
 
-from .amounts import PERCENT_RATES, d2
+from .amounts import PERCENT_RATES, d2, price_str
 
 NS = "http://crd.gov.pl/wzor/2025/06/25/13775/"
 SCHEMA = pathlib.Path(__file__).parent / "schema" / "schemat_FA3.xsd"
@@ -45,6 +53,11 @@ FIELD_ORDER = ["P_13_1", "P_14_1", "P_13_2", "P_14_2", "P_13_3", "P_14_3", "P_13
                "P_13_6_2", "P_13_6_3", "P_13_7", "P_13_8", "P_13_9", "P_13_10"]
 EU = {"AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "EL", "ES", "FI", "FR", "HR", "HU", "IE",
       "IT", "LT", "LU", "LV", "MT", "NL", "PT", "RO", "SE", "SI", "SK", "XI"}
+#: the rates whose invoice says "odwrotne obciążenie" (art. 106e ust. 1 pkt 18):
+#: the buyer settles the VAT.
+REVERSE_CHARGE = ("oo", "np II")
+#: `body.exemption.law` -> the element that names the basis of an exemption
+EXEMPTION_FIELDS = {"A": "P_19A", "B": "P_19B", "C": "P_19C"}
 PAYMENT_FORMS = {"gotówka": 1, "karta": 2, "bon": 3, "czek": 4, "kredyt": 5, "przelew": 6,
                  "płatność mobilna": 7}
 
@@ -84,6 +97,12 @@ def _qty(x) -> str:
     return f"{Decimal(str(x)).normalize():f}"
 
 
+def eu_prefix(country: str) -> str:
+    """The VAT prefix of an EU country: its ISO code, except Greece (EL)."""
+    c = (country or "").upper()
+    return "EL" if c == "GR" else c
+
+
 def _party(root, tag: str, party: dict) -> None:
     p = _sub(root, tag)
     country = (party.get("country") or "PL").upper()
@@ -93,8 +112,8 @@ def _party(root, tag: str, party: dict) -> None:
     nip = (party.get("nip") or "").replace("-", "").replace(" ", "")
     if tag == "Podmiot1" or (country == "PL" and nip):
         _sub(di, "NIP", nip)
-    elif country in EU and party.get("vat_eu"):
-        _sub(di, "KodUE", country)
+    elif eu_prefix(country) in EU and party.get("vat_eu"):
+        _sub(di, "KodUE", eu_prefix(country))
         _sub(di, "NrVatUE", party["vat_eu"])
     elif nip:
         _sub(di, "KodKraju", country)
@@ -126,13 +145,38 @@ def _rate_totals(fa, rates: dict) -> None:
             _sub(fa, f, _amount(fields[f]))
 
 
+def rates_used(body: dict) -> set[str]:
+    """Every rate the document names: its totals, its positions, and a
+    correction's state before and an advance's order."""
+    cor = body.get("correction") or {}
+    order = body.get("order") or {}
+    out: set[str] = set()
+    for t in (body.get("totals"), cor.get("before_totals"), order.get("totals")):
+        out |= set((t or {}).get("rates") or {})
+    for rows in (body.get("lines"), cor.get("before_lines"), order.get("lines"),
+                 (cor.get("before_order") or {}).get("lines")):
+        out |= {str(p.get("vat_rate")) for p in rows or [] if p.get("vat_rate")}
+    return out
+
+
 def _annotations(fa, body: dict) -> None:
+    rates = rates_used(body)
     ad = _sub(fa, "Adnotacje")
     _sub(ad, "P_16", 2)
     _sub(ad, "P_17", 2)
-    _sub(ad, "P_18", 2)
+    _sub(ad, "P_18", 1 if rates & set(REVERSE_CHARGE) else 2)
     _sub(ad, "P_18A", 1 if body.get("split_payment") else 2)
-    _sub(_sub(ad, "Zwolnienie"), "P_19N", 1)
+    zw = _sub(ad, "Zwolnienie")
+    if "zw" in rates:
+        ex = body.get("exemption") or {}
+        basis = (ex.get("basis") or "").strip()
+        if not basis:
+            raise Refused("an exempt (zw) position needs the legal basis of the exemption "
+                          "(exemption_basis, e.g. \"art. 113 ust. 1 ustawy o VAT\")")
+        _sub(zw, "P_19", 1)
+        _sub(zw, EXEMPTION_FIELDS.get((ex.get("law") or "A").upper(), "P_19A"), basis[:240])
+    else:
+        _sub(zw, "P_19N", 1)
     _sub(_sub(ad, "NoweSrodkiTransportu"), "P_22N", 1)
     _sub(ad, "P_23", 2)
     _sub(_sub(ad, "PMarzy"), "P_PMarzyN", 1)
@@ -144,7 +188,7 @@ def _row(fa, n: int, p: dict, before: bool = False) -> None:
     _sub(w, "P_7", p["name"])
     _sub(w, "P_8A", p.get("unit") or "szt.")
     _sub(w, "P_8B", _qty(p["qty"]))
-    _sub(w, "P_9A", _amount(p["unit_net"]))
+    _sub(w, "P_9A", price_str(p["unit_net"]))
     _sub(w, "P_11", _amount(p["net"]))
     _sub(w, "P_12", p["vat_rate"])
     if p.get("gtu"):
@@ -240,7 +284,9 @@ def build(inv) -> bytes:
         _rate_totals(fa, totals.get("rates") or {})
         _sub(fa, "P_15", _amount(totals.get("gross") or 0))
     _annotations(fa, body)
-    _sub(fa, "RodzajFaktury", {"vat": "VAT", "correction": "KOR", "advance": "ZAL"}[inv.kind])
+    of_advance = inv.kind == "correction" and (body.get("correction") or {}).get("of_kind") == "advance"
+    _sub(fa, "RodzajFaktury", "KOR_ZAL" if of_advance else
+         {"vat": "VAT", "correction": "KOR", "advance": "ZAL"}[inv.kind])
     if inv.kind == "correction":
         cor = body.get("correction") or {}
         if cor.get("reason"):
@@ -257,7 +303,7 @@ def build(inv) -> bytes:
         do = _sub(fa, "DodatkowyOpis")
         _sub(do, "Klucz", "Informacja" if i == 1 else f"Informacja {i}")
         _sub(do, "Wartosc", text)
-    if inv.kind == "correction":
+    if inv.kind == "correction" and not of_advance:
         rows = 0
         for p in (body.get("correction") or {}).get("before_lines") or []:
             rows += 1
@@ -269,19 +315,27 @@ def build(inv) -> bytes:
         for i, p in enumerate(body.get("lines") or [], 1):
             _row(fa, i, p)
     _payment(fa, body)
-    if inv.kind == "advance":
+    if inv.kind == "advance" or of_advance:
         order = body.get("order") or {}
+        if not order.get("lines"):
+            raise Refused("an advance names the order it is paid against; this one has no order positions")
         z = _sub(fa, "Zamowienie")
+        # The order as it stands; a correction lists the order before it too.
         _sub(z, "WartoscZamowienia", _amount((order.get("totals") or {}).get("gross") or 0))
-        for i, p in enumerate(order.get("lines") or [], 1):
+        rows = [(p, True) for p in ((body.get("correction") or {}).get("before_order") or {}).get("lines") or []
+                ] if of_advance else []
+        rows += [(p, False) for p in order.get("lines") or []]
+        for i, (p, before) in enumerate(rows, 1):
             w = _sub(z, "ZamowienieWiersz")
             _sub(w, "NrWierszaZam", i)
             _sub(w, "P_7Z", p["name"])
             _sub(w, "P_8AZ", p.get("unit") or "szt.")
             _sub(w, "P_8BZ", _qty(p["qty"]))
-            _sub(w, "P_9AZ", _amount(p["unit_net"]))
+            _sub(w, "P_9AZ", price_str(p["unit_net"]))
             _sub(w, "P_11NettoZ", _amount(p["net"]))
             _sub(w, "P_11VatZ", _amount(p["vat"]))
             _sub(w, "P_12Z", p["vat_rate"])
+            if before:
+                _sub(w, "StanPrzedZ", 1)
     ET.indent(root)
     return b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="utf-8")

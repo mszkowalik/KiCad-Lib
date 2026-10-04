@@ -3881,8 +3881,8 @@ table.kv.settings-table .btn-row {
 /* Invoices view. Same discipline as the run-cost tables: fixed layout, widths
    summing to 100%, .data-fixed supplying the single-line ellipsis treatment. */
 .invoice-sum-table { table-layout: fixed; }
-/* Nine buckets since the conversion-cost column (decision 0058). */
-.invoice-sum-table th:nth-child(n), .invoice-sum-table td:nth-child(n) { width: 11.1%; }
+/* Ten columns since the overhead bucket (decision 0068). */
+.invoice-sum-table th:nth-child(n), .invoice-sum-table td:nth-child(n) { width: 10%; }
 
 .invoice-pool-table { table-layout: fixed; }
 .invoice-pool-table th:nth-child(1), .invoice-pool-table td:nth-child(1) { width: 18%; }
