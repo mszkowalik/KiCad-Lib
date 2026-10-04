@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-04 (company access)
+
+Not deployed yet. Decision
+[0065](docs/decisions/0065-a-record-of-another-company-does-not-exist-for-the-caller.md).
+
+- **A user of one company cannot open the other company's records.** A
+  project, batch, order, invoice, device or shipment of a company the user
+  does not belong to answers "not found". An admin sees everything. Every
+  user is a member of both companies today, so nothing changes until an admin
+  narrows a membership on Admin → Users.
+- **Shipments, devices and the invoice register follow the company switcher.**
+- **The agent's audit-log tool is for administrators only**, like the Activity
+  tab.
+
 ## 2026-10-04 (stock per company)
 
 Not deployed yet. Decision

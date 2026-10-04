@@ -1472,11 +1472,13 @@ def parts_stock(request: Request = None, db: Session = Depends(get_db)):
 
 
 @router.get("/invoices")
-def invoice_register(db: Session = Depends(get_db)):
+def invoice_register(request: Request = None, db: Session = Depends(get_db)):
     """Every supplier document with where its money went, plus the company-wide
     reconciliation: unassigned money, documents whose lines don't add up, and
     whether the component pool balances."""
-    return run_actuals.invoice_register(db)
+    scope = company_svc.scope_ids(db, request)   # the header switcher (decision 0063)
+    return run_actuals.invoice_register(
+        db, company_ids=scope if company_svc.narrows(db, scope) else None)
 
 
 # ------------------------------------------------ consumption + attrition

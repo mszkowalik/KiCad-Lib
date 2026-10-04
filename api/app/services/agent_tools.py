@@ -684,6 +684,15 @@ def get_audit_log(limit: int = 30, entity_type: str = "", actor: str = "",
     """
     db = SessionLocal()
     try:
+        # The activity log is admin-only on /api/activity (decision 0050), and
+        # this tool reads the same rows, so it asks the same question
+        # (decision 0065). Auth off (dev) has no user and is let through.
+        from ..config import settings
+
+        ctx = tracking.current()
+        caller = db.get(M.User, ctx.user_id) if ctx is not None and ctx.user_id else None
+        if settings.auth_enabled and (caller is None or caller.role != "admin"):
+            return json.dumps({"error": "the audit log is for administrators only"})
         q = db.query(M.AuditLog).order_by(M.AuditLog.ts.desc())
         if not include_tracking:
             q = q.filter(M.AuditLog.action != tracking.REQUEST_ACTION,

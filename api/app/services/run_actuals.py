@@ -1967,7 +1967,7 @@ def leaf_line_usd(db: Session, lines: list[M.RunCostLine], rate_cache: dict | No
     return out
 
 
-def invoice_register(db: Session) -> dict:
+def invoice_register(db: Session, company_ids: list[int] | None = None) -> dict:
     """Every supplier document, where its money went, and whether any of it is
     unaccounted for.
 
@@ -1987,6 +1987,12 @@ def invoice_register(db: Session) -> dict:
         .order_by(M.RunCostDocument.doc_date.desc(), M.RunCostDocument.id.desc())
         .all()
     )
+    if company_ids is not None:
+        # One company's documents (decision 0063): those it was billed for, the
+        # transfers it sent, and the ones no company is named on yet. The
+        # identities hold on any set of whole documents.
+        docs = [d for d in docs if d.company_id is None or d.company_id in company_ids
+                or d.counterparty_company_id in company_ids]
     rate_cache: dict[str, dict[str, float]] = {}
     unknown: set[str] = set()
 
@@ -2083,6 +2089,8 @@ def invoice_register(db: Session) -> dict:
     priced_runs = {r.id for r in db.query(M.ProductionRun)
                    .filter(M.ProductionRun.sale_unit_price.isnot(None)).all()}
     pools = pool_states(db)
+    if company_ids is not None and settings.stock_per_company:
+        pools = {cid: pl for cid, pl in pools.items() if cid in company_ids}
     pool = {(cid, k): v for cid, pl in pools.items() for k, v in pl.items()}
     drawn_by_run: dict[int, float] = defaultdict(float)
     # An UNCHARGED draw has no run to add to. The stock has left the pool — which

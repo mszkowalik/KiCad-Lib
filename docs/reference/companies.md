@@ -41,13 +41,32 @@ project's Settings tab. No route edits or deletes a period.
   not see is never in the scope, whatever the header says.
 * A list route that respects the scope filters `company_id IN scope OR
   company_id IS NULL`, so a row nobody assigned yet stays visible. Today these
-  are `GET /api/projects` (by the current owner), `GET /api/runs` and
-  `GET /api/orders`.
-* The scope is a filter, not access control. A detail route answers for any
-  company.
+  are `GET /api/projects` (by the current owner), `/api/runs`, `/api/orders`,
+  `/api/transfers`, `/api/shipments` (by the order's seller),
+  `/api/flasher/devices` (by the batch's company, else the project's owner) and
+  `/api/invoices` (the documents billed to the company, the transfers it sent,
+  and the ones naming no company). `companies.narrows` skips the filter when
+  the scope holds every company.
+* The scope filters a LIST. Opening ONE record is gated separately, below.
 
 Changing the switcher reloads the page, because every list on it was fetched
 for the old scope.
+
+## Opening one record
+
+`access.require_company_access` is an app dependency (decision 0065). It reads
+the matched route's path parameters and answers 404 to a user of no company the
+record belongs to. An admin, and a request with no user, pass.
+
+* **Every path parameter is classified** in `access.RESOLVERS` (company data,
+  keyed by prefix and name, because `device_id` names two different records)
+  or `access.NOT_COMPANY_DATA` (shared on purpose). The test fails on a new one
+  in neither.
+* **A project belongs to every company that ever owned it**, so a company still
+  opens its own past batches after a move. A document no company is named on
+  yet belongs to everybody.
+* **The agent tools are not behind this gate**: they open their own sessions.
+  `get_audit_log` checks the admin role itself.
 
 ## The backfill
 

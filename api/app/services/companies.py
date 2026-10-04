@@ -152,6 +152,21 @@ def scope_ids(db: Session, request: Request | None) -> list[int]:
     return [cid] if cid in allowed else allowed
 
 
+def narrows(db: Session, scope: list[int]) -> bool:
+    """Whether a scope leaves any company out, so a list must be filtered."""
+    return set(scope) != {c.id for c in all_companies(db)}
+
+
+def projects_owned_by(db: Session, scope: list[int], on: str | None = None) -> set[int]:
+    """The projects whose owner on `on` (default today) is in the scope."""
+    out = set()
+    for p in db.query(M.Project.id).all():
+        owner = owner_on(db, p[0], on)
+        if owner is not None and owner.id in scope:
+            out.add(p[0])
+    return out
+
+
 def set_memberships(db: Session, user: M.User, company_ids: list[int]) -> list[int]:
     known = {c.id for c in all_companies(db)}
     bad = [cid for cid in company_ids if cid not in known]

@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
@@ -8,7 +8,7 @@ from sqlalchemy import text
 from .authgate import AuthGate
 from .config import settings
 from .db import Base, engine
-from .services import tracking
+from .services import access, tracking
 from .routers import (
     account,
     activity,
@@ -57,7 +57,12 @@ settings.ensure_dirs()
 # Who-did-it hooks on every session and on the audit log (decision 0050).
 tracking.install()
 
-app = FastAPI(title="Project Management Platform", version="0.1.0")
+# Decision 0065: a route that opens one record by its id answers 404 to a user
+# of no company that record belongs to. One dependency on every route, so a new
+# route cannot forget it; `tests/auth/test_company_access.py` keeps every path
+# parameter classified.
+app = FastAPI(title="Project Management Platform", version="0.1.0",
+              dependencies=[Depends(access.require_company_access)])
 
 # ORDER MATTERS, and it is the reverse of the reading order: `add_middleware`
 # prepends, so the LAST one added is the OUTERMOST and runs first. CORS must be

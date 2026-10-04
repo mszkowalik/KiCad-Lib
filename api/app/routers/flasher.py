@@ -1395,6 +1395,7 @@ def list_devices(
     sort: str = "last_seen",
     dir: str = "desc",
     f: list[str] = Query([]),
+    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """One PAGE of devices, newest-seen first by default.
@@ -1415,6 +1416,16 @@ def list_devices(
              .outerjoin(M.ProductionRun, M.ProductionRun.id == M.DeviceUnit.production_run_id))
     if project_id:
         query = query.filter(M.DeviceUnit.project_id == project_id)
+    # The header's company (decision 0063): a device of a batch that company
+    # made, or of a project it owns when no batch claimed the device.
+    from ..services import companies as company_svc
+
+    scope = company_svc.scope_ids(db, request)
+    if company_svc.narrows(db, scope):
+        owned = company_svc.projects_owned_by(db, scope)
+        query = query.filter(
+            M.ProductionRun.company_id.in_(scope)
+            | (M.DeviceUnit.production_run_id.is_(None) & M.DeviceUnit.project_id.in_(owned or [0])))
     if status:
         query = query.filter(M.DeviceUnit.last_status == status)
     if production_run_id:

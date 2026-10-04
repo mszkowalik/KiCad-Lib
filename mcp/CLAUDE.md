@@ -14,7 +14,9 @@ removed (decision 0062), and MCP is the only way an agent reaches the platform.
   models, datasheets (including archived PDF content), prices + history,
   stock, projects, snapshots, BOMs, production runs, notes, audit log. When a
   new table/service lands, add a matching read tool; withholding data
-  from it is a bug, not a safety feature.
+  from it is a bug, not a safety feature. An agent reads as its token's user:
+  the audit log needs an admin's token, as Admin → Activity does (decisions
+  0050, 0065).
 - **An agent may view AND edit symbols, footprints and components — and its
   writes AUTO-PUBLISH** (user design 2026-08-23, superseding the draft gate).
   The `propose_*` tools keep their names but publish immediately through

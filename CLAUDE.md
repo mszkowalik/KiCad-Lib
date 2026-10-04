@@ -165,7 +165,8 @@ personal API token. Full rules in `api/CLAUDE.md` (backend) and `web/CLAUDE.md`
 - **A user sees the companies they belong to; an admin sees all of them.**
   7Sigma and 9SIGMA share one platform, a project belongs to one company in
   dated periods, and the header switcher narrows the lists to one company.
-  That switcher is a filter, not a gate. Each company keeps its own stock once
+  A record of another company answers 404 (`services/access.py`, one
+  app-wide dependency). Each company keeps its own stock once
   the admin switch `stock_per_company` is on. Rules in
   [docs/reference/companies.md](docs/reference/companies.md).
 - **Each user gets one URL for KiCad**:

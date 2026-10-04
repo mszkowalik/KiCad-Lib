@@ -590,9 +590,13 @@ class ShipmentSendIn(BaseModel):
 
 
 @router.get("/shipments")
-def list_shipments(status: str = "", db: Session = Depends(get_db)):
+def list_shipments(status: str = "", request: Request = None, db: Session = Depends(get_db)):
     """Every delivery, newest first; `status` narrows to open, sent or cancelled."""
     q = db.query(M.Shipment).filter(M.Shipment.kind == "delivery")
+    scope = company_svc.scope_ids(db, request)   # the header switcher (decision 0063)
+    if company_svc.narrows(db, scope):
+        q = (q.join(M.SalesOrder, M.SalesOrder.id == M.Shipment.order_id)
+             .filter(M.SalesOrder.company_id.in_(scope) | M.SalesOrder.company_id.is_(None)))
     if status:
         if status not in svc.SHIPMENT_STATUSES:
             raise HTTPException(422, f"status must be one of {', '.join(svc.SHIPMENT_STATUSES)}")
