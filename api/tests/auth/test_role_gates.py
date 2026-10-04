@@ -42,6 +42,8 @@ EXPECTED = {
     ("POST", "/api/companies/stock-backfill"),
     # Writing the history's in-house transfers in one go — decision 0064.
     ("POST", "/api/transfers/history"),
+    # Importing 7Sigma's old invoice register — decision 0066.
+    ("POST", "/api/sales-invoices/import"),
     ("POST", "/api/projects/{project_id}/ownership"),
     # The deployment's own configuration — decision 0045.
     ("GET", "/api/settings"),

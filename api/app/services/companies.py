@@ -33,7 +33,8 @@ def _today() -> str:
 
 
 def company_json(c: M.Company, *, full: bool = False) -> dict:
-    out = {"id": c.id, "key": c.key, "name": c.name, "nip": c.nip}
+    out = {"id": c.id, "key": c.key, "name": c.name, "nip": c.nip,
+           "issues_invoices": bool(c.issues_invoices)}
     if full:
         out.update({
             "legal_name": c.legal_name, "address_l1": c.address_l1, "address_l2": c.address_l2,

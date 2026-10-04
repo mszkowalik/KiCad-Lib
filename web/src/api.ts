@@ -1102,6 +1102,8 @@ export interface CompanyRef {
   key: string;
   name: string;
   nip: string;
+  /** whether the platform issues this company's sales invoices (decision 0066) */
+  issues_invoices?: boolean;
 }
 
 /** A company with its seller data, for an admin. */
@@ -1118,6 +1120,7 @@ export interface CompanyDetail extends CompanyRef {
   swift: string;
   payment_terms_days: number;
   started_on: string;
+  issues_invoices?: boolean;
 }
 
 export interface AuthState {
@@ -7852,6 +7855,12 @@ export interface CustomerRow {
   address: string;
   payment_terms_days: number;
   notes: string;
+  /** What an invoice prints for the buyer (decision 0066). */
+  key?: string;
+  legal_name?: string;
+  address_l1?: string;
+  address_l2?: string;
+  country?: string;
   created_at: string | null;
 }
 
@@ -9151,4 +9160,174 @@ export interface TransformationOption {
 
 export function listTransformations(signal?: AbortSignal): Promise<TransformationOption[]> {
   return request(`/api/process-transformations`, { signal });
+}
+
+// ---------------------------------------------------- sales invoices (0066)
+
+export interface SalesLine {
+  position?: number;
+  name: string;
+  qty: string | number;
+  unit_net: string | number;
+  vat_rate: string;
+  unit: string;
+  net?: string;
+  vat?: string;
+  gross?: string;
+}
+
+export interface SalesParty {
+  name: string;
+  address_l1: string;
+  address_l2: string;
+  nip: string;
+  country?: string;
+}
+
+export interface SalesTotals {
+  net: string;
+  vat: string;
+  gross: string;
+  rates: Record<string, { net: string; vat: string }>;
+}
+
+export interface SalesInvoiceBody {
+  title: string;
+  place: string;
+  seller: SalesParty;
+  buyer: SalesParty;
+  lines: SalesLine[];
+  totals: SalesTotals;
+  payment: { due_date: string | null; method: string; paid: boolean; paid_date: string | null; note: string };
+  extra_info: string[];
+  correction?: { of_number: string; of_date: string; of_ksef: string; reason: string;
+                 before_lines: SalesLine[]; before_totals: SalesTotals | null };
+  order?: { lines: SalesLine[]; totals: SalesTotals };
+  notes: string[];
+}
+
+export interface SalesInvoiceRow {
+  id: number;
+  company_id: number;
+  kind: "vat" | "proforma" | "correction" | "advance" | "settlement";
+  status: "draft" | "issued" | "error" | "cancelled";
+  number: string;
+  issue_date: string;
+  sale_date: string;
+  customer_id: number | null;
+  buyer_nip: string;
+  buyer_name: string;
+  currency: string;
+  net_total: string;
+  vat_total: string;
+  gross_total: string;
+  amount_due: string;
+  due_date: string;
+  paid: boolean;
+  paid_date: string;
+  corrects_id: number | null;
+  template_key: string;
+  ksef_number: string;
+  has_qr: boolean;
+  source: string;
+  created_by: string;
+  overdue: boolean;
+  body?: SalesInvoiceBody;
+  corrected_by?: { id: number; number: string; status: string }[];
+}
+
+export interface SalesInvoiceCreate {
+  company_id: number;
+  kind: "vat" | "proforma" | "advance";
+  customer_id?: number | null;
+  issue_date?: string;
+  sale_date?: string;
+  lines?: SalesLine[];
+  payment?: { terms_days?: number; paid?: boolean; paid_date?: string | null; method?: string; note?: string };
+  extra_info?: string[];
+  order_lines?: SalesLine[];
+  advance_gross?: string | number | null;
+}
+
+export interface SalesTemplate {
+  id: number;
+  company_id: number;
+  key: string;
+  description: string;
+  customer_id: number | null;
+  day: string;
+  payment_terms_days: number;
+  lines: SalesLine[];
+  extra_info: string[];
+  active: boolean;
+}
+
+export interface SalesProductRow {
+  id: number;
+  company_id: number;
+  name: string;
+  unit_net: string;
+  vat_rate: string;
+  unit: string;
+  source: string;
+}
+
+export function listSalesInvoices(signal?: AbortSignal): Promise<SalesInvoiceRow[]> {
+  return request("/api/sales-invoices", { signal });
+}
+
+export function getSalesInvoice(id: number, signal?: AbortSignal): Promise<SalesInvoiceRow> {
+  return request(`/api/sales-invoices/${id}`, { signal });
+}
+
+export function nextSalesNumber(companyId: number, kind: string, issueDate: string): Promise<{ number: string }> {
+  return request(`/api/sales-invoices/next-number?company_id=${companyId}&kind=${kind}&issue_date=${issueDate}`);
+}
+
+export function createSalesInvoice(body: SalesInvoiceCreate): Promise<SalesInvoiceRow> {
+  return request("/api/sales-invoices", jsonBody("POST", body));
+}
+
+export function updateSalesInvoice(id: number, body: Record<string, unknown>): Promise<SalesInvoiceRow> {
+  return request(`/api/sales-invoices/${id}`, jsonBody("PATCH", body));
+}
+
+export function cancelSalesInvoice(id: number): Promise<SalesInvoiceRow> {
+  return request(`/api/sales-invoices/${id}/cancel`, { method: "POST" });
+}
+
+export function issueSalesInvoice(id: number, ksefNumber: string, xml: File | null): Promise<SalesInvoiceRow> {
+  const fd = new FormData();
+  if (xml) fd.append("xml", xml);
+  return request(`/api/sales-invoices/${id}/issue?ksef_number=${encodeURIComponent(ksefNumber)}`,
+                 { method: "POST", body: fd });
+}
+
+export function markSalesInvoicePaid(id: number, paidDate: string): Promise<SalesInvoiceRow> {
+  return request(`/api/sales-invoices/${id}/paid`, jsonBody("POST", { paid_date: paidDate }));
+}
+
+export function correctSalesInvoice(id: number, reason: string): Promise<SalesInvoiceRow> {
+  return request(`/api/sales-invoices/${id}/correction`, jsonBody("POST", { reason }));
+}
+
+/** Same-origin paths, for `fileHref` and plain links. */
+export function salesInvoicePdfPath(id: number): string {
+  return `/api/sales-invoices/${id}/pdf`;
+}
+
+export function salesInvoiceXmlPath(id: number): string {
+  return `/api/sales-invoices/${id}/xml`;
+}
+
+export function listSalesTemplates(signal?: AbortSignal): Promise<SalesTemplate[]> {
+  return request("/api/sales-invoice-templates", { signal });
+}
+
+export function generateFromTemplate(id: number, month: string): Promise<SalesInvoiceRow> {
+  return request(`/api/sales-invoice-templates/${id}/generate`, jsonBody("POST", { month }));
+}
+
+export function listSalesProducts(signal?: AbortSignal): Promise<SalesProductRow[]> {
+  return request("/api/sales-products", { signal });
 }

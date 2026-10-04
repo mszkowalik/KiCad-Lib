@@ -1088,6 +1088,8 @@ def order_economics(db: Session, order: M.SalesOrder, unit_cost: dict[int, float
 def customer_json(c: M.Customer) -> dict:
     return {"id": c.id, "name": c.name, "tax_id": c.tax_id, "address": c.address,
             "payment_terms_days": c.payment_terms_days, "notes": c.notes,
+            "key": c.key, "legal_name": c.legal_name, "address_l1": c.address_l1,
+            "address_l2": c.address_l2, "country": c.country,
             "created_at": c.created_at.isoformat() if c.created_at else None}
 
 

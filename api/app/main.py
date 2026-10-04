@@ -38,6 +38,7 @@ from .routers import (
     projects,
     reviews,
     run_costs,
+    sales_invoices as sales_invoices_router,
     settings as settings_router,
     sim_models,
     sim_runs,
@@ -121,6 +122,7 @@ app.include_router(production_runs.router)
 app.include_router(process_router.router)
 app.include_router(companies_router.router)
 app.include_router(transfers_router.router)
+app.include_router(sales_invoices_router.router)
 app.include_router(jlc_stock.router)
 app.include_router(jlc_web.router)
 app.include_router(jlc_import.router)
@@ -714,11 +716,24 @@ _PHASE1_DDL = (
      "ALTER TABLE component_consumptions ADD COLUMN IF NOT EXISTS transfer_line_id integer"),
     ("component_stock_adjustments.company_id",
      "ALTER TABLE component_stock_adjustments ADD COLUMN IF NOT EXISTS company_id integer"),
+    # Decision 0066: sales invoices. The tables arrive through `create_all`.
+    ("customers.key", "ALTER TABLE customers ADD COLUMN IF NOT EXISTS key varchar(40) NOT NULL DEFAULT ''"),
+    ("customers.legal_name",
+     "ALTER TABLE customers ADD COLUMN IF NOT EXISTS legal_name varchar(512) NOT NULL DEFAULT ''"),
+    ("customers.address_l1",
+     "ALTER TABLE customers ADD COLUMN IF NOT EXISTS address_l1 varchar(512) NOT NULL DEFAULT ''"),
+    ("customers.address_l2",
+     "ALTER TABLE customers ADD COLUMN IF NOT EXISTS address_l2 varchar(512) NOT NULL DEFAULT ''"),
+    ("customers.country",
+     "ALTER TABLE customers ADD COLUMN IF NOT EXISTS country varchar(2) NOT NULL DEFAULT 'PL'"),
+    ("companies.issues_invoices",
+     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS issues_invoices boolean NOT NULL DEFAULT false"),
     ("companies seed 7sigma",
      "INSERT INTO companies (key, name, legal_name, nip, address_l1, address_l2, country, email, "
-     "place_of_issue, issuer_name, bank_name, bank_account, swift, payment_terms_days, started_on, created_at) "
+     "place_of_issue, issuer_name, bank_name, bank_account, swift, payment_terms_days, started_on, "
+     "issues_invoices, created_at) "
      "VALUES ('7sigma', '7Sigma', '7Sigma Mateusz Kowalik', '8513262910', 'ul. Szczecińska 2G', "
-     "'72-010 Przęsocin', 'PL', '', '', 'Mateusz Kowalik', '', '', '', 14, '', now()) "
+     "'72-010 Przęsocin', 'PL', '', '', 'Mateusz Kowalik', '', '', '', 14, '', true, now()) "
      "ON CONFLICT (nip) DO NOTHING"),
     ("companies seed 9sigma",
      "INSERT INTO companies (key, name, legal_name, nip, address_l1, address_l2, country, email, "

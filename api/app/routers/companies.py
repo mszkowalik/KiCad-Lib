@@ -41,6 +41,8 @@ class CompanyPatch(BaseModel):
     bank_account: str | None = None
     swift: str | None = None
     payment_terms_days: int | None = None
+    # Decision 0066: whether the platform writes this company's invoices.
+    issues_invoices: bool | None = None
 
 
 @router.patch("/companies/{company_id}")

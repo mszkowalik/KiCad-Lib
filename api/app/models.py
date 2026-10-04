@@ -11,6 +11,7 @@ circular-dependency pain — the DB is wiped and reloaded by the import station,
 and every write path goes through the service layer.
 """
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
@@ -21,6 +22,7 @@ from sqlalchemy import (
     Index,
     Integer,
     LargeBinary,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -1937,6 +1939,9 @@ class Company(Base):
     swift: Mapped[str] = mapped_column(String(20), default="")
     payment_terms_days: Mapped[int] = mapped_column(Integer, default=14)
     started_on: Mapped[str] = mapped_column(String(10), default="")    # ISO date; '' = always
+    # Decision 0066: whether the platform issues this company's sales invoices.
+    # 9SIGMA has its own invoicing system and is only READ from KSeF.
+    issues_invoices: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -3798,6 +3803,15 @@ class Customer(Base):
     address: Mapped[str] = mapped_column(Text, default="")
     payment_terms_days: Mapped[int] = mapped_column(Integer, default=14)
     notes: Mapped[str] = mapped_column(Text, default="")
+    # Decision 0066: what an invoice prints for the buyer. `legal_name` is the
+    # registered name (the short `name` labels lists); `key` is the short handle
+    # 7Sigma's script used ("zpue"). Customers are shared by both companies and
+    # matched by `tax_id` (NIP).
+    key: Mapped[str] = mapped_column(String(40), default="")
+    legal_name: Mapped[str] = mapped_column(String(512), default="")
+    address_l1: Mapped[str] = mapped_column(String(512), default="")
+    address_l2: Mapped[str] = mapped_column(String(512), default="")
+    country: Mapped[str] = mapped_column(String(2), default="PL")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -3996,3 +4010,100 @@ class RepairCostLine(Base):
     note: Mapped[str] = mapped_column(String(300), default="")
 
     event: Mapped[DeviceEvent] = relationship(back_populates="cost_lines")
+
+
+# ---------------------------------------------------- sales invoices (0066)
+class SalesInvoice(Base):
+    """A sales document a company issued: a VAT invoice, a proforma, a
+    correction, an advance or a settlement invoice (decision 0066).
+
+    The DOCUMENT is `body` — seller and buyer as printed, the positions, the
+    totals per rate, payment, bank account, extra lines, the correction and
+    advance blocks — kept whole because an invoice is read as one printed page
+    and imported history must stay exactly as it was issued, arithmetic errors
+    included (`body.notes` says so). The typed columns are what lists, filters,
+    numbering and the books need. Amounts are exact decimals.
+
+    `status`: `draft` (a VAT document before KSeF accepted it), `issued`,
+    `error` (issued with a mistake a correction fixes), `cancelled` (a draft
+    never sent). A proforma is issued when written: it never goes to KSeF.
+    """
+
+    __tablename__ = "sales_invoices"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(Integer)                      # the seller
+    kind: Mapped[str] = mapped_column(String(20), default="vat")          # vat|proforma|correction|advance|settlement
+    status: Mapped[str] = mapped_column(String(20), default="draft")      # draft|issued|error|cancelled
+    number: Mapped[str] = mapped_column(String(60), default="")
+    issue_date: Mapped[str] = mapped_column(String(10), default="")
+    sale_date: Mapped[str] = mapped_column(String(10), default="")
+    customer_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    buyer_nip: Mapped[str] = mapped_column(String(40), default="")
+    buyer_name: Mapped[str] = mapped_column(String(512), default="")
+    currency: Mapped[str] = mapped_column(String(3), default="PLN")
+    net_total: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    vat_total: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    gross_total: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    amount_due: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    due_date: Mapped[str] = mapped_column(String(10), default="")
+    paid: Mapped[bool] = mapped_column(Boolean, default=False)
+    paid_date: Mapped[str] = mapped_column(String(10), default="")
+    corrects_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)     # soft ptr
+    template_key: Mapped[str] = mapped_column(String(40), default="")
+    ksef_number: Mapped[str] = mapped_column(String(64), default="")
+    ksef_hash: Mapped[str] = mapped_column(String(64), default="")
+    ksef_received_at: Mapped[str] = mapped_column(String(40), default="")
+    # MinIO keys: the official XML downloaded from KSeF once it is issued.
+    official_xml_key: Mapped[str] = mapped_column(String(300), default="")
+    source: Mapped[str] = mapped_column(String(40), default="platform")    # platform|script|ksef
+    body: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        Index("ix_sales_invoices_company_date", "company_id", "issue_date"),
+        Index("ix_sales_invoices_number", "company_id", "kind", "number"),
+    )
+
+
+class SalesInvoiceTemplate(Base):
+    """A recurring invoice: the buyer and positions issued again every month
+    (7Sigma's `cykliczne.json`). "Generate for a month" writes a draft dated the
+    template's day of that month (decision 0066)."""
+
+    __tablename__ = "sales_invoice_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(Integer)
+    key: Mapped[str] = mapped_column(String(40))
+    description: Mapped[str] = mapped_column(String(500), default="")
+    customer_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    day: Mapped[str] = mapped_column(String(10), default="last")          # "last" or 1..28
+    payment_terms_days: Mapped[int] = mapped_column(Integer, default=14)
+    lines: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    extra_info: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (UniqueConstraint("company_id", "key", name="uq_sales_template_key"),)
+
+
+class SalesProduct(Base):
+    """A company's price list: the name a position is invoiced under, its
+    usual net price, rate and unit (7Sigma's `produkty.json`)."""
+
+    __tablename__ = "sales_products"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(Integer)
+    name: Mapped[str] = mapped_column(String(512))
+    unit_net: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    vat_rate: Mapped[str] = mapped_column(String(10), default="23")
+    unit: Mapped[str] = mapped_column(String(20), default="szt.")
+    source: Mapped[str] = mapped_column(String(100), default="")          # the document the price came from
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (UniqueConstraint("company_id", "name", name="uq_sales_product_name"),)

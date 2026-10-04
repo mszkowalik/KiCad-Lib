@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-10-04 (sales invoices)
+
+Not deployed yet. Decision
+[0066](docs/decisions/0066-the-platform-issues-7sigmas-sales-invoices.md). The
+rules are in [docs/reference/sales-invoices.md](docs/reference/sales-invoices.md).
+
+- **Production → Sales invoices writes 7Sigma's invoices.** A VAT or advance
+  invoice is saved as a draft with the next number of its series. "XML for
+  KSeF" downloads the FA(3) file, checked against the Ministry's schema, to
+  upload in the KSeF Taxpayer Application on the invoice's date. "Issued in
+  KSeF" records the KSeF number, and with the official XML the PDF prints the
+  KSeF QR code. A proforma is issued at once. A correction is made from the
+  invoice it corrects.
+- **Recurring invoices**: "Draft for <month>" writes the month's ZPUE invoice
+  dated the last day of the month.
+- **The platform numbers 7Sigma's documents from 2026-10-04.** The script's
+  register, buyers, recurring invoice and price list are imported once by an
+  admin.
+- **Customers carry the data an invoice prints** (legal name, two address
+  lines, country), and one NIP is one customer.
+
 ## 2026-10-04 (company access)
 
 Not deployed yet. Decision

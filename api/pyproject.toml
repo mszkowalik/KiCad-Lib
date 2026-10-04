@@ -27,6 +27,11 @@ dependencies = [
     # Password hashing for the login page. argon2id is the current OWASP
     # recommendation and the wheel needs no compiler on linux/amd64.
     "argon2-cffi>=23.1",
+    # Sales invoices (decision 0066). segno draws the KSeF verification QR code
+    # on an invoice PDF (pure Python, BSD); xmlschema checks every FA(3) XML
+    # against the Ministry's schema before anybody uploads it (pure Python, MIT).
+    "segno>=1.6",
+    "xmlschema>=3.4",
     # 2D field solver (app/services/fieldsolver): FEM over a Triangle mesh.
     # NOTE ON LICENCE: `triangle` wraps Shewchuk's Triangle, which is free for
     # personal and research use but NOT for commercial distribution. It is fine

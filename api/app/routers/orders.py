@@ -60,6 +60,12 @@ class CustomerIn(BaseModel):
     address: str = ""
     payment_terms_days: int = 14
     notes: str = ""
+    # What an invoice prints for the buyer (decision 0066).
+    key: str = ""
+    legal_name: str = ""
+    address_l1: str = ""
+    address_l2: str = ""
+    country: str = "PL"
 
 
 class CustomerPatch(BaseModel):
@@ -68,6 +74,22 @@ class CustomerPatch(BaseModel):
     address: str | None = None
     payment_terms_days: int | None = None
     notes: str | None = None
+    key: str | None = None
+    legal_name: str | None = None
+    address_l1: str | None = None
+    address_l2: str | None = None
+    country: str | None = None
+
+
+def _same_nip(db: Session, tax_id: str, exclude: int | None = None) -> M.Customer | None:
+    """Customers are matched by NIP (decision 0066): one buyer, one row."""
+    import re
+
+    want = re.sub(r"\D", "", tax_id or "")
+    if not want:
+        return None
+    return next((c for c in db.query(M.Customer).all()
+                 if c.id != exclude and re.sub(r"\D", "", c.tax_id or "") == want), None)
 
 
 @router.get("/customers")
@@ -82,8 +104,13 @@ def create_customer(body: CustomerIn, request: Request, db: Session = Depends(ge
         raise HTTPException(422, "a customer needs a name")
     if db.query(M.Customer).filter(M.Customer.name == name).first():
         raise HTTPException(409, f"customer {name!r} already exists")
+    if (twin := _same_nip(db, body.tax_id)) is not None:
+        raise HTTPException(409, f"NIP {body.tax_id} is already the customer {twin.name!r}")
     c = M.Customer(name=name, tax_id=body.tax_id.strip(), address=body.address,
-                   payment_terms_days=body.payment_terms_days, notes=body.notes)
+                   payment_terms_days=body.payment_terms_days, notes=body.notes,
+                   key=body.key.strip(), legal_name=body.legal_name.strip(),
+                   address_l1=body.address_l1.strip(), address_l2=body.address_l2.strip(),
+                   country=(body.country or "PL").strip().upper()[:2])
     db.add(c)
     db.flush()
     audit(db, "customer.create", "customer", c.id, {"name": name}, actor=actor_of(request))
@@ -102,6 +129,8 @@ def update_customer(customer_id: int, body: CustomerPatch, request: Request, db:
             v = v.strip() if k != "address" else v
         if k == "name" and not v:
             raise HTTPException(422, "a customer needs a name")
+        if k == "tax_id" and (twin := _same_nip(db, v, exclude=c.id)) is not None:
+            raise HTTPException(409, f"NIP {v} is already the customer {twin.name!r}")
         if getattr(c, k) != v:
             before[k] = getattr(c, k)
             setattr(c, k, v)

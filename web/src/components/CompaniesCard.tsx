@@ -81,6 +81,12 @@ function CompanyForm({ company, onSaved }: { company: CompanyDetail; onSaved: (c
             />
           </Field>
         ))}
+        <Field label="Sales invoices">
+          <CheckField checked={!!draft.issues_invoices}
+            onChange={(v) => setDraft((d) => ({ ...d, issues_invoices: v }))}>
+            The platform writes this company's invoices
+          </CheckField>
+        </Field>
         <Field label="Payment terms (days)">
           <NumberInput
             className="text"
