@@ -1121,6 +1121,9 @@ export interface CompanyDetail extends CompanyRef {
   payment_terms_days: number;
   started_on: string;
   issues_invoices?: boolean;
+  /** how the company page estimates income tax (decision 0068) */
+  tax_form?: string;
+  lump_rate?: number;
 }
 
 export interface AuthState {
@@ -2829,6 +2832,8 @@ export interface RunCostLineRow {
   allocate: string;
   /** why a position is charged to nobody, "" otherwise */
   exclude_reason?: string;
+  /** with allocate="overhead": the kind of company cost (decision 0068) */
+  overhead_category?: string;
   component_id: number | null;
   /** the linked library part's name, "" when the line is not linked */
   component_name?: string;
@@ -9399,4 +9404,42 @@ export function skipKsefInvoice(id: number, reason: string): Promise<KsefInboxRo
 
 export function ksefXmlPath(id: number): string {
   return `/api/ksef/inbox/${id}/xml`;
+}
+
+// ---------------------------------------------------- company books (0068)
+
+export interface BooksMonth {
+  month: string;
+  revenue_net: string;
+  advances_net: string;
+  costs_net: string;
+  costs: Record<string, string>;
+  income: string;
+  sales_vat: string;
+  purchase_vat: string;
+  vat_estimate: string;
+  income_tax_estimate: string | null;
+  accountant: Record<string, { id: number; amount: string; status: string; due_date: string; paid_date: string; note: string }>;
+}
+
+export interface CompanyBooks {
+  company_id: number;
+  company: string;
+  year: number;
+  tax_form: string;
+  lump_rate: string;
+  months: BooksMonth[];
+  totals: Record<string, string>;
+  overhead: Record<string, string>;
+  overhead_labels: Record<string, string>;
+}
+
+export function getCompanyBooks(companyId: number, year: number, signal?: AbortSignal): Promise<CompanyBooks> {
+  return request(`/api/companies/${companyId}/books?year=${year}`, { signal });
+}
+
+export function putTaxEntry(companyId: number, body: {
+  period: string; kind: string; amount: number; status: string; due_date?: string; paid_date?: string; note?: string;
+}): Promise<{ id: number }> {
+  return request(`/api/companies/${companyId}/tax-entries`, jsonBody("PUT", body));
 }

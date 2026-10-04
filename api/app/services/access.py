@@ -141,6 +141,8 @@ def _add(prefixes: list[str], param: str, fn: Callable) -> None:
 
 
 _add(["*"], "project_id", _project)
+# A company's own pages (its books, decision 0068) are that company's data.
+_add(["/api/companies/"], "company_id", lambda db, c: {int(c)})
 _add(["*"], "run_id", _run)
 _add(["*"], "order_id", _order)
 _add(["/api/flasher/production-runs/"], "production_run_id", _run)

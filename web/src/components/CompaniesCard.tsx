@@ -91,6 +91,23 @@ function CompanyForm({ company, onSaved }: { company: CompanyDetail; onSaved: (c
             The platform writes this company's invoices
           </CheckField>
         </Field>
+        <Field label="Income tax form" hint="Only for the estimate on the company page.">
+          <select className="text" value={draft.tax_form ?? ""}
+            onChange={(e) => setDraft((d) => ({ ...d, tax_form: e.target.value }))}>
+            <option value="">not stated (no estimate)</option>
+            <option value="pit_linear">PIT linear 19%</option>
+            <option value="pit_scale">PIT scale 12% / 32%</option>
+            <option value="lump">Lump sum (ryczałt) on revenue</option>
+            <option value="cit_9">CIT 9%</option>
+            <option value="cit_19">CIT 19%</option>
+          </select>
+        </Field>
+        {draft.tax_form === "lump" ? (
+          <Field label="Lump sum rate (%)">
+            <NumberInput className="text" value={draft.lump_rate ?? 0} min={0} step={0.5}
+              onChange={(v) => setDraft((d) => ({ ...d, lump_rate: v }))} />
+          </Field>
+        ) : null}
         <Field label="Payment terms (days)">
           <NumberInput
             className="text"

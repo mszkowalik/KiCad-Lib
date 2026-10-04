@@ -27,6 +27,7 @@ import Stock from "./pages/Stock";
 import Transfers from "./pages/Transfers";
 import SalesInvoices from "./pages/SalesInvoices";
 import KsefInbox from "./pages/KsefInbox";
+import CompanyBooks from "./pages/CompanyBooks";
 import NewComponent from "./pages/NewComponent";
 import Orders from "./pages/Orders";
 import Runs from "./pages/Runs";
@@ -105,6 +106,7 @@ const PRODUCTION_LINKS = [
   { to: "/production/invoices", label: "Invoices" },
   { to: "/production/sales-invoices", label: "Sales invoices" },
   { to: "/production/ksef", label: "KSeF" },
+  { to: "/production/company", label: "Company books" },
   { to: "/production/stock", label: "Stock" },
   { to: "/production/transfers", label: "Transfers" },
   { to: "/production/jlc", label: "JLC" },
@@ -245,6 +247,7 @@ function Shell() {
             <Route path="/production/transfers" element={<Transfers />} />
             <Route path="/production/sales-invoices" element={<SalesInvoices />} />
             <Route path="/production/ksef" element={<KsefInbox />} />
+            <Route path="/production/company" element={<CompanyBooks />} />
             <Route path="/production/jlc" element={<ProductionJlc />} />
             <Route path="/production/deployments" element={<Deployments />} />
             <Route path="/production/files" element={<FlasherAdmin />} />

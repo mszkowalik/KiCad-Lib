@@ -47,6 +47,8 @@ class LineIn(BaseModel):
     # Why this position is charged to nobody. Stored since the `excluded` bucket
     # got a reason, writable from nowhere until decision 0045.
     exclude_reason: str = ""
+    # Decision 0068: with allocate="overhead", the kind of company cost.
+    overhead_category: str = ""
     run_id: int | None = None
     project_id: int | None = None
     # Decision 0058 §4: a conversion cost, aimed at one process transformation.
@@ -190,6 +192,7 @@ class LinePatch(BaseModel):
     plan_item_id: int | None = None
     notes: str | None = None
     exclude_reason: str | None = None
+    overhead_category: str | None = None
     run_id: int | None = None
     project_id: int | None = None
     transformation_id: int | None = None
@@ -249,7 +252,8 @@ BASES = {"per_device", "per_run"}
 # "pooled" = stock, stated outright (decision 0045); "excluded" = recorded and
 # charged to nobody on purpose; "none" = nothing has been said, which on a line
 # naming no run and no project is a DEFECT the register reports as `unassigned`.
-ALLOCATES = {"none", "pooled", "by_value", "by_qty", "excluded"}
+# "overhead" = a company cost of no product, under a category (decision 0068).
+ALLOCATES = {"none", "pooled", "by_value", "by_qty", "excluded", "overhead"}
 def _guard_purchase_loss(db: Session, losses: list[dict], what: str) -> None:
     """Refuse a change that would leave draws with no purchase behind them.
 
@@ -538,6 +542,9 @@ def _check_line(body: LineIn | LinePatch | ChildIn) -> None:
     allocate = getattr(body, "allocate", None)
     if allocate is not None and allocate not in ALLOCATES:
         raise HTTPException(422, f"allocate must be one of {sorted(ALLOCATES)}")
+    cat = getattr(body, "overhead_category", None)
+    if cat and cat not in run_actuals.OVERHEAD_CATEGORIES:
+        raise HTTPException(422, f"overhead category must be one of {sorted(run_actuals.OVERHEAD_CATEGORIES)}")
 
 
 def _check_allocate(step: str | None, allocate: str | None) -> None:
@@ -550,6 +557,8 @@ def _check_allocate(step: str | None, allocate: str | None) -> None:
     that belongs on the stock is landed cost and rides on the parts:
     `by_value` / `by_qty`.
     """
+    if allocate == run_actuals.OVERHEAD and step is not None and cost_steps.is_stock_step(step):
+        raise HTTPException(422, f"a position on stock step {step!r} is stock, not a company overhead")
     if allocate == run_actuals.POOLED and step is not None \
             and not cost_steps.is_stock_step(step):
         raise HTTPException(422, {
@@ -657,6 +666,18 @@ def _one_destination(f: dict) -> dict:
     """A patch that sends a position to a batch, a project, the pool or nobody
     takes it OFF its transformation, and one aimed at a transformation clears
     the rest — every editor writes the whole destination (decision 0045)."""
+    if f.get("allocate") == run_actuals.OVERHEAD:
+        # A company overhead names no batch, project or transformation, and
+        # needs its category (decision 0068).
+        f["run_id"], f["project_id"], f["transformation_id"] = None, None, None
+        f["basis"] = "per_run"
+        cat = (f.get("overhead_category") or "other").strip()
+        if cat not in run_actuals.OVERHEAD_CATEGORIES:
+            raise HTTPException(422, f"overhead category must be one of {sorted(run_actuals.OVERHEAD_CATEGORIES)}")
+        f["overhead_category"] = cat
+        return f
+    if f.get("allocate") not in (None, run_actuals.OVERHEAD) and "overhead_category" not in f:
+        f["overhead_category"] = ""
     if f.get("transformation_id") is not None:
         f["run_id"], f["project_id"] = None, None
         f["allocate"] = "none"

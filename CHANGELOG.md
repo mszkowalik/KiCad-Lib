@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-10-04 (company overhead and books)
+
+Not deployed yet. Decision
+[0068](docs/decisions/0068-a-company-has-overhead-and-books.md). The rules are
+in [docs/reference/company-books.md](docs/reference/company-books.md).
+
+- **A supplier position can be company overhead.** "Goes to" offers
+  "Overhead · Leasing", "· Phone and internet", "· Accounting" and nine more.
+  Such a position is the buyer company's cost, of no product, and no longer
+  reads as unassigned.
+- **Production → Company books** shows each month's revenue, costs, income,
+  estimated VAT and estimated income tax for one company, beside the
+  accountant's VAT, PIT or CIT, ZUS and health figures, which a month's row
+  takes as estimated or final. The income tax is estimated only once the tax
+  form is set on Admin → Companies.
+
 ## 2026-10-04 (KSeF read-out and invoice tools for agents)
 
 Not deployed yet. Decision

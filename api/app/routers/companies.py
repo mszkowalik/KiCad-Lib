@@ -43,6 +43,9 @@ class CompanyPatch(BaseModel):
     payment_terms_days: int | None = None
     # Decision 0066: whether the platform writes this company's invoices.
     issues_invoices: bool | None = None
+    # Decision 0068: how the company page estimates income tax.
+    tax_form: str | None = None
+    lump_rate: float | None = None
 
 
 @router.patch("/companies/{company_id}")
@@ -50,6 +53,10 @@ def update_company(company_id: int, body: CompanyPatch, db: Session = Depends(ge
                    admin: M.User = Depends(require_admin)):
     c = svc.get(db, company_id)
     changed = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    from ..services import company_books
+
+    if "tax_form" in changed and changed["tax_form"] not in ("", *company_books.TAX_FORMS):
+        raise HTTPException(422, f"tax_form is one of {', '.join(company_books.TAX_FORMS)} or empty")
     for k, v in changed.items():
         setattr(c, k, v.strip() if isinstance(v, str) else v)
     # The account number is not written to the audit row: the log is readable
@@ -102,6 +109,37 @@ def stock_backfill(body: StockBackfillIn, db: Session = Depends(get_db),
         db.commit()
     res["still_without_company"] = svc.stock_without_company(db)
     return res
+
+
+@router.get("/companies/{company_id}/books")
+def books(company_id: int, year: int, db: Session = Depends(get_db)):
+    """The company's month-by-month estimate beside the accountant's figures
+    (decision 0068). The company gate keeps it to the company's members."""
+    from ..services import company_books
+
+    return company_books.year(db, company_id, year)
+
+
+class TaxEntryIn(BaseModel):
+    period: str
+    kind: str
+    amount: float
+    status: str = "final"
+    due_date: str = ""
+    paid_date: str = ""
+    note: str = Field(default="", max_length=500)
+
+
+@router.put("/companies/{company_id}/tax-entries")
+def put_tax_entry(company_id: int, body: TaxEntryIn, db: Session = Depends(get_db)):
+    """The accountant's figure for one month and one tax, replacing the last."""
+    from ..services import company_books
+
+    row = company_books.set_entry(db, company_id, actor=acting_name(), **body.model_dump())
+    audit(db, "company.tax_entry", "company_tax_entry", row.id,
+          {"period": row.period, "kind": row.kind, "amount": str(row.amount), "status": row.status})
+    db.commit()
+    return {"id": row.id, "period": row.period, "kind": row.kind, "amount": str(row.amount), "status": row.status}
 
 
 @router.get("/projects/{project_id}/ownership")

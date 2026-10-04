@@ -78,6 +78,16 @@ EXCLUDED = "excluded"
 # about. `POOLED` says it outright, so "nobody has decided yet" stops being
 # spelled the same way as "it goes to stock".
 POOLED = "pooled"
+# `allocate` value meaning "a cost of the COMPANY, not of any product"
+# (decision 0068): leasing, telephone, software, accounting. The document's
+# buyer carries it, under the position's `overhead_category`.
+OVERHEAD = "overhead"
+OVERHEAD_CATEGORIES = {
+    "leasing": "Leasing", "telecom": "Phone and internet", "software": "Software and IT services",
+    "accounting": "Accounting", "office": "Office", "travel": "Travel", "car": "Car and fuel",
+    "insurance": "Insurance", "bank": "Bank fees", "rent": "Rent", "marketing": "Marketing",
+    "training": "Training", "other": "Other",
+}
 
 
 def live_consumption(db: Session, **filters):
@@ -296,6 +306,7 @@ def line_json(li: M.RunCostLine, doc: M.RunCostDocument | None = None,
         # `excluded` bucket got a reason column, and emitted nowhere — so the UI
         # could neither show it nor ask for it (decision 0045).
         "exclude_reason": li.exclude_reason or "",
+        "overhead_category": li.overhead_category or "",
         "component_id": li.component_id,
         # The library part's name, so the Invoices view can show WHICH part a
         # line is linked to instead of only an id. `db.get` is a primary-key
@@ -338,6 +349,8 @@ def line_destination(li: M.RunCostLine, doc: M.RunCostDocument | None) -> tuple[
     """
     if li.allocate == EXCLUDED:
         return "excluded", None
+    if li.allocate == OVERHEAD:
+        return "overhead", None
     # A conversion cost (decision 0058 §4) is part of what one transformation's
     # output lot is worth. It comes before the document's own batch, or a
     # document filed against a batch would claim it as a direct cost too.
@@ -473,6 +486,8 @@ def document_json(doc: M.RunCostDocument, with_lines: bool = True,
             # Conversion costs: money in a prepared part's lot, decision 0058 §4.
             "transformation": _round(by_dest.get("transformation", 0.0)),
             "excluded": _round(by_dest.get("excluded", 0.0)),
+            # A company cost of no product (decision 0068).
+            "overhead": _round(by_dest.get("overhead", 0.0)),
             "unassigned": _round(by_dest.get("unassigned", 0.0)),
             "residual": _round(residual),
             # The opposite of `residual`: children claiming more than the header.
@@ -2035,7 +2050,7 @@ def invoice_register(db: Session, company_ids: list[int] | None = None) -> dict:
         j["lines_total_usd"] = _round(to_usd(j["lines_total"] or 0.0, doc))
         j["assignment_usd"] = {k: _round(to_usd(a[k] or 0.0, doc))
                                for k in ("run", "project", "pool", "transformation", "excluded",
-                                         "unassigned", "residual", "overallocated")}
+                                         "overhead", "unassigned", "residual", "overallocated")}
         j["project_name"] = projects.get(doc.project_id or 0, "")
         j["run_label"] = (runs.get(doc.run_id or 0) or {}).get("label", "")
         rows.append(j)
@@ -2057,9 +2072,9 @@ def invoice_register(db: Session, company_ids: list[int] | None = None) -> dict:
         # arithmetic and must hold exactly; `printed - lines` is a transcription
         # difference and is a fact about the data.
         tot["lines"] += to_usd(j["lines_total"] or 0.0, doc)
-        for k in ("run", "project", "pool", "transformation", "excluded", "unassigned",
+        for k in ("run", "project", "pool", "transformation", "excluded", "overhead", "unassigned",
                   "residual", "overallocated"):
-            tot[k] += to_usd(a[k] or 0.0, doc)
+            tot[k] += to_usd(a.get(k) or 0.0, doc)
         _slip = to_usd(printed, doc) - to_usd(j["lines_total"] or 0.0, doc)
         if abs(_slip) > 0.0005:
             untranscribed.append({
@@ -2188,6 +2203,8 @@ def invoice_register(db: Session, company_ids: list[int] | None = None) -> dict:
             # Recorded so documents reconcile, charged to nobody on purpose:
             # reclaimable import VAT, and prepaid components already in the pool.
             "excluded_usd": _round(tot["excluded"]),
+            # Company costs of no product (decision 0068).
+            "to_overhead_usd": _round(tot["overhead"]),
             "unassigned_usd": _round(tot["unassigned"]),
             "residual_usd": _round(tot["residual"]),
             # Children claiming more than the header they split. Sub-cent by
@@ -2219,8 +2236,8 @@ def invoice_register(db: Session, company_ids: list[int] | None = None) -> dict:
             # so the number nobody could fix was also the number nobody could see
             # (decision 0048).
             "gap_usd": _round(tot["lines"] - tot["run"] - tot["project"] - tot["pool"]
-                              - tot["transformation"] - tot["excluded"] - tot["unassigned"]
-                              - tot["residual"] + tot["overallocated"]),
+                              - tot["transformation"] - tot["excluded"] - tot["overhead"]
+                              - tot["unassigned"] - tot["residual"] + tot["overallocated"]),
             # `printed - lines`, summed: money that left the company and is not on
             # any line. Real, small and NOT fixable by editing a line — JLC prints
             # a rounded total while our unit prices carry more decimals. Reported

@@ -15,6 +15,7 @@ in one document. Open the document before you change the module.
 | Cost plans, invoices, stock, orders, sales | `cost_state.py`, `material.py`, `stock.py`, `orders.py` | [docs/reference/production-economics.md](../../../docs/reference/production-economics.md) |
 | The two companies, project ownership over time, the company scope of a list, stock per company, in-house transfers | `companies.py`, `company_backfill.py`, `transfers.py` | [docs/reference/companies.md](../../../docs/reference/companies.md) |
 | Sales invoices a company issues: amounts, series, FA(3), PDF, import | `invoicing/` | [docs/reference/sales-invoices.md](../../../docs/reference/sales-invoices.md) |
+| A company's books: revenue, costs, VAT and income-tax estimates, the accountant's figures, overhead categories | `company_books.py` | [docs/reference/company-books.md](../../../docs/reference/company-books.md) |
 | Reading KSeF: tokens, the inbox, sales links, purchase import | `ksef/` | [docs/reference/ksef.md](../../../docs/reference/ksef.md) |
 | Suppliers, and which source prices a part | `suppliers.py`, `ladder.py` | [docs/reference/suppliers.md](../../../docs/reference/suppliers.md) |
 | Production processes, twins, crafting a batch, the assembly step, costs linked to steps, rebuilding old batches into twins, the bench naming and marking, twin prices, the project's materials from the process, prepared parts, conversion costs | `process.py`, `twins.py`, `twin_rebuild.py` | [docs/reference/processes.md](../../../docs/reference/processes.md) |
@@ -244,10 +245,11 @@ defect and is still reported.
 Three rules for anyone touching this:
 
 - **`line_destination` is the ONE place the order lives**, and the UI mirrors it
-  (`InvoiceLinesTable.goesToOf`). The order matters: `excluded` beats a named
-  run, a named run beats `pooled`, and `pooled` beats the DOCUMENT's own
-  destination. Drift between the two shows the operator a destination the money
-  does not go to.
+  (`InvoiceLinesTable.goesToOf`). The order matters: `excluded`, then
+  `overhead` (a company cost of a category, decision 0068), beat a named run, a
+  named run beats `pooled`, and `pooled` beats the DOCUMENT's own destination.
+  Drift between the two shows the operator a destination the money does not go
+  to. A new bucket enters the register's identity (`gap_usd`) too.
 - **An editor writes all four of `run_id`, `project_id`, `allocate` and `basis`,
   never a subset.** The old one only ever ADDED `allocate: "excluded"`, so moving
   an excluded position onto a batch left it charged to nobody while the screen

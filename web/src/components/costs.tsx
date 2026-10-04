@@ -90,6 +90,15 @@ export function StepSelect({
  */
 export type GoesTo = "" | "inherit" | "pool" | "nobody" | string;
 
+/** Company overhead categories (decision 0068): `overhead:<key>` as a destination.
+ *  The same keys as `run_actuals.OVERHEAD_CATEGORIES`. */
+export const OVERHEAD_CATEGORIES: [string, string][] = [
+  ["leasing", "Leasing"], ["telecom", "Phone and internet"], ["software", "Software and IT services"],
+  ["accounting", "Accounting"], ["office", "Office"], ["travel", "Travel"], ["car", "Car and fuel"],
+  ["insurance", "Insurance"], ["bank", "Bank fees"], ["rent", "Rent"], ["marketing", "Marketing"],
+  ["training", "Training"], ["other", "Other"],
+];
+
 /** A transformation as a destination option: `t:<id>`, decision 0058 §4. */
 export interface TransformOption {
   id: number;
@@ -161,6 +170,11 @@ export function GoesToSelect({
         </option>
       ))}
       {transformOptions(transformations, value)}
+      <optgroup label="Company overhead (no product)">
+        {OVERHEAD_CATEGORIES.map(([k, t]) => (
+          <option key={`overhead:${k}`} value={`overhead:${k}`}>Overhead · {t}</option>
+        ))}
+      </optgroup>
       <option value="nobody">Nobody, on purpose</option>
     </select>
   );
@@ -279,6 +293,8 @@ export function HowSelect({
   if (goesTo === "") return <span className="muted">—</span>;
   // A conversion cost goes into the transformation's lot; nothing to choose.
   if (goesTo.startsWith("t:")) return <span className="muted">into the prepared part's lot</span>;
+  // A company overhead is the buyer's cost as a whole; there is no unit to divide by.
+  if (goesTo.startsWith("overhead:")) return <span className="muted">the buyer company's cost</span>;
   const opts = goesTo === "pool"
     // A non-part cannot BE stock; it can only ride onto the stock as landed
     // cost. Offering "it is stock" for a freight line would produce a pool

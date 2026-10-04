@@ -1941,7 +1941,12 @@ class Company(Base):
     started_on: Mapped[str] = mapped_column(String(10), default="")    # ISO date; '' = always
     # Decision 0066: whether the platform issues this company's sales invoices.
     # 9SIGMA has its own invoicing system and is only READ from KSeF.
-    issues_invoices: Mapped[bool] = mapped_column(Boolean, default=False)
+    issues_invoices: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    # Decision 0068: how income tax is estimated on the company page. "" means
+    # not stated, and then no tax is estimated: pit_linear | pit_scale | lump |
+    # cit_9 | cit_19. `lump_rate` is the ryczałt percentage on revenue.
+    tax_form: Mapped[str] = mapped_column(String(20), default="", server_default="")
+    lump_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -2509,6 +2514,9 @@ class RunCostLine(Base):
     # none|by_value|by_qty — a freight/duty line spread over the part lines of
     # the same document (derived on read; the carrier row is never consumed).
     allocate: Mapped[str] = mapped_column(String(20), default="none")
+    # Decision 0068: with `allocate="overhead"`, what kind of company cost this
+    # is (leasing, telecom, ...). The company is the document's buyer.
+    overhead_category: Mapped[str] = mapped_column(String(40), default="")
     # WHY this line is charged to nobody. `allocate='excluded'` is a legal bucket
     # in the conservation identity, so an exclusion is invisible to every check
     # the platform has: all 115 imported manufacturing lines were once excluded —
@@ -4175,3 +4183,28 @@ class KsefInvoice(Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (Index("ix_ksef_invoices_company_side", "company_id", "side", "status"),)
+
+
+# ---------------------------------------------------- company books (0068)
+class CompanyTaxEntry(Base):
+    """A tax or contribution for one month, as the accountant computed it
+    (decision 0068): VAT, PIT, CIT, ZUS, health. `status` is `estimated` until
+    the accountant's figure is `final`, the way a batch has a planned and an
+    actual cost. The page sets these beside the platform's own estimate."""
+
+    __tablename__ = "company_tax_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(Integer)
+    period: Mapped[str] = mapped_column(String(7))                       # YYYY-MM
+    kind: Mapped[str] = mapped_column(String(20))                        # vat|pit|cit|zus|health|other
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    status: Mapped[str] = mapped_column(String(20), default="final")     # estimated | final
+    due_date: Mapped[str] = mapped_column(String(10), default="")
+    paid_date: Mapped[str] = mapped_column(String(10), default="")
+    note: Mapped[str] = mapped_column(String(500), default="")
+    entered_by: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (UniqueConstraint("company_id", "period", "kind", name="uq_company_tax_entry"),)

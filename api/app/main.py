@@ -721,6 +721,13 @@ _PHASE1_DDL = (
     # Decision 0067: the seller's tax id on a supplier document (KSeF imports).
     ("run_cost_documents.seller_tax_id",
      "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS seller_tax_id varchar(40) NOT NULL DEFAULT ''"),
+    # Decision 0068: a supplier position can be a company overhead of a category.
+    ("run_cost_lines.overhead_category",
+     "ALTER TABLE run_cost_lines ADD COLUMN IF NOT EXISTS overhead_category varchar(40) NOT NULL DEFAULT ''"),
+    ("companies.tax_form",
+     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS tax_form varchar(20) NOT NULL DEFAULT ''"),
+    ("companies.lump_rate",
+     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS lump_rate numeric(5,2) NOT NULL DEFAULT 0"),
     # Decision 0066: sales invoices. The tables arrive through `create_all`.
     ("customers.key", "ALTER TABLE customers ADD COLUMN IF NOT EXISTS key varchar(40) NOT NULL DEFAULT ''"),
     ("customers.legal_name",

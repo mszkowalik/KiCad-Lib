@@ -118,6 +118,8 @@ export function blankDraft(): LineDraft {
  */
 export function goesToOf(li: RunCostLineRow): string {
   if (li.allocate === "excluded") return "nobody";
+  // A company overhead, right after "nobody" — the server's order (decision 0068).
+  if (li.allocate === "overhead") return `overhead:${li.overhead_category || "other"}`;
   // A conversion cost beats a named batch, exactly as on the server.
   if (li.transformation_id) return `t:${li.transformation_id}`;
   if (li.run_id) return `run:${li.run_id}`;
@@ -195,7 +197,9 @@ function destPatch(d: LineDraft) {
     allocate:
       d.dest === "nobody" ? "excluded"
       : d.dest === "pool" ? (spread ? d.how : "pooled")
+      : kind === "overhead" ? "overhead"
       : "none",
+    overhead_category: kind === "overhead" ? id : "",
     // Only a position charged to a batch or a project can be billed per device;
     // stock and excluded money have no units to multiply by.
     basis: (d.dest === "pool" || d.dest === "nobody" || d.dest === ""
