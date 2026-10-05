@@ -21,8 +21,10 @@ const CHOSEN: Record<string, [string, string]> = {
   bench: ["bench", "read by the bench"],
   merge: ["merge", "given its unit by a merge after programming"],
   found: ["found", "entered at a stock count, at zero value"],
-  supplier: ["supplier", "recorded from the supplier's assembly order"],
+  supplier: ["supplier", "the assembly step, recorded by a person from the supplier's assembly order (decision 0072)"],
+  manual: ["by hand", "the assembly step, recorded by hand for an assembly house with no JLC order (decision 0072)"],
   rebuilt: ["records", "rebuilt from the batch's records (decision 0060)"],
+  stated: ["stated", "a person stated it was done; no bench run records it (decision 0074)"],
 };
 
 const SOURCE: Record<string, string> = {
@@ -60,7 +62,11 @@ export default function TwinCard({ deviceId }: { deviceId: number }) {
         columns={[
           { key: "date", label: "Date", width: 24, className: "mono", get: (s) => s.made_at,
             title: (s) => `${s.made_at} · ${s.batch ?? ""} · ${s.actor}` },
-          { key: "step", label: "Step", width: 36, get: (s) => s.label, title: (s) => s.note },
+          { key: "step", label: "Step", width: 36, get: (s) => s.label,
+            render: (s) => (s.deployment_version
+              ? <>{s.label} <span className="muted">· {s.deployment_version}</span></> : s.label),
+            title: (s) => [s.note, s.programming_run_id ? `bench run #${s.programming_run_id}` : ""]
+              .filter(Boolean).join("\n") },
           // One money cell: the card sits in a narrow column. The parts and
           // the invoices behind the figure are on the hover.
           { key: "cost", label: "Cost", width: 26, numeric: true, get: (s) => s.parts_usd + s.costs_usd,
@@ -74,6 +80,13 @@ export default function TwinCard({ deviceId }: { deviceId: number }) {
             title: (s) => CHOSEN[s.chosen]?.[1] ?? s.chosen },
         ]}
       />
+      {twin.reflashes.length ? (
+        <p className="muted dim">
+          Programmed again after it was named:{" "}
+          {twin.reflashes.map((r) => `${r.deployment_version ?? "unknown version"}`
+            + `${r.at ? ` on ${r.at.slice(0, 10)}` : ""} (run #${r.programming_run_id})`).join("; ")}.
+        </p>
+      ) : null}
       {twin.fitted.length ? (
         <details>
           <summary className="muted">On the board: {twin.fitted.length} position(s) from the supplier's own BOM</summary>

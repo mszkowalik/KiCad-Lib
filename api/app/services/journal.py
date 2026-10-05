@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections import defaultdict
 from contextlib import contextmanager
 from datetime import date, datetime
 from decimal import Decimal
@@ -58,6 +59,18 @@ JOURNALLED = {
     "run_substitutions",
     "process_transformations",
     "cost_line_steps",
+    "cost_line_step_keys",
+    # "Record assembly" is one reversible write (decision 0072): its click,
+    # the twins it joins and their stack tokens.
+    "step_runs",
+    "twin_steps",
+    "twins",
+    # A scrap on the batch screen disposes of the named units with their twins
+    # (decision 0074), so undoing it must give both back.
+    "device_units",
+    "device_events",
+    # "Relink run" moves a bench run to another device (decision 0074).
+    "programming_runs",
 }
 
 
@@ -103,6 +116,50 @@ def _hash(d: dict) -> str:
         json.dumps(d, sort_keys=True, default=str).encode()).hexdigest()
 
 
+#: Columns added to a journalled table after rows of it were journalled, with
+#: the value an older row reads back. **A new column on a journalled table goes
+#: here**, or every batch written before the migration reads as "edited since"
+#: and can never be undone: its `after_hash` was taken without the column.
+LATE_COLUMNS: dict[str, dict[str, object]] = {
+    # decisions 0058-0068: production journalled these tables before them
+    "run_cost_documents": {"company_id": None, "company_source": "", "counterparty_company_id": None,
+                           "seller_tax_id": ""},
+    "run_cost_lines": {"transformation_id": None, "overhead_category": ""},
+    "component_consumptions": {"transformation_id": None, "step_run_id": None, "company_id": None,
+                               "transfer_line_id": None},
+    "component_stock_adjustments": {"transformation_id": None, "company_id": None},
+    "step_runs": {"assembler": "", "reference": ""},            # decision 0072
+    "run_substitutions": {"step_run_id": None},                 # decision 0072
+    "twin_steps": {"programming_run_id": None, "deployment_version_id": None},   # decision 0074
+}
+
+
+#: A journalled table other writers keep moving: only these columns are
+#: guarded and put back. The bench writes a device's `last_seen`,
+#: `last_status`, `chip`, its topic and modem data on every read; a scrap
+#: writes only its state, batch and condition, so an undo of a scrap guards
+#: and restores those alone (decision 0074).
+HASH_ONLY: dict[str, set[str]] = {"device_units": {"id", "state", "production_run_id", "condition"}}
+
+
+def _hash_row(table: str, d: dict) -> str:
+    only = HASH_ONLY.get(table)
+    return _hash({k: v for k, v in d.items() if k in only} if only else d)
+
+
+def _unchanged(table: str, d: dict, after_hash: str) -> bool:
+    """Does the row read back as the batch left it? Compared with and without
+    the late columns that still hold their default."""
+    only = HASH_ONLY.get(table)
+    if only:
+        d = {k: v for k, v in d.items() if k in only}
+    if _hash(d) == after_hash:
+        return True
+    late = LATE_COLUMNS.get(table) or {}
+    trimmed = {k: v for k, v in d.items() if not (k in late and v == late[k])}
+    return len(trimmed) < len(d) and _hash(trimmed) == after_hash
+
+
 def _table(obj) -> str:
     return obj.__table__.name
 
@@ -121,6 +178,11 @@ def _capture_before(session: Session, flush_context, instances) -> None:
             continue
         pk = getattr(obj, "id", None)
         if pk is None:
+            continue
+        if buf.pop(("insert", _table(obj), pk), None) is not None:
+            # Written and removed inside this batch: it never existed outside
+            # it, so there is nothing to put back and nothing to check.
+            buf.pop(("update", _table(obj), pk), None)
             continue
         buf.setdefault(("delete", _table(obj), pk), {
             "op": "delete", "table_name": _table(obj), "row_id": pk,
@@ -222,7 +284,7 @@ def batch(db: Session, kind: str, source_ref: str = "", actor: str = "",
         after_hash = None
         if rec["op"] in ("insert", "update") and obj is not None:
             try:
-                after_hash = _hash(_row_dict(obj))
+                after_hash = _hash_row(rec["table_name"], _row_dict(obj))
             except Exception as e:  # noqa: BLE001 — a missing hash blocks reversal, safely
                 log.warning(f"could not hash {rec['table_name']}#{rec['row_id']}: {e}")
         db.add(M.WriteBatchRow(batch_id=wb.id, after_hash=after_hash, **rec))
@@ -262,7 +324,8 @@ def batch_json(wb: M.WriteBatch, db: Session | None = None, rows: bool = False) 
     return out
 
 
-def check_reversible(db: Session, wb: M.WriteBatch) -> dict:
+def check_reversible(db: Session, wb: M.WriteBatch, *, stock: bool = True,
+                     leaving_twins: frozenset = frozenset()) -> dict:
     """Everything standing between this batch and a clean undo, named.
 
     Three gates, and each refusal is specific enough to act on. The hash gate is
@@ -292,7 +355,7 @@ def check_reversible(db: Session, wb: M.WriteBatch) -> dict:
         if obj is None:
             missing.append(f"{r.table_name}#{r.row_id}")
             continue
-        if _hash(_row_dict(obj)) != r.after_hash:
+        if not _unchanged(r.table_name, _row_dict(obj), r.after_hash):
             edited.append(f"{r.table_name}#{r.row_id}")
     if edited:
         blockers.append(
@@ -317,22 +380,303 @@ def check_reversible(db: Session, wb: M.WriteBatch) -> dict:
                     ob = db.get(M.WriteBatch, other.batch_id)
                     if ob is not None and ob.reversed_at is None:
                         later.add(other.batch_id)
+    # A click this batch inserted that rows OUTSIDE it still point at (soft
+    # pointers the rows-of-this-batch gate cannot see: a later "Add to
+    # assembly" links draws and positions to the same click). Undoing it would
+    # leave them pointing at nothing (decision 0072).
+    # A twin this batch inserted is the same: a bench step links it outside
+    # the journal (decision 0074).
+    own = {(r.table_name, r.row_id) for r in wb.rows}
+    pointers = {
+        "step_runs": ((M.ComponentConsumption, "component_consumptions", M.ComponentConsumption.step_run_id),
+                      (M.RunSubstitution, "run_substitutions", M.RunSubstitution.step_run_id),
+                      (M.CostLineStep, "cost_line_steps", M.CostLineStep.step_run_id),
+                      (M.TwinStep, "twin_steps", M.TwinStep.step_run_id)),
+        "twins": ((M.TwinStep, "twin_steps", M.TwinStep.twin_id),),
+    }
+    stray = 0
+    for tbl, sid in inserted:
+        for model, table, col in pointers.get(tbl, ()):
+            for (oid,) in db.query(model.id).filter(col == sid).all():
+                if (table, oid) in own:
+                    continue
+                writers = [b for (b,) in db.query(M.WriteBatchRow.batch_id)
+                           .filter(M.WriteBatchRow.table_name == table, M.WriteBatchRow.row_id == oid,
+                                   M.WriteBatchRow.batch_id > wb.id).all()]
+                live = [b for b in writers if (db.get(M.WriteBatch, b) or wb).reversed_at is None]
+                if live:
+                    later.update(live)
+                elif table != "cost_line_steps":
+                    # A link no journal wrote (a split's copy, a bench click's
+                    # whole-step link) goes with its click: the database
+                    # deletes it on cascade, so it is in nobody's way.
+                    stray += 1
+    if stray:
+        blockers.append(f"{stray} row(s) outside the journal point at a step or twin this batch recorded"
+                        " — take them off it first")
+    # A whole-step link this batch made has since linked bench clicks of its
+    # own (decision 0074); an undo would leave those behind.
+    grown = 0
+    for tbl, kid in inserted:
+        if tbl != "cost_line_step_keys":
+            continue
+        k = db.get(M.CostLineStepKey, kid)
+        if k is None:
+            continue
+        for (cid,) in (db.query(M.CostLineStep.id).join(M.StepRun, M.StepRun.id == M.CostLineStep.step_run_id)
+                       .filter(M.CostLineStep.line_id == k.line_id, M.StepRun.run_id == k.run_id,
+                               M.StepRun.step_key == k.step_key,
+                               M.CostLineStep.created_at > wb.created_at).all()):
+            if ("cost_line_steps", cid) not in own:
+                grown += 1
+    # A position split after the link copied the key to its children, outside
+    # the journal: an undo would take it off the header alone (decision 0074).
+    for tbl, kid in inserted:
+        k = db.get(M.CostLineStepKey, kid) if tbl == "cost_line_step_keys" else None
+        if k is None:
+            continue
+        frontier, seen_lines = [k.line_id], {k.line_id}
+        while frontier:
+            kids = [i for (i,) in db.query(M.RunCostLine.id).filter(M.RunCostLine.parent_line_id.in_(frontier),
+                                                                    M.RunCostLine.voided_at.is_(None)).all()
+                    if i not in seen_lines]
+            seen_lines.update(kids)
+            frontier = kids
+        theirs = [kid2 for (kid2,) in db.query(M.CostLineStepKey.id).filter(
+            M.CostLineStepKey.line_id.in_(seen_lines - {k.line_id}), M.CostLineStepKey.run_id == k.run_id,
+            M.CostLineStepKey.step_key == k.step_key).all() if ("cost_line_step_keys", kid2) not in own]
+        if theirs:
+            blockers.append("the position was split since — unlink it with \"Unlink…\" under Cost by step on "
+                            "the batch screen instead")
+    if grown:
+        blockers.append(f"the step link this batch made has linked {grown} later click(s) since"
+                        " — unlink it with \"Unlink…\" under Cost by step on the batch screen instead")
+    # What this batch DELETED is put back: a unique row made since in its place
+    # would collide, and a whole-step link put back would skip the clicks of
+    # its step recorded while it was gone (decision 0074).
+    restores = {((r.before or {}).get("line_id"), (r.before or {}).get("step_run_id"))
+                for r in wb.rows if r.table_name == "cost_line_steps" and r.op == "delete"}
+    comes_back = {(r.table_name, r.row_id) for r in wb.rows if r.op == "delete"}
+    for r in wb.rows:
+        if r.op != "delete" or not r.before:
+            continue
+        b = r.before
+        # A row put back must point at what still exists (decision 0074).
+        for col, model in (("step_run_id", M.StepRun), ("twin_id", M.Twin), ("line_id", M.RunCostLine),
+                           ("consumption_id", M.ComponentConsumption)):
+            if col in b and b[col] is not None and r.table_name in (
+                    "cost_line_steps", "cost_line_step_keys", "twin_steps", "component_consumptions",
+                    "run_substitutions", "component_consumption_lots") and db.get(model, b[col]) is None \
+                    and (model.__tablename__, b[col]) not in comes_back:
+                blockers.append(f"{r.table_name}#{r.row_id} pointed at {model.__tablename__}#{b[col]}, "
+                                "which no longer exists")
+        if r.table_name == "cost_line_steps":
+            twin = (db.query(M.CostLineStep.id).filter_by(line_id=b.get("line_id"),
+                                                          step_run_id=b.get("step_run_id")).first())
+        elif r.table_name == "cost_line_step_keys":
+            twin = (db.query(M.CostLineStepKey.id).filter_by(line_id=b.get("line_id"), run_id=b.get("run_id"),
+                                                             step_key=b.get("step_key")).first())
+            gap = sum(1 for (sid,) in db.query(M.StepRun.id)
+                      .filter(M.StepRun.run_id == b.get("run_id"), M.StepRun.step_key == b.get("step_key"),
+                              M.StepRun.qty > 0, M.StepRun.kind != "scrap", M.StepRun.chosen != "found",
+                              M.StepRun.created_at > wb.created_at,
+                              ~M.StepRun.id.in_(db.query(M.CostLineStep.step_run_id)
+                                                .filter(M.CostLineStep.line_id == b.get("line_id")))).all()
+                      if (b.get("line_id"), sid) not in restores)
+            if gap and twin is None:
+                blockers.append(f"{gap} click(s) of step {b.get('step_key')!r} were recorded while the position "
+                                "was unlinked — link it to the whole step again instead")
+        else:
+            continue
+        if twin is not None:
+            writers = [x for (x,) in db.query(M.WriteBatchRow.batch_id)
+                       .filter(M.WriteBatchRow.table_name == r.table_name, M.WriteBatchRow.row_id == twin[0],
+                               M.WriteBatchRow.op == "insert", M.WriteBatchRow.batch_id > wb.id).all()]
+            if writers:
+                later.update(writers)
+            else:
+                blockers.append(f"{r.table_name}#{twin[0]} now stands where this batch removed a link"
+                                " — take it away first")
+    # An undo of a finish must not make a unit that has left us unfinished:
+    # nothing could finish it again (decision 0074).
+    for r in wb.rows:
+        if r.table_name != "twins" or r.op != "update" or (r.before or {}).get("status") == "finished":
+            continue
+        tw = db.get(M.Twin, r.row_id)
+        if tw is None or tw.status != "finished" or not tw.device_unit_id or tw.id in leaving_twins:
+            continue   # a twin the same undo deletes ("Undo rebuild") is no unit made unfinished
+        dev = db.get(M.DeviceUnit, tw.device_unit_id)
+        if dev is not None and dev.state not in ("in_stock", "returned"):
+            blockers.append(f"{dev.serial or dev.mac} is {dev.state or 'unrecorded'} — a unit that left us "
+                            "stays finished")
+    # A later batch that was itself undone, and the batch that undid it, cancel
+    # out: neither is in the way any more. Only an UNDO cancels: a chain of
+    # reverses ending at a forward batch after this one, an odd number of hops
+    # long. A redo (an even number) puts the rows back, and they stand.
+    for b in sorted(later):
+        cur, hops = db.get(M.WriteBatch, b), 0
+        while cur is not None and cur.kind == "reverse":
+            t = (cur.summary or {}).get("reverses")
+            cur, hops = (db.get(M.WriteBatch, t) if t else None), hops + 1
+        if cur is not None and hops % 2 == 1 and cur.id > wb.id:
+            later.discard(b)
     if later:
         blockers.append(
             f"later batch(es) {sorted(later)} depend on rows this one created"
             f" — reverse {max(later)} first")
+    # A step recorded on a batch whose books are closed carries frozen twin
+    # prices (decision 0044): it is undone only after the batch is reopened.
+    # A redo of a crafting click is a crafting write too.
+    fwd = wb
+    while fwd is not None and fwd.kind == "reverse":
+        t = (fwd.summary or {}).get("reverses")
+        fwd = db.get(M.WriteBatch, t) if t else None
+    kind, ref = (fwd.kind or "", fwd.source_ref or "") if fwd is not None else ("", "")
+    if kind.startswith("craft.") and ref.startswith("run:"):
+        run = db.get(M.ProductionRun, int(ref.split(":", 1)[1] or 0))
+        if run is not None and run.closed_at is not None:
+            blockers.append(f"batch {run.label} is closed — its twins' shares are frozen"
+                            " (decision 0044); reopen it first")
+    # What the reversal takes from the stock, as a draw or a lot binding would
+    # take it (decision 0073). Last, and only when nothing else refuses: it
+    # runs the reversal in a savepoint.
+    if stock and not blockers:
+        blockers += stock_blockers(db, wb)
     return {"blockers": blockers, "edited": edited, "missing": missing,
             "blocking_batches": sorted(later)}
 
 
+class _Trial(Exception):
+    """Rolls a trial reversal back."""
+
+
+#: Tables whose rows move part stock or a lot's capacity.
+STOCK_TABLES = {"component_consumptions", "component_stock_adjustments", "run_cost_lines",
+                "run_cost_documents", "component_consumption_lots"}
+
+
+def stock_blockers(db: Session, wb: M.WriteBatch) -> list[str]:
+    """Would reversing `wb` leave a part's stock, or a lot, below zero and
+    below where it stands now, on any day? (decision 0073.)
+
+    The reversal runs in a savepoint and is rolled back, so the comparison is
+    of the stock the reversal really leaves: a draw it puts back, voids again
+    or moves to the other company, a purchase it takes away, a binding it puts
+    back — together, as one net change. A deficit the stock already had is no
+    reason to refuse. The journal records nothing of the trial."""
+    from . import lots, run_actuals
+
+    rows = [r for r in wb.rows if r.table_name in STOCK_TABLES]
+    if not rows:
+        return []
+    entries: list[tuple] = []           # what `run_actuals.stock_targets` reads
+    lot_keys: set[str] = set()
+
+    def part(d: dict, scope_company) -> None:
+        entries.append((run_actuals.stock_scope(db, scope_company), d.get("component_id"), d.get("mpn") or "",
+                        d.get("lcsc") or "", d.get("mpn") or d.get("lcsc") or ""))
+
+    def doc_company(doc_id) -> int | None:
+        doc = db.get(M.RunCostDocument, doc_id) if doc_id else None
+        return doc.company_id if doc is not None else None
+
+    for r in rows:
+        model = _model_for(r.table_name)
+        cur = db.get(model, r.row_id) if model is not None else None
+        if r.table_name == "component_consumptions":
+            # A draw made live again takes back the lots it is still bound to.
+            for b in db.query(M.ComponentConsumptionLot).filter_by(consumption_id=r.row_id).all():
+                lot_keys.add(lots._lot_key("L", b.lot_line_id) if b.lot_line_id
+                             else lots._lot_key("A", b.lot_adjustment_id))
+        states = [st for st in ((r.before if r.op != "insert" else None),
+                                (_row_dict(cur) if cur is not None else None)) if st]
+        for st in states:
+            if r.table_name in ("component_consumptions", "component_stock_adjustments"):
+                part(st, st.get("company_id"))
+                if r.table_name == "component_stock_adjustments":
+                    lot_keys.add(lots._lot_key("A", r.row_id))
+            elif r.table_name == "run_cost_lines":
+                part(st, doc_company(st.get("document_id")))
+                lot_keys.add(lots._lot_key("L", r.row_id))
+            elif r.table_name == "run_cost_documents":
+                for li in db.query(M.RunCostLine).filter_by(document_id=r.row_id).all():
+                    part(_row_dict(li), st.get("company_id"))
+                    lot_keys.add(lots._lot_key("L", li.id))
+            elif r.table_name == "component_consumption_lots":
+                if st.get("lot_line_id"):
+                    lot_keys.add(lots._lot_key("L", st["lot_line_id"]))
+                if st.get("lot_adjustment_id"):
+                    lot_keys.add(lots._lot_key("A", st["lot_adjustment_id"]))
+    targets, names = run_actuals.stock_targets(db, entries)
+    want_lots = any(r.table_name == "component_consumption_lots" for r in rows) or bool(
+        lot_keys and db.query(M.ComponentConsumptionLot.id).first())
+
+    def view() -> tuple[dict, dict]:
+        pools = run_actuals.stock_view(db, targets)
+        if not want_lots:
+            return pools, {}
+        state = lots.lot_state(db)["lots"]
+        out = {k: state[k] for k in lot_keys if k in state}
+        # A lot that is gone while live draws are still bound to it holds
+        # minus what they hold: `lot_state` lists no such lot.
+        for k in lot_keys - set(out):
+            col = M.ComponentConsumptionLot.lot_line_id if k.startswith("L") else \
+                M.ComponentConsumptionLot.lot_adjustment_id
+            held = (db.query(M.ComponentConsumptionLot.qty, M.ComponentConsumption)
+                    .join(M.ComponentConsumption, M.ComponentConsumption.id == M.ComponentConsumptionLot.consumption_id)
+                    .filter(col == int(k[1:]), M.ComponentConsumption.voided_at.is_(None)).all())
+            if held:
+                c0 = held[0][1]
+                out[k] = {"qty_remaining": -sum(q or 0.0 for q, _c in held), "mpn": c0.mpn, "lcsc": c0.lcsc,
+                          "date": "", "gone": True, "draws": sorted({c.id for _q, c in held})}
+        return pools, out
+
+    pools_now, lots_now = view()
+    held = db.info.pop("wb_rows", None)  # a trial is no write: nothing to journal
+    trial: dict = {}
+    try:
+        with db.begin_nested():          # rolled back by the exception below, always
+            _reverse_rows(db, wb)
+            trial["pools"], trial["lots"] = view()
+            raise _Trial
+    except _Trial:
+        pass
+    except sa.exc.IntegrityError as e:
+        # The same words as the Ledger's own collision refusal (decision 0074).
+        why = str(e.orig).splitlines()[0] if e.orig else str(e)
+        return [(f"a row it puts back collides with the present data ({why}) — the same record was written "
+                 "again since; undo that write first")]
+    except sa.exc.SQLAlchemyError as e:
+        return [f"the reversal itself fails: {(str(e.orig or e).splitlines() or [e.__class__.__name__])[0]}"]
+    finally:
+        if held is not None:
+            db.info["wb_rows"] = held
+        db.expire_all()
+    pools_after, lots_after = trial["pools"], trial["lots"]
+    out = [f"the stock no longer holds what this takes: {x} — undo or correct the later draw first"
+           for x in run_actuals.stock_worse(pools_now, pools_after, names)]
+    for key, lot in lots_after.items():
+        was = (lots_now.get(key) or {}).get("qty_remaining", 0.0)
+        gap = min(0.0, was) - (lot.get("qty_remaining") or 0.0)
+        if gap > lots.CLOSED_EPS * 100 and lot.get("gone"):
+            out.append(f"lot {key} ({lot.get('mpn') or lot.get('lcsc') or '?'}) is taken away while draw(s) "
+                       f"{', '.join(f'#{d}' for d in lot['draws'][:5])} are still bound to it — undo or correct "
+                       "that draw first")
+        elif gap > lots.CLOSED_EPS * 100:
+            out.append(f"lot {key} ({lot.get('mpn') or lot.get('lcsc') or '?'}, {lot.get('date')}) would be "
+                       f"overdrawn by {round(gap, 4):g} — a later draw took it; undo or correct that draw first")
+    return out
+
+
 # --------------------------------------------------------------- reversing
 def reverse(db: Session, batch_id: int, actor: str = "user",
-            dry_run: bool = True) -> dict:
+            dry_run: bool = True, stock: bool = True, leaving_twins: frozenset = frozenset()) -> dict:
     """Put a batch back, or say precisely why it cannot be.
 
-    The identity re-assertion at the end compares against THIS batch's
-    `identity_before` rather than absolutely, which is the one place a reversal
-    must differ from an apply. `jlc_apply._assert_identities` checks absolutely
+    The identity re-assertion at the end checks that the undo moved each figure
+    by exactly what the batch moved it (`identity_after - identity_before`),
+    rather than absolutely, which is the one place a reversal must differ from
+    an apply: later writes by other batches stay where they are. `jlc_apply._assert_identities` checks absolutely
     and deliberately (right for a forward write, since importing on top of a
     pre-existing gap hides its cause) — but applied to an undo it would make
     every batch permanently irreversible for as long as any gap exists, which
@@ -344,7 +688,7 @@ def reverse(db: Session, batch_id: int, actor: str = "user",
     if wb is None:
         raise LookupError(f"no write batch {batch_id}")
 
-    state = check_reversible(db, wb)
+    state = check_reversible(db, wb, stock=stock, leaving_twins=leaving_twins)
     plan = {"batch_id": batch_id, "kind": wb.kind, "source_ref": wb.source_ref,
             "blockers": state["blockers"], "blocking_batches": state["blocking_batches"],
             "would": {"delete": 0, "restore": 0, "reinsert": 0}}
@@ -364,35 +708,27 @@ def reverse(db: Session, batch_id: int, actor: str = "user",
                summary={"reverses": batch_id, "of_kind": wb.kind,
                         "source_ref": wb.source_ref},
                identity_before=before_now) as holder:
-        # Newest row first. Inserts happen parents-then-children, so undoing in
-        # reverse id order deletes children before the parents they point at.
-        for r in sorted(wb.rows, key=lambda x: x.id, reverse=True):
-            model = _model_for(r.table_name)
-            if model is None:
-                continue
-            if r.op == "insert":
-                obj = db.get(model, r.row_id)
-                if obj is not None:
-                    db.delete(obj)
-            elif r.op == "update":
-                obj = db.get(model, r.row_id)
-                if obj is None:
-                    continue
-                for k, v in (r.before or {}).items():
-                    if k == "id":
-                        continue
-                    setattr(obj, k, _coerce(model, k, v))
-            elif r.op == "delete":
-                data = {k: _coerce(model, k, v) for k, v in (r.before or {}).items()}
-                db.add(model(**data))
-        db.flush()
+        _reverse_rows(db, wb)
 
         after = jlc_apply.identity_snapshot(db)
         target = wb.identity_before or {}
+        made = wb.identity_after or {}
         drift = []
         for key in ("gap_usd", "to_runs_usd", "to_pool_usd", "pool_purchased_usd",
                     "pool_drawn_usd"):
-            if key in target and abs((after.get(key) or 0) - (target[key] or 0)) > 0.01:
+            if key not in target:
+                continue
+            if key in made:
+                # The undo must take away exactly what the batch added. Writes
+                # made since, by other batches, stay where they are: comparing
+                # with the absolute figure refused every undo after any later
+                # money write on the platform.
+                undone = (after.get(key) or 0) - (before_now.get(key) or 0)
+                added = (made[key] or 0) - (target[key] or 0)
+                if abs(undone + added) > 0.01:
+                    drift.append(f"{key}: the undo moved {round(undone, 4)}, the batch had moved "
+                                 f"{round(added, 4)}")
+            elif abs((after.get(key) or 0) - (target[key] or 0)) > 0.01:
                 drift.append(f"{key}: {after.get(key)} != {target[key]} (target)")
         if not after["pool_balanced"]:
             drift.append("pool does not balance after the reversal")
@@ -408,6 +744,61 @@ def reverse(db: Session, batch_id: int, actor: str = "user",
     plan["reverse_batch_id"] = holder["batch_id"]
     plan["identity_after"] = jlc_apply.identity_snapshot(db)
     return plan
+
+
+def _reverse_rows(db: Session, wb: M.WriteBatch) -> None:
+    """Put the rows of `wb` back as they were before it: the reversal itself,
+    without its journal batch or its checks."""
+    # One device names one twin, and the database checks it row by row: a
+    # swap's undo must release the device before the other twin takes it.
+    mine = {r.row_id for r in wb.rows if r.table_name == "twins"}
+    for r in wb.rows:
+        if r.table_name == "twins" and r.op == "update" and (r.before or {}).get("device_unit_id") is not None:
+            for tw in db.query(M.Twin).filter(M.Twin.device_unit_id == r.before["device_unit_id"],
+                                              M.Twin.id != r.row_id, M.Twin.id.in_(mine)).all():
+                tw.device_unit_id = None
+    db.flush()
+    # A click's links no journal wrote (a split's copies, a bench click's
+    # whole-step link) are deleted HERE, through the session, so this
+    # reversal journals them and a redo puts them back (decision 0074);
+    # left to the cascade, a redo would lose them.
+    own_rows = {(r.table_name, r.row_id) for r in wb.rows}
+    for r in wb.rows:
+        if r.table_name == "step_runs" and r.op == "insert":
+            for x in db.query(M.CostLineStep).filter(M.CostLineStep.step_run_id == r.row_id).all():
+                if ("cost_line_steps", x.id) not in own_rows:
+                    db.delete(x)
+    db.flush()
+    # Newest row first. Inserts happen parents-then-children, so undoing in
+    # reverse id order deletes children before the parents they point at.
+    back: dict[str, list] = defaultdict(list)
+    for r in sorted(wb.rows, key=lambda x: x.id, reverse=True):
+        model = _model_for(r.table_name)
+        if model is None:
+            continue
+        if r.op == "insert":
+            obj = db.get(model, r.row_id)
+            if obj is not None:
+                db.delete(obj)
+        elif r.op == "update":
+            obj = db.get(model, r.row_id)
+            if obj is None:
+                continue
+            only = HASH_ONLY.get(r.table_name)
+            for k, v in (r.before or {}).items():
+                if k == "id" or (only and k not in only):
+                    continue
+                setattr(obj, k, _coerce(model, k, v))
+        elif r.op == "delete":
+            back[r.table_name].append(model(**{k: _coerce(model, k, v) for k, v in (r.before or {}).items()}))
+    db.flush()
+    # What the batch deleted comes back parents first, one table at a time:
+    # a link has no ORM relationship to its click or its position, so one
+    # flush could insert it before them.
+    order = {t.name: i for i, t in enumerate(M.Base.metadata.sorted_tables)}
+    for table in sorted(back, key=lambda t: order.get(t, 0)):
+        db.add_all(back[table])
+        db.flush()
 
 
 def _coerce(model, column: str, value):

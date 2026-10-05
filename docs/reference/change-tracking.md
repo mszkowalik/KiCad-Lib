@@ -31,6 +31,31 @@ an admin sees a link from the batch to the request. `write_batches` and
 `write_batch_rows` are in `tracking.SKIP_TABLES`, so the journal is not
 copied into the log a second time.
 
+**A new column on a table in `journal.JOURNALLED` goes into
+`journal.LATE_COLUMNS` with the value an older row reads back.** The hash
+guard was taken without the column, so otherwise every batch written before
+the migration reads as "edited since" and can never be undone. Found
+2026-10-05, when two `twin_steps` columns blocked the undo of every earlier
+assembly record. A table other writers keep moving (the bench stamps a device's
+`last_seen`, `last_status`, `chip` and topic) is listed in `journal.HASH_ONLY`
+with the columns the journalled write changes: only those are guarded and put
+back by an undo. `tests/costs/test_journal_columns.py` fails on a new column
+of a journalled table that is in neither list.
+
+**An undo or a redo is checked against the stock it leaves** (decision
+0073). `journal.stock_blockers` runs the reversal in a savepoint, rolls it
+back, and compares each part the batch touched, day by day, and each lot it
+touched, with how they stand now. It refuses where the reversal takes either
+below zero and below its present level: a draw put back or made live again
+(with the lots it is still bound to), a purchase taken away (also a lot that
+live draws are still bound to), a lot binding put back. The batch's own changes net
+out, so a redo that voids again what it replaces passes. A row it puts back
+that collides with a record written again since is refused with the
+database's reason, as the Ledger refuses it. It runs last, only
+when no other gate refuses, and takes about 1 s on the local copy. "Undo
+rebuild" passes `stock=False` to each reversal: it checks the whole undo
+once, against the pool the rebuild stored, and the lots at the end.
+
 ## Rules for new code
 
 1. **A new reader of `audit_log` must decide about the tracker's rows.** One

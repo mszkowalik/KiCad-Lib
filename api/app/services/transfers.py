@@ -11,7 +11,10 @@ invoice is issued and no money moves. Two rows say it:
   pointing at the position (`transfer_line_id`).
 
 The price is the sender's moving average on the transfer date, or the landed
-cost of the lot the units came from when that is known. Either way the two
+cost of the lot the units came from when that is known. While `lot_pricing`
+is on (decision 0073) a line that names no lot takes the sender's lots oldest
+first: its sender draw is bound to them and the position carries their
+weighted cost, and a line the lots cannot cover is refused. Either way the two
 sides carry the same value, so the companies' totals together stay what they
 were before the transfer. The register keeps transfers out of every money
 total (`run_actuals.invoice_register`).
@@ -194,6 +197,35 @@ def apply_absorb(db: Session, take: dict) -> None:
     db.flush()
 
 
+def _sender_picker(db: Session, sender_id: int, out_lines: list[dict], exclude_draw_ids=()) -> L.FifoPicker:
+    """The sender's lots for the lines that name none (decision 0073).
+
+    The bindings of the draws about to move (`exclude_draw_ids`) go back to
+    their lots, as `check_shortages` leaves those draws out. Every lot a line
+    of this transfer names is then taken first: its full quantity, less the
+    bindings of draws that stay and move onto the new position — the same net
+    figure the lot capacity check uses."""
+    state = L.lot_state(db)
+    excl = {int(i) for i in exclude_draw_ids or ()}
+    if excl:
+        for b in db.query(M.ComponentConsumptionLot).filter(M.ComponentConsumptionLot.consumption_id.in_(excl)):
+            lot = state["lots"].get(_lot_key(b.lot_line_id, b.lot_adjustment_id))
+            if lot is not None:
+                lot["qty_remaining"] = lot["qty_remaining"] + (b.qty or 0.0)
+    picker = L.FifoPicker(db, sender_id, state=state)
+    for x in out_lines:
+        key = _lot_key(x["lot_line_id"], x["lot_adjustment_id"])
+        if key is None:
+            continue
+        stay = 0.0
+        for r in x["rebind"]:
+            b = db.get(M.ComponentConsumptionLot, r["binding_id"])
+            if b is not None and r.get("lot") == key and b.consumption_id not in excl:
+                stay += r["qty"] or 0.0
+        picker.taken[key] += max(x["qty"] - stay, 0.0)
+    return picker
+
+
 def _rebinds(ln: dict) -> list[dict]:
     """A line's rebinds as `{binding_id, qty}`; `qty` None = the whole binding."""
     out = [{"binding_id": int(bid), "qty": None} for bid in ln.get("rebind_ids") or []]
@@ -211,12 +243,18 @@ def plan(db: Session, *, sender_id: int, receiver_id: int, day: str, lines: list
     found: the receiver's draws bound to that lot from the transfer date on.
 
     `exclude_draw_ids` are draws about to move to the receiver
-    (`cover_draws`): the sender's stock is checked without them."""
+    (`cover_draws`): the sender's stock is checked without them.
+
+    While `lot_pricing` is on, a line that names no lot takes the sender's
+    lots oldest first (decision 0073): it gets `bindings`, and its price is
+    their weighted cost, whatever price the caller stated. A line the lots
+    cannot cover in full is a problem."""
     if sender_id == receiver_id:
         raise HTTPException(422, "a transfer goes from one company to the OTHER")
     sender, receiver = C.get(db, sender_id), C.get(db, receiver_id)
     day = (day or _today())[:10]
     out_lines, problems = [], []
+    fifo_lines: list[tuple[int, dict]] = []   # (input line, its entry) priced from the lots below
     lots_named: set[str] = set()
     claimed: dict[int, float] = defaultdict(float)   # binding -> qty rebound by earlier lines
     for i, ln in enumerate(lines):
@@ -278,6 +316,24 @@ def plan(db: Session, *, sender_id: int, receiver_id: int, day: str, lines: list
             "lot_line_id": lot_line_id, "lot_adjustment_id": lot_adjustment_id,
             "rebind": rebind, "label": ln.get("label") or "",
         })
+        if L.lot_pricing_on() and not _lot_key(lot_line_id, lot_adjustment_id):
+            fifo_lines.append((i, out_lines[-1]))
+    if fifo_lines:
+        # Decision 0073: after every named lot is taken, the lines that name
+        # none take the sender's lots oldest first, sharing one picker.
+        picker = _sender_picker(db, sender.id, out_lines, exclude_draw_ids)
+        for i, x in fifo_lines:
+            uncovered = L.fifo_price(db, [x], as_of=day, company_id=sender.id, picker=picker)
+            if uncovered:
+                out_lines[:] = [y for y in out_lines if y is not x]
+                problems.append({"line": i, "mpn": x["mpn"], "component_id": x["component_id"],
+                                 "uncovered": uncovered[0]["uncovered"],
+                                 "problem": f"{x['label'] or x['mpn'] or x['lcsc']}: {uncovered[0]['uncovered']:g} "
+                                            f"of {x['qty']:g} are in no lot of {sender.name} on {day} — enter the "
+                                            "purchase first (decision 0073)"})
+                continue
+            x["unit_cost_usd"] = round(float(x["unit_cost_usd"] or 0.0), 8)
+            x["price_source"] = f"{sender.name}'s lots, oldest first"
     shortages = RA.check_shortages(db, [
         {"component_id": x["component_id"], "mpn": x["mpn"], "lcsc": x["lcsc"], "qty": x["qty"],
          "date": day, "label": x["label"] or x["mpn"]} for x in out_lines], company_id=sender.id,
@@ -350,6 +406,9 @@ def create(db: Session, *, sender_id: int, receiver_id: int, day: str, lines: li
                 consumption_id=out.id, lot_line_id=x["lot_line_id"],
                 lot_adjustment_id=x["lot_adjustment_id"], qty=x["qty"],
                 unit_cost_usd=x["unit_cost_usd"], source="manual", note=doc.doc_number))
+        elif x.get("bindings"):
+            # The sender's lots the line took, oldest first (decision 0073).
+            L.bind(db, out, x)
         for r in x["rebind"]:
             b = db.get(M.ComponentConsumptionLot, r["binding_id"])
             if b is None:
@@ -515,7 +574,9 @@ def reverse(db: Session, doc: M.RunCostDocument, *, reason: str, actor: str = ""
     live = [li for li in doc.lines if li.voided_at is None]
     ids = [li.id for li in live]
     bound = (db.query(M.ComponentConsumptionLot)
-             .filter(M.ComponentConsumptionLot.lot_line_id.in_(ids or [0])).all())
+             .join(M.ComponentConsumption, M.ComponentConsumption.id == M.ComponentConsumptionLot.consumption_id)
+             .filter(M.ComponentConsumptionLot.lot_line_id.in_(ids or [0]),
+                     M.ComponentConsumption.voided_at.is_(None)).all())
     sender_draws = {c.id for c in RA.live_consumption(db)
                     .filter(M.ComponentConsumption.transfer_line_id.in_(ids or [0])).all()}
     used = [b for b in bound if b.consumption_id not in sender_draws]

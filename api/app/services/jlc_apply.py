@@ -29,6 +29,7 @@ Three safety properties, in order of importance:
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -334,8 +335,11 @@ def refresh_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
                 if _differs(getattr(row, k), v)}
         if not diff:
             continue
+        # A voided draw took nothing: its bindings hold no units (decision 0073).
         bound = (db.query(M.ComponentConsumptionLot)
-                   .filter(M.ComponentConsumptionLot.lot_line_id == row.id).all())
+                 .join(M.ComponentConsumption, M.ComponentConsumption.id == M.ComponentConsumptionLot.consumption_id)
+                 .filter(M.ComponentConsumptionLot.lot_line_id == row.id,
+                         M.ComponentConsumption.voided_at.is_(None)).all())
         if "unit_price" in diff and bound:
             # The draws bound to this lot were priced at its old cost. They move
             # with it, or the lot's value goes negative once they have used it
@@ -347,7 +351,7 @@ def refresh_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
                     f"line {row.id} (lot {ref}) changes price but draws bound to it charge "
                     f"closed batch(es) {closed} — enter a correction document instead")
                 continue
-        if float(li["qty"]) < float(row.qty or 0) and bound:
+        if float(li["qty"]) < sum(b.qty or 0.0 for b in bound) - 1e-9:
             blockers.append(
                 f"line {row.id} (lot {ref}) would drop from {row.qty:g} to "
                 f"{float(li['qty']):g} but {len(bound)} draw(s) are bound to it — "
@@ -371,7 +375,10 @@ def refresh_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
                     and abs((li.qty or 0) * (li.unit_price or 0) - r["advance_usd"]) < 0.005]
             rows = fits if len(fits) == 1 else []
         for row in rows:
-            if db.query(M.ComponentConsumptionLot).filter_by(lot_line_id=row.id).first():
+            if (db.query(M.ComponentConsumptionLot)
+                    .join(M.ComponentConsumption, M.ComponentConsumption.id == M.ComponentConsumptionLot.consumption_id)
+                    .filter(M.ComponentConsumptionLot.lot_line_id == row.id,
+                            M.ComponentConsumption.voided_at.is_(None)).first()):
                 blockers.append(f"line {row.id} (refunded lot {r['lot_ref']}) has draws bound to it")
                 continue
             voids.append(row)
@@ -397,6 +404,8 @@ def refresh_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
     # having because it is the same code path — but a plain rollback would also
     # discard whatever else the caller holds in the transaction, which is how a
     # preview reached into a test's fixture and undid it.
+    held = lots.stock_before(db, [doc.id], extra=[(SimpleNamespace(**{k: li.get(k) for k in (
+        "plan_key", "component_id", "mpn", "lcsc")}), doc) for li in adds])
     sp = db.begin_nested() if dry_run else None
     repriced: list[dict] = []
     for row, diff in pending:
@@ -419,6 +428,16 @@ def refresh_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
     doc.total_amount = plan["total_amount"]
     db.flush()
     run_actuals.resolve_part_lines(db, doc.id)
+    # A cut or a cancelled lot strands the draws it fed, bound or not (decision
+    # 0040): the same check every invoice edit runs.
+    short = lots.stock_problems(db, held)
+    if short:
+        if sp is not None:
+            sp.rollback()
+            return {"status": "refused", "document_id": doc.id, "changes": changes,
+                    "blockers": [f"the refresh would leave draws without what they took: {x}" for x in short]}
+        raise ApplyRefused(f"parts refresh {plan['external_id']} would leave draws without what they took: "
+                           + "; ".join(short[:4]))
     after = _assert_identities(db, before, f"parts refresh {plan['external_id']}")
     if sp is not None:
         sp.rollback()
@@ -1070,11 +1089,19 @@ def backfill_fee_split(db: Session, row: M.JlcImport, actor: str = "jlc-import",
             )
             db.add(child)
             # Decisions 0060/0061: the fee keeps the step clicks its line paid for.
-            links = db.query(M.CostLineStep.step_run_id).filter_by(line_id=target.id).all()
-            if links:
+            from . import twins as _twins
+
+            keys = db.query(M.CostLineStepKey).filter_by(line_id=target.id).all()
+            # its clicks, and every click of a whole step it pays for (0074)
+            links = sorted({s for (s,) in db.query(M.CostLineStep.step_run_id).filter_by(line_id=target.id).all()}
+                           | {s for k in keys for s in _twins.step_clicks(db, k.run_id, k.step_key)})
+            if links or keys:
                 db.flush()
-                for (srid,) in links:
+                for srid in links:
                     db.add(M.CostLineStep(line_id=child.id, step_run_id=srid))
+                # and its whole-step links, so later clicks pay too (0074)
+                for k in keys:
+                    db.add(M.CostLineStepKey(line_id=child.id, run_id=k.run_id, step_key=k.step_key))
         made += len(planned)
         value = round(value + sum(c["amount"] for c in base_kids), 2)
         results.append({"key": key, "line_id": target.id, "status": "split",

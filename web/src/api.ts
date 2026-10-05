@@ -432,6 +432,16 @@ function withScope(init?: RequestInit): RequestInit {
   return { ...init, headers };
 }
 
+/** A list call that must show every company the user may see, whatever the
+ *  header switcher shows. The production benches pass it: a bench browser
+ *  left on one company must still find the other company's project and
+ *  batch. The server never widens "all" past the user's companies. */
+export type ListScope = "header" | "all";
+
+function scopeHeaders(scope: ListScope | undefined): HeadersInit | undefined {
+  return scope === "all" ? { "X-Company": "all" } : undefined;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
@@ -1264,6 +1274,26 @@ export function stockBackfill(dryRun: boolean, fetchJlc: boolean): Promise<Stock
                  jsonBody("POST", { dry_run: dryRun, fetch_jlc: fetchJlc }));
 }
 
+/** What binding the history to its lots does (decision 0073): each batch's
+ *  cost change, and the draws no lot covers, which keep their price. */
+export interface LotHistoryResult {
+  dry_run: boolean;
+  draws_bound: number;
+  change_usd: number;
+  batches: { run_id: number | null; batch: string | null; closed: boolean;
+             closed_cost_usd: number | null; change_usd: number }[];
+  uncovered: { consumption_id: number; run_id: number | null; batch: string | null; label: string;
+               mpn: string; lcsc: string; component_id: number | null; date: string | null;
+               qty: number; uncovered: number; company_id: number | null }[];
+  batch_id?: number;
+}
+
+/** Bind every live draw to its lots, oldest first, and price it at their
+ *  cost, closed batches included. Admin only; a dry run writes nothing. */
+export function lotHistory(dryRun: boolean): Promise<LotHistoryResult> {
+  return request("/api/companies/lot-history", jsonBody("POST", { dry_run: dryRun }));
+}
+
 export function getAuthState(signal?: AbortSignal): Promise<AuthState> {
   return request("/api/auth/me", { signal });
 }
@@ -1991,8 +2021,8 @@ export interface ProjectPatchBody {
   description?: string;
 }
 
-export function getProjects(signal?: AbortSignal): Promise<ProjectInfo[]> {
-  return request("/api/projects", { signal });
+export function getProjects(signal?: AbortSignal, scope?: ListScope): Promise<ProjectInfo[]> {
+  return request("/api/projects", { signal, headers: scopeHeaders(scope) });
 }
 
 export function createProject(body: ProjectCreate): Promise<ProjectInfo> {
@@ -2700,8 +2730,8 @@ export interface RunPatchBody {
   company_id?: number;
 }
 
-export function getRuns(projectId: number, signal?: AbortSignal): Promise<RunInfo[]> {
-  return request(`/api/projects/${projectId}/runs`, { signal });
+export function getRuns(projectId: number, signal?: AbortSignal, scope?: ListScope): Promise<RunInfo[]> {
+  return request(`/api/projects/${projectId}/runs`, { signal, headers: scopeHeaders(scope) });
 }
 
 /** Every batch, across every project, newest run date first. The project tab
@@ -4538,11 +4568,39 @@ export interface JlcDecisionApplyResult {
   reversible?: boolean;
 }
 
+/** One assembly order's share of the stock leg (`draw_stock_for_invoice`).
+ *  A dry run reports `would_*`; a real import reports `draws` and
+ *  `lot_bindings`; an order whose lots are not all known is `deferred`. */
+export interface JlcStockOrderLeg {
+  smt_order_code: string;
+  status: "dry_run" | "applied" | "deferred" | "nothing_to_draw" | string;
+  would_write_draws?: number;
+  would_bind_lots?: number;
+  already_present?: number;
+  unresolved_components?: number;
+  reported_bindings?: number;
+  draws?: number;
+  lot_bindings?: number;
+  voided_forecasts?: number;
+  unresolved_lots?: number;
+  hint?: string;
+}
+
+/** The consigned stock an invoice's assembly orders used. Importing the
+ *  document moves it out of the pool, charged to nobody until each order is
+ *  linked to a batch (decision 0034). */
+export interface JlcStockLeg {
+  orders_written: number;
+  orders_deferred: number;
+  orders_without_consumption: number;
+  orders: JlcStockOrderLeg[];
+}
+
 /** Import one staged assembly batch as a cost document. */
 export function applyJlcDocument(
   externalId: string,
   dryRun = true,
-): Promise<JlcApplyPreview & { batch_id?: number; document_id?: number }> {
+): Promise<JlcApplyPreview & { stock?: JlcStockLeg; batch_id?: number; document_id?: number }> {
   return request(
     `/api/jlc/import/documents/${encodeURIComponent(externalId)}/apply?dry_run=${dryRun}`,
     { method: "POST" },
@@ -8586,8 +8644,8 @@ export function inputKey(i: ProcessInput): string {
 
 /** assembly / receive / step / program / mark_laser / label / finish — each
  *  kind is done at one station (`services/process.py::KINDS`). The assembly is
- *  the board's assembly at the supplier, recorded from the batch's assembly
- *  order (decision 0060). */
+ *  the board's assembly at the supplier (decision 0060), recorded by a person
+ *  on Batch → Process from a pre-filled draft (decision 0072). */
 export type StepKind = "assembly" | "receive" | "step" | "program" | "test" | "mark_laser" | "label" | "finish";
 
 export const STEP_STATION: Record<StepKind, string> = {
@@ -8778,8 +8836,35 @@ export function updateProcessDraft(
   return request(`/api/process-versions/${versionId}`, jsonBody("PATCH", body));
 }
 
-export function publishProcessVersion(versionId: number, comment: string): Promise<ProcessVersionDetail> {
-  return request(`/api/process-versions/${versionId}/publish`, jsonBody("POST", { comment }));
+/** `historical`: how older devices were made — published for their batches
+ *  to pin, never the version in effect (decision 0074). */
+export function publishProcessVersion(
+  versionId: number, comment: string, historical = false,
+): Promise<ProcessVersionDetail> {
+  return request(`/api/process-versions/${versionId}/publish`, jsonBody("POST", { comment, historical }));
+}
+
+export function makeProcessCurrent(versionId: number): Promise<{
+  current_version_id: number; version_no: number; previous_version_id: number | null;
+}> {
+  return request(`/api/process-versions/${versionId}/make-current`, { method: "POST" });
+}
+
+export interface RepinPlan {
+  dry_run: boolean;
+  from_version: number;
+  to_version: number;
+  twins: number;
+  added_steps: string[];
+  removed_steps: string[];
+  /** steps the batch's twins have done that the target lacks — any refuses it */
+  missing: { step: string; twins: number }[];
+  bench_stack_missing: string[];
+}
+
+/** Move a batch to another published version of its process (decision 0074). */
+export function repinRun(runId: number, versionId: number, dryRun: boolean): Promise<RepinPlan> {
+  return request(`/api/runs/${runId}/process-version`, jsonBody("POST", { version_id: versionId, dry_run: dryRun }));
 }
 
 export function deleteProcessDraft(versionId: number): Promise<{ deleted: number }> {
@@ -8945,6 +9030,9 @@ export interface CraftClick {
   costs_usd: number;
   /** its draws, USD */
   parts_usd: number;
+  /** the journal batch that wrote it, while it can be undone (decision 0074);
+   *  null for a bench click, an older click, or a closed batch */
+  batch_id: number | null;
 }
 
 /** Money charged to the batch that no step claims: it stays in the origin
@@ -8982,6 +9070,8 @@ export interface CraftView {
   origin: {
     origin_cost_usd?: number;
     scrap_carried_usd?: number;
+    /** origin cost no alive twin carries (decision 0074); it blocks the close */
+    uncarried_usd?: number;
     twins?: number;
     scrapped?: number;
     share_usd?: number | null;
@@ -8991,6 +9081,9 @@ export interface CraftView {
     step_costs_usd?: number;
   };
   clicks: CraftClick[];
+  /** positions linked to this batch's steps, a split one by its header —
+   *  the line an unlink takes (decision 0074) */
+  linked: { line_id: number; label: string; usd: number; steps: string[]; whole_steps: string[] }[];
   assembly: CraftAssembly;
   unlinked: CraftUnlinked;
 }
@@ -9051,12 +9144,195 @@ export function getCostByStep(runId: number, signal?: AbortSignal): Promise<Cost
   return request(`/api/runs/${runId}/craft/cost-by-step`, { signal });
 }
 
-/** Record or extend the batch's assembly step from its assembly order. */
-export function craftAssembly(runId: number, dryRun: boolean): Promise<{
-  status: string; step_run_id?: number; orders?: string[]; twins_added?: number; units?: number;
-  lines_linked?: number; draws_linked?: number;
-}> {
-  return request(`/api/runs/${runId}/craft/assembly`, jsonBody("POST", { dry_run: dryRun }));
+// ------------------------------------------- the Board assembly step (0072)
+// Nothing records the assembly step by itself: not receiving the boards, not
+// applying the JLC order. The person records it from "Record assembly…" on
+// Batch → Process, pre-filled from the draft below, every row ticked.
+
+export type AssemblyStatus = "no_assembly_step" | "no_twins" | "open" | "recorded";
+/** Whose parts went on the board at a replaced position. */
+export type AssemblySuppliedBy = "supplier" | "pool" | "both";
+
+/** An invoice position charged to the batch and not in a step yet. */
+export interface AssemblyDraftLine {
+  line_id: number;
+  label: string;
+  plan_key: string;
+  stage?: string;
+  amount: number;
+  currency: string;
+  doc_id?: number;
+  doc_number: string;
+  supplier: string;
+  doc_date?: string;
+  /** `position`: a fee (`pcba:smt`, `fab:setup`). `supplied_part`: a part the
+   *  assembler bought, already itemised on the invoice (a `pcba:parts` child).
+   *  `parts_lump`: a parts total not split yet — its breakdown, when there is
+   *  one, is in `parts_supplied`. Absent on `recorded.lines`. */
+  kind?: "position" | "supplied_part" | "parts_lump";
+  /** Same as `kind === "parts_lump"`, kept for compatibility. */
+  is_parts_lump?: boolean;
+}
+
+/** A measured draw of the batch (the assembler used our stock), outside a step. */
+export interface AssemblyDraftDraw {
+  consumption_id: number;
+  component_id: number | null;
+  name: string;
+  mpn: string;
+  lcsc: string;
+  qty: number;
+  unit_cost_usd: number | null;
+  value_usd: number | null;
+  order?: string;
+  lots?: { lot: string; qty: number }[];
+}
+
+/** One row of the supplier's BOM breakdown of an unsplit parts total. */
+export interface AssemblySuppliedRow {
+  parent_line_id: number;
+  order: string;
+  lcsc: string;
+  mpn: string;
+  designator: string;
+  qty: number;
+  unit_price: number;
+  amount: number;
+  source?: string;
+}
+
+/** An unsplit parts total charged to the batch. `reason` says why it has no
+ *  breakdown, when it has none. */
+export interface AssemblyPartsLump {
+  line_id: number;
+  label: string;
+  amount: number;
+  currency: string;
+  order?: string;
+  residual: number | null;
+  reconciles: boolean | null;
+  reason: string;
+}
+
+export interface AssemblyReplacementRow {
+  designator: string;
+  supplier_designator: string;
+  specified_lcsc: string;
+  specified_mpn: string;
+  specified_component_id: number | null;
+  fitted_lcsc: string;
+  fitted_mpn: string;
+  supplied_by: AssemblySuppliedBy | "" | null;
+  supplier_source: string;
+  match_type: string;
+  board: string;
+  variant: string;
+  order: string;
+  evidence: string;
+}
+
+/** Design BOM × boards — only when no JLC order is linked (another house). */
+export interface AssemblyBomSuggestion {
+  component_id: number | null;
+  name: string;
+  mpn: string;
+  lcsc: string;
+  designator?: string;
+  qty_per_board: number;
+  qty: number;
+}
+
+/** The step as it stands. */
+export interface AssemblyRecorded {
+  step_run_id: number;
+  made_at: string;
+  assembler: string;
+  reference: string;
+  note: string;
+  units: number;
+  chosen: string;
+  lines: AssemblyDraftLine[];
+  draws: AssemblyDraftDraw[];
+  replacements: { id: number; designator: string; specified_lcsc: string; fitted_lcsc: string;
+                  fitted_mpn?: string; supplied_by: string }[];
+  /** Live `craft.assembly` journal batches of this run, newest first. */
+  batch_ids: number[];
+}
+
+export interface AssemblyDraft {
+  run_id: number;
+  label: string;
+  closed: boolean;
+  status: AssemblyStatus;
+  step: { key: string; label: string } | null;
+  /** Empty (`{}`) when the process has no assembly step. */
+  header: {
+    assembler?: string;
+    orders?: string[];
+    reference?: string;
+    made_at?: string;
+    /** JLC's board count for the linked orders; null when unknown. */
+    boards_jlc?: number | null;
+    twins?: number;
+    twins_not_in_step?: number;
+  };
+  recorded: AssemblyRecorded | null;
+  lines: AssemblyDraftLine[];
+  parts_from_stock: AssemblyDraftDraw[];
+  parts_supplied: AssemblySuppliedRow[];
+  parts_lumps: AssemblyPartsLump[];
+  replacements: AssemblyReplacementRow[];
+  bom_suggestion: AssemblyBomSuggestion[];
+}
+
+export function getAssemblyDraft(runId: number, signal?: AbortSignal): Promise<AssemblyDraft> {
+  return request(`/api/runs/${runId}/craft/assembly/draft`, { signal });
+}
+
+export interface RecordAssemblyBody {
+  dry_run: boolean;
+  made_at: string;
+  assembler: string;
+  reference: string;
+  note: string;
+  line_ids: number[];
+  draw_ids: number[];
+  /** Our stock another assembly house used: NEW draws at the stock average. */
+  parts: { component_id: number | null; mpn: string; lcsc: string; name?: string; qty: number }[];
+  /** Parts the assembler bought: split each lump into these children. */
+  supplied: { parent_line_id: number; lcsc: string; mpn: string; label: string; qty: number;
+              unit_price: number; source?: string }[];
+  replacements: {
+    designator: string; supplier_designator?: string; specified_lcsc: string; specified_mpn?: string;
+    specified_component_id: number | null; fitted_lcsc: string; fitted_component_id: number | null;
+    fitted_mpn: string; supplied_by: AssemblySuppliedBy; supplier_source: string; board: string;
+    variant: string; evidence?: string; note: string;
+  }[];
+}
+
+export interface RecordAssemblyResult {
+  dry_run: boolean;
+  status: "recorded" | "extended";
+  step_run_id: number;
+  units: number;
+  twins_added: number;
+  lines_linked: number;
+  draws_linked: number;
+  draws_written: number;
+  supplied_children: number;
+  replacements_recorded: number;
+  /** What the ticked rows left of each split parts total: charged to nobody. */
+  supplied_residual?: { line_id: number; label: string; residual: number; currency: string }[];
+  value_usd: { lines?: number; draws?: number; parts?: number };
+  /** null on a dry run */
+  batch_id: number | null;
+}
+
+/** Record the assembly step, or add to it. A dry run writes, reports the
+ *  exact figures and rolls back. A real write is one journal batch, which
+ *  "Undo assembly" reverses through `reverseWriteBatch`. */
+export function recordAssembly(runId: number, body: RecordAssemblyBody): Promise<RecordAssemblyResult> {
+  return request(`/api/runs/${runId}/craft/assembly`, jsonBody("POST", body));
 }
 
 /** Say which step click an invoice position paid for, or take the link away. */
@@ -9069,6 +9345,8 @@ export function craftCosts(runId: number, body: {
 
 export function craftStep(runId: number, body: CraftSelection & {
   step_key: string; made_at?: string; lots?: Record<string, number> | null; note?: string;
+  /** why a person states a test, mark or label step no bench recorded (decision 0074) */
+  stated?: string;
   dry_run: boolean;
 }): Promise<StepPlan> {
   return request(`/api/runs/${runId}/craft/step`, jsonBody("POST", body));
@@ -9076,8 +9354,32 @@ export function craftStep(runId: number, body: CraftSelection & {
 
 export function craftScrap(runId: number, body: CraftSelection & {
   reason: string; dry_run: boolean;
-}): Promise<{ units: number; chosen: string }> {
+}): Promise<{ units: number; chosen: string; disposed: number; refused: { unit: string; why: string[] }[] }> {
   return request(`/api/runs/${runId}/craft/scrap`, jsonBody("POST", body));
+}
+
+/** Finished units back into work (decision 0074); they need a new finish. */
+export function craftReopen(runId: number, body: {
+  device_ids: number[]; chosen: "scanned" | "list"; reason: string; dry_run: boolean;
+}): Promise<{ units: number; refused: { unit: string; why: string[] }[] }> {
+  return request(`/api/runs/${runId}/craft/reopen`, jsonBody("POST", body));
+}
+
+/** A bench run filed against the wrong device moves to the right one, with
+ *  the steps it recorded (decision 0074). `runId` is the right device's batch. */
+export function craftRelink(runId: number, body: {
+  programming_run_id: number; device_ids: number[]; dry_run: boolean;
+}): Promise<{ programming_run_id: number; from_device: string | null; to_device: string; steps: string[];
+              refused: { step: string; why: string[] }[] }> {
+  return request(`/api/runs/${runId}/craft/relink`, jsonBody("POST", body));
+}
+
+/** The bench named a device from the wrong pile: it takes a twin of `stack`
+ *  and its old twin goes back unnamed (decision 0074). */
+export function craftSwap(runId: number, body: { device_ids: number[]; stack: string; dry_run: boolean }): Promise<{
+  device: string; from_twin: number; to_twin: number; back_to_stack: string; later_steps: string[];
+}> {
+  return request(`/api/runs/${runId}/craft/swap`, jsonBody("POST", body));
 }
 
 export function craftFinish(runId: number, body: {
@@ -9137,6 +9439,20 @@ export interface TwinStepRow {
            /** the steps one invoice paid for together, when more than one */
            shared_by: string[] }[];
   costs_usd: number;
+  /** the bench run that did the step on this unit, and the deployment
+   *  version it ran (decision 0074); null for a step done by hand */
+  programming_run_id: number | null;
+  deployment_version_id: number | null;
+  /** "<deployment> v<n>" */
+  deployment_version: string | null;
+}
+
+/** A passing programming run on the unit after the one that named it. */
+export interface TwinReflash {
+  programming_run_id: number;
+  deployment_version_id: number | null;
+  deployment_version: string | null;
+  at: string | null;
 }
 
 /** One position of the supplier's own BOM for the board's assembly order. */
@@ -9161,6 +9477,7 @@ export interface TwinInfo {
   finished_at: string | null;
   price: { own_parts_usd: number; step_costs_usd: number; origin_share_usd: number; total_usd: number };
   steps: TwinStepRow[];
+  reflashes: TwinReflash[];
   fitted: TwinFitted[];
 }
 

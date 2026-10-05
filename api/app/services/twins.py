@@ -22,10 +22,9 @@ Three rules hold everything up:
    spread the same way. A closed batch's share is frozen.
 
 **The board's assembly is a step too** (decision 0060). The process has one
-`assembly` step, done at the supplier. It is recorded from the batch's
-assembly order when the boards are received: the order's measured draws and
-every board and assembly position charged to the batch (`fab:*`, `pcba:*`)
-point at it. Any other position can be linked to the click it paid for
+`assembly` step, done at the supplier. The person records it from the
+pre-filled "Record assembly" form (decision 0072): the ticked measured draws
+and board and assembly positions (`fab:*`, `pcba:*`) point at it. Any other position can be linked to the click it paid for
 (`link_costs`) — the final assembler's invoice, a print service.
 
 The money paths need nothing new: a click's draws and positions stay charged
@@ -34,6 +33,7 @@ as before. A link only says which twins carry the money.
 """
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from datetime import date
 
@@ -105,18 +105,22 @@ def done_steps(db: Session, twin_ids: list[int]) -> dict[int, set[str]]:
     return out
 
 
-def needs_met(graph: dict, step: dict, done: set[str]) -> list[str]:
-    """Why `step` cannot run on a unit that has done `done`; [] when it can."""
+def needs_met(graph: dict, step: dict, done: set[str], since: set[str] | None = None) -> list[str]:
+    """Why `step` cannot run on a unit that has done `done`; [] when it can.
+    `since`: for a unit reopened for rework, what it did after the latest
+    reopen (decision 0074) — a step done before may be done again, and the
+    needs still read the whole history."""
     smap = P.step_map(graph)
     groups = P.groups_of(graph)
     label = {k: (s.get("label") or k) for k, s in smap.items()}
     why: list[str] = []
     key = step.get("key")
-    if key in done:
+    fresh = done if since is None else since
+    if key in fresh:
         why.append(f"{label.get(key, key)!r} is already done")
     g = step.get("group")
     if g:
-        other = [m for m in groups.get(g, []) if m != key and m in done]
+        other = [m for m in groups.get(g, []) if m != key and m in fresh]
         if other:
             why.append(f"{label.get(other[0], other[0])!r} is already done — another option of {g!r}")
     needs = P.required_terms(graph) if step.get("kind") == "finish" else (step.get("needs") or [])
@@ -129,9 +133,23 @@ def needs_met(graph: dict, step: dict, done: set[str]) -> list[str]:
             why.append(f"needs {label.get(ref, ref)!r}")
     for ref in step.get("needs_not") or []:
         members = groups.get(ref, [ref])
-        if any(m in done for m in members):
+        if any(m in fresh for m in members):
             why.append(f"must come before {label.get(ref, ref)!r}")
     return why
+
+
+def since_reopen(db: Session, twin_ids: list[int]) -> dict[int, set[str]]:
+    """For each twin reopened for rework: the step keys it did after its
+    latest reopen. A twin never reopened is absent (decision 0074)."""
+    rows = (db.query(M.TwinStep.twin_id, M.TwinStep.id, M.StepRun.step_key, M.StepRun.kind)
+            .join(M.StepRun, M.StepRun.id == M.TwinStep.step_run_id)
+            .filter(M.TwinStep.twin_id.in_(twin_ids or [-1])).order_by(M.TwinStep.id).all())
+    last = {tid: lid for tid, lid, _k, kind in rows if kind == "reopen"}
+    out: dict[int, set[str]] = {tid: set() for tid in last}
+    for tid, lid, key, _kind in rows:
+        if tid in last and lid > last[tid]:
+            out[tid].add(key)
+    return out
 
 
 def g_label(keys: list[str], label: dict) -> str:
@@ -152,12 +170,41 @@ def _new_run(db, run, v, step, qty, chosen, made_at, actor, note) -> M.StepRun:
                    made_at=made_at or _today(), actor=actor, note=(note or "")[:500])
     db.add(sr)
     db.flush()
+    _link_step_keys(db, run, sr)
     return sr
 
 
-def _link(db, twins: list[M.Twin], sr: M.StepRun) -> None:
+def _link_step_keys(db: Session, run: M.ProductionRun, sr: M.StepRun) -> None:
+    """A position linked to this whole step pays for this click too (decision
+    0074) — while it is still charged to this batch: a link counts only inside
+    its batch."""
+    if not sr.qty or sr.kind == "scrap" or sr.chosen == "found":
+        return
+    keyed = {lid for (lid,) in db.query(M.CostLineStepKey.line_id)
+             .filter(M.CostLineStepKey.run_id == run.id, M.CostLineStepKey.step_key == sr.step_key).all()}
+    if not keyed:
+        return
+    mine = {li.id for li in charged_lines(db, run)}
+    # A split position's header is linked too: it is valued at zero, so its
+    # links move no money, and it stays the whole source for a later split or
+    # for the line it becomes again when its children are voided.
+    for lid in (run_actuals.header_ids(db) & keyed) - mine:
+        li = db.get(M.RunCostLine, lid)
+        doc = db.get(M.RunCostDocument, li.document_id) if li is not None else None
+        if li is not None and li.voided_at is None and doc is not None \
+                and run_actuals.line_destination(li, doc) == ("run", run.id):
+            mine.add(lid)
+    have = {lid for (lid,) in db.query(M.CostLineStep.line_id).filter_by(step_run_id=sr.id).all()}
+    for lid in sorted((keyed & mine) - have):
+        db.add(M.CostLineStep(line_id=lid, step_run_id=sr.id))
+    db.flush()
+
+
+def _link(db, twins: list[M.Twin], sr: M.StepRun, *, programming_run_id: int | None = None,
+          deployment_version_id: int | None = None) -> None:
     for tw in twins:
-        db.add(M.TwinStep(twin_id=tw.id, step_run_id=sr.id))
+        db.add(M.TwinStep(twin_id=tw.id, step_run_id=sr.id, programming_run_id=programming_run_id,
+                          deployment_version_id=deployment_version_id))
     db.flush()
 
 
@@ -284,8 +331,8 @@ def receive(db: Session, run: M.ProductionRun, *, qty: int, made_at: str = "", n
     sr = _new_run(db, run, v, step, qty, "stack", made_at, actor, note)
     _link(db, twins, sr)
     plan["step_run_id"] = sr.id
-    if P.step_of_kind(graph, "assembly") is not None:
-        plan["assembly"] = record_assembly(db, run, actor=actor)
+    # The assembly step is the person's to record, from the pre-filled form
+    # on the batch screen (decision 0072): receiving only counts the boards.
     plan["stack"] = stack_id(run.id, twins[0].stack_key)
     return plan
 
@@ -347,6 +394,11 @@ def _plan_draws(db: Session, run: M.ProductionRun, step: dict, n: int, made_at: 
             draws.append({"component_id": cid, "mpn": "" if cid else mpn, "name": name, "qty": need,
                           "unit_cost_usd": round(avg, 8), "value_usd": round(need * avg, 4),
                           "lot_adjustment_id": None, "internal": False})
+    # Decision 0073: a bought part is taken from its lots, oldest first, at
+    # their cost; what no lot holds is refused with the other problems.
+    from . import lots as _lots
+
+    problems += _lots.fifo_price(db, [d for d in draws if not d["internal"]], as_of=made_at, company_id=scope)
     return draws, problems, tokens
 
 
@@ -362,6 +414,10 @@ def write_draws(db: Session, run: M.ProductionRun, sr: M.StepRun, draws: list[di
             step_run_id=sr.id, note=note[:500])
         db.add(c)
         db.flush()
+        if d.get("bindings"):
+            from . import lots as _lots
+
+            _lots.bind(db, c, d)
         if d.get("lot_adjustment_id"):
             db.add(M.ComponentConsumptionLot(consumption_id=c.id, lot_adjustment_id=d["lot_adjustment_id"],
                                              qty=d["qty"], unit_cost_usd=d["unit_cost_usd"],
@@ -369,26 +425,41 @@ def write_draws(db: Session, run: M.ProductionRun, sr: M.StepRun, draws: list[di
     db.flush()
 
 
+#: Bench steps a person may STATE on named devices when no platform bench run
+#: records them (decision 0074): marked or tested elsewhere, a label replaced
+#: by hand. Programming is never stated — the bench names the twin.
+STATABLE_KINDS = ("test", "mark_laser", "label")
+
+
 def apply_step(db: Session, run: M.ProductionRun, *, step_key: str, stack: str = "",
                qty: int = 0, device_ids: list[int] | None = None, codes: list[str] | None = None,
                chosen: str = "", made_at: str = "", lots: dict | None = None, note: str = "",
-               actor: str = "", dry_run: bool = True) -> dict:
+               actor: str = "", dry_run: bool = True, stated: str = "") -> dict:
     """Run one step on N units: from a stack (unnamed) or on devices (named).
 
     Dry run by default: the plan says which units qualify, every draw with its
     price, and any shortage. Programming and marking are refused here — their
-    benches read the device and record them (0059 §5)."""
+    benches read the device and record them (0059 §5) — unless a person STATES
+    a test, mark or label step on named devices, with the reason (`stated`)."""
     v = crafted_version(db, run)
     graph = P._graph(v)
     step = _step(graph, step_key)
     kind = step.get("kind") or "step"
-    if kind != "step":
+    stated = (stated or "").strip()
+    if stated and kind not in STATABLE_KINDS:
+        raise HTTPException(422, f"only a test, laser mark or label step is stated; "
+                                 f"{step.get('label') or step_key!r} is a {kind!r} step")
+    if stated and stack:
+        raise HTTPException(422, "a stated bench step names its devices — scan or pick them")
+    if kind != "step" and not stated:
         where = P.KINDS.get(kind, "batch").replace("_", " ")
         raise HTTPException(422, f"{step.get('label') or step_key!r} is a {kind!r} step — "
                                  + ("use receive" if kind == "receive" else
                                     "use finish" if kind == "finish" else
-                                    "it is recorded from the batch's assembly order when the boards "
-                                    "are received" if kind == "assembly" else f"it is done at the {where}"))
+                                    "it is recorded with \"Record assembly\" on the batch's Process tab "
+                                    "(decision 0072)" if kind == "assembly" else
+                                    f"it is done at the {where}" + (", or stated on named devices with the reason"
+                                                                     if kind in STATABLE_KINDS else "")))
     made_at = made_at or _today()
     if stack:
         twins = _take_stack(db, run.project_id, stack, qty)
@@ -403,7 +474,8 @@ def apply_step(db: Session, run: M.ProductionRun, *, step_key: str, stack: str =
         devices = _resolve_devices(db, run, device_ids, codes)
         twins = _twins_of_devices(db, run, devices)
         done = done_steps(db, [tw.id for tw in twins])
-        refused = {tw.id: why for tw in twins if (why := needs_met(graph, step, done[tw.id]))}
+        again = since_reopen(db, [tw.id for tw in twins])
+        refused = {tw.id: why for tw in twins if (why := needs_met(graph, step, done[tw.id], again.get(tw.id)))}
     n = len(twins)
     draws, problems, tokens = _plan_draws(db, run, step, n, made_at, lots)
     shortages = run_actuals.check_shortages(db, [
@@ -427,6 +499,9 @@ def apply_step(db: Session, run: M.ProductionRun, *, step_key: str, stack: str =
     if refused or shortages or problems:
         raise HTTPException(409, {"error": "the step cannot run on these units — see the plan",
                                   "plan": plan})
+    if stated:
+        # A person's statement, not a bench record: the click says so.
+        chosen, note = "stated", f"stated: {stated}" + (f" — {note}" if note else "")
     sr = _new_run(db, run, v, step, n, chosen, made_at, actor, note)
     write_draws(db, run, sr, draws, f"{sr.step_label} x {n} (step click #{sr.id})")
     _link(db, twins, sr)
@@ -461,9 +536,17 @@ def scrap(db: Session, run: M.ProductionRun, *, stack: str = "", qty: int = 0,
         if chosen not in ("scanned", "list"):
             raise HTTPException(422, "say how the devices were chosen: scanned or list")
         twins = _twins_of_devices(db, run, _resolve_devices(db, run, device_ids, codes))
-    plan = {"dry_run": dry_run, "units": len(twins), "chosen": chosen}
+    # A scrapped named unit is disposed of too (decision 0074), so the shelf
+    # and the twin say the same thing.
+    devices = [db.get(M.DeviceUnit, tw.device_unit_id) for tw in twins if tw.device_unit_id]
+    held = [d for d in devices if d.state not in ("returned", "in_stock", "missing", "")]
+    plan = {"dry_run": dry_run, "units": len(twins), "chosen": chosen,
+            "disposed": len([d for d in devices if d.state]) - len(held),
+            "refused": [{"unit": d.serial or d.mac, "why": [f"it is {d.state or 'unrecorded'}"]} for d in held]}
     if dry_run:
         return plan
+    if held:
+        raise HTTPException(409, {"error": "only a unit we hold can be scrapped — see the plan", "plan": plan})
     sr = _new_run(db, run, v, {"key": "scrap", "label": "Scrapped", "kind": "scrap"},
                   len(twins), chosen, "", actor, reason)
     _link(db, twins, sr)
@@ -471,6 +554,74 @@ def scrap(db: Session, run: M.ProductionRun, *, stack: str = "", qty: int = 0,
     for tw in twins:
         tw.status = "scrapped"
         tw.scrapped_at = now
+    from .orders import dispose_device
+
+    for d in devices:
+        if d.state:   # a device with no recorded state has no shelf to leave
+            dispose_device(db, d, reason=reason, actor=actor,
+                           note=f"scrapped on the batch screen, click #{sr.id}", scrap_twin=False)
+    db.flush()
+    plan["step_run_id"] = sr.id
+    return plan
+
+
+def scrap_disposed(db: Session, device: M.DeviceUnit, *, reason: str = "", actor: str = "") -> None:
+    """A device disposed of on its own page takes its twin with it (decision
+    0074), finished or not: its cost then falls on the good units of its
+    origin batch (0059 §11) until that batch is closed, and after the close it
+    is a loss against the frozen share."""
+    tw = db.query(M.Twin).filter_by(device_unit_id=device.id).first()
+    if tw is None or tw.status == "scrapped":
+        return
+    run = db.get(M.ProductionRun, tw.run_id)
+    v = (db.get(M.ProcessVersion, run.process_version_id) if run is not None and run.process_version_id
+         else db.get(M.ProcessVersion, tw.process_version_id))
+    if run is not None and v is not None:
+        # The note keeps the status it had: "Undo rebuild" puts it back.
+        sr = _new_run(db, run, v, {"key": "scrap", "label": "Scrapped", "kind": "scrap"}, 1, "list", "", actor,
+                      (f"disposed of: {reason}" if reason else "disposed of") + f" (was {tw.status})")
+        _link(db, [tw], sr)
+    tw.status = "scrapped"
+    tw.scrapped_at = utcnow()
+    db.flush()
+
+
+def reopen(db: Session, run: M.ProductionRun, *, device_ids: list[int] | None = None,
+           codes: list[str] | None = None, chosen: str = "", reason: str = "", actor: str = "",
+           dry_run: bool = True) -> dict:
+    """Finished units go back into work (decision 0074): a new label, a new
+    enclosure, a unit back from a customer. The twin is active again, can take
+    steps, and ships only after a new finish."""
+    crafted_version(db, run)
+    _refuse_closed(run)
+    if not (reason or "").strip():
+        raise HTTPException(422, "say why these units are reopened")
+    if chosen not in ("scanned", "list"):
+        raise HTTPException(422, "say how the devices were chosen: scanned or list")
+    devices = _resolve_devices(db, run, device_ids, codes)
+    twins, refused = [], []
+    for d in devices:
+        tw = db.query(M.Twin).filter_by(device_unit_id=d.id).first()
+        why = ("it has no twin" if tw is None else
+               "it is in another batch" if tw.run_id != run.id else
+               f"it is {tw.status}, not finished" if tw.status != "finished" else
+               f"it is {d.state or 'unrecorded'}, not here" if d.state not in ("in_stock", "returned") else None)
+        if why:
+            refused.append({"unit": d.serial or d.mac, "why": [why]})
+        else:
+            twins.append(tw)
+    plan = {"dry_run": dry_run, "units": len(twins), "chosen": chosen, "refused": refused}
+    if dry_run:
+        return plan
+    if refused:
+        raise HTTPException(409, {"error": "these units cannot be reopened — see the plan", "plan": plan})
+    sr = _new_run(db, run, crafted_version(db, run),
+                  {"key": "reopen", "label": "Reopened for rework", "kind": "reopen"},
+                  len(twins), chosen, "", actor, reason)
+    _link(db, twins, sr)
+    for tw in twins:
+        tw.status = "active"
+        tw.finished_at = None
     db.flush()
     plan["step_run_id"] = sr.id
     return plan
@@ -491,9 +642,10 @@ def finish(db: Session, run: M.ProductionRun, *, device_ids: list[int] | None = 
     devices = _resolve_devices(db, run, device_ids, codes)
     twins = _twins_of_devices(db, run, devices)
     done = done_steps(db, [tw.id for tw in twins])
+    again = since_reopen(db, [tw.id for tw in twins])
     names = {d.id: d.serial or d.mac for d in devices}
     refused = [{"unit": names.get(tw.device_unit_id), "why": why}
-               for tw in twins if (why := needs_met(graph, step, done[tw.id]))]
+               for tw in twins if (why := needs_met(graph, step, done[tw.id], again.get(tw.id)))]
     plan = {"dry_run": dry_run, "units": len(twins), "chosen": chosen, "refused": refused}
     if dry_run:
         return plan
@@ -526,6 +678,15 @@ def enter_found(db: Session, run: M.ProductionRun, *, qty: int = 0, done: list[s
         raise HTTPException(404, "no such origin batch in this project")
     if not (note or "").strip():
         raise HTTPException(422, "say where these units came from")
+    # One path for counted spares (decision 0075): units the origin batch
+    # already holds unnamed are its spares, not found units.
+    own = (db.query(func.count(M.Twin.id)).filter(M.Twin.origin_run_id == origin.id, M.Twin.found.is_(False),
+                                                  M.Twin.device_unit_id.is_(None), M.Twin.status == "active")
+           .scalar() or 0)
+    if own and not device_ids:
+        raise HTTPException(409, f"{origin.label} already holds {own} unnamed unit(s) of its own (its rebuilt "
+                                 "spares or received boards) — take them from its stacks, or undo them, rather "
+                                 "than entering the same units as found")
     bad = [k for k in done if k not in smap]
     if bad:
         raise HTTPException(422, f"no step {bad[0]!r} in this process version")
@@ -578,6 +739,59 @@ def enter_found(db: Session, run: M.ProductionRun, *, qty: int = 0, done: list[s
 ASSEMBLY_STAGES = ("fab", "pcba")
 
 
+def repin(db: Session, run: M.ProductionRun, version_id: int, *, dry_run: bool = True) -> dict:
+    """Move a batch to another published version of its process (decision
+    0074): a version published with an error, or the version that really
+    describes how its devices were made. Refused on a closed batch, and when
+    a twin of the batch has done a step the target version does not have —
+    its history would then name steps its process does not know. The clicks
+    keep the version they ran under. Undo is a re-pin back."""
+    _refuse_closed(run)
+    v = db.get(M.ProcessVersion, version_id)
+    if v is None or v.project_id != run.project_id or v.status != "published":
+        raise HTTPException(404, "no such published process version in this project")
+    old = db.get(M.ProcessVersion, run.process_version_id) if run.process_version_id else None
+    if old is None:
+        raise HTTPException(409, f"batch {run.label} has no process — rebuild it into twins instead")
+    smap = P.step_map(P._graph(v))
+    twins = db.query(M.Twin).filter(M.Twin.run_id == run.id).all()
+    done = done_steps(db, [tw.id for tw in twins])
+    missing: dict[str, int] = defaultdict(int)
+    for tw in twins:
+        for k in (done[tw.id] | done_of_key(tw.stack_key)) - {"scrap", "reopen"}:
+            if k not in smap:
+                missing[k] += 1
+    for (k,) in (db.query(M.StepRun.step_key).filter(M.StepRun.run_id == run.id,
+                                                      M.StepRun.kind.notin_(("scrap", "reopen")))
+                 .distinct().all()):
+        if k not in smap and k not in missing:
+            missing[k] = 0   # a click of the batch, its assembly first among them
+    bench = sorted(done_of_key(parse_stack(run.bench_stack)[1]) - set(smap)) if run.bench_stack else []
+    prog = P.step_of_kind(P._graph(v), "program")
+    stale = bool(run.bench_stack and not bench and prog is not None and needs_met(
+        P._graph(v), prog, done_of_key(parse_stack(run.bench_stack)[1])))
+    old_keys = set(P.step_map(P._graph(old)))
+    plan = {"dry_run": dry_run, "run_id": run.id, "from_version": old.version_no, "to_version": v.version_no,
+            "twins": len(twins), "added_steps": sorted(set(smap) - old_keys),
+            "removed_steps": sorted(old_keys - set(smap)),
+            "missing": [{"step": k, "twins": n} for k, n in sorted(missing.items())],
+            "bench_stack_missing": bench, "bench_stack_cleared": stale}
+    if missing or bench:
+        named = [f"{k} ({n} twin(s))" if n else f"{k} (a click of the batch)" for k, n in sorted(missing.items())]
+        named += [f"{k} (the bench stack)" for k in bench]
+        raise HTTPException(409, {"error": f"process version {v.version_no} lacks steps the batch's twins "
+                                           f"have done: {', '.join(named)}", "plan": plan})
+    if dry_run or old.id == v.id:
+        return plan
+    run.process_version_id = v.id
+    if stale:
+        # The target's program step needs more than that pile has done: the
+        # bench says "no stack selected" until a person picks one (0037).
+        run.bench_stack = ""
+    db.flush()
+    return plan
+
+
 def assembly_orders(db: Session, run: M.ProductionRun) -> list[str]:
     """The supplier assembly orders linked to `run` (JLC SMT order codes)."""
     return sorted(d.smt_order_code for d in db.query(M.JlcOrderDecision)
@@ -594,9 +808,13 @@ def assembly_click(db: Session, run: M.ProductionRun) -> M.StepRun | None:
 def _linked_ids(db: Session, run_id: int) -> set[int]:
     """Lines linked to clicks of `run_id`. A link to another batch's click does
     not count: the line was re-charged since, and its new batch must see it."""
-    return {lid for (lid,) in db.query(M.CostLineStep.line_id)
-            .join(M.StepRun, M.StepRun.id == M.CostLineStep.step_run_id)
-            .filter(M.StepRun.run_id == run_id).distinct().all()}
+    clicks = {lid for (lid,) in db.query(M.CostLineStep.line_id)
+              .join(M.StepRun, M.StepRun.id == M.CostLineStep.step_run_id)
+              .filter(M.StepRun.run_id == run_id).distinct().all()}
+    # A position linked to a whole step with no click yet is linked too: it
+    # waits for the clicks (decision 0074).
+    return clicks | {lid for (lid,) in db.query(M.CostLineStepKey.line_id)
+                     .filter(M.CostLineStepKey.run_id == run_id).distinct().all()}
 
 
 def charged_lines(db: Session, run: M.ProductionRun, *, unlinked_only: bool = False
@@ -628,61 +846,302 @@ def _refuse_closed(run: M.ProductionRun) -> None:
 
 
 def link_line(db: Session, line: M.RunCostLine, clicks: list[M.StepRun]) -> None:
-    """Point `line` at `clicks`, replacing any link it had (decision 0061)."""
-    db.query(M.CostLineStep).filter_by(line_id=line.id).delete(synchronize_session=False)
-    for sr in {c.id: c for c in clicks}.values():
-        db.add(M.CostLineStep(line_id=line.id, step_run_id=sr.id))
+    """Point `line` at `clicks`, replacing any link it had (decision 0061).
+
+    Row by row, never a bulk delete: the write journal sees each removed link,
+    so an undo puts it back, and a link that already points at a wanted click
+    is left alone (decision 0072)."""
+    want = {c.id for c in clicks}
+    rows = db.query(M.CostLineStep).filter_by(line_id=line.id).all()
+    for r in rows:
+        if r.step_run_id not in want:
+            db.delete(r)
+    have = {r.step_run_id for r in rows}
+    for sid in sorted(want - have):
+        db.add(M.CostLineStep(line_id=line.id, step_run_id=sid))
     db.flush()
 
 
-def record_assembly(db: Session, run: M.ProductionRun, *, actor: str = "", chosen: str = "supplier",
-                    made_at: str = "", note: str = "") -> dict:
-    """Record the board's assembly at the supplier on the batch's twins (0060).
+def _assembly_twins(db: Session, run: M.ProductionRun) -> list[M.Twin]:
+    """The twins an assembly step is about: every board received in the batch.
+    The found ones entered at zero and never saw the supplier."""
+    return (db.query(M.Twin).filter(M.Twin.origin_run_id == run.id, M.Twin.found.is_(False))
+            .order_by(M.Twin.id).all())
 
-    One click per batch. It takes every twin received in the batch (not the
-    found ones, which entered at zero), the assembly order's measured draws,
-    and every board and assembly position charged to the batch that no click
-    claims yet. Safe to call again: twins received later, and positions
-    imported later, join the same click. Nothing is linked while the batch
-    has no twins, because a cost on a click with no units would be carried by
-    nobody."""
+
+def _line_row(db: Session, li: M.RunCostLine) -> dict:
+    doc = db.get(M.RunCostDocument, li.document_id)
+    return {"line_id": li.id, "label": li.label or li.description or "", "plan_key": li.plan_key or "",
+            "stage": cost_steps.stage_of(li.plan_key) or "",
+            "amount": round(run_actuals.effective_qty(li, doc, db) * (li.unit_price or 0), 4),
+            "currency": li.currency or (doc.currency if doc else "") or "USD",
+            "doc_id": li.document_id, "doc_number": doc.doc_number if doc else "",
+            "supplier": doc.supplier if doc else "", "doc_date": doc.doc_date if doc else ""}
+
+
+def _draw_row(db: Session, c: M.ComponentConsumption, names: dict[int, str]) -> dict:
+    lots = [{"lot": (f"L{b.lot_line_id}" if b.lot_line_id else f"A{b.lot_adjustment_id}"), "qty": b.qty}
+            for b in db.query(M.ComponentConsumptionLot).filter_by(consumption_id=c.id).all()
+            if b.lot_line_id or b.lot_adjustment_id]
+    ref = c.import_ref or ""
+    return {"consumption_id": c.id, "component_id": c.component_id,
+            "name": names.get(c.component_id or 0, ""), "mpn": c.mpn or "", "lcsc": c.lcsc or "",
+            "qty": c.qty, "unit_cost_usd": c.unit_cost_usd,
+            "value_usd": round((c.qty or 0) * (c.unit_cost_usd or 0), 4),
+            "order": ref.split(":")[2] if ref.startswith("jlc:") and ref.count(":") >= 3 else "",
+            "lots": lots}
+
+
+def _line_kind(db: Session, li: M.RunCostLine) -> str:
+    """A parts total not split yet (`parts_lump`), one part the assembler
+    bought — a child of a split parts total (`supplied_part`) — or any other
+    position. A JLC parts total is itself a child of the order's fee split
+    (`pcba:general`), so the parent's step decides, not whether it has one."""
+    if (li.plan_key or "") != "pcba:parts":
+        return "position"
+    parent = db.get(M.RunCostLine, li.parent_line_id) if li.parent_line_id else None
+    return "supplied_part" if parent is not None and (parent.plan_key or "") == "pcba:parts" else "parts_lump"
+
+
+def is_parts_lump(db: Session, li: M.RunCostLine) -> bool:
+    return _line_kind(db, li) == "parts_lump" and li.id not in run_actuals.header_ids(db, li.document_id)
+
+
+def _names(db: Session, ids) -> dict[int, str]:
+    ids = {i for i in ids if i}
+    return {c.id: c.name for c in db.query(M.Component).filter(M.Component.id.in_(ids)).all()} if ids else {}
+
+
+def assembly_draft(db: Session, run: M.ProductionRun) -> dict:
+    """What "Record assembly" opens with (decision 0072): the step as it
+    stands, and every row that is not in it yet, read from the batch's records
+    and the JLC data. Nothing is written. Each row starts ticked; the person
+    decides."""
+    from . import jlc_import, substitutions, supplier_parts
+
+    v = crafted_version(db, run)
+    step = P.step_of_kind(P._graph(v), "assembly")
+    out: dict = {"run_id": run.id, "label": run.label, "closed": run.closed_at is not None,
+                 "step": ({"key": step["key"], "label": step.get("label") or step["key"]} if step else None),
+                 "recorded": None, "lines": [], "parts_from_stock": [], "parts_supplied": [],
+                 "parts_lumps": [], "replacements": [], "bom_suggestion": []}
+    if step is None:
+        return {**out, "status": "no_assembly_step", "header": {}}
+    twins = _assembly_twins(db, run)
+    sr = assembly_click(db, run)
+    in_step = ({tid for (tid,) in db.query(M.TwinStep.twin_id).filter_by(step_run_id=sr.id).all()}
+               if sr is not None else set())
+    orders = assembly_orders(db, run)
+    panels = jlc_import.effective_panels(db) if orders else {}
+    devices = [(panels.get(o) or {}).get("devices") for o in orders]
+    lines = charged_lines(db, run, unlinked_only=True)
+    cand_lines = [li for li in lines if cost_steps.stage_of(li.plan_key) in ASSEMBLY_STAGES]
+    dates = sorted(d for d in (db.get(M.RunCostDocument, li.document_id).doc_date for li in cand_lines) if d)
+    out["header"] = {
+        "assembler": "JLCPCB" if orders else "", "orders": orders, "reference": ", ".join(orders),
+        "made_at": (sr.made_at if sr is not None else (dates[0] if dates else "") or run.run_date or _today()),
+        "boards_jlc": (int(sum(devices)) if devices and all(isinstance(x, (int, float)) for x in devices)
+                       else None),
+        "twins": len(twins), "twins_not_in_step": len([t for t in twins if t.id not in in_step])}
+    hdrs = run_actuals.header_ids(db)
+    out["lines"] = [_line_row(db, li) | {"kind": _line_kind(db, li), "is_parts_lump": _line_kind(db, li) == "parts_lump"}
+                    for li in cand_lines]
+    draws = (run_actuals.live_consumption(db, run_id=run.id)
+             .filter(M.ComponentConsumption.basis == "measured",
+                     M.ComponentConsumption.step_run_id.is_(None)).order_by(M.ComponentConsumption.id).all())
+    names = _names(db, [c.component_id for c in draws])
+    out["parts_from_stock"] = [_draw_row(db, c, names) for c in draws]
+    # The parts the assembler bought: each parts total charged to the batch
+    # that is not split yet, broken down from the supplier's BOM when it has
+    # one. A total split before (the invoice's "supplier" button) is a list of
+    # positions already, offered above as `supplied_part` lines.
+    for li in lines:   # not in a step yet: a total linked whole is the step's already
+        if li.id in hdrs or _line_kind(db, li) != "parts_lump":
+            continue
+        plan = supplier_parts.itemise(db, li)
+        out["parts_lumps"].append({"line_id": li.id, "label": li.label or "", "amount": _line_row(db, li)["amount"],
+                                   "currency": li.currency or "USD", "order": plan.get("smt_order_code") or "",
+                                   "residual": plan.get("residual"), "reconciles": plan.get("reconciles"),
+                                   "reason": "" if plan.get("ok") else plan.get("reason", "")})
+        for ch in plan.get("children") or []:
+            out["parts_supplied"].append({"parent_line_id": li.id, "order": plan.get("smt_order_code") or "",
+                                          "lcsc": ch["lcsc"], "mpn": ch["mpn"], "designator": ch["designator"],
+                                          "qty": ch["qty_supplied"], "unit_price": ch["unit_price"],
+                                          "amount": ch["amount"], "source": ch["source"]})
+    have = {(s.designator or "").strip() for s in substitutions.for_run(db, run.id)}
+    out["replacements"] = [
+        {k: c.get(k) for k in ("designator", "supplier_designator", "specified_lcsc", "specified_mpn",
+                               "specified_component_id", "fitted_lcsc", "fitted_mpn", "supplied_by",
+                               "supplier_source", "match_type", "board", "variant", "order", "evidence")}
+        for c in substitutions.detect(db) if c["run_id"] == run.id and c["designator"] not in have]
+    if not orders and run.snapshot_id:
+        bom = (db.query(M.SnapshotBomLine)
+               .filter_by(snapshot_id=run.snapshot_id, board=run.board or "", variant=run.variant or "")
+               .filter(M.SnapshotBomLine.dnp.is_(False), M.SnapshotBomLine.exclude_from_bom.is_(False))
+               .order_by(M.SnapshotBomLine.position).all())
+        bnames = _names(db, [li.component_id for li in bom])
+        boards = len(twins)
+        # Less what the step drew already, so "Add to assembly" offers the rest.
+        drawn: dict = defaultdict(float)
+        if sr is not None:
+            for c in run_actuals.live_consumption(db).filter(M.ComponentConsumption.step_run_id == sr.id):
+                drawn[c.component_id or (c.mpn or "")] += c.qty or 0.0
+        rows = []
+        for li in bom:
+            want = (li.qty or 0) * boards
+            key = li.component_id or (li.mpn or "")
+            take = min(want, drawn.get(key, 0.0))
+            drawn[key] = drawn.get(key, 0.0) - take
+            if want - take > 0:
+                rows.append({"component_id": li.component_id, "name": bnames.get(li.component_id or 0, ""),
+                             "mpn": li.mpn or "", "lcsc": li.lcsc or "", "designator": li.refs or "",
+                             "qty_per_board": li.qty, "qty": want - take})
+        out["bom_suggestion"] = rows
+    if sr is not None:
+        linked = [db.get(M.RunCostLine, lid) for (lid,) in
+                  db.query(M.CostLineStep.line_id).filter_by(step_run_id=sr.id).all()]
+        sdraws = (run_actuals.live_consumption(db).filter(M.ComponentConsumption.step_run_id == sr.id)
+                  .order_by(M.ComponentConsumption.id).all())
+        snames = _names(db, [c.component_id for c in sdraws])
+        out["recorded"] = {
+            "step_run_id": sr.id, "made_at": sr.made_at, "assembler": sr.assembler or "",
+            "reference": sr.reference or "", "note": sr.note or "", "units": sr.qty, "chosen": sr.chosen,
+            "lines": [_line_row(db, li) | {"kind": _line_kind(db, li)} for li in linked
+                      if li is not None and li.id not in hdrs and li.voided_at is None],
+            "draws": [_draw_row(db, c, snames) for c in sdraws],
+            "replacements": [{"id": x.id, "designator": x.designator, "specified_lcsc": x.specified_lcsc,
+                              "fitted_lcsc": x.fitted_lcsc, "fitted_mpn": x.fitted_mpn,
+                              "supplied_by": x.supplied_by}
+                             for x in db.query(M.RunSubstitution).filter_by(step_run_id=sr.id).all()],
+            # A closed batch's step is undone only after it is reopened.
+            "batch_ids": [] if run.closed_at is not None else [wb.id for wb in db.query(M.WriteBatch)
+                          .filter(M.WriteBatch.kind == "craft.assembly",
+                                  M.WriteBatch.source_ref == f"run:{run.id}",
+                                  M.WriteBatch.reversed_at.is_(None))
+                          .order_by(M.WriteBatch.id.desc()).all()]}
+    out["status"] = "no_twins" if not twins else ("recorded" if sr is not None else "open")
+    return out
+
+
+def apply_assembly(db: Session, run: M.ProductionRun, *, made_at: str = "", assembler: str = "",
+                   reference: str = "", note: str = "", line_ids: list[int] | None = None,
+                   draw_ids: list[int] | None = None, parts: list[dict] | None = None,
+                   actor: str = "") -> tuple[M.StepRun, dict]:
+    """Record, or add to, the board's assembly step with what the person
+    ticked in "Record assembly" (decision 0072). It joins every received twin
+    not in the step yet, links the chosen positions and measured draws, and
+    writes the draws of the parts from our stock that another assembly house
+    used (`parts`), from the batch company's stock at its average on the day.
+    It writes, never commits: the caller wraps it in one journal batch, or
+    rolls it back for a dry run. Returns the click and the counts."""
     v = crafted_version(db, run)
     step = P.step_of_kind(P._graph(v), "assembly")
     if step is None:
-        return {"status": "no_assembly_step"}
+        raise HTTPException(409, "this process has no assembly step")
     _refuse_closed(run)
-    twins = (db.query(M.Twin).filter(M.Twin.origin_run_id == run.id, M.Twin.found.is_(False))
-             .order_by(M.Twin.id).all())
+    # One writer at a time per batch: two records racing would each make a click.
+    db.query(M.ProductionRun).filter_by(id=run.id).with_for_update().one()
+    line_ids = list(dict.fromkeys(line_ids or []))
+    draw_ids = list(dict.fromkeys(draw_ids or []))
+    twins = _assembly_twins(db, run)
     if not twins:
-        return {"status": "no_twins", "orders": assembly_orders(db, run)}
-    lines = [li for li in charged_lines(db, run, unlinked_only=True)
-             if cost_steps.stage_of(li.plan_key) in ASSEMBLY_STAGES]
-    draws = (run_actuals.live_consumption(db, run_id=run.id)
-             .filter(M.ComponentConsumption.basis == "measured",
-                     M.ComponentConsumption.step_run_id.is_(None)).all())
+        raise HTTPException(409, f"{run.label}: receive the boards first — the assembly step is "
+                                 "recorded on the twins the receive makes")
+    offered = {li.id: li for li in charged_lines(db, run, unlinked_only=True)}
+    bad = [lid for lid in (line_ids or []) if lid not in offered]
+    if bad:
+        raise HTTPException(422, f"position(s) {bad} are not charged to {run.label}, or are in a step already")
+    free = {c.id: c for c in run_actuals.live_consumption(db, run_id=run.id)
+            .filter(M.ComponentConsumption.basis == "measured", M.ComponentConsumption.step_run_id.is_(None))}
+    bad = [did for did in (draw_ids or []) if did not in free]
+    if bad:
+        raise HTTPException(422, f"draw(s) {bad} are not measured draws of {run.label} outside a step")
     sr = assembly_click(db, run)
     created = sr is None
     orders = assembly_orders(db, run)
+    asked = (made_at or "").strip()[:10]
+    if sr is not None and asked and asked != sr.made_at:
+        # Its draws are dated with the step: priced and checked on any other
+        # day they would take stock the pool did not hold then.
+        raise HTTPException(422, f"the assembly of {run.label} is recorded on {sr.made_at}; "
+                                 "what is added to it takes that date")
+    day = (sr.made_at if sr is not None else "") or asked or run.run_date or _today()
+    # The parts from our stock another house used: priced and checked first, so
+    # nothing is written when the batch company does not hold them.
+    scope = run_actuals.run_scope(db, run)
+    planned, problems = [], []
+    for i, p in enumerate(parts or []):
+        qty = float(p.get("qty") or 0)
+        if qty <= 0:
+            continue
+        entry = run_actuals.resolve_pool_identity(db, p.get("component_id"), p.get("mpn") or "",
+                                                  p.get("lcsc") or "", as_of=day, company_id=scope)
+        if entry is None:
+            problems.append(p.get("mpn") or p.get("lcsc") or f"row {i + 1}")
+            continue
+        planned.append({"component_id": entry.get("component_id"), "mpn": entry.get("mpn") or p.get("mpn") or "",
+                        "lcsc": entry.get("lcsc") or p.get("lcsc") or "", "qty": qty,
+                        "unit_cost_usd": float(entry.get("avg_usd") or 0.0),
+                        "name": p.get("name") or entry.get("mpn") or ""})
+    if problems:
+        raise HTTPException(422, f"no stock ever held of: {', '.join(map(str, problems))}")
+    from . import lots as _lots
+
+    uncovered = _lots.fifo_price(db, planned, as_of=day, company_id=scope)
+    if uncovered:
+        raise HTTPException(409, {"error": "these parts are in no lot on " + day + ": "
+                                           + "; ".join(f"{u['label']} {u['problem']}" for u in uncovered[:6]),
+                                  "uncovered": uncovered})
+    short = run_actuals.check_shortages(db, [
+        {"component_id": d["component_id"], "mpn": d["mpn"], "lcsc": d["lcsc"], "qty": d["qty"],
+         "date": day, "label": d["name"]} for d in planned], company_id=scope)
+    if short:
+        named = ", ".join(f"{x.get('label') or x.get('mpn')} short {x.get('short')}" for x in short[:6])
+        raise HTTPException(409, {"error": f"the stock does not hold these parts on {day}: {named}",
+                                  "shortages": short})
+    if sr is not None and sr.step_key != step["key"]:
+        # The batch moved to a version whose assembly step has another key:
+        # one click must not carry two keys (decision 0074).
+        raise HTTPException(409, f"the assembly of {run.label} is recorded as step {sr.step_key!r}, and its "
+                                 f"process now calls it {step['key']!r} — move the batch back, or undo the "
+                                 "assembly first")
     if sr is None:
-        dates = sorted(d for d in (db.get(M.RunCostDocument, li.document_id).doc_date
-                                   for li in lines) if d)
-        sr = _new_run(db, run, v, step, 0, chosen, made_at or (dates[0] if dates else "")
-                      or run.run_date or _today(), actor,
+        sr = _new_run(db, run, v, step, 0, "supplier" if orders else "manual", day, actor,
                       note or (f"assembly order {', '.join(orders)}" if orders else "assembly"))
+    if assembler.strip() or created:
+        sr.assembler = assembler.strip()[:120]
+    if reference.strip() or created:
+        sr.reference = reference.strip()[:200]
+    if note.strip() and not created:
+        sr.note = f"{sr.note or ''}\n{note.strip()}"[:500]
     have = {tid for (tid,) in db.query(M.TwinStep.twin_id).filter_by(step_run_id=sr.id).all()}
     new = [tw for tw in twins if tw.id not in have]
     _link(db, new, sr)
     for tw in new:
         tw.stack_key = _add_token(tw.stack_key, step["key"])
     sr.qty = len(have) + len(new)
-    for li in lines:
-        link_line(db, li, [sr])   # replaces a stale link to another batch's click
-    for c in draws:
-        c.step_run_id = sr.id
+    if created:
+        _link_step_keys(db, run, sr)
+    for lid in line_ids or []:
+        link_line(db, offered[lid], [sr])
+        # Ticked onto this batch's assembly: a whole-step link it kept from
+        # another batch says nothing true any more.
+        for k in db.query(M.CostLineStepKey).filter(M.CostLineStepKey.line_id == lid,
+                                                    M.CostLineStepKey.run_id != run.id).all():
+            db.delete(k)
+    for did in draw_ids or []:
+        free[did].step_run_id = sr.id
+    if planned:
+        write_draws(db, run, sr, planned, f"assembly at {sr.assembler or 'the assembler'}: our stock")
     db.flush()
-    return {"status": "recorded" if created else "extended", "step_run_id": sr.id,
-            "orders": orders, "twins_added": len(new), "units": sr.qty,
-            "lines_linked": len(lines), "draws_linked": len(draws)}
+    line_usd = run_actuals.leaf_line_usd(db, [offered[lid] for lid in line_ids or []])
+    return sr, {"status": "recorded" if created else "extended", "step_run_id": sr.id, "units": sr.qty,
+                "twins_added": len(new), "lines_linked": len(line_ids or []),
+                "draws_linked": len(draw_ids or []), "draws_written": len(planned),
+                "value_usd": {"lines": round(sum(v[0] for v in line_usd.values()), 4),
+                              "draws": round(sum((free[d].qty or 0) * (free[d].unit_cost_usd or 0)
+                                                 for d in draw_ids or []), 4),
+                              "parts": round(sum(d["qty"] * d["unit_cost_usd"] for d in planned), 4)}}
 
 
 def link_costs(db: Session, run: M.ProductionRun, *, step_run_ids: list[int] | None,
@@ -716,18 +1175,32 @@ def link_costs(db: Session, run: M.ProductionRun, *, step_run_ids: list[int] | N
                 raise HTTPException(409, f"step click {cid} cannot carry a cost: it has no units, is a "
                                          "scrap, or records units entered at zero")
             clicks.append(sr)
-        if not clicks:
+        smap = P.step_map(P._graph(crafted_version(db, run)))
+        bad = [k for k in step_keys or [] if k not in smap]
+        if bad:
+            raise HTTPException(422, f"no step {bad[0]!r} in this batch's process")
+        # A whole step may have no click yet: the link waits for them (0074).
+        if not clicks and not step_keys:
             raise HTTPException(422, "select at least one step click")
     lines: list[M.RunCostLine] = []
+    headers: list[M.RunCostLine] = []
     seen: set[int] = set()
     for lid in line_ids or []:
         li = db.get(M.RunCostLine, int(lid))
         if li is None:
             raise HTTPException(404, f"no position {lid}")
-        kids = (db.query(M.RunCostLine)
-                .filter(M.RunCostLine.parent_line_id == li.id, M.RunCostLine.voided_at.is_(None)).all())
-        for x in (kids or [li]):
-            if x.id not in seen:
+        # A header stands for its live leaves, at any depth; every header on
+        # the way follows them (decision 0074).
+        frontier = [li]
+        while frontier:
+            x = frontier.pop()
+            kids = (db.query(M.RunCostLine)
+                    .filter(M.RunCostLine.parent_line_id == x.id, M.RunCostLine.voided_at.is_(None)).all())
+            if kids:
+                if x.id not in {h.id for h in headers}:
+                    headers.append(x)
+                frontier.extend(kids)
+            elif x.id not in seen:
                 seen.add(x.id)
                 lines.append(x)
     if not lines:
@@ -739,19 +1212,115 @@ def link_costs(db: Session, run: M.ProductionRun, *, step_run_ids: list[int] | N
     for lid, srid in (db.query(M.CostLineStep.line_id, M.CostLineStep.step_run_id)
                       .filter(M.CostLineStep.line_id.in_([li.id for li in lines])).all()):
         before[lid].append(srid)
+    keys_before = defaultdict(list)
+    for lid, k in (db.query(M.CostLineStepKey.line_id, M.CostLineStepKey.step_key)
+                   .filter(M.CostLineStepKey.line_id.in_([li.id for li in lines])).all()):
+        keys_before[lid].append(k)
     plan = {"dry_run": dry_run, "step_run_ids": [] if unlink else [c.id for c in clicks],
             "unlink": unlink,
             "lines": [{"line_id": li.id, "label": li.label, "plan_key": li.plan_key,
-                       "from_step_run_ids": sorted(before.get(li.id, []))} for li in lines],
+                       "from_step_run_ids": sorted(before.get(li.id, [])),
+                       "from_step_keys": sorted(keys_before.get(li.id, []))} for li in lines],
             "refused": refused}
     if dry_run:
         return plan
     if refused:
-        raise HTTPException(409, {"error": "some positions cannot be linked — see the plan",
+        what = "unlinked" if unlink else "linked"
+        raise HTTPException(409, {"error": f"some positions cannot be {what}: "
+                                           + "; ".join(f"{r['label']} — {r['why']}" for r in refused[:4])
+                                           + (" — unlink this batch's own share instead" if unlink else ""),
                                   "plan": plan})
-    for li in lines:
+    # A header follows its children (decision 0074): it is the source a later
+    # split copies, and valued at zero, so its links move no money.
+    for li in lines + headers:
         link_line(db, li, [] if unlink else clicks)
+        link_keys(db, li, run, [] if unlink else list(step_keys or []))
+    # A link replaces what the lines said before, so the headers above them
+    # lose what no leaf holds any more, as after an unlink.
+    _unlink_around(db, run, [li.id for li in lines], [int(x) for x in line_ids or []], relink=not unlink)
     return plan
+
+
+def _unlink_around(db: Session, run: M.ProductionRun, leaf_ids: list[int], named: list[int], *,
+                   relink: bool = False) -> None:
+    """An unlink leaves no link of this batch where a later split could copy
+    it back (decision 0074): not on a voided line below what was named, and
+    not on a header above it unless another leaf of this batch below that
+    header holds the same link. After a link (`relink`), the leaves just
+    linked hold their new links, and the voided lines are left as they are."""
+    mine_clicks = {sid for (sid,) in db.query(M.StepRun.id).filter_by(run_id=run.id).all()}
+
+    def clear(line_id: int) -> None:
+        for k in db.query(M.CostLineStepKey).filter_by(line_id=line_id, run_id=run.id).all():
+            db.delete(k)
+        for x in db.query(M.CostLineStep).filter(M.CostLineStep.line_id == line_id,
+                                                 M.CostLineStep.step_run_id.in_(mine_clicks or {-1})).all():
+            db.delete(x)
+
+    seen, frontier = set(named), [] if relink else list(named)
+    while frontier:                       # every line below, voided ones too
+        kids = db.query(M.RunCostLine).filter(M.RunCostLine.parent_line_id.in_(frontier)).all()
+        frontier = []
+        for k in kids:
+            if k.id not in seen:
+                seen.add(k.id)
+                frontier.append(k.id)
+                if k.voided_at is not None:
+                    clear(k.id)
+    charged = {li.id for li in charged_lines(db, run)}
+    done: set[int] = set()
+    for lid in leaf_ids:                  # every header above, link by link
+        li = db.get(M.RunCostLine, lid)
+        while li is not None and li.parent_line_id:
+            parent = db.get(M.RunCostLine, li.parent_line_id)
+            if parent is None:
+                break
+            if parent.id not in done:
+                done.add(parent.id)
+                stack, leaves = [parent.id], set()
+                while stack:
+                    x = stack.pop()
+                    ks = [k for (k,) in db.query(M.RunCostLine.id).filter(M.RunCostLine.parent_line_id == x,
+                                                                          M.RunCostLine.voided_at.is_(None)).all()]
+                    stack.extend(ks)
+                    if not ks:
+                        leaves.add(x)
+                others = ((leaves & charged) - (set() if relink else set(leaf_ids))) or {-1}
+                held_keys = {k for (k,) in db.query(M.CostLineStepKey.step_key).filter(
+                    M.CostLineStepKey.line_id.in_(others), M.CostLineStepKey.run_id == run.id).all()}
+                held_clicks = {s for (s,) in db.query(M.CostLineStep.step_run_id).filter(
+                    M.CostLineStep.line_id.in_(others), M.CostLineStep.step_run_id.in_(mine_clicks or {-1})).all()}
+                for k in db.query(M.CostLineStepKey).filter_by(line_id=parent.id, run_id=run.id).all():
+                    if k.step_key not in held_keys:
+                        db.delete(k)
+                for x in db.query(M.CostLineStep).filter(M.CostLineStep.line_id == parent.id,
+                                                         M.CostLineStep.step_run_id.in_(mine_clicks or {-1})).all():
+                    if x.step_run_id not in held_clicks:
+                        db.delete(x)
+            li = parent
+    db.flush()
+
+
+def step_clicks(db: Session, run_id: int, step_key: str) -> list[int]:
+    """Every click of a step in a batch that can carry a cost: what a
+    whole-step link means (decisions 0061, 0074)."""
+    return [sid for (sid,) in db.query(M.StepRun.id).filter(
+        M.StepRun.run_id == run_id, M.StepRun.step_key == step_key, M.StepRun.qty > 0,
+        M.StepRun.kind != "scrap", M.StepRun.chosen != "found").all()]
+
+
+def link_keys(db: Session, line: M.RunCostLine, run: M.ProductionRun, keys: list[str]) -> None:
+    """Say that `line` pays for these whole steps of `run`, replacing what it
+    said before (decision 0074). Row by row, so the journal sees each one."""
+    rows = db.query(M.CostLineStepKey).filter_by(line_id=line.id).all()
+    want = {(run.id, k) for k in keys}
+    for r in rows:
+        if (r.run_id, r.step_key) not in want:
+            db.delete(r)
+    have = {(r.run_id, r.step_key) for r in rows}
+    for rid, k in sorted(want - have):
+        db.add(M.CostLineStepKey(line_id=line.id, run_id=rid, step_key=k))
+    db.flush()
 
 
 def unlinked(db: Session, run: M.ProductionRun) -> dict:
@@ -798,6 +1367,20 @@ def set_bench_stack(db: Session, run: M.ProductionRun, stack: str | None) -> dic
     return {"run_id": run.id, "stack": stack, "left": bench_stack_left(db, run)}
 
 
+def _bench_keys(db: Session, rid: int, key: str) -> list[str]:
+    """The stack keys one selected bench stack stands for. Recording or
+    undoing the assembly (decision 0072) adds or takes away its token on every
+    board of a batch without touching the pile, so the selection names the same
+    boards with or without it."""
+    batch = db.get(M.ProductionRun, rid)
+    v = db.get(M.ProcessVersion, batch.process_version_id) if batch is not None and batch.process_version_id else None
+    step = P.step_of_kind(P._graph(v), "assembly") if v is not None else None
+    if step is None:
+        return [key]
+    toks = set(_tokens(key))
+    return sorted({key, "|".join(sorted(toks | {step["key"]})), "|".join(sorted(toks - {step["key"]}))} - {""})
+
+
 def bench_stack_left(db: Session, run: M.ProductionRun) -> int | None:
     """Units left in the batch's selected stack; None when none is selected."""
     if not run.bench_stack:
@@ -805,12 +1388,12 @@ def bench_stack_left(db: Session, run: M.ProductionRun) -> int | None:
     rid, key = parse_stack(run.bench_stack)
     return (db.query(func.count(M.Twin.id))
             .filter(M.Twin.project_id == run.project_id, M.Twin.run_id == rid,
-                    M.Twin.stack_key == key, M.Twin.device_unit_id.is_(None),
+                    M.Twin.stack_key.in_(_bench_keys(db, rid, key)), M.Twin.device_unit_id.is_(None),
                     M.Twin.status == "active").scalar() or 0)
 
 
 def _name(db, tw: M.Twin, device: M.DeviceUnit, batch: M.ProductionRun, chosen: str,
-          made_at: str, actor: str) -> None:
+          made_at: str, actor: str, programming_run: M.ProgrammingRun | None = None) -> None:
     v = db.get(M.ProcessVersion, batch.process_version_id) or db.get(M.ProcessVersion, tw.process_version_id)
     prog = P.step_of_kind(P._graph(v), "program") or {"key": "program", "label": "Programmed",
                                                        "kind": "program"}
@@ -819,13 +1402,16 @@ def _name(db, tw: M.Twin, device: M.DeviceUnit, batch: M.ProductionRun, chosen: 
     tw.named_at = utcnow()
     tw.stack_key = _add_token(tw.stack_key, prog["key"])
     sr = _new_run(db, batch, v, prog, 1, chosen, made_at, actor,
-                  f"named {device.serial or device.mac}")
-    _link(db, [tw], sr)
+                  f"named {device.serial or device.mac}"
+                  + (f" by programming run #{programming_run.id}" if programming_run is not None else ""))
+    _link(db, [tw], sr, programming_run_id=programming_run.id if programming_run is not None else None,
+          deployment_version_id=programming_run.deployment_version_id if programming_run is not None else None)
     _draw_or_note(db, batch, sr, prog, 1)
 
 
 def name_at_bench(db: Session, device: M.DeviceUnit, event: M.DeviceEvent,
-                  batch: M.ProductionRun | None) -> M.Twin | None:
+                  batch: M.ProductionRun | None, programming_run: M.ProgrammingRun | None = None
+                  ) -> M.Twin | None:
     """A NEW `produced` event names one twin of the batch's selected stack.
 
     Called by the bench engine only when `mark_produced` wrote a new event.
@@ -840,13 +1426,14 @@ def name_at_bench(db: Session, device: M.DeviceUnit, event: M.DeviceEvent,
     # moment must not name the same twin.
     tw = (db.query(M.Twin)
           .filter(M.Twin.project_id == batch.project_id, M.Twin.run_id == rid,
-                  M.Twin.stack_key == key, M.Twin.device_unit_id.is_(None),
+                  M.Twin.stack_key.in_(_bench_keys(db, rid, key)), M.Twin.device_unit_id.is_(None),
                   M.Twin.status == "active")
           .order_by(M.Twin.id).with_for_update(skip_locked=True).first())
     if tw is None:
         return None
     at = event.at.date().isoformat() if event is not None and event.at else _today()
-    _name(db, tw, device, batch, "bench", at, event.actor if event is not None else "")
+    _name(db, tw, device, batch, "bench", at, event.actor if event is not None else "",
+          programming_run=programming_run)
     db.flush()
     return tw
 
@@ -880,9 +1467,206 @@ def merge(db: Session, run: M.ProductionRun, *, stack: str, device_ids: list[int
     if dry_run:
         return plan
     for tw, d in zip(twins, devices):
-        _name(db, tw, d, run, "merge", "", actor)
+        # The run that programmed the board names it, with its deployment
+        # version (decision 0074): it is no reflash.
+        _name(db, tw, d, run, "merge", "", actor, programming_run=production_pass(db, d.id))
     db.flush()
     plan["caught_up"] = catch_up(db, twins)
+    return plan
+
+
+def _drop_token(key: str, step_key: str) -> str:
+    return "|".join(t for t in _tokens(key) if t.split("@", 1)[0] != step_key)
+
+
+def _one_device(db: Session, run: M.ProductionRun, device_ids, codes) -> M.DeviceUnit:
+    devices = _resolve_devices(db, run, device_ids, codes)
+    if len(devices) != 1:
+        raise HTTPException(422, "name exactly one device")
+    return devices[0]
+
+
+def _home_run(db: Session, tw: M.Twin) -> int:
+    """The batch whose pile an unnamed twin lies in: its origin, or for a
+    found unit the batch it was entered into."""
+    if not tw.found:
+        return tw.origin_run_id
+    hit = (db.query(M.StepRun.run_id).join(M.TwinStep, M.TwinStep.step_run_id == M.StepRun.id)
+           .filter(M.TwinStep.twin_id == tw.id, M.StepRun.chosen == "found").order_by(M.StepRun.id).first())
+    return hit[0] if hit is not None else tw.run_id
+
+
+def _is_flash_program(db: Session, r: M.ProgrammingRun) -> bool:
+    """A programming pass: action `program` with a flash deployment (a run with
+    no deployment version is a hand-typed record, not one)."""
+    if (r.action or "program") != "program" or not r.deployment_version_id:
+        return False
+    dv = db.get(M.DeploymentVersion, r.deployment_version_id)
+    dep = db.get(M.Deployment, dv.deployment_id) if dv is not None else None
+    return dep is not None and (dep.kind or "flash") == "flash"
+
+
+_RUN_NOTE = re.compile(r"programming run #(\d+)")
+
+
+def pick_production_pass(passes: list, event=None) -> object | None:
+    """Of a device's passing programming runs (oldest first), the one that
+    produced it (decision 0074). The bench names it in the `produced` event's
+    note ("passed programming run #N"); without that, the latest that started
+    at or before the event, else the first of the event's batch, else the
+    first. A trial before it, and a reflash after it, are not it. The event
+    is stamped with the device's FIRST sighting, which can be a trial's, so
+    the note goes first."""
+    if not passes:
+        return None
+    if event is None:
+        return passes[0]
+    m = _RUN_NOTE.search(event.note or "")
+    named = next((r for r in passes if m and r.id == int(m.group(1))), None)
+    if named is not None:
+        return named
+    before = [r for r in passes if r.started_at is not None and event.at is not None and r.started_at <= event.at]
+    if before:
+        return before[-1]
+    mine = [r for r in passes if event.production_run_id and r.production_run_id == event.production_run_id]
+    return (mine or passes)[0]
+
+
+def production_pass(db: Session, device_id: int) -> M.ProgrammingRun | None:
+    """The programming run that produced `device_id` (`pick_production_pass`)."""
+    passes = [r for r in (db.query(M.ProgrammingRun)
+                          .filter(M.ProgrammingRun.device_unit_id == device_id, M.ProgrammingRun.status == "pass",
+                                  M.ProgrammingRun.draft_run.is_(False))
+                          .order_by(M.ProgrammingRun.started_at, M.ProgrammingRun.id).all())
+              if _is_flash_program(db, r)]
+    ev = (db.query(M.DeviceEvent).filter_by(device_id=device_id, kind="produced")
+          .order_by(M.DeviceEvent.at).first())
+    return pick_production_pass(passes, ev)
+
+
+def swap_twin(db: Session, run: M.ProductionRun, *, device_ids: list[int] | None = None,
+              codes: list[str] | None = None, stack: str = "", actor: str = "", dry_run: bool = True) -> dict:
+    """The bench named the device from the wrong pile (decision 0074): the
+    device takes a twin of `stack`, and its old twin goes back to its own
+    stack, unnamed. The programming click moves with the device, draws
+    included. Refused while the old twin has a step recorded after it was
+    named — undo those first, or they would follow the wrong board. The
+    board's own assembly stays with the board."""
+    graph = P._graph(crafted_version(db, run))
+    _refuse_closed(run)
+    prog = P.step_of_kind(graph, "program") or {"key": "program"}
+    d = _one_device(db, run, device_ids, codes)
+    old = db.query(M.Twin).filter_by(device_unit_id=d.id).first()
+    if old is None:
+        raise HTTPException(409, f"{d.serial or d.mac} has no twin — merge it instead")
+    if old.run_id != run.id or old.status != "active":
+        raise HTTPException(409, f"{d.serial or d.mac} is {old.status} in batch {old.run_id}, not active here")
+    if not any(s["stack"] == stack for s in bench_stacks(db, run)):
+        raise HTTPException(422, "that stack is not ready for programming in this project")
+    links = (db.query(M.TwinStep, M.StepRun).join(M.StepRun, M.StepRun.id == M.TwinStep.step_run_id)
+             .filter(M.TwinStep.twin_id == old.id).order_by(M.TwinStep.id).all())
+    named = [ts for ts, sr in links if sr.kind == "program"]
+    if not named:
+        raise HTTPException(409, f"{d.serial or d.mac} has no programming step to move — it was entered "
+                                 "as found without programming")
+    later = [sr.step_label or sr.step_key for ts, sr in links
+             if ts.id > named[0].id and sr.kind not in ("program", "assembly")]
+    new = _take_stack(db, run.project_id, stack, 1)[0]
+    home = _home_run(db, old)
+    plan = {"dry_run": dry_run, "device": d.serial or d.mac, "from_twin": old.id, "to_twin": new.id,
+            "back_to_stack": stack_id(home, _drop_token(old.stack_key, prog["key"])), "later_steps": later}
+    if later:
+        raise HTTPException(409, {"error": f"{d.serial or d.mac} has steps after it was named: {', '.join(later)} "
+                                           "— undo them first", "plan": plan})
+    if dry_run:
+        return plan
+    named_at = old.named_at or utcnow()
+    # Release the device first: one device names one twin, and the database
+    # checks that row by row.
+    old.device_unit_id, old.named_at = None, None
+    old.stack_key = _drop_token(old.stack_key, prog["key"])
+    old.run_id = home
+    db.flush()
+    new.device_unit_id, new.run_id, new.named_at = d.id, run.id, named_at
+    new.stack_key = _add_token(new.stack_key, prog["key"])
+    for ts in named:
+        ts.twin_id = new.id
+    db.flush()
+    return plan
+
+
+def relink_run(db: Session, run: M.ProductionRun, *, programming_run_id: int,
+               device_ids: list[int] | None = None, codes: list[str] | None = None,
+               dry_run: bool = True) -> dict:
+    """A bench run was filed against the wrong device (decision 0074): it moves
+    to the right one, with the steps it recorded. A run that NAMED a twin is
+    that twin's identity — use "swap twin" for it."""
+    pr = db.get(M.ProgrammingRun, int(programming_run_id))
+    if pr is None:
+        raise HTTPException(404, "no such programming run")
+    _refuse_closed(run)
+    d = _one_device(db, run, device_ids, codes)
+    if pr.device_unit_id == d.id:
+        raise HTTPException(422, "the run is already on that device")
+    old_dev = db.get(M.DeviceUnit, pr.device_unit_id) if pr.device_unit_id else None
+    links = (db.query(M.TwinStep, M.StepRun).join(M.StepRun, M.StepRun.id == M.TwinStep.step_run_id)
+             .filter(M.TwinStep.programming_run_id == pr.id).order_by(M.TwinStep.id).all())
+    batch = db.get(M.ProductionRun, pr.production_run_id) if pr.production_run_id else None
+    dv = db.get(M.DeploymentVersion, pr.deployment_version_id) if pr.deployment_version_id else None
+    dep = db.get(M.Deployment, dv.deployment_id) if dv is not None else None
+    owners = {x.project_id for x in (batch, dep, old_dev) if x is not None} | {sr.project_id for _ts, sr in links}
+    if owners - {run.project_id}:
+        raise HTTPException(409, "that bench run belongs to another project")
+    made = production_pass(db, old_dev.id) if old_dev is not None else None
+    if made is not None and made.id == pr.id and any(e.kind == "produced" for e in old_dev.events):
+        # A passing programming run is its device's production record: moving
+        # it would leave a device with no run behind its "produced".
+        raise HTTPException(409, "this is the run that programmed its device — use merge or \"swap twin\"")
+    if any(sr.kind == "program" for _ts, sr in links):
+        raise HTTPException(409, "this run named its twin — use \"swap twin\" to move the device to the right board")
+    for ts, _sr in links:
+        src = db.get(M.Twin, ts.twin_id)
+        src_run = db.get(M.ProductionRun, src.run_id) if src is not None else None
+        if src is None or src.status != "active" or (src_run is not None and src_run.closed_at is not None):
+            what = (old_dev.serial or old_dev.mac) if old_dev is not None else f"twin {ts.twin_id}"
+            raise HTTPException(409, f"{what} is {src.status if src else 'gone'}"
+                                     f"{' in a closed batch' if src_run is not None and src_run.closed_at else ''}"
+                                     " — reopen it first, so the steps it loses are asked for again")
+    new = db.query(M.Twin).filter_by(device_unit_id=d.id).first()
+    if links and (new is None or new.run_id != run.id or new.status != "active"):
+        raise HTTPException(409, f"{d.serial or d.mac} has no active twin in {run.label} to take the steps")
+    graph = P._graph(crafted_version(db, run))
+    smap = P.step_map(graph)
+    have = done_steps(db, [new.id])[new.id] if new is not None else set()
+    again = since_reopen(db, [new.id]).get(new.id) if new is not None else None
+    refused, moving = [], set(have)
+    for _ts, sr in links:
+        step = smap.get(sr.step_key)
+        why = ([f"no step {sr.step_key!r} in {run.label}'s process"] if step is None
+               else needs_met(graph, step, moving, again))
+        if why:
+            refused.append({"step": sr.step_label or sr.step_key, "why": why})
+        moving.add(sr.step_key)
+        if again is not None:
+            again = again | {sr.step_key}
+    plan = {"dry_run": dry_run, "programming_run_id": pr.id,
+            "from_device": (old_dev.serial or old_dev.mac) if old_dev else None, "to_device": d.serial or d.mac,
+            "steps": sorted(sr.step_label or sr.step_key for _ts, sr in links), "refused": refused}
+    if refused:
+        raise HTTPException(409, {"error": f"{d.serial or d.mac} cannot take these steps: "
+                                           + "; ".join(f"{r['step']} — {', '.join(r['why'])}" for r in refused),
+                                  "plan": plan})
+    if dry_run:
+        return plan
+    pr.device_unit_id = d.id
+    for ts, sr in links:
+        old = db.get(M.Twin, ts.twin_id)
+        ts.twin_id = new.id
+        db.flush()
+        if sr.step_key not in done_steps(db, [old.id])[old.id]:
+            old.stack_key = _drop_token(old.stack_key, sr.step_key)
+        new.stack_key = _add_token(new.stack_key, sr.step_key)
+    db.flush()
     return plan
 
 
@@ -900,18 +1684,22 @@ def _draw_or_note(db: Session, run: M.ProductionRun, sr: M.StepRun, step: dict, 
          "date": sr.made_at, "label": d["name"]} for d in draws if not d["internal"]],
         company_id=run_actuals.run_scope(db, run))
     if problems or short:
-        what = ", ".join(sorted({x.get("label") or x.get("name") or "?" for x in (short or problems)}))
-        sr.note = f"{sr.note} — not drawn, the pool held none: {what}"[:500]
+        what = "; ".join(sorted({(x.get("label") or x.get("name") or "?")
+                                 + (f" ({x['problem']})" if x.get("problem") else " (not in stock)")
+                                 for x in (short or problems)}))
+        sr.note = f"{sr.note} — not drawn: {what}"[:500]
         return
     write_draws(db, run, sr, draws, f"{sr.step_label} x {sr.qty} (bench, click #{sr.id})")
 
 
 def _bench_step(db: Session, run: M.ProductionRun, v: M.ProcessVersion, step: dict, tw: M.Twin,
-                note: str, *, actor: str = "", factor: float = 1, made_at: str = "") -> M.StepRun:
+                note: str, *, actor: str = "", factor: float = 1, made_at: str = "",
+                programming_run_id: int | None = None, deployment_version_id: int | None = None) -> M.StepRun:
     """A bench recorded `step` on one twin: one click, and what the step adds
-    drawn from the pool (decision 0061)."""
+    drawn from the pool (decision 0061). The bench run and its deployment
+    version go on the twin's step (decision 0074)."""
     sr = _new_run(db, run, v, step, 1, "bench", made_at, actor, note)
-    _link(db, [tw], sr)
+    _link(db, [tw], sr, programming_run_id=programming_run_id, deployment_version_id=deployment_version_id)
     tw.stack_key = _add_token(tw.stack_key, step["key"])
     _draw_or_note(db, run, sr, step, factor)
     return sr
@@ -928,7 +1716,8 @@ def _twin_process(db: Session, device: M.DeviceUnit):
 
 def record_marking(db: Session, device: M.DeviceUnit, *, laser: bool, label: bool,
                    deployment_id: int | None = None, actor: str = "", copies: int = 1,
-                   made_at: str = "", note: str = "") -> list[str]:
+                   made_at: str = "", note: str = "", programming_run_id: int | None = None,
+                   deployment_version_id: int | None = None) -> list[str]:
     """The marking bench engraved or labelled `device`: record the matching
     steps on its twin, where its process has them and their needs are met, and
     draw what they add (one label per copy printed).
@@ -945,17 +1734,19 @@ def record_marking(db: Session, device: M.DeviceUnit, *, laser: bool, label: boo
         step = P.step_for_deployment(graph, kind, deployment_id)
         if not did or step is None:
             continue
-        if needs_met(graph, step, done_steps(db, [tw.id])[tw.id]):
+        if needs_met(graph, step, done_steps(db, [tw.id])[tw.id], since_reopen(db, [tw.id]).get(tw.id)):
             continue
         _bench_step(db, run, v, step, tw, note or f"{device.serial or device.mac}", actor=actor,
-                    factor=copies if kind == "label" else 1, made_at=made_at)
+                    factor=copies if kind == "label" else 1, made_at=made_at,
+                    programming_run_id=programming_run_id, deployment_version_id=deployment_version_id)
         out.append(step["key"])
     db.flush()
     return out
 
 
 def record_test(db: Session, device: M.DeviceUnit, *, deployment_id: int | None = None,
-                actor: str = "", made_at: str = "", note: str = "") -> list[str]:
+                actor: str = "", made_at: str = "", note: str = "", programming_run_id: int | None = None,
+                deployment_version_id: int | None = None) -> list[str]:
     """A test procedure passed on `device`: record the process's test step on
     its twin, where its needs are met (decision 0061). The step is the one that
     names the run's deployment, else one that names none."""
@@ -964,10 +1755,11 @@ def record_test(db: Session, device: M.DeviceUnit, *, deployment_id: int | None 
         return []
     graph = P._graph(v)
     step = P.step_for_deployment(graph, "test", deployment_id)
-    if step is None or needs_met(graph, step, done_steps(db, [tw.id])[tw.id]):
+    if step is None or needs_met(graph, step, done_steps(db, [tw.id])[tw.id], since_reopen(db, [tw.id]).get(tw.id)):
         return []
     _bench_step(db, run, v, step, tw, note or f"{device.serial or device.mac}: test passed",
-                actor=actor, made_at=made_at)
+                actor=actor, made_at=made_at, programming_run_id=programming_run_id,
+                deployment_version_id=deployment_version_id)
     db.flush()
     return [step["key"]]
 
@@ -989,6 +1781,14 @@ def catch_up(db: Session, twins: list[M.Twin]) -> list[dict]:
                         M.ProgrammingRun.draft_run.is_(False))
                 .order_by(M.ProgrammingRun.id).all())
         device = db.get(M.DeviceUnit, tw.device_unit_id)
+        # A run from before the twin's latest reopen is no evidence of the
+        # work done since (decision 0074).
+        # One run can record a step now and another later (a label now, the
+        # laser once the enclosure is on), so a run behind one step stays a
+        # source; "already done" stops it recording a step twice.
+        reopened = (db.query(func.max(M.StepRun.created_at)).join(M.TwinStep, M.TwinStep.step_run_id == M.StepRun.id)
+                    .filter(M.TwinStep.twin_id == tw.id, M.StepRun.kind == "reopen").scalar())
+        runs = [r for r in runs if not (reopened and r.started_at and r.started_at < reopened)]
         for r in runs:
             res = r.results or {}
             dv = db.get(M.DeploymentVersion, r.deployment_version_id) if r.deployment_version_id else None
@@ -999,10 +1799,12 @@ def catch_up(db: Session, twins: list[M.Twin]) -> list[dict]:
             if res.get("marked") or res.get("printed"):
                 got += record_marking(db, device, laser=bool(res.get("marked")), label=bool(res.get("printed")),
                                       deployment_id=dep.id if dep else None, actor=r.operator or "",
-                                      copies=int(res.get("label_copies") or 1), made_at=when, note=why)
+                                      copies=int(res.get("label_copies") or 1), made_at=when, note=why,
+                                      programming_run_id=r.id, deployment_version_id=r.deployment_version_id)
             if r.status == "pass" and dep is not None and (dep.kind or "") == "test":
                 got += record_test(db, device, deployment_id=dep.id, actor=r.operator or "",
-                                   made_at=when, note=why)
+                                   made_at=when, note=why, programming_run_id=r.id,
+                                   deployment_version_id=r.deployment_version_id)
             if got:
                 out.append({"device_id": device.id, "run_id": r.id, "steps": got})
     return out
@@ -1016,6 +1818,16 @@ def refuse_rebatch(db: Session, device: M.DeviceUnit, to_run: M.ProductionRun) -
     if tw is not None and not to_run.process_version_id:
         return (f"{device.serial or device.mac} has a twin and {to_run.label} has no process — "
                 "rebuild that batch into twins first")
+    if tw is not None:
+        # Its origin and its rebuilt steps come from the records of the batch
+        # it was rebuilt in (decision 0075): moving it would leave both behind.
+        hit = (db.query(M.StepRun.run_id).join(M.TwinStep, M.TwinStep.step_run_id == M.StepRun.id)
+               .filter(M.TwinStep.twin_id == tw.id, M.StepRun.chosen == "rebuilt").first())
+        if hit is not None:
+            src = db.get(M.ProductionRun, hit[0])
+            return (f"{device.serial or device.mac}'s twin was rebuilt from the records of "
+                    f"{src.label if src else hit[0]} — undo that rebuild, rebatch, then rebuild "
+                    "(name the batch of its boards in origins)")
     return None
 
 
@@ -1028,10 +1840,20 @@ def follow_rebatch(db: Session, device: M.DeviceUnit, to_run_id: int) -> None:
 
 
 def refuse_unfinished(db: Session, device: M.DeviceUnit) -> None:
-    """Only a finished device ships (0059 §9). A device with no twin — made
-    before twins existed — ships as before."""
+    """Only a finished device ships (0059 §9). A device with no twin ships as
+    before only when its batch is not crafted: in a crafted batch it is a gap
+    (decision 0074), the board behind it is still an unnamed twin, and a merge
+    must name it first."""
     tw = db.query(M.Twin).filter_by(device_unit_id=device.id).first()
-    if tw is not None and tw.status != "finished":
+    if tw is None:
+        run = db.get(M.ProductionRun, device.production_run_id) if device.production_run_id else None
+        if run is not None and run.process_version_id:
+            raise HTTPException(409, {
+                "error": f"device {device.serial or device.id} is a gap of {run.label}: it was programmed "
+                         "with no twin behind it — merge it on the batch's process screen first",
+                "device_id": device.id, "status": "gap"})
+        return
+    if tw.status != "finished":
         raise HTTPException(409, {
             "error": f"device {device.serial or device.id} is not finished — mark it finished on "
                      "its batch's process screen first",
@@ -1078,8 +1900,11 @@ def line_shares(db: Session, run_ids: list[int] | None = None) -> list[dict]:
                             .filter(M.StepRun.id.in_({srid for _l, srid in links})).all()):
         click_run[sr_id] = rid
         click_label[sr_id] = lab
+    # A header's links are the source for a later split, not money: its
+    # children carry it (decision 0074).
+    hdrs = run_actuals.header_ids(db)
     lines = (db.query(M.RunCostLine)
-             .filter(M.RunCostLine.id.in_(list(clicks_of)), M.RunCostLine.voided_at.is_(None)).all())
+             .filter(M.RunCostLine.id.in_(list(set(clicks_of) - hdrs)), M.RunCostLine.voided_at.is_(None)).all())
     vals = run_actuals.leaf_line_usd(db, lines)
     keep = []
     for li in lines:
@@ -1183,7 +2008,11 @@ def origin_shares(db: Session, origin_run_ids: list[int], register: dict | None 
         origin = total - step_by_run.get(rid, 0.0) - lines_by_run.get(rid, 0.0)
         share = (r.closed_twin_share_usd if r.closed_twin_share_usd is not None
                  else ((origin + carried) / len(alive) if alive else None))
+        # No twin of its own alive (its units came from another batch, or all
+        # broke): the money is carried by no device, and says so (0074).
+        uncarried = origin + carried if not alive and r.closed_twin_share_usd is None else 0.0
         out[rid] = {"origin_cost_usd": round(origin, 4), "scrap_carried_usd": round(carried, 4),
+                    "uncarried_usd": round(uncarried, 4),
                     "step_costs_usd": round(lines_by_run.get(rid, 0.0), 4),
                     "twins": len(alive), "scrapped": len(scrapped),
                     "share_usd": round(share, 6) if share is not None else None,
@@ -1294,6 +2123,35 @@ def twin_json(db: Session, tw: M.Twin, price: dict | None = None) -> dict:
             .filter(M.ProductionRun.id.in_({tw.origin_run_id, tw.run_id} | {s.run_id for s in rows})).all()}
     price = price or prices(db, [tw])[tw.id]
     order = {"assembly": 0, "receive": 1}
+    # Decision 0074: which bench run did each step on this unit, under which
+    # deployment version; and every later programming pass (a reflash).
+    links = {ts.step_run_id: ts for ts in db.query(M.TwinStep).filter_by(twin_id=tw.id).all()}
+    dv_ids = {ts.deployment_version_id for ts in links.values() if ts.deployment_version_id}
+    reflashes: list[dict] = []
+    if tw.device_unit_id:
+        on_steps = {ts.programming_run_id for ts in links.values() if ts.programming_run_id}
+        made = production_pass(db, tw.device_unit_id)
+        if made is not None:
+            on_steps.add(made.id)
+        for r in (db.query(M.ProgrammingRun)
+                  .filter(M.ProgrammingRun.device_unit_id == tw.device_unit_id,
+                          M.ProgrammingRun.status == "pass", M.ProgrammingRun.draft_run.is_(False))
+                  .order_by(M.ProgrammingRun.id).all()):
+            # A reflash comes after the run that produced the device; a trial
+            # before it is no reflash (decision 0074).
+            if (_is_flash_program(db, r) and r.id not in on_steps
+                    and not (made is not None and made.started_at and r.started_at
+                             and r.started_at <= made.started_at)):
+                reflashes.append({"programming_run_id": r.id, "deployment_version_id": r.deployment_version_id,
+                                  "at": r.started_at.isoformat() if r.started_at else None})
+                if r.deployment_version_id:
+                    dv_ids.add(r.deployment_version_id)
+    dv_label = {}
+    for dv in (db.query(M.DeploymentVersion).filter(M.DeploymentVersion.id.in_(dv_ids)).all() if dv_ids else []):
+        dep = db.get(M.Deployment, dv.deployment_id)
+        dv_label[dv.id] = f"{dep.name if dep else 'deployment'} v{dv.version_no}"
+    for x in reflashes:
+        x["deployment_version"] = dv_label.get(x["deployment_version_id"])
     return {
         "origin_run_id": tw.origin_run_id, "origin_run": runs.get(tw.origin_run_id),
         "run_id": tw.run_id, "run": runs.get(tw.run_id), "status": tw.status,
@@ -1307,8 +2165,13 @@ def twin_json(db: Session, tw: M.Twin, price: dict | None = None) -> dict:
                    "parts": draws_by_click.get(sr.id, []),
                    "parts_usd": round(by_click.get(sr.id, 0.0) / (sr.qty or 1), 4),
                    "costs": sorted(costs_by_click.get(sr.id, []), key=lambda c: c["line_id"]),
-                   "costs_usd": round(sum(c["usd"] for c in costs_by_click.get(sr.id, [])), 4)}
+                   "costs_usd": round(sum(c["usd"] for c in costs_by_click.get(sr.id, [])), 4),
+                   "programming_run_id": links[sr.id].programming_run_id if sr.id in links else None,
+                   "deployment_version_id": links[sr.id].deployment_version_id if sr.id in links else None,
+                   "deployment_version": (dv_label.get(links[sr.id].deployment_version_id)
+                                          if sr.id in links else None)}
                   for sr in sorted(rows, key=lambda r: (order.get(r.kind, 2), r.id))],
+        "reflashes": reflashes,
         "fitted": fitted(db, tw.origin_run_id),
     }
 
@@ -1361,6 +2224,7 @@ def craft_view(db: Session, run: M.ProductionRun) -> dict:
     named = (db.query(M.Twin).filter(M.Twin.run_id == run.id, M.Twin.device_unit_id.isnot(None))
              .order_by(M.Twin.id).all())
     done = done_steps(db, [tw.id for tw in named])
+    again = since_reopen(db, [tw.id for tw in named])
     pr = prices(db, named) if named else {}
     devs = {d.id: d for d in db.query(M.DeviceUnit)
             .filter(M.DeviceUnit.id.in_([tw.device_unit_id for tw in named] or [-1])).all()}
@@ -1370,7 +2234,7 @@ def craft_view(db: Session, run: M.ProductionRun) -> dict:
         devices.append({"device_id": tw.device_unit_id, "serial": d.serial if d else None,
                         "mac": d.mac if d else None, "status": tw.status,
                         "origin_run_id": tw.origin_run_id, "done": in_route_order(done[tw.id]),
-                        "missing": needs_met(graph, P.step_of_kind(graph, "finish") or {}, done[tw.id])
+                        "missing": needs_met(graph, P.step_of_kind(graph, "finish") or {}, done[tw.id], again.get(tw.id))
                         if tw.status == "active" else [],
                         "price_usd": pr.get(tw.id, {}).get("total_usd")})
     counts = defaultdict(int)
@@ -1379,6 +2243,9 @@ def craft_view(db: Session, run: M.ProductionRun) -> dict:
     share = origin_shares(db, [run.id]).get(run.id)
     line_click = click_costs(line_shares(db, [run.id]))
     draw_click, _ = _step_draw_values(db, [run.id])
+    recent = (db.query(M.StepRun).filter_by(run_id=run.id)
+              .order_by(M.StepRun.id.desc()).limit(200).all())
+    undo = click_batches(db, run, [sr.id for sr in recent])
     return {
         "run_id": run.id, "process_version_id": v.id, "version_no": v.version_no,
         "graph": graph, "parts": {str(k): p for k, p in P._part_names(db, {
@@ -1392,12 +2259,96 @@ def craft_view(db: Session, run: M.ProductionRun) -> dict:
         "clicks": [{"id": sr.id, "step": sr.step_key, "label": sr.step_label, "kind": sr.kind,
                     "qty": sr.qty, "chosen": sr.chosen, "made_at": sr.made_at, "actor": sr.actor,
                     "note": sr.note, "costs_usd": round(line_click.get(sr.id, 0.0), 4),
-                    "parts_usd": round(draw_click.get(sr.id, 0.0), 4)}
-                   for sr in db.query(M.StepRun).filter_by(run_id=run.id)
-                   .order_by(M.StepRun.id.desc()).limit(200).all()],
+                    "parts_usd": round(draw_click.get(sr.id, 0.0), 4), "batch_id": undo.get(sr.id)}
+                   for sr in recent],
         "assembly": _assembly_view(db, run),
         "unlinked": unlinked(db, run),
+        "linked": linked_positions(db, run),
     }
+
+
+def click_batches(db: Session, run: M.ProductionRun, click_ids: list[int]) -> dict[int, int]:
+    """The journal batch that wrote each click, while it can still be undone
+    (decision 0074). A bench click and a click from before the journal have
+    none; neither has a click of a closed batch."""
+    if run.closed_at is not None or not click_ids:
+        return {}
+    # A rebuild is one batch for all its clicks: it is undone whole, by
+    # "Undo rebuild" (decision 0075), never from one of its clicks.
+    return {rid: bid for rid, bid in (
+        db.query(M.WriteBatchRow.row_id, M.WriteBatch.id)
+        .join(M.WriteBatch, M.WriteBatch.id == M.WriteBatchRow.batch_id)
+        .filter(M.WriteBatchRow.table_name == "step_runs", M.WriteBatchRow.op == "insert",
+                M.WriteBatchRow.row_id.in_(click_ids), M.WriteBatch.reversed_at.is_(None),
+                M.WriteBatch.kind != "craft.rebuild").all())}
+
+
+def linked_positions(db: Session, run: M.ProductionRun) -> list[dict]:
+    """The positions linked to this batch's steps, for the "Unlink…" control
+    (decision 0074). A split one is listed once, by its header, which an
+    unlink takes with all its children."""
+    hdrs = run_actuals.header_ids(db)
+    mine = {li.id for li in charged_lines(db, run)}
+
+    def leaves(line_id: int) -> set[int]:
+        out_, frontier = set(), [line_id]
+        while frontier:
+            x = frontier.pop()
+            kids = [k for (k,) in db.query(M.RunCostLine.id).filter(M.RunCostLine.parent_line_id == x,
+                                                                    M.RunCostLine.voided_at.is_(None)).all()]
+            if kids:
+                frontier.extend(kids)
+            else:
+                out_.add(x)
+        return out_
+
+    def top_of(li: M.RunCostLine) -> M.RunCostLine:
+        # Up over a header only while every live leaf below it is this
+        # batch's: an unlink by that header must not reach another batch's.
+        top = li
+        while top.parent_line_id and top.parent_line_id in hdrs:
+            parent = db.get(M.RunCostLine, top.parent_line_id)
+            if parent is None or parent.voided_at is not None or not leaves(parent.id) <= mine:
+                break
+            top = parent
+        return top
+
+    labels = {k: (s.get("label") or k) for k, s in P.step_map(P._graph(crafted_version(db, run))).items()}
+    out: dict[int, dict] = {}
+
+    def row_of(top: M.RunCostLine) -> dict:
+        return out.setdefault(top.id, {"line_id": top.id, "label": top.label or "", "usd": 0.0, "steps": set(),
+                                       "whole_steps": sorted({k for (k,) in db.query(M.CostLineStepKey.step_key)
+                                                              .filter_by(line_id=top.id, run_id=run.id).all()})})
+
+    for sh in line_shares(db, [run.id]):
+        row = row_of(top_of(sh["line"]))
+        row["usd"] += sh["usd"]
+        row["steps"] |= set(sh["steps"])
+    # A whole-step link that waits for its first click is a link too. A key on
+    # a header whose leaves are not all this batch's is listed by its leaves
+    # of this batch that hold the same step, which an unlink can reach; by
+    # all of them only when none does.
+    for lid, key in db.query(M.CostLineStepKey.line_id, M.CostLineStepKey.step_key).filter_by(run_id=run.id).all():
+        li = db.get(M.RunCostLine, lid)
+        if li is None or li.voided_at is not None:
+            continue
+        below = leaves(li.id)
+        targets = [li.id]
+        if not below <= mine:
+            ours = below & mine or {-1}
+            holds = {x for (x,) in db.query(M.CostLineStepKey.line_id).filter(
+                M.CostLineStepKey.line_id.in_(ours), M.CostLineStepKey.run_id == run.id,
+                M.CostLineStepKey.step_key == key).all()}
+            holds |= {x for (x,) in db.query(M.CostLineStep.line_id).join(
+                M.StepRun, M.StepRun.id == M.CostLineStep.step_run_id).filter(
+                M.CostLineStep.line_id.in_(ours), M.StepRun.run_id == run.id, M.StepRun.step_key == key).all()}
+            targets = sorted(holds or (ours - {-1}))
+        for leaf_id in targets:
+            row = row_of(top_of(db.get(M.RunCostLine, leaf_id)))
+            row["steps"].add(labels.get(key, key))
+    return [{**r, "usd": round(r["usd"], 4), "steps": sorted(r["steps"])}
+            for r in sorted(out.values(), key=lambda r: r["line_id"])]
 
 
 def cost_by_step(db: Session, run: M.ProductionRun, register: dict | None = None) -> dict:
@@ -1480,7 +2431,11 @@ def _assembly_view(db: Session, run: M.ProductionRun) -> dict:
     draws = (db.query(func.count(M.ComponentConsumption.id))
              .filter(M.ComponentConsumption.step_run_id == sr.id,
                      M.ComponentConsumption.voided_at.is_(None)).scalar() or 0)
-    lines = (db.query(func.count(M.CostLineStep.id)).filter(M.CostLineStep.step_run_id == sr.id)
-             .scalar() or 0)
+    hdrs = run_actuals.header_ids(db)
+    lines = sum(1 for (lid,) in db.query(M.CostLineStep.line_id)
+                .join(M.RunCostLine, M.RunCostLine.id == M.CostLineStep.line_id)
+                .filter(M.CostLineStep.step_run_id == sr.id, M.RunCostLine.voided_at.is_(None)).all()
+                if lid not in hdrs)
     return {"recorded": True, "orders": orders, "step_run_id": sr.id, "made_at": sr.made_at,
-            "units": sr.qty, "chosen": sr.chosen, "draws": draws, "lines": lines}
+            "units": sr.qty, "chosen": sr.chosen, "draws": draws, "lines": lines,
+            "assembler": sr.assembler or "", "reference": sr.reference or ""}

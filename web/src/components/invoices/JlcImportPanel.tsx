@@ -535,7 +535,7 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
                   <div className="muted dim">
                     {typeof plan[o.smt_order_code] === "string"
                       ? (plan[o.smt_order_code] as string)
-                      : `would ${describe(plan[o.smt_order_code] as JlcDecisionApplyResult) || "change nothing"}`}
+                      : `would ${describe(plan[o.smt_order_code] as JlcDecisionApplyResult)}`}
                   </div>
                 )}
               </>
@@ -549,6 +549,11 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
 
 /**
  * The dry run as one sentence, for the confirmation.
+ *
+ * A batch link moves the order's invoice lines and measured draws onto the
+ * batch and records NO assembly step (decision 0072): the person records that
+ * from the batch's Process tab, so the sentence says so rather than letting
+ * "link" read as "done".
  *
  * `rebucketed` and `reason_only` are kept apart deliberately: filling in an
  * `exclude_reason` moves no money at all, and a single combined figure would
@@ -571,7 +576,10 @@ function describe(r: JlcDecisionApplyResult): string {
     parts.push(
       `book ${m.would_write_movements ?? m.movements} stock movement(s) out of the pool, charged to nobody`,
     );
-  return parts.join(", ");
+  const act = parts.join(", ") || "change nothing";
+  return r.outcome === "link_run"
+    ? `${act}. Record the assembly on the batch's Process tab afterwards`
+    : act;
 }
 
 /**

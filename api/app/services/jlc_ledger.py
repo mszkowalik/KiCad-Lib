@@ -357,10 +357,16 @@ def book(db: Session, change_key_ids: list[int] | None = None,
     `company_id` names whose stock the picks came from. JLC keeps one shelf for
     both companies, so the row does not say; while each company keeps its own
     stock (decision 0064) the caller must.
+
+    While `lot_pricing` is on (decision 0073) each pick is taken from its lots,
+    oldest first, as of the pick's date, and priced at their cost. A pick the
+    lots cannot cover in full is refused. The picks of one call share one
+    picker, so two picks never take the same unit.
     """
     from fastapi import HTTPException
 
     from ..config import settings
+    from . import lots as L
     from .run_actuals import check_shortages, resolve_pool_identity, stock_scope
 
     scope = stock_scope(db, company_id)
@@ -372,6 +378,7 @@ def book(db: Session, change_key_ids: list[int] | None = None,
     rows = [r for r in bookable(db) if not want or r["change_key_id"] in want]
     missing = sorted(want - {r["change_key_id"] for r in rows})
     written, refused = [], []
+    picker = L.FifoPicker(db, scope) if L.lot_pricing_on() else None
     for r in rows:
         pool = resolve_pool_identity(db, None, r["mpn"], r["lcsc"], as_of=r["date"],
                                      company_id=scope)
@@ -388,7 +395,22 @@ def book(db: Session, change_key_ids: list[int] | None = None,
                             "shortages": short})
             continue
         unit = pool["avg_usd"]
+        picked = None
+        if picker is not None:
+            picked = {"component_id": pool.get("component_id"), "mpn": pool.get("mpn") or r["mpn"],
+                      "lcsc": pool.get("lcsc") or r["lcsc"], "qty": r["qty"], "label": r["lcsc"]}
+            uncovered = L.fifo_price(db, [picked], as_of=r["date"], company_id=scope, picker=picker)
+            if uncovered:
+                # fifo_price gave back what this pick reserved.
+                refused.append({**r, "why": f"{uncovered[0]['uncovered']:g} of {r['qty']:g} are in no lot "
+                                            f"on {r['date']} — enter the purchase it came from first "
+                                            "(decision 0073)", "uncovered": uncovered})
+                continue
+            unit = picked["unit_cost_usd"]
         entry = {**r, "unit_cost_usd": unit, "usd": round(r["qty"] * unit, 4)}
+        if picked is not None:
+            entry["lots"] = [{"lot": b["lot"], "qty": b["qty"], "unit_cost_usd": b["unit_cost_usd"]}
+                             for b in picked["bindings"]]
         if not dry_run:
             row = M.ComponentConsumption(
                 run_id=None, component_id=pool.get("component_id"),
@@ -401,6 +423,8 @@ def book(db: Session, change_key_ids: list[int] | None = None,
                       + f": {r['remark']}")[:500])
             db.add(row)
             db.flush()
+            if picked is not None:
+                L.bind(db, row, picked)
             entry["consumption_id"] = row.id
         written.append(entry)
     return {"dry_run": dry_run, "written": written, "refused": refused,

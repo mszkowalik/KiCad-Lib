@@ -433,7 +433,7 @@ class RunEngine:
         msg = await self._await_msg(mid, 600)
         return str(msg.get("value", ""))
 
-    async def notice(self, n: dict) -> None:
+    async def notice(self, n: dict, wait: bool = True) -> None:
         """Say it, record it, and for a warning wait for somebody to take it.
 
         A `block` never asks: continuing would write something false, so the
@@ -461,6 +461,11 @@ class RunEngine:
                               "text": n["text"], "hint": n.get("hint") or ""})
             raise StepFailed(n["text"])
 
+        if not wait:
+            # Logged and recorded, never held: a run that found its unit by the
+            # topic (marking, test) must not stop the laser on a stock state.
+            await self._db(record)
+            return
         await self._send({"t": "notice", "id": mid, "level": level, "code": code,
                           "text": n["text"], "hint": n.get("hint") or ""})
         msg = await self._await_msg(mid, 600)
@@ -663,12 +668,16 @@ class RunEngine:
             run.results = clean_results
             if run.device_unit_id:
                 dev = db.get(M.DeviceUnit, run.device_unit_id)
-                dev.last_seen = utcnow()
-                dev.last_status = status
                 dv = (db.get(M.DeploymentVersion, run.deployment_version_id)
                       if run.deployment_version_id else None)
                 dep = db.get(M.Deployment, dv.deployment_id) if dv is not None else None
                 kind = (dep.kind if dep is not None else None) or "flash"
+                dev.last_seen = utcnow()
+                # A marking run found its unit by the topic (decision 0061): a
+                # failed print is no verdict on the device, so only programming
+                # and test runs say how the unit last did.
+                if kind != "mark":
+                    dev.last_status = status
                 # Decision 0003 §5: the first PASS in a batch is the device's
                 # `produced` event — it enters finished-goods stock at that
                 # run's per-device cost, and nobody has to record it by hand.
@@ -697,7 +706,7 @@ class RunEngine:
                         db.flush()
                         try:
                             with db.begin_nested():
-                                _twins.name_at_bench(db, dev, ev, batch)
+                                _twins.name_at_bench(db, dev, ev, batch, programming_run=run)
                         except Exception as e:  # noqa: BLE001 — never fail the run on bookkeeping
                             import logging
                             logging.getLogger(__name__).warning(
@@ -714,7 +723,9 @@ class RunEngine:
                                                   label=bool(self.results.get("printed")),
                                                   deployment_id=dv.deployment_id if dv else None,
                                                   actor=run.operator or "",
-                                                  copies=int(self.results.get("label_copies") or 1))
+                                                  copies=int(self.results.get("label_copies") or 1),
+                                                  programming_run_id=run.id,
+                                                  deployment_version_id=run.deployment_version_id)
                     except Exception as e:  # noqa: BLE001
                         import logging
                         logging.getLogger(__name__).warning(
@@ -727,7 +738,8 @@ class RunEngine:
                     try:
                         with db.begin_nested():
                             _twins.record_test(db, dev, deployment_id=dep.id if dep is not None else None,
-                                               actor=run.operator or "")
+                                               actor=run.operator or "", programming_run_id=run.id,
+                                               deployment_version_id=run.deployment_version_id)
                     except Exception as e:  # noqa: BLE001
                         import logging
                         logging.getLogger(__name__).warning(
@@ -830,7 +842,9 @@ class RunEngine:
         self.device_unit_id = dev_id
         self.log("app", f"unit identified by its topic {t!r}")
         for n_ in found:
-            await self.notice(n_)
+            # A block still ends the run; a warning is logged and recorded and
+            # does not hold the bench (bench-safety review, 2026-10-04).
+            await self.notice(n_, wait=False)
 
     async def _store_identity(self, names: dict[str, Any]) -> None:
         if not self.device_unit_id and names.get("topic"):

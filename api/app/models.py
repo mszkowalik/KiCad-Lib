@@ -1582,6 +1582,8 @@ class RunSubstitution(Base):
     note: Mapped[str] = mapped_column(Text, default="")
     decided_by: Mapped[str] = mapped_column(String(100), default="")
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    #: The assembly step that recorded it, when "Record assembly" did (0072).
+    step_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("run_id", "board", "variant", "designator",
@@ -2003,6 +2005,10 @@ class Project(Base):
     display_currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
     description: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # The process version a NEW batch resolves to (decision 0074). Not the
+    # highest published one: a version published for the history of older
+    # devices is never current. A plain integer like `current_version_id`.
+    current_process_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     git_credential: Mapped["GitCredential | None"] = relationship(back_populates="projects")
     snapshots: Mapped[list["ProjectSnapshot"]] = relationship(
@@ -2862,10 +2868,33 @@ class StepRun(Base):
     made_at: Mapped[str] = mapped_column(String(20), default="")  # ISO date; drives the replay
     actor: Mapped[str] = mapped_column(String(100), default="")
     note: Mapped[str] = mapped_column(String(500), default="")
+    # Who did an assembly step and the order or invoice it was done under, as
+    # the person stated them in "Record assembly" (decision 0072).
+    assembler: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    reference: Mapped[str] = mapped_column(String(200), default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (
         Index("ix_step_run_run", "run_id"),
+    )
+
+
+class CostLineStepKey(Base):
+    """An invoice position paid for a WHOLE STEP of a batch (decision 0074):
+    every click of `step_key` in `run_id`, also the clicks the benches record
+    after the link was made. Each new click gets its `CostLineStep` row when it
+    is written, so the reading side is unchanged."""
+
+    __tablename__ = "cost_line_step_keys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    line_id: Mapped[int] = mapped_column(ForeignKey("run_cost_lines.id", ondelete="CASCADE"))
+    run_id: Mapped[int] = mapped_column(Integer)
+    step_key: Mapped[str] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("line_id", "run_id", "step_key", name="uq_cost_line_step_key"),
     )
 
 
@@ -2898,6 +2927,12 @@ class TwinStep(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     twin_id: Mapped[int] = mapped_column(ForeignKey("twins.id", ondelete="CASCADE"))
     step_run_id: Mapped[int] = mapped_column(ForeignKey("step_runs.id", ondelete="CASCADE"))
+    # The bench run that did this step on THIS unit, and the deployment version
+    # it ran (decision 0074): one click can hold many twins, each programmed,
+    # tested or marked by its own run. Soft pointers; NULL for a step no bench
+    # did.
+    programming_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    deployment_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (

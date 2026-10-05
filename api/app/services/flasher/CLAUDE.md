@@ -279,8 +279,9 @@ Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model
   the newest row: a device's history holds marking jobs and erases too.
 - **The requirement lives in three places and only one of them is the rule.**
   `Deployment.active` is the default ticked on a NEW batch, `ProductionRun
-  .requires_test` is the decision, and `ProgrammingRun.test_required` is the
-  copy taken when the run starts — that copy is what judges a device that
+  .requires_test` is the decision — on a CRAFTED batch, a required `test` step
+  of its process version is, instead (decision 0074) — and
+  `ProgrammingRun.test_required` is the copy taken when the run starts — that copy is what judges a device that
   already exists. Pinning it is the same reason the fingerprints beside it are
   pinned: one project-wide switch would otherwise have re-judged 555 finished
   units.

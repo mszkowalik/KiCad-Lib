@@ -947,7 +947,8 @@ function SourceCell({ r }: { r: MatRow }) {
     pills.push({
       text: "BOM average",
       tone: "warn",
-      title: "Drawn from the whole BOM at the pool's moving average — allocated, not measured.",
+      title: "Drawn from the whole BOM — allocated, not measured. The price is the pool's moving average, "
+        + "or the cost of its lots while lot pricing is on.",
     });
   if (r.writtenOff > 0)
     pills.push({ text: "write-off", tone: "warn", title: "Attrition charged to this batch." });

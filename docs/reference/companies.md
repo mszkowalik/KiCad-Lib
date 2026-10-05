@@ -48,6 +48,10 @@ project's Settings tab. No route edits or deletes a period.
   and the ones naming no company). `companies.narrows` skips the filter when
   the scope holds every company.
 * The scope filters a LIST. Opening ONE record is gated separately, below.
+* **The production benches ignore the switcher.** The flashing and marking
+  benches list projects and batches with `X-Company: all` (`ListScope` in
+  `api.ts`), because a bench browser left on one company must still find the
+  other company's product and batch. Every other page follows the switcher.
 
 Changing the switcher reloads the page, because every list on it was fetched
 for the old scope.
@@ -148,8 +152,12 @@ A transfer is an in-house document (`doc_type="transfer"`, `MM nnnn/yyyy`)
 billed to the receiver, naming the sender in `counterparty_company_id`, plus
 one sender draw per position (`transfer_line_id`, basis `transfer`, no batch).
 
-* **Price**: the lot's landed cost when the units' lot is named, else the
-  sender's moving average on the date.
+* **Price**: the lot's landed cost when the units' lot is named. Else the
+  sender's moving average on the date. While `lot_pricing` is on, a line that
+  names no lot takes the sender's lots oldest first instead, its sender draw is
+  bound to them, and a line those lots cannot cover is refused
+  ([production-economics.md](production-economics.md), "Lots and FIFO
+  pricing").
 * **A lot transfer takes the receiver's draws bound to that lot** (decision
   0069): oldest first, dated on or after the transfer, up to the moved
   quantity, a binding split when only part of it moves. A caller may name the
@@ -160,7 +168,8 @@ one sender draw per position (`transfer_line_id`, basis `transfer`, no batch).
   document, `DELETE /api/consumption/{id}` refuses its sender draw, and no
   document may be TYPED `transfer` (`run_costs.DOC_TYPES`).
   `transfers.reverse` voids it whole, and is refused while the receiver used
-  what it got (a moved binding counts as used).
+  what it got (a moved binding counts as used). The Write log refuses to undo
+  a `transfer.create` batch for that reason: it would skip the check.
 * **Out of the money totals.** `invoice_register` skips transfer documents in
   every total and reports `transfers_usd` and `transferred_out_usd`. The
   sender's draw is neither uncharged nor a batch cost.

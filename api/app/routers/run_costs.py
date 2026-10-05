@@ -6,6 +6,7 @@ shape the response. Every mutation writes an audit row WITH details — this is
 the money path, so "something changed" is not good enough.
 """
 import uuid
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
@@ -295,6 +296,27 @@ def _guard_purchase_loss(db: Session, losses: list[dict], what: str) -> None:
         })
 
 
+def _stock_before(db: Session, doc_ids, extra=(), new_company_id: int | None = None) -> dict:
+    """`lots.stock_before`, with the edit in a savepoint: a refusal by
+    `_refuse_stock_loss` takes back what the edit wrote."""
+    from ..services import lots as lots_svc
+
+    return {**lots_svc.stock_before(db, doc_ids, extra, new_company_id), "sp": db.begin_nested()}
+
+
+def _refuse_stock_loss(db: Session, before: dict, what: str) -> None:
+    """Refuse an edit, written but not committed, that leaves draws without
+    the lots or the stock they took (`lots.stock_problems`)."""
+    from ..services import lots as lots_svc
+
+    problems = lots_svc.stock_problems(db, before)
+    if problems:
+        before["sp"].rollback()
+        raise HTTPException(409, f"{what} would leave draws without what they took: {'; '.join(problems[:4])}. "
+                                 "Reduce or void those draws first, or record a stock adjustment.")
+    before["sp"].commit()
+
+
 def _guard_buyer_change(db: Session, doc: M.RunCostDocument, company_id: int | None) -> bool:
     """Check a new BUYER for a document (decision 0064). Returns whether it
     changes.
@@ -431,6 +453,23 @@ def add_substitution(run_id: int, body: SubstitutionIn, db: Session = Depends(ge
     """
     actor = acting_name()
     run = _run(db, run_id)
+    with journal.batch(db, kind="run.substitution", source_ref=f"run:{run_id}",
+                       actor=actor) as h:
+        row = new_substitution(db, run, body, actor)
+    audit(db, "run.substitution.add", "run_substitution", row.id,
+          {"run_id": run_id, "designator": row.designator,
+           "from": row.specified_lcsc, "to": row.fitted_lcsc,
+           "batch_id": h["batch_id"]}, actor=actor)
+    db.commit()
+    return {**_sub_json(row, db), "batch_id": h["batch_id"], "reversible": True}
+
+
+def new_substitution(db: Session, run: M.ProductionRun, body: SubstitutionIn, actor: str,
+                     step_run_id: int | None = None) -> M.RunSubstitution:
+    """One substitution row, checked, written but NOT committed or journalled —
+    the caller owns both ("Record assembly" records its replacements with the
+    step, decision 0072)."""
+    run_id = run.id
     if not body.designator.strip():
         raise HTTPException(422, "name the position: designator")
     named = bool(body.fitted_lcsc or body.fitted_mpn or body.fitted_component_id)
@@ -445,30 +484,23 @@ def add_substitution(run_id: int, body: SubstitutionIn, db: Session = Depends(ge
              .filter_by(run_id=run_id, board=run.board or "", variant=run.variant or "",
                         designator=body.designator.strip()).first())
     if dup is not None:
-        raise HTTPException(409, {"error": "this batch already records a substitution "
-                                           "at that position", "id": dup.id})
-    with journal.batch(db, kind="run.substitution", source_ref=f"run:{run_id}",
-                       actor=actor) as h:
-        row = M.RunSubstitution(
-            run_id=run_id, board=run.board or "", variant=run.variant or "",
-            designator=body.designator.strip(),
-            supplier_designator=body.supplier_designator.strip(),
-            specified_component_id=body.specified_component_id,
-            specified_lcsc=body.specified_lcsc, specified_mpn=body.specified_mpn,
-            fitted_component_id=body.fitted_component_id,
-            fitted_lcsc=body.fitted_lcsc, fitted_mpn=body.fitted_mpn,
-            qty_per_device=body.qty_per_device, source=body.source,
-            supplied_by=body.supplied_by, supplier_source=body.supplier_source,
-            evidence=body.evidence, note=body.note,
-            design_updated=body.design_updated, decided_by=actor)
-        db.add(row)
-        db.flush()
-    audit(db, "run.substitution.add", "run_substitution", row.id,
-          {"run_id": run_id, "designator": row.designator,
-           "from": row.specified_lcsc, "to": row.fitted_lcsc,
-           "batch_id": h["batch_id"]}, actor=actor)
-    db.commit()
-    return {**_sub_json(row, db), "batch_id": h["batch_id"], "reversible": True}
+        raise HTTPException(409, {"error": f"this batch already records a substitution "
+                                           f"at {body.designator.strip()}", "id": dup.id})
+    row = M.RunSubstitution(
+        run_id=run_id, board=run.board or "", variant=run.variant or "",
+        designator=body.designator.strip(),
+        supplier_designator=body.supplier_designator.strip(),
+        specified_component_id=body.specified_component_id,
+        specified_lcsc=body.specified_lcsc, specified_mpn=body.specified_mpn,
+        fitted_component_id=body.fitted_component_id,
+        fitted_lcsc=body.fitted_lcsc, fitted_mpn=body.fitted_mpn,
+        qty_per_device=body.qty_per_device, source=body.source,
+        supplied_by=body.supplied_by, supplier_source=body.supplier_source,
+        evidence=body.evidence, note=body.note,
+        design_updated=body.design_updated, decided_by=actor, step_run_id=step_run_id)
+    db.add(row)
+    db.flush()
+    return row
 
 
 @router.put("/substitutions/{sub_id}")
@@ -914,6 +946,7 @@ def _create_document(project_id: int | None, body: DocumentIn, db: Session):
             raise HTTPException(502, f"could not resolve an NBP rate: {exc}") from exc
     db.add(doc)
     db.flush()
+    held = _stock_before(db, [doc.id], extra=[(li, doc) for li in body.lines])
     for i, li in enumerate(body.lines):
         d = li.model_dump()
         d.setdefault("position", i)
@@ -922,6 +955,7 @@ def _create_document(project_id: int | None, body: DocumentIn, db: Session):
     # Bridge MPN -> library component immediately: a purchase that is not tied to
     # a component can never be matched by a BOM draw.
     resolved = run_actuals.resolve_part_lines(db, doc.id)
+    _refuse_stock_loss(db, held, "this document")   # a credit is a negative line (decision 0044)
     audit(db, "run.document.add", "run_cost_document", doc.id, {
         "project_id": project_id, "run_id": doc.run_id, "supplier": doc.supplier,
         "doc_number": doc.doc_number, "lines": len(body.lines),
@@ -1029,12 +1063,14 @@ def update_document(doc_id: int, body: DocumentPatch, db: Session = Depends(get_
         raise HTTPException(422, "a correction is billed to the company its original was billed to")
     if "company_id" in fields and _guard_buyer_change(db, doc, fields["company_id"]):
         fields["company_source"] = "manual"
+    held = _stock_before(db, [doc.id], new_company_id=fields.get("company_id"))
     before, after = {}, {}
     for field, value in fields.items():
         old = getattr(doc, field)
         if old != value:
             before[field], after[field] = old, value
             setattr(doc, field, value)
+    _refuse_stock_loss(db, held, "this change")
     audit(db, "run.document.update", "run_cost_document", doc.id,
           {"before": before, "after": after})
     db.commit()
@@ -1057,6 +1093,7 @@ def delete_document(doc_id: int, force: bool = False, db: Session = Depends(get_
         run_actuals.purchase_loss_of(db, li)
         for li in run_actuals.pooled_part_lines(db, live) if li.id not in hdrs
     ], "deleting this document")
+    held = _stock_before(db, [doc.id])
     audit(db, "run.document.delete", "run_cost_document", doc.id,
           {"supplier": doc.supplier, "doc_number": doc.doc_number, "lines": len(doc.lines)})
     # A KSeF purchase imported as this document waits in the inbox again
@@ -1064,6 +1101,7 @@ def delete_document(doc_id: int, force: bool = False, db: Session = Depends(get_
     db.query(M.KsefInvoice).filter(M.KsefInvoice.document_id == doc.id).update(
         {"status": "new", "document_id": None}, synchronize_session=False)
     db.delete(doc)
+    _refuse_stock_loss(db, held, "deleting this document")
     db.commit()
     return {"deleted": doc_id}
 
@@ -1082,11 +1120,12 @@ def add_line(doc_id: int, body: LineIn, db: Session = Depends(get_db)):
     _check_transformation(db, body.plan_key, body.transformation_id, body.run_id,
                           body.project_id, body.allocate)
     pos = body.position or (max([li.position for li in doc.lines], default=-1) + 1)
+    held = _stock_before(db, [doc.id], extra=[(body, doc)])
     d = body.model_dump()
     d["position"] = pos
     li = M.RunCostLine(document_id=doc.id, **d)
     db.add(li)
-    db.flush()
+    _refuse_stock_loss(db, held, "this position")
     audit(db, "run.cost_line.add", "run_cost_line", li.id, {
         "document_id": doc.id, "step": li.plan_key, "label": li.label,
         "qty": li.qty, "unit_price": li.unit_price,
@@ -1106,6 +1145,12 @@ def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
     doc = _doc(db, doc_id)
     _guard_closed(db, doc, "editing this document")
     by_id = {li.id: li for li in doc.lines if li.voided_at is None}
+    held = _stock_before(db, [doc.id], new_company_id=(body.document.model_dump(exclude_unset=True).get("company_id")
+                                                        if body.document is not None else None),
+                         extra=[(c, doc) for c in body.creates] + [
+        (SimpleNamespace(**{k: getattr(e, k, None) if getattr(e, k, None) is not None else getattr(by_id[e.id], k)
+                            for k in ("plan_key", "component_id", "mpn", "lcsc")}), doc)
+        for e in body.updates if e.id in by_id])
     body.creates = [_overhead_whole(c) for c in body.creates]
 
     touched = {e.id for e in body.updates} | set(body.deletes)
@@ -1228,6 +1273,7 @@ def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
         db.flush()
         created.append(row.id)
 
+    _refuse_stock_loss(db, held, "this edit")
     audit(db, "run.document.lines.batch", "run_cost_document", doc.id,
           {"document": {"before": doc_before, "after": doc_after} if doc_after else None,
            "updated": changed, "voided": voided, "created": created})
@@ -1268,6 +1314,24 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
       * children inherit the parent's currency, so the residual is arithmetic on
         one unit.
     """
+    res = split_line_core(line_id, body, db)
+    db.commit()
+    # `expire_on_commit=False` + children added via `db.add` means `doc.lines` is
+    # still the pre-split collection, so the parent would serialize as a leaf.
+    doc = _doc(db, res["document_id"])
+    db.expire(doc, ["lines"])
+    return {
+        "parent_id": res["parent_id"],
+        "created": res["created"],
+        "residual": res["residual"],
+        "document": run_actuals.document_json(doc, db=db),
+    }
+
+
+def split_line_core(line_id: int, body: SplitIn, db: Session) -> dict:
+    """The split itself, every guard included, written but NOT committed —
+    for a caller that wraps it in a larger write ("Record assembly", decision
+    0072). Returns `{parent_id, document_id, created, created_ids, residual}`."""
     parent = _line(db, line_id)
     if parent.voided_at is not None:
         raise HTTPException(409, "line is voided")
@@ -1285,6 +1349,13 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
                 .filter(M.RunCostLine.parent_line_id == parent.id,
                         M.RunCostLine.voided_at.is_(None)).all()]
     by_id = {c.id: c for c in existing}
+    # The part each share will name, as the code below gives it: a credit (a
+    # negative share) is compared like a new position (decision 0044).
+    held = _stock_before(db, [doc.id], extra=[(SimpleNamespace(
+        plan_key=c.plan_key,
+        component_id=c.component_id if c.component_id is not None else by_id.get(c.id, parent).component_id,
+        mpn=c.mpn or by_id.get(c.id, parent).mpn, lcsc=c.lcsc or by_id.get(c.id, parent).lcsc), doc)
+        for c in body.children])
     named = {child.id for child in body.children if child.id is not None}
     unknown = named - set(by_id)
     if unknown:
@@ -1294,8 +1365,12 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
             if c.id in named:
                 continue
             c.voided_at = utcnow()
-            for d in _descendants(db, c.id):
+            gone = [c] + list(_descendants(db, c.id))
+            for d in gone[1:]:
                 d.voided_at = utcnow()
+            # A voided line pays for nothing: its whole-step links go with it.
+            for k in db.query(M.CostLineStepKey).filter(M.CostLineStepKey.line_id.in_([x.id for x in gone])).all():
+                db.delete(k)
         existing = [c for c in existing if c.id in named]
 
     made: list[M.RunCostLine] = []
@@ -1391,10 +1466,24 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
     # unless it is charged to another batch than the parent.
     parent_links = [srid for (srid,) in db.query(M.CostLineStep.step_run_id).filter_by(line_id=parent.id).all()]
     parent_dest = run_actuals.line_destination(parent, doc)
+    # So does a whole-step link (decision 0074). The parent keeps its own: a
+    # header is valued at zero, so its links move no money, and it stays the
+    # one source for a later re-split, at any depth.
+    parent_keys = [(k.run_id, k.step_key) for k in db.query(M.CostLineStepKey).filter_by(line_id=parent.id).all()]
+    # A whole-step link means every click of the step, the ones recorded since
+    # the parent became a header too (a header is no charged line, so it was
+    # never linked to them).
+    from ..services import twins as _twins
+
+    for rid, key in parent_keys:
+        parent_links += _twins.step_clicks(db, rid, key)
+    parent_links = sorted(set(parent_links))
     for ch in made:
-        if parent_links and run_actuals.line_destination(ch, doc) == parent_dest:
+        if (parent_links or parent_keys) and run_actuals.line_destination(ch, doc) == parent_dest:
             for srid in parent_links:
                 db.add(M.CostLineStep(line_id=ch.id, step_run_id=srid))
+            for rid, key in parent_keys:
+                db.add(M.CostLineStepKey(line_id=ch.id, run_id=rid, step_key=key))
     db.flush()
     audit(db, "run.cost_line.split", "run_cost_line", parent.id, {
         "document_id": doc.id, "label": parent.label, "parent_amount": round(parent_amount, 4),
@@ -1405,16 +1494,11 @@ def split_line(line_id: int, body: SplitIn, db: Session = Depends(get_db)):
         "updated": sorted(named),
         "replaced": body.replace, "residual": round(parent_amount - child_amount, 4),
     })
-    db.commit()
-    # `expire_on_commit=False` + children added via `db.add` means `doc.lines` is
-    # still the pre-split collection, so the parent would serialize as a leaf.
-    db.expire(doc, ["lines"])
-    return {
-        "parent_id": parent.id,
-        "created": len(made),
-        "residual": round(parent_amount - child_amount, 4),
-        "document": run_actuals.document_json(doc, db=db),
-    }
+    # A re-split may void or cut a child that is a lot, and the parent stops
+    # being one (decision 0073).
+    _refuse_stock_loss(db, held, "this split")
+    return {"parent_id": parent.id, "document_id": doc.id, "created": len(made),
+            "created_ids": [c.id for c in made], "residual": round(parent_amount - child_amount, 4)}
 
 
 @router.patch("/run-cost-lines/{line_id}")
@@ -1452,12 +1536,16 @@ def update_line(line_id: int, body: LinePatch, db: Session = Depends(get_db)):
         _check_destination(db,
                            fields.get("run_id", li.run_id),
                            fields.get("project_id", li.project_id))
+    held = _stock_before(db, [li.document_id], extra=[(SimpleNamespace(
+        **{k: fields.get(k, getattr(li, k)) for k in ("plan_key", "component_id", "mpn", "lcsc")}),
+        db.get(M.RunCostDocument, li.document_id))])
     before, after = {}, {}
     for field, value in fields.items():
         old = getattr(li, field)
         if old != value:
             before[field], after[field] = old, value
             setattr(li, field, value)
+    _refuse_stock_loss(db, held, "this edit")
     audit(db, "run.cost_line.update", "run_cost_line", li.id, {"before": before, "after": after})
     db.commit()
     return run_actuals.line_json(li, db.get(M.RunCostDocument, li.document_id), db=db)
@@ -1478,9 +1566,11 @@ def void_line(line_id: int, db: Session = Depends(get_db)):
         run_actuals.purchase_loss_of(db, row)
         for row in run_actuals.pooled_part_lines(db, [li, *kids]) if row.id not in hdrs
     ], "voiding this line")
+    held = _stock_before(db, [li.document_id])
     now = utcnow()
     for row in [li, *kids]:
         row.voided_at = now
+    _refuse_stock_loss(db, held, "voiding this line")
     audit(db, "run.cost_line.void", "run_cost_line", li.id,
           {"step": li.plan_key, "label": li.label, "qty": li.qty, "unit_price": li.unit_price,
            "children_voided": [c.id for c in kids]})
@@ -1669,6 +1759,20 @@ def add_consumption(run_id: int, body: ConsumptionIn, db: Session = Depends(get_
     unit = body.unit_cost_usd
     if unit is None:
         unit = pool["avg_usd"] if pool else 0.0
+    # Decision 0073: with lot pricing on, the draw comes from its lots, oldest
+    # first, at their cost — a typed price does not override what was paid.
+    from ..services import lots as lots_svc
+
+    want = {"component_id": (pool or {}).get("component_id") or body.component_id,
+            "mpn": (pool or {}).get("mpn") or body.mpn, "lcsc": (pool or {}).get("lcsc") or body.lcsc,
+            "qty": body.qty, "label": body.mpn or body.lcsc or str(body.component_id)}
+    uncovered = lots_svc.fifo_price(db, [want], as_of=body.consumed_at or run.run_date or "",
+                                    company_id=run_actuals.run_scope(db, run))
+    if uncovered:
+        raise HTTPException(409, {"error": f"{lots_svc.short_text(uncovered)} — enter the missing purchase "
+                                           "(decision 0073)", "uncovered": uncovered})
+    if want.get("bindings"):
+        unit = want["unit_cost_usd"]
     c = M.ComponentConsumption(
         run_id=run_id,
         component_id=(pool or {}).get("component_id") or body.component_id,
@@ -1678,6 +1782,9 @@ def add_consumption(run_id: int, body: ConsumptionIn, db: Session = Depends(get_
         consumed_at=body.consumed_at or run.run_date or "", note=body.note,
     )
     db.add(c)
+    if want.get("bindings"):
+        db.flush()
+        lots_svc.bind(db, c, want)
     db.flush()
     audit(db, "run.consumption.add", "component_consumption", c.id, {
         "run_id": run_id, "qty": c.qty, "unit_cost_usd": c.unit_cost_usd, "basis": c.basis,
@@ -1764,6 +1871,17 @@ def set_used_qty(run_id: int, body: ConsumptionIn, db: Session = Depends(get_db)
                 "mpn": body.mpn, "lcsc": body.lcsc,
                 "hint": "enter the purchase invoice first, or check the spelling"})
         unit = body.unit_cost_usd if body.unit_cost_usd is not None else pool["avg_usd"]
+        from ..services import lots as lots_svc
+
+        want = {"component_id": pool.get("component_id"), "mpn": pool.get("mpn") or body.mpn,
+                "lcsc": pool.get("lcsc") or body.lcsc, "qty": qty,
+                "label": body.mpn or body.lcsc or str(body.component_id)}
+        uncovered = lots_svc.fifo_price(db, [want], as_of=as_of or "", company_id=run_actuals.run_scope(db, run))
+        if uncovered:
+            raise HTTPException(409, {"error": f"{lots_svc.short_text(uncovered)} — enter the missing purchase "
+                                               "(decision 0073)", "uncovered": uncovered})
+        if want.get("bindings"):
+            unit = want["unit_cost_usd"]
         row = M.ComponentConsumption(
             run_id=run_id, component_id=pool.get("component_id"),
             mpn=pool.get("mpn") or body.mpn, lcsc=pool.get("lcsc") or body.lcsc,
@@ -1771,6 +1889,8 @@ def set_used_qty(run_id: int, body: ConsumptionIn, db: Session = Depends(get_db)
             consumed_at=body.consumed_at or run.run_date or "", note=body.note)
         db.add(row)
         db.flush()
+        if want.get("bindings"):
+            lots_svc.bind(db, row, want)
         audit(db, "run.consumption.add", "component_consumption", row.id,
               {"run_id": run_id, "qty": qty, "unit_cost_usd": row.unit_cost_usd,
                "basis": "manual", "note": "counted at end of production"})
@@ -1782,7 +1902,18 @@ def set_used_qty(run_id: int, body: ConsumptionIn, db: Session = Depends(get_db)
         return {"status": "unchanged", "id": row.id, "qty": qty}
     # The unit cost stays as SNAPSHOTTED. It is what the pool averaged when the
     # draw was priced, and re-pricing on every correction would let a later
-    # purchase rewrite what a closed batch paid.
+    # purchase rewrite what a closed batch paid. While lot pricing is on, or
+    # when its price already is its lots' price, the draw is priced over its
+    # OWN lots instead, which a later purchase cannot move.
+    from ..services import lots as lots_svc
+
+    # Decision 0073: a bound draw that grows takes the next lots oldest first,
+    # one that shrinks gives back its newest bindings, and it is priced again.
+    uncovered = lots_svc.resize_bound(db, row, qty, as_of=row.consumed_at or run.run_date or "",
+                                      company_id=run_actuals.run_scope(db, run))
+    if uncovered:
+        raise HTTPException(409, {"error": f"{lots_svc.short_text(uncovered)} — enter the missing purchase "
+                                           "(decision 0073)", "uncovered": uncovered})
     row.qty = qty
     was_basis = row.basis
     row.basis = "manual"
@@ -1798,14 +1929,16 @@ def set_used_qty(run_id: int, body: ConsumptionIn, db: Session = Depends(get_db)
 
 @router.post("/runs/{run_id}/consumption/from-bom")
 def consume_bom(run_id: int, db: Session = Depends(get_db)):
-    """Draw the run's whole BOM from the pool at the moving average."""
+    """Draw the run's whole BOM from the pool at the moving average, or from
+    its lots oldest first while lot pricing is on (decision 0073)."""
     run = _run(db, run_id)
     res = run_actuals.consume_from_bom(db, run)
     if res.get("error"):
         # shortages ride along so the caller sees WHAT is missing, not just that
         # something is
         raise HTTPException(409, {"error": res["error"],
-                                  "shortages": res.get("shortages") or []})
+                                  "shortages": res.get("shortages") or [],
+                                  "uncovered": res.get("uncovered") or []})
     audit(db, "run.consumption.from_bom", "production_run", run.id, res)
     db.commit()
     return res
@@ -1980,6 +2113,26 @@ def delete_adjustment(adj_id: int, db: Session = Depends(get_db)):
     a = db.get(M.ComponentStockAdjustment, adj_id)
     if a is None:
         raise HTTPException(404, "adjustment not found")
+    if (a.qty_delta or 0.0) > 0:
+        # A positive adjustment is stock and a lot (decision 0073): deleting
+        # it is a purchase loss, and the draws bound to it would hold a lot
+        # that no longer exists. A transformation's output goes with its void.
+        from ..services import lots as lots_svc
+
+        if a.transformation_id or db.query(M.ProcessTransformation.id).filter(
+                M.ProcessTransformation.output_adjustment_id == a.id,
+                M.ProcessTransformation.voided_at.is_(None)).first():
+            raise HTTPException(409, "this adjustment is a transformation's output — void the transformation "
+                                     "instead (Stock → Prepared parts)")
+        q, draws = lots_svc.bound_on(db, adjustment_ids=[a.id]).get(lots_svc._lot_key("A", a.id), (0.0, []))
+        if q > lots_svc.CLOSED_EPS:
+            raise HTTPException(409, f"draws {', '.join(f'#{d}' for d in draws[:4])} hold {q:g} of this "
+                                     "adjustment's stock — reduce or void those draws first")
+        _guard_purchase_loss(db, [{"component_id": a.component_id, "mpn": a.mpn or "", "lcsc": a.lcsc or "",
+                                   "qty": a.qty_delta, "date": a.adjusted_at or "",
+                                   "label": a.mpn or a.lcsc or f"adjustment {a.id}",
+                                   "company_id": run_actuals.stock_scope(db, a.company_id)}],
+                             "deleting this adjustment")
     audit(db, "run.stock_adjustment.delete", "component_stock_adjustment", adj_id, {
         "project_id": a.project_id, "component_id": a.component_id, "mpn": a.mpn,
         "qty_delta": a.qty_delta, "reason": a.reason, "charge_run_id": a.charge_run_id,

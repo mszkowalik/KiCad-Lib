@@ -76,10 +76,22 @@ def versions(db: Session, project_id: int) -> list[M.ProcessVersion]:
 
 
 def current_version(db: Session, project_id: int) -> M.ProcessVersion | None:
-    """The newest PUBLISHED version — what a new batch resolves to."""
-    return (db.query(M.ProcessVersion)
-            .filter_by(project_id=project_id, status="published")
-            .order_by(M.ProcessVersion.version_no.desc()).first())
+    """What a new batch resolves to: the version the project POINTS at
+    (decision 0074). Not the highest published one — a version published for
+    the history of older devices is never current."""
+    p = db.get(M.Project, project_id)
+    v = db.get(M.ProcessVersion, p.current_process_version_id) if p and p.current_process_version_id else None
+    return v if v is not None and v.project_id == project_id and v.status == "published" else None
+
+
+def make_current(db: Session, v: M.ProcessVersion) -> M.ProcessVersion:
+    """Point the project at a published version. Batches keep the version
+    they pinned; only new batches and the project's planned BOM follow."""
+    if v.status != "published":
+        raise HTTPException(409, "only a published version can be current")
+    db.get(M.Project, v.project_id).current_process_version_id = v.id
+    db.flush()
+    return v
 
 
 def version_for_run(db: Session, run: M.ProductionRun) -> M.ProcessVersion | None:
@@ -209,6 +221,15 @@ def check(db: Session, project_id: int, graph: dict) -> dict:
         elif kind in DEPLOYMENT_KIND_FOR:
             warnings.append(f"step {label[s['key']]!r} names no deployment, so the bench runs "
                             "whatever procedure the operator picks")
+        # A required bench step the project has no bench for could only ever
+        # be stated by hand (decision 0074): make it optional, or a batch step.
+        # Programming is exempt: its bench is what names a twin at all.
+        if kind in DEPLOYMENT_KIND_FOR and kind != "program" and s.get("required") and not dep_id:
+            want = DEPLOYMENT_KIND_FOR[kind]
+            if not any((d.kind or "flash") == want for d in
+                       db.query(M.Deployment).filter_by(project_id=project_id).all()):
+                errors.append(f"step {label[s['key']]!r} is required, and the project has no {want!r} "
+                              "deployment to record it — add one, or make the step optional")
         if kind == "finish" and s.get("needs"):
             warnings.append(f"step {label[s['key']]!r}: the finish step needs every required "
                             "step by itself; its own needs list is ignored")
@@ -430,7 +451,9 @@ def update_draft(db: Session, v: M.ProcessVersion, *, graph: dict | None = None,
 
 
 def publish(db: Session, v: M.ProcessVersion, *, actor: str,
-            comment: str | None = None) -> M.ProcessVersion:
+            comment: str | None = None, historical: bool = False) -> M.ProcessVersion:
+    """Publish a draft and make it current — unless `historical`: a version
+    that describes how older devices were made, for their batches to pin."""
     if v.status != "draft":
         raise HTTPException(409, "only a draft can be published")
     if comment is not None:
@@ -444,6 +467,8 @@ def publish(db: Session, v: M.ProcessVersion, *, actor: str,
     v.status = "published"
     v.approved_by = actor
     v.published_at = utcnow()
+    if not historical:
+        db.get(M.Project, v.project_id).current_process_version_id = v.id
     db.flush()
     return v
 
@@ -662,6 +687,16 @@ def transform(db: Session, project_id: int, *, recipe_key: str, qty: float, scra
                 problems.append({"component_id": cid, "name": label, "problem": "unpriced",
                                  "detail": "the pool has no price for this part on that date"})
 
+    # Decision 0073: the bought inputs come from their lots, oldest first, at
+    # their cost; the prepared lot's value is then the lots' value.
+    from . import lots as _lots
+
+    problems += _lots.fifo_price(db, [d for d in draws if not d["internal"]], as_of=made_at, company_id=scope)
+    if _lots.lot_pricing_on():
+        problems = [p for p in problems if not (p.get("problem") == "unpriced"
+                                                and any(d.get("bindings") and d["component_id"] == p["component_id"]
+                                                        for d in draws))]
+
     shortages = run_actuals.check_shortages(db, [
         {"component_id": d["component_id"], "mpn": d.get("mpn", ""), "lcsc": "", "qty": d["qty"],
          "date": made_at, "label": d["name"]} for d in draws if not d["internal"]],
@@ -703,6 +738,8 @@ def transform(db: Session, project_id: int, *, recipe_key: str, qty: float, scra
             note=f"input of {t.recipe_label} (transformation #{t.id})"[:500])
         db.add(c)
         db.flush()
+        if d.get("bindings"):
+            _lots.bind(db, c, d)
         if d["lot_adjustment_id"]:
             db.add(M.ComponentConsumptionLot(
                 consumption_id=c.id, lot_adjustment_id=d["lot_adjustment_id"], qty=d["qty"],
@@ -968,18 +1005,20 @@ def step_for_deployment(graph: dict, kind: str, deployment_id: int | None) -> di
     return next((s for s in steps if not s.get("deployment_id")), None)
 
 
-def process_materials(db: Session, project_id: int, as_of: str | None = None) -> list | None:
+def process_materials(db: Session, project_id: int, as_of: str | None = None,
+                      version: M.ProcessVersion | None = None) -> list | None:
     """The materials one device of the project uses, read off its process
     (decisions 0060, 0061): every input of every step on the main route — the
     label of the label step too — a prepared part expanded into its recipe's
     inputs. None when the project has no
     published process — its materials are then the project's extra BOM items.
+    `version` is the one a batch pinned; without it, the current one.
 
     Shaped like `ProjectExtraBomItem` rows, so the BOM pricing reads both the
     same way. A part with no price ladder carries the pool's average price."""
     from types import SimpleNamespace
 
-    v = current_version(db, project_id)
+    v = version or current_version(db, project_id)
     if v is None:
         return None
     graph = _graph(v)

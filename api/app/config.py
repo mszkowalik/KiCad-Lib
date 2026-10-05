@@ -173,6 +173,9 @@ class Settings(BaseSettings):
     # purchase, draw and adjustment names its company; `appconfig.validate`
     # refuses to turn it on before that.
     stock_per_company: bool = False
+    # Decision 0073: a draw is bound to lots oldest first and takes their cost;
+    # a draw the lots cannot cover is refused. Off until the history is bound.
+    lot_pricing: bool = False
 
     # Exchange-rate auto-refresh (frankfurter.app — ECB daily rates, no key).
     fx_autofetch: bool = True

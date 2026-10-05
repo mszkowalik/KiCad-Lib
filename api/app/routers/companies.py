@@ -92,6 +92,28 @@ class StockBackfillIn(BaseModel):
     fetch_jlc: bool = False
 
 
+class LotHistoryIn(BaseModel):
+    dry_run: bool = True
+
+
+@router.post("/companies/lot-history")
+def lot_history(body: LotHistoryIn, db: Session = Depends(get_db), admin: M.User = Depends(require_admin)):
+    """Bind every live draw to its lots, oldest first, and price it at their
+    cost — closed batches included, as one journalled correction (decision
+    0073). Dry run by default; the report lists every draw no lot covers."""
+    from ..services import journal, lots
+
+    if body.dry_run:
+        return lots.bind_history(db, dry_run=True)
+    with journal.batch(db, kind="lots.history", source_ref="", actor=acting_name()) as h:
+        res = lots.bind_history(db, actor=acting_name(), dry_run=False)
+    audit(db, "lots.history", "company", None,
+          {"draws_bound": res["draws_bound"], "uncovered": len(res["uncovered"]),
+           "change_usd": res["change_usd"], "batch_id": h["batch_id"]})
+    db.commit()
+    return {**res, "batch_id": h["batch_id"]}
+
+
 @router.post("/companies/stock-backfill")
 def stock_backfill(body: StockBackfillIn, db: Session = Depends(get_db),
                    admin: M.User = Depends(require_admin)):

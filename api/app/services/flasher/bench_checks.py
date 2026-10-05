@@ -214,6 +214,25 @@ def _about_the_batch(db: Session, batch: M.ProductionRun, dev: M.DeviceUnit, *,
                 "Choose the next stack on the bench page before you go on. If you go on "
                 "anyway, the device is recorded without a twin and the batch shows a gap.",
                 run_id=batch.id, stack=batch.bench_stack or None))
+        elif batch.bench_stack:
+            # Programming another batch's boards is allowed (0059 §12), and it
+            # is also what a wrong stack looks like (decision 0074). Said once:
+            # on the first board this batch names from that batch's pile.
+            rid, key = _twins.parse_stack(batch.bench_stack)
+            # A found pile's units name their origin in the key (found@<batch>).
+            found = next((t.split("@", 1)[1] for t in key.split("|") if t.startswith("found@")), None)
+            origin = int(found) if found and found.isdigit() else rid
+            if rid != batch.id and not (db.query(func.count(M.Twin.id))
+                                        .filter(M.Twin.origin_run_id == origin, M.Twin.found.is_(found is not None),
+                                                M.Twin.run_id == batch.id,
+                                                M.Twin.device_unit_id.isnot(None)).scalar() or 0):
+                src = db.get(M.ProductionRun, rid)
+                out.append(_notice(
+                    "warn", "stack_of_other_batch",
+                    f"{batch.label} programs from a stack of {src.label if src else rid}.",
+                    "The boards keep that batch as their origin. If you meant this batch's own "
+                    "boards, choose its stack on the bench page first.",
+                    run_id=batch.id, stack=batch.bench_stack, origin_run_id=rid))
 
     # The check that would have stopped 2026-09-17, when the bench had Batch 8
     # selected — a batch whose boards had not been delivered — and 31 units were

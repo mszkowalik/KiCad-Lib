@@ -119,7 +119,9 @@ export default function FlashBench() {
 
   useEffect(() => {
     const ac = new AbortController();
-    getProjects(ac.signal)
+    // Every company's projects, whatever the header switcher shows: the
+    // bench programs whichever company's batch is on the table.
+    getProjects(ac.signal, "all")
       .then(setProjects)
       .catch((err) => {
         if (!isAbortError(err)) setError(errorMessage(err));
@@ -132,7 +134,7 @@ export default function FlashBench() {
   useEffect(() => {
     if (!validProject) return;
     const ac = new AbortController();
-    Promise.all([getRuns(validProject, ac.signal), listDeployments(validProject, ac.signal)])
+    Promise.all([getRuns(validProject, ac.signal, "all"), listDeployments(validProject, ac.signal)])
       .then(([r, d]) => {
         setRuns(r);
         setRunsFor(validProject);

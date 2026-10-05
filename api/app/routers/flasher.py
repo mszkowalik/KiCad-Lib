@@ -1758,7 +1758,13 @@ def create_run(body: RunCreate, request: Request, db: Session = Depends(get_db))
     # pass a test? The batch answers; a bench trial takes the project's current
     # default (its active test deployment). Copied once, read forever — a
     # later change of mind cannot re-judge what this run produced.
-    if prod is not None:
+    pv = db.get(M.ProcessVersion, prod.process_version_id) if prod is not None and prod.process_version_id else None
+    if pv is not None:
+        # A crafted batch: its process says it, by a required test step — one
+        # rule, so the device verdict and "finish" never disagree (0074).
+        test_required = any((s.get("kind") == "test" and s.get("required"))
+                            for s in (pv.graph or {}).get("steps") or [])
+    elif prod is not None:
         test_required = bool(prod.requires_test)
     else:
         test_required = bool(db.query(M.Deployment).filter(

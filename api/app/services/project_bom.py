@@ -206,7 +206,8 @@ def priced_bom(
     # Decision 0060: a project with a process takes its materials from the
     # process steps, not from hand-typed extra items.
     from . import process as _process
-    proc = _process.process_materials(db, project.id, as_of=at.date().isoformat() if at else None)
+    proc = _process.process_materials(db, project.id, as_of=at.date().isoformat() if at else None,
+                                      version=_process.version_for_run(db, run) if run is not None else None)
     if proc is not None:
         extras = proc
     comp_ids |= {x.component_id for x in extras if x.component_id}
@@ -533,7 +534,8 @@ def priced_bom_costs_only(db: Session, project: M.Project, volume: int,
     # No commit context → the current (latest-anchored) cost revision.
     extras, costs, cost_rev = cost_state.items_for(db, project.id, None)
     from . import process as _process  # decision 0060: the process names the materials
-    proc = _process.process_materials(db, project.id, as_of=at.date().isoformat() if at else None)
+    proc = _process.process_materials(db, project.id, as_of=at.date().isoformat() if at else None,
+                                      version=_process.version_for_run(db, run) if run is not None else None)
     if proc is not None:
         extras = proc
     comp_ids |= {x.component_id for x in extras if x.component_id}

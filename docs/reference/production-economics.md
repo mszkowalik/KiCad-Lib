@@ -1,7 +1,8 @@
 # Production economics — cost plans, invoices, stock, orders and sales
 
 Backend rules for money and material. The services are `cost_state.py`,
-`material.py`, `stock.py`, `orders.py` and `invoice_register`. Decision
+`material.py`, `stock.py`, `orders.py`, `invoice_register` and `lots.py` (the
+lot ledger, at the end of this page). Decision
 [0003](../decisions/0003-orders-shipments-and-device-history.md) covers orders and
 shipments, [0005](../decisions/0005-off-board-parts.md) covers off-board parts, and
 [0007](../decisions/0007-built-means-finished-and-passed.md) covers the built rule.
@@ -229,7 +230,9 @@ guard reads one company's stock is in [companies.md](companies.md).
   redraw; snapshotted `unit_cost_usd` is never rewritten retroactively. Repricing is
   therefore a DELETE + re-POST with `unit_cost_usd=None`, run in event-date order so
   each draw blends the average the next one sees — `add_consumption` prices as of
-  `consumed_at`, never today.
+  `consumed_at`, never today. While `lot_pricing` is on, such a draw is refused
+  instead, and a re-POST takes lots oldest first, not the average (see "Lots and
+  FIFO pricing" at the end of this page).
 - **A zero-priced draw also hides duplicates.** `ComponentConsumption` has no
   uniqueness constraint, so a part drawn once by `consume_from_bom` and again by an
   ad-hoc script is simply charged twice — and while both rows price at zero, nothing
@@ -382,8 +385,9 @@ guard reads one company's stock is in [companies.md](companies.md).
   `POST /api/jlc/import/parts/{pob}/refresh` re-plans an existing document from
   what JLC says today and updates lines matched on `presaleGoodsKeyId`. It
   decides before it mutates, preserves anything appended to a line's note after
-  " | ", and refuses when a lot has vanished or when shrinking a line would
-  contradict draws bound to it. It moves a line's `allocate` and
+  " | ", and refuses when a lot has vanished, when shrinking a line would
+  leave it fewer units than live draws hold of it (a voided draw holds none),
+  or when a cut or a cancelled lot leaves draws without stock, bound or not. It moves a line's `allocate` and
   `exclude_reason` only when the line's step changes (a lot arrived, or was
   cancelled); otherwise a destination somebody chose survives the refresh. The importer itself refuses a document it
   already holds, and rightly — a second document doubles the purchase.
@@ -705,3 +709,86 @@ guard reads one company's stock is in [companies.md](companies.md).
   search `search_parts(keyword)` (`+` = AND, MPNs stored unhyphenated) and
   `find_market_match(mpn, brand)` matching heuristics. Only sync + detail are
   router-wired today; reuse these wrappers instead of re-deriving endpoints.
+
+## Lots and FIFO pricing (decision 0073)
+
+`services/lots.py` replays the shared event list into lots. A lot is a purchase
+line, a positive stock adjustment or an in-house transfer position. A binding
+(`ComponentConsumptionLot`) records which lot a draw took, how much, and at
+what unit cost. The module docstring says why a lot's remaining quantity and
+value are computed on read and never stored.
+
+- **`lot_pricing` is an admin switch, off by default** ("Lot pricing (FIFO)"
+  on the Configuration tab). While it is off, a draw takes the moving average
+  and only the history job below applies. `appconfig.validate` refuses to turn
+  it on while `lots.untraced` finds a live draw that its bindings do not
+  explain in full.
+- **One picker for every writer: `lots.FifoPicker`.** It offers the lots of
+  the stock the draw takes from (the batch company's while each company keeps
+  its own stock, else every lot), dated on or before the draw, oldest first.
+  A draw that one lot cannot hold is split across lots. The draws of one write
+  share one picker, so they never take the same unit. The draw's unit cost is
+  the weighted landed cost of its bindings.
+- **The writers** are a process or bench step and a twin rebuild
+  (`twins._plan_draws`, `write_draws`), "Record assembly" for the parts another
+  house used (`twins.apply_assembly`), a prepared part's bought inputs
+  (`process.transform`), the BOM draw (`consume_from_bom`), the hand draw and
+  the used-quantity screen (`routers/run_costs.py`), a JLC warehouse pick
+  (`jlc_ledger.book`) and an in-house transfer line that names no lot
+  (`transfers.plan`). A JLC assembly draw keeps the lot JLC named. A new writer
+  calls `lots.fifo_price` and `lots.bind`. It never builds a second picker.
+- **A draw the lots cannot cover in full is refused**: a 409, or a `refused`
+  row for a warehouse pick. The refusal names the part and how much no lot
+  holds, and the fix is the missing purchase. The stock can hold units that no
+  lot holds: a draw of the other company that JLC bound to this company's lot
+  before any transfer takes the lot, but not this company's stock.
+- **A voided draw took nothing**, so its bindings free their lots
+  (`lot_state` counts live draws only, as the pool replay does). A refused row
+  of `fifo_price` reserves nothing in its picker either.
+- **A changed used quantity resizes the bindings** (`lots.resize_bound`). More
+  takes the next lots oldest first, while the switch is on. Less gives back
+  the newest binding first, whatever the switch says, so no draw holds more
+  lots than units. With the switch on, the draw is then priced again over its
+  own lots; off, it keeps its price, unless that price is its lots' price (the
+  history job or the picker set it): then it shrinks and grows as with the
+  switch on and takes the price of the lots it holds (a growth no lot covers
+  in full binds nothing and keeps the price).
+- **A lot is not taken from the draws bound to it.** Every invoice edit —
+  a position or a document, whatever field moves (step, quantity, part,
+  type, date, buyer, a split or re-split, a deletion), and every new
+  position or document, so a credit (a negative stock line, decision 0044)
+  on a correction, a credit note or a split share is checked like a cut, and
+  a new buyer's stock is checked for the credits it would take — runs in a savepoint
+  and is checked after it is written (`lots.stock_before` and
+  `lots.stock_problems`; the JLC parts refresh runs the same check). It is refused when a lot that live draws are bound
+  to is no lot any more, keeps fewer units than they hold, is dated after
+  them, belongs to another company's stock, or is another part
+  (`lots.bound_problems`; an MPN written another way is the same part), or
+  when a part's pool goes below zero and below its present level on any day
+  (`run_actuals.stock_worse`, the comparison the Write log's trial uses). A
+  part with a library component is that component's pool, as a draw sees it:
+  its events, and those with no component that share a name, never another
+  component's (`run_actuals.stock_targets`). A part with no component is the
+  pool of its names.
+  Deleting a positive stock adjustment checks its bindings and the pool. A
+  transformation's output adjustment goes only with "Void transformation".
+- **A transfer line that names no lot takes the sender's lots oldest first**,
+  after every lot that a line of the same transfer names. Its sender draw is
+  bound to those lots, and the position carries their weighted cost, whatever
+  price the caller stated. The bindings of the draws about to move
+  (`exclude_draw_ids`, from `cover_draws`) go back to their lots for this pick,
+  the same way `check_shortages` leaves those draws out. A line that names a
+  lot keeps that lot. The other transfer rules are in
+  [companies.md](companies.md).
+- **The history is bound once, by an explicit job** (`lots.bind_history`,
+  `POST /api/companies/lot-history`, admin only, "Bind draws to lots" on Admin →
+  Companies). A dry run is the default. The job binds every untraced live draw
+  in date order, each company from its own lots while each company keeps its
+  own stock, and prices the draw at the lots' cost. A closed batch is priced
+  again too. The job is its correction event (decision 0044), the change reads
+  as a variance against `closed_cost_usd`, and its frozen twin share is
+  computed again. A draw no lot covers in full keeps its price and is listed,
+  and the units it reserved go back to the picker. The write is one journal
+  batch of kind `lots.history`.
+- **Planning keeps the moving average.** A batch that does not exist yet has no
+  lots to take, so `project_bom` prices its plan from the pool average.

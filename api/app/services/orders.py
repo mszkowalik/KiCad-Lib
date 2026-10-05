@@ -260,6 +260,9 @@ def run_stock(db: Session, project_id: int | None = None) -> list[dict]:
             shipped[rid] += n
         elif state == "missing":
             missing[rid] += n
+    for _pid, rid, why, n in _twin_holds(db, rids):
+        available[rid] -= n
+        held[rid][why] += n
     projects = {p.id: p.name for p in db.query(M.Project).all()}
     out = []
     for r in runs:
@@ -359,6 +362,10 @@ def product_stock(db: Session) -> list[dict]:
             # Not on the shelf, so in no stock figure — but never invisible.
             p["missing"] += n
 
+    for pid, _rid, why, n in _twin_holds(db):
+        if pid in out:
+            out[pid]["available"] -= n
+            out[pid]["held"][why] = out[pid]["held"].get(why, 0) + n
     result = []
     for p in out.values():
         p["batches"] = len(p["batches"])
@@ -367,6 +374,31 @@ def product_stock(db: Session) -> list[dict]:
     # Biggest shelf first: the page is read to find what there is to sell.
     result.sort(key=lambda r: (-r["in_stock"], r["project"]))
     return result
+
+
+#: Why a unit on the shelf in `ok` condition is still not for sale (decision
+#: 0074): its twin is in work, its twin was scrapped, or it is a gap of a
+#: crafted batch. Shown as HELD, beside the conditions.
+def _twin_holds(db: Session, rids: list[int] | None = None) -> list[tuple[int, int | None, str, int]]:
+    """(project, run, reason, n) for in-stock `ok` units held by their twin."""
+    from sqlalchemy import func
+
+    crafted = {rid for (rid,) in db.query(M.ProductionRun.id)
+               .filter(M.ProductionRun.process_version_id.isnot(None)).all()}
+    q = (db.query(M.DeviceUnit.project_id, M.DeviceUnit.production_run_id, M.Twin.status,
+                  func.count(M.DeviceUnit.id))
+         .outerjoin(M.Twin, M.Twin.device_unit_id == M.DeviceUnit.id)
+         .filter(M.DeviceUnit.state == "in_stock", func.coalesce(M.DeviceUnit.condition, "ok") == "ok"))
+    if rids is not None:
+        q = q.filter(M.DeviceUnit.production_run_id.in_(rids or [-1]))
+    out = []
+    for pid, rid, status, n in q.group_by(M.DeviceUnit.project_id, M.DeviceUnit.production_run_id,
+                                          M.Twin.status).all():
+        why = ("in process" if status == "active" else "scrapped" if status == "scrapped" else
+               "gap" if status is None and rid in crafted else None)
+        if why:
+            out.append((pid, rid, why, n))
+    return out
 
 
 def _device_counts(db: Session, rids: list[int]):
@@ -871,17 +903,28 @@ def repair_device(db: Session, device: M.DeviceUnit, *, outcome: str = "to_stock
     if outcome == "dispose":
         record_event(db, device, "disposed", at=at + timedelta(seconds=1), actor=actor,
                      reason="unrepairable", note=note or "")
+        from . import twins as _twins
+
+        _twins.scrap_disposed(db, device, reason="unrepairable", actor=actor)   # decision 0074
     db.flush()
     return ev
 
 
 def dispose_device(db: Session, device: M.DeviceUnit, *, reason: str = "", disposed_at: str = "",
-                   actor: str = "", note: str = "") -> M.DeviceEvent:
+                   actor: str = "", note: str = "", scrap_twin: bool = True) -> M.DeviceEvent:
+    """A unit destroyed or written off. Its twin is scrapped with it (decision
+    0074); `scrap_twin=False` is the batch screen's scrap, which did that
+    already."""
     if device.state not in ("returned", "in_stock", "missing"):
         raise HTTPException(409, f"device is {device.state or 'unrecorded'}; only a returned, "
                                  "in-stock or missing device can be disposed of")
-    return record_event(db, device, "disposed", at=_date_at(disposed_at), actor=actor,
-                        reason=reason or "", note=note or "")
+    ev = record_event(db, device, "disposed", at=_date_at(disposed_at), actor=actor,
+                      reason=reason or "", note=note or "")
+    if scrap_twin:
+        from . import twins as _twins
+
+        _twins.scrap_disposed(db, device, reason=reason, actor=actor)
+    return ev
 
 
 # ------------------------------------------------------ the stock count (0057)
@@ -1040,12 +1083,19 @@ def order_economics(db: Session, order: M.SalesOrder, unit_cost: dict[int, float
     units = {d.id: d for d in db.query(M.DeviceUnit)
              .filter(M.DeviceUnit.id.in_([e.device_id for e in live] or [-1])).all()}
     evs = [(e, units[e.device_id]) for e in live if e.device_id in units]
+    # A gap of a crafted batch has no price of its own, and the batch average
+    # would count the batch twice: its twins carry the whole total (0074).
+    crafted = {rid for (rid,) in db.query(M.ProductionRun.id).filter(
+        M.ProductionRun.id.in_({d.production_run_id for _e, d in evs if d.production_run_id} or {-1}),
+        M.ProductionRun.process_version_id.isnot(None)).all()}
     for ev, d in evs:
         shipped_devices += 1
         if ev.replaces_device_id is not None:
             replacements += 1
         if twin_cost and d.id in twin_cost:
             devices_cost += twin_cost[d.id]
+        elif d.production_run_id in crafted:
+            uncosted += 1
         elif d.production_run_id in unit_cost:
             devices_cost += unit_cost[d.production_run_id]
         else:

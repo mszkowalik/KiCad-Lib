@@ -225,7 +225,9 @@ def _from_values(db: Session, values: dict) -> set[int]:
     if values.get("company_id"):
         return {int(values["company_id"])}
     for key, fn in (("document_id", _doc), ("run_id", _run), ("charge_run_id", _run),
-                    ("project_id", _project), ("consumption_id", _stock_row(M.ComponentConsumption))):
+                    ("project_id", _project), ("consumption_id", _stock_row(M.ComponentConsumption)),
+                    ("line_id", _line), ("step_run_id", _via(M.StepRun, "run_id", _run)),
+                    ("origin_run_id", _run)):
         if values.get(key):
             got = fn(db, values[key])
             if got:
@@ -252,6 +254,16 @@ def write_batch_companies(db: Session, batch_id) -> set[int]:
                                                _stock_row(M.ComponentConsumption)),
             "run_substitutions": _via(M.RunSubstitution, "run_id", _run),
             "jlc_order_decisions": _via(M.JlcOrderDecision, "run_id", _run),
+            # "Record assembly" (decision 0072): its click, links and twins
+            "cost_line_steps": _via(M.CostLineStep, "line_id", _line),
+            "cost_line_step_keys": _via(M.CostLineStepKey, "line_id", _line),
+            "step_runs": _via(M.StepRun, "run_id", _run),
+            "twin_steps": _via(M.TwinStep, "step_run_id", _via(M.StepRun, "run_id", _run)),
+            "twins": _via(M.Twin, "origin_run_id", _run),
+            # a scrap disposes of its named units (decision 0074)
+            "device_units": _device,
+            "device_events": _via(M.DeviceEvent, "device_id", _device),
+            "programming_runs": _programming_run,
         })
     out: set[int] = set()
     for row in wb.rows:
@@ -260,6 +272,9 @@ def write_batch_companies(db: Session, batch_id) -> set[int]:
         if not got and row.before:
             got = _from_values(db, row.before)
         out |= got
+    if not out and (wb.source_ref or "").startswith("run:"):
+        # A batch written for one production batch is that batch's company's.
+        out = _run(db, int((wb.source_ref.split(":", 1)[1] or "0").split(":")[0] or 0))
     return out or {c.id for c in C.all_companies(db)}
 
 
@@ -359,11 +374,15 @@ FIELD_RESOLVERS: dict[tuple[str, str], Callable[[Session, str], set[int]]] = {
     ("/api/runs/{run_id}/craft/costs", "line_ids"): _line,
     ("/api/runs/{run_id}/craft/costs", "step_run_ids"): _via(M.StepRun, "run_id", _run),
     ("/api/run-documents/{doc_id}/lines", "deletes"): _line,
+    ("/api/runs/{run_id}/craft/assembly", "line_ids"): _line,
+    ("/api/runs/{run_id}/craft/assembly", "parent_line_id"): _line,
+    ("/api/runs/{run_id}/craft/assembly", "draw_ids"): _stock_row(M.ComponentConsumption),
     ("*", "attachment_id"): _attachment,
     ("*", "plan_item_id"): _via(M.ProjectCostItem, "project_id", _project),
     ("*", "firmware_asset_id"): _via(M.FirmwareAsset, "project_id", _project),
     ("*", "param_set_id"): _via(M.ParamSet, "project_id", _project),
     ("*", "deployment_version_id"): _deployment_version,
+    ("*", "programming_run_id"): _programming_run,
     # an in-house transfer names both companies, so its author must see both
     ("/api/transfers", "sender_id"): _company,
     ("/api/transfers", "receiver_id"): _company,
@@ -375,6 +394,9 @@ FIELD_RESOLVERS: dict[tuple[str, str], Callable[[Session, str], set[int]]] = {
     ("/api/projects/{project_id}/process/versions", "from_version_id"):
         _via(M.ProcessVersion, "project_id", _project),
     ("/api/runs/{run_id}/rebuild", "version_id"): _via(M.ProcessVersion, "project_id", _project),
+    # the batch whose boards a rebuilt batch's devices were built on (decision 0060)
+    ("/api/runs/{run_id}/rebuild", "from_run_id"): _run,
+    ("/api/runs/{run_id}/process-version", "version_id"): _via(M.ProcessVersion, "project_id", _project),
     ("/api/agent/tools/{name}", "line_id"): _line,
 }
 

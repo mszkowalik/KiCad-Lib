@@ -14,39 +14,55 @@
  *    unit from a stack.
  *  - "Finished" is the last step, done here, and it refuses a device that
  *    misses a required step.
- *  - The board's assembly at the supplier is a step too (decision 0060),
- *    recorded from the batch's assembly order when the boards are received.
- *    Any other invoice position of the batch can be linked to the step click
- *    it paid for; what no step claims stays in the origin batch cost.
+ *  - The board's assembly at the supplier is a step too (decision 0060). The
+ *    person records it from the Board assembly card (decision 0072), with
+ *    "Record assembly…": pre-filled from the JLC order, or filled in by hand
+ *    for another assembly house. Receiving the boards does NOT record it, and
+ *    neither does applying the JLC order. What arrives later stays out until
+ *    "Add to assembly…" takes it in; "Undo assembly…" reverses the newest
+ *    write through the ledger. Any other invoice position of the batch can be
+ *    linked to the step click it paid for; what no step claims stays in the
+ *    origin batch cost.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  craftAssembly,
+  ApiError,
   craftCosts,
   craftFinish,
   craftFound,
   craftMerge,
   craftReceive,
+  craftRelink,
+  craftReopen,
   craftScrap,
   craftStep,
+  craftSwap,
   errorMessage,
+  getAssemblyDraft,
   getCostByStep,
   getCraft,
+  getProjectProcess,
   getRuns,
   isAbortError,
+  repinRun,
+  reverseWriteBatch,
   setBenchStack,
   STEP_STATION,
+  type AssemblyDraft,
   type CraftClick,
   type CraftDevice,
   type CraftStack,
   type CostByStep,
   type CraftView,
+  type ProcessVersionRow,
+  type RepinPlan,
   type RunInfo,
   type StepPlan,
 } from "../../api";
 import { usd } from "../../format";
 import AutoTextarea from "../AutoTextarea";
+import AssemblyDialog, { plural } from "./AssemblyDialog";
 import DataTable, { type Column } from "../DataTable";
 import { useDialog } from "../Dialog";
 import Field, { CheckField, FieldGrid } from "../Field";
@@ -63,10 +79,15 @@ function stackText(s: CraftStack, label: (k: string) => string): string {
   return s.lots.length ? `${done} (lots ${s.lots.join(", ")})` : done;
 }
 
+const STATABLE = ["test", "mark_laser", "label"];
+
 function StepDialog({ run, view, target, onClose }: {
   run: RunInfo; view: CraftView; target: Target; onClose: (changed: boolean) => void;
 }) {
-  const steps = view.graph.steps.filter((s) => s.kind === "step");
+  // On named devices a person may also STATE a test, mark or label step that
+  // no bench run recorded, with the reason (decision 0074).
+  const steps = view.graph.steps.filter((s) => s.kind === "step"
+    || (target.kind === "devices" && STATABLE.includes(s.kind ?? "")));
   const allowed = target.kind === "stack" ? new Set(target.stack.can ?? []) : null;
   const choices = steps.filter((s) => !allowed || allowed.has(s.key));
   const [stepKey, setStepKey] = useState(choices[0]?.key ?? "");
@@ -74,11 +95,14 @@ function StepDialog({ run, view, target, onClose }: {
   const [madeAt, setMadeAt] = useState(today());
   const [note, setNote] = useState("");
   const [lots, setLots] = useState<Record<string, number>>({});
+  const [stated, setStated] = useState("");
   const step = steps.find((s) => s.key === stepKey);
+  const isStated = STATABLE.includes(step?.kind ?? "");
   const preparedInputs = (step?.inputs ?? []).filter((i) => view.parts[String(i.component_id)]?.internal);
   const body = (dry: boolean) => ({
     step_key: stepKey, made_at: madeAt, note, dry_run: dry,
     lots: Object.keys(lots).length ? lots : null,
+    ...(isStated ? { stated } : {}),
     ...(target.kind === "stack"
       ? { stack: target.stack.stack, qty: qty ?? 0 }
       : { device_ids: target.ids, chosen: target.chosen }),
@@ -112,9 +136,15 @@ function StepDialog({ run, view, target, onClose }: {
         <FieldGrid>
           <Field label="Step">
             <select className="text" value={stepKey} onChange={(e) => { setStepKey(e.target.value); setLots({}); }}>
-              {choices.map((s) => <option key={s.key} value={s.key}>{s.label || s.key}{s.required ? "" : " (optional)"}</option>)}
+              {choices.map((s) => <option key={s.key} value={s.key}>{s.label || s.key}{s.required ? "" : " (optional)"}
+                {STATABLE.includes(s.kind ?? "") ? " — state it" : ""}</option>)}
             </select>
           </Field>
+          {isStated ? (
+            <Field label="Why no bench recorded it" wide hint="required — the step is saved as your statement">
+              <AutoTextarea className="text" value={stated} onChange={(e) => setStated(e.target.value)} />
+            </Field>
+          ) : null}
           {target.kind === "stack" ? (
             <Field label="Units" hint={`of ${target.stack.count} in the stack`}>
               <NumberInput className="text" value={qty} min={1} max={target.stack.count} onChange={setQty} />
@@ -144,6 +174,8 @@ export default function RunProcess({ run }: { run: RunInfo }) {
   const dialog = useDialog();
   const [view, setView] = useState<CraftView | null>(null);
   const [costs, setCosts] = useState<CostByStep | null>(null);
+  const [draft, setDraft] = useState<AssemblyDraft | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
   const [runs, setRuns] = useState<RunInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -156,6 +188,7 @@ export default function RunProcess({ run }: { run: RunInfo }) {
     | { kind: "receive" } | { kind: "found" } | { kind: "finish" }
     | { kind: "scrap"; target: Target } | { kind: "merge"; ids: number[] }
     | { kind: "assembly" } | { kind: "link"; lineIds: number[]; label: string }
+    | { kind: "repin" } | { kind: "reopen" } | { kind: "swap" } | { kind: "relink" }
     | null>(null);
 
   useEffect(() => {
@@ -165,6 +198,11 @@ export default function RunProcess({ run }: { run: RunInfo }) {
       .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
     getRuns(run.project_id, ac.signal).then(setRuns).catch(() => undefined);
     getCostByStep(run.id, ac.signal).then(setCosts).catch(() => setCosts(null));
+    // Its own error path: a draft that cannot be read breaks the assembly card,
+    // not the rest of the page.
+    getAssemblyDraft(run.id, ac.signal)
+      .then((d) => { setDraft(d); setDraftError(null); })
+      .catch((err) => { if (!isAbortError(err)) { setDraft(null); setDraftError(errorMessage(err)); } });
     return () => ac.abort();
   }, [run.id, run.project_id, tick]);
 
@@ -208,6 +246,67 @@ export default function RunProcess({ run }: { run: RunInfo }) {
   };
 
   const close = (changed: boolean) => { setModal(null); if (changed) { setPicked({}); reload(); } };
+
+  // Take a position off the steps it paid for: its money goes back into the
+  // origin batch cost (decisions 0061, 0074). A split one goes with its header.
+  const unlink = async (l: CraftView["linked"][number]) => {
+    try {
+      const plan = await craftCosts(run.id, { line_ids: [l.line_id], step_run_ids: [], step_keys: [], unlink: true,
+                                              dry_run: true });
+      if (plan.refused.length) {
+        await dialog.alert(plan.refused.map((r) => `${r.label}: ${r.why}`).join("\n"), { title: "Unlink refused" });
+        return;
+      }
+    } catch (err) {
+      await dialog.alert(refusalText(err), { title: "Unlink refused" });
+      return;
+    }
+    const ok = await dialog.confirm(
+      `Unlink “${l.label}” (${usd(l.usd)}) from ${l.steps.join(", ")}? Its money goes back into the batch's ` +
+        "origin cost, shared by all its units. Undo it on the Write log.",
+      { title: "Unlink position", confirmLabel: "Unlink", tone: "danger" },
+    );
+    if (!ok) return;
+    try {
+      await craftCosts(run.id, { line_ids: [l.line_id], step_run_ids: [], step_keys: [], unlink: true, dry_run: false });
+    } catch (err) {
+      await dialog.alert(refusalText(err), { title: "Unlink refused" });
+      return;
+    }
+    reload();
+  };
+
+  // One click is one journal batch (decision 0074): undo reverses it whole.
+  const undoClick = async (c: CraftClick) => {
+    if (!c.batch_id) return;
+    let plan;
+    try {
+      plan = await reverseWriteBatch(c.batch_id, true);
+    } catch (err) {
+      await dialog.alert(refusalText(err), { title: "Undo refused" });
+      return;
+    }
+    // One write can hold several clicks (found units, a caught-up bench
+    // step): the undo takes them all, so the question names them all.
+    const together = view?.clicks.filter((x) => x.batch_id === c.batch_id) ?? [c];
+    const named = together.map((x) => `“${x.label}” on ${x.qty} unit(s)`).join(", ");
+    const ok = await dialog.confirm(
+      `Undo ${named}, recorded ${c.made_at} by ${c.actor || "nobody named"}? ` +
+        `It deletes ${plan.would.delete}, restores ${plan.would.restore} and re-inserts ` +
+        `${plan.would.reinsert} row(s): the click${together.length > 1 ? "s" : ""}, the twin links, ` +
+        "the draws and their lot bindings.",
+      { title: "Undo step", confirmLabel: "Undo", tone: "danger" },
+    );
+    if (!ok) return;
+    try {
+      await reverseWriteBatch(c.batch_id, false);
+    } catch (err) {
+      await dialog.alert(refusalText(err), { title: "Undo refused" });
+      return;
+    }
+    setPicked({});
+    reload();
+  };
   const stackColumns: Column<CraftStack>[] = [
     { key: "done", label: "Units that have done", width: 48, get: (s) => stackText(s, label) },
     { key: "n", label: "Units", width: 8, numeric: true, get: (s) => s.count },
@@ -237,32 +336,22 @@ export default function RunProcess({ run }: { run: RunInfo }) {
           {view.origin.share_usd != null ? <>, {usd(view.origin.share_usd)} per unit{view.origin.frozen ? " (frozen at close)" : ""}</> : null}.
           {view.origin.step_costs_usd ? <> Invoices linked to steps: {usd(view.origin.step_costs_usd)}, carried by the units of those steps.</> : null}
         </p>
+        {view.origin.uncarried_usd ? (
+          <div className="banner-warn">
+            {usd(view.origin.uncarried_usd)} of this batch's cost is carried by no device: no board received in
+            it is alive. The batch cannot be closed until that money goes to the batch whose units it paid for.
+          </div>
+        ) : null}
         <div className="btn-row">
           <button type="button" className="btn btn-primary" onClick={() => setModal({ kind: "receive" })}>Receive boards…</button>
           <button type="button" className="btn" onClick={() => setModal({ kind: "found" })}>Enter found units…</button>
+          <button type="button" className="btn" onClick={() => setModal({ kind: "repin" })}
+            title="Move this batch to another published version of its process">Change process version…</button>
         </div>
       </div>
 
-      <div className="card pad">
-        <h2 className="card-title">Board assembly</h2>
-        {view.assembly.recorded ? (
-          <p className="muted dim">
-            {view.assembly.chosen === "rebuilt" ? "Rebuilt from the batch's records" : "Recorded from the assembly order"}
-            {view.assembly.orders.length ? ` (${view.assembly.orders.join(", ")})` : ""}, dated {view.assembly.made_at}:{" "}
-            {view.assembly.units} unit(s), {view.assembly.lines} invoice position(s), {view.assembly.draws} part
-            draw(s) from our stock at the supplier.
-          </p>
-        ) : (
-          <p className="muted dim">
-            Not recorded yet. Receiving the boards records it from the batch's assembly order
-            {view.assembly.orders.length ? ` (${view.assembly.orders.join(", ")})` : " — none is linked yet (JLC import queue)"}.
-          </p>
-        )}
-        <div className="btn-row">
-          <button type="button" className="btn btn-sm" disabled={!view.origin.received}
-            onClick={() => setModal({ kind: "assembly" })}>Pick up new board and assembly positions…</button>
-        </div>
-      </div>
+      <AssemblyCard run={run} draft={draft} error={draftError}
+        onOpen={() => setModal({ kind: "assembly" })} onChanged={reload} />
 
       {view.unlinked.lines.length || view.unlinked.draws.length ? (
         <div className="card pad">
@@ -323,6 +412,23 @@ export default function RunProcess({ run }: { run: RunInfo }) {
                 render: (r) => (r.per_unit_usd != null ? usd(r.per_unit_usd) : "—") },
             ]}
           />
+          {view.linked.length ? (
+            <>
+              <h3 className="card-subtitle">Invoice positions linked to steps</h3>
+              <DataTable
+                rows={view.linked}
+                rowKey={(l) => l.line_id}
+                columns={[
+                  { key: "label", label: "Position", width: 36, get: (l) => l.label },
+                  { key: "steps", label: "Pays for", width: 30, get: (l) => l.steps.join(", "),
+                    title: (l) => (l.whole_steps.length ? `whole steps: ${l.whole_steps.join(", ")} — also the clicks recorded later` : "single clicks") },
+                  { key: "usd", label: "Amount", width: 12, numeric: true, get: (l) => l.usd, render: (l) => usd(l.usd) },
+                  { key: "act", label: "", width: 10, interactive: false, get: () => "",
+                    render: (l) => <button type="button" className="btn btn-sm" onClick={() => unlink(l)}>Unlink…</button> },
+                ]}
+              />
+            </>
+          ) : null}
         </div>
       ) : null}
 
@@ -391,6 +497,15 @@ export default function RunProcess({ run }: { run: RunInfo }) {
             onClick={() => setModal({ kind: "finish" })}>Mark finished…</button>
           <button type="button" className="btn btn-sm" disabled={!pickedIds.length}
             onClick={() => setModal({ kind: "scrap", target: { kind: "devices", ids: pickedIds, chosen: chosenOf(pickedIds) } })}>Scrap…</button>
+          <button type="button" className="btn btn-sm" disabled={!pickedIds.length}
+            title="Finished units back into work: a new label, a new enclosure, a return"
+            onClick={() => setModal({ kind: "reopen" })}>Reopen…</button>
+          <button type="button" className="btn btn-sm" disabled={pickedIds.length !== 1}
+            title="The bench named this device from the wrong pile"
+            onClick={() => setModal({ kind: "swap" })}>Swap twin…</button>
+          <button type="button" className="btn btn-sm" disabled={pickedIds.length !== 1}
+            title="A bench run was filed against another device: move it, with its steps, to this one"
+            onClick={() => setModal({ kind: "relink" })}>Relink run…</button>
           {pickedIds.length ? <button type="button" className="btn btn-sm" onClick={() => setPicked({})}>Clear</button> : null}
         </div>
         <DataTable rows={view.devices} columns={devColumns} rowKey={(d) => d.device_id}
@@ -414,12 +529,20 @@ export default function RunProcess({ run }: { run: RunInfo }) {
             { key: "how", label: "Chosen", width: 10, get: (c) => c.chosen },
             { key: "by", label: "By", width: 12, get: (c) => c.actor },
             { key: "note", label: "Note", width: 18, get: (c) => c.note },
+            { key: "undo", label: "", width: 8, get: () => "",
+              render: (c) => (c.batch_id
+                ? <button type="button" className="btn btn-sm" onClick={() => undoClick(c)}
+                    title="Reverse this click and everything it wrote">Undo…</button>
+                : null) },
           ]}
         />
       </div>
 
       {modal?.kind === "step" ? <StepDialog run={run} view={view} target={modal.target} onClose={close} /> : null}
-      {modal?.kind === "receive" ? <ReceiveDialog run={run} onClose={close} /> : null}
+      {modal?.kind === "receive" ? (
+        <ReceiveDialog run={run} boardsJlc={draft?.header.boards_jlc ?? null}
+          orders={draft?.header.orders ?? []} onClose={close} />
+      ) : null}
       {modal?.kind === "found" ? <FoundDialog run={run} view={view} runs={runs} onClose={close} /> : null}
       {modal?.kind === "finish" ? (
         <DryRunDialog<{ units: number; refused: { unit: string; why: string[] }[] }>
@@ -435,20 +558,14 @@ export default function RunProcess({ run }: { run: RunInfo }) {
       ) : null}
       {modal?.kind === "scrap" ? <ScrapDialog run={run} target={modal.target} onClose={close} /> : null}
       {modal?.kind === "merge" ? <MergeDialog run={run} view={view} ids={modal.ids} label={label} onClose={close} /> : null}
-      {modal?.kind === "assembly" ? (
-        <DryRunDialog<{ status: string; lines_linked?: number; draws_linked?: number; twins_added?: number }>
-          title="Board assembly"
-          intro="Links every board and assembly position charged to this batch, and the parts the supplier drew from our stock, to the assembly step."
-          onClose={close}
-          run={(dry) => craftAssembly(run.id, dry)}
-          describe={(p) => (p.status === "no_twins"
-            ? <span className="banner-error">No boards received yet.</span>
-            : <>{p.lines_linked ?? 0} position(s) and {p.draws_linked ?? 0} draw(s) join the assembly step
-                {p.twins_added ? `, and ${p.twins_added} unit(s)` : ""}.</>)}
-          fields={null}
-        />
+      {modal?.kind === "assembly" && draft ? <AssemblyDialog run={run} draft={draft} onClose={close} /> : null}
+      {modal?.kind === "repin" ? <RepinDialog run={run} view={view} onClose={close} /> : null}
+      {modal?.kind === "reopen" ? (
+        <ReopenDialog run={run} ids={pickedIds} chosen={chosenOf(pickedIds)} onClose={close} />
       ) : null}
-      {modal?.kind === "link" ? <LinkDialog run={run} clicks={view.clicks} lineIds={modal.lineIds}
+      {modal?.kind === "swap" ? <SwapDialog run={run} view={view} id={pickedIds[0]} label={label} onClose={close} /> : null}
+      {modal?.kind === "relink" ? <RelinkDialog run={run} view={view} id={pickedIds[0]} onClose={close} /> : null}
+      {modal?.kind === "link" ? <LinkDialog run={run} clicks={view.clicks} graphSteps={view.graph.steps} lineIds={modal.lineIds}
         what={modal.label} onClose={close} /> : null}
     </>
   );
@@ -458,8 +575,9 @@ export default function RunProcess({ run }: { run: RunInfo }) {
  *  0061). One invoice can pay for several steps — the final assembler's covers
  *  programming, the enclosure, the laser mark and the label — and the units of
  *  all the clicks ticked share it. A scrap is no step a cost can pay for. */
-function LinkDialog({ run, clicks, lineIds, what, onClose }: {
-  run: RunInfo; clicks: CraftClick[]; lineIds: number[]; what: string; onClose: (c: boolean) => void;
+function LinkDialog({ run, clicks, graphSteps, lineIds, what, onClose }: {
+  run: RunInfo; clicks: CraftClick[]; graphSteps: CraftView["graph"]["steps"]; lineIds: number[]; what: string;
+  onClose: (c: boolean) => void;
 }) {
   const options = clicks.filter((c) => c.qty > 0 && c.kind !== "scrap");
   const [ticked, setTicked] = useState<number[]>([]);
@@ -468,8 +586,9 @@ function LinkDialog({ run, clicks, lineIds, what, onClose }: {
     setTicked((t) => (on ? [...t, id] : t.filter((x) => x !== id)));
   // A whole step goes to the server by its key, which resolves EVERY click of
   // it — the list here holds only the newest 200, and programming is one
-  // click per device.
-  const steps = [...new Map(options.map((c) => [c.step, c.label])).entries()];
+  // click per device — and also covers the clicks recorded after the link
+  // (decision 0074), so a step with no click yet is offered too.
+  const steps: [string, string][] = graphSteps.map((s) => [s.key, s.label || s.key]);
   const tickStep = (step: string, on: boolean) =>
     setWholeSteps((w) => (on ? [...new Set([...w, step])] : w.filter((x) => x !== step)));
   return (
@@ -485,7 +604,7 @@ function LinkDialog({ run, clicks, lineIds, what, onClose }: {
             {ticked.length ? ` and ${ticked.length} single click(s)` : ""}.</>)}
       fields={
         <>
-          <Field label="Whole steps" wide>
+          <Field label="Whole steps" wide hint="also every click of the step recorded later">
             <div className="btn-row">
               {steps.map(([step, label]) => (
                 <CheckField key={step} checked={wholeSteps.includes(step)}
@@ -508,13 +627,20 @@ function LinkDialog({ run, clicks, lineIds, what, onClose }: {
   );
 }
 
-function ReceiveDialog({ run, onClose }: { run: RunInfo; onClose: (c: boolean) => void }) {
-  const [qty, setQty] = useState<number | null>(run.qty || null);
+/** Receive the boards: the person's count makes the twins (decision 0072).
+ *  Pre-filled with JLC's board count when the batch has a JLC order that
+ *  states one, else with the batch's planned quantity — and the field says
+ *  which, because the number is a suggestion to check against the box. */
+function ReceiveDialog({ run, boardsJlc, orders, onClose }: {
+  run: RunInfo; boardsJlc: number | null; orders: string[]; onClose: (c: boolean) => void;
+}) {
+  const fromJlc = typeof boardsJlc === "number";
+  const [qty, setQty] = useState<number | null>(fromJlc ? boardsJlc : (run.qty || null));
   const [madeAt, setMadeAt] = useState(today());
   return (
     <DryRunDialog<{ qty: number; received_before: number; ordered: number; over_order: boolean }>
       title="Receive boards"
-      intro="One unit per board the batch's assembly order delivered."
+      intro="One unit per board you count. Receiving does not record the assembly. Record it on the Board assembly card after this."
       onClose={onClose}
       run={(dry) => craftReceive(run.id, { qty: qty ?? 0, made_at: madeAt, dry_run: dry })}
       describe={(p) => (
@@ -525,13 +651,175 @@ function ReceiveDialog({ run, onClose }: { run: RunInfo; onClose: (c: boolean) =
       )}
       fields={
         <FieldGrid>
-          <Field label="Boards"><NumberInput className="text" value={qty} min={1} onChange={setQty} /></Field>
+          <Field label="Boards"
+            hint={fromJlc
+              ? `JLC's board count for ${orders.join(", ") || "the linked order"}`
+              : run.qty ? "the batch's planned quantity" : undefined}>
+            <NumberInput className="text" value={qty} min={1} onChange={setQty} />
+          </Field>
           <Field label="Received on">
             <input className="text" type="date" value={madeAt} onChange={(e) => setMadeAt(e.target.value)} />
           </Field>
         </FieldGrid>
       }
     />
+  );
+}
+
+/** A refusal in words. The ledger's 409 carries its reasons beside the
+ *  sentence (`blockers`, `blocking_batches`), so the sentence alone says only
+ *  "cannot reverse this batch". */
+function refusalText(err: unknown): string {
+  const msg = errorMessage(err);
+  if (!(err instanceof ApiError) || !err.detail || typeof err.detail !== "object") return msg;
+  const d = err.detail as { blockers?: unknown; blocking_batches?: unknown };
+  const blockers = Array.isArray(d.blockers) ? d.blockers.map(String) : [];
+  const later = Array.isArray(d.blocking_batches) ? d.blocking_batches.map(String) : [];
+  return [
+    msg.endsWith(".") ? msg : `${msg}.`,
+    ...blockers.map((b) => (b.endsWith(".") ? b : `${b}.`)),
+    later.length ? `Undo write batch ${later.join(", ")} first.` : "",
+  ].filter(Boolean).join(" ");
+}
+
+/** What waits outside the assembly step, in words — "" when nothing does. */
+function waitingText(d: AssemblyDraft): string {
+  const inStep = new Set((d.recorded?.lines ?? []).map((l) => l.line_id));
+  const twins = d.status === "recorded" ? (d.header.twins_not_in_step ?? 0)
+    : d.status === "open" ? (d.header.twins ?? 0) : 0;
+  const kind = (l: AssemblyDraft["lines"][number]) => l.kind ?? (l.is_parts_lump ? "parts_lump" : "position");
+  const broken = new Set(d.parts_supplied.map((r) => r.parent_line_id));
+  // A parts total with no breakdown can only go in whole, so it counts as a
+  // position; one with a breakdown counts as its rows.
+  const positions = d.lines.filter((l) => kind(l) === "position"
+    || (kind(l) === "parts_lump" && !broken.has(l.line_id))).length;
+  const supplied = d.lines.filter((l) => kind(l) === "supplied_part").length
+    + d.parts_supplied.filter((r) => r.source !== "rounding" && !inStep.has(r.parent_line_id)).length;
+  return [
+    twins ? plural(twins, "twin") : "",
+    positions ? plural(positions, "position") : "",
+    d.parts_from_stock.length ? `${plural(d.parts_from_stock.length, "part")} from our stock` : "",
+    supplied ? `${plural(supplied, "part")} the assembler supplied` : "",
+    d.replacements.length ? plural(d.replacements.length, "replacement") : "",
+  ].filter(Boolean).join(", ");
+}
+
+/** The Board assembly card: the step's state, what waits outside it, and the
+ *  three controls — record it, add to it, undo the newest write. */
+function AssemblyCard({ run, draft, error, onOpen, onChanged }: {
+  run: RunInfo; draft: AssemblyDraft | null; error: string | null;
+  onOpen: () => void; onChanged: () => void;
+}) {
+  const dialog = useDialog();
+  const [busy, setBusy] = useState(false);
+  if (error) {
+    return (
+      <div className="card pad">
+        <h2 className="card-title">Board assembly</h2>
+        <ErrorBanner message={error} />
+      </div>
+    );
+  }
+  if (!draft) {
+    return (
+      <div className="card pad">
+        <h2 className="card-title">Board assembly</h2>
+        <Spinner />
+      </div>
+    );
+  }
+  const rec = draft.recorded;
+  const waiting = waitingText(draft);
+  const newest = rec?.batch_ids[0];
+  // `recorded.lines` carry no `kind`. A part the assembler supplied is a
+  // `pcba:parts` line (a child of a split total, or a total linked whole);
+  // every other linked line is a position.
+  const suppliedLines = (rec?.lines ?? []).filter((l) => l.plan_key === "pcba:parts").length;
+
+  const undo = async () => {
+    if (!newest) return;
+    setBusy(true);
+    try {
+      let plan;
+      try {
+        plan = await reverseWriteBatch(newest, true);
+      } catch (err) {
+        await dialog.alert(refusalText(err), { title: "Undo refused" });
+        return;
+      }
+      const ok = await dialog.confirm(
+        `Undo the newest assembly write of ${run.label} (write batch ${newest})? It deletes ` +
+          `${plan.would.delete}, restores ${plan.would.restore} and re-inserts ${plan.would.reinsert} ` +
+          "row(s), so everything that write put in the step comes out again." +
+          (rec && rec.batch_ids.length > 1
+            ? ` The step keeps what the ${plural(rec.batch_ids.length - 1, "earlier write")} put in.` : ""),
+        { title: "Undo assembly", confirmLabel: "Undo", tone: "danger" },
+      );
+      if (!ok) return;
+      try {
+        await reverseWriteBatch(newest, false);
+      } catch (err) {
+        await dialog.alert(refusalText(err), { title: "Undo refused" });
+        return;
+      }
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card pad">
+      <h2 className="card-title">Board assembly</h2>
+      {draft.closed ? <p className="banner-warn">{run.label} is closed. The assembly step cannot change.</p> : null}
+      {draft.status === "no_assembly_step" ? (
+        <p className="muted dim">The process of this batch has no assembly step, so there is nothing to record.</p>
+      ) : draft.status === "recorded" && rec ? (
+        <>
+          <p className="muted dim">
+            {rec.chosen === "rebuilt" ? "Rebuilt from the batch's records, dated" : "Recorded on"} {rec.made_at}
+            {rec.assembler ? ` by ${rec.assembler}` : ""}
+            {rec.reference ? `, reference ${rec.reference}` : ""}: {plural(rec.units, "unit")},{" "}
+            {plural(rec.lines.length - suppliedLines, "position")},{" "}
+            {plural(rec.draws.length, "part")} from our stock,{" "}
+            {plural(suppliedLines, "part")} the assembler supplied,{" "}
+            {plural(rec.replacements.length, "replacement")}.
+          </p>
+          <p className="muted dim">
+            {waiting ? `Not in the assembly step: ${waiting}.` : "Nothing waits outside the assembly step."}
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="muted dim">
+            Not recorded yet.{draft.status === "no_twins" ? " Receive the boards first." : ""}
+            {(draft.header.orders ?? []).length
+              ? ` The JLC order ${(draft.header.orders ?? []).join(", ")} pre-fills it.`
+              : " No JLC order is linked, so you fill it in by hand."}
+          </p>
+          {waiting ? <p className="muted dim">Ready to go in: {waiting}.</p> : null}
+        </>
+      )}
+      {draft.status === "open" || draft.status === "recorded" ? (
+        <div className="btn-row">
+          {draft.status === "open" ? (
+            <button type="button" className="btn btn-primary" onClick={onOpen}>Record assembly…</button>
+          ) : (
+            <>
+              <button type="button" className="btn" disabled={!waiting} onClick={onOpen}
+                title={waiting ? undefined : "Nothing waits outside the assembly step."}>
+                Add to assembly…
+              </button>
+              <button type="button" className="btn btn-danger" disabled={busy || !newest} onClick={undo}
+                title={newest ? undefined : "No write of this step is left to undo in the ledger."}>
+                Undo assembly…
+              </button>
+            </>
+          )}
+          {busy ? <Spinner /> : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -577,11 +865,126 @@ function FoundDialog({ run, view, runs, onClose }: {
   );
 }
 
+/** Move the batch to another published version of its process (decision
+ *  0074): a version published with an error, or the one that really describes
+ *  how its devices were made. The clicks keep the version they ran under. */
+function RepinDialog({ run, view, onClose }: { run: RunInfo; view: CraftView; onClose: (c: boolean) => void }) {
+  const [versions, setVersions] = useState<ProcessVersionRow[]>([]);
+  const [target, setTarget] = useState<number | null>(null);
+  useEffect(() => {
+    const ac = new AbortController();
+    getProjectProcess(run.project_id, null, ac.signal)
+      .then((d) => setVersions(d.versions.filter((v) => v.status === "published" && v.id !== view.process_version_id)))
+      .catch(() => undefined);
+    return () => ac.abort();
+  }, [run.project_id, view.process_version_id]);
+  return (
+    <DryRunDialog<RepinPlan>
+      title="Change process version"
+      intro={`${run.label} runs process v${view.version_no}. A twin that has done a step the new version lacks refuses the change. To go back, change it again.`}
+      onClose={onClose}
+      run={(dry) => repinRun(run.id, target ?? 0, dry)}
+      describe={(p) => (
+        <>
+          v{p.from_version} → v{p.to_version}, {p.twins} twin(s).
+          {p.added_steps.length ? <> New steps: {p.added_steps.join(", ")}.</> : null}
+          {p.removed_steps.length ? <> Steps no twin has done, dropped: {p.removed_steps.join(", ")}.</> : null}
+        </>
+      )}
+      fields={
+        <FieldGrid>
+          <Field label="Version" wide>
+            <select className="text" value={target ?? ""} onChange={(e) => setTarget(Number(e.target.value) || null)}>
+              <option value="">— choose —</option>
+              {versions.map((v) => (
+                <option key={v.id} value={v.id}>v{v.version_no} · {v.comment.slice(0, 80)}</option>
+              ))}
+            </select>
+          </Field>
+        </FieldGrid>
+      }
+    />
+  );
+}
+
+function ReopenDialog({ run, ids, chosen, onClose }: {
+  run: RunInfo; ids: number[]; chosen: "scanned" | "list"; onClose: (c: boolean) => void;
+}) {
+  const [reason, setReason] = useState("");
+  return (
+    <DryRunDialog<{ units: number; refused: { unit: string; why: string[] }[] }>
+      title="Reopen for rework"
+      intro={`${ids.length} finished device(s) go back into work. They can take steps again, and ship only after a new finish.`}
+      onClose={onClose}
+      run={(dry) => craftReopen(run.id, { device_ids: ids, chosen, reason, dry_run: dry })}
+      describe={(p) => (p.refused.length
+        ? <span className="banner-error">Refused: {p.refused.map((r) => `${r.unit} — ${r.why.join(", ")}`).join("; ")}</span>
+        : <>{p.units} device(s) will be reopened.</>)}
+      fields={
+        <FieldGrid>
+          <Field label="Why" wide hint="required">
+            <AutoTextarea className="text" value={reason} onChange={(e) => setReason(e.target.value)} />
+          </Field>
+        </FieldGrid>
+      }
+    />
+  );
+}
+
+function SwapDialog({ run, view, id, label, onClose }: {
+  run: RunInfo; view: CraftView; id: number; label: (k: string) => string; onClose: (c: boolean) => void;
+}) {
+  const dev = view.devices.find((d) => d.device_id === id);
+  const [stack, setStack] = useState(view.bench_stacks[0]?.stack ?? "");
+  return (
+    <DryRunDialog<{ from_twin: number; to_twin: number; back_to_stack: string }>
+      title="Swap twin"
+      intro={`${dev?.serial || dev?.mac || id} takes a board of the stack you choose, and the board it was named with goes back to its own stack, unnamed. Its programming step moves with it.`}
+      onClose={onClose}
+      run={(dry) => craftSwap(run.id, { device_ids: [id], stack, dry_run: dry })}
+      describe={(p) => <>Twin #{p.from_twin} goes back to {p.back_to_stack}; the device takes twin #{p.to_twin}.</>}
+      fields={
+        <FieldGrid>
+          <Field label="The right stack" wide>
+            <select className="text" value={stack} onChange={(e) => setStack(e.target.value)}>
+              {view.bench_stacks.map((s) => <option key={s.stack} value={s.stack}>{stackText(s, label)} · {s.count}</option>)}
+            </select>
+          </Field>
+        </FieldGrid>
+      }
+    />
+  );
+}
+
+function RelinkDialog({ run, view, id, onClose }: {
+  run: RunInfo; view: CraftView; id: number; onClose: (c: boolean) => void;
+}) {
+  const dev = view.devices.find((d) => d.device_id === id);
+  const [runId, setRunId] = useState<number | null>(null);
+  return (
+    <DryRunDialog<{ from_device: string | null; to_device: string; steps: string[] }>
+      title="Relink run"
+      intro={`Move a bench run filed against another device to ${dev?.serial || dev?.mac || id}, with the steps it recorded. A run that named its device is moved with "Swap twin" instead.`}
+      onClose={onClose}
+      run={(dry) => craftRelink(run.id, { programming_run_id: runId ?? 0, device_ids: [id], dry_run: dry })}
+      describe={(p) => <>Run moves from {p.from_device ?? "no device"} to {p.to_device}
+        {p.steps.length ? `, with ${p.steps.join(", ")}` : ", with no step"}.</>}
+      fields={
+        <FieldGrid>
+          <Field label="Programming run" hint="its number, from the device page or the bench history">
+            <NumberInput className="text" value={runId} min={1} onChange={setRunId} />
+          </Field>
+        </FieldGrid>
+      }
+    />
+  );
+}
+
 function ScrapDialog({ run, target, onClose }: { run: RunInfo; target: Target; onClose: (c: boolean) => void }) {
   const [qty, setQty] = useState<number | null>(1);
   const [reason, setReason] = useState("");
   return (
-    <DryRunDialog<{ units: number }>
+    <DryRunDialog<{ units: number; disposed?: number; refused?: { unit: string; why: string[] }[] }>
       title="Scrap units"
       intro="Their price is carried by the other units of the batch they came from, until that batch is closed."
       onClose={onClose}
@@ -589,7 +992,9 @@ function ScrapDialog({ run, target, onClose }: { run: RunInfo; target: Target; o
         reason, dry_run: dry,
         ...(target.kind === "stack" ? { stack: target.stack.stack, qty: qty ?? 0 } : { device_ids: target.ids, chosen: target.chosen }),
       })}
-      describe={(p) => <>{p.units} unit(s) will be scrapped.</>}
+      describe={(p) => (p.refused?.length
+        ? <span className="banner-error">Refused: {p.refused.map((r) => `${r.unit} — ${r.why.join(", ")}`).join("; ")}</span>
+        : <>{p.units} unit(s) will be scrapped{p.disposed ? `, and ${p.disposed} named device(s) recorded as disposed of` : ""}.</>)}
       fields={
         <FieldGrid>
           {target.kind === "stack" ? (

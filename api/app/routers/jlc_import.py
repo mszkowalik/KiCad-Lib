@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..db import get_db
 from ..models import utcnow
-from ..services import jlc_apply, jlc_import, jlc_web, journal, run_actuals, twins
+from ..services import jlc_apply, jlc_import, jlc_web, journal, run_actuals
 from .util import acting_name, audit
 
 router = APIRouter(prefix="/api/jlc/import", tags=["jlc-import"])
@@ -804,11 +804,9 @@ def apply_decision(smt_order_code: str, dry_run: bool = True, db: Session = Depe
                 db, smt_order_code, dec.outcome, dec.run_id, actor=actor)
             if dec.outcome == "link_run":
                 out["draws"] = _charge_or_draw(db, plan, dec.run_id, actor, dry_run=False)
-                # Decision 0060: on a crafted batch whose boards are already
-                # received, the order's money joins the assembly step now.
-                run = db.get(M.ProductionRun, dec.run_id)
-                if run is not None and run.process_version_id:
-                    out["assembly"] = twins.record_assembly(db, run, actor=actor)
+                # Decision 0072: the order's positions and draws are now the
+                # batch's; the person records the assembly step from them on
+                # the batch's Process tab. Nothing joins the step on its own.
             elif _stock_already_booked(db, plan):
                 # The stock left when the invoice was imported, charged to
                 # nobody — which is exactly what "external" means for stock.

@@ -1723,6 +1723,107 @@ def _attach_projects(db: Session, rows: list[dict]) -> None:
         row["devices_coverable"] = int(on_hand // per_device) if per_device > 0 else None
 
 
+def pool_series(events, keys: set[str], since: str, drop: set[int] = frozenset(),
+                 extra: list[tuple[str, float]] = (), component_id: int | None = None) -> dict:
+    """One part's pool, day by day from `since`: the balance before it
+    (`start`) and, for each day with an event, the lowest balance during it
+    and the balance at its end. `keys` are every name the part has. With a
+    `component_id`, the part is that component: its events, and those with
+    no component that share a name, never another component's."""
+    entries = []
+    for date_iso, kind, row in events:
+        if kind == "use" and row.id in drop:
+            continue
+        rc = getattr(row, "component_id", None)
+        named = set(_identity_keys(None, getattr(row, "mpn", "") or "", getattr(row, "lcsc", "") or ""))
+        if component_id is None:
+            if not (keys & (named | set(_identity_keys(rc, "", "")))):
+                continue
+        elif rc is not None:
+            if rc != component_id:
+                continue            # another component, whatever names it shares
+        elif not (keys & named):
+            continue
+        q = (row.qty or 0.0) if kind == "buy" else (-(row.qty or 0.0) if kind == "use" else (row.qty_delta or 0.0))
+        entries.append((((date_iso or "9999"), kind), q))
+    entries += [(((d or "9999"), "use"), -q) for d, q in extra]
+    entries.sort(key=lambda e: e[0])
+    bal, start, days = 0.0, None, {}
+    for (day, _k), q in entries:
+        if day >= (since or "") and start is None:
+            start = bal
+        bal += q
+        if day >= (since or ""):
+            lo, _end = days.get(day, (bal, bal))
+            days[day] = (min(lo, bal), bal)
+    return {"start": bal if start is None else start, "days": sorted([d, lo, end] for d, (lo, end) in days.items())}
+
+
+def value_on(series: dict, day: str) -> float:
+    """The series' balance on `day`: that day's lowest, else the end of the
+    last day before it, else its start."""
+    out = series["start"]
+    for d, lo, end in series["days"]:
+        if d == day:
+            return lo
+        if d > day:
+            break
+        out = end
+    return out
+
+
+def stock_targets(db: Session, entries) -> tuple[set, dict]:
+    """The parts a change touches, as `stock_view` compares them, from
+    `(stock scope, component_id, mpn, lcsc, label)` entries. A part with a
+    library component is that component's pool, once per scope, whatever
+    names its lines carry — as a draw sees it. A part with no component is
+    the pool of its names. Returns `(targets, names)`."""
+    comp: dict[tuple, set] = defaultdict(set)
+    label_of: dict[tuple, str] = {}
+    targets: set[tuple] = set()
+    names: dict = {}
+    for sc, cid, mpn, lcsc, label in entries:
+        keys = set(_identity_keys(cid, mpn or "", lcsc or ""))
+        if not keys:
+            continue
+        if cid:
+            comp[(sc, cid)] |= keys
+            label_of.setdefault((sc, cid), label or mpn or lcsc or f"component #{cid}")
+        else:
+            targets.add((sc, frozenset(keys), None))
+            names.setdefault(frozenset(keys), label or mpn or lcsc or "part")
+    for (sc, cid), keys in comp.items():
+        targets.add((sc, frozenset(keys), cid))
+        names.setdefault(frozenset(keys), label_of[(sc, cid)])
+    return targets, names
+
+
+def stock_view(db: Session, targets: set[tuple]) -> dict:
+    """Each `stock_targets` target → its `pool_series` over all time: what
+    `stock_worse` compares before and after a change."""
+    events = {sc: _pool_events(db, sc)[0] for sc in {t[0] for t in targets}}
+    return {t: pool_series(events[t[0]], set(t[1]), "", component_id=t[2]) for t in targets}
+
+
+def stock_worse(now: dict, after: dict, names: dict) -> list[str]:
+    """`<part> short <n> on <day>` for each part whose pool `after` goes below
+    zero and below where it is `now`, on any day (decision 0073). A deficit
+    the pool already had is no reason to refuse."""
+    out = []
+    for key, a in after.items():
+        n = now.get(key)
+        if n is None:
+            continue
+        worst, when = 0.0, ""
+        for day in sorted({d for d, _l, _e in a["days"]} | {d for d, _l, _e in n["days"]}):
+            gap = min(0.0, value_on(n, day)) - value_on(a, day)
+            if gap > worst + 1e-6:
+                worst, when = gap, day
+        if worst > 1e-4:
+            out.append(f"{names.get(key[1], '?')} short {round(worst, 4):g} on {when}")
+    return list(dict.fromkeys(out))      # one part known by two sets of names reads once
+
+
 def _identity_keys(component_id: int | None, mpn: str, lcsc: str) -> list[str]:
     """Every key a part could be known by, so the two sides of `parts_stock` meet
     even when one of them has not been resolved to a library component yet."""
@@ -2339,7 +2440,9 @@ def consume_from_bom(db: Session, run: M.ProductionRun, basis: str = "bom",
 
     Priced at the pool's moving average per part, snapshotted onto each row.
     Parts with nothing in the pool are reported as `unpriced` rather than
-    silently costed at zero.
+    silently costed at zero. While `lot_pricing` is on (decision 0073), each
+    part comes from its lots oldest first at their cost instead, and a part no
+    lot covers refuses the whole batch.
     """
     # A CRAFTED batch (decision 0059 §10) draws its parts step by step; drawing
     # BOM x produced as well would take the same parts twice.
@@ -2445,17 +2548,34 @@ def consume_from_bom(db: Session, run: M.ProductionRun, basis: str = "bom",
                          "(or a placeholder), record a stock adjustment, or mark the "
                          "part not-used via the run's overrides"}
 
+    # Decision 0073: with lot pricing on, each part comes from its lots, oldest
+    # first, at their cost — and a part no lot covers refuses the whole batch.
+    from . import lots as _lots
+
+    uncovered = _lots.fifo_price(db, planned, as_of=date_iso, company_id=run_scope(db, run))
+    if uncovered:
+        return {"created": 0, "unpriced": [], "volume": volume, "skipped": skipped,
+                "uncovered": uncovered,
+                "error": f"{len(uncovered)} part(s) are in no lot on {date_iso}: {_lots.short_text(uncovered)} "
+                         "— enter the missing purchase (decision 0073)"}
     for d in planned:
-        probe = type("P", (), {"component_id": d["component_id"], "mpn": d["mpn"],
-                               "lcsc": d["lcsc"]})()
-        avg = pool.get(_key(probe), {}).get("avg_usd", 0.0)
+        if d.get("bindings"):
+            avg = d["unit_cost_usd"]
+        else:
+            probe = type("P", (), {"component_id": d["component_id"], "mpn": d["mpn"],
+                                   "lcsc": d["lcsc"]})()
+            avg = pool.get(_key(probe), {}).get("avg_usd", 0.0)
         if avg <= 0:
             unpriced.append(d["label"])
-        db.add(M.ComponentConsumption(
+        c = M.ComponentConsumption(
             run_id=run.id, component_id=d["component_id"], lcsc=d["lcsc"], mpn=d["mpn"],
             qty=d["qty"], unit_cost_usd=avg, basis=basis, consumed_at=d["date"],
             note=d["note"],
-        ))
+        )
+        db.add(c)
+        if d.get("bindings"):
+            db.flush()
+            _lots.bind(db, c, d)
         created += 1
     return {"created": created, "unpriced": unpriced, "volume": volume,
             "extras_drawn": len([x for x in extras if (x.qty or 0)]),

@@ -40,6 +40,7 @@ EXPECTED = {
     ("PATCH", "/api/companies/{company_id}"),
     ("POST", "/api/companies/backfill"),
     ("POST", "/api/companies/stock-backfill"),
+    ("POST", "/api/companies/lot-history"),
     # Writing the history's in-house transfers in one go — decision 0064.
     ("POST", "/api/transfers/history"),
     # Importing 7Sigma's old invoice register — decision 0066.

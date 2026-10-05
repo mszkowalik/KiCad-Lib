@@ -85,7 +85,9 @@ export default function MarkBench() {
 
   useEffect(() => {
     const ac = new AbortController();
-    getProjects(ac.signal)
+    // Every company's projects, whatever the header switcher shows: the
+    // bench marks whichever company's devices are on the table.
+    getProjects(ac.signal, "all")
       .then(setProjects)
       .catch((err) => {
         if (!isAbortError(err)) setError(errorMessage(err));

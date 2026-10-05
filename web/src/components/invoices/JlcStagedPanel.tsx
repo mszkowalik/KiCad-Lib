@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import {
   applyJlcDocument,
   applyJlcParts,
@@ -9,7 +9,10 @@ import {
   refreshJlcParts,
   type JlcPartsOrder,
   type JlcStagedRow,
+  type JlcStockLeg,
+  type JlcStockOrderLeg,
 } from "../../api";
+import DataTable from "../DataTable";
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner } from "../Ui";
 
@@ -24,6 +27,12 @@ import { ErrorBanner, Spinner } from "../Ui";
  * Preview runs the REAL write path with `dry_run=true` and rolls back, so the
  * figures shown are the figures the import produces. A re-implementation of the
  * mapping could disagree with the mapping; the same code cannot.
+ *
+ * The preview shows the STOCK leg too (decision 0034): importing the document
+ * moves the consigned stock its assembly orders used out of the pool, charged
+ * to nobody until each order is linked to a batch. An order whose lots are not
+ * all known is deferred until its parts invoice is imported. It records no
+ * assembly step — that is the person's, on the batch's Process tab (0072).
  */
 import { usd as money } from "../../format";
 
@@ -33,7 +42,7 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [plan, setPlan] = useState<Record<string, string>>({});
+  const [plan, setPlan] = useState<Record<string, { text: string; stock?: JlcStockLeg }>>({});
   const [onlyPending, setOnlyPending] = useState(true);
   // Parts orders are fetched LIVE — sync stages assembly batches only.
   const [parts, setParts] = useState<JlcPartsOrder[] | null>(null);
@@ -76,24 +85,36 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
       const result = (res.result ?? {}) as Record<string, unknown>;
       setPlan((prev) => ({
         ...prev,
-        [r.external_id]:
-          `${(res.lines ?? []).length} lines, $${p.total_amount ?? "?"}` +
-          (p.reconciles === false ? " — DOES NOT RECONCILE" : ", reconciles") +
-          (result.status ? ` (${result.status})` : ""),
+        [r.external_id]: {
+          text:
+            `${(res.lines ?? []).length} lines, $${p.total_amount ?? "?"}` +
+            (p.reconciles === false ? " — DOES NOT RECONCILE" : ", reconciles") +
+            (result.status ? ` (${result.status})` : ""),
+          stock: res.stock,
+        },
       }));
     } catch (err) {
-      setPlan((prev) => ({ ...prev, [r.external_id]: errorMessage(err) }));
+      setPlan((prev) => ({ ...prev, [r.external_id]: { text: errorMessage(err) } }));
     } finally {
       setBusy(null);
     }
   }
 
   async function importIt(r: JlcStagedRow) {
+    const stock = plan[r.external_id]?.stock;
     const ok = await dialog.confirm(
       `Import batch ${r.external_id} (invoice ${r.invoice_no || "—"}, ` +
         `$${r.total_amount ?? "?"})? It becomes one cost document whose lines are ` +
         `charged according to the decisions already recorded for its assembly orders. ` +
-        `One reversible batch; it rolls back if the register stops balancing.`,
+        `It also moves the consigned stock those orders used out of the pool. That stock is ` +
+        `charged to nobody until each order is linked to a batch.` +
+        (stock
+          ? ` The preview found ${stock.orders_written} order(s) that draw stock now` +
+            (stock.orders_deferred ? ` and ${stock.orders_deferred} that wait for their parts invoice` : "") +
+            "."
+          : " Preview it first to see that stock.") +
+        ` It records no assembly step. One reversible batch; it rolls back if the register ` +
+        `stops balancing.`,
       { title: "Import this batch", confirmLabel: "Import" },
     );
     if (!ok) return;
@@ -263,7 +284,8 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
             </thead>
             <tbody>
               {shown.map((r) => (
-                <tr key={r.external_id}>
+                <Fragment key={r.external_id}>
+                <tr>
                   <td className="mono" title={r.external_id}>
                     {r.external_id}
                   </td>
@@ -328,10 +350,20 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
                       </div>
                     )}
                     {plan[r.external_id] && (
-                      <div className="muted dim">{plan[r.external_id]}</div>
+                      <div className="muted dim" title={plan[r.external_id].text}>
+                        {plan[r.external_id].text}
+                      </div>
                     )}
                   </td>
                 </tr>
+                {plan[r.external_id]?.stock ? (
+                  <tr className="row-expansion">
+                    <td colSpan={7}>
+                      <StockLegView stock={plan[r.external_id].stock as JlcStockLeg} />
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -439,5 +471,48 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
         </div>
       )}
     </div>
+  );
+}
+
+/** The stock leg of a preview, per assembly order: what leaves the pool when
+ *  the document is imported. */
+function StockLegView({ stock }: { stock: JlcStockLeg }) {
+  const draws = (o: JlcStockOrderLeg) => o.would_write_draws ?? o.draws;
+  const binds = (o: JlcStockOrderLeg) => o.would_bind_lots ?? o.lot_bindings;
+  const state = (o: JlcStockOrderLeg) =>
+    o.status === "deferred" ? "deferred"
+      : o.status === "nothing_to_draw" ? "nothing to draw"
+      : o.status === "applied" ? "drawn" : "would draw";
+  const note = (o: JlcStockOrderLeg) => [
+    o.status === "deferred"
+      ? `${o.unresolved_lots ?? "?"} lot(s) not known. ${(o.hint ?? "").replace(/^./, (c) => c.toUpperCase())}`.trim()
+      : "",
+    o.already_present ? `${o.already_present} already drawn` : "",
+    o.unresolved_components ? `${o.unresolved_components} part(s) match no library component` : "",
+  ].filter(Boolean).join(". ");
+  return (
+    <>
+      <p className="muted">
+        Stock out of the pool: {stock.orders_written} order(s) draw consigned stock
+        {stock.orders_deferred ? `, ${stock.orders_deferred} deferred` : ""}
+        {stock.orders_without_consumption ? `, ${stock.orders_without_consumption} drew none` : ""}.
+        It is charged to nobody until each order is linked to a batch.
+      </p>
+      {stock.orders.length ? (
+        <DataTable
+          rows={stock.orders}
+          rowKey={(o) => o.smt_order_code}
+          columns={[
+            { key: "order", label: "Assembly order", width: 24, className: "mono", get: (o) => o.smt_order_code },
+            { key: "state", label: "State", width: 14, get: state },
+            { key: "draws", label: "Draws", width: 11, numeric: true, get: (o) => draws(o) ?? null,
+              render: (o) => draws(o) ?? "—" },
+            { key: "lots", label: "Lot bindings", width: 13, numeric: true, get: (o) => binds(o) ?? null,
+              render: (o) => binds(o) ?? "—" },
+            { key: "note", label: "Note", width: 38, get: note },
+          ]}
+        />
+      ) : null}
+    </>
   );
 }

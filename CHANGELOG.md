@@ -1,5 +1,123 @@
 # Changelog
 
+## 2026-10-05 (a unit's history can be corrected, and every draw leads to its invoice)
+
+Not deployed yet. Decisions
+[0073](docs/decisions/0073-a-draw-takes-the-cost-of-the-lots-it-is-bound-to.md),
+[0074](docs/decisions/0074-a-units-history-is-correctable-and-names-its-bench-runs.md) and
+[0075](docs/decisions/0075-a-rebuild-takes-each-devices-own-records.md).
+The rules are in [docs/reference/processes.md](docs/reference/processes.md)
+and [docs/reference/production-economics.md](docs/reference/production-economics.md).
+
+**Every draw leads to the purchase that paid for it (0073).**
+
+- A new admin switch, "Lot pricing (FIFO)", on the Configuration tab. While it
+  is on, every draw takes its parts from the lots of its company's stock,
+  oldest first, and carries their cost: process and bench steps, prepared
+  parts, "Record assembly", BOM and hand draws, JLC warehouse picks, and
+  in-house transfers that name no lot. A draw the lots cannot cover is
+  refused, and the message names each part and how much is missing.
+- Admin → Companies has a new card, "Bind draws to lots". "Check" shows the
+  draws to bind, each batch's cost change (closed batches are marked) and the
+  draws no lot covers. "Write" binds them at the lots' cost as one journal
+  entry, closed batches included. The switch turns on only when no draw is
+  left without lots.
+- The flashing and marking benches list every company's projects and
+  batches, whatever the header company switcher shows.
+- **A lot stays with the draws bound to it.** An invoice edit is refused
+  when it would take a lot from the draws bound to it — voiding, deleting,
+  cutting, excluding, splitting or re-splitting a position, moving it to a
+  step that holds no stock, or making its document a proforma, dating it
+  after the draws or giving it another buyer — and the message names the
+  draws. A refused edit changes nothing. A credit (a negative position) on a
+  correction, a credit note or a new position is checked the same way, and
+  so is a JLC parts refresh that cuts or cancels a lot. A part is judged as
+  its library component, whatever names its invoices carry. Deleting a stock adjustment on
+  the Stock page checks the same, and checks the stock as a purchase does. A
+  prepared part's output is removed only by "Void transformation".
+- **Undo on the Write log checks the stock it leaves.** An undo or a redo
+  that would take a part's stock or a lot below zero is refused, and the
+  message names the part or the lot. This includes the undo of an import
+  whose parts were drawn since, and the undo of a void after the parts were
+  drawn again. A redo that voids again what it replaces is no longer
+  refused. A transfer is undone on its document only (Transfers → Reverse),
+  which checks what the receiver used.
+
+**A unit's history can be corrected (0074).**
+
+- **Process versions:** "Publish as history" publishes a version for older
+  devices without making it the version in effect. "Make current" chooses the
+  version in effect. "Change process version…" on Batch → Process moves a
+  batch to another published version, after a preview. A batch's planned cost
+  now comes from its own version.
+- **Undo:** every click on Batch → Process — receive, a step, scrap, finish,
+  merge, found units and reopen — has "Undo…" in "Steps done in this batch".
+  It is refused, with the reason, while later work stands on it. A swap, a
+  relink and a cost link are undone on the Write log.
+- **Corrections:** "Swap twin…" gives a device programmed from the wrong pile
+  a board of the right one. "Reopen…" sends finished units back into work:
+  they can take their steps again, and ship after a new finish. "Relink run…"
+  moves a bench run filed against the wrong device to the right one, with the
+  steps it recorded.
+- **Stated steps:** on named devices, "Run a step…" offers the test, laser
+  and label steps too, saved as your statement with the reason, for a step no
+  platform bench recorded.
+- **Shelf and shipping:** a device programmed with no board behind it (a gap)
+  cannot ship until a merge, and an order counts it as uncosted. A unit in
+  work, a scrapped one and a gap show as held, not available.
+- **Scrap and disposal:** scrapping a named unit on the batch screen records
+  it as disposed of, and disposing of a device scraps its twin.
+- **Costs:** a position linked to a whole step also pays for the clicks the
+  benches record later. A batch whose origin cost no device carries shows the
+  amount and cannot be closed.
+- **The device page** shows the deployment version beside each bench step,
+  and every later reprogramming.
+- **Benches:** the programming bench warns once when a batch programs another
+  batch's boards. On a crafted batch, whether a unit must pass a test comes
+  from a required test step in its process.
+- A process that requires a test, laser or label step is refused at publish
+  when the project has no deployment of that kind.
+
+**Old batches are rebuilt from each device's own records (0075).**
+
+- A new job links old marking and test runs to their devices by the topic
+  they captured (`POST /api/projects/{id}/bench-runs/link-by-topic`).
+- The rebuild records a test, laser or label step only on a device with its
+  own bench run, or a statement for a device with no bench record. An invoice
+  no longer proves a step. Units still in work stay active. Each step takes
+  the device's own date.
+- The parts a batch drew are compared with what its units needed, step by
+  step. Each difference needs a statement: draw the rest, return the surplus,
+  or keep it as a loss.
+- "Undo rebuild" also takes back the live clicks made on the rebuilt twins.
+  `append` gives devices that joined a rebuilt batch later their twins, and
+  `origins` names the batch whose boards a device was built on.
+- The dry run lists every device with its steps, dates and evidence.
+- Voiding a draw now gives its lots back.
+
+## 2026-10-04 (record the assembly from a pre-filled form)
+
+Not deployed yet. Decision
+[0072](docs/decisions/0072-the-person-records-the-assembly-from-a-pre-filled-form.md).
+The rules are in [docs/reference/processes.md](docs/reference/processes.md).
+
+- **The assembly step is yours to record.** Receiving the boards only counts
+  them, and the count starts from JLC's board number. Applying a JLC order
+  only moves its positions and parts onto the batch.
+- **"Record assembly…" on Batch → Process** opens the step filled in from JLC:
+  the board and assembly fees, the parts JLC took from our stock with their
+  lots, the parts JLC bought, and the replacements JLC's BOM shows. Each row
+  has a tick box. Preview shows the exact effect, Apply records only the
+  ticked rows.
+- **Another assembly house uses the same form**: type the assembler and the
+  reference, pick the parts it used from our stock (the list starts from the
+  design BOM × boards, and the stock is checked), or split its parts total
+  into the parts it bought.
+- **What arrives later waits for you**: the card says what is not in the step
+  yet, and "Add to assembly…" adds it. "Undo assembly…" takes the whole step
+  back.
+- The JLC invoice import preview now shows the stock it moves out of the pool.
+
 ## 2026-10-04 (review fixes: company gate, stock per company, invoices, KSeF)
 
 Not deployed yet. Decisions

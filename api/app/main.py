@@ -1186,6 +1186,41 @@ def startup() -> None:
             conn.execute(text(
                 "ALTER TABLE conformance ADD COLUMN IF NOT EXISTS judgment jsonb"
             ))
+            # "Record assembly" (decision 0072): who assembled the boards and
+            # under which order or invoice, and the step a substitution was
+            # recorded with.
+            conn.execute(text(
+                "ALTER TABLE step_runs ADD COLUMN IF NOT EXISTS assembler varchar(120) NOT NULL DEFAULT ''"
+            ))
+            conn.execute(text(
+                "ALTER TABLE step_runs ADD COLUMN IF NOT EXISTS reference varchar(200) NOT NULL DEFAULT ''"
+            ))
+            conn.execute(text(
+                "ALTER TABLE run_substitutions ADD COLUMN IF NOT EXISTS step_run_id integer"
+            ))
+            # Decision 0074: the bench run and deployment version per twin step.
+            conn.execute(text(
+                "ALTER TABLE twin_steps ADD COLUMN IF NOT EXISTS programming_run_id integer"
+            ))
+            conn.execute(text(
+                "ALTER TABLE twin_steps ADD COLUMN IF NOT EXISTS deployment_version_id integer"
+            ))
+            # Decision 0074: the current process version is a pointer. When the
+            # column is new, it points at what "current" meant before: the
+            # highest published version. Only then — a NULL pointer later is
+            # a project whose published versions are all history.
+            if not _column_exists(conn, "projects", "current_process_version_id"):
+                conn.execute(text(
+                    "ALTER TABLE projects ADD COLUMN current_process_version_id integer"
+                ))
+                conn.execute(text(
+                    """
+                    UPDATE projects p SET current_process_version_id = (
+                        SELECT v.id FROM process_versions v
+                        WHERE v.project_id = p.id AND v.status = 'published'
+                        ORDER BY v.version_no DESC LIMIT 1)
+                    """
+                ))
             conn.execute(text(
                 """
                 INSERT INTO project_cost_revisions

@@ -15,11 +15,13 @@ import {
   errorMessage,
   isAbortError,
   listCompanies,
+  lotHistory,
   setDrawCompany,
   stockBackfill,
   updateCompany,
   type CompanyDetail,
   type HistoryPlan,
+  type LotHistoryResult,
   type StockBackfillResult,
 } from "../api";
 import { useAuth } from "../auth";
@@ -388,6 +390,109 @@ function StockSplitCard() {
   );
 }
 
+type LotBatch = LotHistoryResult["batches"][number];
+const LOT_BATCH_COLUMNS: Column<LotBatch>[] = [
+  { key: "batch", label: "Batch", width: 40, get: (b) => b.batch ?? (b.run_id ? `#${b.run_id}` : "no batch") },
+  { key: "closed", label: "State", width: 14, get: (b) => (b.closed ? "closed" : "open"),
+    render: (b) => (b.closed ? <span className="pill warn">closed</span> : <span className="muted">open</span>) },
+  { key: "closed_cost", label: "Closed cost USD", width: 22, numeric: true, get: (b) => b.closed_cost_usd ?? 0,
+    render: (b) => <>{b.closed ? plain(b.closed_cost_usd) : "—"}</> },
+  { key: "change", label: "Change USD", width: 24, numeric: true, get: (b) => b.change_usd,
+    render: (b) => <>{plain(b.change_usd)}</> },
+];
+
+type LotUncovered = LotHistoryResult["uncovered"][number];
+const LOT_UNCOVERED_COLUMNS: Column<LotUncovered>[] = [
+  { key: "date", label: "Date", width: 13, className: "mono", get: (u) => (u.date ?? "").slice(0, 10) || "—" },
+  { key: "batch", label: "Batch", width: 25, get: (u) => u.batch ?? "no batch" },
+  { key: "part", label: "Part", width: 26, className: "mono", get: (u) => u.label },
+  { key: "qty", label: "Qty", width: 12, numeric: true, get: (u) => u.qty },
+  { key: "uncovered", label: "In no lot", width: 12, numeric: true, get: (u) => u.uncovered },
+  { key: "draw", label: "Draw", width: 12, className: "mono", get: (u) => `#${u.consumption_id}` },
+];
+
+/** Decision 0073: bind every live draw to the lots it came from, oldest
+ *  first, and price it at their cost. A check first; the write changes
+ *  closed batches too, so its confirmation is a danger one. */
+function LotHistoryCard() {
+  const dialog = useDialog();
+  const [res, setRes] = useState<LotHistoryResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const run = async (dryRun: boolean) => {
+    if (!dryRun) {
+      const closed = res?.batches.filter((b) => b.closed).length ?? 0;
+      if (!(await dialog.confirm(
+        `Bind ${res?.draws_bound ?? 0} draw(s) to their lots and give them the lots' cost? The cost of `
+          + `${res?.batches.length ?? 0} batch(es) changes by ${plain(res?.change_usd ?? 0)} USD in total. `
+          + `${closed} of these batches are closed, and their cost changes too.`,
+        { title: "Bind draws to lots", confirmLabel: "Write", tone: "danger" }))) return;
+    }
+    setBusy(true);
+    setErr("");
+    try {
+      setRes(await lotHistory(dryRun));
+    } catch (e) {
+      setErr(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const closed = res ? res.batches.filter((b) => b.closed).length : 0;
+
+  return (
+    <div className="card pad">
+      <h2>Bind draws to lots</h2>
+      <p className="muted dim">
+        Each draw takes its parts from the purchase lots, oldest first, and takes their cost (decision 0073).
+        This job binds the draws that have no lots yet, in date order. It changes the cost of closed batches too.
+      </p>
+      <ErrorBanner message={err} />
+      <div className="btn-row">
+        <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void run(true)}>
+          {busy ? "Working…" : "Check"}
+        </button>
+        <button type="button" className="btn btn-primary btn-sm" disabled={busy || !res || !res.dry_run || !res.draws_bound}
+          onClick={() => void run(false)}>
+          Write
+        </button>
+      </div>
+      <p className="muted dim">
+        You can turn on <b>Lot pricing (FIFO)</b> on the Configuration tab only when no draw is left without lots.
+      </p>
+      {res ? (
+        <>
+          <p className="muted">
+            {res.dry_run ? "Would bind" : "Bound"} {res.draws_bound} draw(s). Total change {plain(res.change_usd)} USD
+            over {res.batches.length} batch(es), {closed} closed.
+            {res.batch_id ? ` Journal entry #${res.batch_id}.` : ""}
+            {res.uncovered.length ? ` ${res.uncovered.length} draw(s) are in no lot.` : " Every draw is in a lot."}
+          </p>
+          {res.batches.length ? (
+            <>
+              <p className="muted dim">
+                Change per batch. A closed batch keeps its closed cost, so its change shows as a variance.
+              </p>
+              <DataTable rows={res.batches} rowKey={(b) => String(b.run_id ?? "none")} columns={LOT_BATCH_COLUMNS}
+                empty="No change." />
+            </>
+          ) : null}
+          {res.uncovered.length ? (
+            <>
+              <p className="muted dim">
+                No lot holds these draws. They keep their price. Enter the missing purchase, then check again.
+              </p>
+              <DataTable rows={res.uncovered} rowKey={(u) => u.consumption_id} columns={LOT_UNCOVERED_COLUMNS}
+                empty="None." />
+            </>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export default function CompaniesCard() {
   const [rows, setRows] = useState<CompanyDetail[] | null>(null);
   const [error, setError] = useState("");
@@ -426,6 +531,7 @@ export default function CompaniesCard() {
       </div>
       <KsefCard />
       <StockSplitCard />
+      <LotHistoryCard />
     </>
   );
 }

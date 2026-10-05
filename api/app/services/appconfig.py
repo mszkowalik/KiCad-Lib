@@ -122,6 +122,11 @@ KNOBS: tuple[Knob, ...] = (
          "the other company with an in-house transfer (decision 0064). It can be "
          "turned on only when every purchase, draw and adjustment names its "
          "company. Off: one pool for both companies."),
+    Knob("lot_pricing", "Companies", "Lot pricing (FIFO)", "bool",
+         "Every draw is bound to the lots it came from, oldest first, and takes "
+         "their cost; a draw the lots cannot cover is refused (decision 0073). It "
+         "can be turned on only when every live draw is bound to its lots: bind "
+         "the history first (Admin → Companies). Off: draws take the moving average."),
     # ----------------------------------------------------------------- render
     Knob("render_mode", "Render", "Render mode", "str",
          "http = the render container; local = invoke kicad-cli directly, which "
@@ -182,6 +187,14 @@ def validate(knob: Knob, value: object, db=None) -> None:
                              "concatenated with paths like /api/datasheets/1/file")
     if knob.key == "render_url" and str(value) and not str(value).startswith("http"):
         raise ValueError("Render service URL: must start with http")
+    if knob.key == "lot_pricing" and value and db is not None:
+        from . import lots
+
+        left = lots.untraced(db)
+        if left:
+            raise ValueError(
+                f"Lot pricing: {len(left)} live draw(s) are not bound to their lots yet — "
+                "bind the history first (Admin → Companies → Bind draws to lots).")
     if knob.key == "stock_per_company" and value and db is not None:
         from . import companies
 

@@ -9,8 +9,9 @@
  *  An internal input (a prepared part) takes its oldest lot first unless one
  *  is picked: that is the only choice a person makes here, because two lots of
  *  one prepared part can differ (printed or stickered, found at zero value or built
- *  from today's purchases). Bought inputs follow the pool's moving average,
- *  like every other draw in the platform.
+ *  from today's purchases). Bought inputs follow the pool's moving average, or
+ *  their lots oldest first while lot pricing is on (decision 0073), like every
+ *  other draw in the platform.
  */
 import { useMemo, useState } from "react";
 import {

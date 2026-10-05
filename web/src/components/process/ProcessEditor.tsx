@@ -342,8 +342,9 @@ export default function ProcessEditor({ draft, internalParts, deployments, onSav
               <p className="muted dim">The first step: one unit per board the batch's assembly order delivered.</p>
             ) : s.kind === "assembly" ? (
               <p className="muted dim">
-                Recorded from the batch's assembly order when the boards are received: the parts the
-                supplier drew from our stock, and every board and assembly charge of the batch.
+                Recorded by a person on the batch's Process tab, with “Record assembly…”: pre-filled
+                from the JLC order, or filled in by hand for another assembly house. Receiving the
+                boards does not record it.
               </p>
             ) : (
               <>

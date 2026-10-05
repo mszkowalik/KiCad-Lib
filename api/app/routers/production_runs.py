@@ -483,6 +483,24 @@ def close_run(run_id: int, body: ClosePatch | None = None, db: Session = Depends
             "error": f"batch {r.label} is already closed "
                      f"({r.closed_at.isoformat()[:10]}, by {r.closed_by or 'unknown'}).",
         })
+    if r.process_version_id:
+        # Decision 0072: the assembly is the person's to record, and a closed
+        # batch refuses it — boards received outside the step could then never
+        # finish or ship.
+        from ..services import twins as _tw
+
+        d = _tw.assembly_draft(db, r)
+        waiting = (d.get("header") or {}).get("twins_not_in_step") or 0
+        if d.get("status") != "no_assembly_step" and waiting:
+            raise HTTPException(409, f"record the assembly of {r.label} first (Batch → Process → Record "
+                                     f"assembly): {waiting} board(s) are not in the step")
+        # Decision 0074: closing freezes the share, and money no twin carries
+        # would leave every device price and order margin for good.
+        loose = (_tw.origin_shares(db, [r.id]).get(r.id) or {}).get("uncarried_usd") or 0.0
+        if abs(loose) > 0.01:
+            raise HTTPException(409, f"{r.label} has {loose:.2f} USD of origin cost that no device carries — "
+                                     "no twin received in it is alive; move that money to the batch whose "
+                                     "units it paid for before you close")
     cost_usd, units = run_actuals.close_snapshot(db, r)
     # Decision 0059 §13: closing freezes the origin share of every twin.
     from ..services import twins as twins_svc

@@ -22,6 +22,7 @@ import {
   getProjectProcess,
   getRuns,
   isAbortError,
+  makeProcessCurrent,
   publishProcessVersion,
   voidTransformation,
   type PreparedRecipe,
@@ -92,17 +93,37 @@ export default function ProcessTab({ project }: { project: ProjectInfo }) {
     }
   };
 
-  const publish = async () => {
+  const publish = async (historical: boolean) => {
     if (!shown) return;
-    const comment = await dialog.prompt("What changed, and why? (required — it is the version's history)",
-      { title: `Publish process v${shown.version_no}`, initial: shown.comment, maxLength: 500 });
+    const comment = await dialog.prompt(
+      historical
+        ? "How were the older devices made with this version, and which batches is it for? (required)"
+        : "What changed, and why? (required — it is the version's history)",
+      { title: historical ? `Publish process v${shown.version_no} as history` : `Publish process v${shown.version_no}`,
+        initial: shown.comment, maxLength: 500 });
     if (comment === null) return;
     try {
-      await publishProcessVersion(shown.id, comment);
+      await publishProcessVersion(shown.id, comment, historical);
       setVersionId(null);
       reload();
     } catch (err) {
       await dialog.alert(errorMessage(err), { title: "Publishing was refused" });
+    }
+  };
+
+  // Decision 0074: the version in effect is a pointer, not the newest number.
+  const makeCurrent = async () => {
+    if (!shown) return;
+    if (!(await dialog.confirm(
+      `Make v${shown.version_no} the version in effect? New batches and the project's planned BOM follow it. ` +
+        "Batches that exist keep the version they run.",
+      { title: "Make current", confirmLabel: "Make current" }))) return;
+    try {
+      await makeProcessCurrent(shown.id);
+      setVersionId(null);
+      reload();
+    } catch (err) {
+      await dialog.alert(errorMessage(err), { title: "Could not make it current" });
     }
   };
 
@@ -202,12 +223,18 @@ export default function ProcessTab({ project }: { project: ProjectInfo }) {
           {shown?.status === "published" && !draft ? (
             <button type="button" className="btn" onClick={() => compose(shown.id)}>Edit as new version</button>
           ) : null}
+          {shown?.status === "published" && !isCurrent ? (
+            <button type="button" className="btn" onClick={makeCurrent}>Make current…</button>
+          ) : null}
           {draft && shown?.id !== draft.id ? (
             <button type="button" className="btn" onClick={() => setVersionId(draft.id)}>Open draft v{draft.version_no}</button>
           ) : null}
           {shown?.status === "draft" ? (
             <>
-              <button type="button" className="btn btn-primary" disabled={!shown.check?.ok} onClick={publish}>Publish…</button>
+              <button type="button" className="btn btn-primary" disabled={!shown.check?.ok} onClick={() => publish(false)}>Publish…</button>
+              <button type="button" className="btn" disabled={!shown.check?.ok} onClick={() => publish(true)}
+                title="For the history of older devices: their batches pin it, and the version in effect stays">
+                Publish as history…</button>
               <button type="button" className="btn btn-danger" onClick={removeDraft}>Delete draft</button>
             </>
           ) : null}
@@ -250,7 +277,7 @@ export default function ProcessTab({ project }: { project: ProjectInfo }) {
         <div className="card pad">
           <h2 className="card-title">Map</h2>
           {!isCurrent && shown.status === "published" ? (
-            <p className="muted dim">An older version — read only. New work runs on the version in effect.</p>
+            <p className="muted dim">Not the version in effect — read only. New batches run on the version in effect.</p>
           ) : null}
           <ProcessMap
             version={shown}
