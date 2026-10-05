@@ -22,13 +22,16 @@ import {
   issueSalesInvoice,
   listCustomers,
   listSalesInvoices,
+  listSalesInvoiceFiles,
   listSalesProducts,
   listSalesTemplates,
   markSalesInvoicePaid,
   nextSalesNumber,
+  salesInvoiceFilePath,
   salesInvoicePdfPath,
   salesInvoiceXmlPath,
   updateSalesInvoice,
+  uploadSalesInvoiceFile,
   type CustomerRow,
   type SalesInvoiceRow,
   type SalesLine,
@@ -41,6 +44,7 @@ import DataTable, { type Column } from "../components/DataTable";
 import { useDialog } from "../components/Dialog";
 import Field, { CheckField, FieldGrid, FieldRow } from "../components/Field";
 import FilePick from "../components/FilePick";
+import RecordFiles from "../components/RecordFiles";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { absoluteFileUrl, fileHref } from "../viewkind";
 
@@ -103,6 +107,13 @@ const LINE_COLUMNS: Column<SalesLine>[] = [
 ];
 
 /** One invoice, opened under its row. */
+/** The printed documents filed with an invoice (decision 0077). */
+function InvoiceFiles({ id }: { id: number }) {
+  const list = useCallback((signal?: AbortSignal) => listSalesInvoiceFiles(id, signal), [id]);
+  const upload = useCallback((file: File) => uploadSalesInvoiceFile(id, file), [id]);
+  return <RecordFiles list={list} upload={upload} pathOf={(fileId) => salesInvoiceFilePath(id, fileId)} label="Documents" />;
+}
+
 function InvoicePanel({ id, onChanged }: { id: number; onChanged: () => void }) {
   const dialog = useDialog();
   const [inv, setInv] = useState<SalesInvoiceRow | null>(null);
@@ -134,6 +145,9 @@ function InvoicePanel({ id, onChanged }: { id: number; onChanged: () => void }) 
   const b = inv.body;
   const pdfName = `${inv.number.replace(/[^0-9A-Za-z]+/g, "-")}.pdf`;
   const before = b?.correction?.before_lines ?? [];
+  // A document issued elsewhere, recorded as printed (decision 0077): the
+  // platform never sends it to KSeF and never corrects it.
+  const recorded = inv.source.startsWith("import: document");
   return (
     <div className="user-detail">
       <ErrorBanner message={err} />
@@ -161,11 +175,17 @@ function InvoicePanel({ id, onChanged }: { id: number; onChanged: () => void }) 
         <DataTable rows={b?.lines ?? []} rowKey={(l) => `l${l.position}`} columns={LINE_COLUMNS} empty="No positions." />
       )}
       {(b?.notes ?? []).length ? <p className="muted dim">Notes: {(b?.notes ?? []).join("; ")}</p> : null}
+      {recorded ? (
+        <p className="muted dim">Issued outside the platform; recorded from the printed document filed below.</p>
+      ) : null}
+      <div className="btn-row">
+        <InvoiceFiles id={inv.id} />
+      </div>
       <div className="btn-row">
         <a className="btn btn-sm" href={fileHref(salesInvoicePdfPath(inv.id), pdfName)} target="_blank" rel="noreferrer">
           PDF
         </a>
-        {inv.kind !== "proforma" ? (
+        {inv.kind !== "proforma" && !recorded ? (
           <a className="btn btn-sm" href={absoluteFileUrl(salesInvoiceXmlPath(inv.id))}>
             XML for KSeF
           </a>
@@ -178,7 +198,7 @@ function InvoicePanel({ id, onChanged }: { id: number; onChanged: () => void }) 
             Mark paid…
           </button>
         ) : null}
-        {inv.status === "issued" && (inv.kind === "vat" || inv.kind === "advance") ? (
+        {inv.status === "issued" && !recorded && (inv.kind === "vat" || inv.kind === "advance") ? (
           <button type="button" className="btn btn-sm" disabled={busy} onClick={async () => {
             const reason = await dialog.prompt("Why is it corrected?", { title: "Correction" });
             if (reason) await act(() => correctSalesInvoice(inv.id, reason));

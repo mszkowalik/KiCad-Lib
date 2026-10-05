@@ -2532,7 +2532,7 @@ class RunCostLine(Base):
     #   prepaid_components | reclaimable_vat | external_project |
     #   cancelled_order_fee | dev_bench | duplicate_superseded |
     #   legacy_unstated (backfill only) | other
-    exclude_reason: Mapped[str] = mapped_column(String(40), default="")
+    exclude_reason: Mapped[str] = mapped_column(String(300), default="")
     # The supplier's own identity for this line — for JLC, the `smtOrderCode` the
     # charge belongs to (`jlc_import.plan_manufacturing_document` computes it and
     # nothing stored it, so the line -> order join survived only inside `label`
@@ -4251,3 +4251,28 @@ class CompanyTaxEntry(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     __table_args__ = (UniqueConstraint("company_id", "period", "kind", name="uq_company_tax_entry"),)
+
+
+class RecordFile(Base):
+    """A file kept as the evidence of a sales invoice or a tax entry (decision
+    0077): the PDF a company issued before the platform or KSeF wrote its
+    invoices, the accountant's notice of a tax. Bytes live in MinIO under
+    `record-files/`, never under a run's prefix. One owner, named by
+    `owner_kind` and `owner_id` (a soft pointer); `company_id` is the owner's
+    company, so the company gate reads it without the owner."""
+
+    __tablename__ = "record_files"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(Integer)
+    owner_kind: Mapped[str] = mapped_column(String(20))                   # sales_invoice | tax_entry
+    owner_id: Mapped[int] = mapped_column(Integer)
+    filename: Mapped[str] = mapped_column(String(300))
+    content_type: Mapped[str] = mapped_column(String(100), default="application/octet-stream")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    minio_key: Mapped[str] = mapped_column(String(500))
+    note: Mapped[str] = mapped_column(String(500), default="")
+    uploaded_by: Mapped[str] = mapped_column(String(100), default="")
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (Index("ix_record_files_owner", "owner_kind", "owner_id"),)

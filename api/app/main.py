@@ -223,6 +223,10 @@ _PHASE1_DDL = (
     # The supplier's own line identity — computed by the planner since the first
     # import and stored nowhere, which is why the line -> order join had to be
     # recovered from `label` text by two repair scripts.
+    # 40 characters held a label, not a reason: a longer one answered 500
+    # (2026-10-06, the overnight import). Routes cap it at 300 (422).
+    ("run_cost_lines.exclude_reason_300",
+     "ALTER TABLE run_cost_lines ALTER COLUMN exclude_reason TYPE varchar(300)"),
     ("run_cost_lines.external_line_id",
      "ALTER TABLE run_cost_lines ADD COLUMN IF NOT EXISTS "
      "external_line_id varchar(120) NOT NULL DEFAULT ''"),

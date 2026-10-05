@@ -9589,6 +9589,8 @@ export interface SalesInvoiceRow {
   overdue: boolean;
   body?: SalesInvoiceBody;
   corrected_by?: { id: number; number: string; status: string }[];
+  /** The printed documents filed with the invoice (decision 0077). */
+  files?: RecordFileRow[];
 }
 
 export interface SalesInvoiceCreate {
@@ -9675,6 +9677,46 @@ export function salesInvoicePdfPath(id: number): string {
 
 export function salesInvoiceXmlPath(id: number): string {
   return `/api/sales-invoices/${id}/xml`;
+}
+
+/** A file kept as the evidence of a sales invoice or a tax entry (decision 0077). */
+export interface RecordFileRow {
+  id: number;
+  filename: string;
+  size_bytes: number;
+  content_type: string;
+  note?: string;
+  uploaded_by?: string;
+  uploaded_at?: string | null;
+}
+
+export function listSalesInvoiceFiles(id: number, signal?: AbortSignal): Promise<RecordFileRow[]> {
+  return request(`/api/sales-invoices/${id}/files`, { signal });
+}
+
+export function uploadSalesInvoiceFile(id: number, file: File): Promise<RecordFileRow> {
+  const fd = new FormData();
+  fd.append("file", file);
+  return request(`/api/sales-invoices/${id}/files`, { method: "POST", body: fd });
+}
+
+/** Same-origin PATH, for `viewkind.fileHref` (see `attachmentPath`). */
+export function salesInvoiceFilePath(id: number, fileId: number): string {
+  return `/api/sales-invoices/${id}/files/${fileId}?inline=true`;
+}
+
+export function listTaxEntryFiles(companyId: number, entryId: number, signal?: AbortSignal): Promise<RecordFileRow[]> {
+  return request(`/api/companies/${companyId}/tax-entries/${entryId}/files`, { signal });
+}
+
+export function uploadTaxEntryFile(companyId: number, entryId: number, file: File): Promise<RecordFileRow> {
+  const fd = new FormData();
+  fd.append("file", file);
+  return request(`/api/companies/${companyId}/tax-entries/${entryId}/files`, { method: "POST", body: fd });
+}
+
+export function taxEntryFilePath(companyId: number, entryId: number, fileId: number): string {
+  return `/api/companies/${companyId}/tax-entries/${entryId}/files/${fileId}?inline=true`;
 }
 
 export function listSalesTemplates(signal?: AbortSignal): Promise<SalesTemplate[]> {
@@ -9790,7 +9832,9 @@ export interface BooksMonth {
   purchase_vat: string;
   vat_estimate: string;
   income_tax_estimate: string | null;
-  accountant: Record<string, { id: number; amount: string; status: string; due_date: string; paid_date: string; note: string }>;
+  accountant: Record<string, {
+    id: number; amount: string; status: string; due_date: string; paid_date: string; note: string; files?: number;
+  }>;
 }
 
 export interface CompanyBooks {

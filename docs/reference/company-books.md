@@ -29,8 +29,11 @@ Production → Company books.
 
 * **Every figure is an estimate.** The accountant's figures
   (`company_tax_entries`) are entered beside them and are the ones that count.
-* **Revenue** is the net of issued sales invoices by issue date
-  (`company_books._sales_effect`). An advance counts for VAT and not for
+* **Revenue** is the net of issued sales invoices
+  (`company_books._sales_effect`), in the month of `book_date`: the earlier
+  of the sale date ("data wykonania usługi") and the issue date, as the tax
+  point is. An April service invoiced on 5 May is April's. A correction keeps
+  its issue date (decision 0077). An advance counts for VAT and not for
   income, at the advance (`invoicing.service.advance_amounts`), never at the
   order total. A correction counts its difference once
   (`invoicing.service.correction_difference`): a platform correction from its
@@ -45,3 +48,6 @@ Production → Company books.
 * **VAT on purchases** is read from `tax_amount` of PLN documents only.
 * **Income tax** follows `companies.tax_form`; with none stated there is no
   estimate. Never guess a tax form.
+* **A tax figure keeps the accountant's notices** in `record_files`
+  (`/api/companies/{company_id}/tax-entries/{entry_id}/files`, decision 0077).
+  The books report a count per figure (`accountant[kind].files`).

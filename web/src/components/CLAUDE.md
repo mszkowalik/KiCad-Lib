@@ -119,6 +119,11 @@ nothing can render. For API-served bytes, pass the same-origin PATH (e.g.
 `Content-Disposition: inline`; without it the browser saves the file to Downloads
 instead of showing it (user preference, 2026-07-27).
 
+**A list of a record's files is `RecordFiles`** (decision 0077): the supplier
+document's originals, a sales invoice's documents, a tax figure's notices. The
+caller passes `list`, `upload` and `pathOf`, and wraps it in its own row. It
+adds files and never deletes one.
+
 ## ONE stackup table, and it is not a DataTable (`components/StackupTable.tsx`)
 
 Every view of a board stackup goes through it — the project's Stackup tab comparing a

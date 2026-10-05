@@ -373,3 +373,89 @@ async def import_register(company_id: int, dry_run: bool = True,
                "templates": len(res["templates"]), "products": len(res["products"])})
         db.commit()
     return res
+
+
+# ------------------------------------------------------------ files (0077)
+
+@router.post("/sales-invoices/{invoice_id}/files")
+async def add_invoice_file(invoice_id: int, file: UploadFile = File(...), note: str = "",
+                           db: Session = Depends(get_db)):
+    """File the printed document (a PDF, a scan) with the invoice it is."""
+    from ..services import record_files
+
+    inv = _inv(db, invoice_id)
+    data = await file.read()
+    row = record_files.add(db, "sales_invoice", inv, file.filename or "document", file.content_type or "", data,
+                           actor=acting_name(), note=note)
+    audit(db, "sales_invoice.file.add", "sales_invoice", inv.id,
+          {"file_id": row.id, "filename": row.filename, "size_bytes": row.size_bytes})
+    db.commit()
+    return record_files.file_json(row)
+
+
+@router.get("/sales-invoices/{invoice_id}/files")
+def list_invoice_files(invoice_id: int, db: Session = Depends(get_db)):
+    from ..services import record_files
+
+    _inv(db, invoice_id)
+    return [record_files.file_json(f) for f in record_files.listed(db, "sales_invoice", invoice_id)]
+
+
+@router.get("/sales-invoices/{invoice_id}/files/{file_id}")
+def get_invoice_file(invoice_id: int, file_id: int, inline: bool = True, db: Session = Depends(get_db)):
+    from ..services import record_files
+
+    _inv(db, invoice_id)
+    f = record_files.one(db, "sales_invoice", invoice_id, file_id)
+    disp = "inline" if inline else "attachment"
+    return Response(record_files.content(f), media_type=f.content_type,
+                    headers={"Content-Disposition": f'{disp}; filename="{f.filename}"'})
+
+
+# ------------------------------------------------------------ history (0077)
+
+class HistoryLineIn(BaseModel):
+    name: str = ""
+    qty: float | str | None = None
+    unit: str = ""
+    unit_net: float | str | None = None
+    vat_rate: str = ""
+    net: float | str = 0
+    vat: float | str = 0
+
+
+class HistoryIn(BaseModel):
+    company_id: int
+    kind: str
+    number: str = Field(min_length=1, max_length=60)
+    issue_date: str
+    sale_date: str = ""
+    due_date: str = ""
+    buyer: BuyerIn
+    currency: str = "PLN"
+    lines: list[HistoryLineIn] = []
+    totals: dict
+    advance_numbers: list[str] = []
+    corrects_number: str = ""
+    paid: bool = False
+    paid_date: str = ""
+    order_id: int | None = None
+    note: str = Field(default="", max_length=500)
+
+
+@router.post("/sales-invoices/history")
+def record_history(body: HistoryIn, db: Session = Depends(get_db), admin: M.User = Depends(require_admin)):
+    """A sales document a company issued elsewhere, before the platform or
+    KSeF wrote its invoices, recorded as printed (decision 0077). Admin: it
+    writes a company's past revenue."""
+    d = body.model_dump()
+    inv = svc.record_history(db, company_id=d["company_id"], kind=d["kind"], number=d["number"],
+                             issue_date=d["issue_date"], sale_date=d["sale_date"], due_date=d["due_date"],
+                             buyer=d["buyer"], currency=d["currency"], lines=d["lines"], totals=d["totals"],
+                             advance_numbers=d["advance_numbers"], corrects_number=d["corrects_number"],
+                             paid=d["paid"], paid_date=d["paid_date"], order_id=d["order_id"], note=d["note"],
+                             actor=acting_name())
+    audit(db, "sales_invoice.history", "sales_invoice", inv.id,
+          {"company_id": inv.company_id, "number": inv.number, "kind": inv.kind, "gross": str(inv.gross_total)})
+    db.commit()
+    return svc.invoice_json(db, inv, full=True)

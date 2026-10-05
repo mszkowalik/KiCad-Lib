@@ -45,6 +45,8 @@ EXPECTED = {
     ("POST", "/api/transfers/history"),
     # Importing 7Sigma's old invoice register — decision 0066.
     ("POST", "/api/sales-invoices/import"),
+    # Recording a sales document issued elsewhere (past revenue) — decision 0077.
+    ("POST", "/api/sales-invoices/history"),
     # KSeF tokens and the sync that spends KSeF's query limit — decision 0067.
     ("GET", "/api/ksef/status"),
     ("PUT", "/api/ksef/credentials/{company_id}"),

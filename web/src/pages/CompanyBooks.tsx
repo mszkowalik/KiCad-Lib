@@ -9,12 +9,16 @@ import {
   errorMessage,
   getCompanyBooks,
   isAbortError,
+  listTaxEntryFiles,
   putTaxEntry,
+  taxEntryFilePath,
+  uploadTaxEntryFile,
   type BooksMonth,
   type CompanyBooks as Books,
 } from "../api";
 import { useAuth } from "../auth";
 import DataTable, { type Column } from "../components/DataTable";
+import RecordFiles from "../components/RecordFiles";
 import Field, { FieldRow } from "../components/Field";
 import { ErrorBanner, Spinner } from "../components/Ui";
 
@@ -99,7 +103,22 @@ function MonthPanel({ companyId, m, onSaved }: { companyId: number; m: BooksMont
           Save
         </button>
       </FieldRow>
+      {m.accountant[kind] ? (
+        <div className="btn-row">
+          <EntryFiles companyId={companyId} entryId={m.accountant[kind].id} onChange={onSaved} />
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+/** The accountant's notices filed with one tax figure (decision 0077). */
+function EntryFiles({ companyId, entryId, onChange }: { companyId: number; entryId: number; onChange: () => void }) {
+  const list = useCallback((signal?: AbortSignal) => listTaxEntryFiles(companyId, entryId, signal), [companyId, entryId]);
+  const upload = useCallback((file: File) => uploadTaxEntryFile(companyId, entryId, file), [companyId, entryId]);
+  return (
+    <RecordFiles list={list} upload={upload} pathOf={(fileId) => taxEntryFilePath(companyId, entryId, fileId)}
+                 label="Notices" onChange={onChange} />
   );
 }
 

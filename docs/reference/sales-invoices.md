@@ -10,7 +10,8 @@ The page is Production → Sales invoices.
 
 * **Never write an invoice for 9SIGMA.** `service.issuing_company` refuses a
   company without `issues_invoices`. 9SIGMA invoices with its own system and is
-  only read from KSeF.
+  read from KSeF. Its documents from before KSeF are RECORDED, not issued (see
+  "Recorded history" below).
 * **An issued invoice never changes in place.** `service.update` takes a draft
   or a proforma only. A mistake on an issued invoice is a correction
   (`service.correct`), and a draft never sent is cancelled, which frees its
@@ -101,3 +102,23 @@ Element ORDER matters: the schema is a sequence, and the writer follows it.
 script's `rejestr.json`, `klienci.json`, `cykliczne.json` and `produkty.json`
 as uploads. A document already on the platform (same kind, number and date) is
 skipped; a buyer is matched by NIP, then by name.
+
+## Recorded history and files
+
+Decision [0077](../decisions/0077-a-record-keeps-its-files-and-a-company-its-issued-history.md).
+
+* **`POST /api/sales-invoices/history` (admin) records a document a company
+  issued elsewhere**, as printed (`service.record_history`). Any company,
+  9SIGMA included: status `issued`, source `import: document`, never sent to
+  KSeF, never numbered from the series. A number is recorded once (409).
+* **An advance keeps the advance in `totals` and the order in `body.order`**
+  (`{lines, totals}`, as a platform advance), so `advance_amounts` reads the
+  advance. A settlement keeps the whole order as its positions and the rest to
+  pay in `totals`, with the advances in `body.advance_refs`, as FA(3) ROZ.
+* **A recorded document has no "XML for KSeF" and no "Correction…"** on the
+  page: it was issued, and is corrected, where it was issued.
+* **A sales invoice keeps its printed documents** in `record_files`
+  (`/api/sales-invoices/{invoice_id}/files`). A file is added and read, never
+  replaced or deleted; a better scan is a second file. `invoice_json(full)`
+  lists them.
+

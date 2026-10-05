@@ -101,6 +101,18 @@ def _income_tax(form: str, lump_rate: Decimal, ytd_income: Decimal, ytd_revenue:
     return None
 
 
+def book_date(inv: M.SalesInvoice) -> str:
+    """The day a sales document enters the books: the day of the delivery or
+    service (`sale_date`, "data wykonania usługi"), or the issue date when the
+    invoice was issued before it, as the tax point is (art. 14 ust. 1c PIT,
+    art. 19a VAT). An invoice for April issued on 5 May is April's. A
+    correction counts on its issue date: its sale date is the corrected
+    invoice's."""
+    if inv.kind == "correction" or not inv.sale_date:
+        return inv.issue_date or ""
+    return min(inv.sale_date[:10], (inv.issue_date or inv.sale_date)[:10])
+
+
 def _sales_effect(db: Session, inv: M.SalesInvoice) -> dict[str, Decimal]:
     """What one issued sales document adds to the books, in its currency:
     `revenue` (net income), `advance` (net advances received) and `vat`.
@@ -146,14 +158,17 @@ def year(db: Session, company_id: int, year: int) -> dict:
 
     for inv in (db.query(M.SalesInvoice)
                 .filter(M.SalesInvoice.company_id == company.id, M.SalesInvoice.status.in_(("issued", "error")),
-                        M.SalesInvoice.kind != "proforma", M.SalesInvoice.issue_date.like(f"{year}-%")).all()):
-        mo = months.get(inv.issue_date[:7])
+                        M.SalesInvoice.kind != "proforma",
+                        M.SalesInvoice.issue_date.like(f"{year}-%") | M.SalesInvoice.sale_date.like(f"{year}-%"))
+                .all()):
+        day = book_date(inv)
+        mo = months.get(day[:7])
         if mo is None:
             continue
         eff = _sales_effect(db, inv)
-        mo["revenue_net"] += pln(eff["revenue"], inv.currency, inv.issue_date)
-        mo["advances_net"] += pln(eff["advance"], inv.currency, inv.issue_date)
-        mo["sales_vat"] += pln(eff["vat"], inv.currency, inv.issue_date)
+        mo["revenue_net"] += pln(eff["revenue"], inv.currency, day)
+        mo["advances_net"] += pln(eff["advance"], inv.currency, day)
+        mo["sales_vat"] += pln(eff["vat"], inv.currency, day)
 
     hdrs = header_ids(db)
     for doc in (db.query(M.RunCostDocument)
@@ -180,11 +195,16 @@ def year(db: Session, company_id: int, year: int) -> dict:
             mo["purchase_vat"] += Decimal(str(doc.tax_amount))
 
     entries: dict[str, dict] = defaultdict(dict)
-    for e in (db.query(M.CompanyTaxEntry)
-              .filter(M.CompanyTaxEntry.company_id == company.id,
-                      M.CompanyTaxEntry.period.like(f"{year}-%")).all()):
+    rows = (db.query(M.CompanyTaxEntry)
+            .filter(M.CompanyTaxEntry.company_id == company.id, M.CompanyTaxEntry.period.like(f"{year}-%")).all())
+    files: dict[int, int] = defaultdict(int)      # the accountant's notices filed with an entry (decision 0077)
+    for f in (db.query(M.RecordFile.owner_id)
+              .filter(M.RecordFile.owner_kind == "tax_entry", M.RecordFile.owner_id.in_([e.id for e in rows] or [0]))):
+        files[f.owner_id] += 1
+    for e in rows:
         entries[e.period][e.kind] = {"id": e.id, "amount": str(e.amount), "status": e.status,
-                                     "due_date": e.due_date, "paid_date": e.paid_date, "note": e.note}
+                                     "due_date": e.due_date, "paid_date": e.paid_date, "note": e.note,
+                                     "files": files.get(e.id, 0)}
 
     out_months, ytd_inc, ytd_rev, prev_tax = [], Decimal(0), Decimal(0), Decimal(0)
     for key in sorted(months):

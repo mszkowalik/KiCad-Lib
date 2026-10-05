@@ -324,6 +324,10 @@ _add(["/api/flasher/param-sets/"], "param_set_id", _via(M.ParamSet, "project_id"
 _add(["/api/sales-invoices/"], "invoice_id", _via(M.SalesInvoice, "company_id", _company))
 _add(["/api/sales-invoice-templates/"], "template_id", _via(M.SalesInvoiceTemplate, "company_id", _company))
 _add(["/api/ksef/inbox/"], "ksef_id", _via(M.KsefInvoice, "company_id", _company))
+# files kept with a sales invoice or a tax entry (decision 0077)
+_add(["/api/sales-invoices/{invoice_id}/files/"], "file_id", _via(M.RecordFile, "company_id", _company))
+_add(["/api/companies/{company_id}/tax-entries/"], "entry_id", _via(M.CompanyTaxEntry, "company_id", _company))
+_add(["/api/companies/{company_id}/tax-entries/{entry_id}/files/"], "file_id", _via(M.RecordFile, "company_id", _company))
 _add(["/api/consumption/"], "cons_id", _stock_row(M.ComponentConsumption))
 _add(["/api/stock-adjustments/"], "adj_id", _stock_row(M.ComponentStockAdjustment))
 
@@ -424,6 +428,8 @@ NOT_COMPANY_LISTS: set[str] = {
     # not ids at all: property keys, layer names, file paths, step keys, text
     "removed_properties", "reference_layers", "paths", "sides", "pin", "extra_info", "unmodelled",
     "assume", "costs", "done", "draw", "step_keys",
+    # the advance invoices a recorded settlement names, by NUMBER (decision 0077)
+    "advance_numbers",
 }
 
 

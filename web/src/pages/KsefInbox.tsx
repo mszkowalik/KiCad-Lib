@@ -112,6 +112,13 @@ export default function KsefInbox() {
             <Link className="btn btn-sm" to={`/production/invoices?doc=${r.document_id}`}>Document</Link>
           ) : null}
           {r.sales_invoice_id ? <Link className="btn btn-sm" to="/production/sales-invoices">Invoice</Link> : null}
+          {r.side === "sales" && r.status === "new" ? (
+            // A sales row has no action: the sync links it to the platform's
+            // record of the invoice, or records it from its XML.
+            <span className="muted dim" title="Sales invoices are linked by the sync, never by hand">
+              {r.has_xml ? "not linked: another invoice holds its number" : "linked once its XML is downloaded"}
+            </span>
+          ) : null}
           {r.side === "purchase" && r.status === "new" ? (
             <>
               <button type="button" className="btn btn-primary btn-sm" disabled={busy !== null || !r.has_xml}

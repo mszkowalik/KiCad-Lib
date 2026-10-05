@@ -594,6 +594,9 @@ def invoice_json(db: Session, inv: M.SalesInvoice, full: bool = False) -> dict:
         out["corrected_by"] = [{"id": k.id, "number": k.number, "status": k.status}
                                for k in db.query(M.SalesInvoice)
                                .filter(M.SalesInvoice.corrects_id == inv.id).all()]
+        out["files"] = [{"id": f.id, "filename": f.filename, "size_bytes": f.size_bytes, "content_type": f.content_type}
+                        for f in db.query(M.RecordFile).filter_by(owner_kind="sales_invoice", owner_id=inv.id)
+                        .order_by(M.RecordFile.id).all()]
     return out
 
 
@@ -762,3 +765,85 @@ def import_register(db: Session, company_id: int, register: dict | None = None,
     if not dry_run:
         db.flush()
     return out
+
+
+# ================================================================ history
+
+HISTORY_KINDS = ("vat", "advance", "settlement", "correction", "proforma")
+
+
+def record_history(db: Session, *, company_id: int, kind: str, number: str, issue_date: str, sale_date: str,
+                   due_date: str, buyer: dict, currency: str, lines: list[dict], totals: dict,
+                   advance_numbers: list[str], corrects_number: str, paid: bool, paid_date: str,
+                   order_id: int | None, note: str, actor: str) -> M.SalesInvoice:
+    """A sales document a company ISSUED somewhere else, before the platform or
+    KSeF wrote its invoices (decision 0077), kept as it was printed.
+
+    Any company may have history, also one that does not issue on the
+    platform: recording is not issuing. The record is `issued` from the start,
+    never goes to KSeF and takes no number from the series. Its figures are the
+    document's, as `from_register` keeps the script's:
+
+    * an advance: `totals` is the advance (FA(3) P_13/P_15), the positions are
+      the order (`body.order`), so `advance_amounts` reads the advance;
+    * a settlement: the positions are the whole order, `totals` what is left
+      to pay after the advances (`advance_numbers`), as FA(3) ROZ states it.
+    """
+    if kind not in HISTORY_KINDS:
+        raise HTTPException(422, f"kind is one of {', '.join(HISTORY_KINDS)}")
+    if not number.strip() or not issue_date:
+        raise HTTPException(422, "a recorded document needs its number and its issue date")
+    company = C.get(db, company_id)
+    dup = (db.query(M.SalesInvoice)
+           .filter(M.SalesInvoice.company_id == company.id, M.SalesInvoice.kind == kind,
+                   M.SalesInvoice.status != "cancelled").all())
+    if any(re.sub(r"\s+", "", i.number) == re.sub(r"\s+", "", number) for i in dup):
+        raise HTTPException(409, f"{company.name} already has a {kind} document numbered {number}")
+    rows = [{"position": i + 1, "name": ln.get("name") or "", "unit": ln.get("unit") or "",
+             "qty": str(ln.get("qty") if ln.get("qty") is not None else ""),
+             "unit_net": str(ln.get("unit_net") if ln.get("unit_net") is not None else ""),
+             "net": str(ln.get("net") or 0), "vat_rate": str(ln.get("vat_rate") or ""),
+             "vat": str(ln.get("vat") or 0),
+             "gross": str(A.d2(Decimal(str(ln.get("net") or 0)) + Decimal(str(ln.get("vat") or 0))))}
+            for i, ln in enumerate(lines)]
+    tot = {"net": str(A.d2(totals.get("net") or 0)), "vat": str(A.d2(totals.get("vat") or 0)),
+           "gross": str(A.d2(totals.get("gross") or 0)), "rates": totals.get("rates") or {}}
+    body = {"title": "", "place": "", "seller": seller_of(company),
+            "buyer": {"name": buyer.get("name") or "", "address_l1": buyer.get("address_l1") or "",
+                      "address_l2": buyer.get("address_l2") or "", "nip": re.sub(r"\D", "", buyer.get("nip") or ""),
+                      "country": buyer.get("country") or "PL"},
+            "lines": [] if kind == "advance" else rows, "totals": tot,
+            "payment": {"due_date": due_date or None, "method": "", "paid": bool(paid), "paid_date": paid_date or None,
+                        "note": "", "partial": []},
+            "bank": {}, "extra_info": [], "notes": [n for n in [note] if n], "files": {}}
+    if kind == "advance":
+        rates: dict[str, dict] = {}
+        for r in rows:
+            k = rates.setdefault(r["vat_rate"], {"net": Decimal(0), "vat": Decimal(0)})
+            k["net"] += Decimal(r["net"]); k["vat"] += Decimal(r["vat"])
+        onet = sum((k["net"] for k in rates.values()), Decimal(0))
+        ovat = sum((k["vat"] for k in rates.values()), Decimal(0))
+        body["order"] = {"lines": rows, "totals": {
+            "net": str(A.d2(onet)), "vat": str(A.d2(ovat)), "gross": str(A.d2(onet + ovat)),
+            "rates": {r: {"net": str(A.d2(k["net"])), "vat": str(A.d2(k["vat"]))} for r, k in rates.items()}}}
+        body["advance_gross"] = tot["gross"]
+    if kind == "settlement" and advance_numbers:
+        body["advance_refs"] = [{"ksef": "", "number": n} for n in advance_numbers]
+    inv = M.SalesInvoice(company_id=company.id, kind=kind, status="issued", number=number.strip(),
+                         issue_date=issue_date[:10], sale_date=(sale_date or issue_date)[:10],
+                         currency=(currency or "PLN")[:3], order_id=order_id, source="import: document",
+                         body=body, created_by=actor)
+    _columns(inv)
+    inv.amount_due = A.d2(tot["gross"])
+    inv.due_date = due_date or ""
+    inv.paid, inv.paid_date = bool(paid), paid_date or ""
+    nip = inv.buyer_nip
+    inv.customer_id = next((c.id for c in db.query(M.Customer).all()
+                            if nip and re.sub(r"\D", "", c.tax_id or "") == nip), None)
+    if kind == "correction" and corrects_number:
+        want = re.sub(r"\s+", "", corrects_number)
+        inv.corrects_id = next((i.id for i in db.query(M.SalesInvoice).filter_by(company_id=company.id).all()
+                                if re.sub(r"\s+", "", i.number) == want and i.kind != "correction"), None)
+    db.add(inv)
+    db.flush()
+    return inv

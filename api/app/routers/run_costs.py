@@ -9,7 +9,7 @@ import uuid
 from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
@@ -47,7 +47,7 @@ class LineIn(BaseModel):
     notes: str = ""
     # Why this position is charged to nobody. Stored since the `excluded` bucket
     # got a reason, writable from nowhere until decision 0045.
-    exclude_reason: str = ""
+    exclude_reason: str = Field(default="", max_length=300)
     # Decision 0068: with allocate="overhead", the kind of company cost.
     overhead_category: str = ""
     run_id: int | None = None
@@ -96,7 +96,7 @@ class ChildIn(BaseModel):
     # could mark a share excluded and had no way to say what for: every prepaid
     # component share JLC's populated-board invoices produce arrived unlabelled
     # and had to be corrected by hand afterwards (decision 0048).
-    exclude_reason: str = ""
+    exclude_reason: str = Field(default="", max_length=300)
     # Decision 0068: with allocate="overhead", the kind of company cost. The
     # split dialog dropped it, so an overhead share came back as "other".
     overhead_category: str = ""
@@ -195,7 +195,7 @@ class LinePatch(BaseModel):
     plan_ref: str | None = None
     plan_item_id: int | None = None
     notes: str | None = None
-    exclude_reason: str | None = None
+    exclude_reason: str | None = Field(default=None, max_length=300)
     overhead_category: str | None = None
     run_id: int | None = None
     project_id: int | None = None

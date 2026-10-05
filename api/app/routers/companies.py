@@ -6,7 +6,8 @@ one-off backfill are admin work: they change what the books say.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -162,6 +163,48 @@ def put_tax_entry(company_id: int, body: TaxEntryIn, db: Session = Depends(get_d
           {"period": row.period, "kind": row.kind, "amount": str(row.amount), "status": row.status})
     db.commit()
     return {"id": row.id, "period": row.period, "kind": row.kind, "amount": str(row.amount), "status": row.status}
+
+
+def _entry(db: Session, company_id: int, entry_id: int) -> M.CompanyTaxEntry:
+    e = db.get(M.CompanyTaxEntry, entry_id)
+    if e is None or e.company_id != company_id:
+        raise HTTPException(404, "no such tax entry")
+    return e
+
+
+@router.post("/companies/{company_id}/tax-entries/{entry_id}/files")
+async def add_tax_entry_file(company_id: int, entry_id: int, file: UploadFile = File(...), note: str = "",
+                             db: Session = Depends(get_db)):
+    """File the accountant's notice (a PDF, a printed mail) with the figure it gives (decision 0077)."""
+    from ..services import record_files
+
+    e = _entry(db, company_id, entry_id)
+    row = record_files.add(db, "tax_entry", e, file.filename or "notice", file.content_type or "", await file.read(),
+                           actor=acting_name(), note=note)
+    audit(db, "company.tax_entry.file.add", "company_tax_entry", e.id,
+          {"file_id": row.id, "filename": row.filename, "size_bytes": row.size_bytes})
+    db.commit()
+    return record_files.file_json(row)
+
+
+@router.get("/companies/{company_id}/tax-entries/{entry_id}/files")
+def list_tax_entry_files(company_id: int, entry_id: int, db: Session = Depends(get_db)):
+    from ..services import record_files
+
+    _entry(db, company_id, entry_id)
+    return [record_files.file_json(f) for f in record_files.listed(db, "tax_entry", entry_id)]
+
+
+@router.get("/companies/{company_id}/tax-entries/{entry_id}/files/{file_id}")
+def get_tax_entry_file(company_id: int, entry_id: int, file_id: int, inline: bool = True,
+                       db: Session = Depends(get_db)):
+    from ..services import record_files
+
+    _entry(db, company_id, entry_id)
+    f = record_files.one(db, "tax_entry", entry_id, file_id)
+    disp = "inline" if inline else "attachment"
+    return Response(record_files.content(f), media_type=f.content_type,
+                    headers={"Content-Disposition": f'{disp}; filename="{f.filename}"'})
 
 
 @router.get("/projects/{project_id}/ownership")

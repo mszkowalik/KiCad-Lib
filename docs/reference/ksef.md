@@ -40,7 +40,9 @@ are Admin → Companies (tokens, "Sync now") and Production → KSeF (the inbox)
   and writes nothing. `document_id` links the purchase to one, and `force`
   imports it anyway.
 * **The skip takes only a purchase.** The numbering counts the numbers KSeF holds,
-  so a skipped sales row would give its number out again.
+  so a skipped sales row would give its number out again. A sales row has no
+  action at all: the KSeF page says instead whether it waits for its XML or
+  another invoice holds its number.
 * **A deleted document frees its purchase.** Deleting a supplier document
   sets its inbox row back to `new`, and an import heals a row that still
   points at a missing document.

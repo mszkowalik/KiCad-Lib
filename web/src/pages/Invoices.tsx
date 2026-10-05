@@ -12,7 +12,7 @@
  *  unassigned / residual, and the component pool must balance against what has
  *  been drawn from it.
  */
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   attachmentPath,
   createCorrection,
@@ -28,7 +28,6 @@ import {
   resolveDocumentParts,
   uploadDocumentAttachment,
   type CostStepCatalog,
-  type DocumentAttachment,
   type InvoiceRegister,
   type RunCostDocumentRow,
   type RunCostLineRow,
@@ -43,11 +42,11 @@ import InvoiceLinesTable, { blankDraft, draftToLineIn, toDraft, type LineDraft }
 import PlanLinkDialog from "../components/invoices/PlanLinkDialog";
 import SplitLineDialog from "../components/invoices/SplitLineDialog";
 import DataTable, { type Column } from "../components/DataTable";
+import RecordFiles from "../components/RecordFiles";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { useStickyState } from "../useStickyState";
 import { useAuth } from "../auth";
 import { Link, useSearchParams } from "react-router-dom";
-import { fileHref } from "../viewkind";
 
 import { amount as money, plain } from "../format";
 import {
@@ -848,72 +847,13 @@ function CorrectionLinks({ doc, onOpen }: {
   );
 }
 
-/** The scanned/PDF original filed with a document. Kept as its own component so
- *  the expanded row does not reload every attachment list on each keystroke. */
+/** The scanned/PDF original filed with a document (the shared `RecordFiles`).
+ *  Kept as its own component so the expanded row does not reload every
+ *  attachment list on each keystroke. */
 function Originals({ docId, onChange }: { docId: number; onChange: () => void }) {
-  const dialog = useDialog();
-  const [files, setFiles] = useState<DocumentAttachment[] | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const load = useCallback((signal?: AbortSignal) => {
-    getDocumentAttachments(docId, signal)
-      .then(setFiles)
-      .catch((err) => {
-        if (!isAbortError(err)) setFiles([]);
-      });
-  }, [docId]);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
-  }, [load]);
-
-  const pick = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setBusy(true);
-    try {
-      await uploadDocumentAttachment(docId, file);
-      load();
-      onChange();
-    } catch (err) {
-      await dialog.alert(errorMessage(err), { title: "Upload failed" });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <>
-      <span className="muted">Original:</span>
-      {files === null ? (
-        <span className="dim">…</span>
-      ) : files.length === 0 ? (
-        <span className="dim">none filed</span>
-      ) : (
-        files.map((f) => (
-          // fileHref sends a PDF to the browser's own viewer and anything the
-          // /view page can render (image, CAD) to that page — never a download
-          <a
-            key={f.id}
-            className="comp-link"
-            href={fileHref(attachmentPath(f.id), f.filename)}
-            target="_blank"
-            rel="noreferrer"
-            title={`${f.filename} · ${Math.round(f.size_bytes / 1024)} kB`}
-          >
-            {f.filename}
-          </a>
-        ))
-      )}
-      <label className="btn btn-sm">
-        {busy ? "Uploading…" : "Attach"}
-        <input type="file" hidden onChange={pick} disabled={busy} />
-      </label>
-    </>
-  );
+  const list = useCallback((signal?: AbortSignal) => getDocumentAttachments(docId, signal), [docId]);
+  const upload = useCallback((file: File) => uploadDocumentAttachment(docId, file), [docId]);
+  return <RecordFiles list={list} upload={upload} pathOf={(id) => attachmentPath(id)} label="Original" onChange={onChange} />;
 }
 
 // ------------------------------------------------------------- new invoice form

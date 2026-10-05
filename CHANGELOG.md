@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-10-06 (invoice and tax files, 9SIGMA's past invoices, sales by service month)
+
+Decision [0077](docs/decisions/0077-a-record-keeps-its-files-and-a-company-its-issued-history.md).
+The rules are in [docs/reference/sales-invoices.md](docs/reference/sales-invoices.md)
+and [docs/reference/company-books.md](docs/reference/company-books.md).
+
+- **A sales invoice keeps its printed documents.** The invoice panel has a
+  "Documents" row: open a file, or "Attach" another. A file is never replaced
+  or deleted; a better scan is a second file.
+- **A tax figure keeps the accountant's notices.** On Company books, open a
+  month: the figure you pick has a "Notices" row.
+- **A company's sales invoices issued outside the platform can be recorded as
+  printed** (admin, `POST /api/sales-invoices/history`). 9SIGMA's invoices
+  from before KSeF are on the platform this way. 9SIGMA still issues nothing
+  here. Such a record has no "XML for KSeF" and no "Correction…".
+- **Correction: the books count a sale in the month of its service.** A sales
+  invoice enters the books on the earlier of its sale date ("data wykonania
+  usługi") and its issue date. An April service invoiced on 5 May now counts
+  in April. A correction keeps its issue date.
+- **The KSeF page says why a sales row has no button**: it is linked once its
+  XML is downloaded, or another invoice holds its number.
+- The supplier document's "Original" row uses the same files control.
+- **Correction: a position's reason for "charged to nobody" holds 300
+  characters.** It held 40, and a longer reason failed with a server error
+  instead of a message. Longer than 300 is now refused with a message.
+
 ## 2026-10-05 (a unit's history can be corrected, and every draw leads to its invoice)
 
 Not deployed yet. Decisions
