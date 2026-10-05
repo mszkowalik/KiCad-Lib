@@ -243,9 +243,12 @@ for the device page. Its designators are the supplier's.
   `process_needs`) when the unit's twin has not done what the step needs. The
   ops the run will execute decide which steps it checks, so "Print label"
   alone does not warn about the enclosure.
-- **The programming bench** starts on the current version of the deployment
-  the program step names (`program_deployment` in
-  `GET /runs/{id}/bench-stacks`).
+- **The bench runs what the process lists** (decision 0076). One page offers
+  the process's bench steps in route order (`steps` in
+  `GET /runs/{id}/bench-stacks`, from `process.bench_steps`), each with the
+  procedure the step names; the operator ticks what this bench does. A
+  crafted batch runs only those procedures (`POST /flasher/runs` refuses any
+  other), at each one's current version, or another with a reason.
 
 ## Money
 

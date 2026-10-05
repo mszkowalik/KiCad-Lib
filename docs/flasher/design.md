@@ -114,7 +114,7 @@ For the production bench itself neither is needed: an operator picks each of the
 | Tables | `api/app/models.py` | §4 |
 | Firmware binaries | MinIO via `services/storage.py` | keys `firmware/<asset_id>/<filename>` |
 | Secrets (WiFi pw, creds salt, MQTT pw) | encrypted with `services/crypto.py` (Fernet from `SECRET_KEY`) | never in a scenario JSON, never in git |
-| Operator bench UI | `web/src/pages/FlashBench.tsx` | up to 5 station columns, live log, PASS/FAIL |
+| Operator bench UI | `web/src/pages/Bench.tsx` (programming and marking, from the batch's process — decision 0076) | up to 4 programming stations or one marking station, live log, PASS/FAIL |
 | Scenario + firmware admin | `web/src/pages/FlashScenarios.tsx` | step editor, firmware upload, param sets |
 | Run history | project page tab + `web/src/pages/FlashRuns.tsx` | filter by project/device/status, drill into logs |
 | Browser-side serial + esptool | `web/src/flasher/` (worker per station) | lifted from `clients/flasher-poc` |

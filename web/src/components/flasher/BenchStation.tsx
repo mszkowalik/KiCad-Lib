@@ -32,11 +32,29 @@ import Field from "../Field";
 import { useModal } from "../modal";
 import { useStickyState } from "../../useStickyState";
 
+/** The two actions a marking procedure can perform. */
+export type MarkOp = "mark_laser" | "print_label";
+
+/** One run of the selected steps (decision 0076): a procedure version, and for
+ *  a marking procedure which of its actions this run performs. The page builds
+ *  them from the batch's process, in route order; a press runs them in turn
+ *  and stops at the first that does not pass. */
+export interface BenchSegment {
+  versionId: number;
+  /** what the operator reads: "Program", "Test", "Laser mark + Barcode label" */
+  label: string;
+  /** the marking actions this run performs; empty for a programming run */
+  markOps: MarkOp[];
+}
+
+const MARK_OPS: MarkOp[] = ["mark_laser", "print_label"];
+
 export interface StationSlotProps {
   index: number;
   /** null = bench trial: no batch, and a DRAFT version is allowed */
   productionRunId: number | null;
-  deploymentVersionId: number | null;
+  /** the selected steps, as runs, in order */
+  segments: BenchSegment[];
   overrideReason: string;
   simPin: string;
   /** Which project an erased device belongs to, for the run record. */
@@ -45,14 +63,14 @@ export interface StationSlotProps {
    *  device: the serial bounds, the marking placeholders and the label rolls
    *  all come from the platform (decision 2026-09-17). */
   meta?: FlasherMeta | null;
-  /** What this slot is for. "mark" drops Erase and Test — a marking bench has
-   *  no business wiping a device — and renames Program to Mark. */
-  mode?: "flash" | "mark";
-  /** Start the procedure by itself when a device arrives, armed once per
-   *  device. Marking is a one-button job repeated all day, so the button is
-   *  the part worth removing; flashing a tray of dongles turned out to be the
-   *  same job, and the bench offers it there too since 2026-09-16 — opt-in,
-   *  off by default, because the run erases the device first. */
+  /** "mark" when the selected steps include a marking one: ONE station, since
+   *  there is one laser and one device is marked at a time, laid out around the
+   *  device's serial. "program" otherwise. */
+  layout: "program" | "mark";
+  /** Run the selected steps by itself when a device arrives, armed once per
+   *  device. Opt-in, off by default, because a programming run erases the
+   *  device first. A marking run also waits until the device has said who it
+   *  is and the machines it needs are ready. */
   autoStart?: boolean;
   /** Marking only: what the bench agent reports, polled by the page. The
    *  station shows each machine above its own button, because "the laser is
@@ -88,7 +106,7 @@ type PortState = "none" | "empty" | "waiting" | "working" | "gone";
  *  because a bar that stalls at 90% reads better than one that finishes early
  *  and then sits at 100% doing nothing. */
 /** Stations a bench can have, for reading back which sockets are taken.
- *  Mirrors MAX_STATIONS in FlashBench. */
+ *  Mirrors MAX_STATIONS in pages/Bench.tsx. */
 const MAX_SLOTS = 4;
 
 const ERASE_ESTIMATE_MS = 6000;
@@ -161,8 +179,8 @@ export default function BenchStation(props: StationSlotProps) {
   const [stepNo, setStepNo] = useState<{ index: number; total: number } | null>(null);
   const [portState, setPortState] = useState<PortState>("none");
   // One marking station, so it is named for the job rather than numbered.
-  const nameKey = props.mode === "mark" ? "mark" : props.index;
-  const slotName = props.mode === "mark" ? "Marking station" : `Station ${props.index + 1}`;
+  const nameKey = props.layout === "mark" ? "mark" : props.index;
+  const slotName = props.layout === "mark" ? "Marking station" : `Station ${props.index + 1}`;
   const [name, setName] = useState(() => readStationName(nameKey) || slotName);
   const [renaming, setRenaming] = useState(false);
   const [bootWait, setBootWait] = useState(false);
@@ -216,20 +234,13 @@ export default function BenchStation(props: StationSlotProps) {
       window.clearInterval(t);
     };
   }, []);
-  const [autoMark, setAutoMark] = useStickyState<boolean>("mark.auto.laser", false);
-  const [autoPrint, setAutoPrint] = useStickyState<boolean>("mark.auto.label", false);
-  /** Chain the two machines: one press engraves AND labels.
-   *
-   *  The bench's normal day is both, and doing it with two Automatic boxes
-   *  meant the pass started by itself. Linked, the operator keeps the trigger
-   *  and still gets one press per device. */
-  const [linked, setLinked] = useStickyState<boolean>("mark.linked", false);
-  /** The roll and the queue are the BENCH's answer, not the procedure's: the
-   *  printer cannot report what is loaded in it (CUPS carries no media-ready
-   *  for this driver, measured 2026-09-17), so the operator states it once and
-   *  the station remembers. */
-  const [roll, setRoll] = useStickyState<string>("mark.roll", FALLBACK_ROLL.size);
+  /** The roll is the PROCEDURE's: its label step names it (decision 0076).
+   *  This is the bench's override, for the rare day another roll is loaded —
+   *  empty means "the procedure's". A new key, so a roll remembered under the
+   *  old rule does not read as an override. */
+  const [roll, setRoll] = useStickyState<string>("mark.roll.override", "");
   const [printer, setPrinter] = useStickyState<string>("mark.printer", "");
+  const [labelSetupOpen, setLabelSetupOpen] = useState(false);
   /** The marking procedure's own template and placeholder, so a typed mark and
    *  a run cannot disagree about which drawing a unit gets. */
   const [markVersion, setMarkVersion] = useState<DeploymentVersionDetail | null>(null);
@@ -283,17 +294,20 @@ export default function BenchStation(props: StationSlotProps) {
    *  function because it was four, and the two that updated only the label left
    *  the pill saying "device disconnected" until the page was reloaded.
    */
+  /** The run that marks, if the selected steps include one. */
+  const markSeg = props.segments.find((s) => s.markOps.length > 0) ?? null;
+  const markVersionId = markSeg?.versionId ?? null;
   useEffect(() => {
-    if (props.mode !== "mark" || !props.deploymentVersionId) {
+    if (!markVersionId) {
       setMarkVersion(null);
       return;
     }
     const ac = new AbortController();
-    getDeploymentVersion(props.deploymentVersionId, ac.signal)
+    getDeploymentVersion(markVersionId, ac.signal)
       .then(setMarkVersion)
       .catch(() => setMarkVersion(null));
     return () => ac.abort();
-  }, [props.mode, props.deploymentVersionId]);
+  }, [markVersionId]);
 
   const syncPort = useCallback(
     (working = false) => {
@@ -338,17 +352,17 @@ export default function BenchStation(props: StationSlotProps) {
   const takenBy = useMemo(() => {
     const out: Record<string, string> = {};
     for (let i = 0; i < MAX_SLOTS; i++) {
-      if (i === props.index && props.mode !== "mark") continue;
+      if (i === props.index && props.layout !== "mark") continue;
       const node = readStationSocket(i);
       if (node) out[node] = readStationName(i) || `Station ${i + 1}`;
     }
     // The marking station is keyed "mark", not by slot.
-    if (props.mode !== "mark") {
+    if (props.layout !== "mark") {
       const markNode = readStationSocket("mark" as unknown as number);
       if (markNode) out[markNode] = readStationName("mark") || "Marking station";
     }
     return out;
-  }, [props.index, props.mode, picking]);
+  }, [props.index, props.layout, picking]);
 
   /** Assign this station a USB socket.
    *
@@ -456,7 +470,7 @@ export default function BenchStation(props: StationSlotProps) {
    *  marked, with nobody able to say against what, is worse than no row.
    *  Everything the two BUTTONS do runs the procedure, and that still records.
    */
-  const markTyped = async () => {
+  const markTyped = async (): Promise<boolean> => {
     const step = (markVersion?.steps ?? []).find(
       (x) => (x as { op?: string }).op === "mark_laser",
     ) as
@@ -471,7 +485,9 @@ export default function BenchStation(props: StationSlotProps) {
         ? files[0]
         : undefined;
     const value = typed.trim().toUpperCase();
-    if (!file || serialProblem(value, props.meta?.serial_len?.min ?? 8, props.meta?.serial_len?.max ?? 12)) return;
+    if (!file || serialProblem(value, props.meta?.serial_len?.min ?? 8, props.meta?.serial_len?.max ?? 12)) {
+      return false;
+    }
 
     setError(null);
     setHint(null);
@@ -504,15 +520,12 @@ export default function BenchStation(props: StationSlotProps) {
       setMarked(value);
       setStatus("pass");
       setStepLabel("engraved");
-      // The chain means one press does both, typed or read. Only after the
-      // engraving passed: a label for a part the laser never marked is worse
-      // than no label.
-      if (chained) await printTyped();
-    } else {
-      setError(out.error ?? "the mark failed");
-      setStatus("fail");
-      setStepLabel("mark failed");
+      return true;
     }
+    setError(out.error ?? "the mark failed");
+    setStatus("fail");
+    setStepLabel("mark failed");
+    return false;
   };
 
   /** Print what the operator typed, with no device in the loop.
@@ -522,9 +535,9 @@ export default function BenchStation(props: StationSlotProps) {
    *  commonest thing on a marking bench, and reprinting one is not a new fact
    *  about the unit.
    */
-  const printTyped = async () => {
+  const printTyped = async (): Promise<boolean> => {
     const value = typed.trim().toUpperCase();
-    if (serialProblem(value, props.meta?.serial_len?.min ?? 8, props.meta?.serial_len?.max ?? 12)) return;
+    if (serialProblem(value, props.meta?.serial_len?.min ?? 8, props.meta?.serial_len?.max ?? 12)) return false;
     setError(null);
     setHint(null);
     setStatus("busy");
@@ -533,7 +546,7 @@ export default function BenchStation(props: StationSlotProps) {
     let out: { status: string; error?: string };
     try {
       out = await runPrintJob(
-        { value, printer: printer || undefined, roll, ...labelStepArgs() },
+        { value, printer: printer || undefined, roll: rollUsed, ...labelStepArgs() },
         (dir, text) => pushLog((dir as LogDir) ?? "app", text),
       );
     } catch (err) {
@@ -544,11 +557,12 @@ export default function BenchStation(props: StationSlotProps) {
       setPrinted(value);
       setStatus("pass");
       setStepLabel("printed");
-    } else {
-      setError(out.error ?? "the label did not print");
-      setStatus("fail");
-      setStepLabel("print failed");
+      return true;
     }
+    setError(out.error ?? "the label did not print");
+    setStatus("fail");
+    setStepLabel("print failed");
+    return false;
   };
 
   /** The step that reads the device's identity, and the split applied to it.
@@ -620,6 +634,14 @@ export default function BenchStation(props: StationSlotProps) {
   /** What the version says about its label, for a print that runs no steps.
    *  The same reason the manual mark reads the template off the step: a typed
    *  label and a run's label must not disagree about what they are. */
+  const labelStep = (markVersion?.steps ?? []).find(
+    (x) => (x as { op?: string }).op === "print_label",
+  ) as { roll?: string } | undefined;
+  /** The roll this bench prints on: its override, else the label step's. */
+  const rollUsed = roll || String(labelStep?.roll ?? "") || FALLBACK_ROLL.size;
+  const rollName =
+    (props.rolls ?? []).find((r) => r.size === rollUsed)?.name
+    || (rollUsed === FALLBACK_ROLL.size ? FALLBACK_ROLL.label : rollUsed);
   const labelStepArgs = () => {
     const step = (markVersion?.steps ?? []).find(
       (x) => (x as { op?: string }).op === "print_label",
@@ -632,33 +654,26 @@ export default function BenchStation(props: StationSlotProps) {
     };
   };
 
-  /** Run the procedure. `skipOps` is how the two marking buttons differ.
+  /** Run ONE procedure version. `skipOps` is which marking action this run
+   *  leaves out.
    *
    *  ONE procedure reads the device once and then acts on it. Which action
    *  this press asked for is the bench's business, so it travels in the hello
    *  rather than in the version — and the engine only honours it for the two
    *  action ops, so a bench can never quietly change what a unit was made
-   *  under (decision 0021).
+   *  under (decision 0021). Resolves with how the run ended.
    */
-  const run = async (
-    versionId: number | null = props.deploymentVersionId,
-    skipOps: string[] = [],
-  ) => {
-    if (!props.productionRunId && !versionId) {
-      setError("Pick a batch, or a deployment version for a bench trial.");
-      return;
-    }
+  const run = async (versionId: number, skipOps: string[] = []): Promise<SlotStatus> => {
     // Check the socket before creating a run: a station with none cannot
     // program anything, and a run row that exists for that is noise.
     try {
       await station.ensurePort();
     } catch (err) {
       setError(errorMessage(err));
-      return;
+      return "fail";
     }
     setError(null);
     setHint(null);
-    setLog([]);
     setStatus("busy");
     syncPort(true);
     setStepLabel("creating run…");
@@ -673,7 +688,7 @@ export default function BenchStation(props: StationSlotProps) {
     } catch (err) {
       setError(errorMessage(err));
       setStatus("ready");
-      return;
+      return "fail";
     }
     setRunId(created.run_id);
     props.onRunCreated?.(created.run_id);
@@ -681,6 +696,7 @@ export default function BenchStation(props: StationSlotProps) {
 
     setMarked(null);
     setPrinted(null);
+    let ended: SlotStatus = "fail";
     const params: Record<string, string> = {};
     if (props.simPin.trim()) params.sim_pin = props.simPin.trim();
     // `operator` is NOT a bench param: the server stamps the run with the
@@ -710,7 +726,8 @@ export default function BenchStation(props: StationSlotProps) {
         if (err) setHint(hintFor(err));
         if (typeof results.marked === "string") setMarked(results.marked);
         if (typeof results.printed === "string") setPrinted(results.printed);
-        setStatus(st === "pass" ? "pass" : st === "aborted" ? "aborted" : "fail");
+        ended = st === "pass" ? "pass" : st === "aborted" ? "aborted" : "fail";
+        setStatus(ended);
         setStepLabel(st === "pass" ? "finished" : st);
         setStepNo(null);
         setProgress(null);
@@ -718,7 +735,9 @@ export default function BenchStation(props: StationSlotProps) {
         if (err) setError(err);
       },
     },
-    { printer: printer || undefined, roll, skipOps },
+    // The roll only when this bench overrides the procedure's: empty, the
+    // label step's own roll is the one printed.
+    { printer: printer || undefined, roll: roll || undefined, skipOps },
     );
     clientRef.current = client;
     try {
@@ -726,9 +745,31 @@ export default function BenchStation(props: StationSlotProps) {
     } catch (err) {
       setError(errorMessage(err));
       setStatus("fail");
+      ended = "fail";
     } finally {
       clientRef.current = null;
     }
+    return ended;
+  };
+
+  /** The selected steps, one run after another, stopping at the first that
+   *  does not pass: a label for a unit that failed its test is worse than no
+   *  label. One log for the whole press. */
+  const runPlan = async (segments: BenchSegment[] = props.segments): Promise<SlotStatus> => {
+    if (!segments.length) {
+      setError("Select the steps to run.");
+      return "fail";
+    }
+    setLog([]);
+    let st: SlotStatus = "pass";
+    for (const seg of segments) {
+      const skip = seg.markOps.length
+        ? [...MARK_OPS.filter((o) => !seg.markOps.includes(o)), ...skipRead]
+        : [];
+      st = await run(seg.versionId, skip);
+      if (st !== "pass") break;
+    }
+    return st;
   };
 
   const abort = () => clientRef.current?.abort();
@@ -745,11 +786,11 @@ export default function BenchStation(props: StationSlotProps) {
 
   const busy = status === "busy";
   const devicePresent = portState === "waiting" || portState === "working";
-  const canRun = devicePresent && !busy && (props.productionRunId || props.deploymentVersionId);
+  const canRun = devicePresent && !busy && props.segments.length > 0;
   /** The device answered a moment ago, so the run has nothing to wait for. The
    *  identity is still read inside the run, by the step after this one. */
   const skipRead = preread ? ["wait_boot"] : [];
-  const marking = props.mode === "mark";
+  const marking = props.layout === "mark";
 
   // --- what each machine is doing, as its own answer ------------------------
   // Two hops for the laser and two for the printer, and the agent is the hop
@@ -766,9 +807,15 @@ export default function BenchStation(props: StationSlotProps) {
   const laserMissing = props.laser?.laserUsb?.present === false;
   const laserReady = Boolean(props.agentUp && props.laser?.responsive && !laserMissing);
   const printerReady = Boolean(props.agentUp && chosenPrinter?.ok);
-  const hasLabelStep = (markVersion?.steps ?? []).some(
-    (x) => (x as { op?: string }).op === "print_label",
-  );
+  const hasOp = (op: MarkOp) => (markVersion?.steps ?? []).some((x) => (x as { op?: string }).op === op);
+  const hasLabelStep = hasOp("print_label");
+  /** What this press will do on the marking side: the selected actions the
+   *  procedure actually has. */
+  const wantsLaser = Boolean(markSeg?.markOps.includes("mark_laser")) && hasOp("mark_laser");
+  const wantsLabel = Boolean(markSeg?.markOps.includes("print_label")) && hasLabelStep;
+  /** The press starts with marking, so the device must say who it is first.
+   *  A press that programs first reads the serial inside its own runs. */
+  const firstMarks = (props.segments[0]?.markOps.length ?? 0) > 0;
 
   const laserPill = !props.agentUp
     ? { text: "agent down", tone: "err", note: "The bench agent is not running on this machine." }
@@ -819,7 +866,7 @@ export default function BenchStation(props: StationSlotProps) {
   // sitting in the fixture is not re-read every render.
   const readArmed = useRef(true);
   useEffect(() => {
-    if (!marking) return;
+    if (!marking || !firstMarks) return;
     if (portState !== "waiting") {
       if (portState === "none" || portState === "gone" || portState === "empty") {
         readArmed.current = true;
@@ -831,7 +878,7 @@ export default function BenchStation(props: StationSlotProps) {
     if (!readArmed.current || busy || !markVersion) return;
     readArmed.current = false;
     void preRead();
-  }, [marking, portState, busy, markVersion, preRead]);
+  }, [marking, firstMarks, portState, busy, markVersion, preRead]);
 
   /** A VERDICT BELONGS TO THE DEVICE THAT EARNED IT (user report 2026-09-17).
    *
@@ -877,30 +924,19 @@ export default function BenchStation(props: StationSlotProps) {
   }, [portState, busy, pushLog]);
 
   const autoArmed = useRef(true);
-  // Which actions an automatic pass should perform. A bench may be engraving
-  // all day and printing nothing, or printing while the laser is down, so the
-  // two are armed separately and a machine that is not ready arms nothing.
   // Nothing starts until the device has said who it is (user decision
   // 2026-09-17): a press that cannot name the part is not worth the label.
-  const identified = !marking || Boolean(preread);
-  /** The chain, as it actually applies: a version with no label step has
-   *  nothing to chain to, whatever the switch says. */
-  const chained = marking && linked && hasLabelStep;
+  const identified = !marking || !firstMarks || Boolean(preread);
+  /** The machines this press needs, ready. */
+  const machinesReady = (!wantsLaser || laserReady) && (!wantsLabel || printerReady);
   /** Manual mode's own verification. The read path is checked in `preRead`. */
   const typedProblem = manual
     ? serialProblem(typed.trim().toUpperCase(),
                     props.meta?.serial_len?.min ?? 8, props.meta?.serial_len?.max ?? 12)
     : "";
-  const autoMarkNow = marking ? autoMark && laserReady && identified : false;
-  const autoPrintNow = marking
-    ? (autoPrint || (linked && autoMarkNow)) && printerReady && hasLabelStep && identified
-    : false;
-  const autoSkip = [
-    ...(autoMarkNow ? [] : ["mark_laser"]),
-    ...(autoPrintNow ? [] : ["print_label"]),
-    ...skipRead,
-  ];
-  const autoOn = marking ? autoMarkNow || autoPrintNow : Boolean(props.autoStart);
+  // ONE switch for the bench: it runs the selected steps, and a marking press
+  // waits for the serial and the machines it needs.
+  const autoOn = Boolean(props.autoStart) && (!marking || (identified && machinesReady));
   useEffect(() => {
     if (!autoOn) return;
     if (portState !== "waiting") {
@@ -909,11 +945,38 @@ export default function BenchStation(props: StationSlotProps) {
     }
     if (!autoArmed.current || busy || !canRun) return;
     autoArmed.current = false;
-    void run(props.deploymentVersionId, marking ? autoSkip : []);
-    // `run` is stable for the life of the slot; listing it would re-fire this
-    // on every render that redefines it.
+    void runPlan();
+    // `runPlan` is stable for the life of the slot; listing it would re-fire
+    // this on every render that redefines it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoOn, autoMarkNow, autoPrintNow, portState, busy, canRun]);
+  }, [autoOn, portState, busy, canRun]);
+
+  /** The one marking button, read or typed. Typed runs no procedure, so it
+   *  engraves and then prints by the bench agent alone, unrecorded. */
+  const press = async () => {
+    if (!manual) {
+      await runPlan();
+      return;
+    }
+    if (wantsLaser && !(await markTyped())) return;
+    if (wantsLabel) await printTyped();
+  };
+
+  /** Redo one marking action — a spoiled label, a faint engraving. */
+  const again = async (op: MarkOp) => {
+    if (manual) {
+      await (op === "mark_laser" ? markTyped() : printTyped());
+      return;
+    }
+    if (!markSeg) return;
+    await runPlan([{ ...markSeg, markOps: [op] }]);
+  };
+
+  /** What the press does, in words. */
+  const planLabel = props.segments.map((s) => s.label).join(" → ");
+  const pressLabel = !firstMarks || props.segments.length > 1
+    ? planLabel
+    : wantsLaser && wantsLabel ? "Mark + label" : wantsLaser ? "Mark" : "Print label";
   const overall = stepNo ? Math.round((stepNo.index / stepNo.total) * 100) : null;
 
   return (
@@ -976,10 +1039,12 @@ export default function BenchStation(props: StationSlotProps) {
                     <div className="bench-serial">
                       <div className="bench-serial-row">
                         <span className="muted">Serial</span>
-                        <label className="field-check bench-manual-toggle" title="Type the serial yourself, for a unit that cannot be read">
-                          <input type="checkbox" checked={manual} onChange={(e) => setManual(e.target.checked)} />
-                          <span>Manual</span>
-                        </label>
+                        {firstMarks && props.segments.length === 1 ? (
+                          <label className="field-check bench-manual-toggle" title="Type the serial yourself, for a unit that cannot be read">
+                            <input type="checkbox" checked={manual} onChange={(e) => setManual(e.target.checked)} />
+                            <span>Manual</span>
+                          </label>
+                        ) : null}
                       </div>
                       <input
                         className="text mono bench-serial-box"
@@ -1006,11 +1071,13 @@ export default function BenchStation(props: StationSlotProps) {
                       ) : null}
                       {!manual && !preread ? (
                         <div className="bench-did">
-                          {prereading
-                            ? "Reading the device…"
-                            : prereadError
-                              ? `${prereadError} — unplug it and plug it back in, or tick Manual.`
-                              : "Waiting for a device."}
+                          {!firstMarks
+                            ? "Read by the run, after programming."
+                            : prereading
+                              ? "Reading the device…"
+                              : prereadError
+                                ? `${prereadError} — unplug it and plug it back in, or tick Manual.`
+                                : "Waiting for a device."}
                         </div>
                       ) : null}
                     </div>
@@ -1060,147 +1127,123 @@ export default function BenchStation(props: StationSlotProps) {
           </div>
 
           <div className="bench-mark-right">
-            <div className="bench-action">
+            {/* The machines this press needs, each with its own status: a laser
+                that is not answering and a printer with no roll are fixed in
+                different places. A machine the selected steps do not use is
+                not shown. */}
+            {wantsLaser ? (
               <div className="bench-action-head">
                 <strong>Laser</strong>
                 <span className={`pill ${laserPill.tone}`} title={laserPill.note}>
                   {laserPill.text}
                 </span>
               </div>
-              <button
-                type="button"
-                className="btn btn-primary bench-action-btn"
-                onClick={() =>
-                  void (manual
-                    ? markTyped()
-                    : run(
-                        props.deploymentVersionId,
-                        chained ? [...skipRead] : ["print_label", ...skipRead],
-                      ))
-                }
-                disabled={
-                  manual
-                    ? busy || !!typedProblem || !markVersion || (chained && !printerReady)
-                    : !canRun || !identified || (chained && !printerReady)
-                }
-                title={
-                  chained && !printerReady
-                    ? "Linked to the printer, and the printer is not ready — fix it, or drop the link"
-                    : chained
-                      ? "Engrave, then print the label"
-                      : "Engrave only"
-                }
-              >
-                {chained ? "Mark + label" : "Mark"}
-              </button>
-              <label className="field-check" title="Engrave by itself when a device is plugged in">
-                <input
-                  type="checkbox"
-                  checked={autoMark}
-                  onChange={(e) => setAutoMark(e.target.checked)}
-                />
-                <span>Automatic</span>
-              </label>
-              {marked ? <div className="bench-did mono">engraved {marked}</div> : null}
-            </div>
-
-            {/* The link lives between the two boxes because that is what it
-                joins. Off, the bench does one thing per press; on, the laser
-                button carries the label with it. */}
-            {hasLabelStep ? (
-              <button
-                type="button"
-                className={`bench-chain${chained ? " is-on" : ""}`}
-                aria-pressed={chained}
-                onClick={() => setLinked(!linked)}
-                disabled={busy}
-                title={
-                  chained
-                    ? "Linked: one press engraves and then prints. Click to separate them."
-                    : "Separate: each button does its own job. Click to link them."
-                }
-              >
-                <span className="bench-chain-icon" aria-hidden="true">
-                  {chained ? "🔗" : "⛓"}
-                </span>
-                <span>{chained ? "linked" : "link"}</span>
-              </button>
             ) : null}
-
-            <div className="bench-action">
+            {wantsLabel ? (
               <div className="bench-action-head">
                 <strong>Printer</strong>
                 <span className={`pill ${printerPill.tone}`} title={printerPill.note}>
                   {printerPill.text}
                 </span>
               </div>
-              <button
-                type="button"
-                className="btn btn-primary bench-action-btn"
-                onClick={() =>
-                  void (manual
-                    ? printTyped()
-                    : run(props.deploymentVersionId, ["mark_laser", ...skipRead]))
-                }
-                disabled={
-                  manual ? busy || !!typedProblem : !canRun || !hasLabelStep || !identified
-                }
-                title={
-                  hasLabelStep || manual
-                    ? "Print the barcode label for this device"
-                    : "This marking procedure has no label step"
-                }
-              >
-                Print label
-              </button>
-              {/* Only when there is a choice to make. One printer is the normal
-                  bench, and a select with one entry is furniture. */}
-              {printers.length > 1 ? (
+            ) : null}
+            {/* ONE button for every selected step (decision 0076). It used to
+                be a Mark button, a Print button and a link between them, with
+                an Automatic box under each. */}
+            <button
+              type="button"
+              className="btn btn-primary bench-action-btn"
+              onClick={() => void press()}
+              disabled={
+                manual
+                  ? busy || !!typedProblem || (wantsLaser && !markVersion)
+                  : !canRun || !identified || (firstMarks && !machinesReady)
+              }
+              title={
+                firstMarks && !machinesReady
+                  ? "A machine this press needs is not ready — see its status above"
+                  : planLabel
+              }
+            >
+              {pressLabel}
+            </button>
+            {wantsLaser && wantsLabel ? (
+              <div className="btn-row">
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => void again("mark_laser")}
+                  disabled={manual ? busy || !!typedProblem : !canRun || !identified || !laserReady}
+                  title="Engrave this device again, and print nothing"
+                >
+                  Engrave again
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => void again("print_label")}
+                  disabled={manual ? busy || !!typedProblem : !canRun || !identified || !printerReady}
+                  title="Print this device's label again, and engrave nothing"
+                >
+                  Print again
+                </button>
+              </div>
+            ) : null}
+            {wantsLabel ? (
+              <div className="bench-did">
+                Label roll {rollName} · {roll ? "set on this bench" : "from the procedure"}
+                {chosenPrinter ? ` · ${chosenPrinter.queue}` : ""}{" "}
+                <button
+                  type="button"
+                  className="cat-act"
+                  onClick={() => setLabelSetupOpen((o) => !o)}
+                  disabled={busy}
+                  title="Another printer, or another roll loaded today"
+                >
+                  {labelSetupOpen ? "Done" : "Change…"}
+                </button>
+              </div>
+            ) : null}
+            {wantsLabel && labelSetupOpen ? (
+              <div className="stack">
+                {printers.length > 1 ? (
+                  <select
+                    className="bench-roll"
+                    value={chosenPrinter?.queue ?? ""}
+                    onChange={(e) => setPrinter(e.target.value)}
+                    disabled={busy}
+                    title="Which printer on this machine"
+                  >
+                    {printers.map((x) => (
+                      <option key={x.queue} value={x.queue}>
+                        {x.queue}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
                 <select
                   className="bench-roll"
-                  value={chosenPrinter?.queue ?? ""}
-                  onChange={(e) => setPrinter(e.target.value)}
+                  value={roll}
+                  onChange={(e) => setRoll(e.target.value)}
                   disabled={busy}
-                  title="Which printer on this machine"
+                  title="The roll loaded in the printer. The printer cannot report it."
                 >
-                  {printers.map((x) => (
-                    <option key={x.queue} value={x.queue}>
-                      {x.queue}
+                  <option value="">the procedure's roll</option>
+                  {/* What the AGENT says the printer's PPD knows, not a list
+                      kept here; the fallback is the roll this bench has
+                      always run. */}
+                  {(props.rolls?.length
+                    ? props.rolls.map((r) => ({ size: r.size, label: r.name || r.size }))
+                    : [FALLBACK_ROLL]).map((r) => (
+                    <option key={r.size} value={r.size}>
+                      {r.label}
                     </option>
                   ))}
                 </select>
-              ) : null}
-              <select
-                className="bench-roll"
-                value={roll}
-                onChange={(e) => setRoll(e.target.value)}
-                disabled={busy}
-                title="Which label roll is in the printer. It cannot be read from the printer, so it is stated here."
-              >
-                {/* What the AGENT says the printer's PPD knows, not a list
-                    kept here. `health.rolls` is that report; the fallback is
-                    the one roll this bench has always run. */}
-                {(props.rolls?.length
-                  ? props.rolls.map((r) => ({ size: r.size, label: r.name || r.size }))
-                  : [FALLBACK_ROLL]).map((r) => (
-                  <option key={r.size} value={r.size}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-              <label className="field-check" title="Print by itself when a device is plugged in">
-                <input
-                  type="checkbox"
-                  checked={autoPrint}
-                  onChange={(e) => setAutoPrint(e.target.checked)}
-                />
-                <span>Automatic</span>
-              </label>
-              {/* No picture of the label here (user decision 2026-09-17): the
-                  station is for pressing, and the step editor is where the
-                  label is looked at. */}
-              {printed ? <div className="bench-did mono">printed {printed}</div> : null}
-            </div>
+              </div>
+            ) : null}
+            {marked ? <div className="bench-did mono">engraved {marked}</div> : null}
+            {printed ? <div className="bench-did mono">printed {printed}</div> : null}
           </div>
         </div>
       ) : (
@@ -1209,17 +1252,16 @@ export default function BenchStation(props: StationSlotProps) {
                   <button
                     type="button"
                     className="btn btn-primary btn-sm"
-                    onClick={() => void (manual ? markTyped() : run())}
-                    disabled={manual ? busy || !typed.trim() || !markVersion : !canRun}
+                    onClick={() => void runPlan()}
+                    disabled={!canRun}
+                    title={props.segments.length ? "Run the selected steps on this device" : "Select the steps to run"}
                   >
-                    {marking ? "Mark" : "Program"}
+                    {planLabel || "Run"}
                   </button>
-                  {marking ? null : (
-                    <button type="button" className="btn btn-sm" onClick={() => void erase()}
-                            disabled={!devicePresent || busy}>
-                      Erase
-                    </button>
-                  )}
+                  <button type="button" className="btn btn-sm" onClick={() => void erase()}
+                          disabled={!devicePresent || busy}>
+                    Erase
+                  </button>
                   {busy ? (
                     <button type="button" className="btn btn-danger btn-sm" onClick={abort}>
                       Abort

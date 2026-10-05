@@ -152,24 +152,33 @@ text applied to another.
   dropdown beside the batch one, which made "batch run with no batch picked" a
   state the page had to detect and warn about — and which disabled Automatic
   until it was resolved. One control cannot express it: a batch means
-  production on that batch's assigned version, none means a trial that may run
-  a draft and is recorded as such.
-- **There is no Test button on a station.** A test is an ordinary deployment
-  with `kind: "test"`, so it is run by picking its version like any other, and
-  a second button that silently ran a different version was a way to program a
-  unit under a procedure nobody chose (user decision 2026-09-17). The kind
-  still decides which BENCH offers a procedure; it no longer adds a button.
-- **The marking bench is its own page, and `BenchStation` takes a `mode`**
-  (2026-09-16). `mode="mark"` drops Erase and Test — a marking bench has no
-  business wiping a device — and renames Program to Mark. `autoStart` fires the
-  procedure when a device arrives, ARMED ONCE per device: the arm drops when the
-  port goes live and only returns when it goes away, so a finished part left in
-  the fixture is not marked twice. **Both benches offer it** — the flash bench
-  since 2026-09-16, where it saves a click per unit on a tray of dongles — but
-  the defaults differ on purpose: marking arrives armed, flashing does not,
-  because a programming run erases the device before it writes. Whatever else
-  gets this, keep the once-per-device arm: a retry loop on a failing unit is
-  the failure mode it exists to prevent.
+  production on what that batch's process names, none means a trial that may
+  run a draft and is recorded as such.
+- **ONE bench page, and the batch's PROCESS says what it can do** (decision
+  0076, `pages/Bench.tsx`). The page lists the process's bench steps
+  (`bench-stacks` → `steps`: Program and Test at the programming stations,
+  Laser mark and Label at the marking station), in route order, each with the
+  procedure its process names; the operator ticks what this bench does today,
+  remembered per project. A step whose process names no procedure is shown and
+  cannot be ticked. A bench trial (no batch) picks a procedure instead. The
+  separate Marking page and the version picker for a batch are gone; a batch
+  runs each procedure's CURRENT version, and "Versions…" picks another with a
+  reason (the API's override rule).
+- **`BenchStation` takes `segments` and a `layout`, not a version and a
+  mode.** The page turns the ticked steps into runs: one per procedure, and
+  consecutive Laser mark + Label that name one procedure are ONE run doing both
+  (`markOps`). A press runs them in turn and stops at the first that does not
+  pass. A selection with a marking step gets ONE station in the marking
+  layout — there is one laser, one device at a time; programming alone keeps
+  up to four. A station has ONE run button for the selection (plus Erase on a
+  programming station); there is no separate Test or Mark button.
+- **Automatic is ONE switch on the page**, ARMED ONCE per device: the arm
+  drops when the port goes live and only returns when it goes away, so a
+  finished part left in the fixture is not run twice. Keep the once-per-device
+  arm: a retry loop on a failing unit is the failure mode it exists to
+  prevent. A marking press also waits for the device's serial and for the
+  machines it needs. It is off by default, because a programming run erases
+  the device before it writes.
 - **A VERDICT BELONGS TO THE DEVICE THAT EARNED IT** (user report 2026-09-17).
   PASS, FAIL and ABORTED used to survive a device swap — `syncPort` only ever
   promoted `empty` to `ready` — so the next unit arrived under the last one's
@@ -203,9 +212,11 @@ text applied to another.
   open-the-port-and-compare trick that existed only because Web Serial would
   not name a port; the agent simply names it.
 - **Without the agent the bench does NOT work, and says so.** That is the
-  trade 0023 made deliberately: one implementation, no fallback. The flashing
-  bench keeps a `/hello` heartbeat so the banner is honest, and a station whose
-  socket has no cable in it reads empty rather than ready.
+  trade 0023 made deliberately: one implementation, no fallback. The page
+  keeps a heartbeat (`useBenchAgent`: `/hello` every 10 s, and the laser and
+  the printers every 2 s while a marking step is ticked) so the strip is
+  honest, and a station whose socket has no cable in it reads empty rather
+  than ready.
 - **One station gets a different LAYOUT, not a different component.**
   `.bench-station.is-mark` re-flows the same markup into two columns through
   named grid areas — what the operator acts on at the left, what they read at
@@ -230,26 +241,18 @@ text applied to another.
 - **A TYPED mark or label is not recorded at all** (user decision 2026-09-17).
   It names no run and proves nothing: the operator is replacing a spoiled label
   or engraving a bare part. A history row saying a unit was marked, with nobody
-  able to say against what, is worse than no row. Everything the two BUTTONS do
+  able to say against what, is worse than no row. Everything the button does
   runs the procedure, and that still records.
 - **The marking station is two columns, split by SUBJECT**
   (`.bench-mark-cols`). Left is the device — serial, port, what the station is
-  doing. Right is one box per machine, each with its own status above its own
-  button, because "LightBurn is not answering" and "the printer has no roll"
-  are fixed in different rooms. The shared hop, the agent itself, stays on the
+  doing. Right is ONE box (decision 0076): the status of each machine the
+  ticked steps need (a machine they do not use is not shown), because
+  "LightBurn is not answering" and "the printer has no roll" are fixed in
+  different rooms; then the ONE button ("Mark + label", "Mark", "Print label",
+  or the whole selection when it programs first); then "Engrave again" and
+  "Print again" to redo one action. The link toggle and the two Automatic
+  boxes it replaced are gone. The shared hop, the agent itself, stays on the
   page strip above.
-- **The chain between the two boxes is a THIRD mode, not a third Automatic**
-  (user decision 2026-09-17). Linked, one press of Mark engraves and then
-  prints, so the operator keeps the trigger and still does one press per
-  device — which is what Automatic was being used for, at the cost of the pass
-  starting by itself. It is drawn between the boxes because it belongs to
-  neither: it says what ONE press does. A linked Mark is disabled while the
-  printer is not ready, because a marked part with no label is worse than a
-  part that waits.
-- **Automatic is TWO checkboxes, one per machine.** A bench may engrave all day
-  and print nothing, or print while the laser is down. Each arms only when its
-  own machine is ready, and an automatic pass runs with the other action
-  skipped.
 - **The marking station reads the device when it ARRIVES, not when a button is
   pressed** (`preRead`, user decision 2026-09-17). Two reasons, and the second
   is the better one: a press no longer waits 0.7-1.1 s for `wait_boot`, and the
@@ -269,18 +272,23 @@ text applied to another.
   station says which rule it broke rather than only greying the buttons. The
   engine enforces the same bounds, so this is the early, readable half of the
   rule and not the only one.
-- **Until the device has answered, both buttons stay disabled** (user decision
-  2026-09-17), and the box says why: waiting, reading, or the error. A press
-  that cannot name the part is not worth the label. Manual is the way past it.
-- **The two buttons run the SAME version and differ only by `skipOps`**, which
+- **Until the device has answered, the button stays disabled** (user decision
+  2026-09-17), when the press starts with marking, and the box says why:
+  waiting, reading, or the error. A press that cannot name the part is not
+  worth the label. Manual is the way past it. A press that programs first
+  reads the serial inside its own runs.
+- **One marking run, and the redo links differ only by `skipOps`**, which
   travels in the run's hello. One procedure reads the device once; which action
   this press wanted is the bench's business, not the version's. The engine
   honours it for `mark_laser` and `print_label` and nothing else, so a bench
   can never quietly change what a unit was made under (decision 0021).
-- **The stocked rolls are a list in `BenchStation.tsx`, not the agent's.** The
-  agent can report all 61 the PPD knows; a dropdown of 61 is a search. Add a
-  row when a roll is actually bought.
-- **The agent's two hops are reported SEPARATELY** (`MarkBench`'s AgentPanel).
+- **The label roll is the PROCEDURE's** (decision 0076): the `print_label`
+  step's `roll`. The station shows it in one line with "Change…", which sets a
+  bench override (`mark.roll.override`, empty = the procedure's) and a printer
+  when there is more than one. The roll list in the override comes from the
+  agent's PPD report.
+- **The agent's two hops are reported SEPARATELY** (the page's `AgentStrip`
+  and the station's machine pills).
   "Agent down" is fixed on the bench machine and "LightBurn is not answering" is
   fixed in LightBurn, so an operator told only "marking unavailable" would not
   know which. The first failure also reads as the second: a page on a public

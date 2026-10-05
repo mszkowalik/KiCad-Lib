@@ -9401,6 +9401,18 @@ export function craftFound(runId: number, body: {
   return request(`/api/runs/${runId}/craft/found`, jsonBody("POST", body));
 }
 
+/** A step of a batch's process that a bench does (decision 0076), in route
+ *  order, with the procedure its process names for it. */
+export interface BenchStep {
+  key: string;
+  label: string;
+  kind: "program" | "test" | "mark_laser" | "label";
+  place: "programming_bench" | "marking_bench";
+  required: boolean;
+  /** null: the process names no procedure, so no bench can do the step */
+  deployment: { id: number; name: string; kind: string; current_version_id: number | null } | null;
+}
+
 export interface BenchStacks {
   run_id: number;
   crafted: boolean;
@@ -9409,6 +9421,8 @@ export interface BenchStacks {
   stacks: CraftStack[];
   /** the deployment the process's program step names (decision 0060) */
   program_deployment: { deployment_id: number; name: string; current_version_id: number | null } | null;
+  /** what the bench offers for this batch, and all it may run (decision 0076) */
+  steps: BenchStep[];
 }
 
 export function getBenchStacks(runId: number, signal?: AbortSignal): Promise<BenchStacks> {

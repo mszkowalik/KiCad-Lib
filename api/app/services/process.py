@@ -126,6 +126,32 @@ def step_of_kind(graph: dict, kind: str) -> dict | None:
     return next((s for s in graph.get("steps") or [] if s.get("kind") == kind), None)
 
 
+#: Where a step kind is done, for the kinds a bench does.
+BENCH_PLACES = ("programming_bench", "marking_bench")
+
+
+def bench_steps(db: Session, v: M.ProcessVersion | None) -> list[dict]:
+    """The steps of a process a bench does, in route order, each with the
+    deployment that says how (decision 0076): what the bench page offers for a
+    batch, and all it may run for one."""
+    if v is None:
+        return []
+    g = _graph(v)
+    order = {k: i for i, k in enumerate(g["route"])}
+    out = []
+    for s in sorted(g["steps"], key=lambda s: order.get(s.get("key"), len(order))):
+        place = KINDS.get(s.get("kind") or "")
+        if place not in BENCH_PLACES:
+            continue
+        dep = db.get(M.Deployment, int(s["deployment_id"])) if s.get("deployment_id") else None
+        out.append({"key": s.get("key"), "label": s.get("label") or s.get("key"), "kind": s.get("kind"),
+                    "place": place, "required": bool(s.get("required")),
+                    "deployment": None if dep is None else {
+                        "id": dep.id, "name": dep.name, "kind": dep.kind,
+                        "current_version_id": dep.current_version_id}})
+    return out
+
+
 def prepared_outputs(graph: dict) -> set[int]:
     return {int(r["output_component_id"]) for r in graph.get("prepared") or []
             if r.get("output_component_id")}

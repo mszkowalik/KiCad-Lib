@@ -45,6 +45,16 @@ and [docs/reference/production-economics.md](docs/reference/production-economics
 
 **Benches.**
 
+- **One bench page, driven by the batch's process** (decision
+  [0076](docs/decisions/0076-the-bench-runs-what-the-batchs-process-lists.md)).
+  Production → Bench lists the bench steps of the batch's process — Program,
+  Test, Laser mark, Label — and you tick the ones this bench does. One button
+  runs them in order. The Marking page is gone: tick Laser mark and Label to
+  mark, on one station, with one "Mark + label" button and "Engrave again" or
+  "Print again" to redo one. One Automatic switch. The label roll comes from
+  the procedure ("Change…" for another roll). A batch runs only the
+  procedures its process names; another version than the current one needs a
+  reason. A batch without a process needs one first, or a bench trial.
 - A device unplugged while the bench talks to it now fails the run with "the
   device disconnected", instead of the run going on as if nothing happened.
   With the current bench agent the run fails at the next command it sends;

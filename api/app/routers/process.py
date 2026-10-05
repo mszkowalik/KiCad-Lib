@@ -845,8 +845,10 @@ def bench_stacks(run_id: int, db: Session = Depends(get_db)):
     one it uses now. Empty for a batch that is not crafted."""
     r = _run(db, run_id)
     prog = None
+    steps: list[dict] = []
     if r.process_version_id:
         v = db.get(M.ProcessVersion, r.process_version_id)
+        steps = svc.bench_steps(db, v)
         step = svc.step_of_kind(svc._graph(v), "program") if v else None
         dep = db.get(M.Deployment, int(step["deployment_id"])) if step and step.get("deployment_id") else None
         if dep is not None:
@@ -854,7 +856,9 @@ def bench_stacks(run_id: int, db: Session = Depends(get_db)):
             prog = {"deployment_id": dep.id, "name": dep.name, "current_version_id": dep.current_version_id}
     return {"run_id": r.id, "crafted": bool(r.process_version_id),
             "selected": r.bench_stack or None, "left": twins_svc.bench_stack_left(db, r),
-            "stacks": twins_svc.bench_stacks(db, r), "program_deployment": prog}
+            "stacks": twins_svc.bench_stacks(db, r), "program_deployment": prog,
+            # What the bench page offers, and all it may run (decision 0076).
+            "steps": steps}
 
 
 class BenchStackIn(BaseModel):

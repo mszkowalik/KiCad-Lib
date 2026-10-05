@@ -17,8 +17,7 @@ import DeviceDetail from "./pages/DeviceDetail";
 import Devices from "./pages/Devices";
 import FileViewer from "./pages/FileViewer";
 import Deployments from "./pages/Deployments";
-import FlashBench from "./pages/FlashBench";
-import MarkBench from "./pages/MarkBench";
+import Bench from "./pages/Bench";
 import FlasherAdmin from "./pages/FlasherAdmin";
 import Parameters from "./pages/Parameters";
 import FlashRunDetail from "./pages/FlashRunDetail";
@@ -113,7 +112,6 @@ const PRODUCTION_LINKS = [
   { to: "/production/deployments", label: "Deployments" },
   { to: "/production/parameters", label: "Parameters" },
   { to: "/production/bench", label: "Bench" },
-  { to: "/production/marking", label: "Marking" },
   { to: "/production/devices", label: "Devices" },
   { to: "/production/files", label: "Files" },
   { to: "/production/writes", label: "Write log" },
@@ -257,8 +255,9 @@ function Shell() {
                    element={<Navigate to="/production/parameters" replace />} />
             <Route path="/production/artifacts" element={<Navigate to="/production/files" replace />} />
             <Route path="/production/flasher" element={<Navigate to="/production/deployments" replace />} />
-            <Route path="/production/bench" element={<FlashBench />} />
-            <Route path="/production/marking" element={<MarkBench />} />
+            <Route path="/production/bench" element={<Bench />} />
+            {/* Marking is a selection on the one bench now (decision 0076). */}
+            <Route path="/production/marking" element={<Navigate to="/production/bench" replace />} />
             <Route path="/production/devices" element={<Devices />} />
             <Route path="/production/devices/:id" element={<DeviceDetail />} />
             <Route path="/production/flash-runs/:id" element={<FlashRunDetail />} />

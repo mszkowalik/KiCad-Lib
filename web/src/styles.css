@@ -4360,35 +4360,23 @@ ul.tight li { margin: 2px 0; }
   align-items: start;
 }
 .bench-mark-left { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-/* Laser, the chain, printer. The middle column is the link control, and it is
-   there rather than inside a box because it belongs to neither: it says what
-   ONE press does. */
+/* The machines a press needs, the ONE button for the selected steps, and the
+   label roll (decision 0076). */
 .bench-mark-right {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  gap: 12px;
-  min-width: 0;
-  align-items: stretch;
-}
-/* Under about 1100px the two action boxes stop being side by side before they
-   start clipping the roll name. A bench laptop is the narrow case. */
-@media (max-width: 1100px) {
-  .bench-mark-cols { grid-template-columns: minmax(0, 1fr); }
-}
-@media (max-width: 680px) {
-  .bench-mark-right { grid-template-columns: minmax(0, 1fr); }
-  .bench-chain { flex-direction: row; gap: 8px; }
-}
-
-.bench-action {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  min-width: 0;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--surface-2);
 }
+/* A bench laptop is the narrow case: the two columns stack. */
+@media (max-width: 1100px) {
+  .bench-mark-cols { grid-template-columns: minmax(0, 1fr); }
+}
+
 .bench-action-head {
   display: flex;
   align-items: center;
@@ -4397,48 +4385,10 @@ ul.tight li { margin: 2px 0; }
 }
 /* Pressed with a part in the other hand, so it is a target rather than a link. */
 .bench-action-btn { padding: 14px 16px; font-size: 16px; }
-.bench-action .field-check { margin: 0; font-size: 12px; }
 .bench-roll { width: 100%; }
 /* What this station last put on a unit, under the button that did it. */
 .bench-did { font-size: 12px; color: var(--muted); }
 
-/* The chain between the two machines. Off it is quiet furniture; on it draws a
-   line across the gap, so which press does what is readable from standing. */
-.bench-chain {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  align-self: center;
-  padding: 8px 6px;
-  border: 1px dashed var(--line);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 11px;
-  cursor: pointer;
-}
-.bench-chain:disabled { cursor: default; opacity: 0.5; }
-.bench-chain-icon { font-size: 16px; line-height: 1; filter: grayscale(1); }
-.bench-chain.is-on {
-  border-style: solid;
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.bench-chain.is-on .bench-chain-icon { filter: none; }
-/* The line only exists when the two are joined. */
-.bench-chain.is-on::before,
-.bench-chain.is-on::after {
-  content: "";
-  position: absolute;
-  width: 12px;
-  border-top: 2px solid var(--accent);
-}
-.bench-chain.is-on::before { transform: translateX(-26px); }
-.bench-chain.is-on::after { transform: translateX(26px); }
-.bench-chain { position: relative; }
 
 /* One station, so the verdict can be read from where the operator stands. */
 .bench-station.is-mark .bench-verdict { font-size: 32px; padding: 14px 0; }

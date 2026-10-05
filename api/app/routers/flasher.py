@@ -1740,6 +1740,18 @@ def create_run(body: RunCreate, request: Request, db: Session = Depends(get_db))
         raise HTTPException(
             409, f"version {dep.name} v{v.version_no} is a draft — publish it, or run it as a "
                  "bench trial (no batch) to try it out")
+    if prod is not None and prod.process_version_id:
+        # A crafted batch runs only what its process lists (decision 0076):
+        # the procedure a bench step names, at that procedure's current
+        # version unless the operator says why not.
+        from ..services import process as process_svc
+        named = {(s.get("deployment") or {}).get("id")
+                 for s in process_svc.bench_steps(db, db.get(M.ProcessVersion, prod.process_version_id))}
+        if dep.id not in named:
+            raise HTTPException(
+                409, f"the process of {prod.label} names no bench step done by {dep.name} — add the step "
+                     "to the process, or run it as a bench trial (no batch)")
+        assigned = dep.current_version_id
     # Drafts are validated too. They used to be exempt, and a draft is exactly
     # where an unresolved {placeholder} does the most damage: `subst` leaves the
     # literal text, `set_and_check` compares what it sent against what it read
