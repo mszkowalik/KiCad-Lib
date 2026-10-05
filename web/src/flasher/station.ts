@@ -166,6 +166,9 @@ export class Station {
   cancelBootWait = false;
   onLine: (line: string) => void = () => {};
   onProgress: (pct: number | null) => void = () => {};
+  /** The console port died under a run — the device was unplugged. The run
+   *  client tells the engine, which fails the run at once. */
+  onDeviceLost: (error: string) => void = () => {};
 
   /** The agent's console session, while one is open. */
   private monitorAgent: MarkAgent | null = null;
@@ -415,6 +418,11 @@ export class Station {
         if (!this.monitorRunning || this.monitorAgent !== agent) return;
         this.monitorSeen = r.seen;
         for (const line of r.lines) this.onLine(line);
+        if (r.error) {
+          this.emit("err", `the device disconnected: ${r.error}`);
+          this.onDeviceLost(r.error);
+          return; // nothing more will come from this port
+        }
         if (!r.open) return; // the session was closed under us
       } catch (e) {
         if (!this.monitorRunning) return;

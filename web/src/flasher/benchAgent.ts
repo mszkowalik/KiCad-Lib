@@ -415,7 +415,7 @@ export class MarkAgent {
   async monitorLines(
     since: number,
     waitS = 0,
-  ): Promise<{ open: boolean; seen: number; lines: string[] }> {
+  ): Promise<{ open: boolean; seen: number; lines: string[]; error?: string }> {
     // The agent holds this request for `waitS`, so the client deadline must sit
     // ABOVE it. At the default 10 s both sides expired together and any quiet
     // device produced "the bench agent did not answer within 10s" on a poll
@@ -429,6 +429,9 @@ export class MarkAgent {
       open: Boolean(r.open),
       seen: Number(r.seen ?? since),
       lines: ((r.lines ?? []) as { text?: string }[]).map((l) => String(l.text ?? "")),
+      // The console reader stopped: the device left the bus. An older agent
+      // never sends it, and its runs wait out each step as before.
+      error: r.error ? String(r.error) : undefined,
     };
   }
 

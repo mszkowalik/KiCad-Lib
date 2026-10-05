@@ -43,6 +43,13 @@ and [docs/reference/production-economics.md](docs/reference/production-economics
   refused. A transfer is undone on its document only (Transfers → Reverse),
   which checks what the receiver used.
 
+**Benches.**
+
+- A device unplugged while the bench talks to it now fails the run with "the
+  device disconnected", instead of the run going on as if nothing happened.
+  With the current bench agent the run fails at the next command it sends;
+  a bench agent downloaded after this release also ends a wait at once.
+
 **A unit's history can be corrected (0074).**
 
 - **Process versions:** "Publish as history" publishes a version for older

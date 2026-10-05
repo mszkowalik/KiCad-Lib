@@ -44,6 +44,17 @@ Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model
   (`mark_laser`, `print_label`, after the bench's `skip_ops`), so "Print
   label" alone never warns about the enclosure.
 
+- **A device unplugged during the console phase fails the run at once**
+  (2026-10-05). The agent's console reader stops on the read error and
+  `/monitor` reports `error`; the page, and a failed `tx` write, send
+  `{t:"device_lost"}`; the engine ends the current wait and fails every later
+  step that talks to the device, until a `serial_open` or `reset` opens the
+  console again (a C6 re-enumerates on every reset). An `optional` step still
+  passes, because a device that is gone is silent, which is what it expects.
+  Before this, every step waited out its timeout and a Backlog with no
+  expected key passed, so a pulled device looked like a run still going.
+  `tests/flasher/test_device_lost.py`.
+
 - **"Which devices did this batch BUILD?" and "which did it PROGRAM?" are two
   questions with two answers.** Built is `DeviceUnit.production_run_id`, set
   once from the `produced` event and never moved by a later pass — it carries

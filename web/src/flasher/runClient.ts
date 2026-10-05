@@ -107,6 +107,7 @@ export class RunClient {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: "rx", data: line }));
       };
       this.station.onProgress = (pct) => this.events.onProgress(pct);
+      this.station.onDeviceLost = (error) => this.send({ t: "device_lost", error });
 
       ws.onopen = () => {
         ws.send(
@@ -171,7 +172,11 @@ export class RunClient {
           this.events.onLog("tx", data.replace(/\n$/, ""));
           await this.station.write(data);
         } catch (e) {
-          this.events.onLog("err", `tx failed: ${(e as Error).message}`);
+          const why = `tx failed: ${(e as Error).message}`;
+          this.events.onLog("err", why);
+          // A write that cannot reach the device: the engine must not wait out
+          // the reply, or the run keeps going with nothing on the bench.
+          this.send({ t: "device_lost", error: why });
         }
         return;
       }

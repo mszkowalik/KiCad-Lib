@@ -47,7 +47,8 @@ The API, all on 127.0.0.1:19842:
     POST /print                 {value, printer, size, dots, rotate, copies} -> {job}
     POST /esp                   {op: connect|erase|flash|reset, port, chip, baud, images, flash_config} -> {job}
     POST /monitor/open          {port, baud, signals} — the device console, held here
-    GET  /monitor?since=<n>&wait=<s>  console lines after `n`; `wait` long-polls
+    GET  /monitor?since=<n>&wait=<s>  console lines after `n`; `wait` long-polls;
+                                `error` once the device left the bus
     POST /monitor/write         {text}
     POST /monitor/reset         pulse EN for a normal boot
     POST /monitor/close
@@ -1256,6 +1257,9 @@ class Monitor:
         # 3 ms (run 6377, 2026-09-17: SetOption153 answered and was drained).
         self.lock = threading.Condition()
         self.closing = False
+        # Why the reader stopped: the device left the bus. `/monitor` reports
+        # it, so the run fails at once instead of waiting out every step.
+        self.error = ""
         # timeout is the READ deadline, and `read(n)` waits for all n bytes or
         # for it — so a big n plus a long timeout is a latency floor, not a
         # buffer size. Kept short, and `_read` asks for one byte at a time and
@@ -1289,6 +1293,7 @@ class Monitor:
                     chunk += self.ser.read(self.ser.in_waiting)
             except Exception as exc:  # noqa: BLE001 — the device left the bus
                 if not self.closing:
+                    self.error = str(exc) or exc.__class__.__name__
                     self._add(f"[read error: {exc}]")
                 return
             if chunk:
@@ -1595,7 +1600,10 @@ class Agent:
         # device look like an abandoned tab.
         self.monitor_touched = time.time()
         seen, lines = m.since(since, wait)
-        return {"open": True, "seen": seen, "lines": lines}
+        out = {"open": True, "seen": seen, "lines": lines}
+        if m.error:
+            out["error"] = m.error   # the device left the bus: the page tells the engine
+        return out
 
     def monitor_write(self, body: dict) -> dict:
         m = self.monitor

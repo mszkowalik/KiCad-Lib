@@ -25,6 +25,7 @@ WebSocket protocol (server view):
   send {t:"prompt", id, field, label, secret} / recv {t:"prompt_result", id, value}
   send {t:"notice", id, level, code, text, hint} / recv {t:"notice_ack", id, ok, reason}
   send {t:"state", index, total, label, status}
+  recv {t:"device_lost", error}             — the console port died (unplugged)
   recv {t:"abort"}
   send {t:"done", status, error?, results}
 """
@@ -164,6 +165,11 @@ class RunEngine:
         self.rx_q: asyncio.Queue[str] = asyncio.Queue()
         self.pending: dict[int, asyncio.Future] = {}
         self.abort_event = asyncio.Event()
+        # The device left the bus during the console phase (the bench says
+        # `device_lost`): every wait for it ends, and every step that talks to
+        # it fails, until the console is opened again.
+        self.device_lost = ""
+        self.lost_event = asyncio.Event()
         self._msg_id = 0
         self._seq = 0
         self._logbuf: list[dict] = []
@@ -390,6 +396,11 @@ class RunEngine:
                     fut = self.pending.pop(int(msg.get("id", -1)), None)
                     if fut and not fut.done():
                         fut.set_result(msg)
+                elif t == "device_lost":
+                    if not self.device_lost:
+                        self.device_lost = str(msg.get("error") or "the port is gone")[:300]
+                        self.log("err", f"the device disconnected: {self.device_lost}")
+                    self.lost_event.set()
                 elif t == "abort":
                     self.log("app", "operator aborted the run")
                     self.abort_event.set()
@@ -484,11 +495,14 @@ class RunEngine:
             self.rx_q.get_nowait()
 
     async def next_line(self, timeout: float) -> str | None:
+        """The next console line, or None at the deadline — at once when the
+        device is gone, since no line will come."""
         abort_wait = asyncio.create_task(self.abort_event.wait())
+        lost_wait = asyncio.create_task(self.lost_event.wait())
         getter = asyncio.create_task(self.rx_q.get())
         try:
             done, _ = await asyncio.wait(
-                {getter, abort_wait}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
+                {getter, abort_wait, lost_wait}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
             )
             if getter in done:
                 return getter.result()
@@ -497,10 +511,13 @@ class RunEngine:
             return None
         finally:
             abort_wait.cancel()
+            lost_wait.cancel()
             if not getter.done():
                 getter.cancel()
 
     async def send_serial(self, text: str, mask: str | None = None) -> None:
+        if self.device_lost:
+            raise StepFailed(f"the device disconnected ({self.device_lost})")
         shown = text if mask is None else text.replace(mask, "•••")
         self.log("tx", shown.rstrip("\n"))
         await self._send({"t": "tx", "data": text})
@@ -613,8 +630,14 @@ class RunEngine:
                 except (StepFailed, Aborted) as e:
                     dur = int((asyncio.get_running_loop().time() - t0) * 1000)
                     msg = str(e) or ("aborted" if isinstance(e, Aborted) else "fail")
+                    lost = isinstance(e, StepFailed) and self.device_lost and "disconnected" not in msg
+                    if lost:
+                        # A wait that ended because the device left the bus says so.
+                        msg = f"the device disconnected ({self.device_lost}) — {msg}"
                     await self._db(lambda db, sid=step_id, d=dur, m=msg:
                                    self._step_end(db, sid, "fail", d, m))
+                    if lost:
+                        raise StepFailed(msg) from e
                     raise
         except Aborted:
             status, error = "aborted", "aborted"
@@ -899,6 +922,11 @@ class RunEngine:
         op = step.get("op")
         V = lambda v: protocol.subst(v, self.vars)  # noqa: E731
         timeout = float(step.get("timeout", 10))
+        if self.device_lost and step.get("optional") and op not in BROWSER_OPS:
+            # Silence is what an optional step expects, and a device that is
+            # gone is silent: the V2 flow's last step restarts the device.
+            self.log("app", f"{step.get('cmd') or op}: the device is gone, which this step allows")
+            return "pass"
 
         if op in BROWSER_OPS:
             args = dict(step)
@@ -917,6 +945,11 @@ class RunEngine:
             if op == "serial_open":
                 args.setdefault("baud", self.spec["monitor_baud"])
             info = await self.action(op, args, timeout=float(step["timeout"]) if "timeout" in step else None)
+            if op in ("serial_open", "reset"):
+                # A console opened again (a C6 re-enumerates after a reset)
+                # talks to whatever is on the port now.
+                self.device_lost = ""
+                self.lost_event.clear()
             if op == "esp_connect":
                 chip, mac = str(info.get("chip", "")), str(info.get("mac", ""))
                 if not mac:
