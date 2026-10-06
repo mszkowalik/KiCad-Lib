@@ -20,7 +20,7 @@ from ..services import cost_state, fx, gitrepo, project_bom, project_ingest, pro
 from ..services import mqtt_monitor
 from ..services.crypto import decrypt_token, encrypt_token
 from .users import require_admin
-from .util import acting_name, audit
+from .util import acting_name, audit, content_disposition
 
 router = APIRouter(prefix="/api", tags=["projects"])
 
@@ -517,7 +517,8 @@ def fab_bundle(snapshot_id: int, board: str, db: Session = Depends(get_db)):
     s, _, rel = _rel_src(db, snapshot_id, board, "pcb")
     key = project_render.render_key(s.project_id, s.sha, board, "fab.zip")
     resp = _render_or_404(key, "fab", rel)
-    resp.headers["Content-Disposition"] = f'attachment; filename="{board}-{s.ref_name or s.sha[:10]}-fab.zip"'
+    resp.headers["Content-Disposition"] = content_disposition(
+        "attachment", f"{board}-{s.ref_name or s.sha[:10]}-fab.zip")
     return resp
 
 

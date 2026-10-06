@@ -65,6 +65,7 @@ new parallel implementations are the main thing to avoid.
 | Expose an agent capability over HTTP | `routers/agent.py` dispatches `services/agent_tools.py::TOOLS` by name — add a tool there and it's exposed to the MCP server automatically; never hand-write a per-tool agent route |
 | S-expr parsing / symbol+footprint parse cache | `util/sexpr.py`, `services/parse_cache.py` |
 | Free-form notes on ANY entity | the generic `comments` table (`M.Comment`, `target_type`+`target_id`) via `routers/comments.py` — never add a per-entity comment table |
+| A file download's `Content-Disposition` | `routers/util.py` → `content_disposition(kind, filename)` — a name with "Ł" in a plain `filename="…"` answers 500 (headers are latin-1) |
 
 If a helper is *almost* right, extend it in place rather than forking a near-copy.
 

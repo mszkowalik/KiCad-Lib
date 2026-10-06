@@ -18,7 +18,7 @@ from .. import models as M
 from ..db import get_db
 from ..services import companies as svc
 from .users import require_admin
-from .util import acting_name, audit
+from .util import acting_name, audit, content_disposition
 
 router = APIRouter(prefix="/api", tags=["companies"])
 
@@ -207,7 +207,8 @@ def accountant_files(company_id: int, rows: str = "", db: Session = Depends(get_
     data, summary = accountant.bundle(db, company_id, picks)
     name = re.sub(r"[^A-Za-z0-9]+", "", c.name or "company") or "company"
     return Response(data, media_type="application/zip", headers={
-        "Content-Disposition": f'attachment; filename="{name}-for-the-accountant-{date.today().isoformat()}.zip"',
+        "Content-Disposition": content_disposition(
+            "attachment", f"{name}-for-the-accountant-{date.today().isoformat()}.zip"),
         "X-Files": str(summary["files"]), "X-Missing-Files": str(summary["missing"])})
 
 
@@ -309,7 +310,7 @@ def get_tax_entry_file(company_id: int, entry_id: int, file_id: int, inline: boo
     f = record_files.one(db, "tax_entry", entry_id, file_id)
     disp = "inline" if inline else "attachment"
     return Response(record_files.content(f), media_type=f.content_type,
-                    headers={"Content-Disposition": f'{disp}; filename="{f.filename}"'})
+                    headers={"Content-Disposition": content_disposition(disp, f.filename)})
 
 
 @router.get("/projects/{project_id}/ownership")

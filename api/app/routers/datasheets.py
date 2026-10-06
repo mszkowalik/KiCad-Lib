@@ -47,7 +47,7 @@ from ..services.datasheet_store import (
 )
 from ..services.mirror import top_level_of, update_mirror_symbols
 from .users import require_admin
-from .util import actor_of
+from .util import actor_of, content_disposition
 
 router = APIRouter(prefix="/api/datasheets", tags=["datasheets"])
 
@@ -327,5 +327,5 @@ def _serve(v: M.DatasheetVersion) -> Response:
     return Response(
         content=v.data,
         media_type=v.content_type or "application/octet-stream",
-        headers={"Content-Disposition": f'inline; filename="{v.filename or "datasheet"}"'},
+        headers={"Content-Disposition": content_disposition("inline", v.filename or "datasheet")},
     )

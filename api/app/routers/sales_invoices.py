@@ -23,7 +23,7 @@ from ..services.invoicing import fa3, numbering
 from ..services.invoicing import pdf as invoice_pdf
 from ..services.invoicing import service as svc
 from .users import require_admin
-from .util import acting_name, audit
+from .util import acting_name, audit, content_disposition
 
 router = APIRouter(prefix="/api", tags=["sales-invoices"])
 
@@ -227,7 +227,7 @@ def invoice_xml(invoice_id: int, db: Session = Depends(get_db)):
         data = storage.get_bytes(inv.official_xml_key)
         if data:
             return Response(data, media_type="application/xml",
-                            headers={"Content-Disposition": f'attachment; filename="{_file(inv)}-KSeF.xml"'})
+                            headers={"Content-Disposition": content_disposition("attachment", f"{_file(inv)}-KSeF.xml")})
     try:
         xml = fa3.build(inv)
     except fa3.Refused as e:
@@ -237,7 +237,7 @@ def invoice_xml(invoice_id: int, db: Session = Depends(get_db)):
         raise HTTPException(422, {"error": f"the FA(3) schema refuses this invoice: {errors[0]}",
                                   "errors": errors[:20]})
     return Response(xml, media_type="application/xml",
-                    headers={"Content-Disposition": f'attachment; filename="{_file(inv)}.xml"'})
+                    headers={"Content-Disposition": content_disposition("attachment", f"{_file(inv)}.xml")})
 
 
 @router.get("/sales-invoices/{invoice_id}/pdf")
@@ -246,7 +246,7 @@ def invoice_pdf_file(invoice_id: int, inline: bool = True, db: Session = Depends
     data = invoice_pdf.render(inv)
     disp = "inline" if inline else "attachment"
     return Response(data, media_type="application/pdf",
-                    headers={"Content-Disposition": f'{disp}; filename="{_file(inv)}.pdf"'})
+                    headers={"Content-Disposition": content_disposition(disp, f"{_file(inv)}.pdf")})
 
 
 def _file(inv: M.SalesInvoice) -> str:
@@ -409,7 +409,7 @@ def get_invoice_file(invoice_id: int, file_id: int, inline: bool = True, db: Ses
     f = record_files.one(db, "sales_invoice", invoice_id, file_id)
     disp = "inline" if inline else "attachment"
     return Response(record_files.content(f), media_type=f.content_type,
-                    headers={"Content-Disposition": f'{disp}; filename="{f.filename}"'})
+                    headers={"Content-Disposition": content_disposition(disp, f.filename)})
 
 
 # ------------------------------------------------------------ history (0077)

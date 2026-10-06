@@ -18,7 +18,7 @@ from .. import models as M
 from ..db import get_db
 from ..services import companies as company_svc
 from ..services import orders, production, project_bom, run_actuals, storage
-from .util import acting_name, audit
+from .util import acting_name, audit, content_disposition
 
 router = APIRouter(prefix="/api", tags=["production-runs"])
 
@@ -612,7 +612,7 @@ def download_attachment(attachment_id: int, inline: bool = False,
     return Response(
         content=data,
         media_type=a.content_type,
-        headers={"Content-Disposition": f'{disposition}; filename="{a.filename}"'},
+        headers={"Content-Disposition": content_disposition(disposition, a.filename)},
     )
 
 
@@ -703,7 +703,7 @@ def production_file(file_id: int, db: Session = Depends(get_db)):
     return Response(
         content=data,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{f.filename}"'},
+        headers={"Content-Disposition": content_disposition("attachment", f.filename)},
     )
 
 

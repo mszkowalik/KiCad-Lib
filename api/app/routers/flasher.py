@@ -43,7 +43,7 @@ from ..services.flasher import (bundle, checks as checks_svc, credentials,
                                 params as params_svc, transports, validate)
 from ..services.flasher import engine as engine_mod
 from ..services.flasher.engine import (SERIAL_MAX, SERIAL_MIN, RunEngine)
-from .util import acting_name, actor_of, audit
+from .util import acting_name, actor_of, audit, content_disposition
 
 router = APIRouter(prefix="/api/flasher", tags=["flasher"])
 
@@ -268,7 +268,7 @@ def firmware_bin(asset_id: int, db: Session = Depends(get_db)):
         raise HTTPException(410, "firmware bytes missing from storage")
     return Response(
         content=data, media_type="application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{asset.filename}"'},
+        headers={"Content-Disposition": content_disposition("attachment", asset.filename)},
     )
 
 

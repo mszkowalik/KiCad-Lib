@@ -1,6 +1,8 @@
 """Shared helpers for routers."""
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -199,3 +201,20 @@ def part_display_name(db: Session, component_id: int | None = None,
             if comp.name:
                 return comp.name, True
     return ((mpn or "").strip() or (lcsc or "").strip()), False
+
+
+def content_disposition(kind: str, filename: str) -> str:
+    """A `Content-Disposition` header value for ANY file name.
+
+    HTTP headers are latin-1, so a name carrying "Ł" or "ą" in a plain
+    `filename="…"` answered 500 and the file could not be opened at all (six
+    supplier originals, found 2026-10-07). RFC 6266: an ASCII `filename` for
+    old clients and the exact UTF-8 name in `filename*`, which browsers use."""
+    import unicodedata
+    from urllib.parse import quote
+
+    name = re.sub(r'["\r\n]', "", filename or "") or "file"
+    plain = unicodedata.normalize("NFKD", name.translate(str.maketrans("Łł", "Ll"))).encode("ascii", "ignore").decode()
+    if plain == name:
+        return f'{kind}; filename="{name}"'
+    return f"{kind}; filename=\"{plain or 'file'}\"; filename*=UTF-8''{quote(name, safe='')}"
