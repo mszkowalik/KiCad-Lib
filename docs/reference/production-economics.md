@@ -391,6 +391,15 @@ guard reads one company's stock is in [companies.md](companies.md).
   `exclude_reason` only when the line's step changes (a lot arrived, or was
   cancelled); otherwise a destination somebody chose survives the refresh. The importer itself refuses a document it
   already holds, and rightly — a second document doubles the purchase.
+- **A parts order's invoice PDF is DRAWN, because JLCPCB has none to give.**
+  Its DOWNLOAD button screenshots the page in the browser; the platform draws
+  the same page from `getInvoiceInfo` (`services/jlc_invoice_pdf.py`, decision
+  [0082](../decisions/0082-a-jlcpcb-parts-invoice-is-drawn-from-its-data.md)).
+  The buyer's street, building and e-mail arrive SM2-encrypted with the key
+  pair of the session's `secret/update` call, so decrypt with
+  `get_parts_invoice(..., reveal=True)` in the SAME client that fetched them —
+  a key minted later cannot read them. The layout constants are measurements
+  of a real JLCPCB file: change them only against an overlay with one.
 - **JLC states a batch's status; do not infer it.** The order listing
   `sync_stage` fetches carries `batchStatus` (`shipped` | `inProduction` |
   `cancelled` | `waitPay` | `waitReview`), stored on `jlc_imports.jlc_status`

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-06 (JLCPCB parts invoices as PDF)
+
+Decision [0082](docs/decisions/0082-a-jlcpcb-parts-invoice-is-drawn-from-its-data.md).
+
+- **A JLCPCB parts order now gets its invoice PDF.** JLCPCB keeps no file:
+  its DOWNLOAD button takes a screenshot of the invoice page. The platform
+  draws the same page from the same data, and it looks the same. The text
+  stays searchable.
+- **Importing a parts order attaches the PDF at once.** For existing
+  documents, `POST /api/jlc/web/invoice-pdfs` with `document_ids` draws it.
+  A document that already has a PDF keeps it unless `force` is set.
+- **The buyer's street, building number and e-mail are decrypted.** JLCPCB
+  sends them encrypted (SM2), and its page decrypts them in the browser.
+
 ## 2026-10-06 (PIT or CIT by company)
 
 - **A company has a legal form**, on Admin → Companies: sole trader (PIT) or

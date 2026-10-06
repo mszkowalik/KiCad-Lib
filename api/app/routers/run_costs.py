@@ -5,7 +5,6 @@ Thin, per the api conventions: parse the request, call `services/run_actuals`,
 shape the response. Every mutation writes an audit row WITH details — this is
 the money path, so "something changed" is not good enough.
 """
-import uuid
 from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -16,7 +15,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..db import get_db
 from ..models import utcnow
-from ..services import (cost_steps, journal, nbp, run_actuals, storage,
+from ..services import (cost_steps, document_files, journal, nbp, run_actuals,
                         substitutions, supplier_parts)
 from ..services import companies as company_svc
 from .util import acting_name, audit, part_display_name
@@ -1586,30 +1585,15 @@ MAX_DOC_ATTACHMENT_MB = 25
 @router.post("/run-documents/{doc_id}/attachment")
 async def upload_doc_attachment(doc_id: int, file: UploadFile = File(...),
                                 db: Session = Depends(get_db)):
-    """File the supplier's original PDF/scan with the document it evidences.
-
-    Stored under its own `documents/` prefix, never the run's: `delete_run` wipes
-    the run prefix, and the evidence for a money row has to outlive the run.
-    """
+    """File the supplier's original PDF/scan with the document it evidences
+    (`services/document_files.py` stores it)."""
     doc = _doc(db, doc_id)
     data = await file.read()
     if len(data) > MAX_DOC_ATTACHMENT_MB * 1024 * 1024:
         raise HTTPException(413, f"attachment larger than {MAX_DOC_ATTACHMENT_MB} MB")
-    filename = file.filename or "document"
-    key = f"documents/{doc.id}/{uuid.uuid4().hex[:12]}-{filename}"
-    storage.put_bytes(key, data, file.content_type or "application/octet-stream")
-    a = M.RunAttachment(
-        document_id=doc.id, filename=filename,
-        content_type=file.content_type or "application/octet-stream",
-        size_bytes=len(data), minio_key=key,
-    )
-    db.add(a)
-    db.flush()
-    # Newest upload becomes the document's headline attachment; older ones stay
-    # reachable through the list, so a corrected scan never destroys the first.
-    doc.attachment_id = a.id
+    a = document_files.add(db, doc, file.filename or "document", file.content_type, data)
     audit(db, "run.document.attachment.add", "run_attachment", a.id,
-          {"document_id": doc.id, "filename": filename, "size_bytes": len(data)})
+          {"document_id": doc.id, "filename": a.filename, "size_bytes": len(data)})
     db.commit()
     return {"id": a.id, "document_id": doc.id, "filename": a.filename, "size_bytes": a.size_bytes}
 

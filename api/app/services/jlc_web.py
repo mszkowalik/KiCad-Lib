@@ -46,6 +46,7 @@ to this codebase's httpx + settings + encrypted-credential conventions.
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import threading
@@ -58,6 +59,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from .. import models as M
+from . import sm2
 from .crypto import decrypt_token, encrypt_token
 
 log = logging.getLogger(__name__)
@@ -315,6 +317,9 @@ class WebClient:
     def __init__(self, cookies: dict[str, str]):
         self._cookies = cookies
         self._secret_key: str | None = None
+        # The SM2 private key `secret/update` hands back with the key id: the
+        # server encrypts personal fields of every response to that key pair.
+        self._private_key: str | None = None
         self._secret_minted_at = 0.0
 
     # -- auth legs
@@ -376,6 +381,7 @@ class WebClient:
         if not key:
             raise JlcWebError(f"could not mint secret key: {json.dumps(body)[:200]}")
         self._secret_key = key
+        self._private_key = (body.get("data") or {}).get("privateHexKey") or None
         self._secret_minted_at = time.time()
         return key
 
@@ -733,13 +739,36 @@ def list_parts_orders(db: Session, *, page: int = 1, page_size: int = 25,
     return data
 
 
-def get_parts_invoice(db: Session, order_batch_no: str) -> dict:
-    """Invoice for a parts purchase batch (POB...) — `componentGoodsVOList`."""
+def get_parts_invoice(db: Session, order_batch_no: str, *, reveal: bool = False) -> dict:
+    """Invoice for a parts purchase batch (POB...) — `componentGoodsVOList`.
+
+    JLC sends the buyer's street, building number and e-mail as `{secret}…`.
+    `reveal=True` decrypts them with the key pair of the call (`reveal_secrets`),
+    for the printed invoice; everything else reads the payload as it came."""
     client = _get_client(db)
     payload = {"addressType": "billing", "orderBatchAccessId": "null", "orderBatchNo": order_batch_no}
     data = client.post(PARTS_INVOICE_PATH, payload).get("data") or {}
     _mark_ok(db)
-    return data
+    return reveal_secrets(data, client._private_key) if reveal else data
+
+
+_SECRET = "{secret}"
+
+
+def reveal_secrets(value, private_hex: str | None):
+    """Decrypt every `{secret}…` string in a JLC payload: SM2 (`services.sm2`)
+    to Base64 to UTF-8, the same three steps the web page runs. A field that
+    cannot be read stays as it came, so a key mismatch shows instead of hiding."""
+    if isinstance(value, dict):
+        return {k: reveal_secrets(v, private_hex) for k, v in value.items()}
+    if isinstance(value, list):
+        return [reveal_secrets(v, private_hex) for v in value]
+    if isinstance(value, str) and value.startswith(_SECRET) and private_hex:
+        try:
+            return base64.b64decode(sm2.decrypt(value[len(_SECRET):], private_hex)).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return value
+    return value
 
 
 def get_customer_component_stock(db: Session, *, page: int = 1, page_size: int = 100,

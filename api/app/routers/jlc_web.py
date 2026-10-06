@@ -12,12 +12,13 @@ never write money rows as a side effect.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from .. import models as M
 from ..db import get_db
-from ..services import jlc_web
-from .util import audit
+from ..services import jlc_invoice_pdf, jlc_web
+from .util import acting_name, audit
 
 router = APIRouter(prefix="/api/jlc/web", tags=["jlc-web"])
 
@@ -115,3 +116,37 @@ def parts_orders(page: int = 1, page_size: int = 25, status: str = "", search: s
 def parts_invoice(order_batch_no: str, db: Session = Depends(get_db)):
     _guard(db)
     return _run(jlc_web.get_parts_invoice, db, order_batch_no)
+
+
+class InvoicePdfBody(BaseModel):
+    document_ids: list[int] = Field(min_length=1, max_length=200)
+    force: bool = False
+
+
+@router.post("/invoice-pdfs")
+def invoice_pdfs(body: InvoicePdfBody, db: Session = Depends(get_db)):
+    """Draw JLCPCB's parts invoice for each document and file it with the
+    document (decision 0082). JLCPCB keeps no PDF of a parts order; its own
+    DOWNLOAD button draws one in the browser from the same data.
+
+    A document that already has a PDF is skipped unless `force`. Each document
+    commits on its own, so one refusal does not undo the others; an expired
+    session stops the run with 401 and keeps what was attached before it."""
+    _guard(db)
+    actor = acting_name()
+    results = []
+    for doc_id in body.document_ids:
+        doc = db.get(M.RunCostDocument, doc_id)
+        if doc is None:
+            results.append({"document_id": doc_id, "status": "error", "error": "no such document"})
+            continue
+        try:
+            results.append(jlc_invoice_pdf.attach(db, doc, force=body.force, actor=actor))
+            db.commit()
+        except jlc_web.JlcSessionExpired as e:
+            db.rollback()
+            raise HTTPException(401, {"error": str(e), "results": results}) from e
+        except (jlc_web.JlcWebError, jlc_invoice_pdf.InvoicePdfError) as e:
+            db.rollback()
+            results.append({"document_id": doc_id, "status": "error", "error": str(e)})
+    return {"results": results}

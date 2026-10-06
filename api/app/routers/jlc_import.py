@@ -13,6 +13,8 @@ JOP partner credentials). The shape here is deliberate:
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -20,8 +22,10 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..db import get_db
 from ..models import utcnow
-from ..services import jlc_apply, jlc_import, jlc_web, journal, run_actuals
+from ..services import jlc_apply, jlc_import, jlc_invoice_pdf, jlc_web, journal, run_actuals
 from .util import acting_name, audit
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/jlc/import", tags=["jlc-import"])
 
@@ -429,7 +433,25 @@ def apply_parts(pob: str, dry_run: bool = True, db: Session = Depends(get_db)):
     audit(db, "jlc.import.parts.apply", "run_cost_document", res.get("document_id"),
           details={"pob": pob, "batch_id": h["batch_id"]}, actor=actor)
     db.commit()
-    return {**res, "batch_id": h["batch_id"], "reversible": True}
+    return {**res, "batch_id": h["batch_id"], "reversible": True,
+            "invoice_pdf": _attach_invoice_pdf(db, res.get("document_id"), actor)}
+
+
+def _attach_invoice_pdf(db: Session, doc_id: int | None, actor: str) -> dict | None:
+    """File the drawn invoice with a freshly imported parts order (decision 0082).
+    Best effort: the import is committed and stands whatever happens here, and
+    `POST /api/jlc/web/invoice-pdfs` draws the file again later."""
+    doc = db.get(M.RunCostDocument, doc_id) if doc_id else None
+    if doc is None:
+        return None
+    try:
+        out = jlc_invoice_pdf.attach(db, doc, actor=actor)
+        db.commit()
+        return out
+    except Exception as e:  # noqa: BLE001 — a PDF failure must not hide the import that succeeded
+        db.rollback()
+        log.warning("invoice PDF for document %s not attached: %s", doc_id, e)
+        return {"document_id": doc_id, "status": "error", "error": str(e)}
 
 
 @router.post("/parts/{pob}/refresh")
