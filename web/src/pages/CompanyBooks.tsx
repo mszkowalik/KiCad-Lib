@@ -51,7 +51,9 @@ function acc(m: BooksMonth, kind: string): string {
   return e ? `${pl(e.amount)}${e.status === "final" ? "" : " (est.)"}` : "";
 }
 
-function MonthPanel({ companyId, m, onSaved }: { companyId: number; m: BooksMonth; onSaved: () => void }) {
+function MonthPanel({ companyId, m, incomeTax, onSaved }: {
+  companyId: number; m: BooksMonth; incomeTax: "pit" | "cit"; onSaved: () => void;
+}) {
   const [kind, setKind] = useState("vat");
   const [amount, setAmount] = useState("");
   const [interest, setInterest] = useState("");
@@ -95,7 +97,8 @@ function MonthPanel({ companyId, m, onSaved }: { companyId: number; m: BooksMont
       <FieldRow>
         <Field label="The accountant's figure">
           <select className="text" value={kind} onChange={(e) => setKind(e.target.value)}>
-            {Object.entries(KIND_TEXT).map(([k, t]) => <option key={k} value={k}>{t}</option>)}
+            {Object.entries(KIND_TEXT).filter(([k]) => k !== (incomeTax === "cit" ? "pit" : "cit"))
+              .map(([k, t]) => <option key={k} value={k}>{t}</option>)}
           </select>
         </Field>
         <Field label="Amount (PLN)">
@@ -337,10 +340,13 @@ export default function CompanyBooks() {
   }, [load]);
 
   const taxLabel = books?.income_tax ?? (books?.tax_form?.startsWith("cit") ? "cit" : "pit");
+  // A company pays ZUS only as an employer (its sole shareholder pays his own,
+  // outside the company), so its ZUS column shows only when it has a figure.
+  const showZus = books?.income_tax !== "cit" || !!books?.months.some((m) => m.accountant.zus);
   const cols = useMemo<Column<BooksMonth>[]>(() => [
     { key: "month", label: "Month", width: 8, className: "mono", get: (m) => m.month },
-    { key: "rev", label: "Revenue", width: 11, numeric: true, get: (m) => Number(m.revenue_net), render: (m) => <>{pl(m.revenue_net)}</> },
-    { key: "cost", label: "Costs", width: 11, numeric: true, get: (m) => Number(m.costs_net), render: (m) => <>{pl(m.costs_net)}</> },
+    { key: "rev", label: "Revenue", width: showZus ? 11 : 16, numeric: true, get: (m) => Number(m.revenue_net), render: (m) => <>{pl(m.revenue_net)}</> },
+    { key: "cost", label: "Costs", width: showZus ? 11 : 15, numeric: true, get: (m) => Number(m.costs_net), render: (m) => <>{pl(m.costs_net)}</> },
     { key: "inc", label: "Income", width: 11, numeric: true, get: (m) => Number(m.income), render: (m) => <>{pl(m.income)}</> },
     { key: "vat", label: "VAT est.", width: 10, numeric: true, get: (m) => Number(m.vat_estimate), render: (m) => <>{pl(m.vat_estimate)}</> },
     { key: "vat_a", label: "VAT (acct.)", width: 11, numeric: true, get: (m) => Number(m.accountant.vat?.amount ?? 0), render: (m) => <>{acc(m, "vat")}</> },
@@ -349,11 +355,12 @@ export default function CompanyBooks() {
       title: (m) => m.tax_form ? `${TAX_FORM_TEXT[m.tax_form] ?? m.tax_form}${m.tax_rate ? `, effective ${m.tax_rate} %` : ""}` : "no tax form" },
     { key: "tax_a", label: `${taxLabel.toUpperCase()} (acct.)`, width: 11, numeric: true,
       get: (m) => Number(m.accountant[taxLabel]?.amount ?? 0), render: (m) => <>{acc(m, taxLabel)}</> },
-    { key: "zus", label: "ZUS (acct.)", width: 9, numeric: true, get: (m) => Number(m.accountant.zus?.amount ?? 0), render: (m) => <>{acc(m, "zus")}</> },
+    ...(showZus ? [{ key: "zus", label: "ZUS (acct.)", width: 9, numeric: true, get: (m: BooksMonth) => Number(m.accountant.zus?.amount ?? 0),
+      render: (m: BooksMonth) => <>{acc(m, "zus")}</> } as Column<BooksMonth>] : []),
     { key: "int", label: "Interest", width: 9, numeric: true, get: (m) => Number(m.interest ?? 0),
       render: (m) => <>{Number(m.interest) ? pl(m.interest) : ""}</>,
       title: () => "Late-payment interest paid with the month's taxes. Never a cost." },
-  ], [taxLabel]);
+  ], [taxLabel, showZus]);
 
   const overhead = books ? Object.entries(books.overhead).map(([k, v]) => ({ key: k, label: books.overhead_labels[k] ?? k, amount: v })) : [];
   return (
@@ -392,7 +399,7 @@ export default function CompanyBooks() {
           <h2 className="card-title">Months</h2>
           {books === null ? <Spinner label="Computing…" /> : (
             <DataTable rows={books.months} rowKey={(m) => m.month} columns={cols} empty="—"
-              expand={(m) => <MonthPanel companyId={companyId} m={m} onSaved={() => load()} />} />
+              expand={(m) => <MonthPanel companyId={companyId} m={m} incomeTax={taxLabel} onSaved={() => load()} />} />
           )}
         </div>
         {companyId ? <AccountantCard companyId={companyId} /> : null}

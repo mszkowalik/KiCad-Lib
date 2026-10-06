@@ -62,6 +62,10 @@ Production → Company books.
   may have `cit_9` or `cit_19`. A form that does not fit is refused, and the
   page labels its columns PIT or CIT from it. The startup fill read the
   legal name; Admin → Companies changes it.
+* **A company shows no ZUS column unless it has a ZUS figure.** It pays ZUS
+  only as an employer; its sole shareholder pays his own contributions
+  outside the company (art. 8 ust. 6 pkt 4 of the social insurance act). The
+  entry form still offers ZUS, for the day it employs somebody.
 * **Income tax** follows the form of each month's quarter
   (`company_tax_periods`, decision 0078), else `companies.tax_form`; with
   neither there is no estimate. Never guess a tax form. A period's `rate`

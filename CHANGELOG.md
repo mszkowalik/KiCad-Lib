@@ -8,6 +8,9 @@
 - **Correction: 9SIGMA's CIT figures now show in Company books.** The column
   read PIT for every company without a stated form, so KSBR's CIT payments
   were in the data but not on the page.
+- **A company's books show no ZUS column** until it has a ZUS figure: a
+  sp. z o.o. pays ZUS only for people it employs. The figure form offers PIT
+  or CIT, whichever the company pays.
 
 ## 2026-10-06 (a final advance invoice is revenue)
 
