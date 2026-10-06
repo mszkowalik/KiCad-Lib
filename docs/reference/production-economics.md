@@ -44,6 +44,16 @@ guard reads one company's stock is in [companies.md](companies.md).
   destination of their own (an invoice on run A with a line allocated to run B
   used to be charged to both); voiding a line voids its subtree. Percentages are
   a frontend calculator only — the API stores absolute amounts.
+- **A document's printed invoice is `body`, beside its cost positions**
+  (decisions 0084 and 0085, `services/printed.py`). KSeF's XML writes it
+  (`ksef.sync.apply_fiscal`). For a document KSeF does not hold,
+  `PUT /api/run-documents/{doc_id}/printed-invoice` stores a transcription of
+  one of the document's own files, and `body.source` names the file. The route
+  writes on a closed batch's document, because the tax layer moves no money,
+  and it never changes the net, the positions, the currency, the date or the
+  pinned rate. A page that does not add up, or disagrees with the document,
+  needs a `reason`, which is kept with the page. A document KSeF holds
+  refuses it.
 - **`allocate` has five values, and `"excluded"` is load-bearing.** `none` |
   `pooled` | `by_value` | `by_qty` | `excluded`. `pooled` says "this position
   IS stock" (decision 0045). The carrier values spread a

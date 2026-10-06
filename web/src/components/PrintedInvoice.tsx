@@ -3,11 +3,12 @@
  *
  *  A sales invoice and a supplier document keep the same `body`, so both pages
  *  draw its positions with `INVOICE_LINE_COLUMNS`. On a supplier document the
- *  body is what the supplier's own data said (a KSeF import) and is never
- *  edited; the cost positions under it are what the platform computes with.
+ *  body is what the supplier's own data said — KSeF's XML, or a transcription
+ *  of the document's original file (decision 0085) — and is never edited in
+ *  the UI; the cost positions under it are what the platform computes with.
  */
 import { useState } from "react";
-import type { SalesInvoiceBody, SalesLine } from "../api";
+import type { PrintedSource, SalesInvoiceBody, SalesLine } from "../api";
 import DataTable, { type Column } from "./DataTable";
 
 /** An amount as the Polish invoice prints it: two decimals, Polish separators. */
@@ -29,9 +30,19 @@ export const INVOICE_LINE_COLUMNS: Column<SalesLine>[] = [
     render: (l) => <>{pl(l.gross)}</> },
 ];
 
+/** Where the page was read from, in words. */
+function sourceText(s: PrintedSource | undefined): string {
+  if (!s) return "";
+  if (s.kind === "ksef") return `Read from KSeF ${s.ksef_number}.`;
+  return `Read from ${s.filename} by ${s.actor || "someone"} on ${s.read_on}.`;
+}
+
 /** The printed invoice behind a button: the cost positions are what a reader
  *  of a supplier document usually came for, the printed page is the evidence. */
-export default function PrintedInvoice({ body, currency }: { body: SalesInvoiceBody; currency: string }) {
+export default function PrintedInvoice({ body, currency }: {
+  body: SalesInvoiceBody & { source?: PrintedSource };
+  currency: string;
+}) {
   const [open, setOpen] = useState(false);
   const t = body.totals;
   return (
@@ -43,6 +54,13 @@ export default function PrintedInvoice({ body, currency }: { body: SalesInvoiceB
       </div>
       {open ? (
         <>
+          {body.source?.kind === "file" && body.source.problems.length ? (
+            <div className="banner-warn">
+              The page does not agree with the document: {body.source.problems.map((p) => p.text).join("; ")}.
+              {" "}Reason given: {body.source.reason}
+            </div>
+          ) : null}
+          <p className="muted dim">{sourceText(body.source)}</p>
           <p className="muted">
             Seller {body.seller.name} · NIP {body.seller.nip || "—"}
             {" · "}Buyer {body.buyer.name} · NIP {body.buyer.nip || "—"}

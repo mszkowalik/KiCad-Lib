@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-10-07 (an invoice read from its own file)
+
+Decision [0085](docs/decisions/0085-a-printed-invoice-can-be-read-from-the-document-s-own-file.md).
+
+- **A supplier document that KSeF does not hold can carry its printed
+  invoice**, read from its own PDF: `PUT /api/run-documents/{id}/printed-invoice`.
+  The page is checked first: its positions, rates and gross must add up, and
+  it must agree with the document's number, date, currency, net and VAT. A
+  disagreement needs a reason, and the "Printed invoice" view shows it.
+- **The tax data of a closed batch's document can now be written.** It moves
+  no cost, so the closed-batch lock does not apply to it.
+- **The printed invoice says where it was read from**: KSeF, or the file and
+  who read it.
+- **Correction: a KSeF correction no longer replaces the page of the invoice
+  it corrects** when both are linked to one document.
+- **Correction: a file whose name has Polish letters opens again.** It
+  answered "Internal Server Error": six supplier originals on production
+  could not be opened. The fix covers every file download (originals, sales
+  invoice files, tax notices, datasheets, batch and flasher files).
+
 ## 2026-10-06 (supplier invoices keep their tax data)
 
 Decision [0084](docs/decisions/0084-a-supplier-invoice-keeps-its-tax-data-in-the-ksef-structure.md).

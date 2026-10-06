@@ -172,6 +172,77 @@ class DocumentPatch(BaseModel):
     company_id: int | None = None
 
 
+class PartyIn(BaseModel):
+    name: str = Field(max_length=512)
+    nip: str = Field(default="", max_length=40)       # a tax id as printed, any country
+    address_l1: str = Field(default="", max_length=300)
+    address_l2: str = Field(default="", max_length=300)
+    country: str = Field(default="", max_length=60)
+
+
+class PrintedLineIn(BaseModel):
+    position: int
+    name: str = Field(max_length=1000)
+    qty: Decimal = Decimal(1)
+    unit: str = Field(default="", max_length=30)
+    unit_net: Decimal | None = None
+    net: Decimal
+    # The rate as printed: an FA(3) code on a Polish invoice ("23", "8", "5",
+    # "0", "zw", "np", "oo"), "" when the page states none.
+    vat_rate: str = Field(default="", max_length=20)
+    vat: Decimal | None = None
+    gross: Decimal | None = None
+
+
+class RateIn(BaseModel):
+    net: Decimal
+    vat: Decimal = Decimal(0)
+    vat_pln: Decimal | None = None
+
+
+class TotalsIn(BaseModel):
+    net: Decimal
+    vat: Decimal = Decimal(0)
+    gross: Decimal
+    rates: dict[str, RateIn] = {}
+    #: the VAT in PLN that an invoice in another currency prints
+    vat_pln: Decimal | None = None
+
+
+class PaymentIn(BaseModel):
+    due_date: str | None = Field(default=None, pattern=_DAY)
+    method: str = Field(default="", max_length=60)
+    paid: bool = False
+    paid_date: str | None = Field(default=None, pattern=_DAY)
+
+
+class PrintedBodyIn(BaseModel):
+    """The printed invoice, in the shape of `SalesInvoice.body` (decision 0084)."""
+
+    title: str = Field(default="", max_length=200)
+    seller: PartyIn
+    buyer: PartyIn
+    lines: list[PrintedLineIn] = []
+    totals: TotalsIn
+    payment: PaymentIn = PaymentIn()
+    extra_info: list[str] = []
+    notes: list[str] = []
+
+
+class PrintedIn(BaseModel):
+    """A transcription of one of the document's own original files (decision 0085)."""
+
+    attachment_id: int
+    number: str = Field(max_length=256)
+    issue_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    sale_date: str = Field(default="", pattern=_DAY)
+    currency: str = Field(min_length=3, max_length=3)
+    body: PrintedBodyIn
+    #: why the page may disagree with itself or with the document; required
+    #: when it does (409 otherwise, naming the problems)
+    reason: str = Field(default="", max_length=500)
+
+
 class CorrectionIn(BaseModel):
     """What to change about the correction the platform is about to write.
 
@@ -1095,6 +1166,33 @@ def update_document(doc_id: int, body: DocumentPatch, db: Session = Depends(get_
           {"before": before, "after": after})
     db.commit()
     return run_actuals.document_json(doc, db=db)
+
+
+@router.put("/run-documents/{doc_id}/printed-invoice")
+def put_printed_invoice(doc_id: int, body: PrintedIn, db: Session = Depends(get_db)):
+    """Store what one of the document's own original files prints: the page as
+    `body`, its sale and due dates, its VAT and its VAT in PLN (decision 0085).
+
+    The tax layer moves no money, so this writes on the document of a closed
+    batch too; the net, the positions, the currency and the date stay as they
+    are. A page that does not add up or disagrees with the document answers
+    409 with the problems unless `reason` says why it is right anyway."""
+    doc = _doc(db, doc_id)
+    att = db.get(M.RunAttachment, body.attachment_id)
+    if att is None:
+        raise HTTPException(404, f"no file {body.attachment_id}")
+    parsed = body.model_dump(mode="json", exclude={"attachment_id", "reason"})
+    parsed["currency"] = parsed["currency"].upper()
+    from ..services import printed
+
+    res = printed.from_original(db, doc, att, parsed, reason=body.reason, actor=acting_name())
+    audit(db, "run.document.printed", "run_cost_document", doc.id, {
+        "attachment_id": att.id, "changed": res["changed"], "before": res["before"],
+        "problems": res["problems"], "reason": body.reason,
+        "positions": len(body.body.lines),
+    })
+    db.commit()
+    return {**res, "document": run_actuals.document_json(doc, db=db)}
 
 
 @router.delete("/run-documents/{doc_id}")

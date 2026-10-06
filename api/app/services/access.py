@@ -432,6 +432,8 @@ NOT_COMPANY_LISTS: set[str] = {
     # not ids at all: property keys, layer names, file paths, step keys, text
     "removed_properties", "reference_layers", "paths", "sides", "pin", "extra_info", "unmodelled",
     "assume", "costs", "done", "draw", "step_keys",
+    # a printed invoice's own text lines (decision 0085)
+    "notes",
     # the advance invoices a recorded settlement names, by NUMBER (decision 0077)
     "advance_numbers",
 }

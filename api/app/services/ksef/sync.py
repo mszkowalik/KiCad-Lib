@@ -40,7 +40,7 @@ from sqlalchemy.orm import Session
 
 from ... import models as M
 from .. import companies as C
-from .. import crypto, storage
+from .. import crypto, printed, storage
 from ..invoicing import amounts as A
 from . import client as K
 from .parse import parse
@@ -451,31 +451,20 @@ def apply_fiscal(doc: M.RunCostDocument, row: M.KsefInvoice, parsed: dict) -> li
     Returns the fields that changed."""
     if parsed.get("kind") == "correction" and (doc.doc_type or "") != "correction":
         return []
-    b = parsed["body"]
-    t = b.get("totals") or {}
-    pay = b.get("payment") or {}
-    foreign = (parsed.get("currency") or "PLN").upper() != "PLN"
+    f = printed.tax_fields(parsed)
     want = {
-        "body": b,
-        "sale_date": parsed.get("sale_date") or "",
-        "due_date": pay.get("due_date") or "",
+        "body": {**f["body"], "source": {"kind": "ksef", "ksef_number": row.ksef_number}},
+        "sale_date": f["sale_date"],
+        "due_date": f["due_date"],
         # KSeF states the receipt in its metadata; without it, a typed day stays.
         "received_date": received_day(row.received_at) or doc.received_date or "",
-        "tax_amount_pln": A.d2(t["vat_pln"]) if foreign and t.get("vat_pln") else None,
+        "tax_amount_pln": f["tax_amount_pln"],
     }
-    if doc.tax_amount is None and t.get("vat") is not None:
-        want["tax_amount"] = float(t["vat"])
-    if not doc.paid_at and pay.get("paid") and pay.get("paid_date"):
-        want["paid_at"] = pay["paid_date"]
-    changed = []
-    for k, v in want.items():
-        old = getattr(doc, k)
-        if k == "tax_amount_pln" and old is not None and v is not None and A.d2(old) == v:
-            continue
-        if old != v:
-            setattr(doc, k, v)
-            changed.append(k)
-    return changed
+    if doc.tax_amount is None and f["vat"] is not None:
+        want["tax_amount"] = float(f["vat"])
+    if not doc.paid_at and f["paid_date"]:
+        want["paid_at"] = f["paid_date"]
+    return printed.assign(doc, want)
 
 
 def _link(db: Session, row: M.KsefInvoice, doc: M.RunCostDocument) -> None:

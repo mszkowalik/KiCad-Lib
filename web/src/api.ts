@@ -2938,8 +2938,8 @@ export interface RunCostDocumentRow {
   received_date?: string;
   /** the VAT in PLN of a document in another currency, as text */
   tax_amount_pln?: string | null;
-  /** the invoice as printed (full view only); null when no import wrote it */
-  body?: SalesInvoiceBody | null;
+  /** the invoice as printed (full view only); null when nothing read it */
+  body?: (SalesInvoiceBody & { source?: PrintedSource }) | null;
   notes: string;
   attachment_id: number | null;
   /** The company that was BILLED (decision 0064), and how that was found:
@@ -9567,6 +9567,12 @@ export interface SalesTotals {
   rates: Record<string, { net: string; vat: string; vat_pln?: string }>;
   vat_pln?: string;
 }
+
+/** Where a supplier document's printed invoice was read from (decisions 0084, 0085). */
+export type PrintedSource =
+  | { kind: "ksef"; ksef_number: string }
+  | { kind: "file"; attachment_id: number; filename: string; actor: string; read_on: string;
+      problems: { code: string; text: string }[]; reason: string };
 
 export interface SalesInvoiceBody {
   title: string;
