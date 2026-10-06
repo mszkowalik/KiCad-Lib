@@ -122,3 +122,28 @@ def test_a_sales_document_counts_in_the_month_of_its_service(db, nine):
     assert Decimal(months["2049-04"]["revenue_net"]) == Decimal("100") and Decimal(months["2049-05"]["revenue_net"]) == 0
     inv.sale_date = "2049-05-20"                      # issued before the service: the issue date counts
     assert B.book_date(inv) == "2049-05-05"
+
+
+def test_a_final_advance_completes_its_order(db, nine):
+    """Two advances pay the whole order and the last says so: no settlement
+    follows, so the books count the order as revenue at the last one."""
+    t1 = {"net": "80000", "vat": "18400", "gross": "98400", "rates": {"23": {"net": "80000", "vat": "18400"}}}
+    t2 = {"net": "44400", "vat": "10212", "gross": "54612", "rates": {"23": {"net": "44400", "vat": "10212"}}}
+    first = _record(db, nine, "advance", "ZAL 00001/03/2049", "2049-03-10", t1)
+    last = _record(db, nine, "advance", "ZAL 00002/04/2049", "2049-04-10", t2)
+    assert not S.is_final_advance(last)
+    assert B._sales_effect(db, last) == {"revenue": 0, "advance": Decimal("44400.00"), "vat": Decimal("10212.00")}
+    last.body = {**last.body, "final_advance": True}
+    db.flush()
+    assert S.is_final_advance(last) and not S.is_final_advance(first)
+    assert B._sales_effect(db, last) == {"revenue": Decimal("124400.00"), "advance": 0, "vat": Decimal("10212.00")}
+    months = {m["month"]: m for m in B.year(db, nine.id, 2049)["months"]}
+    assert Decimal(months["2049-03"]["advances_net"]) >= 80000 and Decimal(months["2049-04"]["revenue_net"]) >= 124400
+
+
+def test_an_imported_final_advance_is_read_from_its_title():
+    inv = M.SalesInvoice(kind="advance", body={"title": "FAKTURA VAT ZALICZKOWA KOŃCOWA",
+                                                  "totals": {"net": "120000.0"}})
+    assert S.is_final_advance(inv) and S.order_net(inv) == Decimal("120000.0")
+    inv.body = {"title": "FAKTURA VAT ZALICZKOWA", "totals": {"net": "120000.0"}}
+    assert not S.is_final_advance(inv)

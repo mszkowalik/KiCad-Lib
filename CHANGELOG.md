@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-06 (a final advance invoice is revenue)
+
+- **Correction: an order paid in full by advances now reaches revenue.** The
+  last advance invoice ("faktura zaliczkowa końcowa") counts the whole order
+  as revenue in Company books, the way a settlement invoice does. Before, the
+  advances stayed advances for ever, because no settlement follows them.
+  7Sigma's 2024 revenue now matches the KPiR.
+
 ## 2026-10-06 (interest on taxes, ZUS includes health)
 
 Decision [0081](docs/decisions/0081-a-tax-figure-carries-its-late-payment-interest.md).

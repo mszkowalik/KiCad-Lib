@@ -159,6 +159,11 @@ def _sales_effect(db: Session, inv: M.SalesInvoice) -> dict[str, Decimal]:
     * VAT invoice: its net is revenue, its VAT is VAT.
     * Advance: the ADVANCE (`invoicing.service.advance_amounts`, never the
       order it is paid against) is an advance, its VAT is VAT.
+    * Final advance ("zaliczkowa końcowa", `invoicing.is_final_advance`): the
+      order was paid in full by advances and no settlement follows, so it is
+      the delivery. Revenue is the whole order (`invoicing.order_net`), the
+      VAT is its own advance's VAT, and the earlier advances reach revenue
+      here, as they would at a settlement.
     * Correction: its difference (`correction_difference`) — of an advance it
       is an advance, otherwise revenue; a correction that changed text only
       adds nothing.
@@ -170,6 +175,8 @@ def _sales_effect(db: Session, inv: M.SalesInvoice) -> dict[str, Decimal]:
     zero = Decimal(0)
     if inv.kind == "advance":
         a = invoicing.advance_amounts(inv)
+        if invoicing.is_final_advance(inv):
+            return {"revenue": invoicing.order_net(inv), "advance": zero, "vat": Decimal(str(a.get("vat") or 0))}
         return {"revenue": zero, "advance": Decimal(str(a.get("net") or 0)), "vat": Decimal(str(a.get("vat") or 0))}
     if inv.kind == "correction":
         d = invoicing.correction_difference(inv)

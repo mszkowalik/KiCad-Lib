@@ -43,6 +43,13 @@ Production → Company books.
   revenue on its date: the net of its positions, which FA(3) states at full
   order value. Its VAT is the VAT it states, the part the advances did not
   carry. So the advances reach revenue at the settlement.
+* **A final advance invoice ("zaliczkowa końcowa") is the delivery too.**
+  When advances pay the whole order, no settlement follows, so the last
+  advance counts the whole order as revenue on its date
+  (`invoicing.service.is_final_advance`, `order_net`), with its own VAT.
+  It is read from `body.final_advance`, or from the printed title of an
+  imported document. Found 2026-10-06: Columbus Energy's ZAL 01/04/2024 and
+  ZAL 01/06/2024 paid 500 dongles in full, and the KPiR books both as revenue.
 * **Costs** are the supplier documents billed to the company, by document
   date, by destination. Excluded positions and transfers are no cost.
 * **A record kept from the accountant is in no figure here**: not its

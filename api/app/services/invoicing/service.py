@@ -153,6 +153,28 @@ def advance_amounts(inv: M.SalesInvoice) -> dict:
         return totals
 
 
+def is_final_advance(inv: M.SalesInvoice) -> bool:
+    """The last advance of an order paid in full by advances ("faktura
+    zaliczkowa końcowa"). No settlement invoice follows one: it completes the
+    order, so the books count the whole order as revenue on its date. Read from
+    `body.final_advance`, or from the printed title of an imported document."""
+    if inv.kind != "advance":
+        return False
+    b = inv.body or {}
+    if b.get("final_advance") is True:
+        return True
+    return bool(re.search(r"KO[ŃN]COW", str(b.get("title") or "").upper()))
+
+
+def order_net(inv: M.SalesInvoice) -> Decimal:
+    """The net of the ORDER an advance is paid against: `body.order` on a
+    platform or recorded advance, the printed totals on one imported from
+    7Sigma's script (which printed the order as its positions)."""
+    b = inv.body or {}
+    totals = (b["order"].get("totals") if b.get("order") else b.get("totals")) or {}
+    return Decimal(str(totals.get("net") or 0))
+
+
 def _columns(inv: M.SalesInvoice) -> None:
     """Copy the figures lists and the books read out of the document."""
     b = inv.body or {}
@@ -827,7 +849,8 @@ def record_history(db: Session, *, company_id: int, kind: str, number: str, issu
         rates: dict[str, dict] = {}
         for r in rows:
             k = rates.setdefault(r["vat_rate"], {"net": Decimal(0), "vat": Decimal(0)})
-            k["net"] += Decimal(r["net"]); k["vat"] += Decimal(r["vat"])
+            k["net"] += Decimal(r["net"])
+            k["vat"] += Decimal(r["vat"])
         onet = sum((k["net"] for k in rates.values()), Decimal(0))
         ovat = sum((k["vat"] for k in rates.values()), Decimal(0))
         body["order"] = {"lines": rows, "totals": {
