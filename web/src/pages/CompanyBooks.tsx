@@ -8,17 +8,23 @@ import { Link } from "react-router-dom";
 import {
   errorMessage,
   getCompanyBooks,
+  deleteTaxPeriod,
   isAbortError,
   listTaxEntryFiles,
   putTaxEntry,
+  putTaxPeriod,
+  TAX_FORM_TEXT,
   taxEntryFilePath,
   uploadTaxEntryFile,
   type BooksMonth,
+  type TaxPeriod,
   type CompanyBooks as Books,
 } from "../api";
 import { useAuth } from "../auth";
 import DataTable, { type Column } from "../components/DataTable";
 import RecordFiles from "../components/RecordFiles";
+import SiInput from "../components/SiInput";
+import { useDialog } from "../components/Dialog";
 import Field, { FieldRow } from "../components/Field";
 import { ErrorBanner, Spinner } from "../components/Ui";
 
@@ -122,6 +128,82 @@ function EntryFiles({ companyId, entryId, onChange }: { companyId: number; entry
   );
 }
 
+/** The income-tax form from a quarter on (decision 0078). The law sets the
+ *  form for a whole year; the quarter is the user's choice of granularity.
+ *  Everybody reads it; an admin changes it, as the company's one form. */
+function TaxPeriodsCard({ companyId, periods, onSaved }: { companyId: number; periods: TaxPeriod[]; onSaved: () => void }) {
+  const { isAdmin } = useAuth();
+  const dialog = useDialog();
+  const [quarter, setQuarter] = useState("");
+  const [form, setForm] = useState("pit_linear");
+  const [rate, setRate] = useState<number | null>(null);
+  const [note, setNote] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const act = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setErr("");
+    try {
+      await fn();
+      onSaved();
+    } catch (e) {
+      setErr(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const cols: Column<TaxPeriod>[] = [
+    { key: "q", label: "From quarter", width: 14, className: "mono", get: (p) => p.from_quarter },
+    { key: "form", label: "Form", width: 26, get: (p) => TAX_FORM_TEXT[p.form] ?? p.form },
+    { key: "rate", label: "Effective rate", width: 14, numeric: true, get: (p) => Number(p.rate ?? -1),
+      render: (p) => <>{p.rate == null ? "statutory" : `${Number(p.rate).toLocaleString("pl-PL")} %`}</> },
+    { key: "note", label: "Note", width: isAdmin ? 36 : 46, get: (p) => p.note, title: (p) => p.note },
+    ...(isAdmin ? [{ key: "x", label: "", width: 10, interactive: false, get: () => "",
+      render: (p: TaxPeriod) => (
+        <button type="button" className="btn btn-sm btn-danger" disabled={busy} onClick={async () => {
+          if (await dialog.confirm(`Remove the tax form from ${p.from_quarter}? The months fall back to the period before it.`,
+            { title: "Remove tax period", confirmLabel: "Remove", tone: "danger" })) {
+            await act(() => deleteTaxPeriod(companyId, p.id));
+          }
+        }}>Remove</button>
+      ) } as Column<TaxPeriod>] : []),
+  ];
+  return (
+    <div className="card pad">
+      <h2 className="card-title">Tax form by quarter</h2>
+      <p className="muted dim">
+        Each row applies from its quarter until the next row. An effective rate replaces the statutory computation, for a
+        year whose return shows the real tax (IP BOX, deductions). By law the form is chosen for a whole year, by the 20th
+        of the month after the year's first revenue.
+      </p>
+      <ErrorBanner message={err} />
+      <DataTable rows={periods} rowKey={(p) => p.id} columns={cols} empty="No form by quarter: the company's one form applies." />
+      {isAdmin ? (
+        <FieldRow>
+          <Field label="From quarter">
+            <input className="text mono" value={quarter} placeholder="2024-Q1" onChange={(e) => setQuarter(e.target.value.trim().toUpperCase())} />
+          </Field>
+          <Field label="Form">
+            <select className="text" value={form} onChange={(e) => setForm(e.target.value)}>
+              {Object.entries(TAX_FORM_TEXT).map(([k, t]) => <option key={k} value={k}>{t}</option>)}
+            </select>
+          </Field>
+          <Field label="Effective rate" hint="Optional. Empty means the statutory rates.">
+            <SiInput quantity="percent" value={rate} onChange={setRate} onEmpty={() => setRate(null)} />
+          </Field>
+          <Field label="Note" wide>
+            <input className="text" value={note} onChange={(e) => setNote(e.target.value)} />
+          </Field>
+          <button type="button" className="btn btn-primary btn-sm" disabled={busy || !/^\d{4}-Q[1-4]$/.test(quarter)}
+                  onClick={() => void act(() => putTaxPeriod(companyId, { from_quarter: quarter, form, rate, note }))}>
+            Save
+          </button>
+        </FieldRow>
+      ) : null}
+    </div>
+  );
+}
+
 export default function CompanyBooks() {
   const { companies, scope } = useAuth();
   const [companyId, setCompanyId] = useState<number>(scope !== "all" ? Number(scope) : companies[0]?.id ?? 0);
@@ -149,7 +231,8 @@ export default function CompanyBooks() {
     { key: "vat", label: "VAT est.", width: 10, numeric: true, get: (m) => Number(m.vat_estimate), render: (m) => <>{pl(m.vat_estimate)}</> },
     { key: "vat_a", label: "VAT (acct.)", width: 11, numeric: true, get: (m) => Number(m.accountant.vat?.amount ?? 0), render: (m) => <>{acc(m, "vat")}</> },
     { key: "tax", label: `${taxLabel.toUpperCase()} est.`, width: 9, numeric: true,
-      get: (m) => Number(m.income_tax_estimate ?? 0), render: (m) => <>{pl(m.income_tax_estimate)}</> },
+      get: (m) => Number(m.income_tax_estimate ?? 0), render: (m) => <>{pl(m.income_tax_estimate)}</>,
+      title: (m) => m.tax_form ? `${TAX_FORM_TEXT[m.tax_form] ?? m.tax_form}${m.tax_rate ? `, effective ${m.tax_rate} %` : ""}` : "no tax form" },
     { key: "tax_a", label: `${taxLabel.toUpperCase()} (acct.)`, width: 11, numeric: true,
       get: (m) => Number(m.accountant[taxLabel]?.amount ?? 0), render: (m) => <>{acc(m, taxLabel)}</> },
     { key: "zus", label: "ZUS (acct.)", width: 9, numeric: true, get: (m) => Number(m.accountant.zus?.amount ?? 0), render: (m) => <>{acc(m, "zus")}</> },
@@ -171,7 +254,7 @@ export default function CompanyBooks() {
         <p className="muted dim">
           The platform's estimate from the sales invoices and the supplier documents billed to the company, beside the
           accountant's figures. Open a month to enter them.{" "}
-          {books && !books.tax_form ? <>No income tax is estimated until the tax form is set on <Link className="comp-link" to="/admin?tab=companies">Admin → Companies</Link>.</> : null}
+          {books && !books.tax_form && !books.tax_periods?.length ? <>No income tax is estimated until the tax form is set on <Link className="comp-link" to="/admin?tab=companies">Admin → Companies</Link>.</> : null}
         </p>
         <FieldRow>
           {companies.length > 1 ? (
@@ -195,6 +278,7 @@ export default function CompanyBooks() {
               expand={(m) => <MonthPanel companyId={companyId} m={m} onSaved={() => load()} />} />
           )}
         </div>
+        {books ? <TaxPeriodsCard companyId={companyId} periods={books.tax_periods ?? []} onSaved={() => load()} /> : null}
         {overhead.length ? (
           <div className="card pad">
             <h2 className="card-title">Company overhead</h2>

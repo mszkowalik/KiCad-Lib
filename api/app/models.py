@@ -4253,6 +4253,29 @@ class CompanyTaxEntry(Base):
     __table_args__ = (UniqueConstraint("company_id", "period", "kind", name="uq_company_tax_entry"),)
 
 
+class CompanyTaxPeriod(Base):
+    """The income-tax form a company uses FROM one quarter on, until the next
+    row (decision 0078). A company changes its form at the start of a year by
+    law (art. 9a ustawy o PIT, by the 20th of the month after its first
+    revenue), and the setting is per quarter on the user's request
+    (2026-10-06). `rate` overrides the statutory computation with an
+    effective rate in percent (of income, or of revenue for `lump`), for a
+    year whose return shows what the tax really was (IP BOX, deductions)."""
+
+    __tablename__ = "company_tax_periods"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(Integer)
+    from_quarter: Mapped[str] = mapped_column(String(7))                 # YYYY-Qn
+    form: Mapped[str] = mapped_column(String(20))
+    rate: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), nullable=True)
+    note: Mapped[str] = mapped_column(String(500), default="")
+    entered_by: Mapped[str] = mapped_column(String(100), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (UniqueConstraint("company_id", "from_quarter", name="uq_company_tax_period"),)
+
+
 class RecordFile(Base):
     """A file kept as the evidence of a sales invoice or a tax entry (decision
     0077): the PDF a company issued before the platform or KSeF wrote its

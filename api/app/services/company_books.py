@@ -83,16 +83,45 @@ class _Pln:
         return usd / Decimal(str(pln)) if pln else usd
 
 
-def _income_tax(form: str, lump_rate: Decimal, ytd_income: Decimal, ytd_revenue: Decimal) -> Decimal | None:
+def _scale_tax(year: int, inc: Decimal) -> Decimal:
+    """The PIT scale (zasady ogólne) on a year's income, by that year's rules.
+    2021 and before: 17 % up to 85 528 with the falling reducing amount, 32 %
+    above. 2022 on: 12 % with a 30 000 free amount, 32 % above 120 000 (the
+    annual rule; 2022's first-half advances used 17 %, its return 12 %)."""
+    inc = max(inc, Decimal(0))
+    if year <= 2021:
+        if inc <= 8000:
+            reduce = Decimal("1360")
+        elif inc <= 13000:
+            reduce = Decimal("1360") - Decimal("834.88") * (inc - 8000) / 5000
+        elif inc <= 85528:
+            reduce = Decimal("525.12")
+        elif inc <= 127000:
+            reduce = Decimal("525.12") - Decimal("525.12") * (inc - 85528) / Decimal("41472")
+        else:
+            reduce = Decimal(0)
+        if inc <= 85528:
+            return d2(max(inc * Decimal("0.17") - reduce, Decimal(0)))
+        return d2(Decimal("14539.76") - reduce + (inc - 85528) * Decimal("0.32"))
+    if inc <= 30000:
+        return Decimal("0.00")
+    low = min(inc, Decimal(120000)) * Decimal("0.12") - Decimal(3600)
+    high = max(inc - Decimal(120000), Decimal(0)) * Decimal("0.32")
+    return d2(max(low, Decimal(0)) + high)
+
+
+def _income_tax(form: str, lump_rate: Decimal, ytd_income: Decimal, ytd_revenue: Decimal,
+                year: int = 2026, rate: Decimal | None = None) -> Decimal | None:
+    """The year-to-date income tax under a form. `rate` (percent) replaces the
+    statutory computation: of revenue for `lump`, of income for every other
+    form (decision 0078)."""
+    if form and rate is not None:
+        base = ytd_revenue if form == "lump" else ytd_income
+        return d2(max(base, Decimal(0)) * rate / 100)
     if form == "pit_linear":
         return d2(max(ytd_income, Decimal(0)) * Decimal("0.19"))
     if form == "pit_scale":
-        inc = max(ytd_income, Decimal(0))
-        if inc <= 30000:
-            return Decimal("0.00")
-        low = min(inc, Decimal(120000)) * Decimal("0.12") - Decimal(3600)
-        high = max(inc - Decimal(120000), Decimal(0)) * Decimal("0.32")
-        return d2(max(low, Decimal(0)) + high)
+        return _scale_tax(year, ytd_income)
     if form == "lump":
         return d2(max(ytd_revenue, Decimal(0)) * lump_rate / 100)
     if form in ("cit_9", "cit_19"):
@@ -144,6 +173,57 @@ def _sales_effect(db: Session, inv: M.SalesInvoice) -> dict[str, Decimal]:
             full = sum((Decimal(str(p.get("net") or 0)) for p in rows), zero)
             return {"revenue": full, "advance": zero, "vat": Decimal(str(inv.vat_total or 0))}
     return {"revenue": Decimal(str(inv.net_total or 0)), "advance": zero, "vat": Decimal(str(inv.vat_total or 0))}
+
+
+def quarter_of(month: str) -> str:
+    """'2024-05' -> '2024-Q2'."""
+    return f"{month[:4]}-Q{(int(month[5:7]) - 1) // 3 + 1}"
+
+
+def tax_periods(db: Session, company_id: int) -> list[M.CompanyTaxPeriod]:
+    return (db.query(M.CompanyTaxPeriod).filter_by(company_id=company_id)
+            .order_by(M.CompanyTaxPeriod.from_quarter).all())
+
+
+def tax_setting(periods: list[M.CompanyTaxPeriod], month: str, company: M.Company) -> tuple[str, Decimal | None]:
+    """The form (and the effective rate, if one is set) a month is taxed under:
+    the last period that starts at or before its quarter, else the company's
+    one `tax_form` (decision 0078)."""
+    q = quarter_of(month)
+    row = None
+    for p in periods:
+        if p.from_quarter <= q:
+            row = p
+    if row is None:
+        return company.tax_form or "", None
+    return row.form, (Decimal(str(row.rate)) if row.rate is not None else None)
+
+
+def set_tax_period(db: Session, company_id: int, *, from_quarter: str, form: str, rate=None, note: str = "",
+                   actor: str = "") -> M.CompanyTaxPeriod:
+    from fastapi import HTTPException
+    import re
+
+    C.get(db, company_id)
+    if not re.fullmatch(r"\d{4}-Q[1-4]", from_quarter or ""):
+        raise HTTPException(422, "from_quarter is YYYY-Qn, for example 2024-Q1")
+    if form not in TAX_FORMS:
+        raise HTTPException(422, f"form is one of {', '.join(TAX_FORMS)}")
+    if rate is not None and not (0 <= float(rate) <= 100):
+        raise HTTPException(422, "rate is a percentage from 0 to 100")
+    row = db.query(M.CompanyTaxPeriod).filter_by(company_id=company_id, from_quarter=from_quarter).first()
+    if row is None:
+        row = M.CompanyTaxPeriod(company_id=company_id, from_quarter=from_quarter)
+        db.add(row)
+    row.form, row.rate, row.note, row.entered_by = form, (Decimal(str(rate)) if rate is not None else None), \
+        (note or "")[:500], actor[:100]
+    db.flush()
+    return row
+
+
+def tax_period_json(p: M.CompanyTaxPeriod) -> dict:
+    return {"id": p.id, "from_quarter": p.from_quarter, "form": p.form,
+            "rate": str(p.rate) if p.rate is not None else None, "note": p.note, "entered_by": p.entered_by}
 
 
 def year(db: Session, company_id: int, year: int) -> dict:
@@ -206,6 +286,7 @@ def year(db: Session, company_id: int, year: int) -> dict:
                                      "due_date": e.due_date, "paid_date": e.paid_date, "note": e.note,
                                      "files": files.get(e.id, 0)}
 
+    periods = tax_periods(db, company.id)
     out_months, ytd_inc, ytd_rev, prev_tax = [], Decimal(0), Decimal(0), Decimal(0)
     for key in sorted(months):
         mo = months[key]
@@ -213,7 +294,8 @@ def year(db: Session, company_id: int, year: int) -> dict:
         income = mo["revenue_net"] - costs
         ytd_inc += income
         ytd_rev += mo["revenue_net"]
-        ytd_tax = _income_tax(company.tax_form or "", Decimal(str(company.lump_rate or 0)), ytd_inc, ytd_rev)
+        form, rate = tax_setting(periods, key, company)
+        ytd_tax = _income_tax(form, Decimal(str(company.lump_rate or 0)), ytd_inc, ytd_rev, year, rate)
         tax = None if ytd_tax is None else d2(max(ytd_tax - prev_tax, Decimal(0)))
         if ytd_tax is not None:
             prev_tax = max(prev_tax, ytd_tax)
@@ -224,6 +306,7 @@ def year(db: Session, company_id: int, year: int) -> dict:
             "purchase_vat": str(d2(mo["purchase_vat"])),
             "vat_estimate": str(d2(mo["sales_vat"] - mo["purchase_vat"])),
             "income_tax_estimate": None if tax is None else str(tax),
+            "tax_form": form, "tax_rate": None if rate is None else str(rate),
             "accountant": entries.get(key, {}),
         })
 
@@ -232,6 +315,7 @@ def year(db: Session, company_id: int, year: int) -> dict:
 
     return {"company_id": company.id, "company": company.name, "year": year,
             "tax_form": company.tax_form or "", "lump_rate": str(company.lump_rate or 0),
+            "tax_periods": [tax_period_json(p) for p in periods],
             "months": out_months,
             "totals": {f: total(f) for f in ("revenue_net", "advances_net", "costs_net", "income", "sales_vat",
                                              "purchase_vat", "vat_estimate")},

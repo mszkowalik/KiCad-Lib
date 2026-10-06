@@ -46,8 +46,11 @@ Production → Company books.
 * **Costs** are the supplier documents billed to the company, by document
   date, by destination. Excluded positions and transfers are no cost.
 * **VAT on purchases** is read from `tax_amount` of PLN documents only.
-* **Income tax** follows `companies.tax_form`; with none stated there is no
-  estimate. Never guess a tax form.
+* **Income tax** follows the form of each month's quarter
+  (`company_tax_periods`, decision 0078), else `companies.tax_form`; with
+  neither there is no estimate. Never guess a tax form. A period's `rate`
+  replaces the statutory computation (of income; of revenue for `lump`). The
+  scale follows the year: 17 % / 32 % up to 2021, 12 % / 32 % from 2022.
 * **A tax figure keeps the accountant's notices** in `record_files`
   (`/api/companies/{company_id}/tax-entries/{entry_id}/files`, decision 0077).
   The books report a count per figure (`accountant[kind].files`).

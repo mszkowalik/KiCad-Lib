@@ -327,6 +327,7 @@ _add(["/api/ksef/inbox/"], "ksef_id", _via(M.KsefInvoice, "company_id", _company
 # files kept with a sales invoice or a tax entry (decision 0077)
 _add(["/api/sales-invoices/{invoice_id}/files/"], "file_id", _via(M.RecordFile, "company_id", _company))
 _add(["/api/companies/{company_id}/tax-entries/"], "entry_id", _via(M.CompanyTaxEntry, "company_id", _company))
+_add(["/api/companies/{company_id}/tax-periods/"], "period_id", _via(M.CompanyTaxPeriod, "company_id", _company))
 _add(["/api/companies/{company_id}/tax-entries/{entry_id}/files/"], "file_id", _via(M.RecordFile, "company_id", _company))
 _add(["/api/consumption/"], "cons_id", _stock_row(M.ComponentConsumption))
 _add(["/api/stock-adjustments/"], "adj_id", _stock_row(M.ComponentStockAdjustment))

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-06 (the income-tax form by quarter)
+
+Decision [0078](docs/decisions/0078-the-tax-form-is-set-by-quarter.md).
+
+- **Company books has a "Tax form by quarter" card.** A row sets the form
+  from a quarter on; an admin adds or removes rows. An optional effective rate
+  replaces the statutory computation, for a year whose return shows the real
+  tax. The PIT estimate's tooltip names the form each month uses.
+- **Correction: the scale estimate for 2021 used the 2022 rates.** It now
+  uses 17 % / 32 % with that year's reducing amount up to 2021, and 12 % / 32 %
+  from 2022.
+
 ## 2026-10-06 (invoice and tax files, 9SIGMA's past invoices, sales by service month)
 
 Decision [0077](docs/decisions/0077-a-record-keeps-its-files-and-a-company-its-issued-history.md).

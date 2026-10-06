@@ -9832,6 +9832,9 @@ export interface BooksMonth {
   purchase_vat: string;
   vat_estimate: string;
   income_tax_estimate: string | null;
+  /** The form this month is taxed under, and its effective rate if one is set (decision 0078). */
+  tax_form?: string;
+  tax_rate?: string | null;
   accountant: Record<string, {
     id: number; amount: string; status: string; due_date: string; paid_date: string; note: string; files?: number;
   }>;
@@ -9843,6 +9846,7 @@ export interface CompanyBooks {
   year: number;
   tax_form: string;
   lump_rate: string;
+  tax_periods?: TaxPeriod[];
   months: BooksMonth[];
   totals: Record<string, string>;
   overhead: Record<string, string>;
@@ -9851,6 +9855,35 @@ export interface CompanyBooks {
 
 export function getCompanyBooks(companyId: number, year: number, signal?: AbortSignal): Promise<CompanyBooks> {
   return request(`/api/companies/${companyId}/books?year=${year}`, { signal });
+}
+
+/** How each income-tax form reads on screen; `company_books.TAX_FORMS` holds the keys. */
+export const TAX_FORM_TEXT: Record<string, string> = {
+  pit_linear: "PIT linear 19%",
+  pit_scale: "PIT scale (zasady ogólne)",
+  lump: "Lump sum (ryczałt) on revenue",
+  cit_9: "CIT 9%",
+  cit_19: "CIT 19%",
+};
+
+/** The income-tax form FROM a quarter on (decision 0078). */
+export interface TaxPeriod {
+  id: number;
+  from_quarter: string;
+  form: string;
+  rate: string | null;
+  note: string;
+  entered_by: string;
+}
+
+export function putTaxPeriod(companyId: number, body: {
+  from_quarter: string; form: string; rate?: number | null; note?: string;
+}): Promise<TaxPeriod> {
+  return request(`/api/companies/${companyId}/tax-periods`, jsonBody("PUT", body));
+}
+
+export function deleteTaxPeriod(companyId: number, periodId: number): Promise<{ deleted: number }> {
+  return request(`/api/companies/${companyId}/tax-periods/${periodId}`, { method: "DELETE" });
 }
 
 export function putTaxEntry(companyId: number, body: {

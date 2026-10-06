@@ -165,6 +165,47 @@ def put_tax_entry(company_id: int, body: TaxEntryIn, db: Session = Depends(get_d
     return {"id": row.id, "period": row.period, "kind": row.kind, "amount": str(row.amount), "status": row.status}
 
 
+class TaxPeriodIn(BaseModel):
+    from_quarter: str
+    form: str
+    rate: float | None = None
+    note: str = Field(default="", max_length=500)
+
+
+@router.get("/companies/{company_id}/tax-periods")
+def list_tax_periods(company_id: int, db: Session = Depends(get_db)):
+    """The income-tax form by quarter (decision 0078)."""
+    from ..services import company_books
+
+    return [company_books.tax_period_json(p) for p in company_books.tax_periods(db, company_id)]
+
+
+@router.put("/companies/{company_id}/tax-periods")
+def put_tax_period(company_id: int, body: TaxPeriodIn, db: Session = Depends(get_db),
+                   admin: M.User = Depends(require_admin)):
+    """The form from a quarter on, replacing that quarter's row. Admin, like the
+    company's one `tax_form`."""
+    from ..services import company_books
+
+    row = company_books.set_tax_period(db, company_id, actor=acting_name(), **body.model_dump())
+    audit(db, "company.tax_period", "company", company_id,
+          {"from_quarter": row.from_quarter, "form": row.form, "rate": str(row.rate) if row.rate is not None else None})
+    db.commit()
+    return company_books.tax_period_json(row)
+
+
+@router.delete("/companies/{company_id}/tax-periods/{period_id}")
+def delete_tax_period(company_id: int, period_id: int, db: Session = Depends(get_db),
+                      admin: M.User = Depends(require_admin)):
+    p = db.get(M.CompanyTaxPeriod, period_id)
+    if p is None or p.company_id != company_id:
+        raise HTTPException(404, "no such tax period")
+    audit(db, "company.tax_period.delete", "company", company_id, {"from_quarter": p.from_quarter, "form": p.form})
+    db.delete(p)
+    db.commit()
+    return {"deleted": period_id}
+
+
 def _entry(db: Session, company_id: int, entry_id: int) -> M.CompanyTaxEntry:
     e = db.get(M.CompanyTaxEntry, entry_id)
     if e is None or e.company_id != company_id:
