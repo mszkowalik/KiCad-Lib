@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-10-06 (sent to the accountant)
+
+Decision [0079](docs/decisions/0079-an-invoice-says-whether-the-accountant-has-it.md).
+
+- **Every supplier document and sales invoice says whether the accountant has
+  it**: from KSeF, booked in the KPiR, by mail, or marked by hand. "Mark
+  sent…" records a send, and "Not sent" clears it.
+- **Company books has a "For the accountant" card**: what she does not have
+  yet, month by month, each due by the 10th of the next month, marked late
+  after that. Tick the documents you sent and record them in one step.
+- KSeF documents count as sent. Proformas, transfers and documents charged to
+  nobody are not listed.
+
 ## 2026-10-06 (the income-tax form by quarter)
 
 Decision [0078](docs/decisions/0078-the-tax-form-is-set-by-quarter.md).

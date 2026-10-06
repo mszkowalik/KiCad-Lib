@@ -2446,6 +2446,12 @@ class RunCostDocument(Base):
     #: credit is simply a negative line. The original keeps its printed figures
     #: forever, exactly as a split parent does.
     corrects_document_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Decision 0079: when the accountant got this document, and how (mail,
+    # kpir = she booked it, manual, history). A KSeF document needs no row:
+    # the accountant reads KSeF (services/accountant.state).
+    accountant_sent_at: Mapped[str] = mapped_column(String(10), default="", server_default="")
+    accountant_sent_via: Mapped[str] = mapped_column(String(20), default="", server_default="")
+    accountant_sent_ref: Mapped[str] = mapped_column(String(200), default="", server_default="")
     created_by: Mapped[str] = mapped_column(String(100), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -4103,6 +4109,10 @@ class SalesInvoice(Base):
     ksef_received_at: Mapped[str] = mapped_column(String(40), default="")
     # MinIO keys: the official XML downloaded from KSeF once it is issued.
     official_xml_key: Mapped[str] = mapped_column(String(300), default="")
+    # Decision 0079, as on a supplier document.
+    accountant_sent_at: Mapped[str] = mapped_column(String(10), default="", server_default="")
+    accountant_sent_via: Mapped[str] = mapped_column(String(20), default="", server_default="")
+    accountant_sent_ref: Mapped[str] = mapped_column(String(200), default="", server_default="")
     source: Mapped[str] = mapped_column(String(40), default="platform")    # platform|script|ksef
     body: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_by: Mapped[str] = mapped_column(String(100), default="")

@@ -165,6 +165,38 @@ def put_tax_entry(company_id: int, body: TaxEntryIn, db: Session = Depends(get_d
     return {"id": row.id, "period": row.period, "kind": row.kind, "amount": str(row.amount), "status": row.status}
 
 
+class AccountantIn(BaseModel):
+    document_ids: list[int] = []
+    sales_invoice_ids: list[int] = []
+    sent_at: str = ""            # empty clears the record
+    via: str = "manual"
+    ref: str = Field(default="", max_length=200)
+
+
+@router.get("/companies/{company_id}/accountant")
+def accountant_to_send(company_id: int, db: Session = Depends(get_db)):
+    """What the accountant does not have yet, by month with its deadline (decision 0079)."""
+    from ..services import accountant
+
+    svc.get(db, company_id)
+    return accountant.to_send(db, company_id)
+
+
+@router.post("/companies/{company_id}/accountant")
+def accountant_mark(company_id: int, body: AccountantIn, db: Session = Depends(get_db)):
+    """Record that the accountant got these documents (or clear it with an empty date).
+    Work, not administration: any member of the company."""
+    from ..services import accountant
+
+    n = accountant.mark(db, company_id, document_ids=body.document_ids, sales_invoice_ids=body.sales_invoice_ids,
+                        sent_at=body.sent_at, via=body.via, ref=body.ref)
+    audit(db, "company.accountant.sent", "company", company_id,
+          {"documents": body.document_ids, "sales_invoices": body.sales_invoice_ids, "sent_at": body.sent_at,
+           "via": body.via})
+    db.commit()
+    return {"marked": n}
+
+
 class TaxPeriodIn(BaseModel):
     from_quarter: str
     form: str

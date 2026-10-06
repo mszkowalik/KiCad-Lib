@@ -45,6 +45,7 @@ import { useDialog } from "../components/Dialog";
 import Field, { CheckField, FieldGrid, FieldRow } from "../components/Field";
 import FilePick from "../components/FilePick";
 import RecordFiles from "../components/RecordFiles";
+import AccountantMark from "../components/AccountantMark";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { absoluteFileUrl, fileHref } from "../viewkind";
 
@@ -178,6 +179,10 @@ function InvoicePanel({ id, onChanged }: { id: number; onChanged: () => void }) 
       {recorded ? (
         <p className="muted dim">Issued outside the platform; recorded from the printed document filed below.</p>
       ) : null}
+      <div className="btn-row">
+        <AccountantMark companyId={inv.company_id} kind="sales_invoice" id={inv.id} state={inv.accountant}
+                        onChange={() => { load(); onChanged(); }} />
+      </div>
       <div className="btn-row">
         <InvoiceFiles id={inv.id} />
       </div>

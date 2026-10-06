@@ -2939,6 +2939,8 @@ export interface RunCostDocumentRow {
   counterparty_company_id?: number | null;
   /** how many originals are filed with this document */
   attachment_count?: number;
+  /** Decision 0079: whether the accountant has this document. */
+  accountant?: AccountantState;
   /** Batches whose books are CLOSED that this document charges (decision 0044).
    *  Non-empty means every write path refuses it and the way to change what it
    *  says is a correction document. Computed server-side on every read, so
@@ -9591,6 +9593,8 @@ export interface SalesInvoiceRow {
   corrected_by?: { id: number; number: string; status: string }[];
   /** The printed documents filed with the invoice (decision 0077). */
   files?: RecordFileRow[];
+  /** Decision 0079: whether the accountant has this invoice. */
+  accountant?: AccountantState;
 }
 
 export interface SalesInvoiceCreate {
@@ -9677,6 +9681,44 @@ export function salesInvoicePdfPath(id: number): string {
 
 export function salesInvoiceXmlPath(id: number): string {
   return `/api/sales-invoices/${id}/xml`;
+}
+
+/** Whether the accountant has a document (decision 0079). `via`: ksef, kpir, mail, manual, history. */
+export interface AccountantState {
+  sent: boolean;
+  via: string;
+  at: string;
+  ref: string;
+  ignored: boolean;
+}
+
+export interface AccountantRow {
+  kind: "document" | "sales_invoice";
+  id: number;
+  date: string;
+  party: string;
+  number: string;
+  net: number | null;
+  currency: string;
+  files: number;
+}
+
+export interface AccountantToSend {
+  company_id: number;
+  today: string;
+  count: number;
+  months: { month: string; deadline: string; overdue: boolean; rows: AccountantRow[] }[];
+}
+
+export function getAccountantToSend(companyId: number, signal?: AbortSignal): Promise<AccountantToSend> {
+  return request(`/api/companies/${companyId}/accountant`, { signal });
+}
+
+/** Record (or, with an empty date, clear) that the accountant got these documents. */
+export function markAccountant(companyId: number, body: {
+  document_ids?: number[]; sales_invoice_ids?: number[]; sent_at: string; via?: string; ref?: string;
+}): Promise<{ marked: number }> {
+  return request(`/api/companies/${companyId}/accountant`, jsonBody("POST", body));
 }
 
 /** A file kept as the evidence of a sales invoice or a tax entry (decision 0077). */

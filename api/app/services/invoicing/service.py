@@ -577,6 +577,12 @@ def generate(db: Session, tpl: M.SalesInvoiceTemplate, month: str, actor: str = 
                   template_key=tpl.key, template_month=ym, actor=actor)
 
 
+def _accountant_state(inv: M.SalesInvoice) -> dict:
+    from .. import accountant
+
+    return accountant.sales_state(inv)
+
+
 def invoice_json(db: Session, inv: M.SalesInvoice, full: bool = False) -> dict:
     out = {"id": inv.id, "company_id": inv.company_id, "kind": inv.kind, "status": inv.status,
            "number": inv.number, "issue_date": inv.issue_date, "sale_date": inv.sale_date,
@@ -587,6 +593,7 @@ def invoice_json(db: Session, inv: M.SalesInvoice, full: bool = False) -> dict:
            "corrects_id": inv.corrects_id, "template_key": inv.template_key,
            "ksef_number": inv.ksef_number, "has_qr": bool(inv.ksef_number and inv.ksef_hash),
            "source": inv.source, "created_by": inv.created_by,
+           "accountant": _accountant_state(inv),
            "overdue": bool(not inv.paid and inv.due_date and inv.due_date < _today()
                            and inv.status == "issued" and inv.kind != "proforma")}
     if full:

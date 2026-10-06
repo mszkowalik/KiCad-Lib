@@ -9,6 +9,8 @@ import {
   errorMessage,
   getCompanyBooks,
   deleteTaxPeriod,
+  getAccountantToSend,
+  markAccountant,
   isAbortError,
   listTaxEntryFiles,
   putTaxEntry,
@@ -16,6 +18,8 @@ import {
   TAX_FORM_TEXT,
   taxEntryFilePath,
   uploadTaxEntryFile,
+  type AccountantRow,
+  type AccountantToSend,
   type BooksMonth,
   type TaxPeriod,
   type CompanyBooks as Books,
@@ -204,6 +208,93 @@ function TaxPeriodsCard({ companyId, periods, onSaved }: { companyId: number; pe
   );
 }
 
+/** What the accountant does not have yet, month by month, each month due by
+ *  the 10th of the next one (decision 0079). KSeF documents and the ones
+ *  nobody pays for are not listed. Tick what was sent and record it. */
+function AccountantCard({ companyId }: { companyId: number }) {
+  const dialog = useDialog();
+  const [data, setData] = useState<AccountantToSend | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = useCallback((signal?: AbortSignal) => {
+    getAccountantToSend(companyId, signal).then((d) => { setData(d); setErr(""); setPicked(new Set()); })
+      .catch((e) => { if (!isAbortError(e)) setErr(errorMessage(e)); });
+  }, [companyId]);
+  useEffect(() => {
+    const ac = new AbortController();
+    load(ac.signal);
+    return () => ac.abort();
+  }, [load]);
+  const keyOf = (r: AccountantRow) => `${r.kind}:${r.id}`;
+  const toggle = (r: AccountantRow) => setPicked((p) => {
+    const n = new Set(p);
+    if (n.has(keyOf(r))) n.delete(keyOf(r)); else n.add(keyOf(r));
+    return n;
+  });
+  const markPicked = async () => {
+    const day = await dialog.prompt("Sent to the accountant on (YYYY-MM-DD):",
+      { title: "Mark as sent", initial: new Date().toISOString().slice(0, 10) });
+    if (!day) return;
+    const ids = [...picked].map((k) => k.split(":"));
+    setBusy(true);
+    try {
+      await markAccountant(companyId, {
+        document_ids: ids.filter(([k]) => k === "document").map(([, i]) => Number(i)),
+        sales_invoice_ids: ids.filter(([k]) => k === "sales_invoice").map(([, i]) => Number(i)),
+        sent_at: day, via: "manual",
+      });
+      load();
+    } catch (e) {
+      setErr(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const cols: Column<AccountantRow>[] = [
+    { key: "pick", label: "", width: 4, className: "ctr", interactive: false, get: () => "",
+      render: (r) => <input type="checkbox" checked={picked.has(keyOf(r))} onChange={() => toggle(r)} aria-label="Select" /> },
+    { key: "date", label: "Date", width: 11, className: "mono", get: (r) => r.date },
+    { key: "kind", label: "Kind", width: 10, get: (r) => (r.kind === "document" ? "purchase" : "sales") },
+    { key: "party", label: "Supplier / buyer", width: 32, get: (r) => r.party, title: (r) => r.party },
+    { key: "number", label: "Number", width: 20, className: "mono", get: (r) => r.number, title: (r) => r.number },
+    { key: "net", label: "Net", width: 13, numeric: true, get: (r) => Number(r.net ?? 0),
+      render: (r) => <>{pl(r.net == null ? null : String(r.net))} {r.currency !== "PLN" ? r.currency : ""}</> },
+    { key: "files", label: "PDF", width: 10, get: (r) => r.files, render: (r) => <>{r.files ? "yes" : "none"}</> },
+  ];
+  return (
+    <div className="card pad">
+      <h2 className="card-title">For the accountant</h2>
+      <p className="muted dim">
+        Documents the accountant does not have yet. Each month is due by the 10th of the next month. KSeF documents
+        reach her by themselves, and documents charged to nobody need no sending.
+      </p>
+      <ErrorBanner message={err} />
+      {data === null ? <Spinner label="Loading…" /> : data.count === 0 ? (
+        <p className="muted">Nothing to send: the accountant has every document.</p>
+      ) : (
+        <>
+          <div className="btn-row">
+            <button type="button" className="btn btn-primary btn-sm" disabled={busy || !picked.size} onClick={() => void markPicked()}>
+              Mark {picked.size || ""} sent…
+            </button>
+            <span className="muted">{data.count} document(s) to send</span>
+          </div>
+          {[...data.months].reverse().map((m) => (
+            <div key={m.month}>
+              <h3 className="card-subtitle">
+                {m.month} · send by {m.deadline}{" "}
+                <span className={`pill ${m.overdue ? "err" : "warn"}`}>{m.overdue ? "late" : "due"}</span>
+              </h3>
+              <DataTable rows={m.rows} rowKey={keyOf} columns={cols} empty="—" />
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function CompanyBooks() {
   const { companies, scope } = useAuth();
   const [companyId, setCompanyId] = useState<number>(scope !== "all" ? Number(scope) : companies[0]?.id ?? 0);
@@ -278,6 +369,7 @@ export default function CompanyBooks() {
               expand={(m) => <MonthPanel companyId={companyId} m={m} onSaved={() => load()} />} />
           )}
         </div>
+        {companyId ? <AccountantCard companyId={companyId} /> : null}
         {books ? <TaxPeriodsCard companyId={companyId} periods={books.tax_periods ?? []} onSaved={() => load()} /> : null}
         {overhead.length ? (
           <div className="card pad">

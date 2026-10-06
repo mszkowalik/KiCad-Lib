@@ -225,6 +225,19 @@ _PHASE1_DDL = (
     # recovered from `label` text by two repair scripts.
     # 40 characters held a label, not a reason: a longer one answered 500
     # (2026-10-06, the overnight import). Routes cap it at 300 (422).
+    # Decision 0079: whether the accountant has a document.
+    ("run_cost_documents.accountant_sent_at",
+     "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS accountant_sent_at varchar(10) NOT NULL DEFAULT ''"),
+    ("run_cost_documents.accountant_sent_via",
+     "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS accountant_sent_via varchar(20) NOT NULL DEFAULT ''"),
+    ("run_cost_documents.accountant_sent_ref",
+     "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS accountant_sent_ref varchar(200) NOT NULL DEFAULT ''"),
+    ("sales_invoices.accountant_sent_at",
+     "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS accountant_sent_at varchar(10) NOT NULL DEFAULT ''"),
+    ("sales_invoices.accountant_sent_via",
+     "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS accountant_sent_via varchar(20) NOT NULL DEFAULT ''"),
+    ("sales_invoices.accountant_sent_ref",
+     "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS accountant_sent_ref varchar(200) NOT NULL DEFAULT ''"),
     ("run_cost_lines.exclude_reason_300",
      "ALTER TABLE run_cost_lines ALTER COLUMN exclude_reason TYPE varchar(300)"),
     ("run_cost_lines.external_line_id",

@@ -387,6 +387,12 @@ def line_destination(li: M.RunCostLine, doc: M.RunCostDocument | None) -> tuple[
     return "unassigned", None
 
 
+def _accountant_state(doc: M.RunCostDocument) -> dict:
+    from . import accountant
+
+    return accountant.state(doc)
+
+
 def document_json(doc: M.RunCostDocument, with_lines: bool = True,
                   db: Session | None = None,
                   closed: dict[int, M.ProductionRun] | None = None) -> dict:
@@ -470,6 +476,8 @@ def document_json(doc: M.RunCostDocument, with_lines: bool = True,
             if db is not None else 0
         ),
         "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        # Decision 0079: whether the accountant has it (KSeF, or a recorded send).
+        "accountant": _accountant_state(doc),
         "line_count": len(live),
         "lines_total": _round(lines_total),
         # Entered total vs the sum of its lines: the reconciliation an importer

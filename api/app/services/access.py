@@ -374,6 +374,9 @@ FIELD_RESOLVERS: dict[tuple[str, str], Callable[[Session, str], set[int]]] = {
     ("*", "shipment_id"): _via(M.Shipment, "order_id", _order),
     ("*", "replaces_device_id"): _device,
     ("*", "device_ids"): _device,
+    # documents marked as sent to the accountant (decision 0079)
+    ("*", "document_ids"): _doc,
+    ("*", "sales_invoice_ids"): _via(M.SalesInvoice, "company_id", _company),
     ("*", "serials"): _serial,
     ("*", "codes"): _serial,
     ("/api/runs/{run_id}/craft/costs", "line_ids"): _line,

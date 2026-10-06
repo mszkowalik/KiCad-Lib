@@ -43,6 +43,7 @@ import PlanLinkDialog from "../components/invoices/PlanLinkDialog";
 import SplitLineDialog from "../components/invoices/SplitLineDialog";
 import DataTable, { type Column } from "../components/DataTable";
 import RecordFiles from "../components/RecordFiles";
+import AccountantMark from "../components/AccountantMark";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { useStickyState } from "../useStickyState";
 import { useAuth } from "../auth";
@@ -586,6 +587,10 @@ export default function Invoices() {
                   </p>
                 )}
                 <CorrectionLinks doc={doc} onOpen={setExpanded} />
+                <div className="btn-row">
+                  <AccountantMark companyId={doc.company_id} kind="document" id={d.id} state={doc.accountant}
+                                  onChange={() => { load(); loadDoc(d.id); }} />
+                </div>
                 <div className="btn-row">
                   <Originals docId={d.id} onChange={load} />
                   <button
