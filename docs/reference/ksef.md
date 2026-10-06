@@ -45,6 +45,8 @@ are Admin → Companies (tokens, "Sync now") and Production → KSeF (the inbox)
   106na ust. 3 of the VAT act) and, for another currency, the VAT in PLN
   (`P_14_xW`). A link to a hand-typed document writes the same, and fills
   `tax_amount` when it is empty; it never touches the net or the positions.
+  A correction linked to the document of the invoice it corrects (the same
+  seller and number) writes nothing: its page states a difference.
   Documents imported before the change are filled by
   `POST /api/ksef/fill-documents` (admin, dry run by default).
 * **The skip takes only a purchase.** The numbering counts the numbers KSeF holds,

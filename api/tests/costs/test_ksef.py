@@ -489,3 +489,19 @@ def test_a_hand_typed_document_learns_the_tax_data_when_it_is_linked(db, seven, 
     Y.import_purchase(db, row, actor="test", link_to=hand.id)
     assert hand.tax_amount == pytest.approx(23.0) and hand.received_date == "2049-09-12"
     assert hand.total_amount == pytest.approx(100.0) and hand.body["totals"]["gross"] == "123.00"
+
+
+def test_a_correction_linked_to_its_invoice_keeps_the_invoice_s_page(db, seven):
+    """Found on production 2026-10-07: a zero KSeF correction with the
+    invoice's own number was linked to the invoice's document, and the fill
+    job took the correction's page and receipt day."""
+    doc = M.RunCostDocument(doc_type="invoice", supplier="T", doc_number="FV 1", doc_date="2049-02-04",
+                            currency="PLN", company_id=seven.c.id, total_amount=75.17, tax_amount=17.29,
+                            received_date="2049-02-04", body={"title": "the invoice"})
+    db.add(doc)
+    db.flush()
+    kor = {"kind": "correction", "number": "FV 1", "issue_date": "2049-02-04", "sale_date": "2049-02-04",
+           "currency": "PLN", "body": {"title": "the correction", "totals": {"net": "0.00", "vat": "0.00"}}}
+    row = SimpleNamespace(received_at="2049-02-17T10:00:00Z", ksef_number="K")
+    assert Y.apply_fiscal(doc, row, kor) == []
+    assert (doc.body["title"], doc.received_date) == ("the invoice", "2049-02-04")

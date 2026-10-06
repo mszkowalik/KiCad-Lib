@@ -446,7 +446,11 @@ def apply_fiscal(doc: M.RunCostDocument, row: M.KsefInvoice, parsed: dict) -> li
     when nobody typed it, and the payment KSeF states when none is recorded.
     The invoice in KSeF is the binding one, so these replace what was typed.
     The net and the positions are never touched: they carry the money paths.
+    A correction linked to the invoice it corrects (the same seller and
+    number) changes nothing: it states a difference, not the invoice's page.
     Returns the fields that changed."""
+    if parsed.get("kind") == "correction" and (doc.doc_type or "") != "correction":
+        return []
     b = parsed["body"]
     t = b.get("totals") or {}
     pay = b.get("payment") or {}
