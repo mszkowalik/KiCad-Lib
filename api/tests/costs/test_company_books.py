@@ -313,3 +313,21 @@ def test_a_second_correction_of_an_advance_starts_from_the_first(db, world):
     db.flush()
     assert S.correction_difference(k2)["net"] == "-200.00"
     assert B.year(db, world.c.id, 2049)["months"][9]["advances_net"] == "300.00"
+
+
+def test_purchase_vat_is_in_pln_in_the_first_month_it_can_be_deducted(db, world):
+    """Decision 0084: a document in another currency counts the VAT in PLN its
+    invoice states, and a purchase's VAT waits for the month it was received
+    (art. 86 ust. 10b pkt 1 of the VAT act)."""
+    eur = M.RunCostDocument(doc_type="invoice", supplier="TEST-BOOKS-EUR", doc_number="E-1", doc_date="2049-04-28",
+                            currency="EUR", fx_rate_usd=1.1, company_id=world.c.id, total_amount=100.0,
+                            tax_amount=23.0, tax_amount_pln=Decimal("98.21"), received_date="2049-05-03")
+    late = _doc(db, world.c, "2049-04-10", [(1, 100.0, "overhead", "telecom")], tax=23.0)
+    late.sale_date = "2049-06-30"           # the service ends after the invoice: the tax point is June
+    bare = M.RunCostDocument(doc_type="invoice", supplier="TEST-BOOKS-USD", doc_number="U-1", doc_date="2049-04-11",
+                             currency="USD", company_id=world.c.id, total_amount=10.0, tax_amount=2.3)
+    db.add_all([eur, bare])
+    db.flush()
+    m = B.year(db, world.c.id, 2049)["months"]
+    assert (m[3]["purchase_vat"], m[4]["purchase_vat"], m[5]["purchase_vat"]) == ("0.00", "98.21", "23.00")
+    assert B.purchase_vat_day(eur) == "2049-05-03" and B.purchase_vat_pln(bare) is None

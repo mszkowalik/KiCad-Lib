@@ -55,7 +55,13 @@ Production → Company books.
 * **A record kept from the accountant is in no figure here**: not its
   revenue, cost, overhead or VAT (decision 0080). Her tax cannot include an
   invoice she never saw.
-* **VAT on purchases** is read from `tax_amount` of PLN documents only.
+* **VAT on purchases is in PLN, in the first month it can be deducted**
+  (decision 0084). `purchase_vat_pln` reads `tax_amount` of a PLN document
+  and `tax_amount_pln` of one in another currency; a foreign document without
+  it adds nothing. `purchase_vat_day` is the later of the sale date and the
+  receipt date, each falling back to the issue date (art. 86 ust. 10 and 10b
+  pkt 1 of the VAT act). So a December invoice received in January is
+  January's, and the books read documents from the year before too.
 * **The income tax is the company's legal form** (`companies.legal_form`,
   `company_books.income_tax`): a `sole_trader` pays PIT and may have
   `pit_linear`, `pit_scale` or `lump`; a `company` (sp. z o.o.) pays CIT and

@@ -2695,7 +2695,9 @@ def get_supplier_invoice(document_id: int) -> str:
 @beta_tool
 def create_supplier_invoice(supplier: str, doc_number: str, doc_date: str, currency: str,
                             total_amount: float, lines: list, company: str, external_id: str = "",
-                            notes: str = "") -> str:
+                            notes: str = "", tax_amount: float | None = None, sale_date: str = "",
+                            due_date: str = "", received_date: str = "",
+                            tax_amount_pln: float | None = None) -> str:
     """Enter a supplier invoice that KSeF does not hold (a foreign supplier, a
     receipt). Amounts are NET, as printed. Positions start with no destination;
     give each one with assign_invoice_line.
@@ -2710,6 +2712,14 @@ def create_supplier_invoice(supplier: str, doc_number: str, doc_date: str, curre
         company: The BILLED company: "7sigma" or "9sigma".
         external_id: The supplier's order id, if any.
         notes: What the document covers.
+        tax_amount: The printed VAT, in the document's currency. Leave it out
+            when the invoice charges no Polish VAT (an import, reverse charge).
+        sale_date: ISO day of the delivery or service, when it is not the issue date.
+        due_date: ISO payment term.
+        received_date: ISO day the company received the invoice, when it is
+            not the issue date. The books deduct its VAT no earlier.
+        tax_amount_pln: The VAT in PLN, for an invoice in another currency
+            that charges Polish VAT (the invoice prints it).
     """
     from ..routers import run_costs
 
@@ -2726,9 +2736,12 @@ def create_supplier_invoice(supplier: str, doc_number: str, doc_date: str, curre
     try:
         body = run_costs.DocumentIn(supplier=supplier, doc_number=doc_number, doc_date=doc_date, currency=currency,
                                     total_amount=total_amount, external_id=external_id, notes=notes,
+                                    tax_amount=tax_amount, sale_date=sale_date, due_date=due_date,
+                                    received_date=received_date,
+                                    tax_amount_pln=(str(tax_amount_pln) if tax_amount_pln is not None else None),
                                     company_id=cid, lines=[run_costs.LineIn(**ln) for ln in lines or []])
-    except Exception as e:  # noqa: BLE001 — a malformed line is the caller's mistake, said plainly
-        return json.dumps({"error": f"bad line: {e}"})
+    except Exception as e:  # noqa: BLE001 — a malformed line or day is the caller's mistake, said plainly
+        return json.dumps({"error": f"bad argument: {e}"})
     return _route(run_costs.create_shared_document, body)
 
 

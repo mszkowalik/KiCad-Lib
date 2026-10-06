@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-10-06 (supplier invoices keep their tax data)
+
+Decision [0084](docs/decisions/0084-a-supplier-invoice-keeps-its-tax-data-in-the-ksef-structure.md).
+
+- **A supplier invoice has VAT, VAT in PLN, sale date, received date and due
+  date.** Invoices → Edit this invoice shows them. VAT in PLN is for an
+  invoice in another currency that charges Polish VAT.
+- **A KSeF import keeps the whole invoice.** The document view has a
+  "Printed invoice" button: seller, buyer, the positions with their VAT rates,
+  and the totals per rate.
+- **Correction: Company books count the VAT of a purchase in another
+  currency**, from its VAT in PLN. Before, only PLN documents counted.
+- **Company books count purchase VAT in the month the law allows the
+  deduction**: the later of the sale date and the received date, not the
+  document date. A KSeF invoice is received on the day KSeF numbered it.
+- **`create_supplier_invoice` (agent tool) takes the same fields.**
+- **Admin: `POST /api/ksef/fill-documents`** fills the documents imported
+  from KSeF before this change, from their stored XML. Dry run by default.
+
 ## 2026-10-06 (download what the accountant needs)
 
 - **"For the accountant" has a Download button**: one ZIP with a file per

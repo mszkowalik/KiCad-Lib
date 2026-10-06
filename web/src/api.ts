@@ -2931,6 +2931,15 @@ export interface RunCostDocumentRow {
   display_amount: number | null;
   total_amount: number | null;
   tax_amount: number | null;
+  /** Decision 0084: the invoice's tax data. "" = the issue date. */
+  sale_date?: string;
+  due_date?: string;
+  /** the day it was received; for a KSeF invoice, the day KSeF numbered it */
+  received_date?: string;
+  /** the VAT in PLN of a document in another currency, as text */
+  tax_amount_pln?: string | null;
+  /** the invoice as printed (full view only); null when no import wrote it */
+  body?: SalesInvoiceBody | null;
   notes: string;
   attachment_id: number | null;
   /** The company that was BILLED (decision 0064), and how that was found:
@@ -3194,7 +3203,8 @@ export function editDocumentLines(
     /** the header fields, changed in the same transaction as the positions */
     document?: Partial<Pick<RunCostDocumentRow,
       "supplier" | "doc_number" | "external_id" | "doc_date" | "currency" |
-      "total_amount" | "doc_type" | "notes" | "paid_at" | "fx_rate_usd" | "company_id">>;
+      "total_amount" | "doc_type" | "notes" | "paid_at" | "fx_rate_usd" | "company_id" |
+      "tax_amount" | "sale_date" | "due_date" | "received_date" | "tax_amount_pln">>;
     updates?: (Partial<RunCostLineRow> & { id: number })[];
     creates?: Record<string, unknown>[];
     deletes?: number[];
@@ -3478,6 +3488,11 @@ export interface DocumentCreate {
   currency?: string;
   fx_rate_usd?: number | null;
   total_amount?: number | null;
+  tax_amount?: number | null;
+  sale_date?: string;
+  due_date?: string;
+  received_date?: string;
+  tax_amount_pln?: string | null;
   notes?: string;
   /** the company that was billed (decision 0064) */
   company_id?: number | null;
@@ -9547,7 +9562,10 @@ export interface SalesTotals {
   net: string;
   vat: string;
   gross: string;
-  rates: Record<string, { net: string; vat: string }>;
+  /** `vat_pln`: an invoice in another currency also states its VAT in PLN
+   *  (FA(3) P_14_xW, decision 0084) */
+  rates: Record<string, { net: string; vat: string; vat_pln?: string }>;
+  vat_pln?: string;
 }
 
 export interface SalesInvoiceBody {

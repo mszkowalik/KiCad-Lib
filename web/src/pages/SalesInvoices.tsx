@@ -34,7 +34,6 @@ import {
   uploadSalesInvoiceFile,
   type CustomerRow,
   type SalesInvoiceRow,
-  type SalesLine,
   type SalesProductRow,
   type SalesTemplate,
 } from "../api";
@@ -44,6 +43,7 @@ import DataTable, { type Column } from "../components/DataTable";
 import { useDialog } from "../components/Dialog";
 import Field, { CheckField, FieldGrid, FieldRow } from "../components/Field";
 import FilePick from "../components/FilePick";
+import { INVOICE_LINE_COLUMNS, pl } from "../components/PrintedInvoice";
 import RecordFiles from "../components/RecordFiles";
 import AccountantMark from "../components/AccountantMark";
 import { ErrorBanner, Spinner } from "../components/Ui";
@@ -53,11 +53,6 @@ const KIND_TEXT: Record<string, string> = {
   vat: "VAT", proforma: "proforma", correction: "correction", advance: "advance", settlement: "settlement",
 };
 const RATES = ["23", "8", "5", "0 KR", "0 WDT", "0 EX", "zw", "oo", "np I", "np II"];
-
-function pl(amount: string | number | null | undefined): string {
-  const n = Number(amount ?? 0);
-  return n.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 /** An imported document's payment is what the old register said, and it
  *  rarely said: "payment not recorded" is the honest word, never "overdue". */
@@ -94,18 +89,8 @@ const COLUMNS: Column<SalesInvoiceRow>[] = [
     title: (r) => r.ksef_number || "not in KSeF" },
 ];
 
-const LINE_COLUMNS: Column<SalesLine>[] = [
-  { key: "pos", label: "Lp.", width: 5, numeric: true, get: (l) => l.position ?? 0 },
-  { key: "name", label: "Name", width: 39, get: (l) => l.name },
-  { key: "qty", label: "Qty", width: 8, numeric: true, get: (l) => Number(l.qty) },
-  { key: "unit", label: "Unit", width: 6, get: (l) => l.unit },
-  { key: "unit_net", label: "Unit net", width: 11, numeric: true, get: (l) => Number(l.unit_net),
-    render: (l) => <>{pl(l.unit_net)}</> },
-  { key: "net", label: "Net", width: 11, numeric: true, get: (l) => Number(l.net ?? 0), render: (l) => <>{pl(l.net)}</> },
-  { key: "rate", label: "VAT", width: 7, get: (l) => l.vat_rate },
-  { key: "gross", label: "Gross", width: 13, numeric: true, get: (l) => Number(l.gross ?? 0),
-    render: (l) => <>{pl(l.gross)}</> },
-];
+// Shared with the supplier document's printed invoice (decision 0084).
+const LINE_COLUMNS = INVOICE_LINE_COLUMNS;
 
 /** One invoice, opened under its row. */
 /** The printed documents filed with an invoice (decision 0077). */

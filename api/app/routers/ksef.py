@@ -69,6 +69,22 @@ def run_sync(body: SyncIn, db: Session = Depends(get_db), admin: M.User = Depend
     return res
 
 
+@router.post("/fill-documents")
+def fill_documents(dry_run: bool = True, db: Session = Depends(get_db), admin: M.User = Depends(require_admin)):
+    """Give the supplier documents imported from KSeF before decision 0084
+    the invoice's tax data, from the XML each one stored. Dry run by default;
+    an archive-wide job, so admin work. Runs again harmlessly."""
+    res = svc.fill_documents(db)
+    if dry_run:
+        db.rollback()
+    else:
+        audit(db, "ksef.fill_documents", "run_cost_document", 0,
+              {"checked": res["checked"], "filled": len(res["filled"]), "no_xml": len(res["no_xml"]),
+               "failed": len(res["failed"])})
+        db.commit()
+    return {"dry_run": dry_run, **res}
+
+
 @router.get("/inbox")
 def inbox(side: str = "", status: str = "", request: Request = None, db: Session = Depends(get_db)):
     """The invoices KSeF holds for the companies in the header scope."""

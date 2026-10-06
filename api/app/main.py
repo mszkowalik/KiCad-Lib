@@ -810,6 +810,19 @@ _PHASE1_DDL = (
      "CREATE UNIQUE INDEX IF NOT EXISTS uq_ksef_invoices_company_number ON ksef_invoices (company_id, ksef_number)"),
     ("ksef_invoices.ksef_number unique drop",
      "ALTER TABLE ksef_invoices DROP CONSTRAINT IF EXISTS ksef_invoices_ksef_number_key"),
+    # Decision 0084: a supplier document keeps the invoice's tax data in the
+    # KSeF structure. The documents already imported from KSeF are filled from
+    # their stored XML by an admin job (`POST /api/ksef/fill-documents`).
+    ("run_cost_documents.sale_date",
+     "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS sale_date varchar(10) NOT NULL DEFAULT ''"),
+    ("run_cost_documents.due_date",
+     "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS due_date varchar(10) NOT NULL DEFAULT ''"),
+    ("run_cost_documents.received_date",
+     "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS received_date varchar(10) NOT NULL DEFAULT ''"),
+    ("run_cost_documents.tax_amount_pln",
+     "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS tax_amount_pln numeric(14,2)"),
+    ("run_cost_documents.body",
+     "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS body jsonb"),
     # LAST. Everything above reads `kind`; nothing below may.
     #
     # The index on it goes first and by name: `create_all` cannot drop an index

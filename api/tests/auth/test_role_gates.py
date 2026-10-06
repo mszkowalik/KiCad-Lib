@@ -54,6 +54,8 @@ EXPECTED = {
     ("GET", "/api/ksef/status"),
     ("PUT", "/api/ksef/credentials/{company_id}"),
     ("POST", "/api/ksef/sync"),
+    # Filling every KSeF-imported document's tax data, archive-wide — decision 0084.
+    ("POST", "/api/ksef/fill-documents"),
     ("POST", "/api/projects/{project_id}/ownership"),
     # The deployment's own configuration — decision 0045.
     ("GET", "/api/settings"),

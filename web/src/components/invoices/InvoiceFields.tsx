@@ -12,6 +12,7 @@ import { errorMessage, getNbpRate } from "../../api";
 import { useAuth } from "../../auth";
 import AutoTextarea from "../AutoTextarea";
 import Field from "../Field";
+import InfoTip from "../InfoTip";
 import { ChargeToSelect, type RunOption } from "../costs";
 
 export interface InvoiceHeader {
@@ -26,6 +27,45 @@ export interface InvoiceHeader {
   dest: string;         // create only — a destination for every position at once
   /** the company that was billed (decision 0064); "" = not decided yet */
   company_id: number | "";
+  /** Decision 0084, the invoice's tax data. Strings while typing; "" = not stated. */
+  tax: string;          // the printed VAT, in the document's currency
+  tax_pln: string;      // the VAT in PLN, on a document in another currency
+  sale_date: string;
+  due_date: string;
+  received_date: string;
+}
+
+/** The tax fields of a header, shaped for a create or a patch. A PLN
+ *  document's VAT is `tax_amount`, so it never sends a VAT in PLN as well. */
+export function taxFieldsOf(h: InvoiceHeader) {
+  const tax = h.tax.trim();
+  const pln = h.tax_pln.trim();
+  const isPln = (h.currency.trim() || "USD").toUpperCase() === "PLN";
+  return {
+    tax_amount: tax === "" ? null : Number(tax),
+    tax_amount_pln: isPln || pln === "" ? null : pln,
+    sale_date: h.sale_date.trim(),
+    due_date: h.due_date.trim(),
+    received_date: h.received_date.trim(),
+  };
+}
+
+/** The header fields a new document starts with that are the same for all. */
+export const EMPTY_TAX = { tax: "", tax_pln: "", sale_date: "", due_date: "", received_date: "" };
+
+/** The tax data in one line, for the document view when it is not edited. */
+export function taxSummary(d: {
+  currency: string; tax_amount: number | null; tax_amount_pln?: string | null;
+  sale_date?: string; due_date?: string; received_date?: string;
+}): string {
+  const parts = [
+    d.tax_amount != null ? `VAT ${d.tax_amount.toFixed(2)} ${d.currency}` : "no VAT stated",
+    d.tax_amount_pln != null ? `VAT ${d.tax_amount_pln} PLN` : "",
+    d.sale_date ? `sale ${d.sale_date}` : "",
+    d.received_date ? `received ${d.received_date}` : "",
+    d.due_date ? `due ${d.due_date}` : "",
+  ];
+  return parts.filter(Boolean).join(" · ");
 }
 
 export const DOC_TYPES = [
@@ -70,6 +110,7 @@ export default function InvoiceFields({
   };
 
   const foreign = value.currency.trim() && value.currency.trim().toUpperCase() !== "USD";
+  const isPln = (value.currency.trim() || "USD").toUpperCase() === "PLN";
 
   return (
     <>
@@ -127,6 +168,30 @@ export default function InvoiceFields({
           <input className="text num" value={value.total} disabled={disabled}
                  onChange={(e) => set({ total: e.target.value })} />
         </label>
+        {/* Decision 0084. The books deduct a purchase's VAT in PLN, in the
+            month of the later of the sale date and the receipt date. */}
+        <Field label={<>VAT <InfoTip label="About VAT">The printed VAT, in the document's currency. Empty when the invoice charges no Polish VAT (an import, reverse charge).</InfoTip></>}>
+          <input className="text num" value={value.tax} disabled={disabled}
+                 onChange={(e) => set({ tax: e.target.value })} />
+        </Field>
+        {isPln ? null : (
+          <Field label={<>VAT in PLN <InfoTip label="About VAT in PLN">An invoice in another currency that charges Polish VAT prints it in PLN as well. The books read this figure.</InfoTip></>}>
+            <input className="text num" value={value.tax_pln} disabled={disabled}
+                   onChange={(e) => set({ tax_pln: e.target.value })} />
+          </Field>
+        )}
+        <Field label={<>Sale date <InfoTip label="About Sale date">The day of the delivery or the service, when the invoice prints one that is not its date.</InfoTip></>}>
+          <input className="text" value={value.sale_date} disabled={disabled} placeholder="as the date"
+                 onChange={(e) => set({ sale_date: e.target.value })} />
+        </Field>
+        <Field label={<>Received <InfoTip label="About Received">The day the invoice reached you. Its VAT is deducted no earlier. A KSeF invoice takes the day KSeF numbered it.</InfoTip></>}>
+          <input className="text" value={value.received_date} disabled={disabled} placeholder="as the date"
+                 onChange={(e) => set({ received_date: e.target.value })} />
+        </Field>
+        <Field label="Due">
+          <input className="text" value={value.due_date} disabled={disabled}
+                 onChange={(e) => set({ due_date: e.target.value })} />
+        </Field>
         <label>
           Type
           <select className="text" value={value.doc_type} disabled={disabled}

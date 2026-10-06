@@ -39,6 +39,14 @@ are Admin → Companies (tokens, "Sync now") and Production → KSeF (the inbox)
   word of the seller's name. Then the import answers 409 with the candidates
   and writes nothing. `document_id` links the purchase to one, and `force`
   imports it anyway.
+* **An import keeps the invoice's tax data** (decision 0084,
+  `sync.apply_fiscal`): the printed invoice as `body`, the sale and due
+  dates, `received_date` (the Polish day of KSeF's `acquisitionDate`, art.
+  106na ust. 3 of the VAT act) and, for another currency, the VAT in PLN
+  (`P_14_xW`). A link to a hand-typed document writes the same, and fills
+  `tax_amount` when it is empty; it never touches the net or the positions.
+  Documents imported before the change are filled by
+  `POST /api/ksef/fill-documents` (admin, dry run by default).
 * **The skip takes only a purchase.** The numbering counts the numbers KSeF holds,
   so a skipped sales row would give its number out again. A sales row has no
   action at all: the KSeF page says instead whether it waits for its XML or

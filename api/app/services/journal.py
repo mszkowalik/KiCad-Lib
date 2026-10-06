@@ -125,7 +125,10 @@ LATE_COLUMNS: dict[str, dict[str, object]] = {
     "run_cost_documents": {"company_id": None, "company_source": "", "counterparty_company_id": None,
                            "seller_tax_id": "",
                            # decision 0079, missed when it shipped (found 2026-10-06)
-                           "accountant_sent_at": "", "accountant_sent_via": "", "accountant_sent_ref": ""},
+                           "accountant_sent_at": "", "accountant_sent_via": "", "accountant_sent_ref": "",
+                           # decision 0084: the invoice's tax data
+                           "sale_date": "", "due_date": "", "received_date": "", "tax_amount_pln": None,
+                           "body": None},
     "run_cost_lines": {"transformation_id": None, "overhead_category": ""},
     "component_consumptions": {"transformation_id": None, "step_run_id": None, "company_id": None,
                                "transfer_line_id": None},

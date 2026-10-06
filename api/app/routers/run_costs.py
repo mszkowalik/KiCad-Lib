@@ -5,6 +5,7 @@ Thin, per the api conventions: parse the request, call `services/run_actuals`,
 shape the response. Every mutation writes an audit row WITH details — this is
 the money path, so "something changed" is not good enough.
 """
+from decimal import Decimal
 from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -18,6 +19,7 @@ from ..models import utcnow
 from ..services import (cost_steps, document_files, journal, nbp, run_actuals,
                         substitutions, supplier_parts)
 from ..services import companies as company_svc
+from ..services.invoicing.amounts import d2
 from .util import acting_name, audit, part_display_name
 
 router = APIRouter(prefix="/api", tags=["run-costs"])
@@ -111,6 +113,10 @@ class SplitIn(BaseModel):
     replace: bool = False
 
 
+#: An ISO day, or "" for "not stated".
+_DAY = r"^(\d{4}-\d{2}-\d{2})?$"
+
+
 class DocumentIn(BaseModel):
     project_id: int | None = None
     run_id: int | None = None
@@ -124,6 +130,12 @@ class DocumentIn(BaseModel):
     fx_rate_usd: float | None = None
     total_amount: float | None = None
     tax_amount: float | None = None
+    # Decision 0084: the invoice's tax data. "" = the issue date.
+    sale_date: str = Field(default="", pattern=_DAY)
+    due_date: str = Field(default="", pattern=_DAY)
+    received_date: str = Field(default="", pattern=_DAY)
+    # The VAT in PLN of a document in another currency (P_14_xW).
+    tax_amount_pln: Decimal | None = None
     notes: str = ""
     attachment_id: int | None = None
     corrects_document_id: int | None = None
@@ -144,6 +156,10 @@ class DocumentPatch(BaseModel):
     fx_rate_usd: float | None = None
     total_amount: float | None = None
     tax_amount: float | None = None
+    sale_date: str | None = Field(default=None, pattern=_DAY)
+    due_date: str | None = Field(default=None, pattern=_DAY)
+    received_date: str | None = Field(default=None, pattern=_DAY)
+    tax_amount_pln: Decimal | None = None
     notes: str | None = None
     run_id: int | None = None
     # A document becomes SHARED the moment a second product's lines land on it
@@ -911,6 +927,8 @@ def _create_document(project_id: int | None, body: DocumentIn, db: Session):
         _check_transformation(db, li.plan_key, li.transformation_id, li.run_id,
                               li.project_id, li.allocate)
     data = body.model_dump(exclude={"lines", "project_id"})
+    if data.get("tax_amount_pln") is not None:
+        data["tax_amount_pln"] = d2(data["tax_amount_pln"])
     original = db.get(M.RunCostDocument, body.corrects_document_id) if body.corrects_document_id else None
     if body.corrects_document_id and original is None:
         raise HTTPException(404, f"no document {body.corrects_document_id} to correct")
@@ -1063,11 +1081,14 @@ def update_document(doc_id: int, body: DocumentPatch, db: Session = Depends(get_
     if "company_id" in fields and _guard_buyer_change(db, doc, fields["company_id"]):
         fields["company_source"] = "manual"
     held = _stock_before(db, [doc.id], new_company_id=fields.get("company_id"))
+    if fields.get("tax_amount_pln") is not None:
+        fields["tax_amount_pln"] = d2(fields["tax_amount_pln"])
     before, after = {}, {}
     for field, value in fields.items():
         old = getattr(doc, field)
         if old != value:
-            before[field], after[field] = old, value
+            # The audit row is JSON: a Decimal (`tax_amount_pln`) goes as text.
+            before[field], after[field] = (str(v) if isinstance(v, Decimal) else v for v in (old, value))
             setattr(doc, field, value)
     _refuse_stock_loss(db, held, "this change")
     audit(db, "run.document.update", "run_cost_document", doc.id,
@@ -1243,10 +1264,14 @@ def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
     doc_before, doc_after = {}, {}
     if "company_id" in doc_fields:
         doc_fields["company_source"] = "manual"
+    if doc_fields.get("tax_amount_pln") is not None:
+        doc_fields["tax_amount_pln"] = d2(doc_fields["tax_amount_pln"])
     if body.document is not None:
         for field, value in doc_fields.items():
             if getattr(doc, field) != value:
-                doc_before[field], doc_after[field] = getattr(doc, field), value
+                # The audit row is JSON: a Decimal (`tax_amount_pln`) goes as text.
+                doc_before[field], doc_after[field] = (str(v) if isinstance(v, Decimal) else v
+                                                       for v in (getattr(doc, field), value))
                 setattr(doc, field, value)
         # A changed currency or date invalidates the pinned rate: it was resolved
         # from NBP table A at the OLD date, so leaving it would price the

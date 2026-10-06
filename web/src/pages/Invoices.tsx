@@ -36,7 +36,9 @@ import {
 } from "../api";
 import { CheckField } from "../components/Field";
 import { useDialog } from "../components/Dialog";
-import InvoiceFields, { type InvoiceHeader } from "../components/invoices/InvoiceFields";
+import InvoiceFields, { EMPTY_TAX, taxFieldsOf, taxSummary, type InvoiceHeader }
+  from "../components/invoices/InvoiceFields";
+import PrintedInvoice from "../components/PrintedInvoice";
 import InvoiceLinesTable, { blankDraft, draftToLineIn, toDraft, type LineDraft }
   from "../components/invoices/InvoiceLinesTable";
 import PlanLinkDialog from "../components/invoices/PlanLinkDialog";
@@ -67,6 +69,11 @@ function headerOf(d: RunCostDocumentRow): InvoiceHeader {
     notes: d.notes || "",
     dest: "",
     company_id: d.company_id ?? "",
+    tax: d.tax_amount == null ? "" : String(d.tax_amount),
+    tax_pln: d.tax_amount_pln ?? "",
+    sale_date: d.sale_date || "",
+    due_date: d.due_date || "",
+    received_date: d.received_date || "",
   };
 }
 
@@ -356,6 +363,7 @@ export default function Invoices() {
           total_amount: total === "" ? null : Number(total),
           doc_type: header.doc_type,
           notes: header.notes,
+          ...taxFieldsOf(header),
           ...(header.company_id !== "" ? { company_id: header.company_id } : {}),
         },
         updates: savedRows
@@ -582,10 +590,14 @@ export default function Invoices() {
                     disabled={savingDoc}
                   />
                 ) : (
-                  <p className="muted">
-                    {d.notes ? d.notes : "No notes on this document."}
-                  </p>
+                  <>
+                    <p className="muted">
+                      {d.notes ? d.notes : "No notes on this document."}
+                    </p>
+                    <p className="muted dim">{taxSummary(doc)}</p>
+                  </>
                 )}
+                {doc.body ? <PrintedInvoice body={doc.body} currency={doc.currency} /> : null}
                 <CorrectionLinks doc={doc} onOpen={setExpanded} />
                 <div className="btn-row">
                   <AccountantMark companyId={doc.company_id} kind="document" id={d.id} state={doc.accountant}
@@ -874,7 +886,7 @@ function NewInvoiceCard({
   const { companies, scope } = useAuth();
   const [head, setHead] = useState<InvoiceHeader>({
     supplier: "", doc_number: "", external_id: "", doc_date: "",
-    currency: "USD", total: "", doc_type: "invoice", notes: "", dest: "",
+    currency: "USD", total: "", doc_type: "invoice", notes: "", dest: "", ...EMPTY_TAX,
     // The switcher's company, else the user's only one (decision 0064).
     company_id: scope !== "all" ? Number(scope) : companies.length === 1 ? companies[0].id : "",
   });
@@ -908,6 +920,7 @@ function NewInvoiceCard({
         doc_date: head.doc_date.trim(),
         currency: head.currency.trim() || "USD",
         total_amount: totalNum,
+        ...taxFieldsOf(head),
         notes: head.notes.trim(),
         company_id: head.company_id === "" ? null : head.company_id,
         // A position with no destination of its own falls back to the

@@ -11,7 +11,8 @@ to the platform's record, import a purchase on request (decision 0067).
   out again. For a company with its own system (9SIGMA) every sales invoice is
   recorded for reading.
 * **A purchase waits** until a person or an agent imports it as a supplier
-  document, or skips it with a reason.
+  document, or skips it with a reason. The document keeps the invoice's tax
+  data beside its cost positions (`apply_fiscal`, decision 0084).
 * **An invoice is in the inbox once per company that sees it.** An invoice
   7Sigma issues to 9SIGMA is 7Sigma's sales row and 9SIGMA's purchase row:
   `ksef_number` is unique per company, not across them.
@@ -28,8 +29,10 @@ from __future__ import annotations
 
 import base64
 import re
+import xml.etree.ElementTree as ET
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
@@ -417,13 +420,70 @@ def possible_duplicates(db: Session, row: M.KsefInvoice) -> list[M.RunCostDocume
     return out
 
 
+_WARSAW = ZoneInfo("Europe/Warsaw")
+
+
+def received_day(stamp: str) -> str:
+    """The Polish calendar day of KSeF's acquisition timestamp: the day KSeF
+    gave the invoice its number, which IS the day the buyer received it (art.
+    106na ust. 3 of the VAT act). A stamp just after midnight UTC is the next
+    day in Poland. A stamp without a zone is taken as written."""
+    s = (stamp or "").strip()
+    if not s:
+        return ""
+    try:
+        # KSeF may print 7 fractional digits; Python reads at most 6.
+        t = datetime.fromisoformat(re.sub(r"(\.\d{6})\d+", r"\1", s.replace("Z", "+00:00")))
+    except ValueError:
+        return s[:10]
+    return (t.astimezone(_WARSAW) if t.tzinfo is not None else t).date().isoformat()
+
+
+def apply_fiscal(doc: M.RunCostDocument, row: M.KsefInvoice, parsed: dict) -> list[str]:
+    """Give a supplier document the invoice's tax data from its KSeF XML
+    (decision 0084): the printed invoice as `body`, its sale, due and receipt
+    dates, the VAT in PLN of an invoice in another currency, the VAT itself
+    when nobody typed it, and the payment KSeF states when none is recorded.
+    The invoice in KSeF is the binding one, so these replace what was typed.
+    The net and the positions are never touched: they carry the money paths.
+    Returns the fields that changed."""
+    b = parsed["body"]
+    t = b.get("totals") or {}
+    pay = b.get("payment") or {}
+    foreign = (parsed.get("currency") or "PLN").upper() != "PLN"
+    want = {
+        "body": b,
+        "sale_date": parsed.get("sale_date") or "",
+        "due_date": pay.get("due_date") or "",
+        # KSeF states the receipt in its metadata; without it, a typed day stays.
+        "received_date": received_day(row.received_at) or doc.received_date or "",
+        "tax_amount_pln": A.d2(t["vat_pln"]) if foreign and t.get("vat_pln") else None,
+    }
+    if doc.tax_amount is None and t.get("vat") is not None:
+        want["tax_amount"] = float(t["vat"])
+    if not doc.paid_at and pay.get("paid") and pay.get("paid_date"):
+        want["paid_at"] = pay["paid_date"]
+    changed = []
+    for k, v in want.items():
+        old = getattr(doc, k)
+        if k == "tax_amount_pln" and old is not None and v is not None and A.d2(old) == v:
+            continue
+        if old != v:
+            setattr(doc, k, v)
+            changed.append(k)
+    return changed
+
+
 def _link(db: Session, row: M.KsefInvoice, doc: M.RunCostDocument) -> None:
     """The inbox row points at the document that already holds the purchase;
     a hand-entered document learns the seller's NIP, so the exact guard finds
-    it next time."""
+    it next time, and the invoice's tax data when the XML is here."""
     row.status, row.document_id = "imported", doc.id
     if not doc.seller_tax_id and row.seller_nip:
         doc.seller_tax_id = row.seller_nip
+    xml = _xml_of(row)
+    if xml is not None:
+        apply_fiscal(doc, row, parse(xml))
     db.flush()
 
 
@@ -493,6 +553,7 @@ def import_purchase(db: Session, row: M.KsefInvoice, actor: str = "", client_fac
         corrects_document_id=corrects.id if corrects else None,
         notes=f"Imported from KSeF {row.ksef_number} by {actor}. The XML in KSeF is the invoice; "
               f"totals are NET, VAT {b['totals']['vat']}, gross {b['totals']['gross']}.")
+    apply_fiscal(doc, row, p)
     if (doc.currency or "PLN").upper() != "USD" and doc.doc_date:
         from .. import nbp
 
@@ -523,6 +584,35 @@ def import_purchase(db: Session, row: M.KsefInvoice, actor: str = "", client_fac
     doc.attachment_id = att.id
     db.flush()
     return doc
+
+
+def fill_documents(db: Session) -> dict:
+    """Give every supplier document that holds a KSeF purchase the invoice's
+    tax data from the XML the inbox stored (decision 0084). Idempotent: a
+    document already filled reports no change. The caller commits, or rolls
+    back for a dry run."""
+    out = {"checked": 0, "filled": [], "no_xml": [], "failed": []}
+    rows = (db.query(M.KsefInvoice)
+            .filter(M.KsefInvoice.side == "purchase", M.KsefInvoice.document_id.isnot(None))
+            .order_by(M.KsefInvoice.id).all())
+    for row in rows:
+        doc = db.get(M.RunCostDocument, row.document_id)
+        if doc is None:
+            continue
+        out["checked"] += 1
+        xml = _xml_of(row)
+        if xml is None:
+            out["no_xml"].append({"document_id": doc.id, "ksef_number": row.ksef_number})
+            continue
+        try:
+            changed = apply_fiscal(doc, row, parse(xml))
+        except (ValueError, ET.ParseError) as e:
+            out["failed"].append({"document_id": doc.id, "ksef_number": row.ksef_number, "error": str(e)[:200]})
+            continue
+        if changed:
+            out["filled"].append({"document_id": doc.id, "ksef_number": row.ksef_number, "fields": changed})
+    db.flush()
+    return out
 
 
 def inbox_json(row: M.KsefInvoice) -> dict:

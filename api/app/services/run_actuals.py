@@ -447,6 +447,11 @@ def document_json(doc: M.RunCostDocument, with_lines: bool = True,
         "display_amount": doc.display_amount,
         "total_amount": doc.total_amount,
         "tax_amount": doc.tax_amount,
+        # Decision 0084: the invoice's tax data, in the KSeF structure.
+        "sale_date": doc.sale_date or "",
+        "due_date": doc.due_date or "",
+        "received_date": doc.received_date or "",
+        "tax_amount_pln": str(doc.tax_amount_pln) if doc.tax_amount_pln is not None else None,
         "notes": doc.notes,
         "attachment_id": doc.attachment_id,
         # Decisions 0063/0064: the company that was billed, how that was found,
@@ -509,6 +514,9 @@ def document_json(doc: M.RunCostDocument, with_lines: bool = True,
     if with_lines:
         out["lines"] = [line_json(li, doc, db, kids=kids)
                         for li in sorted(doc.lines, key=lambda x: (x.position, x.id))]
+        # The printed invoice (decision 0084): on the full view only, the
+        # register renders every document and never reads it.
+        out["body"] = doc.body
     return out
 
 

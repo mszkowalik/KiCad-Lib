@@ -10,6 +10,10 @@ A position priced NET carries P_9A and P_11; one priced GROSS carries P_9B and
 P_11A instead, and its net is the gross less its VAT (P_11Vat when stated). A
 unit price keeps every decimal the invoice gives (up to 8).
 
+An invoice in another currency states each rate's VAT in PLN as well
+(P_14_xW); it is kept as `vat_pln`, per rate and in the totals (decision
+0084), because that is the VAT a Polish buyer deducts.
+
 The totals of a correction (KOR, KOR_ZAL, KOR_ROZ) are the DIFFERENCE, so the
 document says so (`correction.states_difference`), and a correction of an
 advance or a settlement names what it corrects (`correction.of_kind`).
@@ -30,6 +34,8 @@ NET_FIELDS = {"P_13_1": "23", "P_13_2": "8", "P_13_3": "5", "P_13_4": "4", "P_13
               "P_13_6_1": "0 KR", "P_13_6_2": "0 WDT", "P_13_6_3": "0 EX", "P_13_7": "zw",
               "P_13_8": "np I", "P_13_9": "np II", "P_13_10": "oo", "P_13_11": "marża"}
 VAT_FIELDS = {"P_13_1": "P_14_1", "P_13_2": "P_14_2", "P_13_3": "P_14_3", "P_13_4": "P_14_4", "P_13_5": "P_14_5"}
+#: An invoice in another currency also states each rate's VAT in PLN (decision 0084)
+VAT_PLN_FIELDS = {"P_13_1": "P_14_1W", "P_13_2": "P_14_2W", "P_13_3": "P_14_3W", "P_13_4": "P_14_4W"}
 FORMS = {"1": "gotówka", "2": "karta", "3": "bon", "4": "czek", "5": "kredyt", "6": "przelew",
          "7": "płatność mobilna"}
 PERCENT = {"23", "22", "8", "7", "5", "4", "3"}
@@ -117,8 +123,12 @@ def parse(xml: bytes) -> dict:
         if v is not None:
             vat = _t(fa, VAT_FIELDS[f]) if f in VAT_FIELDS else None
             rates[r] = {"net": str(d2(v)), "vat": str(d2(vat or 0))}
+            vat_pln = _t(fa, VAT_PLN_FIELDS[f]) if f in VAT_PLN_FIELDS else None
+            if vat_pln is not None:
+                rates[r]["vat_pln"] = str(d2(vat_pln))
     net = sum((Decimal(v["net"]) for v in rates.values()), Decimal(0))
     vat = sum((Decimal(v["vat"]) for v in rates.values()), Decimal(0))
+    vat_pln = [Decimal(v["vat_pln"]) for v in rates.values() if "vat_pln" in v]
     gross = Decimal(_t(fa, "P_15") or "0")
     rows = [_position(w, i) for i, w in enumerate(fa.findall("FaWiersz"), 1)]
     pl = fa.find("Platnosc")
@@ -149,7 +159,8 @@ def parse(xml: bytes) -> dict:
             "title": "", "place": _t(fa, "P_1M") or "",
             "seller": _party(root, "Podmiot1"), "buyer": _party(root, "Podmiot2"),
             "lines": [p for p in rows if not p["before"]],
-            "totals": {"net": str(d2(net)), "vat": str(d2(vat)), "gross": str(d2(gross)), "rates": rates},
+            "totals": {"net": str(d2(net)), "vat": str(d2(vat)), "gross": str(d2(gross)), "rates": rates,
+                       **({"vat_pln": str(d2(sum(vat_pln, Decimal(0))))} if vat_pln else {})},
             "payment": {"due_date": terms[0] if terms and not paid else None,
                         "method": FORMS.get(_t(pl, "FormaPlatnosci") or "", "") if pl is not None else "",
                         "paid": paid, "paid_date": _t(pl, "DataZaplaty") if paid else None, "note": ""},

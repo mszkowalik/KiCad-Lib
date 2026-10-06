@@ -19,7 +19,9 @@ What the page computes, in PLN, by month:
   bought, as in a KPIR, without the year-end stock count.
 * **VAT** — the VAT of the sales invoices, advances included, minus the VAT on
   the supplier documents. A foreign purchase under reverse charge adds as much
-  as it takes away and is left out.
+  as it takes away and is left out. A purchase's VAT is in PLN as its invoice
+  states it, in the first month the law allows the deduction
+  (`purchase_vat_day`, decision 0084), not by the document date.
 * **Income tax** — only when the company's tax form is stated, from the
   year-to-date figures: linear 19 %, the scale (12 % to 120 000 with the 3 600
   reduction, 32 % above), the lump sum on revenue, or CIT 9 % / 19 %. ZUS
@@ -263,6 +265,27 @@ def tax_period_json(p: M.CompanyTaxPeriod) -> dict:
             "rate": str(p.rate) if p.rate is not None else None, "note": p.note, "entered_by": p.entered_by}
 
 
+def purchase_vat_day(doc: M.RunCostDocument) -> str:
+    """The first day a purchase's VAT can be deducted (decision 0084): the
+    period of the supplier's tax point, but not before the period the buyer
+    received the invoice (art. 86 ust. 10 and 10b pkt 1 of the VAT act). The
+    tax point is read as the sale date, else the issue date; the receipt as
+    `received_date` (for a KSeF invoice, the day KSeF numbered it), else the
+    issue date. The law lets a deduction wait three more months (art. 86 ust.
+    11), so the accountant's figure can be later; it is the one that counts."""
+    issued = (doc.doc_date or "")[:10]
+    return max((doc.sale_date or issued)[:10], (doc.received_date or issued)[:10])
+
+
+def purchase_vat_pln(doc: M.RunCostDocument) -> Decimal | None:
+    """A purchase's VAT in PLN: `tax_amount` on a PLN document, the VAT in PLN
+    the invoice states (`tax_amount_pln`) on one in another currency. None
+    when the document states none."""
+    if (doc.currency or "PLN").upper() == "PLN":
+        return Decimal(str(doc.tax_amount)) if doc.tax_amount else None
+    return Decimal(doc.tax_amount_pln) if doc.tax_amount_pln is not None else None
+
+
 def year(db: Session, company_id: int, year: int) -> dict:
     company = C.get(db, company_id)
     pln = _Pln(db)
@@ -308,8 +331,19 @@ def year(db: Session, company_id: int, year: int) -> dict:
                     overhead[li.overhead_category or "other"] += pln(
                         (li.qty or 0) * (li.unit_price or 0), li.currency or doc.currency, doc.doc_date,
                         doc.fx_rate_usd)
-        if doc.tax_amount and (doc.currency or "PLN").upper() == "PLN":
-            mo["purchase_vat"] += Decimal(str(doc.tax_amount))
+
+    # Purchase VAT has its own month, which can be after the document's
+    # (decision 0084), so a document of last year can land in this one.
+    for doc in (db.query(M.RunCostDocument)
+                .filter(M.RunCostDocument.company_id == company.id,
+                        M.RunCostDocument.doc_type.notin_(("proforma", "transfer")),
+                        M.RunCostDocument.doc_date >= f"{year - 1}-01-01",
+                        M.RunCostDocument.doc_date <= f"{year}-12-31").all()):
+        vat = purchase_vat_pln(doc)
+        mo = months.get(purchase_vat_day(doc)[:7])
+        if vat is None or mo is None or kept_from_accountant(doc):
+            continue
+        mo["purchase_vat"] += vat
 
     entries: dict[str, dict] = defaultdict(dict)
     rows = (db.query(M.CompanyTaxEntry)

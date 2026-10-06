@@ -429,3 +429,63 @@ def test_a_zero_quantity_stays_zero():
     missing = parse(doc(b"VAT", b'<FaWiersz><NrWierszaFa>1</NrWierszaFa><P_7>A</P_7><P_9A>100</P_9A>'
                                 b'<P_12>23</P_12></FaWiersz>'))
     assert missing["body"]["lines"][0]["qty"] == "1"
+
+
+# --- decision 0084: a supplier document keeps the invoice's tax data -----------
+
+def test_a_foreign_currency_invoice_keeps_its_vat_in_pln():
+    xml = (b'<?xml version="1.0" encoding="UTF-8"?><Faktura xmlns="http://crd.gov.pl/wzor/2025/06/25/13775/">'
+           b'<Podmiot1><DaneIdentyfikacyjne><NIP>5213545223</NIP><Nazwa>S</Nazwa></DaneIdentyfikacyjne></Podmiot1>'
+           b'<Podmiot2><DaneIdentyfikacyjne><NIP>8513262910</NIP><Nazwa>B</Nazwa></DaneIdentyfikacyjne></Podmiot2>'
+           b'<Fa><KodWaluty>EUR</KodWaluty><P_1>2049-06-02</P_1><P_2>FV 3</P_2><P_13_1>100.00</P_13_1>'
+           b'<P_14_1>23.00</P_14_1><P_14_1W>98.21</P_14_1W><P_15>123.00</P_15><RodzajFaktury>VAT</RodzajFaktury>'
+           b'<FaWiersz><NrWierszaFa>1</NrWierszaFa><P_7>U</P_7><P_8B>1</P_8B><P_9A>100</P_9A>'
+           b'<P_11>100.00</P_11><P_12>23</P_12></FaWiersz></Fa></Faktura>')
+    t = parse(xml)["body"]["totals"]
+    assert (t["vat"], t["vat_pln"], t["rates"]["23"]["vat_pln"]) == ("23.00", "98.21", "98.21")
+    # A PLN invoice states no P_14_xW and gets no vat_pln.
+    assert "vat_pln" not in parse(xml.replace(b"<P_14_1W>98.21</P_14_1W>", b""))["body"]["totals"]
+
+
+def test_the_receipt_day_is_the_polish_day_ksef_numbered_it():
+    assert Y.received_day("2049-03-31T23:30:00Z") == "2049-04-01"          # CEST, UTC+2
+    assert Y.received_day("2049-03-10T10:00:00.1234567+00:00") == "2049-03-10"
+    assert Y.received_day("2049-03-10") == "2049-03-10" and Y.received_day("") == ""
+
+
+def test_an_import_keeps_the_invoice_s_tax_data(db, seven, store):
+    xml = _purchase_xml(seven, "FV 21/2049", "2049-09-02")
+    n = "5213545223-20490902-0123456789AB-61"
+    meta = {**_meta(n, "FV 21/2049", xml, "5213545223", "8513262910", day="2049-09-02"),
+            "acquisitionDate": "2049-09-04T22:15:00Z"}
+    Y.sync(db, seven.c.id, sides=("purchase",), since="2049-09-01",
+           client_factory=FakeKsef(sales=[], purchases=[meta], xmls={n: xml}))
+    row = db.query(M.KsefInvoice).filter_by(company_id=seven.c.id, ksef_number=n).one()
+    doc = Y.import_purchase(db, row, actor="test")
+    assert (doc.sale_date, doc.due_date, doc.received_date) == ("2049-09-02", "2049-09-02", "2049-09-05")
+    assert doc.tax_amount == pytest.approx(23.0) and doc.tax_amount_pln is None    # a PLN invoice
+    assert doc.body["seller"]["nip"] == "5213545223" and doc.body["lines"][0]["vat_rate"] == "23"
+    # The documents imported before the change are filled by the job, once.
+    doc.sale_date, doc.received_date, doc.body = "", "", None
+    db.flush()
+    res = Y.fill_documents(db)
+    assert {"document_id": doc.id, "ksef_number": n, "fields": ["body", "sale_date", "received_date"]} \
+        in res["filled"]
+    assert doc.received_date == "2049-09-05"
+    assert not any(f["document_id"] == doc.id for f in Y.fill_documents(db)["filled"])
+
+
+def test_a_hand_typed_document_learns_the_tax_data_when_it_is_linked(db, seven, store):
+    hand = M.RunCostDocument(doc_type="invoice", supplier="Dostawca", doc_number="FV 22/2049", doc_date="2049-09-12",
+                             currency="PLN", company_id=seven.c.id, total_amount=100.0)
+    db.add(hand)
+    db.flush()
+    xml = _purchase_xml(seven, "FV 22/2049", "2049-09-12")
+    n = "5213545223-20490912-0123456789AB-62"
+    Y.sync(db, seven.c.id, sides=("purchase",), since="2049-09-01",
+           client_factory=FakeKsef(sales=[], purchases=[_meta(n, "FV 22/2049", xml, "5213545223", "8513262910",
+                                                              day="2049-09-12")], xmls={n: xml}))
+    row = db.query(M.KsefInvoice).filter_by(company_id=seven.c.id, ksef_number=n).one()
+    Y.import_purchase(db, row, actor="test", link_to=hand.id)
+    assert hand.tax_amount == pytest.approx(23.0) and hand.received_date == "2049-09-12"
+    assert hand.total_amount == pytest.approx(100.0) and hand.body["totals"]["gross"] == "123.00"

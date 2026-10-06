@@ -2455,6 +2455,23 @@ class RunCostDocument(Base):
     accountant_sent_at: Mapped[str] = mapped_column(String(10), default="", server_default="")
     accountant_sent_via: Mapped[str] = mapped_column(String(20), default="", server_default="")
     accountant_sent_ref: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    # Decision 0084: the invoice's tax data, in the KSeF (FA(3)) structure the
+    # sales side already uses. `total_amount` and `tax_amount` stay the net and
+    # the VAT in `currency`; these add what the books need beside them.
+    #: P_6, the day of the delivery or the service ("" = the issue date).
+    sale_date: Mapped[str] = mapped_column(String(10), default="", server_default="")
+    #: The payment term (Platnosc/TerminPlatnosci).
+    due_date: Mapped[str] = mapped_column(String(10), default="", server_default="")
+    #: The day the buyer RECEIVED it: for a KSeF invoice the day KSeF gave it
+    #: its number (art. 106na ust. 3 of the VAT act). "" = the issue date.
+    received_date: Mapped[str] = mapped_column(String(10), default="", server_default="")
+    #: The VAT in PLN of a document in ANOTHER currency (FA(3) P_14_xW). A PLN
+    #: document's VAT is `tax_amount`; this stays empty there.
+    tax_amount_pln: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    #: The invoice as printed, in the shape of `SalesInvoice.body` (seller,
+    #: buyer, positions with their rates, totals per rate, payment). Written
+    #: by an import from the supplier's own data, never edited.
+    body: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_by: Mapped[str] = mapped_column(String(100), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
