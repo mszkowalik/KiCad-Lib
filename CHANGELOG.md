@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-06 (a JLCPCB proforma is not the invoice)
+
+Decision [0083](docs/decisions/0083-a-jlcpcb-proforma-is-not-the-invoice.md).
+
+- **A JLCPCB proforma is named as one**: `…-JLCPCB-Proforma-Invoice-POB….pdf`.
+  JLCPCB issues a proforma while it still sources a lot of the order. The
+  result warns "proforma: … not the final invoice".
+- **Refresh on a parts order now attaches the final invoice** once JLCPCB
+  issues it. The proforma stays in the document's files, and the final
+  invoice becomes its main file.
+
 ## 2026-10-06 (JLCPCB parts invoices as PDF)
 
 Decision [0082](docs/decisions/0082-a-jlcpcb-parts-invoice-is-drawn-from-its-data.md).

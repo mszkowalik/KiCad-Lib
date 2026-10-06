@@ -27,8 +27,3 @@ def add(db: Session, doc: M.RunCostDocument, filename: str, content_type: str, d
     db.flush()
     doc.attachment_id = a.id
     return a
-
-
-def has_pdf(db: Session, doc_id: int) -> bool:
-    return db.query(M.RunAttachment.id).filter(
-        M.RunAttachment.document_id == doc_id, M.RunAttachment.filename.ilike("%.pdf")).first() is not None

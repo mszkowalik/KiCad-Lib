@@ -400,6 +400,10 @@ guard reads one company's stock is in [companies.md](companies.md).
   `get_parts_invoice(..., reveal=True)` in the SAME client that fetched them —
   a key minted later cannot read them. The layout constants are measurements
   of a real JLCPCB file: change them only against an overlay with one.
+  While a lot is still sourced JLCPCB issues a PROFORMA, not the invoice
+  (decision [0083](../decisions/0083-a-jlcpcb-proforma-is-not-the-invoice.md)):
+  it is filed as `…-Proforma-Invoice-…`, never blocks the final one, and the
+  parts-order Refresh draws the final invoice once JLCPCB issues it.
 - **JLC states a batch's status; do not infer it.** The order listing
   `sync_stage` fetches carries `batchStatus` (`shipped` | `inProduction` |
   `cancelled` | `waitPay` | `waitReview`), stored on `jlc_imports.jlc_status`

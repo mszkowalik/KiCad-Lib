@@ -138,6 +138,30 @@ def test_the_drawn_invoice_is_filed_with_its_document_once(db, store, monkeypatc
     assert P.attach(db, doc, force=True)["status"] == "attached"
 
 
+def test_a_proforma_is_named_so_and_the_final_invoice_follows_it(db, store, monkeypatch):
+    goods = [dict(g, orderStatus=30) for g in _invoice()["componentGoodsVOList"]]
+    goods[1]["orderStatus"] = 20
+    answer = {"data": _invoice(estimateInvoiceFlag=True, componentGoodsVOList=goods)}
+    monkeypatch.setattr(jlc_web, "get_parts_invoice", lambda db, pob, reveal=False: answer["data"])
+    doc = _doc(db)
+    first = P.attach(db, doc)
+    assert first["status"] == "attached" and first["proforma"] is True
+    assert first["filename"] == f"2049-01-01-JLCPCB-Proforma-Invoice-{POB}.pdf"
+    assert first["warnings"][0].startswith("proforma: JLCPCB is still sourcing 1 lot(s)")
+    assert "Proforma Invoice" in _text(store[db.get(M.RunAttachment, first["attachment_id"]).minio_key])
+
+    again = P.attach(db, doc)
+    assert again["status"] == "skipped" and again["proforma"] is True
+
+    goods[1]["orderStatus"] = 30
+    answer["data"] = _invoice(componentGoodsVOList=goods)
+    final = P.attach(db, doc)
+    assert final["status"] == "attached" and final["proforma"] is False
+    assert final["filename"] == f"2049-01-01-JLCPCB-componentInovice-{POB}.pdf"
+    assert doc.attachment_id == final["attachment_id"]
+    assert P.attach(db, doc)["status"] == "skipped"
+
+
 def test_a_disagreeing_total_is_a_warning_not_a_refusal(db, store, monkeypatch):
     monkeypatch.setattr(jlc_web, "get_parts_invoice", lambda db, pob, reveal=False: _invoice(paidMoney=2.5))
     out = P.attach(db, _doc(db))

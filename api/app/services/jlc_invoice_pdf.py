@@ -332,9 +332,28 @@ class InvoicePdfError(ValueError):
     """The response cannot become this document's invoice: nothing is attached."""
 
 
-def filename(doc: M.RunCostDocument) -> str:
-    """What JLCPCB's button would save, dated and keyed like the other files."""
-    return f"{doc.doc_date or 'undated'}-JLCPCB-componentInovice-{doc.external_id}.pdf"
+PROFORMA = "Proforma-Invoice"
+
+
+def filename(doc: M.RunCostDocument, estimate: bool = False) -> str:
+    """What JLCPCB's button would save, dated and keyed like the other files:
+    `componentInovice`, or `Proforma Invoice` while a lot is still sourced."""
+    kind = PROFORMA if estimate else "componentInovice"
+    return f"{doc.doc_date or 'undated'}-JLCPCB-{kind}-{doc.external_id}.pdf"
+
+
+def is_proforma_file(name: str) -> bool:
+    return PROFORMA.lower() in (name or "").lower()
+
+
+def _pdfs(db: Session, doc_id: int) -> list[str]:
+    return [n for (n,) in db.query(M.RunAttachment.filename).filter(
+        M.RunAttachment.document_id == doc_id, M.RunAttachment.filename.ilike("%.pdf"))]
+
+
+def unfinished_lots(data: dict) -> int:
+    """Lots JLCPCB has neither completed (30) nor cancelled (40): why it prints a proforma."""
+    return sum(1 for g in data.get("componentGoodsVOList") or [] if g.get("orderStatus") not in (30, 40))
 
 
 def _check(doc: M.RunCostDocument, data: dict) -> list[str]:
@@ -359,19 +378,31 @@ def _check(doc: M.RunCostDocument, data: dict) -> list[str]:
 
 def attach(db: Session, doc: M.RunCostDocument, *, force: bool = False, actor: str = "user") -> dict:
     """Fetch the invoice data of one JLCPCB parts order, draw it, and file the
-    PDF with its document. A document that already has a PDF is left alone
-    unless `force`; the new file is added, never put in place of one. The
-    caller commits."""
+    PDF with its document. The new file is added, never put in place of one,
+    and becomes the document's headline file. The caller commits.
+
+    A proforma is not the invoice (decision 0083). Without `force`:
+    a document with a PDF that is not a proforma is left alone; one with a
+    proforma gets nothing while JLCPCB still issues a proforma, and gets the
+    final invoice once JLCPCB does."""
     if not (doc.external_id or "").startswith("POB"):
         raise InvoicePdfError(f"document {doc.id} is not a JLCPCB parts order (external id {doc.external_id!r})")
-    if not force and document_files.has_pdf(db, doc.id):
+    pdfs = _pdfs(db, doc.id)
+    if not force and any(not is_proforma_file(n) for n in pdfs):
         return {"document_id": doc.id, "status": "skipped", "reason": "the document already has a PDF"}
     data = jlc_web.get_parts_invoice(db, doc.external_id, reveal=True)
     warnings = _check(doc, data)
-    a = document_files.add(db, doc, filename(doc), "application/pdf", render(data))
+    estimate = bool(data.get("estimateInvoiceFlag"))
+    if estimate:
+        warnings.insert(0, f"proforma: JLCPCB is still sourcing {unfinished_lots(data)} lot(s); "
+                           "not the final invoice")
+    if not force and estimate and pdfs:
+        return {"document_id": doc.id, "status": "skipped", "proforma": True, "warnings": warnings,
+                "reason": "a proforma is attached and JLCPCB still issues a proforma"}
+    a = document_files.add(db, doc, filename(doc, estimate), "application/pdf", render(data))
     audit(db, "jlc.parts.invoice_pdf", "run_attachment", a.id,
           {"document_id": doc.id, "pob": doc.external_id, "filename": a.filename, "size_bytes": a.size_bytes,
-           "warnings": warnings}, actor=actor)
+           "proforma": estimate, "warnings": warnings}, actor=actor)
     return {"document_id": doc.id, "status": "attached", "attachment_id": a.id, "filename": a.filename,
-            "buyer": _s(data.get("companyName")), "buyer_vat": _s(data.get("eoriNumber")),
+            "proforma": estimate, "buyer": _s(data.get("companyName")), "buyer_vat": _s(data.get("eoriNumber")),
             "warnings": warnings}

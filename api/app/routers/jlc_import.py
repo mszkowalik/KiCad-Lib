@@ -438,9 +438,11 @@ def apply_parts(pob: str, dry_run: bool = True, db: Session = Depends(get_db)):
 
 
 def _attach_invoice_pdf(db: Session, doc_id: int | None, actor: str) -> dict | None:
-    """File the drawn invoice with a freshly imported parts order (decision 0082).
-    Best effort: the import is committed and stands whatever happens here, and
-    `POST /api/jlc/web/invoice-pdfs` draws the file again later."""
+    """File the drawn invoice with a parts order just imported or refreshed
+    (decisions 0082, 0083): the proforma while JLCPCB still sources a lot, the
+    final invoice once it does. Best effort: the import or refresh is committed
+    and stands whatever happens here, and `POST /api/jlc/web/invoice-pdfs`
+    draws the file again later."""
     doc = db.get(M.RunCostDocument, doc_id) if doc_id else None
     if doc is None:
         return None
@@ -472,6 +474,10 @@ def refresh_parts(pob: str, dry_run: bool = True, db: Session = Depends(get_db))
     if dry_run or preview["status"] in ("refused", "not_imported", "unchanged"):
         if not dry_run and preview["status"] in ("refused", "not_imported"):
             raise HTTPException(409, preview)
+        if not dry_run:
+            # A lot can complete at the price already booked: nothing to re-state,
+            # but JLCPCB now issues the final invoice (decision 0083).
+            return {**preview, "invoice_pdf": _attach_invoice_pdf(db, preview.get("document_id"), actor)}
         return preview
     with journal.batch(db, kind="jlc.parts.refresh", source_ref=pob, actor=actor,
                        summary={"total_amount": plan.get("total_amount")}) as h:
@@ -480,7 +486,8 @@ def refresh_parts(pob: str, dry_run: bool = True, db: Session = Depends(get_db))
           details={"pob": pob, "changes": len(res.get("changes") or []),
                    "batch_id": h["batch_id"]}, actor=actor)
     db.commit()
-    return {**res, "batch_id": h["batch_id"], "reversible": True}
+    return {**res, "batch_id": h["batch_id"], "reversible": True,
+            "invoice_pdf": _attach_invoice_pdf(db, res.get("document_id"), actor)}
 
 
 @router.post("/orders/{smt_order_code}/fetch-bom")
