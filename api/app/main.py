@@ -242,6 +242,13 @@ _PHASE1_DDL = (
     # contribution is ZUS's (one transfer since 2018): a "health" row becomes
     # the month's ZUS row. A month that somehow has both keeps both; the kind
     # is refused on write from now on.
+    # What a company IS decides its income tax: PIT for a sole trader, CIT for
+    # a company. Filled from the legal name where it is still empty.
+    ("companies.legal_form",
+     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS legal_form varchar(20) NOT NULL DEFAULT ''"),
+    ("companies.legal_form_fill",
+     "UPDATE companies SET legal_form = CASE WHEN legal_name ~* '(sp\\.? ?z ?o\\.? ?o|spółk|spolk|ograniczon|s\\.a\\.)' "
+     "THEN 'company' ELSE 'sole_trader' END WHERE legal_form = ''"),
     ("company_tax_entries.interest",
      "ALTER TABLE company_tax_entries ADD COLUMN IF NOT EXISTS interest numeric(14,2) NOT NULL DEFAULT 0"),
     ("company_tax_entries.health_is_zus",

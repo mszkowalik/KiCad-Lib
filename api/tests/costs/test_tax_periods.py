@@ -79,3 +79,19 @@ def test_interest_is_money_paid_and_never_a_cost(db):
 
 def test_the_health_contribution_is_part_of_zus():
     assert "health" not in B.ENTRY_KINDS and "zus" in B.ENTRY_KINDS
+
+
+def test_the_legal_form_decides_pit_or_cit_and_which_forms_fit(db):
+    seven, nine = C.by_key(db, "7sigma"), C.by_key(db, "9sigma")
+    seven.legal_form, nine.legal_form = "sole_trader", "company"
+    db.flush()
+    assert B.income_tax(seven) == "pit" and B.income_tax(nine) == "cit"
+    assert B.year(db, nine.id, 2049)["income_tax"] == "cit"
+    with pytest.raises(HTTPException):
+        B.set_tax_period(db, nine.id, from_quarter="2049-Q1", form="pit_linear", actor="t")
+    with pytest.raises(HTTPException):
+        B.set_tax_period(db, seven.id, from_quarter="2049-Q1", form="cit_9", actor="t")
+    B.set_tax_period(db, nine.id, from_quarter="2049-Q1", form="cit_9", actor="t")
+    nine.legal_form = ""                       # unknown: a stated CIT form still says CIT
+    nine.tax_form = "cit_19"
+    assert B.income_tax(nine) == "cit"

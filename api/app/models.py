@@ -1947,6 +1947,9 @@ class Company(Base):
     # Decision 0068: how income tax is estimated on the company page. "" means
     # not stated, and then no tax is estimated: pit_linear | pit_scale | lump |
     # cit_9 | cit_19. `lump_rate` is the ryczałt percentage on revenue.
+    # 2026-10-06: what the company IS decides its income tax. A sole trader
+    # pays PIT (linear, scale or lump sum); a company (sp. z o.o.) pays CIT.
+    legal_form: Mapped[str] = mapped_column(String(20), default="", server_default="")   # sole_trader | company
     tax_form: Mapped[str] = mapped_column(String(20), default="", server_default="")
     lump_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -18,7 +18,8 @@ import {
   lotHistory,
   setDrawCompany,
   stockBackfill,
-  TAX_FORM_TEXT,
+  LEGAL_FORM_TEXT,
+  taxFormsFor,
   updateCompany,
   type CompanyDetail,
   type HistoryPlan,
@@ -96,11 +97,18 @@ function CompanyForm({ company, onSaved }: { company: CompanyDetail; onSaved: (c
             The platform writes this company's invoices
           </CheckField>
         </Field>
+        <Field label="Legal form" hint="Decides the income tax: a sole trader pays PIT, a company pays CIT.">
+          <select className="text" value={draft.legal_form ?? ""}
+            onChange={(e) => setDraft((d) => ({ ...d, legal_form: e.target.value, tax_form: "" }))}>
+            {Object.entries(LEGAL_FORM_TEXT).map(([k, t]) => <option key={k} value={k}>{t}</option>)}
+          </select>
+        </Field>
         <Field label="Income tax form" hint="Only for the estimate on the company page. A form by quarter (Company books) wins over this one.">
           <select className="text" value={draft.tax_form ?? ""}
             onChange={(e) => setDraft((d) => ({ ...d, tax_form: e.target.value }))}>
             <option value="">not stated (no estimate)</option>
-            {Object.entries(TAX_FORM_TEXT).map(([k, t]) => <option key={k} value={k}>{t}</option>)}
+            {taxFormsFor(draft.legal_form === "company" ? "cit" : draft.legal_form === "sole_trader" ? "pit" : undefined)
+              .map(([k, t]) => <option key={k} value={k}>{t}</option>)}
           </select>
         </Field>
         {draft.tax_form === "lump" ? (

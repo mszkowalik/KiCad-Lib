@@ -57,6 +57,25 @@ from .invoicing.amounts import d2
 from .run_actuals import OVERHEAD_CATEGORIES, document_json, header_ids, line_destination
 
 TAX_FORMS = ("pit_linear", "pit_scale", "lump", "cit_9", "cit_19")
+#: What a company is decides which tax its income pays, and so which forms fit.
+LEGAL_FORMS = {"sole_trader": ("pit", ("pit_linear", "pit_scale", "lump")),
+               "company": ("cit", ("cit_9", "cit_19"))}
+
+
+def income_tax(company: M.Company) -> str:
+    """`pit` or `cit`: from the legal form, else from a stated CIT form."""
+    if company.legal_form in LEGAL_FORMS:
+        return LEGAL_FORMS[company.legal_form][0]
+    return "cit" if (company.tax_form or "").startswith("cit") else "pit"
+
+
+def check_form(name: str, legal_form: str, form: str) -> None:
+    """Refuse a tax form the company's legal form cannot have."""
+    from fastapi import HTTPException
+
+    fits = LEGAL_FORMS.get(legal_form or "", (None, TAX_FORMS))[1]
+    if form and form not in fits:
+        raise HTTPException(422, f"{name} is a {legal_form.replace('_', ' ')}: its tax form is one of {', '.join(fits)}")
 ENTRY_KINDS = ("vat", "pit", "cit", "zus", "other")    # health is ZUS (decision 0081)
 COST_BUCKETS = ("stock", "batches", "projects", "prepared", "overhead", "unassigned")
 _BUCKET = {"pool": "stock", "run": "batches", "project": "projects", "transformation": "prepared",
@@ -221,11 +240,12 @@ def set_tax_period(db: Session, company_id: int, *, from_quarter: str, form: str
     from fastapi import HTTPException
     import re
 
-    C.get(db, company_id)
+    company = C.get(db, company_id)
     if not re.fullmatch(r"\d{4}-Q[1-4]", from_quarter or ""):
         raise HTTPException(422, "from_quarter is YYYY-Qn, for example 2024-Q1")
     if form not in TAX_FORMS:
         raise HTTPException(422, f"form is one of {', '.join(TAX_FORMS)}")
+    check_form(company.name, company.legal_form or "", form)
     if rate is not None and not (0 <= float(rate) <= 100):
         raise HTTPException(422, "rate is a percentage from 0 to 100")
     row = db.query(M.CompanyTaxPeriod).filter_by(company_id=company_id, from_quarter=from_quarter).first()
@@ -335,6 +355,7 @@ def year(db: Session, company_id: int, year: int) -> dict:
 
     return {"company_id": company.id, "company": company.name, "year": year,
             "tax_form": company.tax_form or "", "lump_rate": str(company.lump_rate or 0),
+            "legal_form": company.legal_form or "", "income_tax": income_tax(company),
             "tax_periods": [tax_period_json(p) for p in periods],
             "months": out_months,
             "totals": {f: total(f) for f in ("revenue_net", "advances_net", "costs_net", "income", "sales_vat",

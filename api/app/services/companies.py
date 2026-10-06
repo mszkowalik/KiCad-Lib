@@ -42,6 +42,7 @@ def company_json(c: M.Company, *, full: bool = False) -> dict:
             "issuer_name": c.issuer_name, "bank_name": c.bank_name, "bank_account": c.bank_account,
             "swift": c.swift, "payment_terms_days": c.payment_terms_days, "started_on": c.started_on,
             "tax_form": c.tax_form or "", "lump_rate": float(c.lump_rate or 0),
+            "legal_form": c.legal_form or "",
         })
     return out
 

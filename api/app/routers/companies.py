@@ -47,6 +47,7 @@ class CompanyPatch(BaseModel):
     # Decision 0068: how the company page estimates income tax.
     tax_form: str | None = None
     lump_rate: float | None = None
+    legal_form: str | None = None      # sole_trader (PIT) | company (CIT)
 
 
 @router.patch("/companies/{company_id}")
@@ -58,6 +59,9 @@ def update_company(company_id: int, body: CompanyPatch, db: Session = Depends(ge
 
     if "tax_form" in changed and changed["tax_form"] not in ("", *company_books.TAX_FORMS):
         raise HTTPException(422, f"tax_form is one of {', '.join(company_books.TAX_FORMS)} or empty")
+    if "legal_form" in changed and changed["legal_form"] not in company_books.LEGAL_FORMS:
+        raise HTTPException(422, f"legal_form is one of {', '.join(company_books.LEGAL_FORMS)}")
+    company_books.check_form(c.name, changed.get("legal_form", c.legal_form or ""), changed.get("tax_form", c.tax_form or ""))
     for k, v in changed.items():
         setattr(c, k, v.strip() if isinstance(v, str) else v)
     # The account number is not written to the audit row: the log is readable

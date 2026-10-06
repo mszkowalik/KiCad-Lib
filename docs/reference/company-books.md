@@ -56,6 +56,12 @@ Production → Company books.
   revenue, cost, overhead or VAT (decision 0080). Her tax cannot include an
   invoice she never saw.
 * **VAT on purchases** is read from `tax_amount` of PLN documents only.
+* **The income tax is the company's legal form** (`companies.legal_form`,
+  `company_books.income_tax`): a `sole_trader` pays PIT and may have
+  `pit_linear`, `pit_scale` or `lump`; a `company` (sp. z o.o.) pays CIT and
+  may have `cit_9` or `cit_19`. A form that does not fit is refused, and the
+  page labels its columns PIT or CIT from it. The startup fill read the
+  legal name; Admin → Companies changes it.
 * **Income tax** follows the form of each month's quarter
   (`company_tax_periods`, decision 0078), else `companies.tax_form`; with
   neither there is no estimate. Never guess a tax form. A period's `rate`

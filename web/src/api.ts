@@ -1134,6 +1134,8 @@ export interface CompanyDetail extends CompanyRef {
   /** how the company page estimates income tax (decision 0068) */
   tax_form?: string;
   lump_rate?: number;
+  /** what the company IS: `sole_trader` pays PIT, `company` (sp. z o.o.) pays CIT */
+  legal_form?: string;
 }
 
 export interface AuthState {
@@ -9894,6 +9896,9 @@ export interface CompanyBooks {
   year: number;
   tax_form: string;
   lump_rate: string;
+  legal_form?: string;
+  /** The income tax the company pays, from its legal form: `pit` or `cit`. */
+  income_tax?: "pit" | "cit";
   tax_periods?: TaxPeriod[];
   months: BooksMonth[];
   totals: Record<string, string>;
@@ -9906,6 +9911,16 @@ export function getCompanyBooks(companyId: number, year: number, signal?: AbortS
 }
 
 /** How each income-tax form reads on screen; `company_books.TAX_FORMS` holds the keys. */
+export const LEGAL_FORM_TEXT: Record<string, string> = {
+  sole_trader: "Sole trader (PIT)",
+  company: "Company, sp. z o.o. (CIT)",
+};
+
+/** The tax forms a company of this income tax can have. */
+export function taxFormsFor(incomeTax: string | undefined): [string, string][] {
+  return Object.entries(TAX_FORM_TEXT).filter(([k]) => !incomeTax || (incomeTax === "cit") === k.startsWith("cit"));
+}
+
 export const TAX_FORM_TEXT: Record<string, string> = {
   pit_linear: "PIT linear 19%",
   pit_scale: "PIT scale (zasady ogólne)",

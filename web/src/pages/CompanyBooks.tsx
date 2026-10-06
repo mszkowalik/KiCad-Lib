@@ -16,6 +16,7 @@ import {
   putTaxEntry,
   putTaxPeriod,
   TAX_FORM_TEXT,
+  taxFormsFor,
   taxEntryFilePath,
   uploadTaxEntryFile,
   type AccountantRow,
@@ -144,11 +145,13 @@ function EntryFiles({ companyId, entryId, onChange }: { companyId: number; entry
 /** The income-tax form from a quarter on (decision 0078). The law sets the
  *  form for a whole year; the quarter is the user's choice of granularity.
  *  Everybody reads it; an admin changes it, as the company's one form. */
-function TaxPeriodsCard({ companyId, periods, onSaved }: { companyId: number; periods: TaxPeriod[]; onSaved: () => void }) {
+function TaxPeriodsCard({ companyId, periods, incomeTax, onSaved }: {
+  companyId: number; periods: TaxPeriod[]; incomeTax?: "pit" | "cit"; onSaved: () => void;
+}) {
   const { isAdmin } = useAuth();
   const dialog = useDialog();
   const [quarter, setQuarter] = useState("");
-  const [form, setForm] = useState("pit_linear");
+  const [form, setForm] = useState(incomeTax === "cit" ? "cit_9" : "pit_linear");
   const [rate, setRate] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
@@ -198,7 +201,7 @@ function TaxPeriodsCard({ companyId, periods, onSaved }: { companyId: number; pe
           </Field>
           <Field label="Form">
             <select className="text" value={form} onChange={(e) => setForm(e.target.value)}>
-              {Object.entries(TAX_FORM_TEXT).map(([k, t]) => <option key={k} value={k}>{t}</option>)}
+              {taxFormsFor(incomeTax).map(([k, t]) => <option key={k} value={k}>{t}</option>)}
             </select>
           </Field>
           <Field label="Effective rate" hint="Optional. Empty means the statutory rates.">
@@ -333,7 +336,7 @@ export default function CompanyBooks() {
     return () => ac.abort();
   }, [load]);
 
-  const taxLabel = books?.tax_form?.startsWith("cit") ? "cit" : "pit";
+  const taxLabel = books?.income_tax ?? (books?.tax_form?.startsWith("cit") ? "cit" : "pit");
   const cols = useMemo<Column<BooksMonth>[]>(() => [
     { key: "month", label: "Month", width: 8, className: "mono", get: (m) => m.month },
     { key: "rev", label: "Revenue", width: 11, numeric: true, get: (m) => Number(m.revenue_net), render: (m) => <>{pl(m.revenue_net)}</> },
@@ -393,7 +396,8 @@ export default function CompanyBooks() {
           )}
         </div>
         {companyId ? <AccountantCard companyId={companyId} /> : null}
-        {books ? <TaxPeriodsCard companyId={companyId} periods={books.tax_periods ?? []} onSaved={() => load()} /> : null}
+        {books ? <TaxPeriodsCard key={`${companyId}-${books.income_tax}`} companyId={companyId} periods={books.tax_periods ?? []}
+          incomeTax={books.income_tax} onSaved={() => load()} /> : null}
         {overhead.length ? (
           <div className="card pad">
             <h2 className="card-title">Company overhead</h2>

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-06 (PIT or CIT by company)
+
+- **A company has a legal form**, on Admin → Companies: sole trader (PIT) or
+  company, sp. z o.o. (CIT). Company books label the income-tax columns from
+  it, and the tax form lists offer only the forms that fit.
+- **Correction: 9SIGMA's CIT figures now show in Company books.** The column
+  read PIT for every company without a stated form, so KSBR's CIT payments
+  were in the data but not on the page.
+
 ## 2026-10-06 (a final advance invoice is revenue)
 
 - **Correction: an order paid in full by advances now reaches revenue.** The
