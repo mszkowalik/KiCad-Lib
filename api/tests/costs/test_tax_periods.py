@@ -1,4 +1,4 @@
-"""The income-tax form by quarter (decision 0078).
+"""The income-tax form by quarter (decision 0078), and interest on a tax figure (decision 0081).
 
 Run from `api/`, with the dev database up:
     python -m pytest tests/costs/test_tax_periods.py -q
@@ -58,3 +58,24 @@ def test_the_scale_follows_the_year_and_a_rate_replaces_the_computation():
     assert B._scale_tax(2023, Decimal(150000)) == Decimal("20400.00")        # 10 800 + 32 % of 30 000
     assert B._income_tax("pit_linear", Decimal(0), Decimal(1000), Decimal(5000), 2024, Decimal("5")) == Decimal("50.00")
     assert B._income_tax("lump", Decimal(0), Decimal(1000), Decimal(5000), 2024, Decimal("8.5")) == Decimal("425.00")
+
+
+def test_interest_is_money_paid_and_never_a_cost(db):
+    c = C.by_key(db, "9sigma")
+
+    def month(m):
+        return next(x for x in B.year(db, c.id, 2049)["months"] if x["month"] == m)
+
+    before = month("2049-04")
+    B.set_entry(db, c.id, period="2049-04", kind="vat", amount=2351, paid_date="2049-08-31", interest=66, actor="t")
+    after = month("2049-04")
+    assert after["accountant"]["vat"]["interest"] == "66.00" and Decimal(after["interest"]) == Decimal(before["interest"]) + 66
+    assert (after["costs_net"], after["income"], after["income_tax_estimate"]) == \
+        (before["costs_net"], before["income"], before["income_tax_estimate"])
+    assert Decimal(B.year(db, c.id, 2049)["totals"]["interest"]) >= 66
+    with pytest.raises(HTTPException):
+        B.set_entry(db, c.id, period="2049-05", kind="vat", amount=1, interest=-1, actor="t")
+
+
+def test_the_health_contribution_is_part_of_zus():
+    assert "health" not in B.ENTRY_KINDS and "zus" in B.ENTRY_KINDS

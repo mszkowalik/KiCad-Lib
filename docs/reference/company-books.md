@@ -45,18 +45,37 @@ Production → Company books.
   carry. So the advances reach revenue at the settlement.
 * **Costs** are the supplier documents billed to the company, by document
   date, by destination. Excluded positions and transfers are no cost.
+* **A record kept from the accountant is in no figure here**: not its
+  revenue, cost, overhead or VAT (decision 0080). Her tax cannot include an
+  invoice she never saw.
 * **VAT on purchases** is read from `tax_amount` of PLN documents only.
 * **Income tax** follows the form of each month's quarter
   (`company_tax_periods`, decision 0078), else `companies.tax_form`; with
   neither there is no estimate. Never guess a tax form. A period's `rate`
   replaces the statutory computation (of income; of revenue for `lump`). The
   scale follows the year: 17 % / 32 % up to 2021, 12 % / 32 % from 2022.
+* **A tax figure carries its late-payment interest** (`interest`, decision
+  0081): summed per month (`months[].interest`) and in `totals.interest`,
+  and in nothing else. It is never a cost and never in a tax estimate (art.
+  23 ust. 1 pkt 18 of the PIT act, art. 16 ust. 1 of the CIT act).
+* **The kinds are `vat`, `pit`, `cit`, `zus` and `other`.** The health
+  contribution is paid with ZUS and entered as `zus` (decision 0081); a
+  `health` write is refused.
 * **A tax figure keeps the accountant's notices** in `record_files`
   (`/api/companies/{company_id}/tax-entries/{entry_id}/files`, decision 0077).
   The books report a count per figure (`accountant[kind].files`).
 * **Whether the accountant has a document** is `services/accountant.state`
   (decision 0079). A KSeF document has it without a row, also one typed by
   hand and later linked to a KSeF row (`ksef_invoices.document_id`); a proforma, a
-  transfer, a fully excluded document and a draft sales invoice are not to
-  send. `GET /api/companies/{id}/accountant` lists the rest by month, due the
+  transfer and a draft or cancelled sales invoice are not to send.
+  `GET /api/companies/{id}/accountant` lists the rest by month, due the
   10th of the next month; `POST` records or clears a send.
+* **"Not for the accountant" is a send record with `via="not_sent"`**
+  (decision 0080): the date is the decision, `ref` the reason, and a reason
+  is required. It takes the record off the list and out of every figure on
+  this page (`accountant.kept_from_accountant`); batch, project and stock
+  costs do not read it. A KSeF document refuses it.
+* **`excluded` does not decide sending.** It says who bears a cost. A
+  document with every position excluded is still to send unless it is sent
+  or marked: most fully excluded JLC orders reached the accountant
+  (decision 0080 overrides item 3 of 0079).

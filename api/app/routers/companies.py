@@ -151,6 +151,7 @@ class TaxEntryIn(BaseModel):
     due_date: str = ""
     paid_date: str = ""
     note: str = Field(default="", max_length=500)
+    interest: float = Field(default=0, ge=0)    # late-payment interest paid on top (decision 0081)
 
 
 @router.put("/companies/{company_id}/tax-entries")
@@ -162,14 +163,15 @@ def put_tax_entry(company_id: int, body: TaxEntryIn, db: Session = Depends(get_d
     audit(db, "company.tax_entry", "company_tax_entry", row.id,
           {"period": row.period, "kind": row.kind, "amount": str(row.amount), "status": row.status})
     db.commit()
-    return {"id": row.id, "period": row.period, "kind": row.kind, "amount": str(row.amount), "status": row.status}
+    return {"id": row.id, "period": row.period, "kind": row.kind, "amount": str(row.amount),
+            "interest": str(row.interest), "status": row.status}
 
 
 class AccountantIn(BaseModel):
     document_ids: list[int] = []
     sales_invoice_ids: list[int] = []
     sent_at: str = ""            # empty clears the record
-    via: str = "manual"
+    via: str = "manual"          # or "not_sent": she never gets it, `ref` says why (decision 0080)
     ref: str = Field(default="", max_length=200)
 
 
@@ -184,15 +186,18 @@ def accountant_to_send(company_id: int, db: Session = Depends(get_db)):
 
 @router.post("/companies/{company_id}/accountant")
 def accountant_mark(company_id: int, body: AccountantIn, db: Session = Depends(get_db)):
-    """Record that the accountant got these documents (or clear it with an empty date).
-    Work, not administration: any member of the company."""
+    """Record that the accountant got these documents, or that she never will
+    (`via="not_sent"` with a reason, decision 0080), or clear it with an empty
+    date. Work, not administration: any member of the company."""
     from ..services import accountant
 
     n = accountant.mark(db, company_id, document_ids=body.document_ids, sales_invoice_ids=body.sales_invoice_ids,
                         sent_at=body.sent_at, via=body.via, ref=body.ref)
-    audit(db, "company.accountant.sent", "company", company_id,
+    action = "company.accountant.not_sent" if body.sent_at and body.via == accountant.NOT_SENT \
+        else "company.accountant.sent"
+    audit(db, action, "company", company_id,
           {"documents": body.document_ids, "sales_invoices": body.sales_invoice_ids, "sent_at": body.sent_at,
-           "via": body.via})
+           "via": body.via, "ref": body.ref})
     db.commit()
     return {"marked": n}
 

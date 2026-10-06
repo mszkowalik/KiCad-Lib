@@ -25,6 +25,7 @@ import {
   type CompanyBooks as Books,
 } from "../api";
 import { useAuth } from "../auth";
+import { askNotSentReason } from "../components/AccountantMark";
 import DataTable, { type Column } from "../components/DataTable";
 import RecordFiles from "../components/RecordFiles";
 import SiInput from "../components/SiInput";
@@ -36,7 +37,8 @@ const BUCKET_TEXT: Record<string, string> = {
   stock: "Stock bought", batches: "Batch costs", projects: "Project costs", prepared: "Prepared parts",
   overhead: "Company overhead", unassigned: "Not assigned yet",
 };
-const KIND_TEXT: Record<string, string> = { vat: "VAT", pit: "PIT", cit: "CIT", zus: "ZUS", health: "Health", other: "Other" };
+/** The health contribution is paid with ZUS and entered as ZUS (decision 0081). */
+const KIND_TEXT: Record<string, string> = { vat: "VAT", pit: "PIT", cit: "CIT", zus: "ZUS", other: "Other" };
 
 function pl(x: string | null | undefined): string {
   if (x == null) return "—";
@@ -51,6 +53,7 @@ function acc(m: BooksMonth, kind: string): string {
 function MonthPanel({ companyId, m, onSaved }: { companyId: number; m: BooksMonth; onSaved: () => void }) {
   const [kind, setKind] = useState("vat");
   const [amount, setAmount] = useState("");
+  const [interest, setInterest] = useState("");
   const [status, setStatus] = useState("final");
   const [due, setDue] = useState("");
   const [paid, setPaid] = useState("");
@@ -60,6 +63,7 @@ function MonthPanel({ companyId, m, onSaved }: { companyId: number; m: BooksMont
   useEffect(() => {
     const e = m.accountant[kind];
     setAmount(e ? e.amount : "");
+    setInterest(e?.interest && Number(e.interest) ? e.interest : "");
     setStatus(e ? e.status : "final");
     setDue(e?.due_date ?? "");
     setPaid(e?.paid_date ?? "");
@@ -69,7 +73,9 @@ function MonthPanel({ companyId, m, onSaved }: { companyId: number; m: BooksMont
     setBusy(true);
     setErr("");
     try {
-      await putTaxEntry(companyId, { period: m.month, kind, amount: Number(amount), status, due_date: due, paid_date: paid, note });
+      await putTaxEntry(companyId, {
+        period: m.month, kind, amount: Number(amount), interest: Number(interest || 0), status, due_date: due, paid_date: paid, note,
+      });
       onSaved();
     } catch (e) {
       setErr(errorMessage(e));
@@ -105,6 +111,9 @@ function MonthPanel({ companyId, m, onSaved }: { companyId: number; m: BooksMont
         </Field>
         <Field label="Paid">
           <input className="text" type="date" value={paid} onChange={(e) => setPaid(e.target.value)} />
+        </Field>
+        <Field label="Interest (PLN)" hint="Late-payment interest paid on top of the amount. It is never a cost and never enters a tax estimate.">
+          <input className="text num-input" value={interest} inputMode="decimal" placeholder="0" onChange={(e) => setInterest(e.target.value)} />
         </Field>
         <Field label="Note" wide>
           <input className="text" value={note} onChange={(e) => setNote(e.target.value)} />
@@ -209,8 +218,9 @@ function TaxPeriodsCard({ companyId, periods, onSaved }: { companyId: number; pe
 }
 
 /** What the accountant does not have yet, month by month, each month due by
- *  the 10th of the next one (decision 0079). KSeF documents and the ones
- *  nobody pays for are not listed. Tick what was sent and record it. */
+ *  the 10th of the next one (decision 0079). KSeF documents, proformas and
+ *  transfers are not listed. Tick rows and record that they were sent, or
+ *  that she will never get them, with the reason (decision 0080). */
 function AccountantCard({ companyId }: { companyId: number }) {
   const dialog = useDialog();
   const [data, setData] = useState<AccountantToSend | null>(null);
@@ -232,17 +242,14 @@ function AccountantCard({ companyId }: { companyId: number }) {
     if (n.has(keyOf(r))) n.delete(keyOf(r)); else n.add(keyOf(r));
     return n;
   });
-  const markPicked = async () => {
-    const day = await dialog.prompt("Sent to the accountant on (YYYY-MM-DD):",
-      { title: "Mark as sent", initial: new Date().toISOString().slice(0, 10) });
-    if (!day) return;
+  const recordPicked = async (day: string, via: string, ref = "") => {
     const ids = [...picked].map((k) => k.split(":"));
     setBusy(true);
     try {
       await markAccountant(companyId, {
         document_ids: ids.filter(([k]) => k === "document").map(([, i]) => Number(i)),
         sales_invoice_ids: ids.filter(([k]) => k === "sales_invoice").map(([, i]) => Number(i)),
-        sent_at: day, via: "manual",
+        sent_at: day, via, ref,
       });
       load();
     } catch (e) {
@@ -250,6 +257,15 @@ function AccountantCard({ companyId }: { companyId: number }) {
     } finally {
       setBusy(false);
     }
+  };
+  const markPicked = async () => {
+    const day = await dialog.prompt("Sent to the accountant on (YYYY-MM-DD):",
+      { title: "Mark as sent", initial: new Date().toISOString().slice(0, 10) });
+    if (day) await recordPicked(day, "manual");
+  };
+  const keepPicked = async () => {
+    const reason = await askNotSentReason(dialog, picked.size);
+    if (reason) await recordPicked(new Date().toISOString().slice(0, 10), "not_sent", reason);
   };
   const cols: Column<AccountantRow>[] = [
     { key: "pick", label: "", width: 4, className: "ctr", interactive: false, get: () => "",
@@ -267,7 +283,8 @@ function AccountantCard({ companyId }: { companyId: number }) {
       <h2 className="card-title">For the accountant</h2>
       <p className="muted dim">
         Documents the accountant does not have yet. Each month is due by the 10th of the next month. KSeF documents
-        reach her by themselves, and documents charged to nobody need no sending.
+        reach her by themselves. A document she will never get (lost, private, too late) can be marked "not for the
+        accountant": it leaves this list and the books above, and batch costs keep it.
       </p>
       <ErrorBanner message={err} />
       {data === null ? <Spinner label="Loading…" /> : data.count === 0 ? (
@@ -277,6 +294,9 @@ function AccountantCard({ companyId }: { companyId: number }) {
           <div className="btn-row">
             <button type="button" className="btn btn-primary btn-sm" disabled={busy || !picked.size} onClick={() => void markPicked()}>
               Mark {picked.size || ""} sent…
+            </button>
+            <button type="button" className="btn btn-sm" disabled={busy || !picked.size} onClick={() => void keepPicked()}>
+              Not for the accountant…
             </button>
             <span className="muted">{data.count} document(s) to send</span>
           </div>
@@ -327,7 +347,9 @@ export default function CompanyBooks() {
     { key: "tax_a", label: `${taxLabel.toUpperCase()} (acct.)`, width: 11, numeric: true,
       get: (m) => Number(m.accountant[taxLabel]?.amount ?? 0), render: (m) => <>{acc(m, taxLabel)}</> },
     { key: "zus", label: "ZUS (acct.)", width: 9, numeric: true, get: (m) => Number(m.accountant.zus?.amount ?? 0), render: (m) => <>{acc(m, "zus")}</> },
-    { key: "hl", label: "Health", width: 9, numeric: true, get: (m) => Number(m.accountant.health?.amount ?? 0), render: (m) => <>{acc(m, "health")}</> },
+    { key: "int", label: "Interest", width: 9, numeric: true, get: (m) => Number(m.interest ?? 0),
+      render: (m) => <>{Number(m.interest) ? pl(m.interest) : ""}</>,
+      title: () => "Late-payment interest paid with the month's taxes. Never a cost." },
   ], [taxLabel]);
 
   const overhead = books ? Object.entries(books.overhead).map(([k, v]) => ({ key: k, label: books.overhead_labels[k] ?? k, amount: v })) : [];
@@ -339,6 +361,7 @@ export default function CompanyBooks() {
           {books ? (
             <span className="toolbar-total">
               {books.year}: revenue {pl(books.totals.revenue_net)} · costs {pl(books.totals.costs_net)} · income {pl(books.totals.income)} PLN
+              {Number(books.totals.interest) ? <> · interest paid {pl(books.totals.interest)} PLN</> : null}
             </span>
           ) : null}
         </div>

@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-10-06 (interest on taxes, ZUS includes health)
+
+Decision [0081](docs/decisions/0081-a-tax-figure-carries-its-late-payment-interest.md).
+
+- **A tax figure records the late-payment interest paid with it.** Company
+  books show an "Interest" column by month and the year's total in the
+  header. Interest is never a cost and never enters a tax estimate.
+- **The health contribution is entered as ZUS.** The "Health" column is gone.
+  7Sigma's six health figures (2021-08 to 2022-02) are now that month's ZUS
+  figure, because the health contribution was the whole ZUS payment then.
+
+## 2026-10-06 (not for the accountant)
+
+Decision [0080](docs/decisions/0080-an-invoice-can-be-kept-from-the-accountant.md).
+
+- **An invoice can be marked "not for the accountant"**, with a reason such as
+  lost, private or too late. It leaves the "For the accountant" list and
+  every figure of Company books, and batch costs keep it. "Undo" puts it back
+  on the list. The card marks several ticked rows at once.
+- **Behaviour change: a document whose positions are all excluded is listed
+  for the accountant again** unless it was sent. "Excluded" says who bears a
+  cost, not whether the accountant has the invoice.
+- **Correction:** the three "sent to the accountant" columns of decision 0079
+  were not known to the write journal. An undo on the Write log of a batch
+  older than 2026-10-06 that touched a supplier document could report the
+  document as changed by somebody else. They are now listed as late columns.
+
 ## 2026-10-06 (sent to the accountant)
 
 Decision [0079](docs/decisions/0079-an-invoice-says-whether-the-accountant-has-it.md).

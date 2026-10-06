@@ -238,6 +238,17 @@ _PHASE1_DDL = (
      "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS accountant_sent_via varchar(20) NOT NULL DEFAULT ''"),
     ("sales_invoices.accountant_sent_ref",
      "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS accountant_sent_ref varchar(200) NOT NULL DEFAULT ''"),
+    # Decision 0081: the late-payment interest paid with a tax, and the health
+    # contribution is ZUS's (one transfer since 2018): a "health" row becomes
+    # the month's ZUS row. A month that somehow has both keeps both; the kind
+    # is refused on write from now on.
+    ("company_tax_entries.interest",
+     "ALTER TABLE company_tax_entries ADD COLUMN IF NOT EXISTS interest numeric(14,2) NOT NULL DEFAULT 0"),
+    ("company_tax_entries.health_is_zus",
+     "UPDATE company_tax_entries h SET kind = 'zus', "
+     "note = left(h.note || ' Entered as the health contribution; ZUS collects both (decision 0081).', 500) "
+     "WHERE h.kind = 'health' AND NOT EXISTS (SELECT 1 FROM company_tax_entries z "
+     "WHERE z.company_id = h.company_id AND z.period = h.period AND z.kind = 'zus')"),
     ("run_cost_lines.exclude_reason_300",
      "ALTER TABLE run_cost_lines ALTER COLUMN exclude_reason TYPE varchar(300)"),
     ("run_cost_lines.external_line_id",

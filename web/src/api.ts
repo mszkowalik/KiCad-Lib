@@ -9683,7 +9683,8 @@ export function salesInvoiceXmlPath(id: number): string {
   return `/api/sales-invoices/${id}/xml`;
 }
 
-/** Whether the accountant has a document (decision 0079). `via`: ksef, kpir, mail, manual, history. */
+/** Whether the accountant has a document (decision 0079). `via`: ksef, kpir, mail, manual, history, or
+ *  `not_sent` — she never gets it, `ref` says why, and `ignored` is true (decision 0080). */
 export interface AccountantState {
   sent: boolean;
   via: string;
@@ -9714,7 +9715,8 @@ export function getAccountantToSend(companyId: number, signal?: AbortSignal): Pr
   return request(`/api/companies/${companyId}/accountant`, { signal });
 }
 
-/** Record (or, with an empty date, clear) that the accountant got these documents. */
+/** Record (or, with an empty date, clear) that the accountant got these documents, or with
+ *  `via: "not_sent"` and a `ref` reason that she never will (decision 0080). */
 export function markAccountant(companyId: number, body: {
   document_ids?: number[]; sales_invoice_ids?: number[]; sent_at: string; via?: string; ref?: string;
 }): Promise<{ marked: number }> {
@@ -9879,7 +9881,11 @@ export interface BooksMonth {
   tax_rate?: string | null;
   accountant: Record<string, {
     id: number; amount: string; status: string; due_date: string; paid_date: string; note: string; files?: number;
+    /** Late-payment interest paid on top of `amount` (decision 0081). */
+    interest?: string;
   }>;
+  /** The month's late-payment interest, summed over its tax figures (decision 0081). Never a cost. */
+  interest?: string;
 }
 
 export interface CompanyBooks {
@@ -9930,6 +9936,7 @@ export function deleteTaxPeriod(companyId: number, periodId: number): Promise<{ 
 
 export function putTaxEntry(companyId: number, body: {
   period: string; kind: string; amount: number; status: string; due_date?: string; paid_date?: string; note?: string;
+  interest?: number;
 }): Promise<{ id: number }> {
   return request(`/api/companies/${companyId}/tax-entries`, jsonBody("PUT", body));
 }

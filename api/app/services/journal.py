@@ -123,7 +123,9 @@ def _hash(d: dict) -> str:
 LATE_COLUMNS: dict[str, dict[str, object]] = {
     # decisions 0058-0068: production journalled these tables before them
     "run_cost_documents": {"company_id": None, "company_source": "", "counterparty_company_id": None,
-                           "seller_tax_id": ""},
+                           "seller_tax_id": "",
+                           # decision 0079, missed when it shipped (found 2026-10-06)
+                           "accountant_sent_at": "", "accountant_sent_via": "", "accountant_sent_ref": ""},
     "run_cost_lines": {"transformation_id": None, "overhead_category": ""},
     "component_consumptions": {"transformation_id": None, "step_run_id": None, "company_id": None,
                                "transfer_line_id": None},

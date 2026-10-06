@@ -4241,17 +4241,21 @@ class KsefInvoice(Base):
 # ---------------------------------------------------- company books (0068)
 class CompanyTaxEntry(Base):
     """A tax or contribution for one month, as the accountant computed it
-    (decision 0068): VAT, PIT, CIT, ZUS, health. `status` is `estimated` until
-    the accountant's figure is `final`, the way a batch has a planned and an
-    actual cost. The page sets these beside the platform's own estimate."""
+    (decision 0068): VAT, PIT, CIT, ZUS (the health contribution included,
+    decision 0081), other. `status` is `estimated` until the accountant's
+    figure is `final`, the way a batch has a planned and an actual cost. The
+    page sets these beside the platform's own estimate. `interest` is the
+    late-payment interest paid on top of `amount` (decision 0081): never a
+    cost, never in a tax estimate."""
 
     __tablename__ = "company_tax_entries"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(Integer)
     period: Mapped[str] = mapped_column(String(7))                       # YYYY-MM
-    kind: Mapped[str] = mapped_column(String(20))                        # vat|pit|cit|zus|health|other
+    kind: Mapped[str] = mapped_column(String(20))                        # vat|pit|cit|zus|other
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    interest: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, server_default="0")
     status: Mapped[str] = mapped_column(String(20), default="final")     # estimated | final
     due_date: Mapped[str] = mapped_column(String(10), default="")
     paid_date: Mapped[str] = mapped_column(String(10), default="")

@@ -22,8 +22,17 @@ What the page computes, in PLN, by month:
   as it takes away and is left out.
 * **Income tax** — only when the company's tax form is stated, from the
   year-to-date figures: linear 19 %, the scale (12 % to 120 000 with the 3 600
-  reduction, 32 % above), the lump sum on revenue, or CIT 9 % / 19 %. ZUS and
-  the health contribution are not deducted.
+  reduction, 32 % above), the lump sum on revenue, or CIT 9 % / 19 %. ZUS
+  (the health contribution included, decision 0081) is not deducted.
+* **Interest** — the late-payment interest the accountant's figures carry
+  (`CompanyTaxEntry.interest`, decision 0081), summed by month. It is money
+  paid and nothing else: never a cost (art. 23 ust. 1 pkt 18 of the PIT act,
+  art. 16 ust. 1 of the CIT act) and never in a tax estimate.
+
+A record the user keeps from the accountant (`accountant.kept_from_accountant`,
+decision 0080) is in none of these figures: the accountant's tax cannot
+include an invoice she never saw. Batch, project and stock costs still count
+it; they do not read this module.
 
 Every figure here is an estimate. The accountant's numbers (`CompanyTaxEntry`)
 are entered beside it, the way a batch has a planned and an actual cost.
@@ -42,12 +51,13 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from . import companies as C
 from . import fx
+from .accountant import kept_from_accountant
 from .invoicing import service as invoicing
 from .invoicing.amounts import d2
 from .run_actuals import OVERHEAD_CATEGORIES, document_json, header_ids, line_destination
 
 TAX_FORMS = ("pit_linear", "pit_scale", "lump", "cit_9", "cit_19")
-ENTRY_KINDS = ("vat", "pit", "cit", "zus", "health", "other")
+ENTRY_KINDS = ("vat", "pit", "cit", "zus", "other")    # health is ZUS (decision 0081)
 COST_BUCKETS = ("stock", "batches", "projects", "prepared", "overhead", "unassigned")
 _BUCKET = {"pool": "stock", "run": "batches", "project": "projects", "transformation": "prepared",
            "overhead": "overhead", "unassigned": "unassigned"}
@@ -243,7 +253,7 @@ def year(db: Session, company_id: int, year: int) -> dict:
                 .all()):
         day = book_date(inv)
         mo = months.get(day[:7])
-        if mo is None:
+        if mo is None or kept_from_accountant(inv):
             continue
         eff = _sales_effect(db, inv)
         mo["revenue_net"] += pln(eff["revenue"], inv.currency, day)
@@ -256,7 +266,7 @@ def year(db: Session, company_id: int, year: int) -> dict:
                         M.RunCostDocument.doc_type.notin_(("proforma", "transfer")),
                         M.RunCostDocument.doc_date.like(f"{year}-%")).all()):
         mo = months.get((doc.doc_date or "")[:7])
-        if mo is None:
+        if mo is None or kept_from_accountant(doc):
             continue
         a = document_json(doc, with_lines=False, db=db)["assignment"]
         for dest, bucket in _BUCKET.items():
@@ -281,10 +291,12 @@ def year(db: Session, company_id: int, year: int) -> dict:
     for f in (db.query(M.RecordFile.owner_id)
               .filter(M.RecordFile.owner_kind == "tax_entry", M.RecordFile.owner_id.in_([e.id for e in rows] or [0]))):
         files[f.owner_id] += 1
+    interest: dict[str, Decimal] = defaultdict(Decimal)
     for e in rows:
-        entries[e.period][e.kind] = {"id": e.id, "amount": str(e.amount), "status": e.status,
-                                     "due_date": e.due_date, "paid_date": e.paid_date, "note": e.note,
-                                     "files": files.get(e.id, 0)}
+        entries[e.period][e.kind] = {"id": e.id, "amount": str(e.amount), "interest": str(d2(e.interest or 0)),
+                                     "status": e.status, "due_date": e.due_date, "paid_date": e.paid_date,
+                                     "note": e.note, "files": files.get(e.id, 0)}
+        interest[e.period] += Decimal(e.interest or 0)
 
     periods = tax_periods(db, company.id)
     out_months, ytd_inc, ytd_rev, prev_tax = [], Decimal(0), Decimal(0), Decimal(0)
@@ -308,6 +320,7 @@ def year(db: Session, company_id: int, year: int) -> dict:
             "income_tax_estimate": None if tax is None else str(tax),
             "tax_form": form, "tax_rate": None if rate is None else str(rate),
             "accountant": entries.get(key, {}),
+            "interest": str(d2(interest.get(key, Decimal(0)))),
         })
 
     def total(field: str) -> str:
@@ -318,13 +331,14 @@ def year(db: Session, company_id: int, year: int) -> dict:
             "tax_periods": [tax_period_json(p) for p in periods],
             "months": out_months,
             "totals": {f: total(f) for f in ("revenue_net", "advances_net", "costs_net", "income", "sales_vat",
-                                             "purchase_vat", "vat_estimate")},
+                                             "purchase_vat", "vat_estimate", "interest")},
             "overhead": {k: str(d2(v)) for k, v in sorted(overhead.items(), key=lambda kv: -kv[1])},
             "overhead_labels": OVERHEAD_CATEGORIES}
 
 
 def set_entry(db: Session, company_id: int, *, period: str, kind: str, amount, status: str = "final",
-              due_date: str = "", paid_date: str = "", note: str = "", actor: str = "") -> M.CompanyTaxEntry:
+              due_date: str = "", paid_date: str = "", note: str = "", interest=0,
+              actor: str = "") -> M.CompanyTaxEntry:
     from fastapi import HTTPException
 
     C.get(db, company_id)
@@ -332,6 +346,8 @@ def set_entry(db: Session, company_id: int, *, period: str, kind: str, amount, s
         raise HTTPException(422, f"kind is one of {', '.join(ENTRY_KINDS)}")
     if status not in ("estimated", "final"):
         raise HTTPException(422, "status is estimated or final")
+    if Decimal(str(interest or 0)) < 0:
+        raise HTTPException(422, "interest is what was paid on top of the tax: zero or more")
     import re
 
     if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", period or ""):
@@ -340,7 +356,7 @@ def set_entry(db: Session, company_id: int, *, period: str, kind: str, amount, s
     if row is None:
         row = M.CompanyTaxEntry(company_id=company_id, period=period, kind=kind)
         db.add(row)
-    row.amount, row.status = d2(amount), status
+    row.amount, row.status, row.interest = d2(amount), status, d2(interest or 0)
     row.due_date, row.paid_date, row.note = due_date[:10], paid_date[:10], note[:500]
     row.entered_by = actor[:100]
     db.flush()
