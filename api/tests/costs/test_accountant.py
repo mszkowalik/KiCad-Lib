@@ -70,3 +70,14 @@ def test_a_send_is_recorded_and_cleared(db):
     seven = C.by_key(db, "7sigma")
     with pytest.raises(HTTPException):
         A.mark(db, seven.id, document_ids=[n.id], sales_invoice_ids=[], sent_at="2050-01-05")
+
+
+def test_a_document_linked_to_a_ksef_row_counts_as_ksef(db):
+    c = C.by_key(db, "9sigma")
+    d = _doc(db, c, "L/1", "2049-05-05")
+    assert not A.state(d, db)["sent"]
+    db.add(M.KsefInvoice(company_id=c.id, side="purchase", ksef_number="TEST-ACC-KSEF-1", status="imported",
+                         document_id=d.id))
+    db.flush()
+    assert A.state(d, db)["via"] == "ksef"
+    assert all(r["id"] != d.id for m in A.to_send(db, c.id)["months"] for r in m["rows"])

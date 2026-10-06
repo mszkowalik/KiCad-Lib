@@ -55,7 +55,8 @@ Production → Company books.
   (`/api/companies/{company_id}/tax-entries/{entry_id}/files`, decision 0077).
   The books report a count per figure (`accountant[kind].files`).
 * **Whether the accountant has a document** is `services/accountant.state`
-  (decision 0079). A KSeF document has it without a row; a proforma, a
+  (decision 0079). A KSeF document has it without a row, also one typed by
+  hand and later linked to a KSeF row (`ksef_invoices.document_id`); a proforma, a
   transfer, a fully excluded document and a draft sales invoice are not to
   send. `GET /api/companies/{id}/accountant` lists the rest by month, due the
   10th of the next month; `POST` records or clears a send.

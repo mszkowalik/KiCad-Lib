@@ -10,8 +10,9 @@ Decision [0079](docs/decisions/0079-an-invoice-says-whether-the-accountant-has-i
 - **Company books has a "For the accountant" card**: what she does not have
   yet, month by month, each due by the 10th of the next month, marked late
   after that. Tick the documents you sent and record them in one step.
-- KSeF documents count as sent. Proformas, transfers and documents charged to
-  nobody are not listed.
+- KSeF documents count as sent, also one typed by hand and later linked to
+  its KSeF row. Proformas, transfers and documents charged to nobody are not
+  listed.
 
 ## 2026-10-06 (the income-tax form by quarter)
 

@@ -25,8 +25,18 @@ VIAS = ("ksef", "kpir", "mail", "manual", "history")
 _KSEF = re.compile(r"^\d{10}-\d{8}-[0-9A-F]{6,}-[0-9A-F]{2}$")
 
 
-def _from_ksef(doc: M.RunCostDocument) -> bool:
-    return doc.company_source == "ksef" or bool(_KSEF.match(doc.external_id or ""))
+def _from_ksef(doc: M.RunCostDocument, linked: bool = False) -> bool:
+    """Imported from KSeF, or typed by hand and later linked to a KSeF row
+    (`ksef_invoices.document_id`): the accountant reads it in KSeF either way."""
+    return linked or doc.company_source == "ksef" or bool(_KSEF.match(doc.external_id or ""))
+
+
+def ksef_linked_ids(db: Session, company_id: int | None = None) -> set[int]:
+    q = db.query(M.KsefInvoice.document_id).filter(M.KsefInvoice.document_id.isnot(None),
+                                                   M.KsefInvoice.status == "imported")
+    if company_id is not None:
+        q = q.filter(M.KsefInvoice.company_id == company_id)
+    return {r[0] for r in q.all()}
 
 
 def ignored(doc: M.RunCostDocument) -> bool:
@@ -36,9 +46,13 @@ def ignored(doc: M.RunCostDocument) -> bool:
     return bool(live) and all(li.allocate == "excluded" for li in live)
 
 
-def state(doc: M.RunCostDocument) -> dict:
-    """{sent, via, at, ref, ignored} of a supplier document."""
-    if _from_ksef(doc):
+def state(doc: M.RunCostDocument, db: Session | None = None, linked: set[int] | None = None) -> dict:
+    """{sent, via, at, ref, ignored} of a supplier document. `linked` is the
+    set of KSeF-linked document ids, else one query through `db`."""
+    if linked is None and db is not None:
+        linked = {r[0] for r in db.query(M.KsefInvoice.document_id)
+                  .filter(M.KsefInvoice.document_id == doc.id, M.KsefInvoice.status == "imported").all()}
+    if _from_ksef(doc, bool(linked) and doc.id in linked):
         return {"sent": True, "via": "ksef", "at": doc.doc_date or "", "ref": doc.external_id or "", "ignored": False}
     if doc.accountant_sent_at:
         return {"sent": True, "via": doc.accountant_sent_via, "at": doc.accountant_sent_at,
@@ -68,8 +82,9 @@ def to_send(db: Session, company_id: int, today: str | None = None) -> dict:
     oldest first, with the deadline and whether it has passed."""
     today = today or date.today().isoformat()
     rows = []
+    linked = ksef_linked_ids(db, company_id)
     for d in (db.query(M.RunCostDocument).filter(M.RunCostDocument.company_id == company_id).all()):
-        st = state(d)
+        st = state(d, linked=linked)
         if st["sent"] or st["ignored"] or not d.doc_date:
             continue
         rows.append({"kind": "document", "id": d.id, "date": d.doc_date[:10], "party": d.supplier or "",
