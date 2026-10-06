@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-06 (download what the accountant needs)
+
+- **"For the accountant" has a Download button**: one ZIP with a file per
+  document, in a folder per month. It takes the ticked rows, or the whole list
+  when nothing is ticked. A document without a file is named in
+  `_missing-files.txt` inside the ZIP.
+
 ## 2026-10-06 (a JLCPCB proforma is not the invoice)
 
 Decision [0083](docs/decisions/0083-a-jlcpcb-proforma-is-not-the-invoice.md).

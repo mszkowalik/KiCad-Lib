@@ -135,3 +135,35 @@ def test_a_sales_invoice_kept_from_the_accountant_leaves_the_revenue(db):
     before = rev()
     A.mark(db, c.id, document_ids=[], sales_invoice_ids=[inv.id], sent_at="2049-10-06", via="not_sent", ref="private")
     assert A.sales_state(inv)["via"] == "not_sent" and rev() == before - 100
+
+
+def test_the_list_downloads_as_one_zip_with_the_missing_named(db, monkeypatch):
+    import io
+    import zipfile
+
+    store = {}
+    monkeypatch.setattr("app.services.storage.get_bytes", lambda k: store.get(k))
+    c = C.by_key(db, "9sigma")
+    with_file = _doc(db, c, "ZIP/1", "2049-05-03")
+    for i, name in enumerate(("scan.pdf", "final.PDF")):
+        a = M.RunAttachment(document_id=with_file.id, filename=name, content_type="application/pdf",
+                            size_bytes=3, minio_key=f"k/zip/{i}")
+        db.add(a)
+        db.flush()
+        store[a.minio_key] = f"bytes-{i}".encode()
+    with_file.attachment_id = a.id - 1          # the headline is the first, not the newest
+    without = _doc(db, c, "ZIP/2", "2049-05-04")
+    other = _doc(db, C.by_key(db, "7sigma"), "ZIP/3", "2049-05-05")
+    db.flush()
+
+    data, summary = A.bundle(db, c.id, today="2049-06-11")
+    z = zipfile.ZipFile(io.BytesIO(data))
+    mine = [n for n in z.namelist() if "TEST-ACC" in n]
+    assert mine == ["2049-05/2049-05-03 TEST-ACC ZIP-1.pdf"]
+    assert z.read(mine[0]) == b"bytes-0"
+    assert "ZIP/2" in z.read(A.MISSING_NAME).decode() and "ZIP/3" not in z.read(A.MISSING_NAME).decode()
+    assert summary["missing"] >= 1
+
+    picked, s2 = A.bundle(db, c.id, {("document", without.id), ("document", other.id)}, today="2049-06-11")
+    z2 = zipfile.ZipFile(io.BytesIO(picked))
+    assert z2.namelist() == [A.MISSING_NAME] and s2 == {"files": 0, "missing": 1}

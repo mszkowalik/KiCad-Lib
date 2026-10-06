@@ -6,6 +6,9 @@ one-off backfill are admin work: they change what the books say.
 """
 from __future__ import annotations
 
+import re
+from datetime import date
+
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -186,6 +189,26 @@ def accountant_to_send(company_id: int, db: Session = Depends(get_db)):
 
     svc.get(db, company_id)
     return accountant.to_send(db, company_id)
+
+
+@router.get("/companies/{company_id}/accountant/files.zip")
+def accountant_files(company_id: int, rows: str = "", db: Session = Depends(get_db)):
+    """The files of the to-send list as one ZIP. `rows` picks some, as
+    `document:12,sales_invoice:5`; empty means the whole list."""
+    from ..services import accountant
+
+    c = svc.get(db, company_id)
+    picks = None
+    if rows.strip():
+        try:
+            picks = {(k, int(i)) for k, i in (p.split(":") for p in rows.split(",") if p.strip())}
+        except ValueError as e:
+            raise HTTPException(422, "rows is a list like document:12,sales_invoice:5") from e
+    data, summary = accountant.bundle(db, company_id, picks)
+    name = re.sub(r"[^A-Za-z0-9]+", "", c.name or "company") or "company"
+    return Response(data, media_type="application/zip", headers={
+        "Content-Disposition": f'attachment; filename="{name}-for-the-accountant-{date.today().isoformat()}.zip"',
+        "X-Files": str(summary["files"]), "X-Missing-Files": str(summary["missing"])})
 
 
 @router.post("/companies/{company_id}/accountant")

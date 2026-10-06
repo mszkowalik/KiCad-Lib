@@ -21,13 +21,16 @@ her (decision 0080 overrides item 3 of 0079).
 """
 from __future__ import annotations
 
+import io
 import re
+import zipfile
 from datetime import date
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from .. import models as M
+from . import storage
 
 VIAS = ("ksef", "kpir", "mail", "manual", "history", "not_sent")
 NOT_SENT = "not_sent"
@@ -157,3 +160,75 @@ def mark(db: Session, company_id: int, *, document_ids: list[int], sales_invoice
         row.accountant_sent_ref = (ref or "").strip()[:200] if sent_at else ""
     db.flush()
     return len(rows)
+
+
+MISSING_NAME = "_missing-files.txt"
+
+
+def _name(text: str) -> str:
+    """A file name every system accepts: no path separators, no control or
+    reserved characters, single spaces."""
+    text = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "-", text or "")
+    return re.sub(r"\s+", " ", text).strip(" .-")[:110] or "document"
+
+
+def _row_files(db: Session, row: dict) -> list[tuple[str, bytes]]:
+    """The files that ARE this row's invoice, as (original name, bytes).
+
+    A supplier document gives its headline attachment, the newest file when
+    none is marked, because a corrected scan or a final invoice beside its
+    proforma is the one to send. A sales invoice gives the files kept with it;
+    with none, one issued on the platform gives its own PDF. A sales invoice
+    recorded from elsewhere has no platform rendering worth sending."""
+    if row["kind"] == "document":
+        doc = db.get(M.RunCostDocument, row["id"])
+        a = db.get(M.RunAttachment, doc.attachment_id) if doc and doc.attachment_id else None
+        if a is None or a.document_id != row["id"]:
+            a = (db.query(M.RunAttachment).filter(M.RunAttachment.document_id == row["id"])
+                 .order_by(M.RunAttachment.id.desc()).first())
+        data = storage.get_bytes(a.minio_key) if a else None
+        return [(a.filename, data)] if data else []
+    out = []
+    for f in db.query(M.RecordFile).filter_by(owner_kind="sales_invoice", owner_id=row["id"]).order_by(M.RecordFile.id):
+        data = storage.get_bytes(f.minio_key)
+        if data:
+            out.append((f.filename, data))
+    inv = db.get(M.SalesInvoice, row["id"])
+    if not out and inv is not None and inv.source == "platform":
+        from .invoicing import pdf
+        out.append((f"{inv.number}.pdf", pdf.render(inv)))
+    return out
+
+
+def bundle(db: Session, company_id: int, picks: set[tuple[str, int]] | None = None,
+           today: str | None = None) -> tuple[bytes, dict]:
+    """The files of the to-send list as one ZIP, for the user to forward.
+
+    Only rows on this company's list go in, so a pick naming another
+    company's record, or one already sent, adds nothing. Each file lands in
+    its month's folder as `date party number.ext`; a row without a file is
+    named in `_missing-files.txt` instead, so nothing drops out silently."""
+    got = to_send(db, company_id, today)
+    buf, used, missing, files = io.BytesIO(), set(), [], 0
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for m in got["months"]:
+            for row in m["rows"]:
+                if picks is not None and (row["kind"], row["id"]) not in picks:
+                    continue
+                stem = _name(f"{row['date']} {row['party']} {row['number']}")
+                found = _row_files(db, row)
+                if not found:
+                    missing.append(row)
+                for i, (orig, data) in enumerate(found):
+                    ext = ("." + orig.rsplit(".", 1)[1].lower()) if "." in orig else ""
+                    name = f"{m['month']}/{stem}{f' ({i + 1})' if i else ''}{ext}"
+                    while name in used:
+                        name = name.replace(ext, f" (x){ext}", 1) if ext else name + " (x)"
+                    used.add(name)
+                    z.writestr(name, data)
+                    files += 1
+        if missing:
+            z.writestr(MISSING_NAME, "No file on the platform for these documents:\n" + "".join(
+                f"{r['date']}  {'purchase' if r['kind'] == 'document' else 'sales'}  {r['party']}  {r['number']}  "
+                f"{r['net'] if r['net'] is not None else ''} {r['currency']}\n" for r in missing))
+    return buf.getvalue(), {"files": files, "missing": len(missing)}

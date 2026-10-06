@@ -9717,6 +9717,12 @@ export function getAccountantToSend(companyId: number, signal?: AbortSignal): Pr
   return request(`/api/companies/${companyId}/accountant`, { signal });
 }
 
+/** The files of the to-send list as one ZIP, for a plain `<a href download>`: the
+ *  browser fetches it with the session cookie. `rows` (`document:12`, `sales_invoice:5`)
+ *  picks some; none means the whole list. Rows without a file are named inside it. */
+export const accountantFilesUrl = (companyId: number, rows: string[] = []): string =>
+  `${API_URL}/api/companies/${companyId}/accountant/files.zip${rows.length ? `?rows=${encodeURIComponent(rows.join(","))}` : ""}`;
+
 /** Record (or, with an empty date, clear) that the accountant got these documents, or with
  *  `via: "not_sent"` and a `ref` reason that she never will (decision 0080). */
 export function markAccountant(companyId: number, body: {

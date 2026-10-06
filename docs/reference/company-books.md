@@ -87,6 +87,14 @@ Production → Company books.
   transfer and a draft or cancelled sales invoice are not to send.
   `GET /api/companies/{id}/accountant` lists the rest by month, due the
   10th of the next month; `POST` records or clears a send.
+* **The list downloads as one ZIP**: `GET /api/companies/{id}/accountant/files.zip`,
+  all rows or `?rows=document:12,sales_invoice:5` (`accountant.bundle`). One
+  file per row, the document's HEADLINE attachment (a final invoice beside its
+  proforma, a corrected scan), in a folder per month. A sales invoice gives its
+  kept files, or its own PDF only when it was issued on the platform — a
+  rendering of one recorded from elsewhere is not the document. A row with no
+  file is named in `_missing-files.txt`, never dropped. Only rows on that
+  company's list go in, so a pick naming another company's record adds nothing.
 * **"Not for the accountant" is a send record with `via="not_sent"`**
   (decision 0080): the date is the decision, `ref` the reason, and a reason
   is required. It takes the record off the list and out of every figure on

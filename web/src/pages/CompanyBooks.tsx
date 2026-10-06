@@ -9,6 +9,7 @@ import {
   errorMessage,
   getCompanyBooks,
   deleteTaxPeriod,
+  accountantFilesUrl,
   getAccountantToSend,
   markAccountant,
   isAbortError,
@@ -226,7 +227,8 @@ function TaxPeriodsCard({ companyId, periods, incomeTax, onSaved }: {
 /** What the accountant does not have yet, month by month, each month due by
  *  the 10th of the next one (decision 0079). KSeF documents, proformas and
  *  transfers are not listed. Tick rows and record that they were sent, or
- *  that she will never get them, with the reason (decision 0080). */
+ *  that she will never get them, with the reason (decision 0080). Download
+ *  gives their files as one ZIP: the ticked rows, or the whole list. */
 function AccountantCard({ companyId }: { companyId: number }) {
   const dialog = useDialog();
   const [data, setData] = useState<AccountantToSend | null>(null);
@@ -304,6 +306,10 @@ function AccountantCard({ companyId }: { companyId: number }) {
             <button type="button" className="btn btn-sm" disabled={busy || !picked.size} onClick={() => void keepPicked()}>
               Not for the accountant…
             </button>
+            <a className="btn btn-sm" href={accountantFilesUrl(companyId, [...picked])} download
+              title="One ZIP, a folder per month. A document without a file is named in _missing-files.txt.">
+              Download {picked.size ? `${picked.size} selected` : "all"} (ZIP)
+            </a>
             <span className="muted">{data.count} document(s) to send</span>
           </div>
           {[...data.months].reverse().map((m) => (
