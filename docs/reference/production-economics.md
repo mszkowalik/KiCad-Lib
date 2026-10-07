@@ -414,6 +414,14 @@ guard reads one company's stock is in [companies.md](companies.md).
   (decision [0083](../decisions/0083-a-jlcpcb-proforma-is-not-the-invoice.md)):
   it is filed as `…-Proforma-Invoice-…`, never blocks the final one, and the
   parts-order Refresh draws the final invoice once JLCPCB issues it.
+- **An assembly order's invoice PDF is drawn too** (`services/jlc_mfg_invoice_pdf.py`,
+  decision [0086](../decisions/0086-a-jlcpcb-assembly-invoice-is-drawn-from-its-data.md)),
+  from `invoiceOrder` with `get_manufacturing_invoice(..., reveal=True)`;
+  `POST /api/jlc/web/invoice-pdfs` picks the drawer by the order number (POB
+  or W). Its rows are JLCPCB's DATA, one per order: JLCPCB's page splits an
+  assembly order's board fabrication into a row of its own from data
+  `invoiceOrder` does not carry, so the drawn rows differ from the page while
+  every amount and total is the same, and a footer line says so.
 - **JLC states a batch's status; do not infer it.** The order listing
   `sync_stage` fetches carries `batchStatus` (`shipped` | `inProduction` |
   `cancelled` | `waitPay` | `waitReview`), stored on `jlc_imports.jlc_status`

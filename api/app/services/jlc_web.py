@@ -711,13 +711,15 @@ def get_smt_order_detail(db: Session, smt_order_num: str) -> dict:
     return data.get("data") or {}
 
 
-def get_manufacturing_invoice(db: Session, batch_num: str) -> dict:
+def get_manufacturing_invoice(db: Session, batch_num: str, *, reveal: bool = False) -> dict:
     """THE consumption source. Returns the raw payload; `presaleDetailResultVOList`
-    is the per-component / per-SMT-order billed consumption."""
+    is the per-component / per-SMT-order billed consumption. `reveal=True`
+    decrypts the `{secret}` buyer fields for the printed invoice (decision 0086),
+    as `get_parts_invoice` does."""
     client = _get_client(db)
     data = client.post(MFG_INVOICE_PATH, {"batchNum": batch_num, "orderPay": "yes"}).get("data") or {}
     _mark_ok(db)
-    return data
+    return reveal_secrets(data, client._private_key) if reveal else data
 
 
 def list_parts_orders(db: Session, *, page: int = 1, page_size: int = 25,

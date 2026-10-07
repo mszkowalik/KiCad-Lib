@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-10-07 (JLCPCB assembly invoices as PDF)
+
+Decision [0086](docs/decisions/0086-a-jlcpcb-assembly-invoice-is-drawn-from-its-data.md).
+
+- **A JLCPCB assembly order (W…) now gets its invoice PDF**, drawn from
+  JLCPCB's invoice data like a parts order's. JLCPCB keeps no file: its
+  DOWNLOAD button saves a picture of the page. The drawn invoice lists one row
+  per order; JLCPCB's page lists the board fabrication of an assembly order as
+  a row of its own. The amounts and totals are the same, and a line at the
+  bottom of the page says so.
+- **`POST /api/jlc/web/invoice-pdfs` takes both kinds** and picks by the order
+  number.
+
 ## 2026-10-07 (an invoice read from its own file)
 
 Decision [0085](docs/decisions/0085-a-printed-invoice-can-be-read-from-the-document-s-own-file.md).
