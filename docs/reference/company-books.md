@@ -73,8 +73,10 @@ Production → Company books.
   counts in full, so a gap in the classification never hides VAT.
 * **Both leased cars carry `car_mixed`**: PKO Leasing 22/003970 (Tesla
   Model 3) and 22/019405 (Volkswagen, ZS091PR), and their charging, service,
-  parking and tolls. 100 % needs exclusive business use with a mileage log
-  (art. 86a ust. 3 and 4); take the flag off a car only when the user says so.
+  parking, tolls and tools (user, 2026-10-07: mixed use). 100 % needs
+  exclusive business use with a mileage log (art. 86a ust. 3 and 4). BOTO
+  deducts 50 % too: with the flag, 7Sigma's monthly estimate meets her filed
+  VAT within about 100 PLN in most months of 2025.
 * **A customs document carries the import VAT and no money**
   (`services/customs.py`, `POST /api/customs-documents`). It is the courier's
   certified declaration (PZC: ZC299, ZC299H7 or ZC429), never the debt

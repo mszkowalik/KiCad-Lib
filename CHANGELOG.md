@@ -19,8 +19,8 @@ Decision [0087](docs/decisions/0087-a-supplier-document-states-what-it-is-in-law
   counts in full, as before.
 - **Both leased cars are marked mixed use**: the Tesla Model 3 (PKO Leasing
   22/003970) and the Volkswagen ZS091PR (PKO Leasing 22/019405), with their
-  charging. Tell us if a car is used only for the business and has a mileage
-  log: then its VAT counts in full.
+  charging, service and tyres. Only a car used solely for the business, with
+  a mileage log, gives its VAT in full.
 - **Customs declarations carry the import VAT.** "Customs declaration" on the
   Invoices toolbar files the courier's certified declaration (the PZC XML:
   ZC299, ZC299H7 or ZC429). It asks the day the declaration reached you,
@@ -31,6 +31,20 @@ Decision [0087](docs/decisions/0087-a-supplier-document-states-what-it-is-in-law
 - **The agent tool `create_supplier_invoice` takes `kind` and `vat_rule`.**
 - The kind and the limit can be changed on a closed batch's document: they
   move no money.
+- **Every existing supplier document now has its kind**: 199 from KSeF, the
+  rest read from each document's file, with a second reading of every answer
+  that changes VAT. 254 documents are car costs and 13 are hotels or
+  restaurants. 35 remain undecided, and none of them carries VAT.
+- **31 customs declarations are filed**, Nov 2023 to Sep 2026, found in the
+  couriers' own mails: 22 565 PLN of import VAT for 7Sigma and 34 066 PLN for
+  9SIGMA. Each one carries the courier's XML and a PDF print, and 29 carry
+  the day it was forwarded to the accountant.
+- **What the books show changed.** 7Sigma's purchase VAT for 2021 to 2026 is
+  28 503 PLN lower: 51 068 PLN is no longer deductible, and the import VAT
+  adds 22 565 PLN. 9SIGMA's is 34 066 PLN higher. 7Sigma's yearly estimates
+  now meet the VAT BOTO filed within 2 220, 516 and 243 PLN for 2022, 2023
+  and 2024, where they were 6 827, 8 886 and 5 767 PLN off.
+- The empty cancelled JLCPCB record W2026061105482196 is deleted.
 
 ## 2026-10-07 (connect an agent from the Account page)
 
@@ -57,6 +71,10 @@ Decision [0087](docs/decisions/0087-a-supplier-document-states-what-it-is-in-law
 ## 2026-10-07 (JLCPCB assembly invoices as PDF)
 
 Decision [0086](docs/decisions/0086-a-jlcpcb-assembly-invoice-is-drawn-from-its-data.md).
+
+- **13 of the 15 assembly orders now carry their drawn invoice** and its
+  printed page (deployed 2026-10-07). W2026092300301215 waits until it ships:
+  until then JLCPCB dates its invoice the day it is asked.
 
 - **A JLCPCB assembly order (W…) now gets its invoice PDF**, drawn from
   JLCPCB's invoice data like a parts order's. JLCPCB keeps no file: its
