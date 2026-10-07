@@ -17,17 +17,22 @@ export function pl(amount: string | number | null | undefined): string {
   return n.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** A figure the page may not print (a unit price, a position's VAT or gross):
+ *  empty when it is not there, never a made-up 0,00. */
+const plOrBlank = (amount: string | number | null | undefined) =>
+  amount === null || amount === undefined || amount === "" ? "" : pl(amount);
+
 export const INVOICE_LINE_COLUMNS: Column<SalesLine>[] = [
   { key: "pos", label: "Lp.", width: 7, numeric: true, get: (l) => l.position ?? 0 },
   { key: "name", label: "Name", width: 37, get: (l) => l.name },
   { key: "qty", label: "Qty", width: 8, numeric: true, get: (l) => Number(l.qty) },
   { key: "unit", label: "Unit", width: 6, get: (l) => l.unit },
-  { key: "unit_net", label: "Unit net", width: 11, numeric: true, get: (l) => Number(l.unit_net),
-    render: (l) => <>{pl(l.unit_net)}</> },
+  { key: "unit_net", label: "Unit net", width: 11, numeric: true, get: (l) => Number(l.unit_net ?? 0),
+    render: (l) => <>{plOrBlank(l.unit_net)}</> },
   { key: "net", label: "Net", width: 11, numeric: true, get: (l) => Number(l.net ?? 0), render: (l) => <>{pl(l.net)}</> },
   { key: "rate", label: "VAT", width: 7, get: (l) => l.vat_rate },
   { key: "gross", label: "Gross", width: 13, numeric: true, get: (l) => Number(l.gross ?? 0),
-    render: (l) => <>{pl(l.gross)}</> },
+    render: (l) => <>{plOrBlank(l.gross)}</> },
 ];
 
 /** Where the page was read from, in words. */

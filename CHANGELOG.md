@@ -13,6 +13,16 @@ Decision [0085](docs/decisions/0085-a-printed-invoice-can-be-read-from-the-docum
   no cost, so the closed-batch lock does not apply to it.
 - **The printed invoice says where it was read from**: KSeF, or the file and
   who read it.
+- **Every supplier invoice on production now carries its tax data.** 199
+  were filled from KSeF's XML and 752 from their PDFs, each read and checked
+  against the document. 129 record a difference from the document's figures,
+  each with its reason (most often JLCPCB's import taxes or a receipt without
+  a net). Six are held: four JLCPCB parts orders that have only a proforma,
+  an empty duplicate JLCPCB record, and a T-Mobile file that holds an invoice
+  and a correction in one document. 77 documents have no original file to
+  read.
+- **A printed position shows nothing where the page prints nothing**, never
+  a made-up 0,00.
 - **Correction: a KSeF correction no longer replaces the page of the invoice
   it corrects** when both are linked to one document.
 - **Correction: a file whose name has Polish letters opens again.** It
