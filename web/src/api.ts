@@ -2938,6 +2938,13 @@ export interface RunCostDocumentRow {
   received_date?: string;
   /** the VAT in PLN of a document in another currency, as text */
   tax_amount_pln?: string | null;
+  /** Decision 0087: what the paper is in law ("" = not decided) and a VAT
+   *  limit on what was bought (`car_mixed`, `accommodation_catering`). */
+  kind?: string;
+  kind_label?: string;
+  vat_rule?: string;
+  /** the share of the VAT the books deduct, "0" to "1", as text */
+  vat_deductible_share?: string;
   /** the invoice as printed (full view only); null when nothing read it */
   body?: (SalesInvoiceBody & { source?: PrintedSource }) | null;
   notes: string;
@@ -3146,6 +3153,38 @@ export function uploadDocumentAttachment(
   return request(`/api/run-documents/${docId}/attachment`, { method: "POST", body: fd });
 }
 
+/** Decision 0087: the legal kinds of a supplier document and the VAT limits. */
+export interface DocumentKinds {
+  kinds: { value: string; label: string; deductible: boolean }[];
+  vat_rules: { value: string; label: string; share: string }[];
+}
+
+export function getDocumentKinds(signal?: AbortSignal): Promise<DocumentKinds> {
+  return request("/api/document-kinds", { signal });
+}
+
+/** Writes the kind and the VAT limit alone. It moves no money, so it works on
+ *  the document of a closed batch too. */
+export function setDocumentKind(docId: number, kind: string, vat_rule: string): Promise<RunCostDocumentRow> {
+  return request(`/api/run-documents/${docId}/kind`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, vat_rule }),
+  });
+}
+
+/** Files a certified customs declaration (the courier's ZC299, ZC299H7 or
+ *  ZC429 XML) as the document that gives its import VAT. The same MRN twice
+ *  answers `exists` with the first document. */
+export function uploadCustomsDocument(
+  file: File, receivedDate: string,
+): Promise<{ status: "created" | "exists"; document: RunCostDocumentRow }> {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("received_date", receivedDate);
+  return request("/api/customs-documents", { method: "POST", body: fd });
+}
+
 /** Same-origin PATH to an attachment (not an absolute URL) so it can be fed to
  *  `viewkind.fileHref`, which routes PDFs to the browser viewer and CAD/mesh
  *  files to the /view page. `inline` asks the API to display rather than download. */
@@ -3204,7 +3243,7 @@ export function editDocumentLines(
     document?: Partial<Pick<RunCostDocumentRow,
       "supplier" | "doc_number" | "external_id" | "doc_date" | "currency" |
       "total_amount" | "doc_type" | "notes" | "paid_at" | "fx_rate_usd" | "company_id" |
-      "tax_amount" | "sale_date" | "due_date" | "received_date" | "tax_amount_pln">>;
+      "tax_amount" | "sale_date" | "due_date" | "received_date" | "tax_amount_pln" | "kind" | "vat_rule">>;
     updates?: (Partial<RunCostLineRow> & { id: number })[];
     creates?: Record<string, unknown>[];
     deletes?: number[];
@@ -3493,6 +3532,8 @@ export interface DocumentCreate {
   due_date?: string;
   received_date?: string;
   tax_amount_pln?: string | null;
+  kind?: string;
+  vat_rule?: string;
   notes?: string;
   /** the company that was billed (decision 0064) */
   company_id?: number | null;
@@ -9906,6 +9947,9 @@ export interface BooksMonth {
   income: string;
   sales_vat: string;
   purchase_vat: string;
+  /** Purchase VAT the law gives no deduction for (decision 0087): notes,
+   *  receipts, half of a mixed-use car's, all of a hotel's or a restaurant's. */
+  purchase_vat_excluded?: string;
   vat_estimate: string;
   income_tax_estimate: string | null;
   /** The form this month is taxed under, and its effective rate if one is set (decision 0078). */

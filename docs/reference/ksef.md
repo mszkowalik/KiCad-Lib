@@ -48,7 +48,9 @@ are Admin → Companies (tokens, "Sync now") and Production → KSeF (the inbox)
   A correction linked to the document of the invoice it corrects (the same
   seller and number) writes nothing: its page states a difference.
   Documents imported before the change are filled by
-  `POST /api/ksef/fill-documents` (admin, dry run by default).
+  `POST /api/ksef/fill-documents` (admin, dry run by default). The same
+  call sets the legal `kind` from KSeF's invoice type when nobody set one
+  (decision 0087, `doc_kinds.KSEF_KIND`).
 * **The skip takes only a purchase.** The numbering counts the numbers KSeF holds,
   so a skipped sales row would give its number out again. A sales row has no
   action at all: the KSeF page says instead whether it waits for its XML or

@@ -26,6 +26,7 @@ import {
   getInvoiceRegister,
   isAbortError,
   resolveDocumentParts,
+  uploadCustomsDocument,
   uploadDocumentAttachment,
   type CostStepCatalog,
   type InvoiceRegister,
@@ -35,6 +36,7 @@ import {
   type TransformationOption,
 } from "../api";
 import { CheckField } from "../components/Field";
+import FilePick from "../components/FilePick";
 import { useDialog } from "../components/Dialog";
 import InvoiceFields, { EMPTY_TAX, taxFieldsOf, taxSummary, type InvoiceHeader }
   from "../components/invoices/InvoiceFields";
@@ -74,6 +76,8 @@ function headerOf(d: RunCostDocumentRow): InvoiceHeader {
     sale_date: d.sale_date || "",
     due_date: d.due_date || "",
     received_date: d.received_date || "",
+    kind: d.kind || "",
+    vat_rule: d.vat_rule || "",
   };
 }
 
@@ -740,6 +744,7 @@ export default function Invoices() {
           >
             Resolve parts everywhere
           </button>
+          <CustomsUpload busy={busy} onDone={(id) => { load(); setExpanded(id); }} />
           <button type="button" className="btn btn-sm btn-primary" onClick={() => setAdding((v) => !v)}>
             {adding ? "Close" : "New invoice"}
           </button>
@@ -874,6 +879,38 @@ function Originals({ docId, onChange }: { docId: number; onChange: () => void })
 }
 
 // ------------------------------------------------------------- new invoice form
+
+/** Decision 0087: a courier's certified customs declaration (ZC299, ZC299H7
+ *  or ZC429 XML) filed as the document that gives the import VAT. The day it
+ *  reached you is asked first, because the VAT is deducted no earlier. */
+function CustomsUpload({ busy, onDone }: { busy: boolean; onDone: (docId: number) => void }) {
+  const dialog = useDialog();
+  const pick = async (files: File[]) => {
+    const file = files[0];
+    if (!file) return;
+    const day = await dialog.prompt(
+      "The day the declaration reached you (YYYY-MM-DD). Its import VAT is deducted no earlier.",
+      { title: "Customs declaration received", initial: new Date().toLocaleDateString("sv-SE") },
+    );
+    if (day === null) return;
+    try {
+      const r = await uploadCustomsDocument(file, day.trim());
+      if (r.status === "exists") {
+        await dialog.alert(`MRN ${r.document.doc_number} is already filed. Nothing was changed.`,
+                           { title: "Already filed" });
+      }
+      onDone(r.document.id);
+    } catch (err) {
+      await dialog.alert(errorMessage(err), { title: "Filing the declaration failed" });
+    }
+  };
+  return (
+    <FilePick accept=".xml" onPick={pick} disabled={busy}
+              title="File a courier's certified customs declaration (PZC XML: ZC299, ZC299H7 or ZC429). It carries the import VAT.">
+      Customs declaration
+    </FilePick>
+  );
+}
 
 function NewInvoiceCard({
   runs, projects, stepCatalog, onDone,

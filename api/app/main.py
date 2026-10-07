@@ -823,6 +823,11 @@ _PHASE1_DDL = (
      "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS tax_amount_pln numeric(14,2)"),
     ("run_cost_documents.body",
      "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS body jsonb"),
+    # Decision 0087: the legal kind of a supplier document and its VAT limit.
+    ("run_cost_documents.kind",
+     "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS kind varchar(30) NOT NULL DEFAULT ''"),
+    ("run_cost_documents.vat_rule",
+     "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS vat_rule varchar(30) NOT NULL DEFAULT ''"),
     # LAST. Everything above reads `kind`; nothing below may.
     #
     # The index on it goes first and by name: `create_all` cannot drop an index

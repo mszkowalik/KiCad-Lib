@@ -54,6 +54,14 @@ guard reads one company's stock is in [companies.md](companies.md).
   pinned rate. A page that does not add up, or disagrees with the document,
   needs a `reason`, which is kept with the page. A document KSeF holds
   refuses it.
+- **`kind` is what the paper is in law; `doc_type` is how its money counts**
+  (decision 0087). No money path reads `kind` or `vat_rule`: they decide only
+  the share of the VAT the company books deduct
+  ([company-books.md](company-books.md)). So
+  `PUT /api/run-documents/{doc_id}/kind` writes on a closed batch's document,
+  like the printed invoice. A customs document (`kind="customs_document"`)
+  has a total of 0 and no positions: it carries the import VAT, and the
+  goods stay on the supplier's invoice.
 - **`allocate` has five values, and `"excluded"` is load-bearing.** `none` |
   `pooled` | `by_value` | `by_qty` | `excluded`. `pooled` says "this position
   IS stock" (decision 0045). The carrier values spread a

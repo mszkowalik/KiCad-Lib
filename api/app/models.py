@@ -2472,6 +2472,14 @@ class RunCostDocument(Base):
     #: buyer, positions with their rates, totals per rate, payment). Written
     #: by an import from the supplier's own data, never edited.
     body: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Decision 0087: what the paper IS in law (`services/doc_kinds.KINDS`: a VAT
+    # invoice, a debit note, a customs document, ...), "" = not decided yet,
+    # and a VAT limit on what was bought (`VAT_RULES`: a mixed-use passenger
+    # car 50 %, accommodation or catering 0 %). Together they decide how much
+    # of `tax_amount` the books count as deductible. `doc_type` still decides
+    # how the money is counted.
+    kind: Mapped[str] = mapped_column(String(30), default="", server_default="")
+    vat_rule: Mapped[str] = mapped_column(String(30), default="", server_default="")
     created_by: Mapped[str] = mapped_column(String(100), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

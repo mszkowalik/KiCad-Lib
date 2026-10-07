@@ -62,6 +62,27 @@ Production → Company books.
   receipt date, each falling back to the issue date (art. 86 ust. 10 and 10b
   pkt 1 of the VAT act). So a December invoice received in January is
   January's, and the books read documents from the year before too.
+* **Only the deductible share of that VAT counts** (decision 0087):
+  `doc_kinds.deductible_share(kind, vat_rule)`. The paper decides whether
+  there is any: an invoice of any sort, a simplified invoice (a receipt with
+  the NIP up to 450 PLN), a ticket and a customs document give VAT; a receipt
+  without the NIP, a note, a policy, a bill, a bank statement, an internal
+  voucher and a proforma give none. `vat_rule` cuts it for what was bought:
+  `car_mixed` 50 % (art. 86a), `accommodation_catering` 0 % (art. 88 ust. 1
+  pkt 4). The rest is `purchase_vat_excluded`. A document whose kind is ""
+  counts in full, so a gap in the classification never hides VAT.
+* **Both leased cars carry `car_mixed`**: PKO Leasing 22/003970 (Tesla
+  Model 3) and 22/019405 (Volkswagen, ZS091PR), and their charging, service,
+  parking and tolls. 100 % needs exclusive business use with a mileage log
+  (art. 86a ust. 3 and 4); take the flag off a car only when the user says so.
+* **A customs document carries the import VAT and no money**
+  (`services/customs.py`, `POST /api/customs-documents`). It is the courier's
+  certified declaration (PZC: ZC299, ZC299H7 or ZC429), never the debt
+  notice (ZC291, ZCX91) or the release notice (PW229, PW429). Its VAT is the
+  PAYABLE B00, which customs rounds to whole złoty. The goods are on the
+  supplier's invoice, and JLCPCB's prepaid import tax position stays
+  `excluded` as `reclaimable_vat`, so the VAT counts once. The duty (A00) is
+  in that excluded position too, so it is in no cost.
 * **The income tax is the company's legal form** (`companies.legal_form`,
   `company_books.income_tax`): a `sole_trader` pays PIT and may have
   `pit_linear`, `pit_scale` or `lump`; a `company` (sp. z o.o.) pays CIT and

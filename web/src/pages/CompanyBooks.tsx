@@ -93,6 +93,7 @@ function MonthPanel({ companyId, m, incomeTax, onSaved }: {
         Costs: {Object.entries(m.costs).filter(([, v]) => Number(v)).map(([k, v]) => `${BUCKET_TEXT[k] ?? k} ${pl(v)}`).join(" · ") || "none"}
         {Number(m.advances_net) ? ` · advances received ${pl(m.advances_net)} net (VAT only)` : ""}
         {" · "}VAT on sales {pl(m.sales_vat)}, on purchases {pl(m.purchase_vat)}
+        {Number(m.purchase_vat_excluded) ? ` (${pl(m.purchase_vat_excluded)} more not deductible)` : ""}
       </p>
       <ErrorBanner message={err} />
       <FieldRow>

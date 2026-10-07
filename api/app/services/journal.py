@@ -128,7 +128,9 @@ LATE_COLUMNS: dict[str, dict[str, object]] = {
                            "accountant_sent_at": "", "accountant_sent_via": "", "accountant_sent_ref": "",
                            # decision 0084: the invoice's tax data
                            "sale_date": "", "due_date": "", "received_date": "", "tax_amount_pln": None,
-                           "body": None},
+                           "body": None,
+                           # decision 0087: the legal kind and the VAT limit
+                           "kind": "", "vat_rule": ""},
     "run_cost_lines": {"transformation_id": None, "overhead_category": ""},
     "component_consumptions": {"transformation_id": None, "step_run_id": None, "company_id": None,
                                "transfer_line_id": None},

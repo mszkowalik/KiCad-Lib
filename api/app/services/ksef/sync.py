@@ -40,7 +40,7 @@ from sqlalchemy.orm import Session
 
 from ... import models as M
 from .. import companies as C
-from .. import crypto, printed, storage
+from .. import crypto, doc_kinds, printed, storage
 from ..invoicing import amounts as A
 from . import client as K
 from .parse import parse
@@ -464,6 +464,9 @@ def apply_fiscal(doc: M.RunCostDocument, row: M.KsefInvoice, parsed: dict) -> li
         want["tax_amount"] = float(f["vat"])
     if not doc.paid_at and f["paid_date"]:
         want["paid_at"] = f["paid_date"]
+    if not doc.kind:
+        # Decision 0087: KSeF states what the invoice is; a person's choice stays.
+        want["kind"] = doc_kinds.KSEF_KIND.get(getattr(row, "invoice_type", "") or "", "invoice")
     return printed.assign(doc, want)
 
 

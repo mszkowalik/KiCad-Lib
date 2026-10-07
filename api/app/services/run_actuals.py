@@ -37,7 +37,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..config import settings
 from . import companies as _companies  # also registers `stamp_stock` (decision 0064)
-from . import cost_steps, fx
+from . import cost_steps, doc_kinds, fx
 from .project_bom import display_currency, run_pricing_date
 
 # Money that is STOCK is identified by its production STEP, not by a second
@@ -452,6 +452,12 @@ def document_json(doc: M.RunCostDocument, with_lines: bool = True,
         "due_date": doc.due_date or "",
         "received_date": doc.received_date or "",
         "tax_amount_pln": str(doc.tax_amount_pln) if doc.tax_amount_pln is not None else None,
+        # Decision 0087: what the paper is in law, its VAT limit, and the share
+        # of its VAT the books count as deductible.
+        "kind": doc.kind or "",
+        "kind_label": doc_kinds.KINDS.get(doc.kind or "", ("",))[0],
+        "vat_rule": doc.vat_rule or "",
+        "vat_deductible_share": str(doc_kinds.deductible_share(doc.kind, doc.vat_rule)),
         "notes": doc.notes,
         "attachment_id": doc.attachment_id,
         # Decisions 0063/0064: the company that was billed, how that was found,

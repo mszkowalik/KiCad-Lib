@@ -7,8 +7,8 @@
  *  or printed total at all: the only editable things on a saved document were
  *  its positions.
  */
-import { useState } from "react";
-import { errorMessage, getNbpRate } from "../../api";
+import { useEffect, useState } from "react";
+import { errorMessage, getDocumentKinds, getNbpRate, isAbortError, type DocumentKinds } from "../../api";
 import { useAuth } from "../../auth";
 import AutoTextarea from "../AutoTextarea";
 import Field from "../Field";
@@ -33,6 +33,9 @@ export interface InvoiceHeader {
   sale_date: string;
   due_date: string;
   received_date: string;
+  /** Decision 0087: what the paper is in law, and a VAT limit; "" = none. */
+  kind: string;
+  vat_rule: string;
 }
 
 /** The tax fields of a header, shaped for a create or a patch. A PLN
@@ -47,18 +50,42 @@ export function taxFieldsOf(h: InvoiceHeader) {
     sale_date: h.sale_date.trim(),
     due_date: h.due_date.trim(),
     received_date: h.received_date.trim(),
+    kind: h.kind,
+    vat_rule: h.vat_rule,
   };
 }
 
 /** The header fields a new document starts with that are the same for all. */
-export const EMPTY_TAX = { tax: "", tax_pln: "", sale_date: "", due_date: "", received_date: "" };
+export const EMPTY_TAX = {
+  tax: "", tax_pln: "", sale_date: "", due_date: "", received_date: "", kind: "", vat_rule: "",
+};
+
+/** The two vocabularies, fetched once for every form on the page. */
+let kindsCache: Promise<DocumentKinds> | null = null;
+function useDocumentKinds(): DocumentKinds | null {
+  const [kinds, setKinds] = useState<DocumentKinds | null>(null);
+  useEffect(() => {
+    let live = true;
+    kindsCache ??= getDocumentKinds();
+    kindsCache.then((k) => { if (live) setKinds(k); }).catch((err) => {
+      kindsCache = null;
+      if (!isAbortError(err) && live) setKinds({ kinds: [], vat_rules: [] });
+    });
+    return () => { live = false; };
+  }, []);
+  return kinds;
+}
 
 /** The tax data in one line, for the document view when it is not edited. */
 export function taxSummary(d: {
   currency: string; tax_amount: number | null; tax_amount_pln?: string | null;
   sale_date?: string; due_date?: string; received_date?: string;
+  kind_label?: string; vat_deductible_share?: string;
 }): string {
+  const share = d.vat_deductible_share == null ? 1 : Number(d.vat_deductible_share);
   const parts = [
+    d.kind_label || "kind not decided",
+    d.tax_amount != null && share !== 1 ? `${Math.round(share * 100)} % of the VAT deductible` : "",
     d.tax_amount != null ? `VAT ${d.tax_amount.toFixed(2)} ${d.currency}` : "no VAT stated",
     d.tax_amount_pln != null ? `VAT ${d.tax_amount_pln} PLN` : "",
     d.sale_date ? `sale ${d.sale_date}` : "",
@@ -92,6 +119,7 @@ export default function InvoiceFields({
 }) {
   const [nbp, setNbp] = useState("");
   const { companies } = useAuth();
+  const kinds = useDocumentKinds();
   const set = (next: Partial<InvoiceHeader>) => onChange({ ...value, ...next });
 
   /** Invoice-date FX convention: the NBP table-A rate at the document date.
@@ -191,6 +219,28 @@ export default function InvoiceFields({
         <Field label="Due">
           <input className="text" value={value.due_date} disabled={disabled}
                  onChange={(e) => set({ due_date: e.target.value })} />
+        </Field>
+        {/* Decision 0087. The kind decides whether the VAT can be deducted at
+            all; the limit cuts it for what was bought. */}
+        <Field label={<>Legal kind <InfoTip label="About Legal kind">What the paper is in Polish law. An invoice, a simplified invoice (a receipt with your NIP up to 450 PLN), a ticket and a customs document give input VAT. A receipt without the NIP, a note, a policy, a bill or a proforma give none.</InfoTip></>}>
+          <select className="text" value={value.kind} disabled={disabled}
+                  onChange={(e) => set({ kind: e.target.value })}>
+            <option value="">— not decided —</option>
+            {(kinds?.kinds ?? []).map((k) => (
+              <option key={k.value} value={k.value}>{k.label}{k.deductible ? "" : " (no VAT deduction)"}</option>
+            ))}
+            {value.kind && kinds && !kinds.kinds.some((k) => k.value === value.kind)
+              ? <option value={value.kind}>{value.kind}</option> : null}
+          </select>
+        </Field>
+        <Field label={<>VAT limit <InfoTip label="About VAT limit">A limit set by what was bought, not by the paper. A passenger car in mixed use gives 50 % of the VAT (art. 86a). Accommodation and catering give none (art. 88).</InfoTip></>}>
+          <select className="text" value={value.vat_rule} disabled={disabled}
+                  onChange={(e) => set({ vat_rule: e.target.value })}>
+            <option value="">— none —</option>
+            {(kinds?.vat_rules ?? []).map((r) => (
+              <option key={r.value} value={r.value}>{r.label}</option>
+            ))}
+          </select>
         </Field>
         <label>
           Type

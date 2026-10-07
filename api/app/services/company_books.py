@@ -21,7 +21,11 @@ What the page computes, in PLN, by month:
   the supplier documents. A foreign purchase under reverse charge adds as much
   as it takes away and is left out. A purchase's VAT is in PLN as its invoice
   states it, in the first month the law allows the deduction
-  (`purchase_vat_day`, decision 0084), not by the document date.
+  (`purchase_vat_day`, decision 0084), not by the document date. Only the
+  deductible share counts (`doc_kinds.deductible_share`, decision 0087): a
+  receipt without NIP, a note or a policy gives none, a mixed-use passenger
+  car gives 50 %, accommodation and catering give none; the rest is
+  `purchase_vat_excluded`.
 * **Income tax** — only when the company's tax form is stated, from the
   year-to-date figures: linear 19 %, the scale (12 % to 120 000 with the 3 600
   reduction, 32 % above), the lump sum on revenue, or CIT 9 % / 19 %. ZUS
@@ -52,7 +56,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as M
 from . import companies as C
-from . import fx
+from . import doc_kinds, fx
 from .accountant import kept_from_accountant
 from .invoicing import service as invoicing
 from .invoicing.amounts import d2
@@ -280,7 +284,8 @@ def purchase_vat_day(doc: M.RunCostDocument) -> str:
 def purchase_vat_pln(doc: M.RunCostDocument) -> Decimal | None:
     """A purchase's VAT in PLN: `tax_amount` on a PLN document, the VAT in PLN
     the invoice states (`tax_amount_pln`) on one in another currency. None
-    when the document states none."""
+    when the document states none. How much of it is deductible is
+    `doc_kinds.deductible_share` (decision 0087)."""
     if (doc.currency or "PLN").upper() == "PLN":
         return Decimal(str(doc.tax_amount)) if doc.tax_amount else None
     return Decimal(doc.tax_amount_pln) if doc.tax_amount_pln is not None else None
@@ -292,7 +297,7 @@ def year(db: Session, company_id: int, year: int) -> dict:
     months = {f"{year}-{m:02d}": {"month": f"{year}-{m:02d}", "revenue_net": Decimal(0),
                                   "advances_net": Decimal(0), "sales_vat": Decimal(0),
                                   "costs": {b: Decimal(0) for b in COST_BUCKETS},
-                                  "purchase_vat": Decimal(0)}
+                                  "purchase_vat": Decimal(0), "purchase_vat_excluded": Decimal(0)}
               for m in range(1, 13)}
     overhead: dict[str, Decimal] = defaultdict(Decimal)
 
@@ -343,7 +348,11 @@ def year(db: Session, company_id: int, year: int) -> dict:
         mo = months.get(purchase_vat_day(doc)[:7])
         if vat is None or mo is None or kept_from_accountant(doc):
             continue
-        mo["purchase_vat"] += vat
+        # Decision 0087: only the share the law lets the company deduct (the
+        # paper's kind, a mixed-use car's 50 %, no hotel or catering VAT).
+        part = d2(vat * doc_kinds.deductible_share(doc.kind, doc.vat_rule))
+        mo["purchase_vat"] += part
+        mo["purchase_vat_excluded"] += vat - part
 
     entries: dict[str, dict] = defaultdict(dict)
     rows = (db.query(M.CompanyTaxEntry)
@@ -377,6 +386,7 @@ def year(db: Session, company_id: int, year: int) -> dict:
             "costs_net": str(d2(costs)), "costs": {b: str(d2(v)) for b, v in mo["costs"].items()},
             "income": str(d2(income)), "sales_vat": str(d2(mo["sales_vat"])),
             "purchase_vat": str(d2(mo["purchase_vat"])),
+            "purchase_vat_excluded": str(d2(mo["purchase_vat_excluded"])),
             "vat_estimate": str(d2(mo["sales_vat"] - mo["purchase_vat"])),
             "income_tax_estimate": None if tax is None else str(tax),
             "tax_form": form, "tax_rate": None if rate is None else str(rate),
@@ -393,7 +403,7 @@ def year(db: Session, company_id: int, year: int) -> dict:
             "tax_periods": [tax_period_json(p) for p in periods],
             "months": out_months,
             "totals": {f: total(f) for f in ("revenue_net", "advances_net", "costs_net", "income", "sales_vat",
-                                             "purchase_vat", "vat_estimate", "interest")},
+                                             "purchase_vat", "purchase_vat_excluded", "vat_estimate", "interest")},
             "overhead": {k: str(d2(v)) for k, v in sorted(overhead.items(), key=lambda kv: -kv[1])},
             "overhead_labels": OVERHEAD_CATEGORIES}
 

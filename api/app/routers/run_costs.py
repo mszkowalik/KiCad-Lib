@@ -8,7 +8,7 @@ the money path, so "something changed" is not good enough.
 from decimal import Decimal
 from types import SimpleNamespace
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..db import get_db
 from ..models import utcnow
-from ..services import (cost_steps, document_files, journal, nbp, run_actuals,
+from ..services import (cost_steps, customs, doc_kinds, document_files, journal, nbp, run_actuals,
                         substitutions, supplier_parts)
 from ..services import companies as company_svc
 from ..services.invoicing.amounts import d2
@@ -136,6 +136,9 @@ class DocumentIn(BaseModel):
     received_date: str = Field(default="", pattern=_DAY)
     # The VAT in PLN of a document in another currency (P_14_xW).
     tax_amount_pln: Decimal | None = None
+    # Decision 0087: what the paper is in law, and its VAT limit.
+    kind: str = Field(default="", max_length=30)
+    vat_rule: str = Field(default="", max_length=30)
     notes: str = ""
     attachment_id: int | None = None
     corrects_document_id: int | None = None
@@ -160,6 +163,8 @@ class DocumentPatch(BaseModel):
     due_date: str | None = Field(default=None, pattern=_DAY)
     received_date: str | None = Field(default=None, pattern=_DAY)
     tax_amount_pln: Decimal | None = None
+    kind: str | None = Field(default=None, max_length=30)
+    vat_rule: str | None = Field(default=None, max_length=30)
     notes: str | None = None
     run_id: int | None = None
     # A document becomes SHARED the moment a second product's lines land on it
@@ -355,6 +360,14 @@ def _check_doc_type(doc_type: str | None) -> None:
         raise HTTPException(422, f"doc_type is one of {', '.join(sorted(DOC_TYPES))}"
                                  + (" — an in-house transfer is written on the Transfers page"
                                     if doc_type == "transfer" else ""))
+
+
+def _check_kind(kind: str | None, vat_rule: str | None) -> None:
+    """Decision 0087: the legal kind and the VAT limit come from two closed lists."""
+    try:
+        doc_kinds.check(kind, vat_rule)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
 
 
 def _guard_purchase_loss(db: Session, losses: list[dict], what: str) -> None:
@@ -985,6 +998,7 @@ def _create_document(project_id: int | None, body: DocumentIn, db: Session):
             raise HTTPException(409, f"shared document already exists (id={dup.id}, "
                                      f"number={dup.doc_number!r}, external_id={dup.external_id!r})")
     _check_doc_type(body.doc_type)
+    _check_kind(body.kind, body.vat_rule)
     if body.run_id is not None:
         r = _run(db, body.run_id)
         if project_id is not None and r.project_id != project_id:
@@ -1145,6 +1159,7 @@ def update_document(doc_id: int, body: DocumentPatch, db: Session = Depends(get_
     _guard_closed(db, doc, "changing this document")
     fields = body.model_dump(exclude_unset=True)
     _check_doc_type(fields.get("doc_type"))
+    _check_kind(fields.get("kind"), fields.get("vat_rule"))
     original = db.get(M.RunCostDocument, doc.corrects_document_id) if doc.corrects_document_id else None
     if ("company_id" in fields and original is not None and original.company_id
             and fields["company_id"] != original.company_id):
@@ -1193,6 +1208,35 @@ def put_printed_invoice(doc_id: int, body: PrintedIn, db: Session = Depends(get_
     })
     db.commit()
     return {**res, "document": run_actuals.document_json(doc, db=db)}
+
+
+class KindIn(BaseModel):
+    kind: str = Field(max_length=30)
+    vat_rule: str = Field(default="", max_length=30)
+
+
+@router.get("/document-kinds")
+def document_kinds():
+    """The legal kinds of a supplier document and the VAT limits (decision 0087)."""
+    return doc_kinds.as_json()
+
+
+@router.put("/run-documents/{doc_id}/kind")
+def put_document_kind(doc_id: int, body: KindIn, db: Session = Depends(get_db)):
+    """Say what the paper is in law and which VAT limit applies (decision 0087).
+
+    Like the printed invoice, this moves no money, so it is written on the
+    document of a closed batch too. An in-house transfer is always a transfer."""
+    doc = _doc(db, doc_id)
+    _check_kind(body.kind, body.vat_rule)
+    if (doc.doc_type or "") == "transfer" and body.kind not in ("", "transfer"):
+        raise HTTPException(422, "an in-house transfer is a transfer, not a supplier's paper")
+    before = {"kind": doc.kind or "", "vat_rule": doc.vat_rule or ""}
+    doc.kind, doc.vat_rule = body.kind, body.vat_rule
+    audit(db, "run.document.kind", "run_cost_document", doc.id,
+          {"before": before, "after": {"kind": body.kind, "vat_rule": body.vat_rule}})
+    db.commit()
+    return run_actuals.document_json(doc, db=db)
 
 
 @router.delete("/run-documents/{doc_id}")
@@ -1331,6 +1375,7 @@ def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
         })
     # A new buyer, checked before anything is written (decision 0064).
     doc_fields = body.document.model_dump(exclude_unset=True) if body.document is not None else {}
+    _check_kind(doc_fields.get("kind"), doc_fields.get("vat_rule"))
     if "company_id" in doc_fields and not _guard_buyer_change(db, doc, doc_fields["company_id"]):
         doc_fields.pop("company_id")
 
@@ -1719,6 +1764,22 @@ async def upload_doc_attachment(doc_id: int, file: UploadFile = File(...),
           {"document_id": doc.id, "filename": a.filename, "size_bytes": len(data)})
     db.commit()
     return {"id": a.id, "document_id": doc.id, "filename": a.filename, "size_bytes": a.size_bytes}
+
+
+@router.post("/customs-documents")
+async def upload_customs_document(file: UploadFile = File(...), received_date: str = Form(""),
+                                  db: Session = Depends(get_db)):
+    """File a certified customs declaration (the XML a courier mails: ZC299,
+    ZC299H7 or ZC429) as the document that gives its import VAT (decision
+    0087). `received_date` is the day it reached the importer. The same MRN
+    twice returns the first document, unchanged."""
+    data = await file.read()
+    if len(data) > MAX_DOC_ATTACHMENT_MB * 1024 * 1024:
+        raise HTTPException(413, f"file larger than {MAX_DOC_ATTACHMENT_MB} MB")
+    doc, created = customs.record(db, data, filename=file.filename or "", received_date=received_date.strip(),
+                                  actor=acting_name())
+    db.commit()
+    return {"status": "created" if created else "exists", "document": run_actuals.document_json(doc, db=db)}
 
 
 @router.get("/run-documents/{doc_id}/attachments")

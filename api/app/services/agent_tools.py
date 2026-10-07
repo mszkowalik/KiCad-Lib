@@ -2697,7 +2697,7 @@ def create_supplier_invoice(supplier: str, doc_number: str, doc_date: str, curre
                             total_amount: float, lines: list, company: str, external_id: str = "",
                             notes: str = "", tax_amount: float | None = None, sale_date: str = "",
                             due_date: str = "", received_date: str = "",
-                            tax_amount_pln: float | None = None) -> str:
+                            tax_amount_pln: float | None = None, kind: str = "", vat_rule: str = "") -> str:
     """Enter a supplier invoice that KSeF does not hold (a foreign supplier, a
     receipt). Amounts are NET, as printed. Positions start with no destination;
     give each one with assign_invoice_line.
@@ -2720,6 +2720,14 @@ def create_supplier_invoice(supplier: str, doc_number: str, doc_date: str, curre
             not the issue date. The books deduct its VAT no earlier.
         tax_amount_pln: The VAT in PLN, for an invoice in another currency
             that charges Polish VAT (the invoice prints it).
+        kind: What the paper is in law (decision 0087): invoice,
+            invoice_correction, advance_invoice, settlement_invoice,
+            simplified_invoice (a receipt with the buyer's NIP up to 450 PLN),
+            ticket, customs_document, receipt, bill, debit_note, credit_note,
+            interest_note, note_correction, policy, bank_statement, internal,
+            proforma, placeholder. Only the first seven give input VAT.
+        vat_rule: car_mixed (a mixed-use passenger car: 50 % of the VAT) or
+            accommodation_catering (none), when one applies.
     """
     from ..routers import run_costs
 
@@ -2739,6 +2747,7 @@ def create_supplier_invoice(supplier: str, doc_number: str, doc_date: str, curre
                                     tax_amount=tax_amount, sale_date=sale_date, due_date=due_date,
                                     received_date=received_date,
                                     tax_amount_pln=(str(tax_amount_pln) if tax_amount_pln is not None else None),
+                                    kind=kind, vat_rule=vat_rule,
                                     company_id=cid, lines=[run_costs.LineIn(**ln) for ln in lines or []])
     except Exception as e:  # noqa: BLE001 — a malformed line or day is the caller's mistake, said plainly
         return json.dumps({"error": f"bad argument: {e}"})

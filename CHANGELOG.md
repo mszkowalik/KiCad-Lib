@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-10-07 (what a supplier document is in law, and import VAT)
+
+Decision [0087](docs/decisions/0087-a-supplier-document-states-what-it-is-in-law.md).
+
+- **A supplier document now states what it is in law.** Invoices → Edit this
+  invoice has two new fields. "Legal kind" is the paper: an invoice, a
+  correction, an advance or settlement invoice, a simplified invoice (a
+  receipt with your NIP up to 450 PLN), a ticket, a customs document, a
+  receipt, a bill, a debit, credit or interest note, a policy, a bank
+  statement, an internal voucher, a proforma or a record with no paper.
+  "VAT limit" is set by what was bought: a passenger car in mixed use
+  (50 % of the VAT) or accommodation and catering (none).
+- **The company books deduct only the VAT the law allows.** A note, a policy
+  or a receipt without your NIP adds no purchase VAT. A car cost adds half,
+  a hotel or a restaurant nothing. Each month shows the VAT that is not
+  deductible beside the purchase VAT. A document whose kind is not decided
+  counts in full, as before.
+- **Both leased cars are marked mixed use**: the Tesla Model 3 (PKO Leasing
+  22/003970) and the Volkswagen ZS091PR (PKO Leasing 22/019405), with their
+  charging. Tell us if a car is used only for the business and has a mileage
+  log: then its VAT counts in full.
+- **Customs declarations carry the import VAT.** "Customs declaration" on the
+  Invoices toolbar files the courier's certified declaration (the PZC XML:
+  ZC299, ZC299H7 or ZC429). It asks the day the declaration reached you,
+  because the VAT counts from that month. The goods stay on the supplier's
+  invoice, so the VAT counts once. A debt notice or a release notice is
+  refused with the reason.
+- **A KSeF import sets the kind from KSeF's own invoice type.**
+- **The agent tool `create_supplier_invoice` takes `kind` and `vat_rule`.**
+- The kind and the limit can be changed on a closed batch's document: they
+  move no money.
+
 ## 2026-10-07 (connect an agent from the Account page)
 
 - **The Account page has a new "Agents (MCP)" card with a setup prompt.**
