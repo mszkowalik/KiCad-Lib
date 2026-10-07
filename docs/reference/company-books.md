@@ -29,6 +29,13 @@ Production → Company books.
 
 * **Every figure is an estimate.** The accountant's figures
   (`company_tax_entries`) are entered beside them and are the ones that count.
+* **A corrected return replaces its own month's figure.** The note keeps the
+  filed amount and the mail. When one mail asks a top-up for several months,
+  split it into those months, never into an `other` figure: `other` counts as
+  neither VAT nor PIT, so the months it corrects keep their wrong figures (BOTO's
+  2026-01-20 top-up for VI, VIII and XI 2025, recorded that way and split on
+  2026-10-07). A PIT-5L advance is cumulative, so its top-up belongs to the
+  month it was asked with.
 * **Revenue** is the net of issued sales invoices
   (`company_books._sales_effect`), in the month of `book_date`: the earlier
   of the sale date ("data wykonania usługi") and the issue date, as the tax

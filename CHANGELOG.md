@@ -41,9 +41,21 @@ Decision [0087](docs/decisions/0087-a-supplier-document-states-what-it-is-in-law
   the day it was forwarded to the accountant.
 - **What the books show changed.** 7Sigma's purchase VAT for 2021 to 2026 is
   28 503 PLN lower: 51 068 PLN is no longer deductible, and the import VAT
-  adds 22 565 PLN. 9SIGMA's is 34 066 PLN higher. 7Sigma's yearly estimates
-  now meet the VAT BOTO filed within 2 220, 516 and 243 PLN for 2022, 2023
-  and 2024, where they were 6 827, 8 886 and 5 767 PLN off.
+  adds 22 565 PLN. 9SIGMA's is 34 066 PLN higher.
+- **BOTO's corrections of 7Sigma's 2025 returns are in their own months.**
+  Her returns for June, August and November 2025 had deducted the import VAT
+  of three 9SIGMA parcels (424, 3 349 and 8 115 PLN), and she reversed them in
+  January 2026. The 9 290 PLN VAT top-up is now in the VAT of those months,
+  the December correction (2 598 PLN, paid in February 2026) in December, and
+  the 8 230 PLN PIT top-up in the December PIT. It was one "other" figure of
+  17 520 PLN before.
+- **BOTO's own invoices of March 2023 to March 2026 carry their 23 % VAT**
+  (46.00 PLN each). 33 of them have no file, and her filed returns show the
+  deduction in each of those months. Her invoices before December 2022 stay
+  without VAT, because her returns show no such deduction then.
+- With all of this, 7Sigma's yearly VAT estimate for 2023 to 2026 is within
+  800 PLN of what BOTO filed (it was 807 to 8 886 PLN off), and 20 months
+  match within 15 PLN.
 - The empty cancelled JLCPCB record W2026061105482196 is deleted.
 
 ## 2026-10-07 (connect an agent from the Account page)
