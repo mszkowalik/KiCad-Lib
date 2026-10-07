@@ -29,11 +29,23 @@ import with ``'Server' object has no attribute 'list_tools'`` — and uv resolve
 fresh on any cold start, so it breaks with no local change. Lift the pin only
 together with a port to the 2.x API.
 
-Environment:
-  KICAD_API_URL    base URL of the platform API   (default: http://localhost:8020)
-  KICAD_MCP_TOKEN  bearer token, if the API requires one (default: none / open)
+**The token is read from a FILE when the environment does not carry one.**
+The setup prompt on the Account page registers this server with no secret in
+the agent's config: the user saves the token in ``~/.config/kicad-library/token``
+(mode 600) from their own terminal, so it never passes through the agent's chat
+or a config file the agent prints. ``KICAD_MCP_TOKEN`` still wins when set,
+which keeps the repo's ``.mcp.json`` + ``settings.local.json`` wiring working.
 
-Run standalone:  uv run --script mcp/server.py
+The platform serves this file at ``GET /api/agent/mcp-server`` — that is why it
+lives under ``api/app`` and not in a top-level ``mcp/`` directory, which is
+not in the api image.
+
+Environment:
+  KICAD_API_URL         base URL of the platform API  (default: http://localhost:8020)
+  KICAD_MCP_TOKEN       bearer token                  (default: read from the token file)
+  KICAD_MCP_TOKEN_FILE  where the token file is       (default: ~/.config/kicad-library/token)
+
+Run standalone:  uv run --script api/app/services/mcp_server/server.py
 """
 from __future__ import annotations
 
@@ -44,13 +56,28 @@ from pathlib import Path
 
 import anyio
 import httpx
-import mcp.types as types
+from mcp import types
 from mcp.server.lowlevel import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
 
 API_URL = os.environ.get("KICAD_API_URL", "http://localhost:8020").rstrip("/")
-TOKEN = os.environ.get("KICAD_MCP_TOKEN", "").strip()
+TOKEN_FILE = Path(os.environ.get("KICAD_MCP_TOKEN_FILE")
+                  or "~/.config/kicad-library/token").expanduser()
+
+
+def _read_token() -> tuple[str, str]:
+    """The token and where it came from. Never logs the value itself."""
+    env = os.environ.get("KICAD_MCP_TOKEN", "").strip()
+    if env:
+        return env, "KICAD_MCP_TOKEN"
+    try:
+        return TOKEN_FILE.read_text(encoding="utf-8").strip(), str(TOKEN_FILE)
+    except OSError:
+        return "", "none"
+
+
+TOKEN, TOKEN_SOURCE = _read_token()
 
 server = Server("kicad-library")
 
@@ -58,6 +85,10 @@ server = Server("kicad-library")
 def _log(msg: str) -> None:
     # stdout is the MCP protocol channel — diagnostics MUST go to stderr.
     print(f"[kicad-mcp] {msg}", file=sys.stderr, flush=True)
+
+
+_TOKEN_HELP = (f"save a live token from the platform's Account page in {TOKEN_FILE} "
+               "(or set KICAD_MCP_TOKEN), then restart the MCP server")
 
 
 def _headers() -> dict[str, str]:
@@ -212,7 +243,15 @@ LOCAL_TOOLS = {UPLOAD_MODEL3D.name: (UPLOAD_MODEL3D, lambda a: _upload_model3d(a
 async def list_tools() -> list[types.Tool]:
     try:
         catalog = await _get("/api/agent/tools")
-    except Exception as e:  # noqa: BLE001
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 401:
+            # Re-raised with the fix in it: the client shows this message to the
+            # agent, and httpx's own text says nothing about where a token goes.
+            _log(f"the platform refused the token (401) — {_TOKEN_HELP}")
+            raise RuntimeError(f"401 from {API_URL}: {_TOKEN_HELP}") from e
+        _log(f"could not fetch tool catalog from {API_URL}: {e!r}")
+        raise
+    except Exception as e:
         _log(f"could not fetch tool catalog from {API_URL}: {e!r} "
              f"— is the platform API running?")
         raise
@@ -267,6 +306,8 @@ async def call_tool(name: str, arguments: dict | None) -> list[types.ContentBloc
         data = await _post(f"/api/agent/tools/{name}", arguments or {})
     except httpx.HTTPStatusError as e:
         detail = e.response.text[:500]
+        if e.response.status_code == 401:
+            detail += f" — {_TOKEN_HELP}"
         return [types.TextContent(
             type="text",
             text=f"Error calling {name!r}: HTTP {e.response.status_code} — {detail}",
@@ -280,7 +321,9 @@ async def call_tool(name: str, arguments: dict | None) -> list[types.ContentBloc
 
 
 async def _main() -> None:
-    _log(f"starting; API_URL={API_URL} auth={'yes' if TOKEN else 'no'}")
+    _log(f"starting; API_URL={API_URL} token from {TOKEN_SOURCE}")
+    if not TOKEN:
+        _log(f"no token — {_TOKEN_HELP}")
     async with stdio_server() as (read, write):
         await server.run(
             read,

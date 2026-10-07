@@ -18,7 +18,7 @@
         "run",
         "--quiet",
         "--script",
-        "/Users/mateuszkowalik/Projects/KiCad Lib/mcp/server.py"
+        "/Users/mateuszkowalik/Projects/KiCad Lib/api/app/services/mcp_server/server.py"
       ],
       "env": {
         "KICAD_API_URL": "${KICAD_API_URL:-https://disfunction.cc/lib}",

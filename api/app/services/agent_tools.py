@@ -1,7 +1,7 @@
 """The agent tools: the one tool surface every agent uses, over MCP.
 
 The platform runs no agent of its own (decision 0062). Claude Code and other
-agents reach these tools through the MCP server (`mcp/`), which calls
+agents reach these tools through the MCP server (`services/mcp_server/`), which calls
 `routers/agent.py`, which dispatches `TOOLS` by name. Each tool is a plain
 function wrapped by the Anthropic SDK's `beta_tool`, which derives its JSON
 schema from the signature and the docstring.

@@ -25,13 +25,12 @@ import {
   type PlatformUser,
 } from "../api";
 import { useDialog } from "./Dialog";
-import { ErrorBanner, Spinner } from "./Ui";
+import { CopyButton, ErrorBanner, Spinner } from "./Ui";
 import DataTable, { type Column } from "./DataTable";
 import { CheckField, FieldSet } from "./Field";
 import { useAuth } from "../auth";
 
 function CopyRow({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false);
   if (!value) return null;
   return (
     <div className="user-url-row">
@@ -39,17 +38,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
       <code className="user-url" title={value}>
         {value}
       </code>
-      <button
-        className="btn btn-sm"
-        onClick={() => {
-          void navigator.clipboard.writeText(value).then(() => {
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 1500);
-          });
-        }}
-      >
-        {copied ? "Copied" : "Copy"}
-      </button>
+      <CopyButton value={value} />
     </div>
   );
 }

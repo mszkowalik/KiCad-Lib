@@ -13,7 +13,7 @@ file, uploads it to `/api/models3d/upload`, and rewrites the reference. This
 module is the pure part of it — no I/O beyond `Path.is_file()`, so it is
 testable on its own.
 
-`suggest_rel_path` is duplicated in `mcp/server.py` (the `upload_model3d` tool)
+`suggest_rel_path` is duplicated in `services/mcp_server/server.py` (the `upload_model3d` tool)
 because that script imports no app code. Change both together.
 """
 from __future__ import annotations

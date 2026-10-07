@@ -1,11 +1,34 @@
-# Agent tool surface and MCP server (`mcp`)
+# Agent tool surface and MCP server (`api/app/services/mcp_server`)
 
-`mcp/server.py` is a stateless stdio client. It exposes the platform's agent
+`server.py` is a stateless stdio client. It exposes the platform's agent
 tools to Claude Code and other agents. The tools themselves are
-`api/app/services/agent_tools.py::TOOLS`, dispatched by `api/app/routers/agent.py` —
-see [docs/reference/agent-tools.md](../docs/reference/agent-tools.md) for the
+`services/agent_tools.py::TOOLS`, dispatched by `routers/agent.py` —
+see [docs/reference/agent-tools.md](../../../../docs/reference/agent-tools.md) for the
 implementation. **The platform runs no agent of its own**: the in-app chat was
 removed (decision 0062), and MCP is the only way an agent reaches the platform.
+
+## Why it lives under `api/app`, and how an agent gets it
+
+**Because the platform SERVES it**: `GET /api/agent/mcp-server` returns this
+file, and the Account page's **Agents (MCP)** card (`web/src/components/McpSetupCard.tsx`)
+hands the user a prompt that makes an agent download and register it. A
+top-level `mcp/` is not in the api image — same reason as `pcm_plugin/` and
+`bench_agent/`. The repo's `.mcp.json` runs this same file in place.
+
+- **The token never enters the prompt or the agent's config.** A prompt is
+  pasted into a chat, which the agent's vendor stores. The agent asks the user
+  to save the token in `~/.config/kicad-library/token` (mode 600) from their
+  own terminal, and `server.py` reads it there when `KICAD_MCP_TOKEN` is unset.
+  The path is written in three places — `TOKEN_FILE` here, the card's prompt,
+  and every user's disk — so moving it breaks existing installs.
+- **Every command in the prompt was run end to end before it shipped** (macOS,
+  zsh and bash, a scratch `HOME`, `claude mcp list` → Connected). Change one
+  and run it again. Two traps it avoids: the token prompt is wrapped in
+  `bash -c` because `read -p` means something else in zsh and fish has no
+  subshell parentheses, and `claude mcp add` takes the server NAME before `-e`.
+- **Inside this repo `claude mcp list` warns that `kicad-library` is defined
+  twice** when the user also ran the prompt: the project entry and the user
+  entry. Both reach the same platform with the same token.
 
 ## Agent capability policy (user directive, 2026-07)
 
@@ -54,16 +77,17 @@ Claude Code automatically** — never write per-tool routes. An agent brings its
 own web tools.
 
 **Auth:** a **personal API token** (`Authorization: Bearer <token>`), minted per
-user in the Setup page's Users card. The shared `settings.mcp_token` still works
+user on their own Account page (or by an admin on Admin → Users). The shared `settings.mcp_token` still works
 while `AUTH_LEGACY_TOKENS` is on, scoped to `/api/agent/` only — see
 "Authentication — default deny, one gate" in `api/CLAUDE.md`. Empty `mcp_token` plus `AUTH_ENABLED=false` is the
 localhost-dev posture and nothing else.
 
-**MCP server (`mcp/server.py`):** a stateless stdio client run via
+**MCP server (`server.py`):** a stateless stdio client run via
 `uv run --script` (self-contained PEP 723 deps: `mcp`, `httpx`). It imports NO
 app code — it fetches the catalog from `/api/agent/tools` and proxies each call
 to `/api/agent/tools/{name}`, needing only `KICAD_API_URL`
-(default `http://localhost:8020`) + optional `KICAD_MCP_TOKEN`.
+(default `http://localhost:8020`) and a token — `KICAD_MCP_TOKEN`, else the
+token file (`KICAD_MCP_TOKEN_FILE` moves it).
 `read_datasheet`'s list-of-content-blocks return (text + base64 PNG pages) is
 converted to MCP image content; every other tool returns a JSON string as text.
 
@@ -84,13 +108,13 @@ converted to MCP image content; every other tool returns a JSON string as text.
   (this script imports no app code) — change both together. Keep local tools to
   that shape: something the API genuinely cannot do because the bytes are here.
 
-**Claude Code wiring (`.mcp.json` at repo root):** a project-scoped stdio entry
-`kicad-library` that runs the server via `uv`, with `KICAD_API_URL` /
+**Claude Code wiring in this repo (`.mcp.json` at repo root):** a project-scoped
+stdio entry `kicad-library` that runs this file via `uv`, with `KICAD_API_URL` /
 `KICAD_MCP_TOKEN` from env (`${VAR:-default}` expansion keeps them out of git).
 `KICAD_API_URL` defaults to the PUBLIC address, so the server works away from
-the LAN as well as on it. **`KICAD_MCP_TOKEN` must now be set** — the agent
-surface is behind the auth gate, and an unset token gets 401 on every call.
-**Both values live in `.claude/settings.local.json` under `env`** — it is
+the LAN as well as on it. **A token must reach the server** — the agent
+surface is behind the auth gate, and no token gets 401 on every call.
+**Here both values live in `.claude/settings.local.json` under `env`** — it is
 gitignored and its `env` block reaches the Bash tool, so one file serves the MCP
 server and any script. Never put the token in `.mcp.json` or in
 `.claude/settings.json`; both are tracked.

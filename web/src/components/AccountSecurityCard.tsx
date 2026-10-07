@@ -11,14 +11,12 @@
  *  Revoking is not deleting: the row is the record that the credential existed
  *  and when it was last used.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 
 import {
   addOwnToken,
   changeOwnPassword,
   errorMessage,
-  getAccount,
-  isAbortError,
   revokeOwnToken,
   type PlatformUser,
 } from "../api";
@@ -26,29 +24,20 @@ import Field from "./Field";
 import { useDialog } from "./Dialog";
 import { ErrorBanner, Spinner } from "./Ui";
 
-export default function AccountSecurityCard() {
+/** `me` is owned by the Account page, because the MCP card shows the same
+ *  tokens: a token made here must appear there without a reload. */
+export default function AccountSecurityCard({
+  me,
+  setMe,
+}: {
+  me: PlatformUser | null;
+  setMe: (u: PlatformUser) => void;
+}) {
   const dialog = useDialog();
-  const [me, setMe] = useState<PlatformUser | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pw, setPw] = useState({ current: "", next: "", again: "" });
   const [label, setLabel] = useState("");
-
-  const load = useCallback(
-    (signal?: AbortSignal) =>
-      getAccount(signal)
-        .then(setMe)
-        .catch((err) => {
-          if (!isAbortError(err)) setError(errorMessage(err));
-        }),
-    [],
-  );
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    void load(ctrl.signal);
-    return () => ctrl.abort();
-  }, [load]);
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -127,8 +116,10 @@ export default function AccountSecurityCard() {
 
       <h3>API tokens</h3>
       <p className="muted">
-        One token authenticates KiCad, the sync plugin and the MCP server as you. The links
-        below carry it, so treat them as the credential they are.
+        A token authenticates KiCad, the sync plugin and an agent's MCP server as you. The
+        KiCad links below carry your first token, so treat them as the credential they are.
+        Give each computer its own token, with a label: then you can revoke one computer
+        without breaking the others.
       </p>
       {me === null ? (
         <Spinner label="Loading account" />

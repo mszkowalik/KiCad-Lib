@@ -7,22 +7,26 @@ reimplement any of them — it dispatches by name:
 
     GET  /api/agent/tools          -> the tool catalog (name, description, JSON schema)
     POST /api/agent/tools/{name}   -> run one tool with a JSON object of arguments
+    GET  /api/agent/mcp-server     -> the stdio MCP server script an agent installs
 
 The MCP server fetches the catalog once and proxies each call here, so the tool
 logic and the JSON responses are reused exactly (reuse first — never
 reinvent). An agent brings its own web tools.
 
-Auth: when ``settings.mcp_token`` is set, an ``Authorization: Bearer <token>``
-header is required. Empty token = open (fine on localhost); set it before the
-platform is reachable remotely, since these endpoints can create drafts.
+Auth: a personal API token (``Authorization: Bearer 7s_…``), resolved by
+``authgate.AuthGate`` like every other route. ``_require_auth`` below only keeps
+the legacy shared ``mcp_token`` and the auth-disabled dev posture.
 """
 import json
+from pathlib import Path
 
 from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi.responses import Response
 from starlette.concurrency import run_in_threadpool
 
 from ..config import settings
 from ..services import agent_tools
+from .util import content_disposition
 
 router = APIRouter(prefix="/api/agent")
 
@@ -47,6 +51,22 @@ def _require_auth(request: Request, authorization: str | None) -> None:
     if settings.auth_legacy_tokens and authorization == f"Bearer {settings.mcp_token}":
         return
     raise HTTPException(status_code=401, detail="invalid or missing bearer token")
+
+
+_MCP_SERVER = Path(__file__).resolve().parent.parent / "services" / "mcp_server" / "server.py"
+
+
+@router.get("/mcp-server")
+def mcp_server_script(request: Request, authorization: str | None = Header(default=None)):
+    """The stdio MCP server, for an agent setting itself up from the Account
+    page's prompt. Same gate as the tools it proxies: the agent downloads it
+    with the token the user just saved, so a 200 here also proves the token."""
+    _require_auth(request, authorization)
+    return Response(
+        content=_MCP_SERVER.read_text(encoding="utf-8"),
+        media_type="text/x-python",
+        headers={"Content-Disposition": content_disposition("attachment", "kicad_library_mcp.py")},
+    )
 
 
 @router.get("/tools")

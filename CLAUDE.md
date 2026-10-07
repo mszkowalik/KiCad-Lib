@@ -26,12 +26,11 @@ files — write it once and link to it.
 | `api/` | FastAPI backend (DB, importer, generator, agent tools, JLC/LCSC clients) | `api/CLAUDE.md` |
 | `api/app/services/` | Business logic | `api/app/services/CLAUDE.md` — it routes every backend topic to its document |
 | `api/app/routers/` | HTTP endpoints | `api/app/routers/CLAUDE.md` |
-| `api/app/services/fieldsolver\|flasher\|pcm_plugin/` | Field solver, production programming, the KiCad sync plugin | the `CLAUDE.md` in that directory |
+| `api/app/services/fieldsolver\|flasher\|pcm_plugin\|mcp_server/` | Field solver, production programming, the KiCad sync plugin, the stdio MCP server agents install | the `CLAUDE.md` in that directory |
 | `web/` | React + Vite frontend | `web/CLAUDE.md` — the style system and the shared-input rule |
 | `web/src/components\|pages\|sim/` | Shared components, routes, the simulator | the `CLAUDE.md` in that directory |
-| `mcp/` | Stdio MCP server proxying the agent tools to Claude Code | `mcp/CLAUDE.md` |
 | `render/` | kicad-cli render container (previews, project exports) | — |
-| `clients/` | A sample `.kicad_httplib` and unrelated client projects (flasher, invoice import). Two clients the platform SERVES are NOT here — the KiCad sync plugin (`api/app/services/pcm_plugin/`, packaged by `pcm.py`) and the bench agent (`api/app/services/bench_agent/`, zipped by `routers/flasher.py`) — because `clients/` is not in the api image | `api/CLAUDE.md` |
+| `clients/` | A sample `.kicad_httplib` and unrelated client projects (flasher, invoice import). Three clients the platform SERVES are NOT here — the KiCad sync plugin (`api/app/services/pcm_plugin/`, packaged by `pcm.py`), the bench agent (`api/app/services/bench_agent/`, zipped by `routers/flasher.py`) and the MCP server (`api/app/services/mcp_server/`, served by `routers/agent.py`) — because `clients/` is not in the api image | `api/CLAUDE.md` |
 | `docs/reference/` | Long-form topic documents the `CLAUDE.md` files link to | [docs/reference/index.md](docs/reference/index.md) |
 | `docs/decisions/` | Architecture decisions, MADR format | [docs/decisions/index.md](docs/decisions/index.md) |
 | `compose.yaml`, `compose.prod.yaml`, `.github/workflows/images.yml` | Dev and server deployment, image builds | [docs/reference/deployment.md](docs/reference/deployment.md) |

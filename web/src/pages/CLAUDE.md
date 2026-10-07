@@ -4,14 +4,17 @@ One file per route. A page composes shared components; it does not invent its
 own input, table or card. Read `web/CLAUDE.md` for the style system and
 `../components/CLAUDE.md` for what is already built.
 
-## The Account page is the user's own settings; Setup is administration
+## The Account page is the user's own settings; Admin is administration
 
 `/account` is reached by clicking the signed-in name in the top bar, and it
 holds what belongs to whoever is signed in: `AccountSecurityCard` (own password,
-own API tokens), `GitCredentialsCard` (git accounts) and `KicadClientCards`
-(Effective URLs, the PCM install, the `.kicad_httplib` download, Claude Code /
-MCP). Setup stays administration of OTHER people's accounts and the deployment's
-knobs, so a new per-user setting goes here, not there.
+own API tokens), `GitCredentialsCard` (git accounts), `KicadClientCards`
+(Effective URLs, the PCM install, the `.kicad_httplib` download) and
+`McpSetupCard` (the agent setup prompt, and the token beside it — never in it;
+the reason is in its docstring). Admin stays administration of OTHER people's
+accounts and the deployment's knobs, so a new per-user setting goes here, not
+there. **The page owns the account record** and passes it to both cards that
+show tokens, so a token made in one appears in the other without a reload.
 
 **The KiCad boxes moved here because every one of them carries the signed-in
 user's token** — the PCM URL installs a sync plugin with that token inside it,

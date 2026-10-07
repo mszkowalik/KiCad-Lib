@@ -83,6 +83,7 @@ If a helper is *almost* right, extend it in place rather than forking a near-cop
 | `app/services/fieldsolver/` | 2D quasi-TEM field solver | `app/services/fieldsolver/CLAUDE.md` |
 | `app/services/flasher/` | Production programming | `app/services/flasher/CLAUDE.md` |
 | `app/services/pcm_plugin/` | Source of the KiCad sync plugin | `app/services/pcm_plugin/CLAUDE.md` |
+| `app/services/mcp_server/` | The stdio MCP server, served at `/api/agent/mcp-server` | `app/services/mcp_server/CLAUDE.md` |
 | `app/seed_skills/*.md` | The seed convention docs (skills) | — |
 | `kiutils/` | **Vendored** KiCad-10-patched kiutils — never `pip install` a different one | — |
 

@@ -11,7 +11,7 @@ shared helpers, and you reuse them rather than write a second one.
 
 `agent.py` dispatches `services/agent_tools.py::TOOLS` by name. Add a tool there and
 the HTTP surface and the MCP server both get it. See
-[mcp/CLAUDE.md](../../../mcp/CLAUDE.md).
+[services/mcp_server/CLAUDE.md](../services/mcp_server/CLAUDE.md).
 
 ## `GET /api/{kind}/{id}/versions/{n}/preview.svg` SELECTS; `?v=` does not
 

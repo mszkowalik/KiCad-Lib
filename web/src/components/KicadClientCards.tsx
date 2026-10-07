@@ -1,6 +1,6 @@
-/** The KiCad and MCP client setup — every box on it carries the SIGNED-IN
- *  user's own token, which is why it lives on the Account page rather than on
- *  Setup.
+/** The KiCad client setup — every box on it carries the SIGNED-IN user's own
+ *  token, which is why it lives on the Account page rather than on Admin. The
+ *  agent (MCP) setup is `McpSetupCard`, beside it on the same page.
  *
  *  The PCM repository URL installs a sync plugin with that token already inside
  *  it, and the `.kicad_httplib` download embeds it too, so these links are
@@ -16,7 +16,6 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
-  API_URL,
   errorMessage,
   getKicadConfig,
   httplibFileUrl,
@@ -178,45 +177,6 @@ export default function KicadClientCards() {
         </details>
       </div>
 
-      <div className="card pad">
-        <h2>Claude Code / MCP</h2>
-        <p className="muted">
-          The platform's agent tools reach Claude Code over MCP (the{" "}
-          <span className="mono">mcp/</span> server in the repo). The skill documents live
-          here in the database, and copies are committed to{" "}
-          <span className="mono">.claude/skills/</span> — Claude Code only discovers a skill
-          as a file on disk, and that is what makes it trigger on the right task by itself.
-          There is no sync script and no hook: keeping the copies current is the agent's job,
-          and it costs one tool call.
-        </p>
-        <ol className="skill-claude-steps">
-          <li>
-            <strong>Point it at this API —</strong> set{" "}
-            <span className="mono">KICAD_API_URL</span> (this UI is talking to{" "}
-            <span className="mono">{API_URL || window.location.origin}</span>), plus{" "}
-            <span className="mono">KICAD_MCP_TOKEN</span> if the API requires a bearer token.
-          </li>
-          <li>
-            <strong>Check currency —</strong> <span className="mono">list_skills</span> returns
-            every skill with its version number and no bodies. Each{" "}
-            <span className="mono">SKILL.md</span> carries the version it was written from in a
-            stamp under its frontmatter, so comparing them is one call.
-          </li>
-          <li>
-            <strong>Refresh a stale copy —</strong>{" "}
-            <span className="mono">get_skill(name)</span>, then rewrite the file and update its
-            stamp. Agents are expected to edit these files.
-          </li>
-          <li>
-            <strong>Change a convention —</strong>{" "}
-            <span className="mono">propose_skill_update</span> publishes a new version at once
-            (no approval step since 2026-08-24) and that is what{" "}
-            <span className="mono">list_skills</span> reports from then on. Never record a rule
-            only in the local file, or the next refresh drops it. To undo one, open the
-            previous version on this page and restore it.
-          </li>
-        </ol>
-      </div>
     </>
   );
 }

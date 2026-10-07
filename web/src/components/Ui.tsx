@@ -1,5 +1,5 @@
 /** Small shared UI atoms: spinner, error banner, status pill, back link,
- *  fold-away list. */
+ *  fold-away list, copy button. */
 import { useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -53,6 +53,36 @@ export function Spinner({ label }: { label?: string }) {
       <span className="spinner" aria-hidden="true" />
       {label ? <span className="spinner-label">{label}</span> : null}
     </span>
+  );
+}
+
+/** Copy a value to the clipboard and say so for a moment. The value never has
+ *  to be on screen: the MCP card copies a masked token, and the setup prompt is
+ *  copied whole from a box the reader may not have scrolled through. */
+export function CopyButton({
+  value,
+  label = "Copy",
+  className = "btn btn-sm",
+}: {
+  value: string;
+  label?: string;
+  className?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className={className}
+      disabled={!value}
+      onClick={() => {
+        void navigator.clipboard.writeText(value).then(() => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+    >
+      {copied ? "Copied" : label}
+    </button>
   );
 }
 

@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-10-07 (connect an agent from the Account page)
+
+- **The Account page has a new "Agents (MCP)" card with a setup prompt.**
+  Copy the prompt and give it to Claude Code, or to another MCP agent, on
+  any computer. The agent installs the MCP server, registers it and checks
+  the connection. The repository is not necessary.
+- **The prompt contains no token.** The agent asks you to save the token in
+  `~/.config/kicad-library/token` with a command that you run in your own
+  terminal. The command hides what you paste, so the token does not go into
+  the chat or into the agent's config. The card shows your token beside the
+  prompt, hidden until you click Show, with a Copy button.
+- **The MCP server reads its token from that file** when `KICAD_MCP_TOKEN` is
+  not set. A missing or revoked token now gives an error that tells you
+  where to save a new one.
+- **`GET /api/agent/mcp-server` downloads the MCP server.** It needs a token,
+  like the tools it serves. The server moved from `mcp/server.py` to
+  `api/app/services/mcp_server/server.py`, so the api image carries it. The
+  repository's `.mcp.json` points to the new path.
+- **Correction: the old MCP card showed the wrong API address on the
+  deployed site.** It showed the page's origin without `/lib`. The prompt
+  uses the deployment's public base URL.
+
 ## 2026-10-07 (JLCPCB assembly invoices as PDF)
 
 Decision [0086](docs/decisions/0086-a-jlcpcb-assembly-invoice-is-drawn-from-its-data.md).

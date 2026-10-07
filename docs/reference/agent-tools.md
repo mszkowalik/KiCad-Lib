@@ -1,7 +1,7 @@
 # Agent tools — implementation notes (`api/app/services/agent_tools.py`)
 
 The capability policy that governs what an agent may do is in
-[mcp/CLAUDE.md](../../mcp/CLAUDE.md). This page holds the implementation. The
+[api/app/services/mcp_server/CLAUDE.md](../../api/app/services/mcp_server/CLAUDE.md). This page holds the implementation. The
 platform runs no agent of its own (decision 0062): every agent reaches these
 tools over MCP.
 
