@@ -52,6 +52,10 @@ export interface Column<T> {
   className?: string;
   /** Set false for action/icon columns — no filter input, no sort button. */
   interactive?: boolean;
+  /** With `interactive: false`: keep the sort button, still no filter box. A
+   *  selection checkbox is the case — sorting it brings the ticked rows to the
+   *  top, and a 4 % column has no room for a filter. */
+  sortable?: boolean;
   /** Optional title attribute for body cells (defaults to the text value). */
   title?: (row: T) => string | undefined;
   /** This column's filter box is reported to the caller instead of being
@@ -287,7 +291,7 @@ export default function DataTable<T>({
       <thead>
         <tr>
           {columns.map((c) =>
-            c.interactive === false ? (
+            c.interactive === false && !c.sortable ? (
               <th key={c.key} className={headClass(c)}>
                 {c.label}
               </th>

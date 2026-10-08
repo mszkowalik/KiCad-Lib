@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-08 (ticked devices on top)
+
+- **The Devices list on a batch's Process tab shows the ticked devices
+  first.** A scanned device moves to the top of the list. Click the ✓
+  column header to change the order. The batch page remembers your choice
+  when you reload it.
+
 ## 2026-10-08 (a step runs on the devices that can take it)
 
 - **"Run a step…" on scanned or picked devices no longer fails because of

@@ -229,7 +229,10 @@ export default function RunProcess({ run }: { run: RunInfo }) {
     ids.every((id) => picked[id] === "scanned") ? "scanned" : "list";
 
   const devColumns: Column<CraftDevice>[] = useMemo(() => [
-    { key: "sel", label: "", width: 4, interactive: false, className: "ctr", get: (d) => (picked[d.device_id] ? 1 : 0),
+    // Sortable, so the ticked devices can come to the top: a scan ticks a row
+    // that may sit 700 rows down. The table opens sorted that way.
+    { key: "sel", label: "✓", width: 4, interactive: false, sortable: true, className: "ctr",
+      get: (d) => (picked[d.device_id] ? 1 : 0), sortValue: (d) => (picked[d.device_id] ? 0 : 1),
       render: (d) => (
         <input type="checkbox" checked={!!picked[d.device_id]} onChange={(e) => {
           const next = { ...picked };
@@ -526,6 +529,7 @@ export default function RunProcess({ run }: { run: RunInfo }) {
           {pickedIds.length ? <button type="button" className="btn btn-sm" onClick={() => setPicked({})}>Clear</button> : null}
         </div>
         <DataTable rows={view.devices} columns={devColumns} rowKey={(d) => d.device_id}
+          persistKey={`run:${run.id}:devices`} defaultSort={{ key: "sel", dir: "asc" }}
           empty="No device yet — the programming bench names units as it programs them." />
       </div>
 

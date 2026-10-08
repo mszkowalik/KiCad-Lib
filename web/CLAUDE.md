@@ -190,6 +190,7 @@ component:
   | `pageSize` | rows laid out per chunk (default 60); more are added as the reader nears the end. Filtering and sorting still run over the WHOLE `rows` array, so this never narrows what a filter can find |
   | `defaultSort` | the sort before the user touches a header |
   | `sortValue` (column) | sort key when it must differ from the printed text — the review and sign-off columns sort worst-first by RANK while their filter matches the visible word |
+  | `sortable` (column) | an `interactive: false` column that still sorts, with no filter box: the batch screen's selection checkbox, so the ticked devices come to the top. A 4 % column has no room for a filter |
   | `expand` / `openKey` / `onOpenChange` | inline detail panel. Uncontrolled by default; pass `openKey` when the PARENT owns it (the review workbench steps Prev/Next from inside the open panel) |
   | `onRowClick` | click the row to open its page. Links inside must `stopPropagation()` |
   | `serverFilter` (column) / `serverSort` / `onServerFilters` / `onSortChange` | the table is a WINDOW on server-paged data, so its filter and sort must reach the server — see below |
