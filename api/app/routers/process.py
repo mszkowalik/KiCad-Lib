@@ -402,6 +402,10 @@ class StepIn(Selection):
     #: why a person states a test, mark or label step no bench run recorded
     #: (decision 0074); empty for an ordinary batch step
     stated: str = Field(default="", max_length=300)
+    #: on named devices: run the step on the units that can take it, and skip
+    #: the refused ones (step already done, a need not met, not active, another
+    #: batch, no twin) instead of refusing the whole click
+    skip_refused: bool = False
     dry_run: bool = True
 
 
@@ -411,10 +415,10 @@ def craft_step(run_id: int, body: StepIn, db: Session = Depends(get_db)):
     return _click(db, r, body.dry_run, "craft.step", lambda: twins_svc.apply_step(
         db, r, step_key=body.step_key, stack=body.stack, qty=body.qty, device_ids=body.device_ids,
         codes=body.codes, chosen=body.chosen, made_at=body.made_at, lots=body.lots, note=body.note,
-        actor=acting_name(), dry_run=body.dry_run, stated=body.stated),
+        actor=acting_name(), dry_run=body.dry_run, stated=body.stated, skip_refused=body.skip_refused),
         lambda res: {"step": body.step_key, "units": res["units"], "chosen": res["chosen"],
                      "value_usd": res["value_usd"], "step_run_id": res.get("step_run_id"),
-                     "stated": body.stated})
+                     "stated": body.stated, "skipped": res["refused"]})
 
 
 class ScrapIn(Selection):

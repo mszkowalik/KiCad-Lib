@@ -30,9 +30,11 @@ import { today } from "./MakeDialog";
 import { useModal } from "../modal";
 
 
-/** The shared frame: fields, a preview line, Cancel / Preview / Apply. */
+/** The shared frame: fields, a preview line, Cancel / Preview / Apply.
+ *  `applyLabel` and `canApply` let the preview decide what Apply says and
+ *  whether it is offered ("Run on 28" when two units are skipped). */
 export function DryRunDialog<P>({
-  title, intro, fields, describe, run, onClose,
+  title, intro, fields, describe, run, onClose, applyLabel, canApply,
 }: {
   title: string;
   intro: string;
@@ -40,6 +42,8 @@ export function DryRunDialog<P>({
   describe: (plan: P) => React.ReactNode;
   run: (dry: boolean) => Promise<P>;
   onClose: (changed: boolean) => void;
+  applyLabel?: (plan: P) => string;
+  canApply?: (plan: P) => boolean;
 }) {
   const modal = useModal(() => onClose(false));
   const [plan, setPlan] = useState<P | null>(null);
@@ -68,8 +72,8 @@ export function DryRunDialog<P>({
           {busy ? <Spinner /> : null}
           <button type="button" className="btn" onClick={() => onClose(false)}>Cancel</button>
           <button type="button" className="btn" disabled={busy} onClick={() => go(true)}>Preview</button>
-          <button type="button" className="btn btn-primary" disabled={busy || !plan}
-            onClick={() => go(false)}>Apply</button>
+          <button type="button" className="btn btn-primary" disabled={busy || !plan || (canApply ? !canApply(plan) : false)}
+            onClick={() => go(false)}>{plan && applyLabel ? applyLabel(plan) : "Apply"}</button>
         </div>
       </div>
     </div>

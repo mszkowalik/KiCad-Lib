@@ -9165,7 +9165,10 @@ export interface StepPlan {
   dry_run: boolean;
   step: string;
   label: string;
+  /** the units that take the step: on named devices, those not refused */
   units: number;
+  /** the units the click named */
+  selected: number;
   chosen: string;
   made_at: string;
   refused: { unit: string; why: string[] }[];
@@ -9407,6 +9410,8 @@ export function craftStep(runId: number, body: CraftSelection & {
   step_key: string; made_at?: string; lots?: Record<string, number> | null; note?: string;
   /** why a person states a test, mark or label step no bench recorded (decision 0074) */
   stated?: string;
+  /** on named devices: run on the units that can take the step, skip the refused ones */
+  skip_refused?: boolean;
   dry_run: boolean;
 }): Promise<StepPlan> {
   return request(`/api/runs/${runId}/craft/step`, jsonBody("POST", body));

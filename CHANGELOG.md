@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-08 (a step runs on the devices that can take it)
+
+- **"Run a step…" on scanned or picked devices no longer fails because of
+  one device.** The preview names each device that cannot take the step:
+  the step is already done, a step it needs is missing, it is finished or
+  scrapped, it is in another batch, or it has no twin. The button then
+  reads "Run on N" and records the step on the other devices only. Before,
+  one such device refused the whole selection, and the preview counted the
+  parts for every device.
+- **A step is never recorded twice on one device.** The note of the click
+  names the devices that were skipped.
+- A step on units from a stack did not change: a stack is one pile, so it is
+  still all or nothing.
+
 ## 2026-10-07 (what a supplier document is in law, and import VAT)
 
 Decision [0087](docs/decisions/0087-a-supplier-document-states-what-it-is-in-law.md).

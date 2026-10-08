@@ -99,14 +99,19 @@ function StepDialog({ run, view, target, onClose }: {
   const step = steps.find((s) => s.key === stepKey);
   const isStated = STATABLE.includes(step?.kind ?? "");
   const preparedInputs = (step?.inputs ?? []).filter((i) => view.parts[String(i.component_id)]?.internal);
+  // Named devices are judged one by one: a device that already has the step,
+  // or lacks what it needs, is skipped and named, and the rest take it. A
+  // stack is one pile, so it is still all or nothing.
+  const devices = target.kind === "devices";
   const body = (dry: boolean) => ({
     step_key: stepKey, made_at: madeAt, note, dry_run: dry,
     lots: Object.keys(lots).length ? lots : null,
     ...(isStated ? { stated } : {}),
     ...(target.kind === "stack"
       ? { stack: target.stack.stack, qty: qty ?? 0 }
-      : { device_ids: target.ids, chosen: target.chosen }),
+      : { device_ids: target.ids, chosen: target.chosen, skip_refused: true }),
   });
+  const refusedText = (p: StepPlan) => p.refused.map((r) => `${r.unit} — ${r.why.join(", ")}`).join("; ");
   return (
     <DryRunDialog<StepPlan>
       title="Run a step"
@@ -115,12 +120,20 @@ function StepDialog({ run, view, target, onClose }: {
         : `On ${target.ids.length} device(s), ${target.chosen === "scanned" ? "scanned" : "picked from the list"}.`}
       onClose={onClose}
       run={(dry) => craftStep(run.id, body(dry))}
+      applyLabel={(p) => (devices && p.refused.length && p.units ? `Run on ${p.units}` : "Apply")}
+      canApply={(p) => !devices || p.units > 0}
       describe={(p) => (
         <>
-          {p.refused.length ? (
-            <span className="banner-error">
-              Refused: {p.refused.map((r) => `${r.unit} — ${r.why.join(", ")}`).join("; ")}
+          {devices && p.refused.length && p.units ? (
+            <span className="banner-warn">
+              {p.refused.length} of {p.selected} skipped: {refusedText(p)}
             </span>
+          ) : devices && p.refused.length ? (
+            <span className="banner-error">
+              None of the {p.selected} device(s) can take this step: {refusedText(p)}
+            </span>
+          ) : p.refused.length ? (
+            <span className="banner-error">Refused: {refusedText(p)}</span>
           ) : null}
           {p.shortages.length ? (
             <span className="banner-error">Not in stock: {p.shortages.map((s) => `${s.label} (${s.short} short)`).join(", ")}</span>
@@ -128,8 +141,12 @@ function StepDialog({ run, view, target, onClose }: {
           {p.problems.length ? (
             <span className="banner-error">{p.problems.map((x) => `${x.name}: ${x.problem}`).join("; ")}</span>
           ) : null}
-          {p.units} unit(s) take {p.draws.length ? p.draws.map((d) => `${d.qty} × ${d.name}${d.lot_adjustment_id ? ` (lot A${d.lot_adjustment_id})` : ""}`).join(", ") : "no parts"}
-          {p.draws.length ? <> — {usd(p.value_usd)}, {usd(p.per_unit_usd, 4)} per unit, charged to {run.label}.</> : "."}
+          {devices && !p.units ? null : (
+            <>
+              {p.units}{devices && p.refused.length ? ` of ${p.selected}` : ""} unit(s) take {p.draws.length ? p.draws.map((d) => `${d.qty} × ${d.name}${d.lot_adjustment_id ? ` (lot A${d.lot_adjustment_id})` : ""}`).join(", ") : "no parts"}
+              {p.draws.length ? <> — {usd(p.value_usd)}, {usd(p.per_unit_usd, 4)} per unit, charged to {run.label}.</> : "."}
+            </>
+          )}
         </>
       )}
       fields={

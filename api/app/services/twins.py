@@ -287,18 +287,25 @@ def _resolve_devices(db: Session, run: M.ProductionRun, device_ids: list[int] | 
     return out
 
 
+def _twin_of_device(db: Session, run: M.ProductionRun, d: M.DeviceUnit) -> tuple[M.Twin | None, str]:
+    """The device's twin, if the batch screen may craft it; else why not."""
+    tw = db.query(M.Twin).filter_by(device_unit_id=d.id).first()
+    if tw is None:
+        return None, "has no twin — merge it first"
+    if tw.run_id != run.id:
+        other = db.get(M.ProductionRun, tw.run_id)
+        return None, f"is in {other.label if other else tw.run_id}, not in {run.label}"
+    if tw.status != "active":
+        return None, f"is {tw.status}"
+    return tw, ""
+
+
 def _twins_of_devices(db: Session, run: M.ProductionRun, devices: list[M.DeviceUnit]) -> list[M.Twin]:
     twins = []
     for d in devices:
-        tw = db.query(M.Twin).filter_by(device_unit_id=d.id).first()
-        if tw is None:
-            raise HTTPException(409, f"{d.serial or d.mac} has no twin — merge it first")
-        if tw.run_id != run.id:
-            other = db.get(M.ProductionRun, tw.run_id)
-            raise HTTPException(409, f"{d.serial or d.mac} is in {other.label if other else tw.run_id}, "
-                                     f"not in {run.label}")
-        if tw.status != "active":
-            raise HTTPException(409, f"{d.serial or d.mac} is {tw.status}")
+        tw, why = _twin_of_device(db, run, d)
+        if why:
+            raise HTTPException(409, f"{d.serial or d.mac} {why}")
         twins.append(tw)
     return twins
 
@@ -431,16 +438,37 @@ def write_draws(db: Session, run: M.ProductionRun, sr: M.StepRun, draws: list[di
 STATABLE_KINDS = ("test", "mark_laser", "label")
 
 
+def _skipped_note(note: str, names: list[str], selected: int) -> str:
+    """The click's note when refused units were skipped: how many, and as many
+    of their names as fit in `StepRun.note` (500). The audit row lists all."""
+    head = f"skipped {len(names)} of {selected} (refused): "
+    tail = f" — {note}" if note else ""
+    for k in range(len(names), -1, -1):
+        more = f" +{len(names) - k} more" if k < len(names) else ""
+        text = head + ", ".join(names[:k]) + more + tail
+        if len(text) <= 500:
+            return text
+    return text[:500]
+
+
 def apply_step(db: Session, run: M.ProductionRun, *, step_key: str, stack: str = "",
                qty: int = 0, device_ids: list[int] | None = None, codes: list[str] | None = None,
                chosen: str = "", made_at: str = "", lots: dict | None = None, note: str = "",
-               actor: str = "", dry_run: bool = True, stated: str = "") -> dict:
+               actor: str = "", dry_run: bool = True, stated: str = "",
+               skip_refused: bool = False) -> dict:
     """Run one step on N units: from a stack (unnamed) or on devices (named).
 
     Dry run by default: the plan says which units qualify, every draw with its
     price, and any shortage. Programming and marking are refused here — their
     benches read the device and record them (0059 §5) — unless a person STATES
-    a test, mark or label step on named devices, with the reason (`stated`)."""
+    a test, mark or label step on named devices, with the reason (`stated`).
+
+    On named devices each unit is judged on its own, and the plan counts and
+    draws only the units that can take the step (`units` of `selected`). A
+    refused unit (step already done, a need not met, finished, in another
+    batch, no twin) refuses the whole click unless `skip_refused`: then the
+    others take it, and the click's note names the skipped ones. A step is
+    never recorded twice."""
     v = crafted_version(db, run)
     graph = P._graph(v)
     step = _step(graph, step_key)
@@ -467,41 +495,58 @@ def apply_step(db: Session, run: M.ProductionRun, *, step_key: str, stack: str =
             raise HTTPException(409, "that stack belongs to another batch; craft it there")
         chosen = "stack"
         refusals = needs_met(graph, step, done_of_key(twins[0].stack_key))
-        refused = {tw.id: refusals for tw in twins} if refusals else {}
+        refused = [{"unit": "stack", "why": refusals} for _tw in twins] if refusals else []
+        selected = len(twins)
     else:
         if chosen not in ("scanned", "list"):
             raise HTTPException(422, "say how the devices were chosen: scanned or list")
         devices = _resolve_devices(db, run, device_ids, codes)
-        twins = _twins_of_devices(db, run, devices)
-        done = done_steps(db, [tw.id for tw in twins])
-        again = since_reopen(db, [tw.id for tw in twins])
-        refused = {tw.id: why for tw in twins if (why := needs_met(graph, step, done[tw.id], again.get(tw.id)))}
+        selected = len(devices)
+        # A stack is one pile, refused whole; named devices are judged one by
+        # one, so a finished unit or one that already has the step is named.
+        refused, ready = [], []
+        for d in devices:
+            tw, why = _twin_of_device(db, run, d)
+            if why:
+                refused.append({"unit": d.serial or d.mac, "why": [f"it {why}"]})
+            else:
+                ready.append((d, tw))
+        done = done_steps(db, [tw.id for _d, tw in ready])
+        again = since_reopen(db, [tw.id for _d, tw in ready])
+        twins = []
+        for d, tw in ready:
+            if why := needs_met(graph, step, done[tw.id], again.get(tw.id)):
+                refused.append({"unit": d.serial or d.mac, "why": why})
+            else:
+                twins.append(tw)
     n = len(twins)
     draws, problems, tokens = _plan_draws(db, run, step, n, made_at, lots)
     shortages = run_actuals.check_shortages(db, [
         {"component_id": d["component_id"], "mpn": d.get("mpn", ""), "lcsc": "", "qty": d["qty"],
          "date": made_at, "label": d["name"]} for d in draws if not d["internal"]],
         company_id=run_actuals.run_scope(db, run))
-    dev_name = {}
-    if not stack:
-        dev_name = {tw.id: (db.get(M.DeviceUnit, tw.device_unit_id).serial
-                            or db.get(M.DeviceUnit, tw.device_unit_id).mac) for tw in twins}
     plan = {
         "dry_run": dry_run, "step": step_key, "label": step.get("label") or step_key,
-        "units": n, "chosen": chosen, "made_at": made_at,
-        "refused": [{"unit": dev_name.get(tid) or "stack", "why": why} for tid, why in refused.items()],
+        "units": n, "selected": selected, "chosen": chosen, "made_at": made_at,
+        "refused": refused,
         "draws": draws, "value_usd": round(sum(d["value_usd"] for d in draws), 4),
         "per_unit_usd": round(sum(d["value_usd"] for d in draws) / n, 6) if n else 0.0,
         "shortages": shortages, "problems": problems,
     }
     if dry_run:
         return plan
-    if refused or shortages or problems:
+    skipping = bool(refused) and skip_refused and not stack
+    if (refused and not skipping) or shortages or problems:
         raise HTTPException(409, {"error": "the step cannot run on these units — see the plan",
+                                  "plan": plan})
+    if not twins:
+        raise HTTPException(409, {"error": "none of these units can take the step — see the plan",
                                   "plan": plan})
     if stated:
         # A person's statement, not a bench record: the click says so.
         chosen, note = "stated", f"stated: {stated}" + (f" — {note}" if note else "")
+    if skipping:
+        note = _skipped_note(note, [r["unit"] for r in refused], selected)
     sr = _new_run(db, run, v, step, n, chosen, made_at, actor, note)
     write_draws(db, run, sr, draws, f"{sr.step_label} x {n} (step click #{sr.id})")
     _link(db, twins, sr)

@@ -5,6 +5,9 @@ What these pin down:
 - receiving makes one twin per board, in one stack; a step on a stack draws
   N x each input, charged to the batch, and the stack's key moves on;
 - a step whose needs are not met is refused, and a choice allows one option;
+- on named devices a refused unit refuses the click, unless the person skips
+  it: the others take the step, a step is never recorded twice, and the
+  click's note names the skipped units;
 - a stack is one physical pile: units enclosed from two lots are two stacks;
 - the bench names a twin from the selected stack, never invents one, and a
   device programmed with no stack is a gap until a merge;
@@ -304,6 +307,74 @@ def test_finish_refuses_a_missing_required_step_and_shipping_waits_for_it(db, wo
     T.finish(db, world["b1"], device_ids=[d.id], chosen="scanned", dry_run=False)
     T.refuse_unfinished(db, d)  # finished: ships
     assert db.query(M.Twin).filter_by(device_unit_id=d.id).one().status == "finished"
+
+
+def _crafted_devices(db, world, first, n):
+    """`n` programmed devices of B1, enclosed, serials TW<first>…"""
+    stack = _received(db, world, n)
+    T.apply_step(db, world["b1"], step_key="enclose", stack=stack, qty=n, dry_run=False)
+    T.set_bench_stack(db, world["b1"], _stack(db, world, world["b1"], {"assembly", "receive", "enclose"}))
+    return [_program(db, world, world["b1"], first + i)[0] for i in range(n)]
+
+
+def _carton_links(db, device):
+    tw = db.query(M.Twin).filter_by(device_unit_id=device.id).one()
+    return (db.query(M.TwinStep).join(M.StepRun, M.StepRun.id == M.TwinStep.step_run_id)
+            .filter(M.TwinStep.twin_id == tw.id, M.StepRun.step_key == "carton").count())
+
+
+def test_a_step_on_named_devices_can_skip_the_units_that_cannot_take_it(db, world):
+    d1, d2, d3 = _crafted_devices(db, world, 21, 3)
+    T.apply_step(db, world["b1"], step_key="carton", device_ids=[d1.id], chosen="scanned", dry_run=False)
+    ids = [d1.id, d2.id, d3.id]
+    plan = T.apply_step(db, world["b1"], step_key="carton", device_ids=ids, chosen="scanned")
+    # The plan counts and draws for the two that can take it, and names the third.
+    assert (plan["units"], plan["selected"]) == (2, 3)
+    assert plan["refused"] == [{"unit": "TW0021", "why": ["'Carton' is already done"]}]
+    assert [d["qty"] for d in plan["draws"]] == [2]
+    with pytest.raises(HTTPException) as e:
+        T.apply_step(db, world["b1"], step_key="carton", device_ids=ids, chosen="scanned", dry_run=False)
+    assert e.value.status_code == 409
+    assert [_carton_links(db, d) for d in (d1, d2, d3)] == [1, 0, 0]
+    done = T.apply_step(db, world["b1"], step_key="carton", device_ids=ids, chosen="scanned",
+                        skip_refused=True, dry_run=False)
+    assert done["units"] == 2
+    # Never twice: the unit that had the step keeps one.
+    assert [_carton_links(db, d) for d in (d1, d2, d3)] == [1, 1, 1]
+    sr = db.get(M.StepRun, done["step_run_id"])
+    assert (sr.qty, sr.note) == (2, "skipped 1 of 3 (refused): TW0021")
+    draws = db.query(M.ComponentConsumption).filter_by(step_run_id=sr.id).all()
+    assert [d.qty for d in draws] == [2]
+
+
+def test_skipping_refuses_a_click_no_unit_can_take(db, world):
+    (d,) = _crafted_devices(db, world, 31, 1)
+    T.apply_step(db, world["b1"], step_key="carton", device_ids=[d.id], chosen="list", dry_run=False)
+    with pytest.raises(HTTPException) as e:
+        T.apply_step(db, world["b1"], step_key="carton", device_ids=[d.id], chosen="list",
+                     skip_refused=True, dry_run=False)
+    assert e.value.status_code == 409 and "none of these units" in e.value.detail["error"]
+
+
+def test_a_unit_the_batch_screen_cannot_craft_is_named_not_an_error(db, world):
+    d1, d2 = _crafted_devices(db, world, 41, 2)
+    T.scrap(db, world["b1"], device_ids=[d1.id], chosen="list", reason="dropped", dry_run=False)
+    plan = T.apply_step(db, world["b1"], step_key="carton", device_ids=[d1.id, d2.id], chosen="scanned")
+    assert (plan["units"], plan["selected"]) == (1, 2)
+    assert plan["refused"] == [{"unit": "TW0041", "why": ["it is scrapped"]}]
+    # The paths that act on whole selections keep refusing outright.
+    with pytest.raises(HTTPException) as e:
+        T.finish(db, world["b1"], device_ids=[d1.id, d2.id], chosen="scanned")
+    assert e.value.detail == "TW0041 is scrapped"
+
+
+def test_the_skipped_note_fits_its_column():
+    names = [f"88F1555A{i:04d}" for i in range(60)]
+    note = T._skipped_note("packed by Kuba", names, 90)
+    assert len(note) <= 500
+    assert note.startswith("skipped 60 of 90 (refused): 88F1555A0000, ")
+    assert " more — packed by Kuba" in note
+    assert T._skipped_note("", ["A", "B"], 5) == "skipped 2 of 5 (refused): A, B"
 
 
 # ------------------------------------------------------------------ prices

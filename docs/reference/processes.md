@@ -107,6 +107,17 @@ serials (0059, Consequences).
   or `label` step on named devices, with the reason (`apply_step(stated=…)`,
   `twins.STATABLE_KINDS`), when no platform bench run recorded it. Programming
   is never stated: the bench names the twin.
+- **A step on named devices judges each device on its own**
+  (`apply_step`). The plan names every device that cannot take the step (the
+  step is done, a need is missing, the twin is not active, it is in another
+  batch, it has no twin), and `units` and the draws count only the others,
+  out of `selected`. A refused device refuses the click, unless
+  `skip_refused` is set: then the others take the step, and the click's note
+  names the skipped devices (the audit row lists them all). The batch screen
+  always sends `skip_refused`, after the preview has named them. A step on a
+  stack stays all or nothing, because a stack is one pile. Scrap, reopen and
+  finish still refuse the whole selection (`_twins_of_devices`). Before
+  2026-10-08, one device that already had the step refused 30 scanned ones.
 - **Every crafting click is one journal batch** (`routers/process._click`,
   kind `craft.<action>`, `source_ref` `run:<id>`): receive, step, scrap,
   finish, merge, found, reopen, swap, relink and a cost link. `craft_view`
