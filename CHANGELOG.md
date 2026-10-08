@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-08 (select all, and the selection stays after a step)
+
+- **The ✓ column header of a batch's Devices list has a select-all box.**
+  It ticks every device the filters leave shown. Click it again to untick
+  them. The sort arrow is under the box.
+- **The ticked devices stay ticked after "Run a step…".** Run the next step
+  on the same devices without scanning them again. "Clear" unticks them.
+  Other actions (finish, scrap, reopen) still clear the selection.
+
 ## 2026-10-08 (ticked devices on top)
 
 - **The Devices list on a batch's Process tab shows the ticked devices

@@ -200,6 +200,9 @@ export default function RunProcess({ run }: { run: RunInfo }) {
   // selected devices, and how each one was chosen
   const [picked, setPicked] = useState<Record<number, "scanned" | "list">>({});
   const [scan, setScan] = useState("");
+  // The devices the list shows after its filters: "select all" ticks these,
+  // as the component browser's bulk sign-off does.
+  const [shownDevs, setShownDevs] = useState<CraftDevice[]>([]);
   const [modal, setModal] = useState<
     | { kind: "step"; target: Target }
     | { kind: "receive" } | { kind: "found" } | { kind: "finish" }
@@ -228,10 +231,25 @@ export default function RunProcess({ run }: { run: RunInfo }) {
   const chosenOf = (ids: number[]): "scanned" | "list" =>
     ids.every((id) => picked[id] === "scanned") ? "scanned" : "list";
 
+  const allShownPicked = shownDevs.length > 0 && shownDevs.every((d) => picked[d.device_id]);
   const devColumns: Column<CraftDevice>[] = useMemo(() => [
     // Sortable, so the ticked devices can come to the top: a scan ticks a row
-    // that may sit 700 rows down. The table opens sorted that way.
-    { key: "sel", label: "✓", width: 4, interactive: false, sortable: true, className: "ctr",
+    // that may sit 700 rows down. The table opens sorted that way. The header
+    // box ticks, or unticks, every device the filters leave shown.
+    { key: "sel", width: 4, interactive: false, sortable: true, className: "ctr",
+      label: (
+        <input type="checkbox" checked={allShownPicked} disabled={!shownDevs.length}
+          onChange={() => {
+            const next = { ...picked };
+            for (const d of shownDevs) {
+              if (allShownPicked) delete next[d.device_id];
+              else next[d.device_id] = next[d.device_id] ?? "list";
+            }
+            setPicked(next);
+          }}
+          aria-label={allShownPicked ? "Untick every device shown" : "Tick every device shown"}
+          title={allShownPicked ? "Untick every device shown" : "Tick every device shown"} />
+      ),
       get: (d) => (picked[d.device_id] ? 1 : 0), sortValue: (d) => (picked[d.device_id] ? 0 : 1),
       render: (d) => (
         <input type="checkbox" checked={!!picked[d.device_id]} onChange={(e) => {
@@ -247,7 +265,7 @@ export default function RunProcess({ run }: { run: RunInfo }) {
     { key: "missing", label: "Still needs", width: 24, get: (d) => d.missing.join("; "),
       render: (d) => (d.status === "finished" ? <span className="muted">—</span> : d.missing.join("; ") || "ready to finish") },
     { key: "price", label: "Price", width: 10, numeric: true, get: (d) => d.price_usd ?? 0, render: (d) => usd(d.price_usd) },
-  ], [picked, label]);
+  ], [picked, label, shownDevs, allShownPicked]);
 
   if (error) return <ErrorBanner message={error} />;
   if (!view) return <Spinner />;
@@ -266,6 +284,8 @@ export default function RunProcess({ run }: { run: RunInfo }) {
   };
 
   const close = (changed: boolean) => { setModal(null); if (changed) { setPicked({}); reload(); } };
+  // A step keeps the selection, so the next step can run on the same devices.
+  const closeStep = (changed: boolean) => { setModal(null); if (changed) reload(); };
 
   // Take a position off the steps it paid for: its money goes back into the
   // origin batch cost (decisions 0061, 0074). A split one goes with its header.
@@ -529,7 +549,7 @@ export default function RunProcess({ run }: { run: RunInfo }) {
           {pickedIds.length ? <button type="button" className="btn btn-sm" onClick={() => setPicked({})}>Clear</button> : null}
         </div>
         <DataTable rows={view.devices} columns={devColumns} rowKey={(d) => d.device_id}
-          persistKey={`run:${run.id}:devices`} defaultSort={{ key: "sel", dir: "asc" }}
+          persistKey={`run:${run.id}:devices`} defaultSort={{ key: "sel", dir: "asc" }} onVisibleChange={setShownDevs}
           empty="No device yet — the programming bench names units as it programs them." />
       </div>
 
@@ -559,7 +579,7 @@ export default function RunProcess({ run }: { run: RunInfo }) {
         />
       </div>
 
-      {modal?.kind === "step" ? <StepDialog run={run} view={view} target={modal.target} onClose={close} /> : null}
+      {modal?.kind === "step" ? <StepDialog run={run} view={view} target={modal.target} onClose={closeStep} /> : null}
       {modal?.kind === "receive" ? (
         <ReceiveDialog run={run} boardsJlc={draft?.header.boards_jlc ?? null}
           orders={draft?.header.orders ?? []} onClose={close} />

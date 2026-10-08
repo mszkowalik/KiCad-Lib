@@ -54,7 +54,9 @@ export interface Column<T> {
   interactive?: boolean;
   /** With `interactive: false`: keep the sort button, still no filter box. A
    *  selection checkbox is the case — sorting it brings the ticked rows to the
-   *  top, and a 4 % column has no room for a filter. */
+   *  top, and a 4 % column has no room for a filter. The label is drawn
+   *  OUTSIDE the button, so it may hold a control (a select-all checkbox):
+   *  a checkbox inside a button would sort on every tick. */
   sortable?: boolean;
   /** Optional title attribute for body cells (defaults to the text value). */
   title?: (row: T) => string | undefined;
@@ -294,6 +296,18 @@ export default function DataTable<T>({
             c.interactive === false && !c.sortable ? (
               <th key={c.key} className={headClass(c)}>
                 {c.label}
+              </th>
+            ) : c.interactive === false ? (
+              <th key={c.key} className={headClass(c)}>
+                {c.label}
+                <button type="button" className="th-sort" onClick={() => cycleSort(c.key)}
+                  title={typeof c.label === "string" ? `Sort by ${c.label}` : "Sort"}>
+                  {sort?.key === c.key ? (
+                    <span className="sort-ind">{sort.dir === "asc" ? "▲" : "▼"}</span>
+                  ) : (
+                    <span className="sort-hint" aria-hidden="true">⇅</span>
+                  )}
+                </button>
               </th>
             ) : (
               <th key={c.key} className={headClass(c)}>
