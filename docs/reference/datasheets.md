@@ -198,6 +198,17 @@ before you change a fetch, a hash, a classification or an endpoint.
   while `phoenixcontact.com` (403), `st.com` (timeout) and `renata.com` (500)
   refused both it and the server. A 403 or a login wall arrives as a
   200-status HTML page, so check `file` says `PDF document` before uploading.
+
+  **`st.com` serves a real browser session** (2026-10-07). Through Claude in
+  Chrome, the product page's Documentation tab shows the current `DSnnnnn`
+  revision, and a `fetch()` of `/resource/en/datasheet/<part>.pdf` from a tab
+  on `st.com` returns the PDF. Chrome lets each tab make only ONE scripted
+  download, so open a fresh tab for each file. Then set the row's
+  `source_url` to the `st.com` URL (component versions endpoint, keeping the
+  row `id`) and upload the file. The upload does not bump the component, so
+  publish one more version to pin the new PDF, and re-record the
+  verification against it. LCSC copies of ST datasheets were up to four
+  revisions behind: DS12110 Rev 7 against Rev 11.
 - **Datasheets are indexed PER PAGE, and the index is a finding aid — never an
   authority** (`services/datasheet_pages.py`, 2026-08-25). `DatasheetPage`
   holds one row per page of layout-aware markdown from `pymupdf4llm` (same

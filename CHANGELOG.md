@@ -81,6 +81,21 @@ review reads them.
 - A step on units from a stack did not change: a stack is one pile, so it is
   still all or nothing.
 
+## 2026-10-07 (a smaller ferrite bead symbol)
+
+- **The `FerriteBead` base symbol is smaller, and its pins have the
+  resistor's geometry** (v4). It is vertical like `R`: pin 1 at the top,
+  pin 2 at the bottom, 7.62 mm apart. It was horizontal, with 10.16 mm
+  between the pins. The pin numbers and the pin types did not change, so
+  the `sigma_ferrite` simulation link still applies.
+- **A bead that is already on a sheet must be connected again.** After
+  Tools → Update Symbols from Library, the wires stay where the old pins
+  were. This applies to FB1 on CE_Dongle_V3 and on its PWR_sim sheet
+  (`BLM18EG101TN1D`).
+- **A new ferrite bead, `BLM15AG601SN1D`** (Murata, 600 Ω at 100 MHz,
+  300 mA, 0402, LCSC C76884), with `Sim.Params RDC=520m` from its
+  datasheet.
+
 ## 2026-10-07 (what a supplier document is in law, and import VAT)
 
 Decision [0087](docs/decisions/0087-a-supplier-document-states-what-it-is-in-law.md).
