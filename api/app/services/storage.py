@@ -9,7 +9,9 @@ Key layout (single bucket, settings.minio_bucket):
     projects/{project_id}/runs/{run_id}/{uuid}-{filename}
 
 Renders are keyed by commit sha — immutable, so cached objects never need
-invalidation. Deleting a project/run deletes its prefix.
+invalidation. Deleting a project deletes its renders. A run's files, an
+attachment and a firmware file stay when their row is deleted, because an undo
+can put the row back (decision 0089).
 """
 from __future__ import annotations
 

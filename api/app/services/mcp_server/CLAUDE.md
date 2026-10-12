@@ -13,7 +13,9 @@ removed (decision 0062), and MCP is the only way an agent reaches the platform.
 file, and the Account page's **Agents (MCP)** card (`web/src/components/McpSetupCard.tsx`)
 hands the user a prompt that makes an agent download and register it. A
 top-level `mcp/` is not in the api image — same reason as `pcm_plugin/` and
-`bench_agent/`. The repo's `.mcp.json` runs this same file in place.
+`bench_agent/`. The repo's `.mcp.json` has no entry for it: a developer
+installs it from the Account page like any user, so a change to `server.py`
+reaches an agent only after the prompt downloads it again.
 
 - **The token never enters the prompt or the agent's config.** A prompt is
   pasted into a chat, which the agent's vendor stores. The agent asks the user
@@ -26,9 +28,6 @@ top-level `mcp/` is not in the api image — same reason as `pcm_plugin/` and
   and run it again. Two traps it avoids: the token prompt is wrapped in
   `bash -c` because `read -p` means something else in zsh and fish has no
   subshell parentheses, and `claude mcp add` takes the server NAME before `-e`.
-- **Inside this repo `claude mcp list` warns that `kicad-library` is defined
-  twice** when the user also ran the prompt: the project entry and the user
-  entry. Both reach the same platform with the same token.
 
 ## Agent capability policy (user directive, 2026-07)
 
@@ -56,6 +55,12 @@ top-level `mcp/` is not in the api image — same reason as `pcm_plugin/` and
   verified an item and found it WRONG without fixing it, never `checked` on a
   guess. It can never overwrite an item a human answered, and `failed` is
   machine-only.
+- **An agent may craft batches, edit a process and pack shipments as its
+  user** (decision 0088). Those tools keep each route's `dry_run` default,
+  and their descriptions tell the agent to read the plan before it writes.
+- **Every change an agent makes can be undone** (decision 0089):
+  `list_changes` finds it (client `mcp`, sent by this server in an
+  `X-Kicad-Client` header), and `undo_change` puts it back.
 - Production sign-off stays human-only; `refresh_supply` re-fetches
   auto-managed LCSC/JLC data live (same domain the background refresher owns).
 
@@ -107,17 +112,21 @@ converted to MCP image content; every other tool returns a JSON string as text.
   `rel_path` rule duplicates `services/pcm_plugin/model_paths.suggest_rel_path`
   (this script imports no app code) — change both together. Keep local tools to
   that shape: something the API genuinely cannot do because the bytes are here.
+- **Two more local tools reach every other route: `api_routes` and
+  `api_request`** (decision [0088](../../../../docs/decisions/0088-an-agent-reaches-every-api-route-as-its-user.md)).
+  They are the second and last kind of local tool: a call to `/api/` with the
+  token this server holds, so the platform's own gate decides what an agent may
+  do. Do not add a permission check here — a second permission model would
+  drift from the gate. A DELETE needs `confirm`. When agents use one route
+  often, give it a dedicated catalog tool; the general pair is the fallback.
 
-**Claude Code wiring in this repo (`.mcp.json` at repo root):** a project-scoped
-stdio entry `kicad-library` that runs this file via `uv`, with `KICAD_API_URL` /
-`KICAD_MCP_TOKEN` from env (`${VAR:-default}` expansion keeps them out of git).
-`KICAD_API_URL` defaults to the PUBLIC address, so the server works away from
-the LAN as well as on it. **A token must reach the server** — the agent
-surface is behind the auth gate, and no token gets 401 on every call.
-**Here both values live in `.claude/settings.local.json` under `env`** — it is
-gitignored and its `env` block reaches the Bash tool, so one file serves the MCP
-server and any script. Never put the token in `.mcp.json` or in
-`.claude/settings.json`; both are tracked.
+**Configuration:** the Account page's prompt registers the downloaded copy at
+user scope with the PUBLIC `KICAD_API_URL`, so the server works away from the
+LAN as well as on it. **A token must reach the server** — the agent surface is
+behind the auth gate, and no token gets 401 on every call. It comes from the
+token file; `KICAD_MCP_TOKEN` wins when set, and this repo keeps one in the
+gitignored `.claude/settings.local.json` `env` block for scripts. Never put the
+token in `.mcp.json` or in `.claude/settings.json`; both are tracked.
 - **A personal token starts with `7s_`** (`auth.TOKEN_PREFIX`). The 64-character
   hex secrets are the legacy shared `MCP_TOKEN` / `HTTPLIB_TOKEN`, which
   `_LEGACY_SCOPES` no longer honours on production — one stored in

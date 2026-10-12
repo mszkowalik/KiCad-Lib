@@ -242,13 +242,10 @@ def delete_firmware(asset_id: int, db: Session = Depends(get_db)):
         raise HTTPException(
             409, f"{a.filename} is pinned by {len(used)} deployment version(s) ({where}) — "
                  "programming runs record what they flashed, so it stays")
-    key, name = a.minio_key, a.filename
+    name = a.filename
     db.delete(a)
     db.commit()
-    try:
-        storage.delete_prefix(key)
-    except Exception:  # noqa: BLE001 — the row is gone; a stray object is harmless
-        pass
+    # The file stays: an undo can put the row back (decision 0089).
     audit(db, "flasher.firmware_delete", "firmware_asset", asset_id, details=name)
     return {"ok": True}
 

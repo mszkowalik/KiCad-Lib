@@ -562,14 +562,13 @@ def delete_run(run_id: int, db: Session = Depends(get_db)):
     if held:
         detail = ", ".join(f"{v} {k}" for k, v in held.items())
         raise HTTPException(409, f"run has financial records attached ({detail}) — remove or reassign them first")
-    project_id = r.project_id
     for pset in db.query(M.ProductionFileSet).filter_by(run_id=run_id).all():
         shutil.rmtree(settings.data_dir / f"gerber-work/{pset.id}", ignore_errors=True)
         db.delete(pset)
     db.delete(r)
     audit(db, "run.delete", "production_run", run_id)
     db.commit()
-    storage.delete_prefix(f"projects/{project_id}/runs/{run_id}/")
+    # The files stay: an undo can put the row back (decision 0089).
     return {"deleted": run_id}
 
 
@@ -621,10 +620,9 @@ def delete_attachment(attachment_id: int, db: Session = Depends(get_db)):
     a = db.get(M.RunAttachment, attachment_id)
     if a is None:
         raise HTTPException(404, "attachment not found")
-    key = a.minio_key
     db.delete(a)
     db.commit()
-    storage.delete_prefix(key)
+    # The files stay: an undo can put the row back (decision 0089).
     return {"deleted": attachment_id}
 
 
@@ -716,13 +714,11 @@ def delete_production_set(set_id: int, db: Session = Depends(get_db)):
     pset = db.get(M.ProductionFileSet, set_id)
     if pset is None:
         raise HTTPException(404, "set not found")
-    run = db.get(M.ProductionRun, pset.run_id)
-    prefix = f"projects/{run.project_id}/runs/{run.id}/production/v{pset.version_no}/"
     shutil.rmtree(settings.data_dir / f"gerber-work/{pset.id}", ignore_errors=True)
     db.delete(pset)
     audit(db, "run.production.delete", "production_set", set_id, {"run_id": pset.run_id})
     db.commit()
-    storage.delete_prefix(prefix)
+    # The files stay: an undo can put the row back (decision 0089).
     return {"deleted": set_id}
 
 

@@ -1,5 +1,44 @@
 # Changelog
 
+## 2026-10-12 (faster batch, order and stock pages)
+
+- **A batch's Process tab opens in about 1.6 s instead of 6 s** on Batch 8.
+  Measured on production data, without the time the page itself needs.
+- **Other money pages are faster too**:
+  - a batch's actuals: 3.3 s → 0.3 s;
+  - the transfers history: 3.3 s → 0.8 s;
+  - the cost pool: 1.2 s → 0.1 s;
+  - an order, finished stock and demand: about 2.5 s → 0.6 s of cost work
+    each;
+  - the invoice register: 2.5 s → 0.6 s.
+- **Recording a step on a batch is faster:** the check before a click went
+  from 2.5 s to 0.3 s.
+- **The agent tool `list_models3d` answers in a fraction of a second** instead
+  of 10 s.
+- The figures did not change: the register built by the new code is
+  identical to the old one.
+
+## 2026-10-12 (every change can be undone)
+
+Decision [0089](docs/decisions/0089-every-change-is-recorded-and-can-be-undone.md).
+
+- **The platform now records every change to its data, and any request can be
+  put back.** A deleted record comes back with its id, an edited record gets
+  its old values, a created record is removed. This covers changes made in the
+  browser, by an agent and by background work, including records the database
+  deletes together with their parent.
+- **An undo is refused when it would be wrong:** when the record was changed
+  again since (it names that later change, to undo first), when it would bring
+  back a password or a token, when it would take stock below zero, and when it
+  touches a closed batch.
+- **You undo your own changes; an administrator can undo anybody's.** There
+  is no page yet. Use the API (`/api/undo/requests`) or ask an agent:
+  `list_changes` finds a change, `undo_change` puts it back, `row_history`
+  shows what a deleted record held. An agent's changes are listed as client
+  `mcp`.
+- **Deleting a run, an attachment, a production file set or a firmware file
+  keeps the file**, so an undo can bring the record back with its file.
+
 ## 2026-10-12 (the checklists hold the rules the skills were waiting to move)
 
 Six decided rules lived only in the convention skills, which said "the
@@ -50,6 +89,29 @@ review reads them.
   LCSC serves the Xunpu sheet with a damaged cross-reference table, which no
   PDF reader can open. The archive now holds a repaired copy with the same
   content.
+
+## 2026-10-12 (an agent reaches every API route)
+
+Decision [0088](docs/decisions/0088-an-agent-reaches-every-api-route-as-its-user.md).
+
+- **An agent connected over MCP can now use every API route, as its user.**
+  Two new tools in the MCP server: `api_routes` finds a route and shows its
+  parameters and body, and `api_request` calls it. Before, an agent reached
+  only the 65 tools, about a tenth of the API: batch crafting, process
+  versions, shipments, stock and devices had no tool.
+- **The platform's permissions apply as in the browser.** An agent can do
+  what its user can do, and nothing more. A delete needs the agent to confirm
+  it, after it asks you.
+- **13 new tools for production work:** see a batch (`get_batch`), record a
+  step (`batch_step`), finish, reopen, scrap or merge units (`batch_units`),
+  choose the bench stack (`set_bench_stack`), read and edit a process
+  (`get_process`, `edit_process`, `move_batch_process`), list, check, pack and
+  unpack shipments (`list_shipments`, `get_shipment`, `shipment_devices`),
+  find a device and write on its notes (`find_device`, `set_device_note`), and
+  read stock (`get_stock`). `get_shipment` says which devices lack a step, for
+  example a leaflet. The writes take a dry run first, as on the batch screen.
+- **If you installed the MCP server from the Account page, install it again**
+  to get the two general tools. The production tools need no new install.
 
 ## 2026-10-08 (select all, and the selection stays after a step)
 

@@ -31,8 +31,8 @@ import json
 from collections import defaultdict
 from datetime import timedelta, timezone
 
-from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
+from sqlalchemy.orm import Session, selectinload
 
 from .. import models as M
 from ..config import settings
@@ -395,7 +395,8 @@ def _accountant_state(doc: M.RunCostDocument, db: Session | None) -> dict:
 
 def document_json(doc: M.RunCostDocument, with_lines: bool = True,
                   db: Session | None = None,
-                  closed: dict[int, M.ProductionRun] | None = None) -> dict:
+                  closed: dict[int, M.ProductionRun] | None = None, accountant: bool = True,
+                  attachment_counts: dict[int, int] | None = None) -> dict:
     live = [li for li in doc.lines if li.voided_at is None]
     kids: dict[int, float] = defaultdict(float)
     for li in live:
@@ -483,12 +484,13 @@ def document_json(doc: M.RunCostDocument, with_lines: bool = True,
         ),
         # The supplier's original, filed with the money it evidences.
         "attachment_count": (
+            attachment_counts.get(doc.id, 0) if attachment_counts is not None else
             db.query(M.RunAttachment).filter(M.RunAttachment.document_id == doc.id).count()
             if db is not None else 0
         ),
         "created_at": doc.created_at.isoformat() if doc.created_at else None,
         # Decision 0079: whether the accountant has it (KSeF, or a recorded send).
-        "accountant": _accountant_state(doc, db),
+        "accountant": _accountant_state(doc, db) if accountant else None,
         "line_count": len(live),
         "lines_total": _round(lines_total),
         # Entered total vs the sum of its lines: the reconciliation an importer
@@ -1347,7 +1349,7 @@ def close_snapshot(db: Session, run: M.ProductionRun,
     DISPLAY currency, which is editable — a snapshot taken in it would mean
     something different after somebody changed the project's currency.
     """
-    reg = register if register is not None else invoice_register(db)
+    reg = register if register is not None else invoice_register(db, accountant=False)
     money = ((reg.get("by_run_usd") or {}).get(str(run.id))
              or (reg.get("by_run_usd") or {}).get(run.id) or {})
     made = produced_counts(db, [run.id]).get(run.id, 0)
@@ -2126,7 +2128,20 @@ def leaf_line_usd(db: Session, lines: list[M.RunCostLine], rate_cache: dict | No
     return out
 
 
-def invoice_register(db: Session, company_ids: list[int] | None = None) -> dict:
+def invoice_register(db: Session, company_ids: list[int] | None = None, *, accountant: bool = True) -> dict:
+    """Every supplier document, where its money went, and whether any of it is
+    unaccounted for. Built once per session state (`session_memo`): a page that
+    asks for it twice gets the same object, so treat it as read-only.
+    `accountant=False` is for callers that read only money: it skips each
+    document's accountant state, which no cost figure uses.
+    """
+    from . import session_memo
+
+    key = ("invoice_register", tuple(sorted(company_ids)) if company_ids is not None else None, accountant)
+    return session_memo.get(db, key, lambda: _invoice_register(db, company_ids, accountant))
+
+
+def _invoice_register(db: Session, company_ids: list[int] | None, accountant: bool) -> dict:
     """Every supplier document, where its money went, and whether any of it is
     unaccounted for.
 
@@ -2141,11 +2156,18 @@ def invoice_register(db: Session, company_ids: list[int] | None = None) -> dict:
     Amounts roll up in USD, at the document's pinned rate when it has one (see
     `RunCostDocument`), else the rate history at its date.
     """
+    # The positions in one query, not one per document (3,327 statements a
+    # build on production, 2026-10-12).
     docs = (
         db.query(M.RunCostDocument)
+        .options(selectinload(M.RunCostDocument.lines))
         .order_by(M.RunCostDocument.doc_date.desc(), M.RunCostDocument.id.desc())
         .all()
     )
+    attachments = dict(db.query(M.RunAttachment.document_id, func.count(M.RunAttachment.id))
+                       .filter(M.RunAttachment.document_id.isnot(None))
+                       .group_by(M.RunAttachment.document_id).all())
+    all_headers: set[int] | None = None
     if company_ids is not None:
         # One company's documents (decision 0063): those it was billed for, the
         # transfers it sent, and the ones no company is named on yet. The
@@ -2185,7 +2207,8 @@ def invoice_register(db: Session, company_ids: list[int] | None = None) -> dict:
     untranscribed: list[dict] = []
     excl_reason: dict[str, float] = defaultdict(float)
     for doc in docs:
-        j = document_json(doc, with_lines=False, db=db, closed=closed_by_id)
+        j = document_json(doc, with_lines=False, db=db, closed=closed_by_id, accountant=accountant,
+                          attachment_counts=attachments)
         a = j["assignment"]
         # The printed total is the truth about how much money left the company;
         # `lines_total` is our transcription of it. Show both, trust the printed.
@@ -2229,7 +2252,11 @@ def invoice_register(db: Session, company_ids: list[int] | None = None) -> dict:
                 "difference_usd": _round(_slip),
             })
         if (a.get("excluded") or 0.0) > 0.0 or (a.get("excluded") or 0.0) < 0.0:
-            _h = header_ids(db, doc.id)
+            # Children live on their parent's document, so the one set of
+            # headers answers for every document.
+            if all_headers is None:
+                all_headers = header_ids(db)
+            _h = all_headers
             for li in doc.lines:
                 if li.voided_at is not None or li.id in _h:
                     continue

@@ -349,6 +349,9 @@ NOT_COMPANY_DATA: set[str] = {
     "upload_id", "job", "board",
     # under a project route already resolved by its project_id
     "profile_id",
+    # a recorded change is reached by whose request it was, not by company:
+    # your own, or anybody's for an administrator (decision 0089)
+    "table@/api/undo/rows/",
 }
 
 
@@ -405,6 +408,8 @@ FIELD_RESOLVERS: dict[tuple[str, str], Callable[[Session, str], set[int]]] = {
     # the batch whose boards a rebuilt batch's devices were built on (decision 0060)
     ("/api/runs/{run_id}/rebuild", "from_run_id"): _run,
     ("/api/runs/{run_id}/process-version", "version_id"): _via(M.ProcessVersion, "project_id", _project),
+    # move_batch_process, the one agent tool that names a process version (0088)
+    ("/api/agent/tools/{name}", "process_version_id"): _via(M.ProcessVersion, "project_id", _project),
     ("/api/agent/tools/{name}", "line_id"): _line,
 }
 
@@ -419,6 +424,9 @@ NOT_COMPANY_FIELDS: set[str] = {
     # the flasher's shared file pool, the simulator's uploads, a field-solver profile
     # (read under its project's id)
     "file_set_id", "artwork_set_id", "upload_id", "profile_id",
+    # row_history's row of any table, shown only where the caller's own request
+    # changed it (decision 0089)
+    "row_id",
 }
 
 

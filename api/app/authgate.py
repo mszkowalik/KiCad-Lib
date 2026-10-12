@@ -216,7 +216,9 @@ class AuthGate:
         who-columns and the `row.*` entries. It is set for reads as well, because a
         GET that writes (a cache fill, a lazy migration) is still somebody's.
         """
-        ctx = tracking.actor_for(user, tracking.new_request_id(), via)
+        headers = dict(scope.get("headers") or [])
+        client = "mcp" if headers.get(b"x-kicad-client", b"").decode("latin-1").lower() == "mcp" else ""
+        ctx = tracking.actor_for(user, tracking.new_request_id(), via, client)
         token = tracking.bind(ctx)
         method = scope.get("method", "")
         record = (scope["type"] == "http" and method in tracking.WRITE_METHODS

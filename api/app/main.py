@@ -47,6 +47,7 @@ from .routers import (
     skills,
     suppliers,
     transfers as transfers_router,
+    undo as undo_router,
     users,
     view,
     orders,
@@ -58,6 +59,11 @@ settings.ensure_dirs()
 
 # Who-did-it hooks on every session and on the audit log (decision 0050).
 tracking.install()
+# Decision 0089: every ORM transaction tells the row-change trigger which
+# request, person and client it belongs to.
+from .services import row_changes as _row_changes
+
+_row_changes.install_tagging()
 
 # Decision 0065: a route that opens one record by its id answers 404 to a user
 # of no company that record belongs to. One dependency on every route, so a new
@@ -134,6 +140,7 @@ app.include_router(flasher.router)
 app.include_router(mqtt.router)
 app.include_router(orders.router)
 app.include_router(activity.router)
+app.include_router(undo_router.router)
 
 # Published-state file mirror, served read-only (sync + downloads).
 app.mount("/files", StaticFiles(directory=settings.mirror_dir), name="files")
@@ -1425,6 +1432,15 @@ def startup() -> None:
     except Exception:
         # A settings table that is not there yet must never stop startup.
         pass
+    # Decision 0089: the row-change trigger on every table. Last of the schema
+    # work, so every table a migration above created carries it too.
+    try:
+        got = _row_changes.install(engine)
+        _SCHEMA_RESULTS["row_changes.trigger"] = "ok"
+        log.info(f"row changes: trigger on {got['tables']} tables, {got['skipped']} skipped")
+    except Exception as e:  # noqa: BLE001 — never block startup; /health/schema says it failed
+        _SCHEMA_RESULTS["row_changes.trigger"] = f"failed: {type(e).__name__}: {e}"
+        log.warning(f"row changes: trigger not installed: {type(e).__name__}: {e}")
     # The first admin, from ADMIN_USERNAME / ADMIN_PASSWORD, and ONLY when the
     # users table is empty. A deployment with auth on and no users can never be
     # signed into, so this must run — but it must also never be able to reset a

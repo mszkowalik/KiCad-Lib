@@ -11,6 +11,16 @@ The wider design is in [docs/production-costs/design.md](../production-costs/des
 Stock is kept per company once `stock_per_company` is on; how every replay and
 guard reads one company's stock is in [companies.md](companies.md).
 
+- **The invoice register and the rate history are read once per session
+  state** (`services/session_memo.py`, 2026-10-12). Before, a batch's Process
+  tab built the register twice (6 s on production) and each `fx.rates_at`
+  call read all ~2,300 rate history rows. Three rules follow:
+  1. A memoised register is shared: treat it as read-only.
+  2. A caller that reads only money passes `invoice_register(db,
+     accountant=False)`.
+  3. A write through `db.connection().execute(...)` bypasses the session
+     events that drop the memo, so a read after it in the same session can be
+     stale. Write through the session.
 - **Project manual cost data is commit-versioned** (`services/cost_state.py`).
   `ProjectCostItem` + `ProjectExtraBomItem` rows belong to an immutable
   `ProjectCostRevision` anchored at the git commit (snapshot) where it was

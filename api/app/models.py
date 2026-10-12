@@ -1353,6 +1353,57 @@ class WriteBatchRow(Base):
     )
 
 
+
+class RowChange(Base):
+    """One row changed in the database, as the database saw it (decision 0089).
+
+    Written ONLY by the `row_change_capture` trigger (`services/row_changes.py`),
+    never through the ORM, so nothing escapes it: a cascade Postgres runs
+    itself, a bulk `UPDATE`, a script. `old` holds what an undo needs to put
+    back — the whole row of a delete, the prior values of the columns an update
+    changed. `new` holds what the change left, for the "changed since?" guard:
+    the whole row of an insert, the new values of an update; a long value is
+    kept as {"$md5": ...}. Secret columns are never stored.
+    """
+
+    __tablename__ = "row_changes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+    # The request's id, or "tx:<transaction id>" for work no request started.
+    group_key: Mapped[str] = mapped_column(String(48))
+    request_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # No foreign key: a deleted account's history stays readable.
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actor: Mapped[str] = mapped_column(String(100), default="", server_default="")
+    # browser | token | mcp | job — who drove the request
+    client: Mapped[str] = mapped_column(String(20), default="", server_default="")
+    table_name: Mapped[str] = mapped_column(String(64))
+    op: Mapped[str] = mapped_column(String(1))  # I | U | D
+    pk: Mapped[dict] = mapped_column(JSONB)
+    old: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    new: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    __table_args__ = (
+        Index("ix_row_changes_group", "group_key"),
+        Index("ix_row_changes_row", "table_name", "pk"),
+        Index("ix_row_changes_user_at", "user_id", "at"),
+    )
+
+
+class ChangeUndo(Base):
+    """A request that was undone, and the request that undid it (decision 0089)."""
+
+    __tablename__ = "change_undos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    group_key: Mapped[str] = mapped_column(String(48), index=True)
+    undo_group_key: Mapped[str] = mapped_column(String(48))
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actor: Mapped[str] = mapped_column(String(100), default="")
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ImportRun(Base):
     __tablename__ = "import_runs"
 

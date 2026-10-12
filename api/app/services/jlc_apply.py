@@ -52,7 +52,7 @@ class ApplyRefused(RuntimeError):
 # ------------------------------------------------------------- verification
 def identity_snapshot(db: Session) -> dict:
     """The two conservation identities, plus the totals they are derived from."""
-    reg = run_actuals.invoice_register(db)
+    reg = run_actuals.invoice_register(db, accountant=False)
     return {
         "gap_usd": reg["summary"]["gap_usd"],
         "pool_balanced": reg["pool"]["balanced"],

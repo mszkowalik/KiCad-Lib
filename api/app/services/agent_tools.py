@@ -721,10 +721,12 @@ def list_models3d(query: str = "", limit: int = 100) -> str:
     """
     db = SessionLocal()
     try:
-        rows = db.query(M.Model3D).order_by(M.Model3D.rel_path).all()
+        # Two columns, never `data`: the models hold 377 MB, and loading them
+        # to print paths took 10 s (measured 2026-10-12).
+        rows = db.query(M.Model3D.rel_path, M.Model3D.size_bytes).order_by(M.Model3D.rel_path).all()
         needle = query.strip().lower()
-        out = [{"rel_path": m.rel_path, "size_bytes": m.size_bytes}
-               for m in rows if not needle or needle in m.rel_path.lower()]
+        out = [{"rel_path": rel, "size_bytes": size}
+               for rel, size in rows if not needle or needle in rel.lower()]
         return json.dumps({"total_matching": len(out),
                            "models": out[:max(1, min(limit, 300))]})
     finally:
@@ -2916,6 +2918,630 @@ def create_sales_invoice_draft(customer: str, lines: list, issue_date: str = "",
         db.close()
 
 
+# ------------------------------------------------- production (decision 0088)
+# Batch crafting, process versions, shipments, devices and stock — the work an
+# agent did through the raw API on 2026-10-08. The write tools call the same
+# route functions as the batch screen (`_route`), so every click is one
+# journal batch with its audit row, and every guard applies. The gate reads the
+# ids in a tool call's body, but not a device named by serial or a project by
+# name, so each tool checks the company itself as well.
+
+def _caller_owns(db, param: str, ident) -> bool:
+    """The company gate's answer for one record, by any id the gate resolves."""
+    from . import access
+
+    mine = access.allowed_companies(db)
+    if mine is None:
+        return True
+    fn = access.RESOLVERS.get(("*", param)) or access.FIELD_RESOLVERS.get(("*", param))
+    owners = fn(db, ident) if fn is not None else set()
+    return not owners or bool(owners & mine)
+
+
+def _codes(devices: str) -> list[str]:
+    """Serials or MACs from a list separated by commas, spaces or new lines."""
+    return [c for c in re.split(r"[\s,;]+", devices or "") if c]
+
+
+def _device_by_code(db, code: str):
+    """A device by serial or MAC, as the batch screen resolves a scan, or by a
+    longer id (a manufacturer id) whose last 12 characters are the MAC."""
+    from . import orders as osvc
+
+    code = (code or "").strip()
+    for c in dict.fromkeys([code, code[-12:]] if len(code) > 12 else [code]):
+        norm = c.lower().replace(":", "").replace("-", "")
+        d = osvc.find_device(db, c) or (db.query(M.DeviceUnit).filter(
+            func.replace(func.lower(M.DeviceUnit.mac), ":", "") == norm).first() if norm else None)
+        if d is not None:
+            return d
+    return None
+
+
+def _no_batch(db, run_id: int) -> str | None:
+    if db.get(M.ProductionRun, run_id) is None or not _caller_owns(db, "run_id", run_id):
+        return json.dumps({"error": f"no batch {run_id}"})
+    return None
+
+
+def _gate_run(run_id: int) -> str | None:
+    db = SessionLocal()
+    try:
+        return _no_batch(db, run_id)
+    finally:
+        db.close()
+
+
+@beta_tool
+def get_batch(run_id: int, devices: str = "", limit: int = 100) -> str:
+    """One crafted batch as its Process tab shows it: the piles of unnamed units
+    ("stacks", with the steps they have done and the steps they can take), the
+    bench stack the programming bench names twins from and how many are left,
+    the gaps (devices programmed with no unit behind them), device counts by
+    state and by what they still need, and the latest clicks. Slow on a large
+    batch (seconds).
+
+    Args:
+        run_id: The batch id (see get_project or get_production_run).
+        devices: Optional. "active", "finished" or "all" lists those devices; a list of serials or MACs lists those. Each row: serial, state, steps done, what it still needs.
+        limit: Most device rows to return. Default 100.
+    """
+    from ..routers import process as proc
+
+    if (err := _gate_run(run_id)) is not None:
+        return err
+    raw = _route(proc.craft, run_id)
+    v = json.loads(raw)
+    if "error" in v:
+        return raw
+    devs = v.get("devices") or []
+    needs: dict[str, int] = {}
+    for d in devs:
+        if d.get("status") == "active":
+            key = "; ".join(d.get("missing") or []) or "ready to finish"
+            needs[key] = needs.get(key, 0) + 1
+    want = (devices or "").strip().lower()
+    rows = []
+    if want in ("active", "finished", "all"):
+        rows = [d for d in devs if want == "all" or d.get("status") == want]
+    elif want:
+        codes = {c.lower().replace(":", "") for c in _codes(devices)}
+        rows = [d for d in devs if (d.get("serial") or "").lower() in codes
+                or (d.get("mac") or "").lower().replace(":", "") in codes]
+    states: dict[str, int] = {}
+    for d in devs:
+        states[d.get("status")] = states.get(d.get("status"), 0) + 1
+    return json.dumps({
+        "run_id": run_id, "process_version": v.get("version_no"),
+        "bench_stack": v.get("bench_stack"), "bench_left": v.get("bench_left"),
+        "stacks": [{k: s.get(k) for k in ("stack", "count", "done", "can", "next")} for s in v.get("stacks", [])],
+        "gaps": v.get("gaps", []),
+        "devices_by_state": states, "active_devices_need": needs,
+        "devices": [{"device_id": d["device_id"], "serial": d.get("serial"), "state": d.get("status"),
+                     "done": d.get("done"), "needs": d.get("missing")} for d in rows[:limit]],
+        "devices_listed": f"{min(len(rows), limit)} of {len(rows)}" if want else None,
+        "recent_clicks": [{k: c.get(k) for k in ("id", "step", "qty", "chosen", "made_at", "actor", "note",
+                                                 "batch_id")} for c in (v.get("clicks") or [])[:15]],
+    }, default=str)
+
+
+@beta_tool
+def batch_step(run_id: int, step_key: str, stack: str = "", qty: int = 0, devices: str = "",
+               made_at: str = "", note: str = "", stated: str = "", skip_refused: bool = False,
+               dry_run: bool = True) -> str:
+    """Record one process step (for example "antenna", "enclosure", "carton",
+    "leaflet") on units of a batch, drawing the step's parts from stock — the
+    batch screen's "Run a step…". Before programming, units are taken as N from
+    a STACK (a pile of identical unnamed units; never name one by id). After
+    programming, units are devices named by serial or MAC. Programming and
+    marking are recorded by their benches, not here; a test, laser mark or
+    label step may be STATED on devices with the reason. Always run with
+    dry_run=true first and read the plan: `refused` names each device that
+    cannot take the step (already done, a need missing, finished, another
+    batch), and `units` of `selected` is what would be recorded. A refused
+    device refuses the whole click unless skip_refused=true. A step is never
+    recorded twice. Each click can be undone on the batch screen.
+
+    Args:
+        run_id: The batch id.
+        step_key: The step's key in the batch's process (see get_batch or get_process).
+        stack: For units before programming: the stack id from get_batch, e.g. "19:assembly|receive".
+        qty: With `stack`: how many units.
+        devices: For programmed units: serials or MACs, separated by commas or spaces.
+        made_at: ISO date the step was done. Default today.
+        note: Why, in a sentence, for the click's note.
+        stated: Only for a test, laser mark or label step no bench recorded: why the person states it.
+        skip_refused: With devices: record the step on the units that can take it and skip the refused ones.
+        dry_run: true (default) returns the plan and writes nothing.
+    """
+    from ..routers import process as proc
+
+    if (err := _gate_run(run_id)) is not None:
+        return err
+    body = proc.StepIn(step_key=step_key, stack=stack, qty=qty, codes=_codes(devices) or None,
+                       chosen="" if stack else "list", made_at=made_at, note=note, stated=stated,
+                       skip_refused=skip_refused, dry_run=dry_run)
+    return _route(proc.craft_step, run_id, body)
+
+
+@beta_tool
+def batch_units(run_id: int, action: str, devices: str = "", stack: str = "", qty: int = 0,
+                reason: str = "", dry_run: bool = True) -> str:
+    """Change units of a batch, as the batch screen does. Run with dry_run=true
+    first and read the plan.
+    - "finish": mark devices finished. A device that misses a required step is
+      refused, and then nothing is written.
+    - "reopen": put finished devices back into work (a missed step, a rework).
+      Only a device on our shelf (in stock or returned) can be reopened; take it
+      out of an open shipment first (shipment_devices). Needs `reason`.
+    - "scrap": scrap units — devices, or N units of a stack (a board that is
+      disposed). Needs `reason`.
+    - "merge": give gap devices (programmed with no unit behind them) a unit
+      from `stack`, which must be ready for programming.
+
+    Args:
+        run_id: The batch id.
+        action: finish | reopen | scrap | merge.
+        devices: Serials or MACs, separated by commas or spaces.
+        stack: For scrap of unnamed units, or the stack a merge takes from.
+        qty: With scrap from a stack: how many units.
+        reason: Required for reopen and scrap; the note for finish.
+        dry_run: true (default) returns the plan and writes nothing.
+    """
+    from ..routers import process as proc
+
+    if (err := _gate_run(run_id)) is not None:
+        return err
+    codes = _codes(devices) or None
+    if action == "finish":
+        return _route(proc.craft_finish, run_id, proc.FinishIn(codes=codes, chosen="list", note=reason,
+                                                               dry_run=dry_run))
+    if action == "reopen":
+        return _route(proc.craft_reopen, run_id, proc.ReopenIn(codes=codes, chosen="list", reason=reason,
+                                                               dry_run=dry_run))
+    if action == "scrap":
+        return _route(proc.craft_scrap, run_id, proc.ScrapIn(stack=stack, qty=qty, codes=codes,
+                                                             chosen="" if stack else "list", reason=reason,
+                                                             dry_run=dry_run))
+    if action == "merge":
+        return _route(proc.craft_merge, run_id, proc.MergeIn(stack=stack, codes=codes, chosen="list",
+                                                             dry_run=dry_run))
+    return json.dumps({"error": "action must be finish, reopen, scrap or merge"})
+
+
+@beta_tool
+def set_bench_stack(run_id: int, stack: str = "") -> str:
+    """Choose the stack the programming bench names a unit from for every device
+    it programs in this batch (a stack whose units have done what programming
+    needs — get_batch lists them). While no stack is chosen, or the chosen one
+    is used up, every device programmed becomes a gap. Live at once.
+
+    Args:
+        run_id: The batch id.
+        stack: The stack id, e.g. "19:antenna|assembly|enclosure|receive". Empty = none.
+    """
+    from ..routers import process as proc
+
+    if (err := _gate_run(run_id)) is not None:
+        return err
+    return _route(proc.set_bench_stack, run_id, proc.BenchStackIn(stack=stack or None))
+
+
+@beta_tool
+def get_process(project: str) -> str:
+    """A project's production process: its versions and the current one's
+    steps in route order — each step's key, label, kind, what it needs, the
+    parts it draws per unit, and whether finish requires it.
+
+    Args:
+        project: Project name (exact, case-insensitive).
+    """
+    from ..routers import process as proc
+
+    db = SessionLocal()
+    try:
+        p = _find_project(db, project)
+        if p is None:
+            return json.dumps({"error": f"project {project!r} not found"})
+        pid = p.id
+    finally:
+        db.close()
+    raw = _route(proc.get_process, pid)
+    v = json.loads(raw)
+    if "error" in v:
+        return raw
+    shown = v.get("shown") or {}
+    graph = shown.get("graph") or {}
+    return json.dumps({
+        "project": project, "current_version_id": v.get("current_version_id"),
+        "versions": v.get("versions"),
+        "shown_version": {k: shown.get(k) for k in ("id", "version_no", "status", "comment", "check")},
+        "route": graph.get("route"), "steps": graph.get("steps"), "prepared": graph.get("prepared"),
+    }, default=str)
+
+
+@beta_tool
+def edit_process(project: str, graph_json: str, comment: str, publish: bool = False) -> str:
+    """Write a new version of a project's process from a whole graph (the
+    "steps", "route" and "prepared" of get_process, changed). It becomes the
+    project's one draft (an existing draft is overwritten), and the answer
+    carries the machine check. With publish=true and a clean check it is
+    published and becomes the project's current process; batches keep the
+    version they have until move_batch_process moves them. A published version
+    is permanent.
+
+    Args:
+        project: Project name.
+        graph_json: The whole graph as JSON: {"steps": [...], "route": [...], "prepared": [...]}.
+        comment: What changed and why (required to publish).
+        publish: Publish the draft when its check is clean. Default false.
+    """
+    from ..routers import process as proc
+
+    try:
+        graph = json.loads(graph_json)
+    except ValueError as e:
+        return json.dumps({"error": f"graph_json is not JSON: {e}"})
+    db = SessionLocal()
+    try:
+        p = _find_project(db, project)
+        if p is None:
+            return json.dumps({"error": f"project {project!r} not found"})
+        draft = db.query(M.ProcessVersion).filter_by(project_id=p.id, status="draft").first()
+        draft_id, pid = (draft.id if draft else None), p.id
+    finally:
+        db.close()
+    if draft_id is None:
+        made = json.loads(_route(proc.compose_version, pid, proc.ComposeIn()))
+        if "error" in made:
+            return json.dumps(made)
+        draft_id = made["id"]
+    res = json.loads(_route(proc.patch_version, draft_id, proc.DraftPatch(graph=graph, comment=comment)))
+    if "error" in res or not publish:
+        return json.dumps({k: res.get(k) for k in ("error", "id", "version_no", "status", "check")
+                           if k in res}, default=str)
+    if not (res.get("check") or {}).get("ok"):
+        return json.dumps({"error": "the check is not clean — not published", "id": draft_id,
+                           "check": res.get("check")}, default=str)
+    pub = json.loads(_route(proc.publish_version, draft_id, proc.PublishIn(comment=comment)))
+    return json.dumps({k: pub.get(k) for k in ("error", "id", "version_no", "status", "check") if k in pub},
+                      default=str)
+
+
+@beta_tool
+def move_batch_process(run_id: int, process_version_id: int, dry_run: bool = True) -> str:
+    """Move a batch to another published version of its project's process — for
+    example after edit_process added a part to a step. Refused when the batch's
+    units have done a step the target version lacks. The plan says whether the
+    bench stack stays selected. Undo is a move back.
+
+    Args:
+        run_id: The batch id.
+        process_version_id: The target process version id (from get_process).
+        dry_run: true (default) returns the plan and writes nothing.
+    """
+    from ..routers import process as proc
+
+    if (err := _gate_run(run_id)) is not None:
+        return err
+    return _route(proc.repin_batch, run_id, proc.RepinIn(version_id=process_version_id, dry_run=dry_run))
+
+
+def _shipment_or_error(db, shipment_id: int):
+    sh = db.get(M.Shipment, shipment_id)
+    if sh is None or not _caller_owns(db, "order_id", sh.order_id):
+        return None
+    return sh
+
+
+@beta_tool
+def list_shipments(status: str = "open", limit: int = 20) -> str:
+    """Deliveries, newest first, with their order, customer, status, date and
+    how many devices they hold per order line.
+
+    Args:
+        status: open | sent | cancelled | "" for all. Default open.
+        limit: Most rows. Default 20.
+    """
+    from . import orders as osvc
+
+    db = SessionLocal()
+    try:
+        q = db.query(M.Shipment)
+        if status:
+            q = q.filter(M.Shipment.status == status)
+        projects = {p.id: p.name for p in db.query(M.Project).all()}
+        out = []
+        for sh in q.order_by(M.Shipment.created_at.desc(), M.Shipment.id.desc()).all():
+            if not _caller_owns(db, "order_id", sh.order_id):
+                continue
+            out.append(osvc.shipment_list_json(db, sh, projects))
+            if len(out) >= limit:
+                break
+        return json.dumps(out, default=str)
+    finally:
+        db.close()
+
+
+@beta_tool
+def get_shipment(shipment_id: int, check_steps: bool = True) -> str:
+    """One delivery: its header, its devices, and — with check_steps — whether
+    each device has every step of its batch's process recorded (for example a
+    carton and a leaflet), with the devices that lack each step.
+
+    Args:
+        shipment_id: The shipment id (from list_shipments).
+        check_steps: Count the recorded steps of the devices. Default true.
+    """
+    from . import orders as osvc
+    from . import process as P
+    from . import twins as T
+
+    db = SessionLocal()
+    try:
+        sh = _shipment_or_error(db, shipment_id)
+        if sh is None:
+            return json.dumps({"error": f"no shipment {shipment_id}"})
+        full = osvc.shipment_json(db, sh)
+        devs = full.get("devices") or []
+        out = {k: full.get(k) for k in ("id", "order_id", "kind", "status", "shipped_at", "delivery_note",
+                                         "tracking", "notes", "qty", "per_line")}
+        out["devices"] = [{"device_id": d["device_id"], "serial": d.get("serial"),
+                           "order_line_id": d.get("order_line_id")} for d in devs]
+        if check_steps and devs:
+            ids = [d["device_id"] for d in devs]
+            twins = db.query(M.Twin).filter(M.Twin.device_unit_id.in_(ids)).all()
+            done = T.done_steps(db, [t.id for t in twins])
+            serial = {d["device_id"]: d.get("serial") for d in devs}
+            keys: dict[str, str] = {}
+            for t in twins:
+                v = db.get(M.ProcessVersion, db.get(M.ProductionRun, t.run_id).process_version_id
+                           or t.process_version_id)
+                for s in P._graph(v).get("steps", []):
+                    if s.get("kind") not in ("finish",):
+                        keys.setdefault(s["key"], s.get("label") or s["key"])
+            steps = {}
+            for k, label in keys.items():
+                lacking = [serial[t.device_unit_id] for t in twins if k not in done[t.id]]
+                steps[k] = {"label": label, "with": len(twins) - len(lacking), "lacking": lacking[:50]}
+            out["steps"] = steps
+            out["twin_status"] = {s: sum(1 for t in twins if t.status == s) for s in {t.status for t in twins}}
+            out["devices_without_twin"] = [serial[i] for i in ids if i not in {t.device_unit_id for t in twins}]
+        return json.dumps(out, default=str)
+    finally:
+        db.close()
+
+
+@beta_tool
+def shipment_devices(shipment_id: int, action: str, devices: str, order_line_id: int | None = None) -> str:
+    """Put devices into an open shipment ("pack") or take them out ("unpack"),
+    as the shipment page does. All or nothing: the first device that may not go
+    is refused by name and nothing is written. A device taken out is back in
+    stock. Live at once.
+
+    Args:
+        shipment_id: An OPEN shipment's id.
+        action: pack | unpack.
+        devices: Serials or MACs, separated by commas or spaces.
+        order_line_id: With pack: the order line the devices are for, when the order has more than one.
+    """
+    from fastapi import HTTPException
+
+    from ..routers.util import acting_name, audit
+    from . import orders as osvc
+
+    db = SessionLocal()
+    try:
+        sh = _shipment_or_error(db, shipment_id)
+        if sh is None:
+            return json.dumps({"error": f"no shipment {shipment_id}"})
+        ids, missing = [], []
+        for c in _codes(devices):
+            d = _device_by_code(db, c)
+            (ids.append(d.id) if d is not None else missing.append(c))
+        if missing:
+            return json.dumps({"error": f"no device for {', '.join(missing)}"})
+        actor = acting_name()
+        if action == "pack":
+            n = osvc.pack_devices(db, sh, ids, order_line_id=order_line_id, actor=actor)
+        elif action == "unpack":
+            n = osvc.unpack_devices(db, sh, ids, actor=actor)
+        else:
+            return json.dumps({"error": "action must be pack or unpack"})
+        audit(db, f"shipment.{action}", "sales_order", sh.order_id, {"shipment_id": sh.id, "devices": n},
+              actor=actor)
+        db.commit()
+        return json.dumps({"shipment_id": sh.id, action: n, "qty": len(osvc.packed_devices(db, sh))})
+    except HTTPException as e:
+        db.rollback()
+        return json.dumps({"error": e.detail}, default=str)
+    finally:
+        db.close()
+
+
+@beta_tool
+def find_device(code: str) -> str:
+    """One device by its serial or MAC (a manufacturer id that ends in the MAC
+    works too): its batch, state, notes, its unit's recorded steps and what it
+    still needs, and its latest programming and marking runs with their errors.
+
+    Args:
+        code: Serial, MAC, or a longer id whose last 12 characters are the MAC.
+    """
+    from . import process as P
+    from . import twins as T
+
+    db = SessionLocal()
+    try:
+        d = _device_by_code(db, code)
+        if d is None or not _caller_owns(db, "device_ids", d.id):
+            return json.dumps({"error": f"no device for {code!r}"})
+        tw = db.query(M.Twin).filter_by(device_unit_id=d.id).first()
+        twin = None
+        if tw is not None:
+            done = T.done_steps(db, [tw.id])[tw.id]
+            v = db.get(M.ProcessVersion, db.get(M.ProductionRun, tw.run_id).process_version_id
+                       or tw.process_version_id)
+            g = P._graph(v)
+            twin = {"status": tw.status, "batch_id": tw.run_id, "origin_batch_id": tw.origin_run_id,
+                    "done": sorted(done),
+                    "needs": T.needs_met(g, P.step_of_kind(g, "finish") or {}, done) if tw.status == "active" else []}
+        runs = (db.query(M.ProgrammingRun).filter_by(device_unit_id=d.id)
+                .order_by(M.ProgrammingRun.id.desc()).limit(10).all())
+        names = {}
+        for r in runs:
+            dv = db.get(M.DeploymentVersion, r.deployment_version_id) if r.deployment_version_id else None
+            dep = db.get(M.Deployment, dv.deployment_id) if dv else None
+            names[r.id] = dep.name if dep else ""
+        return json.dumps({
+            "device_id": d.id, "serial": d.serial, "mac": d.mac, "project_id": d.project_id,
+            "batch_id": d.production_run_id, "state": d.state, "notes": d.notes, "twin": twin,
+            "runs": [{"id": r.id, "procedure": names[r.id], "status": r.status, "started_at": r.started_at,
+                      "batch_id": r.production_run_id, "error": r.error} for r in runs],
+        }, default=str)
+    finally:
+        db.close()
+
+
+@beta_tool
+def set_device_note(code: str, note: str, replace: bool = False) -> str:
+    """Write on a device's notes — why it was scrapped, held, swapped. By
+    default the note is added below the existing notes with today's date.
+
+    Args:
+        code: Serial or MAC.
+        note: The text.
+        replace: Replace the existing notes instead of adding below them.
+    """
+
+    db = SessionLocal()
+    try:
+        d = _device_by_code(db, code)
+        if d is None or not _caller_owns(db, "device_ids", d.id):
+            return json.dumps({"error": f"no device for {code!r}"})
+        stamp = datetime.now(timezone.utc).date().isoformat()
+        d.notes = note if replace else "\n".join(x for x in (d.notes or "", f"{stamp}: {note}") if x)
+        db.commit()
+        return json.dumps({"device_id": d.id, "serial": d.serial, "notes": d.notes})
+    finally:
+        db.close()
+
+
+@beta_tool
+def get_stock(project: str, part: str = "") -> str:
+    """The stock a project's batches draw from, part by part: bought, used,
+    lost, on hand, and the moving average unit cost in USD. Parts that are not
+    library components (cartons, leaflets, labels) are listed by their MPN key.
+
+    Args:
+        project: Project name.
+        part: Optional text that the part's name or MPN must contain.
+    """
+    from ..routers import run_costs
+
+    db = SessionLocal()
+    try:
+        p = _find_project(db, project)
+        if p is None:
+            return json.dumps({"error": f"project {project!r} not found"})
+        pid = p.id
+    finally:
+        db.close()
+    raw = _route(run_costs.get_pool, pid, as_of=None)
+    v = json.loads(raw)
+    if "error" in v:
+        return raw
+    want = (part or "").strip().lower()
+    rows = [x for x in v.get("parts", [])
+            if not want or want in " ".join(str(x.get(k) or "") for k in ("mpn", "name", "lcsc", "key")).lower()]
+    return json.dumps({"as_of": v.get("as_of"), "total_value_usd": v.get("total_value_usd"),
+                       "parts": rows}, default=str)
+
+
+# ------------------------------------------------------- undo (decision 0089)
+# Every change to the database is recorded by a trigger, grouped by request.
+# These tools read that record and put a request back. A user sees and undoes
+# their own requests; an administrator, anybody's.
+
+def _rc_call(fn, *args, **kwargs) -> str:
+    from fastapi import HTTPException
+
+    db = SessionLocal()
+    try:
+        return json.dumps(fn(db, *args, **kwargs), default=str)
+    except HTTPException as e:
+        db.rollback()
+        return json.dumps({"error": e.detail}, default=str)
+    finally:
+        db.close()
+
+
+@beta_tool
+def list_changes(everyone: bool = False, client: str = "", table: str = "", limit: int = 20) -> str:
+    """Your recent requests that changed data, newest first: when, the route
+    (method and path), the client that sent it (browser, token, mcp for an
+    agent, job), and how many rows of each table it inserted, updated and
+    deleted. Each has a `key`; get_change shows its rows and undo_change puts it
+    back. Use it to find a misclick or what an agent did.
+
+    Args:
+        everyone: An administrator's view of everybody's requests. Default false: your own.
+        client: Only requests from browser, token, mcp or job.
+        table: Only requests that changed this table, e.g. "run_cost_lines".
+        limit: Most requests. Default 20.
+    """
+    from . import row_changes as rc
+
+    return _rc_call(rc.list_groups, everyone=everyone, client=client, table=table, limit=limit)
+
+
+@beta_tool
+def get_change(key: str, limit: int = 100) -> str:
+    """One recorded request: each row it changed, with the values before
+    (`old`) and after (`new`). A deleted row's `old` is the whole record.
+
+    Args:
+        key: The request's key, from list_changes or row_history.
+        limit: Most rows. Default 100.
+    """
+    from . import row_changes as rc
+
+    return _rc_call(rc.detail, key, limit=limit)
+
+
+@beta_tool
+def undo_change(key: str, dry_run: bool = True) -> str:
+    """Put back everything one request changed: a deleted row returns with its
+    id, an updated row gets its old values, an inserted row is removed. Run
+    with dry_run=true first. It refuses when a row was changed again since
+    (it names the later request: undo that one first), when a row holds a
+    credential, when the stock would go below zero, or when it touches a closed
+    batch. The undo is itself a recorded request, so undoing the undo redoes
+    the change.
+
+    Args:
+        key: The request's key, from list_changes.
+        dry_run: true (default) returns the plan and writes nothing.
+    """
+    from . import row_changes as rc
+
+    return _rc_call(rc.undo, key, dry_run=dry_run)
+
+
+@beta_tool
+def row_history(table: str, row_id: int) -> str:
+    """Every recorded change of one row, newest first, with the request that
+    made it: how to find what a deleted record held and which request to undo.
+
+    Args:
+        table: The table, e.g. "run_cost_lines", "comments", "twins".
+        row_id: The row's id.
+    """
+    from . import row_changes as rc
+
+    return _rc_call(rc.row_history, table, {"id": row_id})
+
+
 TOOLS = [
     # library reads
     search_components, get_component, list_categories, list_base_symbols,
@@ -2948,4 +3574,10 @@ TOOLS = [
     # invoices: supplier documents, KSeF, sales (decisions 0063-0067)
     list_supplier_invoices, get_supplier_invoice, create_supplier_invoice, assign_invoice_line,
     list_ksef_inbox, import_ksef_invoice, list_sales_invoices, create_sales_invoice_draft,
+    # production: batches, process versions, shipments, devices, stock (decision 0088)
+    get_batch, batch_step, batch_units, set_bench_stack, get_process, edit_process,
+    move_batch_process, list_shipments, get_shipment, shipment_devices, find_device,
+    set_device_note, get_stock,
+    # undo any change (decision 0089)
+    list_changes, get_change, undo_change, row_history,
 ]

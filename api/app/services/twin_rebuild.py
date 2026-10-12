@@ -640,7 +640,7 @@ class _Build:
 
     def execute(self) -> dict:
         db, run = self.db, self.run
-        reg_before = run_actuals.invoice_register(db)
+        reg_before = run_actuals.invoice_register(db, accountant=False)
         all_devices = (db.query(M.DeviceUnit).filter_by(production_run_id=run.id)
                        .order_by(M.DeviceUnit.id).all())
         allowed = {d.id for d in all_devices}
@@ -1301,7 +1301,7 @@ class _Build:
 
     def _check(self, total_before: float) -> dict:
         db = self.db
-        reg = run_actuals.invoice_register(db)
+        reg = run_actuals.invoice_register(db, accountant=False)
         total_after = sum(_total(reg, b) for b in self.batch_ids)
         added = sum(d["usd"] for d in self.added)
         returned = sum(d["usd"] for d in self.returned)

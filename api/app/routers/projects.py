@@ -249,7 +249,10 @@ def delete_project(project_id: int, db: Session = Depends(get_db)):
     db.delete(p)
     audit(db, "project.delete", "project", project_id, {"name": p.name})
     db.commit()
-    storage.delete_prefix(f"projects/{project_id}/")
+    # Renders are rebuilt from git; a run's files stay, because an undo can put
+    # the run back (decision 0089).
+    storage.delete_prefix(f"projects/{project_id}/renders/")
+    storage.delete_prefix(f"projects/{project_id}/snapshots/")
     import shutil
 
     shutil.rmtree(gitrepo.mirror_path(project_id), ignore_errors=True)

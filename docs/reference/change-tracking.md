@@ -56,6 +56,28 @@ when no other gate refuses, and takes about 1 s on the local copy. "Undo
 rebuild" passes `stock=False` to each reversal: it checks the whole undo
 once, against the pool the rebuild stored, and the lots at the end.
 
+## Every row change is recorded, and a request can be undone
+
+`row_changes` is written by a database trigger on every table, not by the
+ORM (`services/row_changes.py`, decision
+[0089](../decisions/0089-every-change-is-recorded-and-can-be-undone.md)), so it
+also holds the cascades Postgres runs itself, bulk statements and scripts. It is
+the record an undo reads. `audit_log` says who did what. The Write log stays for
+its own undo of money batches.
+
+- **A new table gets the trigger at the next start.** A table of machine state
+  that is rewritten all day, or a table whose rows are credentials, goes into
+  `row_changes.SKIP` instead. `test_every_table_carries_the_trigger` fails when
+  a table has neither.
+- **Each transaction is tagged in `after_begin`** with the request, the person
+  and the client. A connection used outside a `Session` (`engine.begin()`) is not
+  tagged, and its rows group by transaction under client `job`.
+- **An undo writes with SQL, not the ORM.** It is recorded by the trigger like
+  any other write, so a redo is the undo of the undo. It also writes no `row.*`
+  rows in `audit_log`.
+- **Deleting a row must not delete the file it points at.** Delete only what is
+  rebuilt from elsewhere (renders).
+
 ## Rules for new code
 
 1. **A new reader of `audit_log` must decide about the tracker's rows.** One
@@ -74,10 +96,10 @@ once, against the pool the rebuild stored, and the lots at the end.
    `threading.Thread` starts with an empty context, so its writes have no
    person and no `row.*` rows. Start it as
    `threading.Thread(target=contextvars.copy_context().run, args=(fn, ...))`.
-5. **A Core statement is not captured.** `db.execute(update(...))`,
-   `text("UPDATE ...")` and `query(...).update()` skip the ORM, so only the
-   `request` row records them. Use ORM objects when the write matters to
-   anybody.
+5. **A Core statement writes no `row.*` row.** `db.execute(update(...))`,
+   `text("UPDATE ...")` and `query(...).update()` skip the ORM, so `audit_log`
+   has only the `request` row for them, and the Write log cannot undo them.
+   `row_changes` still records them. Use ORM objects inside a Write log batch.
 6. **A new column that holds a secret must be redacted.** Names ending in
    `_enc` or `_hash`, or containing `password`, are redacted by name. Any
    other secret needs a line in `tracking._is_secret`, and a test in

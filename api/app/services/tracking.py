@@ -54,6 +54,9 @@ class RequestActor:
     # What to write into a who-column: the display name, else the username.
     name: str
     auth_via: str  # session | token | legacy | none
+    # What drove the request: browser | token | mcp (the MCP server says so in
+    # an `X-Kicad-Client` header) — decision 0089 groups an agent's changes by it.
+    client: str = ""
 
 
 _current: contextvars.ContextVar[RequestActor | None] = contextvars.ContextVar(
@@ -85,12 +88,13 @@ def actor_label(ctx: RequestActor) -> str:
     return "legacy token" if ctx.auth_via == "legacy" else PLACEHOLDER
 
 
-def actor_for(user, request_id: str, auth_via: str) -> RequestActor:
+def actor_for(user, request_id: str, auth_via: str, client: str = "") -> RequestActor:
+    client = client or ("browser" if auth_via == "session" else auth_via)
     if user is None:
-        return RequestActor(request_id, None, "", "", auth_via)
+        return RequestActor(request_id, None, "", "", auth_via, client)
     username = (getattr(user, "username", "") or "").strip()
     name = (getattr(user, "display_name", "") or "").strip() or username
-    return RequestActor(request_id, getattr(user, "id", None), username, name, auth_via)
+    return RequestActor(request_id, getattr(user, "id", None), username, name, auth_via, client)
 
 
 # ------------------------------------------------------------- who-columns

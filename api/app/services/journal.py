@@ -562,7 +562,7 @@ STOCK_TABLES = {"component_consumptions", "component_stock_adjustments", "run_co
                 "run_cost_documents", "component_consumption_lots"}
 
 
-def stock_blockers(db: Session, wb: M.WriteBatch) -> list[str]:
+def stock_blockers(db: Session, wb: M.WriteBatch, reverse=None) -> list[str]:
     """Would reversing `wb` leave a part's stock, or a lot, below zero and
     below where it stands now, on any day? (decision 0073.)
 
@@ -570,7 +570,11 @@ def stock_blockers(db: Session, wb: M.WriteBatch) -> list[str]:
     of the stock the reversal really leaves: a draw it puts back, voids again
     or moves to the other company, a purchase it takes away, a binding it puts
     back — together, as one net change. A deficit the stock already had is no
-    reason to refuse. The journal records nothing of the trial."""
+    reason to refuse. The journal records nothing of the trial.
+
+    `reverse` replaces the trial reversal: the undo of a recorded request
+    (`row_changes.undo`, decision 0089) passes its own writes and rows shaped
+    like this batch's."""
     from . import lots, run_actuals
 
     rows = [r for r in wb.rows if r.table_name in STOCK_TABLES]
@@ -643,7 +647,7 @@ def stock_blockers(db: Session, wb: M.WriteBatch) -> list[str]:
     trial: dict = {}
     try:
         with db.begin_nested():          # rolled back by the exception below, always
-            _reverse_rows(db, wb)
+            (reverse or (lambda: _reverse_rows(db, wb)))()
             trial["pools"], trial["lots"] = view()
             raise _Trial
     except _Trial:

@@ -5,6 +5,28 @@ The capability policy that governs what an agent may do is in
 platform runs no agent of its own (decision 0062): every agent reaches these
 tools over MCP.
 
+- **Every route without a tool is reached through `api_routes` and
+  `api_request`**, two local tools in the MCP server (decision 0088). They
+  are not in `TOOLS` and are not counted by `GET /api/agent/tools`. A route
+  that agents call often deserves a tool here instead: typed arguments and a
+  description that states its rules cost less context than the raw API.
+- **Production tools** (decision 0088): `get_batch`, `batch_step`,
+  `batch_units`, `set_bench_stack`, `get_process`, `edit_process`,
+  `move_batch_process`, `list_shipments`, `get_shipment`, `shipment_devices`,
+  `find_device`, `set_device_note`, `get_stock`. The writes call the same route
+  functions as the batch screen through `_route`, so a click is one journal
+  batch with its audit row and keeps the route's `dry_run` default. The gate
+  checks the ids in a tool call's body, but a device named by serial and a
+  project named by name reach no resolver, so each tool also calls
+  `_caller_owns`. A new `*_id` argument must be classified in
+  `services/access.py` — `tests/auth/test_company_access.py` fails until it is
+  (`move_batch_process` names its argument `process_version_id` for that
+  reason). Shipment writes go to `services/orders.py` directly, because their
+  routes read the actor from the `Request` a tool does not have.
+- **Undo tools** (decision 0089): `list_changes`, `get_change`, `undo_change`,
+  `row_history`. They call `services/row_changes.py` in the tool's own session.
+  The ownership rule (your own requests, an administrator anybody's) is in the
+  service, so the API and the tools cannot differ.
 - **Simulation and the field solver are on the tool surface too** (2026-08-31).
   Running: `sim_projects`, `sim_scenarios`, `sim_netlist`, `sim_run_scenario` —
   the last one returns the harness's PASS/FAIL verdicts, per-vector min/max/final
@@ -19,8 +41,8 @@ tools over MCP.
   somebody else's board. `fieldsolver_solve` and `fieldsolver_find_solutions` run
   the FEM inline (seconds to a minute), so they take small sweeps by default; the
   browser's job queue exists for the long ones.
-- The tools are `TOOLS` (`GET /api/agent/tools` gives the live count — 55 on
-  2026-10-04). Each is a plain function wrapped by the Anthropic SDK's
+- The tools are `TOOLS` (`GET /api/agent/tools` gives the live count — 76 on
+  2026-10-12). Each is a plain function wrapped by the Anthropic SDK's
   `beta_tool`, which derives the JSON schema from the signature and docstring;
   that is the only reason the `anthropic` package is still a dependency.
 - `read_datasheet` returns a LIST of content blocks (text + base64 PNG page

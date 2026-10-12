@@ -1029,7 +1029,7 @@ def per_device_cost_usd(db: Session, register: dict | None = None) -> dict[int, 
     `uncosted`, which is true and visible, where a planned-quantity estimate
     would have been neither.
     """
-    reg = register or run_actuals.invoice_register(db)
+    reg = register or run_actuals.invoice_register(db, accountant=False)
     counts = run_actuals.produced_counts(db, [int(rid) for rid in (reg.get("by_run_usd") or {})])
     out: dict[int, float] = {}
     for rid, money in (reg.get("by_run_usd") or {}).items():

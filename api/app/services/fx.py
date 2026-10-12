@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from bisect import bisect_right
 
 import httpx
 from sqlalchemy.orm import Session
@@ -16,6 +17,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..db import SessionLocal
 from ..models import utcnow
+from . import session_memo
 
 log = logging.getLogger(__name__)
 
@@ -44,25 +46,31 @@ def record_rate_history(db: Session, currency: str, rate_usd: float) -> bool:
     return True
 
 
+def _history(db: Session) -> dict[str, tuple[list, list]]:
+    """Per currency, the recorded times and rates in time order."""
+    out: dict[str, tuple[list, list]] = {}
+    for cur, at, rate in (db.query(M.ExchangeRateHistory.currency, M.ExchangeRateHistory.recorded_at,
+                                   M.ExchangeRateHistory.rate_usd)
+                          .order_by(M.ExchangeRateHistory.recorded_at, M.ExchangeRateHistory.id)):
+        times, rates = out.setdefault(cur.upper(), ([], []))
+        times.append(at)
+        rates.append(rate)
+    return out
+
+
 def rates_at(db: Session, at) -> dict[str, float]:
     """Rates AS OF `at` from history — per currency the latest row
     at-or-before `at`, else the earliest after it. Currencies with no history
-    fall back to the current live rate (better than dropping the line)."""
-    rates = get_rates(db)
-    rows = (
-        db.query(M.ExchangeRateHistory)
-        .order_by(M.ExchangeRateHistory.recorded_at, M.ExchangeRateHistory.id)
-        .all()
-    )
-    by_cur: dict[str, list[M.ExchangeRateHistory]] = {}
-    for r in rows:
-        by_cur.setdefault(r.currency.upper(), []).append(r)
-    for cur, hist in by_cur.items():
-        chosen = hist[0]
-        for r in hist:
-            if r.recorded_at <= at:
-                chosen = r
-        rates[cur] = chosen.rate_usd
+    fall back to the current live rate (better than dropping the line).
+
+    The live rates and the history are read once per session state
+    (`session_memo`): a request asks for rates at up to ~130 dates, and each
+    call used to read all ~2,300 history rows (29 ms each, measured
+    2026-10-12)."""
+    rates = dict(session_memo.get(db, "fx.live", lambda: get_rates(db)))
+    for cur, (times, values) in session_memo.get(db, "fx.history", lambda: _history(db)).items():
+        i = bisect_right(times, at)
+        rates[cur] = values[i - 1] if i else values[0]
     rates["USD"] = 1.0
     return rates
 

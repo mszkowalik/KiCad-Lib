@@ -2031,7 +2031,7 @@ def origin_shares(db: Session, origin_run_ids: list[int], register: dict | None 
             .filter(M.ProductionRun.id.in_(origin_run_ids)).all()}
     # Always the register: a closed batch answers its frozen share, but its
     # origin batch cost is still reported, and is wrong without the total.
-    reg = register or run_actuals.invoice_register(db)
+    reg = register or run_actuals.invoice_register(db, accountant=False)
     by_run_usd = reg.get("by_run_usd") or {}
     _, step_by_run = _step_draw_values(db, list(runs))
     shares = line_shares(db) if shares is None else shares
@@ -2404,7 +2404,7 @@ def cost_by_step(db: Session, run: M.ProductionRun, register: dict | None = None
     no step claims. The board and its assembly are the assembly step's figures.
 
     The rows add up to the batch's total in the register."""
-    reg = register or run_actuals.invoice_register(db)
+    reg = register or run_actuals.invoice_register(db, accountant=False)
     total = float((reg.get("by_run_usd", {}).get(str(run.id)) or {}).get("total_usd") or 0.0)
     clicks = db.query(M.StepRun).filter_by(run_id=run.id).order_by(M.StepRun.id).all()
     click_of = {c.id: c for c in clicks}
