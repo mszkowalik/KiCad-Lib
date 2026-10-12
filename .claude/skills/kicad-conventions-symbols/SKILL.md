@@ -2,7 +2,7 @@
 name: kicad-conventions-symbols
 description: "Choosing AND authoring base symbols: how to publish one, and the index of every symbol rule with the check that now holds it. The rules themselves live in the symbol checklist — read them with get_review_checklist('symbol'). Use when picking a base symbol or writing a propose_symbol_edit."
 ---
-<!-- platform-skill: conventions-symbols v24 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-symbols v25 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Symbol conventions
 
 **The rules are checks now, not prose.** Every convention this document used to
@@ -86,24 +86,15 @@ shape and the same four consequences as a footprint rename — see
 polarity-mark positions against the house coordinates for the 15.24 mm
 amplifier and the 10.16 mm one-input gate. It replaced six judgment checks that
 asked a reader to compare coordinates by eye and had been answered zero times
-between them (audit 2026-09-14). A **multi-input** gate is absent from the measured table, so the check
-refuses to judge one.
+between them (audit 2026-09-14).
 What needs the datasheet stays judgment — `sym.rail_negative_mark`,
 `sym.inverting_on_top`, `sym.comparator_glyph`.
 
-**A multi-input gate uses the same 10.16 mm triangle** (Mateusz Kowalik,
-2026-09-28: "use house rules but extend them to more input pins"). Keep the
-one-input body, the output at (7.62, 0), the rails at (0, ±5.08) and the
-+/− marks. Put the inputs on the back edge, 2.54 mm apart and symmetric about
-y = 0: two inputs at (−7.62, ±2.54). Draw the IEC qualifier inside the body
-at (−2.54, 0) — `≥1` for OR, `&` for AND. First drawn on `74LVC1G32`.
-
-**Three inputs follow the same rule** (Mateusz Kowalik, 2026-10-01): inputs
-at (−7.62, +2.54), (−7.62, 0) and (−7.62, −2.54), top to bottom in the
-datasheet's letter order (A, B, C). The qualifier stays at (−2.54, 0); the
-middle input stub ends on the back edge, clear of it. First drawn on
-`74LVC1G11`. A gate with four or more inputs is not decided yet: ask before
-you draw one.
+**Multi-input gates use the same 10.16 mm triangle**, with two and three
+inputs decided (2026-09-28, 2026-10-01). The coordinates are in the
+`sym.family_drawing` hint. The measurement itself does not hold the input
+positions yet, so a multi-input gate is judged by eye under
+`sym.drawing_family`. Four or more inputs are not decided: ask.
 
 **`ki_fp_filters` is retired.** It filtered the footprint chooser, and every
 curated path already carries the footprint — the HTTP catalog does not send the

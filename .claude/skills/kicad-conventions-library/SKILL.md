@@ -2,7 +2,7 @@
 name: kicad-conventions-library
 description: "Component DATA conventions: the index of every rule with the check that holds it, plus the manufacturer names nobody has been able to resolve. The rules themselves live in the component checklist — read them with get_review_checklist('component'). Use when setting Value, ki_description, Manufacturer 1 or a category."
 ---
-<!-- platform-skill: conventions-library v42 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-library v45 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Library conventions
 
 **The rules are checks now, not prose.** Every convention this document used to
@@ -22,7 +22,7 @@ and where to look when a rule does not fit.
 | Is `Manufacturer 1` the company's own brand spelling? Every stylization exception, with its evidence | `cmp.manufacturer_canonical` |
 | Is `Value` the shortest string that identifies this part on a sheet? Per-category formats | `cmp.value_field` (one variant per category shape) |
 | Is `Value` empty, `~`, `N/A`, `-`, an unresolved template, or a copy of the description? | `cmp.value_placeholder` |
-| Does `ki_description` follow the family template? The seven parametric categories, and the sub-families deliberately left as free text | `cmp.description` |
+| Does `ki_description` follow the family template? The seven parametric categories, the sub-family templates with their keys and traps (LDO, DC-DC, logic, MCU, FFC and the rest), and the sub-families deliberately left as free text | `cmp.description` |
 | Is every `{Key}` in a description resolvable? | `cmp.templates` |
 | Is the `Power` rating spelled the one decided way? (1/16 W is always `63mW`) | `cmp.power_format` |
 | Is the part in the right category, checked against the source catalogue? | `cmp.category` |

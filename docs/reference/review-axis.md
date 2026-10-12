@@ -93,8 +93,10 @@ review axis records who verified each version against its documentation.
 - **Checklists** (`checklists` + `checklist_versions`,
   `services/checklists.py`): seeded from code on first start, resolved per
   subject (base for the kind + category-scoped merges), items keyed stably.
-  A human UI save publishes a version directly; the agent never edits
-  checklists. The editor is `web/src/pages/Checklists.tsx`
+  A save publishes a version directly. No agent tool writes a checklist: an
+  agent saves one through `PUT /api/checklists/{id}` only when its user asks
+  for that edit, and says so in the version comment. The editor is
+  `web/src/pages/Checklists.tsx`
   (`/reviews/checklists`), and four rules hold it up:
   - **`GET /api/{kind}/{id}/preview.svg?v=<version_id>`**: `v` is a CACHE KEY,
     never a selector — it always renders the CURRENT drawing. It exists so the
@@ -148,20 +150,15 @@ review axis records who verified each version against its documentation.
     that has a breakdown, which is the same split `_detail` makes for display.
     Verified: three answers, then Mark checked, then one more answer leaves four
     recorded, where it used to leave one.
-  - **Adding an item to a base checklist un-answers it on every existing
-    subject.** Publishing checklist v2 with `cmp.datasheet_text` (2026-08-25)
-    moved all 418 components from checked to partial at once, because
-    `machine_check_on_publish` ran only inside the publish transaction and
-    nothing could re-run it. That one was backfilled by hand from the
-    `text_layer` column the validator itself reads.
-    **Since 2026-09-13 there is a re-run** (decision
-    [0013](../decisions/0013-the-validator-owns-the-automatic-checks.md)):
-    `POST /api/reviews/{kind}/{id}/recheck` for one subject and
-    `POST /api/checklists/{id}/apply` for every subject a list governs, both
-    through `review.recheck_machine_tier`. It answers the MACHINE items only, so
-    it backfills a new automatic item and does nothing for a new judgment one —
-    before adding a judgment item to a base checklist, still decide who answers
-    it for the existing rows.
+  - **A new JUDGMENT item on a base checklist is unanswered on every existing
+    subject.** Automatic items need no re-run: conformance is computed on read
+    and cached against a digest of its inputs (decision
+    [0017](../decisions/0017-conformance-is-computed-not-recorded.md)), and a
+    checklist save warms that cache (`conformance.warm_in_background`). A new
+    or edited automatic item, or a changed `when`, therefore reaches every
+    subject without any call. There is no re-check endpoint. Before you add a
+    judgment item to a base checklist, decide who answers it for the existing
+    rows.
   - **Re-answering an item keeps what it replaced** (`superseded` on the entry).
     Accepting a flag used to mean deleting the only description of the defect,
     so the answer being overwritten is kept on the new entry, and `_notable`

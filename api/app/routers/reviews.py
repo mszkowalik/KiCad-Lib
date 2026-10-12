@@ -1210,9 +1210,10 @@ def _check_variant_groups(items: list[dict]) -> None:
 @router.put("/checklists/{cl_id}")
 def save_checklist(cl_id: int, body: ChecklistSaveIn, request: Request,
                    db: Session = Depends(get_db)):
-    """Publish a new checklist version. A human save publishes directly —
-    same rationale as the component in-place save (the user saving IS the
-    approval); the agent has no checklist write tool."""
+    """Publish a new checklist version. A save publishes directly — same
+    rationale as the component in-place save (the user saving IS the
+    approval). No agent tool calls this; an agent reaches it over the API only
+    when its user asks for the edit."""
     cl = db.get(M.Checklist, cl_id)
     if cl is None:
         raise HTTPException(404, "checklist not found")

@@ -1,5 +1,56 @@
 # Changelog
 
+## 2026-10-12 (the checklists hold the rules the skills were waiting to move)
+
+Six decided rules lived only in the convention skills, which said "the
+checklist does not know this yet". They are now on the checks, where every
+review reads them.
+
+- **`cmp.description` has the MCU and the FFC/FPC connector templates**, with
+  their keys and the two STM32 traps (component checklist v30). MCUs and FFC
+  parts are no longer in the free-text list.
+- **`cmp.exposed_pad_documented` says how to name the exposed-pad pin**: GND
+  and `power_in` when the datasheet says ground, EP and `passive` when it says
+  only that the pad must be soldered (v31).
+- **`sym.family_drawing` has the three-input gate coordinates** (symbol
+  checklist v35).
+- **A lightpipe no longer gets the three courtyard checks** (footprint
+  checklist v32). `fp.courtyard_present`, `fp.courtyard_width` and
+  `fp.courtyard_grid` skip `Lightpipe_*` names, as they already skipped
+  `Enclosure_*`. `fp.mechanical_constraint` no longer asks a lightpipe for a
+  courtyard.
+- **Four footprint hints now state decisions from 2026-09-18:** an exact JLC
+  land verifies a rotation offset (`fp.rotation_offset`), a house-prepared land
+  under a KiCad name answers n/a (`fp.stock_name_diffed`), a published min or
+  max in the datasheet wins over JLC (`fp.jlc_land`), and an exposed pad takes
+  the number after the last lead (`fp.pad_numbering`).
+- The `conventions-library`, `conventions-symbols` and
+  `conventions-footprints` skills now point at those checks instead of
+  repeating them.
+
+## 2026-10-12 (a 40-pin FPC connector, and one description for all FFC parts)
+
+`FPC-05F-40PH20` (LCSC C2856812) is in the library. It is a Xunpu 40-position,
+0.5 mm pitch, bottom-contact flip-lock FFC/FPC connector, 2.0 mm high.
+
+- **A new generic symbol, `Conn_01x40`.** It is drawn like `Conn_01x22`:
+  pins 1–40 on the left, and the two mounting pins 41 (bottom) and 42 (top).
+  All pins are passive.
+- **A new footprint, `Xunpu_FPC-05F-40PH20_1x40-1MP_P0.50mm_Horizontal`.**
+  The copper is the JLC land, pad for pad. The signal pads are 1.50 mm long.
+  The Xunpu drawing gives 1.25 mm as a nominal value, and the JLC land wins
+  over a nominal. The 3D model is the EasyEDA model, set 0.925 mm toward the
+  rear so that each lead sits on its pad.
+- **The three FFC connectors have one description template.** Two new
+  properties, `Positions` and `Pitch`, feed
+  `FFC/FPC Connector {Positions} Position {Pitch} Pitch Bottom Contact Surface Mount, Right Angle`.
+  This applies to `FPC-05F-40PH20`, `FPC-05F-24PH20` and `AFC01-S22FCC-00`.
+  The text of `FPC-05F-24PH20` no longer gives the temperature range.
+- **`FPC-05F-24PH20` and `FPC-05F-40PH20` have a local datasheet again.**
+  LCSC serves the Xunpu sheet with a damaged cross-reference table, which no
+  PDF reader can open. The archive now holds a repaired copy with the same
+  content.
+
 ## 2026-10-08 (select all, and the selection stays after a step)
 
 - **The ✓ column header of a batch's Devices list has a select-all box.**

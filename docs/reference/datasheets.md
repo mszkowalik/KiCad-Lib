@@ -262,11 +262,20 @@ before you change a fetch, a hash, a classification or an endpoint.
   NULL (a dangling pointer makes `has_file` true and every download 404), then
   refresh the mirror for the affected categories (`injected_props` emits the
   LOCAL url whenever a current version exists, so a row falling back to NULL
-  must go back to emitting the supplier URL). Run 2026-08-25: removed 2 — a
-  truncated 300 kB LCSC PDF whose xref cannot resolve object 1
-  (`FPC-05F-24PH20`, still served broken today, so that part now has no local
-  copy at all) and a 0-byte `text/html` file Infineon served under a `.pdf`
-  name (`BTT60501ERAXUMA1`, history only).
+  must go back to emitting the supplier URL). Run 2026-08-25: removed 2 — the
+  300 kB LCSC PDF of `FPC-05F-24PH20`, whose xref cannot resolve object 1, and
+  a 0-byte `text/html` file Infineon served under a `.pdf` name
+  (`BTT60501ERAXUMA1`, history only).
+- **An LCSC PDF whose newest xref stream lists ITSELF as `/Prev` is not
+  truncated, and one byte-range edit repairs it.** LCSC still serves the
+  Xunpu FPC-05F series sheets this way: `startxref` points at the last xref
+  stream, its `/Prev` repeats that same offset, so MuPDF, poppler and qpdf all
+  loop and find no pages, and the archive gate refuses the fetch ("the PDF
+  contains no pages"). Point `/Prev` at the EARLIER `startxref` value (same
+  digit count, so no offset moves), check that `pdfinfo` reports the pages, and
+  push the file through `POST /api/datasheets/{ds_id}/upload`. Done 2026-10-12
+  for `FPC-05F-24PH20` and `FPC-05F-40PH20`. Say in `cmp.datasheet` that the
+  archive is a repaired copy.
 - **`cmp.datasheet_text` is a machine checklist item** answered by
   `validate_component` from the `text_layer` column, so it costs a column read.
   `scan` and `error` fail it; `mixed` passes with the page counts in the note;

@@ -2,7 +2,7 @@
 name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints: where to get the copper, how to publish it, and the index of every footprint rule with the check that now holds it. The rules themselves live in the footprint checklist — read them with get_review_checklist('footprint'). Use when naming, picking or authoring any footprint."
 ---
-<!-- platform-skill: conventions-footprints v53 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v56 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 **The rules are checks now, not prose.** Every convention this document used to
@@ -118,11 +118,11 @@ Pass the model path as it appears after `3DModels/` in the `(model ...)` line.
 | Question | Check |
 |---|---|
 | Do the pads match the datasheet land drawing? Is a generic stock land really this package? | `fp.land_pattern` |
-| Was it diffed against the JLC land for this LCSC code? | `fp.jlc_land` |
+| Was it diffed against the JLC land for this LCSC code? When does JLC lose? (a published min or max; a house-prepared family) | `fp.jlc_land` |
 | Does a standard package have exactly one land, and is a reuse annotated rather than re-cut? | `fp.one_land_per_package` |
 | Does this land also fit other vendor package names, and are they in `tags` and `descr`? | `fp.shared_land_record` |
 | Which of the four naming rules applies to this package? | `fp.tier` |
-| Is a name copied from KiCad's own library really on KiCad's copper? (not asked of a house land — see below) | `fp.stock_name_diffed` |
+| Is a name copied from KiCad's own library really on KiCad's copper? (a house-prepared land answers n/a — measured diffs below) | `fp.stock_name_diffed` |
 | Does anything justify a rename? | `fp.naming` |
 | Are the twelve name slots in order? | `fp.field_order` |
 | Is the family word right for this mount technology? (varistors split, fuses do not) | `fp.family_prefix` |
@@ -130,7 +130,7 @@ Pass the model path as it appears after `3DModels/` in the `(model ...)` line.
 | Is the package name set? | `fp.package_name` |
 | Does the internal `(footprint "NAME")` match, with no importer prefix? | `fp.internal_name` |
 | Are pad names integers (`"1"`, never `"1.0"`)? | `fp.pad_name_format` |
-| Do the pad numbers follow the datasheet's own contact numbers? | `fp.pad_numbering` |
+| Do the pad numbers follow the datasheet's own contact numbers? Which number does an exposed pad take? | `fp.pad_numbering` |
 | Does a quad package number counter-clockwise? | `fp.quad_numbering` |
 | Pad shape, corner ratio, silk/fab/courtyard widths, courtyard grid, drill and pad floors | `fp.smd_pad_shape`, `fp.smd_rratio`, `fp.silk_width`, `fp.fab_width`, `fp.fab_outline`, `fp.courtyard_present`, `fp.courtyard_width`, `fp.courtyard_grid`, `fp.min_drill`, `fp.min_th_pad`, `fp.via_dims` |
 | How far is the courtyard from the copper? | `fp.courtyard_clearance` |
@@ -145,7 +145,8 @@ Pass the model path as it appears after `3DModels/` in the `(model ...)` line.
 | A lightpipe or standoff — and why an ENCLOSURE and a LIGHTPIPE carry no courtyard at all | `fp.mechanical_constraint` |
 | Is there a 3D model, on the right path, in the right folder? | `fp.model3d`, `fp.model_path` |
 | Does the model actually fit, measured? | `fp.model_fit` |
-| Is a JLC rotation offset real, and named correctly? | `fp.rotation_offset`, `fp.rotation_field_name` |
+| Is a JLC rotation offset real (a reviewed export, or an exact JLC land), and named correctly? | `fp.rotation_offset`, `fp.rotation_field_name` |
+| What does the exposed-pad pin connect to, and what is it named? | `cmp.exposed_pad_documented` |
 
 Full naming standard, the per-footprint migration table and the catalogue of
 canonical names for packages not yet in the library: `docs/footprint-naming/`.
@@ -157,9 +158,11 @@ Mateusz Kowalik, 2026-09-22: a courtyard on a case outline makes the layout
 harder, because the keep-out covers the whole board area the case encloses.
 
 `fp.courtyard_present`, `fp.courtyard_width` and `fp.courtyard_grid` each carry
-`when {"$name": "^(?!Enclosure_)"}` on the footprint base checklist (v31), so
-none of the three runs on an enclosure. `fp.courtyard_clearance` measures from
-pads and never reaches a part that has none.
+`when {"$name": "^(?!Enclosure_|Lightpipe_)"}` on the footprint base checklist
+(v32), so none of the three runs on an enclosure or a lightpipe.
+`fp.mechanical_constraint` states what each draws instead.
+`fp.courtyard_clearance` measures from pads and never reaches a part that has
+none.
 
 **THE EXEMPTION IS READ OFF THE NAME.** `validate_footprint` is not passed the
 component, so it cannot know what a footprint belongs to. A mechanical case not
@@ -174,14 +177,6 @@ courtyard overlap on every board. A lightpipe draws `F.Fab` at the head OD, a
 the head OD, and puts nothing on `F.CrtYd`. Its STEP puts the inject face at
 z = 1.0 mm. The three FIX-LEMB lightpipes carry the note and the circle, and
 no courtyard, but no `F.Fab` yet, so they fail `fp.fab_outline`.
-
-**THE CHECKS DO NOT KNOW THIS YET.** `fp.courtyard_present` still runs on a
-`Lightpipe_*` name, and the `fp.mechanical_constraint` hint still says a
-lightpipe carries a courtyard. The fix is a checklist edit by a person (agents
-have no checklist write tool): extend the three courtyard `when` predicates to
-`^(?!Enclosure_|Lightpipe_)` and correct the hint. Until then, answer
-`fp.courtyard_present` and `fp.mechanical_constraint` `na`, reason `waived`,
-and cite this decision.
 
 **NOTHING ELSE IS EXEMPT.** A standoff and a logo still carry `F.CrtYd` at the
 body outline plus the standard 0.25 mm.
@@ -201,38 +196,45 @@ Cleared the same day: `Enclosure_Hammond_1551RFLGY` v3 and
 `Enclosure_TAKACHI_SIM6-12-3W` v7 lost the outlines they carried. The other
 three enclosures never had one.
 
-## An exact EasyEDA land match verifies the rotation offset
+## A JLC quad land can arrive rotated — turn the copper, then the model
 
-**`fp.rotation_offset` does not always need a JLC export.** Mateusz Kowalik,
-2026-09-18: "if the footprint matches easyeda, then the rotation is ok."
+**Read the pin-1 corner off the EasyEDA name before you import a quad land.**
+The name ends in it: `-BL` is pin 1 bottom-left, `-TL` is top-left. A `-BL`
+land puts pin 1 on the BOTTOM edge, 90° away from what `fp.quad_numbering`
+requires (pin 1 at (−X, −Y), on the left edge). First met on
+`LQFP-100_L14.0-W14.0-P0.50-LS16.0-BL` for STM32H743VIT6 (C114409),
+2026-10-07. ST's own recommended-footprint figure for that package is drawn
+the same way, so a rotated drawing is not proof of an error in the source.
 
-The reasoning: the offset is a property of one PAIR — a given land and the
-part's orientation in its tape. If our land is an exact copy of JLC's own land,
-it is the same pair, so the stored offset is the offset for that land.
+**Turn the copper, never the numbers.**
 
-**THE TEST IS EXACTNESS, and it is the whole test.** Run
-`easyeda2kicad --lcsc_id=C<n> --footprint` and compare every pad: number,
-position, size and rotation. All four, on every pad. `U.FL_Kinghelm_
-KH-IPEX-K501-29_Vertical` passes it — JLC's `ANT-SMD_KH-IPEX-K501-29` is
-identical pad for pad, so its stored 180 was answered CHECKED on 2026-09-18
-with no export read.
+1. Map every pad (x, y) to (−y, x) and swap its width and height. That turns
+   the land 90° clockwise as drawn.
+2. Check that pad 1 is at (−X, −Y) and pad N/4 + 1 is on the bottom edge (+Y).
+3. Compare every pad by script against the JLC file after the same mapping.
+   A difference means step 1 is wrong.
 
-**IT DOES NOT COVER A LAND THAT DIFFERS.** The moment our copper is not JLC's,
-the pair is not the same pair and this shortcut is gone. That is most of the
-house families: `SOT-23-5` and `SOT-23-6` both carry an offset of 90 and both
-sit at the decided 1.00 mm pitch where JLC uses 0.95, with different pad sizes
-again — so they still need a reviewed export, and they are still open.
+**Then turn the 3D model the same way.** The EasyEDA STEP is modelled for
+JLC's orientation, so after step 1 the `(model ...)` line needs
+`(rotate (xyz 0 0 90))`. The sign is easy to get wrong: −90 put the pin-1
+dimple in the opposite corner on the first try. Render the draft with
+`footprint-render.py <file.kicad_mod>` and confirm that the dimple sits next to
+the silk pin-1 mark before you publish. Record the non-identity rotation in
+`fp.model_fit`.
 
-**THE CHECK'S OWN HINT SAYS OTHERWISE**, and has not been changed: it reads
-"ONLY A REVIEWED EXPORT VERIFIES AN OFFSET". Treat this section as the newer
-decision and say in the note which route was taken, so the two never get
-confused on one part.
+**The exact-match shortcut for the rotation offset does not apply.** The turned
+land is no longer the same pair as JLC's (see `fp.rotation_offset`). Leave
+`FT Rotation Offset` unset and measure it on the first reviewed JLC export. A
+vendor-prefixed name such as `STMicroelectronics_LQFP-100_…` also matches no
+plugin rule keyed on a package prefix (`^QFN-`, `^SOT-23`).
 
 ## A house land is not diffed against KiCad
 
-**`fp.stock_name_diffed` does not apply to a house-prepared land.** Mateusz
-Kowalik, 2026-09-18: "if its house model, it doesnt need to be compared against
-kicad." Answer it `na`, reason `kind_exempt`, and move on.
+**The rule is on `fp.stock_name_diffed` and `fp.jlc_land`** (decided
+2026-09-18): a house-prepared land under a stock name answers
+`fp.stock_name_diffed` n/a with reason `kind_exempt`, and keeps its name and
+its copper. What the checks do not hold is the measured difference, for the
+note.
 
 The generic chip-passive families are house copper under a stock name, on
 purpose. Every one of them differs from the shipped file, because the whole
@@ -249,82 +251,27 @@ library was snapped to the 0.1 mm grid and KiCad's generator was not:
 | `L_0603_1608Metric` | −0.80 vs −0.7875, 0.90 vs 0.875 wide |
 | `Fuse_1206_3216Metric` | −1.45 vs −1.40, 1.20×1.80 vs 1.25×1.75 |
 
-**The name stays.** This closes the Tier 0 question the same way the SOT-23
-family closed it: house copper under a stock name. Do not rename, and do not
-redraw the copper back to KiCad's.
+## easyeda2kicad can write the 3D offset with the wrong sign
 
-**What the check still protects.** It exists for pad NUMBERING — same name,
-same pad count, different numbers, and the symbol lands on the wrong pads of a
-board that looks right. None of the lands above touches that: pad count, pad
-numbering and the pitch axis are identical to KiCad's in every case. A house
-land that changed pad numbers or pad count is still a real finding, and the
-exemption does not cover it.
+**Render an imported model before you believe its offset.** Measured on
+C2856812 (FPC-05F-40PH20), 2026-10-12: easyeda2kicad 0.8.0 wrote
+`(offset (xyz 0 -1.61 0))`. In KiCad that puts the body about 2 mm in front
+of the land, with every lead off its pad. The 24-pin sibling
+`Xunpu_FPC-05F-24PH20_1x24-1MP_P0.50mm_Horizontal` carries `-1.2`, and its
+render shows the same fault. It is not corrected yet.
 
-**`fp.jlc_land` works the same way** and already names R_0402, R_0805, R_1206
-and the SOIC family. The rule generalises: a house-prepared family is ours on
-purpose, so a difference from stock or from JLC is not a defect. Record the
-measured diff in the note and leave the geometry alone.
+KiCad places a model point at board y = −(model y + offset y). Do this:
 
-**A fourth pass re-discovered this on 2026-09-17**, on the chip capacitor,
-inductor and fuse lands. That is why it is written here rather than left to the
-check text, which still says a stock name is abandoned when the copper differs.
+1. Find the lead feet in the STEP: the vertices at z ≈ 0.
+2. Choose the offset that puts the feet inside the pad copper and the body
+   under the JLC silk outline.
+3. Render from the REAR (`kicad-cli pcb render --side top --rotate
+   "-60,0,210"`). The default isometric view of `footprint-render.py` looks at
+   the front of a right-angle connector and hides its leads.
+4. Record the measured offset and the original value in `fp.model_fit`.
 
-## JLC does not win against the manufacturer's own minimum
-
-**`fp.jlc_land` says "WHEN THEY DISAGREE, JLC WINS". That holds because JLC's
-file is machine-readable for the exact orderable part. It stops holding when
-JLC's land breaks a dimension the manufacturer publishes as a limit.**
-
-Measured on `D_SMA`, 2026-09-18, against the Littelfuse SMAJ recommended land
-(p5):
-
-| | Pad width | Inner gap |
-|---|---|---|
-| Littelfuse | 1.8 **min** | 2.3 **max** |
-| Ours, 2.5 × 1.8 at ±2.0 | 1.80 ✓ | 1.50 ✓ |
-| JLC `SMA_L4.4-W2.8-LS5.4-RD`, 2.05 × 1.62 at ±2.57 | 1.62 ✗ | 3.09 ✗ |
-
-JLC is under the minimum width and over the maximum gap. Ours is inside both,
-so ours stays and the diff is recorded in the note.
-
-**The test is a PUBLISHED LIMIT, not a preference.** A min or a max in the
-manufacturer's land drawing outranks JLC. A difference from a nominal, or from
-a figure JLC simply drew differently, does not — that is the ordinary
-note-and-move-on case the check already describes, and the chip-passive and
-SOT-23 families are decided that way.
-
-**Say which document and which page in the note**, so the next reader can
-check the limit rather than take the exception on trust.
-
-## The exposed pad takes the next number after the last lead
-
-**A DFN-8's exposed pad is pad 9. A QFN-16's is 17. A VQFN-40's is 41.** The
-pad is numbered `<last lead> + 1`, and the SYMBOL gives its pin the same
-number, so `cmp.pins_to_pads` matches and the net reaches the copper.
-
-Mateusz Kowalik, 2026-09-18: "house standard is to number this pad as 9 for
-DFN8."
-
-Measured the same day across every footprint in the library that carries a
-`pad_prop_heatsink` pad — **15 of 15 follow it**, from `SOIC-8-1EP` (EP 9) and
-`HVSSOP-10-1EP` (EP 11) up to `QFN-68-1EP` (EP 69).
-
-**The number is ours, not the datasheet's, and that is the normal case.** Most
-manufacturers draw the pad and dimension it but never put it in the pin table:
-AOS gives the AON7264E's package as "DFN 3x3 EP" and numbers only 1–8; UMW
-dimensions the PCF8574's pad at D1 = E1 = 1.55/1.75 in §14.2 and numbers only
-1–16. So do not read an unnumbered pad as an undocumented one, and do not
-invent a different number to match a datasheet that has none.
-
-**What the house number does NOT decide is what the pad connects to.** That is
-`cmp.exposed_pad_documented`, it is answered from the datasheet, and the two
-are independent: TI states outright that the TXS0104E's pad "must be connected
-to ground", while for the PCF8574 it says only that the pad "must be soldered
-to the printed circuit board for thermal and mechanical performance". Name the
-symbol pin for what the datasheet supports — `GND` and `power_in` when it says
-ground, `EP` and `passive` when it says only that the pad exists and must be
-soldered. `passive` is also the right ERC for must-be-soldered: clean when
-wired, an error when left open.
+A z-centred mesh is a different fault with the same cure: measure, then set
+the offset. See the 3D-model paragraph under Getting the copper.
 
 ## Pad placement grid — still prose, because no check holds it
 
