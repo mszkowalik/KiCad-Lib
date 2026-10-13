@@ -2,7 +2,7 @@
 name: kicad-conventions-library
 description: "Component DATA conventions: the index of every rule with the check that holds it, plus the manufacturer names nobody has been able to resolve. The rules themselves live in the component checklist — read them with get_review_checklist('component'). Use when setting Value, ki_description, Manufacturer 1 or a category."
 ---
-<!-- platform-skill: conventions-library v45 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-library v47 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Library conventions
 
 **The rules are checks now, not prose.** Every convention this document used to

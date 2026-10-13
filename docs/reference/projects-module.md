@@ -20,6 +20,11 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   (`projects/<id>/renders/<sha>/…`) never invalidate. Checkouts under
   `DATA_DIR/checkouts/<id>/<sha>/` are disposable (`gitrepo.materialize`
   recreates them); the render container sees them read-only at `/data/...`.
+- **Ingest resolves a ref on the MIRROR, not on the remote.** After a push,
+  `POST /api/projects/{id}/snapshots {"ref": "main"}` answers `started` with
+  the OLD head's sha until the mirror is fetched. Use
+  `POST /api/projects/{id}/fetch` instead: it fetches, then ingests every new
+  tag and the default-branch head (`project_ingest.fetch_and_autoingest`).
 - **`routers/account.py` is the self-service twin of `routers/users.py`.** It
   takes NO user id — the subject is always `request.state.user` — so no endpoint
   on it can be aimed at somebody else by changing a number in a URL, and it

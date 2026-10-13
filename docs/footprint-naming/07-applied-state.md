@@ -109,6 +109,29 @@ version rail. Each is also recorded in `audit_log` as `footprint.rename` with `p
 > not four, and its two frame tabs became `MP` pads. Its package name was corrected on
 > 2026-09-14 for the same reason, and because the switch is top-actuated, not right-angle.
 > The "Renames applied" table above is the 2026-07-30 wave and still reads correctly as history.
+>
+> **Switch wave, 2026-10-13.** The switch names applied on 2026-07-30 kept the draft's order
+> (geometry before vendor, a bare `-4P` count, the mount token in the middle). The owner chose to follow
+> the switches row of `01-standard.md` instead: `SW_<Actuation>_<Config>_<Vendor>_<MPN>_<X>x<Y>mm[_H<h>mm][_<Orient>]_<Mount>`,
+> vendor token per D1, no pin count. All 13 push and slide switches were renamed; copper is unchanged and
+> verification carried. The two DIP switches keep the stock DIP family form. Tables below still show the
+> 2026-07-30 names.
+>
+> | Previous name | Current name |
+> |---|---|
+> | `SW_Push-2P-2MP_SPST_SMD_4.7x3.5mm_H2.25mm_ShouHan_TS24CA` | `SW_Push_SPST_ShouHan_TS24CA_4.7x3.5mm_H2.25mm_SMD` |
+> | `SW_Push-2P_SPST_SMD_6x3.5mm_H2.5mm_ShouHan_TS3625A` | `SW_Push_SPST_ShouHan_TS3625A_6x3.5mm_H2.5mm_SMD` |
+> | `SW_Push-4P_SPST_SMD_3x2.6mm_H0.65mm_G-Switch_GT-TC025D-H0065-L1` | `SW_Push_SPST_G-Switch_GT-TC025D-H0065-L1_3x2.6mm_H0.65mm_SMD` |
+> | `SW_Push-4P_SPST_SMD_4.2x3.2mm_H2.5mm_G-Switch_GT-TC048D-H025-L1` | `SW_Push_SPST_G-Switch_GT-TC048D-H025-L1_4.2x3.2mm_H2.5mm_SMD` |
+> | `SW_Push-4P_SPST_SMD_6x6mm_H16mm_XKBConnection_TS-1102S-C-X-B` | `SW_Push_SPST_XKBConnection_TS-1102S-C-X-B_6x6mm_H16mm_SMD` |
+> | `SW_Push-4P_SPST_SMD_6x6mm_H18mm_XKBConnection_TS-1102S-C-18-B` | `SW_Push_SPST_XKBConnection_TS-1102S-C-18-B_6x6mm_H18mm_SMD` |
+> | `SW_Push-4P_SPST_SMD_6x6mm_H19mm_XKBConnection_TS-1102S-C-19-B` | `SW_Push_SPST_XKBConnection_TS-1102S-C-19-B_6x6mm_H19mm_SMD` |
+> | `SW_Push-4P_SPST_SMD_6x6mm_H4.3mm_Kinghelm_KH-6X6X4.3H-STM` | `SW_Push_SPST_Kinghelm_KH-6X6X4.3H-STM_6x6mm_H4.3mm_SMD` |
+> | `SW_Push-4P_SPST_SMD_6x6mm_H5mm_Kinghelm_KH-6X6X5H-STM` | `SW_Push_SPST_Kinghelm_KH-6X6X5H-STM_6x6mm_H5mm_SMD` |
+> | `SW_Push-4P_SPST_SMD_6x6mm_H7mm_Kinghelm_KH-6X6X7H-STM` | `SW_Push_SPST_Kinghelm_KH-6X6X7H-STM_6x6mm_H7mm_SMD` |
+> | `SW_Push-4P_SPST_THT_6x6mm_H9mm_Kinghelm_KH-6X6X9H-TJ` | `SW_Push_SPST_Kinghelm_KH-6X6X9H-TJ_6x6mm_H9mm_THT` |
+> | `SW_Push-4P_SPST_THT_Horizontal_6x6mm_HCTL_TC-6615-9.0-160G` | `SW_Push_SPST_HCTL_TC-6615-9.0-160G_6x6mm_Horizontal_THT` |
+> | `SW_Slide_SPDT_SMD_8x2.8mm_H1.4mm_ShouHan_MSK12C02-HB` | `SW_Slide_SPDT_ShouHan_MSK12C02-HB_8x2.8mm_H1.4mm_Horizontal_SMD` |
 
 | Footprint | `display_name` |
 |---|---|

@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-10-13 (DotConnect boards, switch footprint names)
+
+- **The four DotConnect boards are on the platform** as 7Sigma projects with their batches from the
+  sales invoices: DC_GPS, DC_LIDAR, DC_BMS and DC_Temp. DC_BMS and DC_Temp are KiCad conversions of
+  the EasyEDA Pro and Altium designs.
+- **The 13 push and slide switch footprints follow the naming standard now** — vendor and MPN before
+  the geometry, no pin count, the mount token last, for example
+  `SW_Push_SPST_Kinghelm_KH-6X6X4.3H-STM_6x6mm_H4.3mm_SMD`. Copper is unchanged. A board placed
+  before the rename keeps the old library id until Update Footprints from Library is run; this
+  affects CE_Dongle_V2, CE_Dongle_V3, CE_Aqua_V2 and EVSE_20_CTRL.
+- **RGB LEDs have a description template:** `RGB LED {Common} {Forward Current} {Footprint_Name}`.
+  Digital isolators have one too: `Digital Isolator {Channels} {Isolation Voltage} {Data Rate}
+  {Footprint_Name}`.
+- **The DotConnect JLCPCB orders are charged to their batches.** Their PCB, assembly, freight and
+  discount positions were excluded as "not a 7Sigma product"; they now go to the DC batches, split
+  by boards or by value where one order served several batches. Import VAT on those orders is
+  excluded as `reclaimable_vat`. Orders for other products, and Y11, Y14 and Y24, whose product is
+  unknown, stay excluded.
+- **Two more DotConnect batches:** DC_GPS Batch 6 (6 units, in production) and DC_BMS Batch 1b
+  (the 10 V1 boards JLCPCB assembled in July 2023, with no sale recorded).
+- **Hammond 1551V3GY is in the library**, as a symbol with no footprint.
+- **Every symbol on the four DotConnect boards is a 7Sigma library symbol**, except DC_GPS U1. The
+  symbols that did not fit the old pin points are joined to their nets by labels; connectivity is
+  unchanged.
+
 ## 2026-10-12 (faster batch, order and stock pages)
 
 - **A batch's Process tab opens in about 1.6 s instead of 6 s** on Batch 8.
