@@ -473,6 +473,16 @@ export default function RunMaterials({
   return (
     <>
       {error ? <ErrorBanner message={error} /> : null}
+      {run.effective?.process_warnings?.length ? (
+        <div className="banner-warn">
+          The batch's BOM and its process steps disagree:
+          <ul>
+            {run.effective.process_warnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {/* The reconciliation sits ABOVE the list, because it is the thing that
           says whether the list below can be trusted — a position the supplier

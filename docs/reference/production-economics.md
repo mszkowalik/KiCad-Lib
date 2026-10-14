@@ -720,8 +720,11 @@ guard reads one company's stock is in [companies.md](companies.md).
 - **A project with a process has no extra-BOM items that count** (decision
   0060). Its materials are the inputs of its process steps
   (`process.process_materials`), the BOM pricing reads them in place of the
-  extra items, and a new extra item is refused. The rule below holds for a
-  project without a process.
+  extra items, and a new extra item is refused. A schematic line for a part a
+  step draws is counted through the step only (decision
+  [0090](../decisions/0090-a-part-a-step-draws-is-counted-once-by-the-step.md),
+  rules in [processes.md](processes.md)). The rule below holds for a project
+  without a process.
 - **An extra-BOM item and a schematic symbol for the same part double-count.** Once
   an enclosure gets a symbol, its `ProjectExtraBomItem` twin must go or both the plan
   and the draws count it twice (the Aqua plan listed components 324/325 once with

@@ -274,6 +274,16 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
               No exchange rate for: {bom.totals.unknown_rates.join(", ")} — amounts kept 1:1.
             </div>
           ) : null}
+          {bom.process_warnings?.length ? (
+            <div className="banner-warn">
+              The board BOM and the process steps disagree:
+              <ul>
+                {bom.process_warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {stock ? (
             <div className={stock.shortages > 0 ? "banner-warn" : "banner-ok"}>
               Stock check at volume {stock.volume}: {stock.shortages} shortage(s),{" "}
@@ -313,6 +323,18 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
                             title="Virtual part (test point, logo, fiducial, mounting hole) — never bought, so it is left out of totals, orders and stock checks. Change this on the component page."
                           >
                             virtual
+                          </span>
+                        ) : null}
+                        {r.li.process_steps ? (
+                          <span
+                            className="pill neutral"
+                            title={
+                              r.li.process_steps.length
+                                ? `Counted once, as the material of step ${r.li.process_steps.join(", ")} — never as a BOM line too (decision 0090).`
+                                : "Off the board, and no step of the process draws it, so it is not counted. Add it to the step that fits it."
+                            }
+                          >
+                            {r.li.process_steps.length ? "step" : "no step"}
                           </span>
                         ) : null}
                       </>

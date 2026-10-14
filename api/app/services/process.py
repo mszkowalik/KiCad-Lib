@@ -1048,7 +1048,6 @@ def process_materials(db: Session, project_id: int, as_of: str | None = None,
     if v is None:
         return None
     graph = _graph(v)
-    smap = step_map(graph)
     recipes = {int(r["output_component_id"]): r for r in graph["prepared"] if r.get("output_component_id")}
     pool = run_actuals.pool_state(db, project_id, as_of=as_of,   # priced on the batch's date
                                   company_id=run_actuals.project_scope(db, project_id, as_of))
@@ -1056,6 +1055,29 @@ def process_materials(db: Session, project_id: int, as_of: str | None = None,
     cids |= {c for r in recipes.values() for c, _m in map(input_ref, r.get("inputs") or []) if c}
     names = _part_names(db, cids)
     out = []
+    for key, slabel, i, j, pin, q, recipe in route_inputs(graph):
+        pcid, pmpn = input_ref(pin)
+        probe = SimpleNamespace(component_id=pcid, mpn="" if pcid else pmpn, lcsc="")
+        avg = (pool.get(run_actuals._key(probe)) or {}).get("avg_usd")
+        out.append(SimpleNamespace(
+            id=None, key=f"p{key}.{i}.{j}", step=key,
+            label=f"{slabel}: {input_label(pin, names)}", qty=q, component_id=pcid,
+            manufacturer="", mpn=pmpn, unit_price=avg, currency="USD",
+            price_source="pool average" if avg is not None else None,
+            notes=(f"process v{v.version_no}, step {slabel!r}"
+                   + (f", inside {recipe.get('label') or recipe.get('key')!r}" if recipe else ""))))
+    return out
+
+
+def route_inputs(graph: dict):
+    """Every part one device takes through the steps on the main route, a
+    prepared part expanded into its recipe's inputs: (step key, step label,
+    input index, recipe-input index, the input, quantity per device, the
+    recipe or None). `process_materials` prices these and
+    `bom_lines_owned` matches the board's BOM against them, so the two can
+    never disagree about what the process draws."""
+    smap = step_map(graph)
+    recipes = {int(r["output_component_id"]): r for r in graph["prepared"] if r.get("output_component_id")}
     for key in graph["route"]:
         st = smap.get(key)
         if not st or (st.get("kind") or "step") in NO_INPUT_KINDS:
@@ -1068,14 +1090,55 @@ def process_materials(db: Session, project_id: int, as_of: str | None = None,
             parts = ([(rin, qty * float(rin.get("qty") or 0)) for rin in recipe.get("inputs") or []]
                      if recipe else [(inp, qty)])
             for j, (pin, q) in enumerate(parts):
-                pcid, pmpn = input_ref(pin)
-                probe = SimpleNamespace(component_id=pcid, mpn="" if pcid else pmpn, lcsc="")
-                avg = (pool.get(run_actuals._key(probe)) or {}).get("avg_usd")
-                out.append(SimpleNamespace(
-                    id=None, key=f"p{key}.{i}.{j}", step=key,
-                    label=f"{slabel}: {input_label(pin, names)}", qty=q, component_id=pcid,
-                    manufacturer="", mpn=pmpn, unit_price=avg, currency="USD",
-                    price_source="pool average" if avg is not None else None,
-                    notes=(f"process v{v.version_no}, step {slabel!r}"
-                           + (f", inside {recipe.get('label') or recipe.get('key')!r}" if recipe else ""))))
-    return out
+                yield key, slabel, i, j, pin, q, recipe
+
+
+def bom_lines_owned(graph: dict, lines: list) -> dict:
+    """The board BOM lines a project with a process counts THROUGH its steps,
+    not as BOM lines (decision 0090). Two kinds:
+
+    - a line whose part a step on the main route draws — matched on any shared
+      identity key (component, MPN, LCSC), the way a draw finds its stock;
+    - a line that is off the board (`exclude_from_board`, decision 0005). No
+      assembler fits such a part, so it reaches a device only through a step,
+      and a project with a process takes its materials only from its steps
+      (decision 0060). One that no step draws is reported, not counted.
+
+    `lines` are the lines that would otherwise count (no DNP, no-BOM or
+    virtual line); each needs `id`, `refs`, `qty`, `component_id`, `mpn`,
+    `lcsc`, `value` and `exclude_from_board`. Returns `{"by_line": {line id:
+    [step keys]}, "warnings": [...]}` — an off-board line no step draws maps
+    to `[]`."""
+    drawn: dict[str, list[tuple[str, int, int, str, float]]] = defaultdict(list)
+    for key, slabel, i, j, pin, q, _recipe in route_inputs(graph):
+        cid, mpn = input_ref(pin)
+        for k in run_actuals._identity_keys(cid, mpn, ""):
+            drawn[k].append((key, i, j, slabel, q))
+    by_line: dict[int, list[str]] = {}
+    warnings: list[str] = []
+    # BOM quantity against step quantity, per part: the step's is what is
+    # drawn and counted, so a difference is reported for the person to settle.
+    per_part: dict[tuple, dict] = {}
+    for li in lines:
+        keys = run_actuals._identity_keys(li.component_id, li.mpn or "", li.lcsc or "")
+        hits = [h for k in keys for h in drawn.get(k, [])]
+        name = li.value or li.mpn or li.refs
+        if hits:
+            steps = list(dict.fromkeys(h[0] for h in hits))
+            by_line[li.id] = steps
+            ident = tuple(sorted(set(hits)))
+            p = per_part.setdefault(ident, {"refs": [], "bom": 0.0, "name": name})
+            p["refs"].append(li.refs)
+            p["bom"] += float(li.qty or 0)
+        elif li.exclude_from_board:
+            by_line[li.id] = []
+            warnings.append(f"{li.refs} ({name}) is off the board and no step of the process draws it, "
+                            "so it is not counted — add it to the step that fits it, unless the "
+                            "process replaced it with another part")
+    for ident, p in per_part.items():
+        step_qty = sum(h[4] for h in ident)
+        if abs(step_qty - p["bom"]) > EPS:
+            labels = ", ".join(dict.fromkeys(repr(h[3]) for h in ident))
+            warnings.append(f"{', '.join(p['refs'])} ({p['name']}): the BOM lists {p['bom']:g} per device, "
+                            f"step {labels} draws {step_qty:g} — the step's quantity is counted")
+    return {"by_line": by_line, "warnings": warnings}

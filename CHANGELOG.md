@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-10-13 (a part the process draws is counted once)
+
+- **A part that a process step draws is no longer counted twice.** The
+  enclosure, antennas, RF pigtails and lightpipes were counted once as a
+  schematic BOM line and once as the step's material. The BOM line now shows a
+  `step` pill and is left out of the BOM total. The step's row counts the part.
+  Decision 0090.
+  - CE_Dongle_V3 batch 2164: the planned cost per device goes from $53.04 to
+    $44.86.
+  - CE_Dongle_V2: ENC1 is counted once on every batch.
+- **An off-board BOM line that no step draws is not counted.** It shows a
+  `no step` pill, and a warning on the BOM page and on the batch's Materials
+  tab names it. The same warning names a BOM quantity that differs from the
+  step's quantity.
+- **"Record assembly" no longer offers the parts the steps draw**, for a batch
+  with no JLC order.
+
 ## 2026-10-13 (DotConnect boards, switch footprint names)
 
 - **The four DotConnect boards are on the platform** as 7Sigma projects with their batches from the

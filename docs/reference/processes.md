@@ -44,9 +44,19 @@ to their devices by topic),
   person's statement. `program` is exempt.
 - **The project's materials are the process inputs** (`process_materials`):
   every input of every `step` on the main route, a prepared part expanded into
-  its recipe. `project_bom` prices them in place of the extra BOM items, and
-  `POST /projects/{id}/extra-items` refuses a new item. A batch is priced from
-  the version it pinned (`version_for_run`), the project from the current one.
+  its recipe (`route_inputs`). `project_bom` prices them in place of the extra
+  BOM items, and `POST /projects/{id}/extra-items` refuses a new item. A batch
+  is priced from the version it pinned (`version_for_run`), the project from
+  the current one.
+- **A part the steps draw is never a board BOM line too** (decision
+  [0090](../decisions/0090-a-part-a-step-draws-is-counted-once-by-the-step.md),
+  `bom_lines_owned`). A BOM line whose part a route step draws, or that is off
+  the board, gets `process_steps` and `excluded`, so `priced_bom` leaves it out
+  of the BOM total and "Record assembly" does not offer it. An off-board line
+  no step draws, and a BOM quantity that differs from the step's, come back as
+  `process_warnings`. A part ON the board that the process replaced with
+  another part is not caught: the batch's BOM is then older than its process,
+  and a repin to the matching snapshot settles it.
 - **The current version is a pointer** (`Project.current_process_version_id`,
   `process.current_version`), never the highest number. Publish moves it;
   "Publish as history" (`historical`) does not, so a version written for older

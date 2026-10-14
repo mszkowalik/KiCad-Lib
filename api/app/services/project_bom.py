@@ -206,12 +206,20 @@ def priced_bom(
     # Decision 0060: a project with a process takes its materials from the
     # process steps, not from hand-typed extra items.
     from . import process as _process
+    pv = _process.version_for_run(db, run) if run is not None else _process.current_version(db, project.id)
     proc = _process.process_materials(db, project.id, as_of=at.date().isoformat() if at else None,
-                                      version=_process.version_for_run(db, run) if run is not None else None)
+                                      version=pv)
     if proc is not None:
         extras = proc
     comp_ids |= {x.component_id for x in extras if x.component_id}
     points, supply, names, virtual = _component_data(db, comp_ids, at=at, project_id=project.id, run=run)
+    # Decision 0090: a line whose part a step draws, or that is off the board,
+    # is counted once — as the step's material — and never as a BOM line too.
+    owned = {"by_line": {}, "warnings": []}
+    if proc is not None:
+        owned = _process.bom_lines_owned(_process._graph(pv), [
+            li for li in lines
+            if not (li.dnp or li.exclude_from_bom or li.component_id in virtual)])
 
     out_lines = []
     bom_per_device = 0.0
@@ -223,7 +231,8 @@ def priced_bom(
         # Virtual parts (test point, logo, fiducial, mounting hole) are on the
         # board but never bought — same treatment as DNP / no-BOM lines.
         not_purchasable = li.component_id in virtual
-        excluded = li.dnp or li.exclude_from_bom or not_purchasable
+        process_steps = owned["by_line"].get(li.id)
+        excluded = li.dnp or li.exclude_from_bom or not_purchasable or process_steps is not None
         qty_total = li.qty * volume
         row = {
             "key": f"b{li.id}",
@@ -242,6 +251,9 @@ def priced_bom(
             "exclude_from_bom": li.exclude_from_bom,
             "exclude_from_board": li.exclude_from_board,
             "not_purchasable": not_purchasable,
+            # The steps that count this line instead (decision 0090); [] = off
+            # the board and no step draws it; None = an ordinary BOM line.
+            "process_steps": process_steps,
             "excluded": excluded,
         }
         priced = _price_line(
@@ -348,6 +360,7 @@ def priced_bom(
         "extra": out_extra,
         "costs": out_costs,
         "cost_revision": cost_state.revision_json(cost_rev),
+        "process_warnings": owned["warnings"],
         "totals": {
             "bom_per_device": _round(bom_per_device),
             "extra_per_device": _round(extra_per_device),
@@ -693,6 +706,7 @@ def run_effective(db: Session, run: M.ProductionRun) -> dict:
         "priced_at": at.isoformat(),
         "currency": display_currency(project),
         "cost_revision": bom.get("cost_revision"),
+        "process_warnings": bom.get("process_warnings") or [],
         "qty": qty,
         "lines": lines,
         "costs": costs,

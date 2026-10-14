@@ -1024,6 +1024,10 @@ def assembly_draft(db: Session, run: M.ProductionRun) -> dict:
                .filter_by(snapshot_id=run.snapshot_id, board=run.board or "", variant=run.variant or "")
                .filter(M.SnapshotBomLine.dnp.is_(False), M.SnapshotBomLine.exclude_from_bom.is_(False))
                .order_by(M.SnapshotBomLine.position).all())
+        # A part a step draws, or one off the board, is the steps' to draw
+        # (decision 0090): offering it here drew it twice.
+        owned = P.bom_lines_owned(P._graph(v), bom)["by_line"]
+        bom = [li for li in bom if li.id not in owned]
         bnames = _names(db, [li.component_id for li in bom])
         boards = len(twins)
         # Less what the step drew already, so "Add to assembly" offers the rest.

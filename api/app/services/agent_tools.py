@@ -924,12 +924,15 @@ def get_project_bom(project: str, board: str = "", variant: str = "", volume: in
              "unit_price": li["unit_price"], "line_total": li["line_total"],
              "dnp": li["dnp"], "excluded": li["excluded"],
              "not_purchasable": li["not_purchasable"]}
+            # The process steps that count this line instead (decision 0090).
+            | ({"process_steps": li["process_steps"]} if li.get("process_steps") is not None else {})
             for li in bom["lines"]
         ]
         return json.dumps({
             "project": p.name, "ref": snap.ref_name, "board": board_name,
             "variant": variant or "(default)", "volume": bom["volume"],
             "currency": bom["currency"], "totals": bom["totals"],
+            "process_warnings": bom.get("process_warnings") or [],
             "lines": lines,
             "extra_items": [{"label": x["label"], "qty_per": x["qty_per"],
                              "unit_price": x["unit_price"]} for x in bom["extra"]],

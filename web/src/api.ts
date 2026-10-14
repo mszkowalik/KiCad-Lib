@@ -2125,6 +2125,9 @@ export interface BomLine {
   exclude_from_board: boolean;
   /** Matched component is flagged virtual (test point, logo, fiducial). */
   not_purchasable: boolean;
+  /** Decision 0090: the process steps that count this line instead of the
+   *  BOM; [] = off the board and no step draws it; null = an ordinary line. */
+  process_steps?: string[] | null;
   excluded: boolean;
   unit_price: number | null;
   unit_price_src: number | null;
@@ -2191,6 +2194,8 @@ export interface PricedBom {
   lines: BomLine[];
   extra: ExtraBomLine[];
   costs: CostLine[];
+  /** Where the board BOM and the process steps disagree (decision 0090). */
+  process_warnings?: string[];
   totals: BomTotals;
 }
 
@@ -2571,6 +2576,8 @@ export interface RunEffective {
   priced_at: string | null;
   currency: string | null;
   cost_revision?: CostRevisionInfo | null;
+  /** Where the board BOM and the process steps disagree (decision 0090). */
+  process_warnings?: string[];
   qty: number;
   lines: RunEffectiveLine[];
   costs: (CostLine & { overridden: boolean; dropped?: boolean; run_cost?: number | null })[];
