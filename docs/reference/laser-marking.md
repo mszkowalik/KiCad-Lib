@@ -10,7 +10,7 @@ measurements behind it and the things you need to run a marking bench.
 ```
 browser  ──Web Serial──▶  device            (reads the Tasmota device name)
 browser  ──HTTP───────▶  platform           (fetches the pinned .lbrn2)
-browser  ──patches XML                      (one Text shape, one attribute)
+browser  ──patches XML                      (the Text and BarCode shapes that hold the placeholder)
 browser  ──http://127.0.0.1:19842─▶ agent   (sends the FINISHED job, polls its log)
 agent    ──UDP 19840──▶  LightBurn          (FORCELOAD, START, STATUS)
 LightBurn ──USB──────▶   BSL controller     (closed protocol, see below)
@@ -199,13 +199,23 @@ part was marked.
 
 ## The artwork
 
-`patchTemplate` replaces the `Str` attribute of one `Shape Type="Text"`. Nothing
-else in the file is touched: the layers, speeds, power and passes are the
+`patchTemplate` writes the value into every shape that holds the placeholder:
+the `Str` of a `Shape Type="Text"` and the `Content` of a `Shape Type="BarCode"`.
+Nothing else in the file is touched: the layers, speeds, power and passes are the
 artwork author's, and LightBurn applies its own galvo correction on top. That is
 the whole reason the platform patches a drawing rather than generating one.
 
+A QR code is a `BarCode` shape. The file stores no geometry for it, only
+`Content`, `BarCodeType` and the size, so LightBurn draws the code from
+`Content` when it loads the job. `CE_Dongle_V3_Side_Info.lbrn2` carries the
+device ID twice, as text and as a 6.3 mm QR, and both get the same value.
+
 The placeholder defaults to `123456789011`, then `123456` — the strings the CE
-templates have always used, first hit wins — and a step can name its own.
+templates have always used — and a step can name its own. The first placeholder
+that any shape holds wins. **The patch refuses a file that still holds one of the
+placeholders afterwards**, for example text that says `123456` beside a QR that
+says `123456789011`. A QR left at the placeholder looks like a good mark and
+identifies nothing. Give every text and QR in one artwork the same placeholder.
 
 Measured from `AQUA_DONGLE_Side_Info.lbrn2` v2 (2026-09-17), as an example of
 what a template carries: the serial is Arial at 1.73 mm on layer 2 "Logo", a

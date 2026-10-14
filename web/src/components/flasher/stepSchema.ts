@@ -219,7 +219,7 @@ const RAW_OPS: OpSpec[] = [
         hint: "a LightBurn DEVICE PROFILE, as LightBurn names it — on a two-source marker the profile carries the calibration for one source and its layers say which source fires; empty leaves LightBurn's own choice" },
       { key: "placeholder", label: "Placeholder in the artwork", kind: "text",
         placeholder: "123456789011",
-        hint: "empty = the strings the CE templates already use" },
+        hint: "the string the artwork's text and QR codes hold where the value goes — every one is replaced; empty = the strings the CE templates already use" },
       { key: "start", label: "Fire the laser", kind: "bool",
         hint: "off = load the job only, the operator presses Start in LightBurn" },
       { key: "job_timeout", label: "Job timeout", kind: "seconds", placeholder: "300 s" },

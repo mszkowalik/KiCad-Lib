@@ -431,9 +431,10 @@ Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model
   pinned ARTWORK SET — one `.lbrn2` per set, `artwork_set_id` beside the
   berryware `file_set_id` — so the version still answers "which drawing did
   this unit get"; that is why there is no `marking_templates` table, and why
-  adding one would fork the answer. The engine names the file and
-  the text; the BENCH fetches the artwork, patches the one text shape, and
-  relays the finished job to the bench agent. The engine never touches the XML
+  adding one would fork the answer. The engine names the file and the text;
+  the BENCH fetches the artwork, patches every text and QR shape that holds
+  the placeholder, and relays the finished job to the bench agent. The engine
+  never touches the XML
   and never sees the laser. Read
   [docs/reference/laser-marking.md](../../../../docs/reference/laser-marking.md)
   before changing any of it — it holds what the controller is, and the four

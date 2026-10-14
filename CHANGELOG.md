@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-14 (a QR code in the marking artwork)
+
+- **The marking bench fills a QR code in the artwork with the same value as the serial.** Before,
+  it filled only the text, so the Dongle V3 artwork (`CE_Dongle_V3_Side_Info.lbrn2`) would have
+  engraved a QR that says `123456789011` on every unit. Every text and QR code that holds the
+  placeholder now gets the device ID.
+- **The bench refuses an artwork that still holds a placeholder after the patch**, for example text
+  that says `123456` beside a QR that says `123456789011`. Use one placeholder for each artwork.
+
 ## 2026-10-13 (a part the process draws is counted once)
 
 - **A part that a process step draws is no longer counted twice.** The

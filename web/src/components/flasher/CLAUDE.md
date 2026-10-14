@@ -232,8 +232,9 @@ text applied to another.
   one renamed the other.
 - **The manual mark and a marking run share ONE implementation**
   (`runMarkJob` in `flasher/benchAgent.ts`). Both fetch the artwork the version
-  pins, patch the one text shape and hand the finished job to the agent; the
-  only difference is where the string came from — the device's own topic, or
+  pins, patch every text and QR shape that holds the placeholder and hand the
+  finished job to the agent; the only difference is where the string came
+  from — the device's own topic, or
   the operator's keyboard. Two copies would drift the moment one of them
   learned something. The manual card reads the template and the placeholder off
   the version's `mark_laser` STEP, so it cannot disagree with the run about

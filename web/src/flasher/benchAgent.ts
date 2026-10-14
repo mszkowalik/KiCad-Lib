@@ -72,12 +72,34 @@ export interface MarkResult {
   job_file?: string;
 }
 
-/** Replace the placeholder text shape with `value`, returning the new XML.
+/** The shapes that can carry the value, and the attribute that holds it.
+ *  LightBurn stores no geometry for a `BarCode` — only its `Content` — and
+ *  draws the code when the file loads, so the QR beside the serial on the
+ *  Dongle V3 artwork is patched the same way as the text (2026-10-14). */
+const VALUE_ATTR: Record<string, string> = { Text: "Str", BarCode: "Content" };
+
+function placeholderShapes(doc: Document, placeholder: string): [Element, string][] {
+  const out: [Element, string][] = [];
+  for (const shape of Array.from(doc.querySelectorAll("Shape"))) {
+    const attr = VALUE_ATTR[shape.getAttribute("Type") ?? ""];
+    if (attr && shape.getAttribute(attr) === placeholder) out.push([shape, attr]);
+  }
+  return out;
+}
+
+/** Put `value` into every shape that carries the placeholder, returning the
+ *  new XML.
  *
- *  This is `mark.py`'s `patch_template` in the browser: one Text shape, one
- *  attribute. Everything else in the file — the layers, the speeds, the
- *  correction LightBurn applies — is left exactly as the artwork author left
- *  it, which is the whole point of patching rather than generating.
+ *  This is `mark.py`'s `patch_template` in the browser: a `Text` shape's
+ *  `Str` and a `BarCode` shape's `Content`, nothing else. Everything else in
+ *  the file — the layers, the speeds, the correction LightBurn applies — is
+ *  left exactly as the artwork author left it, which is the whole point of
+ *  patching rather than generating.
+ *
+ *  The first placeholder that any shape carries wins, and EVERY shape that
+ *  carries it is patched. A placeholder still in the file afterwards is
+ *  refused: a QR left saying `123456789011` reads as a working mark and
+ *  identifies nothing.
  */
 /** `placeholders` is stated by the caller and never guessed here. The engine
  *  sends the step's own, or the platform's defaults
@@ -88,17 +110,20 @@ export function patchTemplate(xml: string, value: string, placeholders: string[]
   if (doc.querySelector("parsererror")) throw new Error("the template is not valid XML");
   const wanted = placeholders.filter(Boolean);
   if (!wanted.length) throw new Error("no placeholder named for this template");
-  for (const p of wanted) {
-    for (const shape of Array.from(doc.querySelectorAll('Shape[Type="Text"]'))) {
-      if (shape.getAttribute("Str") === p) {
-        shape.setAttribute("Str", value);
-        return new XMLSerializer().serializeToString(doc);
-      }
-    }
+  const hit = wanted.find((p) => placeholderShapes(doc, p).length);
+  if (hit === undefined) {
+    throw new Error(
+      `the template has no text or barcode saying ${wanted.join(" or ")} — name the placeholder on the step`,
+    );
   }
-  throw new Error(
-    `the template has no text shape saying ${wanted.join(" or ")} — name the placeholder on the step`,
-  );
+  for (const [shape, attr] of placeholderShapes(doc, hit)) shape.setAttribute(attr, value);
+  const left = wanted.filter((p) => p !== value && placeholderShapes(doc, p).length);
+  if (left.length) {
+    throw new Error(
+      `the template still says ${left.join(" and ")} after ${hit} was replaced — use one placeholder for every text and barcode`,
+    );
+  }
+  return new XMLSerializer().serializeToString(doc);
 }
 
 function toBase64(s: string): string {

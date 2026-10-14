@@ -59,23 +59,36 @@ from agent import (  # noqa: F401  (re-exported for anything importing mark)
 
 
 
+# The shapes that can carry the serial, and the attribute that holds it. A
+# BarCode stores no geometry, only its Content, and LightBurn draws it on load.
+VALUE_ATTR = {"Text": "Str", "BarCode": "Content"}
+
+
+def _placeholder_shapes(root: ET.Element, placeholder: str) -> list:
+    return [(s, VALUE_ATTR[s.get("Type")]) for s in root.iter("Shape")
+            if s.get("Type") in VALUE_ATTR and s.get(VALUE_ATTR[s.get("Type")]) == placeholder]
+
+
 def patch_template(template: Path, out_dir: Path, serial: str, placeholders=DEFAULT_PLACEHOLDERS,
                    suffix: str = "") -> Path:
-    """Write a copy of the template with the placeholder text replaced by `serial`.
+    """Write a copy of the template with every shape that carries the
+    placeholder — a Text's `Str`, a BarCode's `Content` — set to `serial`.
 
-    The filename is unique per call so a stale file can never be picked up (and
-    so a browser download cannot collide into "name (1).lbrn2").
+    Same rule as `patchTemplate` in `web/src/flasher/benchAgent.ts`: the first
+    placeholder any shape carries wins, and one still in the file afterwards is
+    refused. The filename is unique per call so a stale file can never be
+    picked up (and so a browser download cannot collide into "name (1).lbrn2").
     """
     tree = ET.parse(template)
     root = tree.getroot()
-    shape = None
-    for placeholder in placeholders:
-        shape = root.find(f'.//Shape[@Type="Text"][@Str="{placeholder}"]')
-        if shape is not None:
-            break
-    if shape is None:
-        raise MarkError(f"no placeholder text shape {placeholders} found in {template.name}")
-    shape.set("Str", serial)
+    hit = next((p for p in placeholders if _placeholder_shapes(root, p)), None)
+    if hit is None:
+        raise MarkError(f"no text or barcode saying {placeholders} found in {template.name}")
+    for shape, attr in _placeholder_shapes(root, hit):
+        shape.set(attr, serial)
+    left = [p for p in placeholders if p != serial and _placeholder_shapes(root, p)]
+    if left:
+        raise MarkError(f"{template.name} still says {left} after {hit} was replaced")
     out_dir.mkdir(parents=True, exist_ok=True)
     name = f"{serial}{('-' + suffix) if suffix else ''}.lbrn2"
     dest = out_dir / name
