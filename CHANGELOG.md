@@ -7,8 +7,9 @@
   schematic BOM line and once as the step's material. The BOM line now shows a
   `step` pill and is left out of the BOM total. The step's row counts the part.
   Decision 0090.
-  - CE_Dongle_V3 batch 2164: the planned cost per device goes from $53.04 to
-    $44.86.
+  - CE_Dongle_V3 batch 2164 is repinned to its hw-v3.3.1 design, where every
+    such line matches its step. Its planned cost per device goes from $53.04
+    to $44.64.
   - CE_Dongle_V2: ENC1 is counted once on every batch.
 - **An off-board BOM line that no step draws is not counted.** It shows a
   `no step` pill, and a warning on the BOM page and on the batch's Materials
